@@ -15,7 +15,7 @@ const wikiDir = (dir?: string) => dir || resolve(process.cwd(), ".agentx/wiki")
  *  The prompt carries raw message text, so no built-in tool, MCP server,
  *  hook or settings file is loaded: an injected instruction has nothing
  *  to write or send with. */
-function claudeCall(model: string): (prompt: string) => Promise<{ text: string; costUsd: number }> {
+export function claudeCall(model: string): (prompt: string) => Promise<{ text: string; costUsd: number }> {
   return async (prompt) => {
     const { claudeCliEnv } = await import("@/utils/workspace-env")
     const args = ["-p", "-", "--output-format", "json", "--max-turns", "1", "--model", model,

@@ -141,6 +141,46 @@ interface GitLabPipelineEvent {
 
 type GitLabEvent = GitLabNoteEvent | GitLabIssueEvent | GitLabMREvent | GitLabPipelineEvent | Record<string, unknown>
 
+/** A GitLab write (note, time-log, issue, labels, assignees) that did not
+ *  land. Thrown rather than logged so the agent that asked for it hears
+ *  why, with GitLab's status and message (#984). */
+export class GitLabWriteError extends Error {
+  constructor(
+    readonly action: string,
+    readonly status: number | undefined,
+    readonly detail: string,
+    /** The write went out with the shared global token, not the agent's. */
+    readonly globalToken: boolean,
+  ) {
+    super(
+      `GitLab ${action} failed: ${status ? `${status} ` : ""}${detail}` +
+      (globalToken ? " (sent with the shared global GitLab token; this agent has no token of its own)" : ""),
+    )
+    this.name = "GitLabWriteError"
+  }
+}
+
+/** The useful part of a GitLab error body: OAuth's error_description,
+ *  else the API's message, else the raw text, kept short. */
+export function gitlabErrorDetail(text: string): string {
+  try {
+    const j = JSON.parse(text) as { error_description?: unknown; message?: unknown; error?: unknown }
+    const picked = j.error_description ?? j.message ?? j.error
+    if (picked !== undefined) return (typeof picked === "string" ? picked : JSON.stringify(picked)).slice(0, 300)
+  } catch { /* not JSON */ }
+  return text.trim().slice(0, 300) || "no response body"
+}
+
+/** What this node last learned about one GitLab token: from the `/user`
+ *  check at start, then from every write made with it. */
+export interface GitLabTokenStatus {
+  ok: boolean
+  username?: string
+  status?: number
+  error?: string
+  checkedAt: string
+}
+
 export class GitLabAdapter implements ChannelAdapter {
   readonly name = "gitlab"
   private config: GitLabChannelConfig
@@ -154,6 +194,8 @@ export class GitLabAdapter implements ChannelAdapter {
    *  botUsernames, names merely derived from agent ids do not count. */
   private postingUsernames: Set<string> = new Set()
   private sentNoteIds: Set<string> = new Set()  // track our own comments
+  /** Token health keyed "global" or the agent id (#984). */
+  private tokenStatus: Map<string, GitLabTokenStatus> = new Map()
   /** Maps actual GitLab username -> agentId (resolved from tokens at startup) */
   private usernameToAgent: Map<string, string> = new Map()
   /** Maps agentId -> actual GitLab username (resolved from tokens at startup) */
@@ -287,15 +329,25 @@ export class GitLabAdapter implements ChannelAdapter {
         const res = await fetch(`${this.config.host}/api/v4/user`, {
           headers: { "PRIVATE-TOKEN": token },
         })
-        if (!res.ok) throw new Error(`${res.status}`)
+        if (!res.ok) {
+          const detail = gitlabErrorDetail(await res.text().catch(() => ""))
+          this.markToken(label, res.status, detail)
+          throw new Error(`${res.status} ${detail}`)
+        }
         const data = await res.json() as any
         return { label, username: data.username as string }
       })
     )
 
-    for (const result of resolutions) {
+    for (const [i, result] of resolutions.entries()) {
+      if (result.status === "rejected") {
+        const { label } = tokensToResolve[i]
+        // A network failure says nothing about the token; leave it unknown.
+        this.log(`GitLab token check failed for ${label === "global" ? "the global token" : `agent "${label}"`}: ${result.reason?.message ?? result.reason}`)
+      }
       if (result.status === "fulfilled") {
         const { label, username } = result.value
+        this.markToken(label, undefined, undefined, username)
         this.botUsernames.add(username)
         this.postingUsernames.add(username.toLowerCase())
         if (label === "global") {
@@ -374,8 +426,7 @@ export class GitLabAdapter implements ChannelAdapter {
     // chatId format: "group/project:type:iid" — split from the end
     const parts = msg.chatId.split(":")
     if (parts.length < 3) {
-      this.log(`Invalid chatId for GitLab reply: ${msg.chatId}`)
-      return ""
+      throw new Error(`Invalid GitLab chatId "${msg.chatId}" (expected group/project:issue:<iid> or group/project:merge_request:<iid>)`)
     }
     const iid = parts.pop()!
     const noteableType = parts.pop()!
@@ -392,8 +443,7 @@ export class GitLabAdapter implements ChannelAdapter {
         endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/merge_requests/${iid}/notes`
         break
       default:
-        this.log(`Unsupported noteable type: ${noteableType}`)
-        return ""
+        throw new Error(`Unsupported GitLab chat type "${noteableType}" in "${msg.chatId}" (expected issue or merge_request)`)
     }
 
     // Identity rules — posts must go out under the agent's own GitLab user,
@@ -414,11 +464,13 @@ export class GitLabAdapter implements ChannelAdapter {
       try {
         const body = markBody(msg.text, msg.agentId || "unknown")
         const noteId = await this.sendNoteForwarder(target.node, project, noteableType, iid, msg.agentId || "", body)
-        if (noteId) this.sentNoteIds.add(noteId)
+        if (!noteId) throw new Error("the peer returned no note ID")
+        this.sentNoteIds.add(noteId)
         return noteId
       } catch (e: any) {
-        this.log(`GitLab send forward to "${target.node}" failed: ${e.message} — skipping (would post as group bot)`)
-        return ""
+        // Not retried with the global token: that would post as the group bot.
+        this.log(`GitLab send forward to "${target.node}" failed: ${e.message}`)
+        throw new Error(`GitLab note via peer "${target.node}" failed: ${e.message}`)
       }
     }
 
@@ -443,19 +495,15 @@ export class GitLabAdapter implements ChannelAdapter {
         body: JSON.stringify({ body: markBody(msg.text, msg.agentId || "unknown") }),
       })
 
-      if (!res.ok) {
-        const text = await res.text()
-        this.log(`GitLab API error: ${res.status} ${text}`)
-        return ""
-      }
+      if (!res.ok) throw await this.writeFailure("note", res, agentToken, msg.agentId)
 
+      this.markTokenOk(agentToken, msg.agentId)
       const data = await res.json() as any
       const noteId = String(data.id || "")
       if (noteId) this.sentNoteIds.add(noteId)
       return noteId
     } catch (e: any) {
-      this.log(`GitLab send error: ${e.message}`)
-      return ""
+      throw this.networkFailure("note", e, agentToken, msg.agentId)
     }
   }
 
@@ -1738,6 +1786,61 @@ export class GitLabAdapter implements ChannelAdapter {
     return {}
   }
 
+  /** How a write for `agentId` goes out: its own token, through the peer
+   *  that holds it, or the shared global token (#984). */
+  postingIdentity(agentId?: string): "agent" | "peer" | "global" {
+    const target = this.resolvePostTarget(agentId)
+    if (target.token) return "agent"
+    if (target.node) return "peer"
+    return "global"
+  }
+
+  /** Record what a token check or a write said about a token. Only a 401
+   *  marks a token bad: a 403 or 404 is about the project, not the token. */
+  private markToken(label: string, status?: number, error?: string, username?: string): void {
+    const prev = this.tokenStatus.get(label)
+    if (status !== undefined && status !== 401) return
+    const ok = status === undefined
+    if (!ok && prev?.ok !== false) {
+      this.log(`[gitlab/token] ${label === "global" ? "global token" : `token of agent "${label}"`} rejected by GitLab: ${status} ${error}`)
+    }
+    this.tokenStatus.set(label, {
+      ok,
+      username: username ?? prev?.username,
+      ...(ok ? {} : { status, error }),
+      checkedAt: new Date().toISOString(),
+    })
+  }
+
+  /** Token health for /health and the dashboard: the global token and each
+   *  agent token this node has checked or written with. */
+  tokenHealth(): { global?: GitLabTokenStatus; agents: Record<string, GitLabTokenStatus> } {
+    const agents: Record<string, GitLabTokenStatus> = {}
+    for (const [label, s] of this.tokenStatus) if (label !== "global") agents[label] = s
+    return { global: this.tokenStatus.get("global"), agents }
+  }
+
+  /** Turn a failed GitLab write into the error the caller sees, logging it
+   *  and recording a rejected token on the way. */
+  private async writeFailure(action: string, res: Response, agentToken: string | undefined, agentId?: string): Promise<GitLabWriteError> {
+    const detail = gitlabErrorDetail(await res.text().catch(() => ""))
+    this.log(`GitLab API error (${action}): ${res.status} ${detail}`)
+    this.markToken(agentToken ? agentId || "global" : "global", res.status, detail)
+    return new GitLabWriteError(action, res.status, detail, !agentToken && !!agentId)
+  }
+
+  /** A write that never reached GitLab (DNS, refused connection, timeout). */
+  private networkFailure(action: string, e: any, agentToken: string | undefined, agentId?: string): GitLabWriteError {
+    if (e instanceof GitLabWriteError) return e
+    this.log(`GitLab ${action} error: ${e?.message ?? e}`)
+    return new GitLabWriteError(action, undefined, e?.message ?? String(e), !agentToken && !!agentId)
+  }
+
+  /** A write that succeeded proves its token works (again). */
+  private markTokenOk(agentToken: string | undefined, agentId?: string): void {
+    this.markToken(agentToken ? agentId || "global" : "global")
+  }
+
   /**
    * Find the per-agent token for the first @mentioned agent in note text.
    */
@@ -1904,7 +2007,9 @@ export class GitLabAdapter implements ChannelAdapter {
         await this.logTimeForwarder(target.node, project, noteableType, iid, agentId || "", durationMs)
         this.log(`Time logged (via peer "${target.node}"): ${duration} on ${project} ${typeSegment}/${iid} (${agentId})`)
       } catch (e: any) {
-        this.log(`Time log forward to "${target.node}" failed: ${e.message} — skipping (would log as group bot)`)
+        // Not retried with the global token: that would log as the group bot.
+        this.log(`Time log forward to "${target.node}" failed: ${e.message}`)
+        throw new Error(`GitLab time-log via peer "${target.node}" failed: ${e.message}`)
       }
       return
     }
@@ -1924,14 +2029,11 @@ export class GitLabAdapter implements ChannelAdapter {
         body: JSON.stringify({ duration }),
       })
 
-      if (res.ok) {
-        this.log(`Time logged: ${duration} on ${project} ${noteableType} #${iid} (${agentId || "global"})`)
-      } else {
-        const text = await res.text()
-        this.log(`Time log failed (${res.status}): ${text.slice(0, 100)}`)
-      }
+      if (!res.ok) throw await this.writeFailure("time-log", res, agentToken, agentId)
+      this.markTokenOk(agentToken, agentId)
+      this.log(`Time logged: ${duration} on ${project} ${noteableType} #${iid} (${agentId || "global"})`)
     } catch (e: any) {
-      this.log(`Time log error: ${e.message}`)
+      throw this.networkFailure("time-log", e, agentToken, agentId)
     }
   }
 
@@ -1959,7 +2061,7 @@ export class GitLabAdapter implements ChannelAdapter {
         return result
       } catch (e: any) {
         this.log(`Issue-create forward to "${target.node}" failed: ${e.message}`)
-        return null
+        throw new Error(`GitLab issue-create via peer "${target.node}" failed: ${e.message}`)
       }
     }
 
@@ -2034,17 +2136,13 @@ export class GitLabAdapter implements ChannelAdapter {
         },
         body: body.toString(),
       })
-      if (!res.ok) {
-        const text = await res.text()
-        this.log(`Issue-create failed (${res.status}): ${text.slice(0, 200)}`)
-        return null
-      }
+      if (!res.ok) throw await this.writeFailure("issue-create", res, agentToken, agentId)
+      this.markTokenOk(agentToken, agentId)
       const issue = await res.json() as { iid: number; web_url: string }
       this.log(`Issue created #${issue.iid} on ${project} (${agentId || "global"})`)
       return { iid: issue.iid, url: issue.web_url }
     } catch (e: any) {
-      this.log(`Issue-create error: ${e.message}`)
-      return null
+      throw this.networkFailure("issue-create", e, agentToken, agentId)
     }
   }
 
@@ -2070,7 +2168,7 @@ export class GitLabAdapter implements ChannelAdapter {
         return labels
       } catch (e: any) {
         this.log(`setLabels forward to "${target.node}" failed: ${e.message}`)
-        return null
+        throw new Error(`GitLab label change via peer "${target.node}" failed: ${e.message}`)
       }
     }
     const token = agentToken || this.config.token
@@ -2091,16 +2189,12 @@ export class GitLabAdapter implements ChannelAdapter {
         headers: { "Content-Type": "application/x-www-form-urlencoded", "PRIVATE-TOKEN": token },
         body: body.toString(),
       })
-      if (!res.ok) {
-        const text = await res.text()
-        this.log(`setLabels failed (${res.status}): ${text.slice(0, 200)}`)
-        return null
-      }
+      if (!res.ok) throw await this.writeFailure("label change", res, agentToken, agentId)
+      this.markTokenOk(agentToken, agentId)
       const data = await res.json() as { labels?: string[] }
       return data.labels ?? []
     } catch (e: any) {
-      this.log(`setLabels error: ${e.message}`)
-      return null
+      throw this.networkFailure("label change", e, agentToken, agentId)
     }
   }
 
@@ -2142,6 +2236,9 @@ export class GitLabAdapter implements ChannelAdapter {
         const r = await fetch(`${this.config.host}/api/v4/users?username=${encodeURIComponent(username)}`, {
           headers: { "PRIVATE-TOKEN": token },
         })
+        // A rejected token fails every lookup; say so rather than
+        // reporting "no such user" for each name.
+        if (r.status === 401) throw await this.writeFailure("assignee change", r, agentToken, agentId)
         if (!r.ok) {
           this.log(`setAssignees: lookup "${username}" returned ${r.status}`)
           continue
@@ -2151,6 +2248,7 @@ export class GitLabAdapter implements ChannelAdapter {
         if (match?.id) ids.push(match.id)
         else this.log(`setAssignees: no user found for "${username}"`)
       } catch (e: any) {
+        if (e instanceof GitLabWriteError) throw e
         this.log(`setAssignees: lookup error for "${username}": ${e.message}`)
       }
     }
@@ -2175,17 +2273,13 @@ export class GitLabAdapter implements ChannelAdapter {
         headers: { "Content-Type": "application/x-www-form-urlencoded", "PRIVATE-TOKEN": token },
         body: body.toString(),
       })
-      if (!res.ok) {
-        const text = await res.text()
-        this.log(`setAssignees failed (${res.status}): ${text.slice(0, 200)}`)
-        return null
-      }
+      if (!res.ok) throw await this.writeFailure("assignee change", res, agentToken, agentId)
+      this.markTokenOk(agentToken, agentId)
       const node = mapping?.node ? `via ${mapping.node}` : (agentId || "global")
       this.log(`Assignees updated on ${project} ${kind}/${iid} (${node}): [${assignees.join(", ")}] → ids [${ids.join(", ")}]`)
       return ids
     } catch (e: any) {
-      this.log(`setAssignees error: ${e.message}`)
-      return null
+      throw this.networkFailure("assignee change", e, agentToken, agentId)
     }
   }
 

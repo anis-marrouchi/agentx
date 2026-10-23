@@ -10,8 +10,11 @@
 // comes from /api/app/*, which is never cached.
 //
 // Phase 1 of the mobile epic shipped the shell and pairing. Chat is filled
-// by app-chat.client.ts, Fleet and Activity by app-fleet.client.ts, Alerts
-// by app-alerts.client.ts with its Places card from app-places.client.ts; Chat is voice first (app-voice.client.ts, with
+// by app-chat.client.ts, Fleet and Activity by app-fleet.client.ts, Desk by
+// app-desk.client.ts, Alerts
+// by app-alerts.client.ts with its Places card from app-places.client.ts
+// and its Pinned pages card from app-pins.client.ts (which also fills the
+// row of pinned buttons under the header); Chat is voice first (app-voice.client.ts, with
 // the orb in app-orb.client.ts); the header's Share camera is
 // app-camera.client.ts; a sideways swipe changes tab (app-swipe.client.ts).
 // A tab without content yet says so plainly — no simulated data.
@@ -21,9 +24,12 @@ import { APP_SHEET_SCRIPT } from "./app-sheet.client"
 import { AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
+import { APP_DESK_SCRIPT } from "./app-desk.client"
+import { APP_DESK_CSS } from "./app-desk.css"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
 import { APP_PLACES_CSS, APP_PLACES_SCRIPT } from "./app-places.client"
 import { locationErrorText } from "./app-places-logic"
+import { APP_PINS_BAR, APP_PINS_CSS, APP_PINS_SCRIPT } from "./app-pins.client"
 import { APP_ANNOUNCE_SCRIPT } from "./app-announce.client"
 import { APP_CHAT_SCRIPT } from "./app-chat.client"
 import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
@@ -73,6 +79,7 @@ const TAB_ICONS: Record<string, string> = {
   fleet: 'M3 3h18v13H3zM8 21h8M12 16v5',
   activity: 'M3 12h4l3-8 4 16 3-8h4',
   alerts: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',
+  desk: 'M3 13l3-8h12l3 8v6H3zM3 13h5l1 3h6l1-3h5',
 }
 
 const TABS = [
@@ -80,6 +87,7 @@ const TABS = [
   { id: "fleet", label: "Fleet", soon: "Loading your machines…" },
   { id: "activity", label: "Activity", soon: "Loading what your agents are doing…" },
   { id: "alerts", label: "Alerts", soon: "Loading notifications…" },
+  { id: "desk", label: "Desk", soon: "Loading what waits for you…" },
 ] as const
 
 export function renderAppPage(): string {
@@ -95,7 +103,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -104,6 +112,7 @@ export function renderAppPage(): string {
   </div>
   <div class="bar-btns">${CAMERA_BUTTON}<button type="button" id="theme" class="icon-btn" aria-label="Switch to light theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A9 9 0 0 1 8.5 4 9 9 0 1 0 20 15.5Z"/></svg></button></div>
 </header>
+${APP_PINS_BAR}
 <p id="offline" class="offline" role="status" hidden>Offline. Showing the saved app; live data needs a connection.</p>
 ${CAMERA_ASKS_BODY}
 <main>${panels}</main>
@@ -113,8 +122,10 @@ ${CAMERA_BODY}
 <script>${injectFns({ swipeMayStart, swipeAxis, swipeOffset, swipeLanding })}${APP_SWIPE_SCRIPT}</script>
 <script>${APP_SHEET_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
+<script>${APP_DESK_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
 <script>${injectFns({ locationErrorText })}${APP_PLACES_SCRIPT}</script>
+<script>${APP_PINS_SCRIPT}</script>
 <script>${APP_ANNOUNCE_SCRIPT}</script>
 <script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_LOG_SCRIPT}${APP_CHAT_SHEETS_SCRIPT}${APP_CHAT_SCRIPT}</script>
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
@@ -308,7 +319,7 @@ main {
 main h2 { font-size: 20px; margin: 4px 0 8px; }
 .soon { color: var(--ax-text-2); line-height: 1.55; margin: 0; }
 .tabs {
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   position: sticky; bottom: 0;
   padding: 6px calc(6px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left));
   background: var(--ax-surface); border-top: var(--ax-border-w) solid var(--ax-border);

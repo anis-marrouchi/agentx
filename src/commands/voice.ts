@@ -12,6 +12,7 @@ import { findMissingVoices, REINSTALL_HINT, voiceDisplayName } from "@/voice/voi
 import { CARD_LIMITS, applyVoiceSettings, checkVoiceSettings, type VoiceSettingsPatch } from "@/daemon/voice-settings-api"
 import type { Pronunciation } from "@/voice/pronounce"
 import { formatLesson, gradeLesson, readLessons, type Verdict } from "@/voice/lesson-log"
+import { floor } from "@/commands/voice-floor"
 
 // --- agentx voice: which voice each agent speaks with ---
 //
@@ -22,6 +23,7 @@ import { formatLesson, gradeLesson, readLessons, type Verdict } from "@/voice/le
 export const voice = new Command()
   .name("voice")
   .description("list installed system voices and pick each agent's voice")
+  .addCommand(floor)
 
 type Provider = "system" | "elevenlabs"
 

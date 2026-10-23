@@ -10,6 +10,7 @@ import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
 import { patchProblems } from "@/wiki/fact-guard"
+import { LockBusyError } from "@/wiki/facts/ledger-file"
 import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
 import { applyNoteAnswers, noteSource, parseNoteAnswers, renderAbsorbNotesBlock } from "@/wiki/absorb-notes"
 import { NoteStore, type WikiNote } from "@/wiki/notes"
@@ -20,6 +21,8 @@ import { registerWikiFacts } from "./wiki-facts"
 import { registerWikiNotes } from "./wiki-notes"
 import { registerWikiOntology } from "./wiki-ontology"
 import { registerWikiEnrich } from "./wiki-enrich"
+import { registerWikiEvents } from "./wiki-events"
+import { registerWikiRules } from "./wiki-rules"
 import { registerWikiSummarize } from "./wiki-summarize"
 import { resolve, relative, dirname } from "path"
 import { exec, execSync } from "child_process"
@@ -138,6 +141,8 @@ registerWikiFacts(wiki)
 registerWikiNotes(wiki)
 registerWikiOntology(wiki)
 registerWikiEnrich(wiki)
+registerWikiEvents(wiki)
+registerWikiRules(wiki)
 registerWikiSummarize(wiki)
 
 // agentx wiki status
@@ -346,6 +351,9 @@ wiki
 
     let totalAbsorbed = 0
     let totalWithPath = 0
+    // Compile calls that failed: thrown, unparseable, or reported an error.
+    // Any one makes the command exit 1, so a command schedule sees it (#603).
+    let failedCalls = 0
 
     // One line per compile call in _absorb-runs.jsonl: time, cost, tokens
     // and prompt size, so a change to the pipeline can be measured (#808).
@@ -723,10 +731,11 @@ wiki
       } finally {
         call.at = new Date().toISOString()
         call.wallMs = Date.now() - callStart
+        if (call.failed) failedCalls++
         writeTelemetry(call)
       }
     }
-    writeTelemetry({ kind: "run", label, startedAt, endedAt: new Date().toISOString(), max: maxEntries, model })
+    writeTelemetry({ kind: "run", label, startedAt, endedAt: new Date().toISOString(), max: maxEntries, model, failed: failedCalls })
 
     console.log()
     if (opts.dryRun) {
@@ -737,6 +746,10 @@ wiki
         const pct = totalAbsorbed > 0 ? Math.round((totalWithPath / totalAbsorbed) * 100) : 0
         console.log(chalk.dim(`  ${totalWithPath}/${totalAbsorbed} carry graphPath (${pct}%) — wiki retrieval graph weight is now non-zero for those`))
       }
+    }
+    if (failedCalls > 0) {
+      console.log(chalk.red(`  ${failedCalls} absorb call(s) failed; their entries stay queued`))
+      process.exitCode = 1
     }
     console.log()
   })
@@ -912,6 +925,30 @@ wiki
     if (opts.json) console.log(JSON.stringify({ card, checks }, null, 2))
     else if (opts.out) console.log(chalk.green(`  scorecard written to ${opts.out}`))
     else console.log(md)
+  })
+
+// agentx wiki query-runs — how many queries ran, failed and how long they
+// took, from _query-runs.jsonl (#603).
+wiki
+  .command("query-runs")
+  .description("count wiki queries by outcome, with timing")
+  .option("--dir <path>", "wiki directory")
+  .option("--since <date>", "only queries on or after this date or time (ISO)")
+  .option("--json", "print the summary as JSON")
+  .action(async (opts) => {
+    const { QUERY_RUNS_FILE, summariseQueryRuns } = await import("@/wiki/query-runs")
+    const file = resolve(wikiDir(opts.dir), QUERY_RUNS_FILE)
+    if (!existsSync(file)) {
+      console.log(chalk.yellow(`  no queries recorded yet (${file})`))
+      return
+    }
+    const s = summariseQueryRuns(readFileSync(file, "utf-8"), typeof opts.since === "string" ? opts.since.trim() : undefined)
+    if (opts.json) { console.log(JSON.stringify(s, null, 2)); return }
+    console.log()
+    console.log(chalk.bold(`  ${s.total} queries · ${s.failed} failed · p50 ${(s.wallMsP50 / 1000).toFixed(1)} s · p95 ${(s.wallMsP95 / 1000).toFixed(1)} s`))
+    for (const [status, n] of Object.entries(s.byStatus).sort((a, b) => b[1] - a[1])) console.log(`  ${status.padEnd(14)} ${n}`)
+    console.log(chalk.dim(`  from: ${Object.entries(s.bySource).map(([src, n]) => `${src} ${n}`).join(" · ")}`))
+    console.log()
   })
 
 // agentx wiki absorb-runs — time and cost per absorb run label, from
@@ -2094,7 +2131,16 @@ wiki
     const relPath = resolveArticlePath(store, titleOrPath, agentId)
     if (!relPath) { console.log(chalk.yellow(`  no page matches "${titleOrPath}" in ${agentId}'s wiki.`)); process.exitCode = 1; return }
     const target = version || store.getVersions(relPath)[0]?.timestamp
-    if (!target || !store.restoreVersion(relPath, target)) {
+    let restored = false
+    try {
+      restored = !!target && store.restoreVersion(relPath, target)
+    } catch (e) {
+      if (!(e instanceof LockBusyError)) throw e
+      console.log(chalk.red(`  ${relPath} was not restored: the page was busy; run again.`))
+      process.exitCode = 1
+      return
+    }
+    if (!restored) {
       console.log(chalk.red(`  no version ${target ? `"${target}" ` : ""}of ${relPath}; see agentx wiki versions ${agentId} "${titleOrPath}"`))
       process.exitCode = 1
       return
@@ -3186,10 +3232,15 @@ wiki
   .action(async (question, opts) => {
     const { agenticQuery } = await import("@/wiki/query")
     const { noteSourceFor } = await import("@/wiki/query-settings")
+    const { QUERY_RUNS_FILE, queryFailed, recordQueryRun, timedQuery } = await import("@/wiki/query-runs")
     const settings = await querySettingsFor(opts)
     if (!settings) return
     const hub = getHub(opts.dir)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    // Every query leaves one line in _query-runs.jsonl, and one that could
+    // not run exits 1, so a failure is counted and a caller can see it (#603).
+    const runsFile = resolve(hub.getBaseDir(), QUERY_RUNS_FILE)
+    const queryStart = Date.now()
 
     // The named (or calling) agent, or the first one that has a catalog. A named agent
     // with no articles of its own still searches the shared wiki.
@@ -3204,21 +3255,26 @@ wiki
     }
     if (!chosen) {
       console.log(chalk.yellow("  No agent has a catalog yet. Run `agentx wiki status` or migrate first."))
+      recordQueryRun(runsFile, { at: new Date().toISOString(), agent: named || "", status: "no-catalog", source: "cli", wallMs: Date.now() - queryStart })
+      process.exitCode = 1
       return
     }
 
-    const store = hub.getAgentWiki(chosen)
-    const result = await agenticQuery(question, store, chosen, {
+    const agent = chosen
+    const store = hub.getAgentWiki(agent)
+    const shared = opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(agent)
+    const result = await timedQuery(runsFile, agent, "cli", () => agenticQuery(question, store, agent, {
       selectorModel: opts.selectorModel,
       synthModel: opts.synthModel,
       maxCandidates: parseInt(opts.maxCandidates),
       maxHops: parseInt(opts.maxHops),
       maxArticles: parseInt(opts.maxArticles),
-      shared: opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(chosen),
+      shared,
       method: settings.method,
       summaries: settings.summaries,
-      notes: noteSourceFor(settings, chosen),
-    })
+      notes: noteSourceFor(settings, agent),
+    }))
+    if (queryFailed(result.status)) process.exitCode = 1
 
     if (opts.json) {
       console.log(JSON.stringify(result, null, 2))
@@ -3289,8 +3345,12 @@ wiki
   .option("--synth-model <m>", "synthesis model (default sonnet)")
   .option("--json", "print the report as JSON")
   .action(async (opts) => {
-    const { parseQuestionSet, buildReport, compareReports } = await import("@/wiki/score")
+    const { parseQuestionSet, buildReport, compareReports, runCost } = await import("@/wiki/score")
     const pct = (n: number) => `${Math.round(n * 100)}%`
+    const secs = (ms?: number) => (ms === undefined ? "?" : `${(ms / 1000).toFixed(1)}s`)
+    const usd = (n?: number) => (n === undefined ? "?" : `$${n.toFixed(3)}`)
+    const costLine = (c: { meanMs?: number; meanCostUsd?: number; unpriced: number }) =>
+      `${secs(c.meanMs)} and ${usd(c.meanCostUsd)} per question${c.unpriced ? ` (${c.unpriced} without a cost)` : ""}`
 
     if (opts.compare) {
       if (opts.compare.length !== 2) {
@@ -3303,6 +3363,17 @@ wiki
       if (opts.json) { console.log(JSON.stringify(diff, null, 2)); return }
       console.log()
       console.log(chalk.bold(`  ${pct(diff.before)} → ${pct(diff.after)}`))
+      console.log(chalk.dim(`  before: ${costLine(diff.cost.before)}`))
+      console.log(chalk.dim(`  after:  ${costLine(diff.cost.after)}`))
+      if (diff.changed === "unknown") {
+        console.log(chalk.yellow("  ! A report records no settings, so what changed between the runs is unknown."))
+      } else {
+        console.log(chalk.dim(`  changed: ${diff.changed.join("; ") || "nothing"}`))
+        if (diff.changed.length > 1) console.log(chalk.yellow("  ! More than one setting changed: the difference can't be put down to one of them."))
+      }
+      if (diff.onlyBefore.length || diff.onlyAfter.length) {
+        console.log(chalk.yellow(`  ! The runs asked different questions. Only before: ${diff.onlyBefore.join(", ") || "none"}. Only after: ${diff.onlyAfter.join(", ") || "none"}.`))
+      }
       for (const d of diff.deltas) {
         if (d.before === d.after) continue
         const mark = d.after > d.before ? chalk.green("▲") : chalk.red("▼")
@@ -3326,14 +3397,19 @@ wiki
       return
     }
     const questions = parseQuestionSet(readFileSync(resolve(opts.questions), "utf-8"))
-    const { agenticQuery } = await import("@/wiki/query")
+    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
     const { noteSourceFor } = await import("@/wiki/query-settings")
+    const { meteredModelCall } = await import("@/wiki/model-call")
     const settings = await querySettingsFor(opts)
     if (!settings) return
     const hub = getHub(opts.dir)
     const shared = !opts.ownOnly
     const answers = []
     for (const q of questions) {
+      // Each question gets its own meter. Only the summaries method's calls
+      // go through it; the catalog method's cost stays unknown.
+      const spend = { calls: 0, usd: 0, unpriced: 0 }
+      const started = Date.now()
       const r = await agenticQuery(q.question, hub.getAgentWiki(agent), agent, {
         selectorModel: opts.selectorModel,
         synthModel: opts.synthModel,
@@ -3341,15 +3417,32 @@ wiki
         method: settings.method,
         summaries: settings.summaries,
         notes: noteSourceFor(settings, agent),
+        call: meteredModelCall(spend),
       })
-      answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path) })
-      if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status}\n`))
+      const ms = Date.now() - started
+      const costUsd = r.method === "summaries" && spend.unpriced === 0 ? spend.usd : undefined
+      answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path), method: r.method ?? "catalog", ms, costUsd })
+      if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status} ${secs(ms)} ${usd(costUsd)}\n`))
     }
-    const report = buildReport({ questions: opts.questions, agent, shared }, answers)
+    const report = buildReport({
+      questions: opts.questions, agent, shared,
+      settings: {
+        method: settings.method,
+        linkedPages: settings.summaries.linkedPages,
+        linkedChars: settings.summaries.linkedChars,
+        live: settings.summaries.live.enabled,
+        notes: settings.notes.enabled,
+        navigatorModel: opts.selectorModel ?? settings.summaries.navigatorModel,
+        answerModel: opts.synthModel ?? settings.summaries.answerModel,
+        catalogSelectorModel: opts.selectorModel ?? CATALOG_SELECTOR_MODEL,
+        catalogSynthModel: opts.synthModel ?? CATALOG_SYNTH_MODEL,
+      },
+    }, answers)
     if (opts.out) writeFileSync(resolve(opts.out), `${JSON.stringify(report, null, 2)}\n`)
     if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
     console.log()
     console.log(chalk.bold(`  ${agent}: ${pct(report.score)} · ${report.full}/${report.results.length} questions fully answered${shared ? "" : " (own articles only)"}`))
+    console.log(chalk.dim(`  ${costLine(runCost(report))}`))
     for (const r of report.results) {
       const mark = r.missing.length === 0 ? chalk.green("✓") : r.found.length ? chalk.yellow("~") : chalk.red("✗")
       console.log(`  ${mark} ${r.id} ${pct(r.score)}  ${chalk.dim(r.question.slice(0, 80))}`)

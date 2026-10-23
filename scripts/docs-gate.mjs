@@ -16,7 +16,7 @@
 // Surface JSON comes from scripts/docs-surface.mts. Exit 1 on errors.
 import { execFileSync } from "node:child_process"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { applyBaseline, checkImpact, checkPage, coverageGaps, matchesAny, parseDiff } from "./docs-gate-lib.mjs"
+import { applyBaseline, checkImpact, checkPage, coverageGaps, matchesAny, parseDiff, rulesForPage } from "./docs-gate-lib.mjs"
 
 const [mode, ...rest] = process.argv.slice(2)
 const opt = (name) => {
@@ -115,7 +115,7 @@ function rules() {
   let errorCount = 0
   let warningCount = 0
   for (const path of pages) {
-    const problems = checkPage(path, readFileSync(path, "utf8"), checks, existsSync)
+    const problems = checkPage(path, readFileSync(path, "utf8"), rulesForPage(path, checks), existsSync)
     const { errors, warnings } = applyBaseline(path, problems, r.baseline)
     for (const w of warnings) report("warning", { ...w, message: `${w.message} (older page on the baseline: fix it when you can)` })
     for (const e of errors) report("error", e)

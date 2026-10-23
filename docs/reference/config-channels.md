@@ -221,6 +221,9 @@ The phone app beyond pairing and notifications: the AgentX Android app and place
 | `app.places.cooldownMinutes` | number (0 to 1440) | `10` | A reminder set to fire every time fires at most once in this many minutes, so a phone at the edge of a place doesn't buzz again and again. |
 | `app.places.maxEventAgeMinutes` | number (1 to 1440) | `30` | A crossing the phone could only report later, for lack of signal, is dropped once it is older than this. |
 | `app.places.syncMinutes` | number (15 to 1440) | `60` | How often the Android app checks for added or removed places. Android runs background checks at most every 15 minutes. |
+| `app.pins.file` | string | `".agentx/app-pins.json"` | Where the phone app's pinned pages are kept, relative to the folder that holds `agentx.json`. See [Pinned pages](../dashboard/mobile-pins.md). |
+| `app.pins.max` | number (1 to 50) | `12` | Most pages you can pin as buttons in the phone app, counting `app.pins.pages`. |
+| `app.pins.pages` | array of `{ label, url }` (at most `app.pins.max`) | `[]` | Buttons for every paired phone, set here instead of in the app. `https://` only; read only in the phone app and `agentx app`. See [Pinned pages](../dashboard/mobile-pins.md#set-buttons-in-agentx-json). |
 
 ## ntfy
 
@@ -234,6 +237,11 @@ ntfy sends push notifications to your phone. It only sends; it does not receive 
 | `channels.ntfy.token` | string | — | Access token for protected topics. |
 | `channels.ntfy.defaultPriority` | number (1–5) | `3` | Priority when a message sets none. |
 | `channels.ntfy.defaultTitle` | string | — | Title when a message sets none (otherwise `AgentX`). |
+
+When AgentX cannot connect to the ntfy server, or the server answers "busy" (`429` or `503`), it tries again after 1, 3 and 8 seconds. Each failed try is written to the daemon log with its reason, for example `ntfy: attempt 1/4 failed (ntfy: fetch failed code=ETIMEDOUT); retrying in 1000 ms`. A notification still not delivered is logged as `send failed`.
+
+- AgentX gives up after about 20 seconds in total, whatever the number of tries. When that limit stops a try, the log says `send time limit of 20000 ms reached`.
+- It does not try again when the server may already have received the notification: for example when the connection breaks halfway, or the server answers with another error. This way your phone never gets the same notification twice.
 
 ## Browser calls (WebRTC)
 
@@ -299,4 +307,5 @@ The call bot joins a call, writes down what is said and posts it to a chat. It d
 - **A GitHub issue starts no run:** the daemon log says why, with a line such as `skipped: action="labeled" not in channels.github.issueActions`. Add the change to `issueActions` or to the project rule's `actions` list.
 - **A GitHub issue still starts several runs:** the changes came further apart than `debounceSeconds`. Raise it.
 - **GitLab says the webhook failed:** check that `channels.gitlab.webhookPort` is reachable from GitLab and that the secret matches `channels.gitlab.webhookSecret`.
+- **A notification never arrives:** run `agentx daemon logs` and look for `ntfy: attempt` or `send failed` lines. `ETIMEDOUT` points at a slow link (see `node.connectAttemptTimeoutMs` in [Configuration: agents and runtime](./config-agents.md#node)); a `401` or `403` points at a wrong `token` or `topic`.
 - **A value is empty at runtime:** a `${…}` reference points at a variable missing from `.env`. Add it and restart the daemon.

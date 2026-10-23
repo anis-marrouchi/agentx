@@ -69,6 +69,8 @@ export interface WikiArticleMeta {
   class?: string
   /** Event importance. Unset, the ontology default applies. */
   importance?: Importance
+  /** A level a job suggests and only the owner may set (#811). */
+  importanceProposed?: Importance
   /** When the event happened (YYYY-MM-DD). */
   date?: string
   /** Title of the event this minor event rolled up into. */

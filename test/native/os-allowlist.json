@@ -1,0 +1,23 @@
+{
+  "//": "Core files that still name the OS (#1062 step 1). This list may only shrink: move OS work into src/native/ and delete the line. New entries are not allowed.",
+  "files": [
+    "src/approvals/card-window.ts",
+    "src/approvals/origin.ts",
+    "src/approvals/popup-runner.ts",
+    "src/approvals/popup.ts",
+    "src/commands/approvals-card.ts",
+    "src/commands/doctor.ts",
+    "src/daemon/config.ts",
+    "src/daemon/index.ts",
+    "src/daemon/restart-host.ts",
+    "src/daemon/screen-buffer.ts",
+    "src/daemon/ui/pages/admin.ts",
+    "src/decisions/seats/voice-narration.ts",
+    "src/desktop/install.ts",
+    "src/guard/confirm.ts",
+    "src/utils/open-browser.ts",
+    "src/voice/siri.ts",
+    "src/voice/speaker.ts",
+    "src/voice/system-voices.ts"
+  ]
+}

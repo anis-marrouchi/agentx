@@ -80,7 +80,7 @@ To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki** or **
 
 The card shows who is asking, the background (**context**), the question, the ready-made answers, and the suggested message. When the agent's recommendation starts with one of the answers, that answer carries a dot and is already picked when the card opens, with the agent's reason under the answers. A recommendation that starts any other way picks nothing and is shown whole.
 
-1. Click an answer, or press its number (**1** to **5**). The message below fills in with your pick.
+1. Click an answer, or press its number (**1** to **3**). The message below fills in with your pick.
 2. Read the message and change the wording if you like. **Edited** shows next to it once you have, with **Reset** to put the suggested message back. If you pick another answer after editing, your edits stay and only the pick in the text changes.
 3. Click **Send**, or press **⌘↩**. The agent that asked is told your pick and the exact message, and it does the sending.
 
@@ -90,7 +90,9 @@ The card is a plain web page shown by macOS itself. There is no app to install. 
 
 The popup behaves like your other notifications:
 
-- **Focus is respected.** While a Focus mode (Do Not Disturb) or the widget's hold is on, nothing pops up. The card appears within a minute after Focus ends.
+- **Focus and calls are respected.** While a Focus mode (Do Not Disturb) or the widget's hold is on, or while you are in a call, nothing pops up. The card appears within a minute after the Focus or the call ends. See [Hold messages during Focus and calls](../jobs/notifications.md#4-hold-messages-during-focus-and-calls).
+- **It doesn't take the keyboard.** The card floats over the app you are using, and that app keeps the keyboard, so you can finish the sentence you are typing. One click on the card answers it.
+- **The screen gate.** A card goes on your screen only if it asks one question, its title is at most 120 characters and says what it is in words, its question is at most 300, and it offers at most 3 answers. A title that is only a reference, such as `#402`, a link, a commit hash or a request id, is refused; a reference next to words, such as `Approve the login fix (#402)`, is fine. A new card that breaks one of these rules is refused when the agent raises it, and the agent is told why. An older card that breaks one is not shown: it stays in Approvals, unchanged, and the agent that raised it is told why, once. A card you ask for with **Show on Mac** always shows.
 - **One at a time,** oldest first. Each new card pops up once, and again at each [check-in](#check-ins-a-few-times-a-day).
 - **Cards you put off with Later** pop up when they come back. Cards older than a day don't pop up by themselves, so switching the popup on doesn't replay a backlog. Check-ins bring them back.
 
@@ -116,7 +118,7 @@ To show one real card now:
 
 1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
 
-You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer from the dashboard](#answer-from-the-dashboard) and [the phone app](./mobile-fleet.md#answer-a-decision).
+You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. A plain `agentx approvals approve <key>` (no `--choice`) takes the agent's suggested choice, the one its recommendation starts with, and the agent is told it was a plain yes. When the recommendation names no choice, a plain yes is refused with the list of choices. A plain yes means yes to the advice, so on a card whose choices are Yes and No and whose recommendation starts with "No: …", a plain yes records the choice No. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer from the dashboard](#answer-from-the-dashboard) and [the phone app](./mobile-fleet.md#answer-a-decision).
 
 ## Agents on another machine
 
@@ -132,7 +134,7 @@ With [a second machine](../jobs/second-machine.md) in your mesh, its agents rais
 4. **Browser or Mac, on the machine with your screen:** the card is in **Approvals**, shown as `from <agent> on <machine>`, and the Mac card opens for it like any other. Answer it.
 5. Within a minute the other machine's daemon gets the answer and runs the agent's short turn on the `approvals` channel.
 
-The same mesh token that protects the rest of the mesh protects this: the forwarding machine sends the card with its peer token, and it accepts an answer only from a request that carries one of its own mesh tokens, never from a program on the same machine. Agents on the other machine keep `agentx_approval` and the status check: a status check for a forwarded card is answered from this machine. If this machine is unreachable when a card is raised, the agent is told so and nothing is lost in between; if it is unreachable when you answer, the answer is sent again every minute for a day. To keep cards on the other machine again, run `agentx approvals settings --forward-to none` there.
+The same mesh token that protects the rest of the mesh protects this: the forwarding machine sends the card with its peer token, and it accepts an answer only from a request that carries one of its own mesh tokens, never from a program on the same machine. When an agent on the other machine has the same id as an agent on this one, its card is listed as raised on the other machine only if that machine sends it with its own peer token (its `token` in `mesh.peers`); with the shared `MESH_TOKEN` the card is taken as this machine's agent's. `agentx doctor` warns about a peer that has no token of its own. Agents on the other machine keep `agentx_approval` and the status check: a status check for a forwarded card is answered from this machine. If this machine is unreachable when a card is raised, the agent is told so and nothing is lost in between; if it is unreachable when you answer, the answer is sent again every minute for a day. To keep cards on the other machine again, run `agentx approvals settings --forward-to none` there.
 
 ## Requests that are not finished
 
@@ -142,7 +144,7 @@ When [open requests](../jobs/open-requests.md) are on, a request you gave an age
 - **No** drops the request. A note you add is kept as the reason.
 - **Later** puts it off, like any other item.
 
-Under the inbox, **Open requests** lists everything you asked for that is not finished, oldest first, whatever its state, one card each: a short summary, the agent that has it, why it is not finished, your own words and the agent's last answer. On the card you reply, hand it to an agent, press **Done** or **Drop**: see [decide on a request](../jobs/open-requests.md#decide-on-a-request). **Settings: open requests** below the list turns the feature on and sets who counts as you, the channels, the quiet time and how long closed requests are kept.
+Under the inbox, **Open requests** lists everything you asked for that is not finished, oldest first, whatever its state, one card each: its headline and what is needed from you (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)), the agent that has it, why it is not finished, your own words under **You said** and the agent's last answer. On the card you reply, hand it to an agent, press **Done** or **Drop**: see [decide on a request](../jobs/open-requests.md#decide-on-a-request). **Settings: open requests** below the list turns the feature on and sets who counts as you, the channels, the quiet time, how long closed requests are kept and whether AgentX writes a headline when the agent gave none.
 
 ## Check-ins: a few times a day
 
@@ -265,7 +267,8 @@ A card can also offer ready-made answers. The popup and `agentx approvals approv
 
 | Field | Meaning |
 |---|---|
-| `choices` | Up to 5 short answers to pick from, such as three free times |
+| `choices` | Up to 3 short answers to pick from, such as three free times |
+| `followup` | Marks a follow-up card: `resurface`, `bring-back`, `weekly` or `cleanup`. Follow-up cards share a budget of 5 a day, at most 3 of them `resurface`; past it the card is refused until the next day |
 | `draft` | A suggested message you can edit. `{choice}` is replaced by your pick |
 | `say` | The short line the popup speaks. Default: the title |
 | `context` | A few lines of background shown above the question, such as what the other person wrote (up to 600 characters) |
@@ -282,9 +285,36 @@ agentx approvals request --agent helper --title "New meeting date" \
 
 When you answer yes, the agent's result message includes **Chosen:** and the approved message. The agent sends exactly that text.
 
-The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires`, `source`, `choices`, `draft`, `say` and `context`, plus `raised_by` (the agent id). A card from another machine of the mesh also carries `node`, that machine's name; the daemon keeps it only for a name in its peer list. `GET /approvals` lists what is waiting. `POST /approvals/checkin` starts a check-in. `POST /approvals/result` is how the machine that answered a forwarded card hands the answer back; it needs a mesh token. Answering is refused on that API on purpose.
+The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires`, `source`, `choices`, `draft`, `say` and `context`, plus `raised_by` (the agent id). While a card from an agent is still waiting, a second card from the same agent on the same machine with the same `source` is refused, and the reply names the open card. A card from another machine of the mesh also carries `node`, that machine's name; the daemon keeps it only for a name in its peer list. `GET /approvals` lists what is waiting. `POST /approvals/checkin` starts a check-in. `POST /approvals/<id>/resolve` closes a card its own agent already handled ([When you answer in chat instead](#when-you-answer-in-chat-instead)). `POST /approvals/result` is how the machine that answered a forwarded card hands the answer back; it needs a mesh token. Answering is refused on that API on purpose.
+
+### When you answer in chat instead
+
+Sometimes you answer the same question in chat while its card is still open, and the agent goes ahead. The agent then closes its own card, so a check-in or the Mac card does not ask you again:
+
+1. The agent carries out what you approved in chat.
+2. The agent closes the card with the `resolve` action of `agentx_approval`, and says why, for example "approved in chat, done".
+3. The card leaves **Approvals**. Its record keeps the reason and which agent closed it.
+
+Closing a card is not an answer: it approves and rejects nothing. An agent can close only a card it raised itself, and only while it is still waiting. Cards that AgentX acts on by itself, such as a workflow step, a plan step or a retro card, close only when you answer them.
+
+If you do answer **No** on a card whose work is already done, the agent does not undo anything because of that no alone. It asks you one clear question first.
+
+Over the local API, an agent closes a card with `POST /approvals/<id>/resolve` and the field `reason`. The daemon works out which agent is asking from the agent's running turn (the `X-AgentX-Task` header, or `X-AgentX-Channel` and `X-AgentX-Chat`), which the `agentx_approval` tool sends by itself. A `raised_by` field is optional and must name that same agent. A call from outside a running turn, or one that names a different agent, is refused with `403` and the card stays open.
+
+A card forwarded from another machine is closed through that machine's daemon, which checks its agent the same way and then passes the request on in its own name. The machine that keeps the card accepts that only when the request carries the own mesh token of the peer that forwarded the card: the `token` of that peer in `mesh.peers`. The shared `MESH_TOKEN` is not enough, because every agent on the machine has it.
 
 Agents on a `claude-code` engine get the `agentx_approval` tool in every session, whichever channel started it: the daemon adds its own tool server to each session it starts, next to the tool servers the workspace and the computer's user already load.
+
+## For agents: see what is on your screen
+
+Before an agent puts something new in front of you (a card, a notice, a call or a spoken line), it can look at what is already there with the `agentx_screen` tool. It is in the `read` tool set: it looks and changes nothing. It lists:
+
+- decision cards waiting for your answer: title, the agent that raised it, its machine, and when;
+- notices held while you are in Focus or a call: title, who sent it, and when;
+- the line being spoken and the lines waiting to be spoken, each cut to its first words;
+- open requests waiting on you: the request cut to a title, its agent, and since when.
+
+It shows titles only, never a card's question, a notice's message or a request's whole text, and at most 20 of each kind with the full count. The same view is on the daemon's local API as `GET /screen`. Like `GET /approvals`, a call from another machine needs a mesh token.
 
 ## Check it worked
 
@@ -308,12 +338,35 @@ For a second machine:
 3. **Browser, on the machine with your screen:** open **Approvals**. The card is there, `from <agent> on <machine>`. Click **No**.
 4. **Browser, on the other machine:** within a minute, the **Activity** tab of its dashboard shows a short run for that agent on the `approvals` channel, and its daemon log has a line `result back from <machine>`.
 
+For a card answered in chat:
+
+1. **Chat:** ask an agent for something that needs your approval, and wait until it says a decision card is waiting.
+2. **Chat:** say yes in the same chat, and let the agent do it.
+3. **Browser:** open **Approvals**. The card is gone.
+4. **Terminal:** `agentx approvals list` does not show it, and the next `agentx approvals checkin` does not ask about it.
+5. **Terminal:** the daemon log has a line `[approvals] <card> closed by <agent>: <reason>`.
+
 For check-ins (Mac):
 
 1. **Mac:** in Reminders, add a reminder due today to your `Reminders` list, such as "Reply to the client about the meeting".
 2. **Terminal:** run `agentx approvals checkin`.
 3. **Terminal:** within a few minutes, `agentx approvals list` shows a card from your `checkin.agent` for that reminder, and the Mac card opens for it.
 4. **Terminal:** the daemon log has a line starting `[checkin] check pass:` with the number of cards raised.
+
+For the screen gate:
+
+1. **Terminal:** raise a card that asks two things:
+   ```sh
+   agentx approvals request --agent helper --title "Test gate" --ask "Send it? And post it?" \
+     --recommend "No: test" --if-silent discard --expires 1h
+   ```
+2. **Terminal:** it is refused with `ask holds more than one question: one card asks one thing`, and `agentx approvals list` does not show it.
+3. **Terminal:** run the same command with `--title "#402"` and `--ask "Send it?"`. It is refused with `title is only a reference ("#402")`.
+
+For what is on your screen:
+
+1. **Terminal:** run `curl -s http://127.0.0.1:18800/screen`.
+2. **Terminal:** every decision card that `agentx approvals list` shows is in the `cards` list, with a `title` and no `ask`.
 
 ## If something is wrong
 
@@ -322,16 +375,21 @@ For check-ins (Mac):
 - **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it.
 - **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.
 - **A card says `then: keep` although the agent asked for `approve`:** that is expected. A card never approves itself; answer it yourself if the work should go ahead.
+- **An agent gets "a card from you on this source is still pending":** it already has an open card with the same `source` link, so the same question would reach you twice. The message names the open card: answer it, or let the agent close it with the `resolve` action and raise a new one. Cards without a `source`, and cards from another agent or another machine, are not affected.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
-- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>`, or **Show on Mac** on the Approvals tab, to show it again. The daemon log has a line starting `[approvals] popup`.
+- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode, widget hold or call is on (`agentx notify --status`), and that the card is less than a day old. A card that breaks a screen-gate rule is never shown by itself: the daemon log says `not shown, back to <agent>`. Each card pops up once; use `agentx approvals popup <key>`, or **Show on Mac** on the Approvals tab, to show it again. The daemon log has a line starting `[approvals] popup`.
 - **A card went away and you don't know why:** the daemon log says how each popup ended. `left waiting: not now` means **Not now** or **Esc**, `timed out` means the wait ran out, and `closed` means the window was closed. The card is still in Approvals in all three cases.
 - **The card window never opens, but the plain dialogs do:** the web window couldn't start, so AgentX fell back to the dialogs. Run `agentx approvals popup --sample` in a terminal to see the error. To keep the dialogs, set `--popup-style dialog`.
 - **Check-ins raise no cards:** check that `agentx approvals settings` shows **Check-ins on**, that `remindctl show today` lists your reminders, and that `checkin.agent` names an agent from `agentx agent list`. The daemon log lines starting `[checkin]` say what happened to each reminder: "no agent owns it", "couldn't compose a card", or the pass totals.
+- **A card comes back after you already approved it in chat:** the agent did not close it. Answer it with what you said in chat (**Yes**), or tell the agent to close it with the `resolve` action. Agents whose sessions started before this update need a new session to see that action.
+- **An agent gets "only the agent that raised the card can close it":** the call did not come from one of that agent's running turns, or it came from another agent. Only the agent that raised a card can close it, while it is working. Answer the card in **Approvals** instead.
+- **An agent on another machine can't close its card ("needs that peer's own mesh token"):** on the machine that keeps the cards, give that peer its own `token` in `mesh.peers`, and use the same token for this machine in the peer's `mesh.peers`. Until then, answer the card in **Approvals**.
+- **An agent gets "card … is answered by the operator only" when it closes a card:** the card belongs to a workflow, a plan or a retro, which act on your answer themselves. Answer it in **Approvals**.
 - **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
 - **"Pick one of the choices first":** you clicked **Yes** on a card with choices without picking one. Click a choice, then **Yes**.
-- **"This card offers choices: pick one":** the answer reached the machine without a choice, for example from an older phone app page. Reload the page, or answer with `agentx approvals approve <key> --choice <n>`.
+- **"This card offers choices and suggests none: pick one of …":** a plain yes reached the machine, and the agent's recommendation does not start with one of the choices, so there is nothing to take. Pick a choice on the dashboard, or answer with `agentx approvals approve <key> --choice <n>`.
 - **The agent never heard the result:** check `notifyAgent` is on, and that the agent still exists on this machine. The daemon log line starting `[approvals]` says what happened.
 - **An agent on another machine says the `agentx_approval` tool is missing:** its daemon is older than this feature, or the agent is not on a `claude-code` engine. Update AgentX there and restart its daemon; a session started after that has the tool.
 - **A card raised on another machine never shows here:** on that machine, `agentx approvals settings` must say **Cards go to** this machine, and `agentx mesh list` must show this machine as `healthy`. Its daemon log says `forwarded to <machine>` for each card it sent, or names the machine it could not reach. `approvals.forwardTo names "…", which is not in mesh.peers` means the name is wrong: use the name from that machine's `agentx mesh list`.

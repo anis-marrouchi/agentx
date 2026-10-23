@@ -2,11 +2,12 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import type { Call } from "@/calls/store"
-import { callerHeaders } from "@/calls/service"
+import { busyText, callerHeaders } from "@/calls/service"
 
 // --- `agentx call` — an agent rings the owner (#321) ---
 //
 //   agentx call request --reason "…" [--urgent]   (inside an agent's run)
+//   agentx call cancel                            (same: withdraw that call)
 //   agentx call list [--status missed]
 //   agentx call answer|decline|hangup <id>, agentx call later <id> [min]
 //   agentx call allow <agent|*>, agentx call disallow <agent|*>
@@ -65,8 +66,18 @@ const request = new Command("request")
     if (opts.json) { console.log(JSON.stringify(r, null, 2)); return }
     const how = r.rang === "widget" ? "ringing on AgentX Voice"
       : r.rang === "notify" ? "AgentX Voice is not running; sent a notification instead"
+      : r.rang === "waiting" && r.busy ? `waiting. ${busyText(r.busy)} To withdraw it: agentx call cancel`
       : `not rung: ${r.call.note ?? "held"} — it is listed as a missed call`
     console.log(`  ${r.rang ? chalk.green("☎") : chalk.yellow("⏸")} ${r.call.id} ${how}`)
+  }))
+
+const cancel = new Command("cancel")
+  .description("withdraw your call that is still waiting or ringing; runs inside an agent's turn")
+  .action(() => run(async () => {
+    const agentId = process.env.AGENTX_AGENT_ID
+    if (!agentId) throw new Error("no agent: a call is withdrawn from inside the agent's run that placed it, which sets AGENTX_AGENT_ID")
+    const { call } = await daemon("POST", "/calls/cancel", { agentId }, callerHeaders())
+    console.log(line(call))
   }))
 
 const list = new Command("list")
@@ -116,6 +127,7 @@ function allowCmd(name: string, allowed: boolean) {
 export const call = new Command("call")
   .description("agents ring you for a live voice call")
   .addCommand(request)
+  .addCommand(cancel)
   .addCommand(list)
   .addCommand(act("answer", "pick up a ringing call (AgentX Voice does this for you)"))
   .addCommand(act("decline", "decline a ringing call"))

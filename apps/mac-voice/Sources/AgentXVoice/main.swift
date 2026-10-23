@@ -91,6 +91,13 @@ final class App: NSObject, NSApplicationDelegate {
     // An agent ringing the owner (#321).
     private let callWatcher = CallWatcher()
     private let guideWatcher = GuideWatcher()
+    /// Who may speak and show a bubble on this Mac (#924).
+    private let floorWatcher = FloorWatcher()
+    /// Who held the floor at its last change, for the log.
+    private var floorHolder: String?
+    /// The microphone is open with no key held and no click: a follow-up
+    /// window. What it hears while a holder plays sound is thrown away.
+    private var openedByItself = false
     /// A play runs, or its picture is being taken (#562).
     private var playing = false
     /// When the app started, for the hint in the character's bubble.
@@ -105,10 +112,35 @@ final class App: NSObject, NSApplicationDelegate {
     private var activeCall: IncomingCall?
 
     /// /ask, counted in flight for the menu while it thinks.
-    private func ask(_ heard: String, agent: String) async throws -> AgentClient.Answer {
+    private func ask(_ heard: String, agent: String, handsFree: Bool = false) async throws -> AgentClient.Answer {
         track(agent, 1)
         defer { track(agent, -1) }
-        return try await AgentClient.ask(heard, agent: agent)
+        return try await AgentClient.ask(heard, agent: agent, handsFree: handsFree)
+    }
+
+    /// The floor was taken, renewed or freed (#924). A recording takes
+    /// the character and the pill off the screen; a holder that plays
+    /// sound closes a microphone that had opened by itself.
+    private func floorChanged(_ floor: FloorState) {
+        if floor.holder != floorHolder {
+            floorHolder = floor.holder
+            // Just taken: an answer being read or said leaves the screen.
+            // Its line is cut on the daemon and plays again after.
+            if floor.held && !recorder.isRecording { panel.collapse(); panel.render(rest) }
+            Log.info(floor.held
+                ? "floor: held by \(floor.holder ?? "?")\(floor.sound ? ", plays sound" : "")\(floor.hide ? ", everything hidden" : "")"
+                : "floor: free")
+        }
+        character.setConcealed(floor.hidesEverything)
+        panel.setConcealed(floor.hidesEverything)
+        statusMenu.floor = floor
+        if floor.closesOpenMicrophone && recorder.isRecording && openedByItself {
+            Log.info("floor: closing the microphone it opened by itself")
+            openedByItself = false
+            stopPolling()
+            _ = recorder.stop()
+            panel.render(rest)
+        }
     }
 
     private func track(_ agent: String, _ delta: Int) {
@@ -245,7 +277,7 @@ final class App: NSObject, NSApplicationDelegate {
     private var canPlay: Bool {
         character.onScreen == true && Config.animatedOrb
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            && !busy && !recorder.isRecording && !play.running
+            && !busy && !recorder.isRecording && !play.running && !floorWatcher.state.held
     }
 
     /// What the idle bubble says (#562): no hint at a guide stop, on the
@@ -551,6 +583,9 @@ final class App: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + GuideMath.hintSeconds) { [weak self] in self?.idleWords() }
         guideWatcher.start()
         character.onScreenChanged = { [weak self] in self?.guideWatcher.start() }
+        floorWatcher.onChange = { [weak self] floor in self?.floorChanged(floor) }
+        statusMenu.onTakeFloorBack = { Task { await FloorClient.takeBack() } }
+        floorWatcher.start()
 
         // The target does not wait for the microphone: the menu shows it
         // either way.
@@ -598,6 +633,8 @@ final class App: NSObject, NSApplicationDelegate {
         guard !busy, !recorder.isRecording else { return }
         // A replay is playing (#492): the follow-up window would hear it.
         if followUp && replaying != nil { return }
+        // So it would the floor's holder, and take it for the owner (#924).
+        if followUp && floorWatcher.state.closesOpenMicrophone { return }
         recorder.endOfTurn = settings?.general.endOfTurn ?? "vad"
         do {
             try recorder.start()
@@ -606,6 +643,7 @@ final class App: NSObject, NSApplicationDelegate {
             return
         }
         if !followUp && lessonOn { talkCheck = Task { await AgentClient.hush() } }
+        openedByItself = followUp
         openedAt = Date()
         patience = followUp ? (activeCall == nil ? followUpPatience : callPatience) : clickPatience
         silentClose = followUp
@@ -739,6 +777,7 @@ final class App: NSObject, NSApplicationDelegate {
         lastSpokeAt = Date()
         talkCheck = Task { await AgentClient.hush() }
         Log.info("door: opened\(busy ? " (a turn is running)" : "")")
+        openedByItself = false
         // Push-to-talk ends on key release; no end-of-turn detection needed.
         recorder.endOfTurn = "hold"
         do {
@@ -752,6 +791,16 @@ final class App: NSObject, NSApplicationDelegate {
 
     private func stopAndSend() {
         guard recorder.isRecording else { return }
+        let handsFree = openedByItself
+        openedByItself = false
+        // The floor's holder was playing sound and nobody asked for the
+        // microphone: what it heard is the holder, not the owner (#924).
+        if handsFree && floorWatcher.state.closesOpenMicrophone {
+            Log.info("floor: dropped what the open microphone heard")
+            _ = recorder.stop()
+            panel.render(rest)
+            return
+        }
         // Clicked or hands-free: nothing hushed yet. They did speak, so
         // hush now; whatever was talking gets the words, same as the key.
         let door = talkCheck ?? Task { await AgentClient.hush() }
@@ -780,7 +829,7 @@ final class App: NSObject, NSApplicationDelegate {
                 if !midTurn {
                     panel.render(.error("Didn't catch that"))
                     // Say it aloud: someone not looking would think it was sent.
-                    await Speech.say("Sorry, I didn't hear that. Please say it again.", agentID: nil, kind: "line", voice: voice)
+                    await apologise("Sorry, I didn't hear that. Please say it again.", voice: voice)
                     busy = false; resetSoon()
                 }
                 return
@@ -845,8 +894,31 @@ final class App: NSObject, NSApplicationDelegate {
                 busy = false; resetSoon()
                 return
             }
-            await runTurn(heard, agent: agent)
+            await runTurn(heard, agent: agent, handsFree: handsFree)
         }
+    }
+
+    /// Someone holds the floor (#924): the answer is kept, and shown and
+    /// said once it is free. Until then nothing of it is on screen.
+    private func waitForFloor(_ agent: String?, ownTurn: Bool = true) async {
+        let floor = floorWatcher.state
+        guard floor.holdsAnswers else { return }
+        Log.info("floor: answer\(agent.map { " (\($0))" } ?? "") kept until \(floor.holder ?? "the holder") lets go")
+        if !recorder.isRecording { panel.render(rest) }
+        // The owner's own words end the wait: "stop" drops the answer,
+        // anything else replaces it, and neither should wait for the holder.
+        let generation = stopGeneration
+        while floorWatcher.state.holdsAnswers && generation == stopGeneration && !(ownTurn && (abandoned || followUp != nil || silenced)) {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+    }
+
+    /// An apology said aloud, for someone not looking. Not while the
+    /// floor is held: the line would wait behind the holder with the
+    /// turn still open, and the pill already says it.
+    private func apologise(_ text: String, voice: VoiceChoice?) async {
+        guard !floorWatcher.state.held else { return }
+        await Speech.say(text, agentID: nil, kind: "line", voice: voice)
     }
 
     /// A question for another agent while our own turn thinks. It runs
@@ -875,6 +947,7 @@ final class App: NSObject, NSApplicationDelegate {
             // The next question for this agent goes now, while this
             // answer waits to be spoken.
             startNextAside(for: agent)
+            if case .success(let answer) = result { await waitForFloor(answer.agentID ?? agent, ownTurn: false) }
             guard generation == stopGeneration else { return }
             switch result {
             case .success(let answer):
@@ -896,7 +969,7 @@ final class App: NSObject, NSApplicationDelegate {
                 }
             case .failure(let error):
                 Log.warn("aside failed (\(agent)): \(error.localizedDescription)")
-                await Speech.say("Sorry, \(statusMenu.name(of: agent)) couldn't answer that.", agentID: nil, kind: "line", voice: nil)
+                await apologise("Sorry, \(statusMenu.name(of: agent)) couldn't answer that.", voice: nil)
             }
         }
     }
@@ -920,14 +993,20 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// One question and its spoken answer. Words said through the door
     /// while it thinks replace the answer with the next turn.
-    private func runTurn(_ heard: String, agent: String) async {
+    private func runTurn(_ heard: String, agent: String, handsFree: Bool = false) async {
         silenced = false
         turnAgent = agent
         do {
             beginNarration(agent)
 
-            let answer = try await ask(heard, agent: agent)
+            let answer = try await ask(heard, agent: agent, handsFree: handsFree)
             endNarration()
+            // The daemon took the words for the floor holder's sound.
+            if answer.dropped {
+                Log.info("floor: the daemon dropped hands-free words")
+                panel.render(.idle); busy = false; return
+            }
+            await waitForFloor(answer.agentID)
             if abandoned {
                 abandoned = false
                 Log.info("dropped answer (\(answer.agentID ?? "?")): \(answer.text)")
@@ -988,7 +1067,7 @@ final class App: NSObject, NSApplicationDelegate {
             panel.render(.error(short(error.localizedDescription)))
             // Say it aloud too — a voice assistant that fails only in
             // a 230px label has failed silently for anyone not looking.
-            await Speech.say("Sorry, that didn't work.", agentID: nil, kind: "line", voice: voice)
+            await apologise("Sorry, that didn't work.", voice: voice)
             resetSoon()
         }
         busy = false
@@ -1078,7 +1157,7 @@ final class App: NSObject, NSApplicationDelegate {
     private var rest: Panel.State { activeCall == nil ? .idle : .onCall }
 
     /// A new call can ring: no call in progress, no turn, microphone closed.
-    private var canRing: Bool { activeCall == nil && !busy && !recorder.isRecording }
+    private var canRing: Bool { activeCall == nil && !busy && !recorder.isRecording && !floorWatcher.state.held }
 
     private func polled(_ state: RingingCalls) {
         switch CallModel.action(ringing: ringingCall?.id, calls: state.calls, canRing: canRing) {

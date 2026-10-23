@@ -87,11 +87,12 @@ export const AGENTX_MCP_TOOLS_ENV = "AGENTX_MCP_TOOLS"
  *  (requests/sweep.ts, requests/tracker.ts), approval cards, the event
  *  digest and wake text (events/subscriptions.ts, events/wake.ts),
  *  queued attachments (attach/service.ts) and workflow steps and nudges
- *  (workflows/nodes/follow-up.ts). A tool left off the list is
+ *  (workflows/nodes/follow-up.ts), and saying a run ends waiting rather
+ *  than done (agentx_waiting, #1100). A tool left off the list is
  *  not even findable through ToolSearch, so a prompt naming it would
  *  send the agent after a tool it cannot call. The test scans src/ for
  *  prompts naming any other tool. */
-export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow"]
+export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting"]
 
 /** The tools the `[Context on demand]` line names; kept whenever a lean
  *  start relies on that line. */
@@ -206,6 +207,22 @@ export function leanClaudeArgs(
   const tools = leanTools(lean, channel)
   if (tools.length) args.push("--tools", withToolSearch(tools).join(","))
   return args
+}
+
+/** Flags for an isolated `claude` spawn (AgentTask.isolated, #990): no
+ *  MCP server at all (so none of the agentx tools that read other chats or
+ *  memory) and no built-in tool either. The reviewer's whole input is its
+ *  prompt, and its workspace is not the PR checkout, so a file tool gains
+ *  it nothing and would let an injected diff read local files whose text
+ *  the verdict then posts to the PR. `--tools ""` loads no MCP schemas
+ *  here because `--strict-mcp-config` leaves none. */
+export function isolatedClaudeArgs(): string[] {
+  return [
+    "--strict-mcp-config",
+    "--mcp-config", JSON.stringify({ mcpServers: {} }),
+    "--setting-sources", "project,local",
+    "--tools", "",
+  ]
 }
 
 /** Claude Code tool that loads a deferred tool's description on demand. */

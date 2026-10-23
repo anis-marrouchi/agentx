@@ -2,6 +2,297 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.154.1](https://github.com/anis-marrouchi/agentx/compare/v0.154.0...v0.154.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **requests:** settle on work handed back after the owner sent it back ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138)) ([#1143](https://github.com/anis-marrouchi/agentx/issues/1143)) ([3ee7964](https://github.com/anis-marrouchi/agentx/commit/3ee7964c6478fe83fb28156dc9beddfd17a1220f)), closes [#1141](https://github.com/anis-marrouchi/agentx/issues/1141)
+
+## [0.154.0](https://github.com/anis-marrouchi/agentx/compare/v0.153.1...v0.154.0) (2026-10-23)
+
+
+### Features
+
+* **requests:** settle a request whose handed work came back done ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138)) ([#1141](https://github.com/anis-marrouchi/agentx/issues/1141)) ([5ff319f](https://github.com/anis-marrouchi/agentx/commit/5ff319f2f8d815684747863bc3578afe91bbeae8))
+
+## [0.153.1](https://github.com/anis-marrouchi/agentx/compare/v0.153.0...v0.153.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **approvals:** never overwrite a card with the same id ([#1135](https://github.com/anis-marrouchi/agentx/issues/1135)) ([40e6894](https://github.com/anis-marrouchi/agentx/commit/40e68940344aa2ba3df08eb046bc0e540391f487)), closes [#1134](https://github.com/anis-marrouchi/agentx/issues/1134)
+
+## [0.153.0](https://github.com/anis-marrouchi/agentx/compare/v0.152.0...v0.153.0) (2026-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **app:** app.pins.pages (shipped in 0.152.0) may no longer list more pages than app.pins.max (default 12). A config that was valid on 0.152.0 with more pages than max now fails validation; raise app.pins.max or remove pages.
+
+### Features
+
+* **notify:** one told-the-owner record, told once, nags in the digest ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1129](https://github.com/anis-marrouchi/agentx/issues/1129)) ([5b8844b](https://github.com/anis-marrouchi/agentx/commit/5b8844bcd5a073fb195f1ffea8bbb849634d8ff8))
+* **requests:** switch for daemon headlines in the CLI and dashboard ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1132](https://github.com/anis-marrouchi/agentx/issues/1132)) ([f3a42ec](https://github.com/anis-marrouchi/agentx/commit/f3a42ec52558e6c3d7ecb2809bda56823b5f8d21))
+
+
+### Bug Fixes
+
+* **app:** no repeated pinned buttons, pages within app.pins.max, unpair note ([#1125](https://github.com/anis-marrouchi/agentx/issues/1125) follow-up) ([afcabd5](https://github.com/anis-marrouchi/agentx/commit/afcabd5556925b8ef3fe7f5cee92fdb1b784f25e))
+
+## [0.152.0](https://github.com/anis-marrouchi/agentx/compare/v0.151.0...v0.152.0) (2026-10-22)
+
+
+### Features
+
+* **app:** pin a web page as a button in the phone app ([#1120](https://github.com/anis-marrouchi/agentx/issues/1120)) ([#1122](https://github.com/anis-marrouchi/agentx/issues/1122)) ([2b9c2a9](https://github.com/anis-marrouchi/agentx/commit/2b9c2a9e193b239eddca5cc84745f8a3cb7b6def))
+* **app:** pinned pages from agentx.json, offline buttons and a diagram ([#1121](https://github.com/anis-marrouchi/agentx/issues/1121) follow-up) ([#1125](https://github.com/anis-marrouchi/agentx/issues/1125)) ([204117b](https://github.com/anis-marrouchi/agentx/commit/204117b0e0c1172199fba68b894abb35f7cff324))
+* **requests:** cards say what they are, with a headline and a need line ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1128](https://github.com/anis-marrouchi/agentx/issues/1128)) ([f4b79b4](https://github.com/anis-marrouchi/agentx/commit/f4b79b4bb8bef5ccd3227b3061688eb4d5dfce19))
+
+## [0.151.0](https://github.com/anis-marrouchi/agentx/compare/v0.150.0...v0.151.0) (2026-10-20)
+
+
+### Features
+
+* **a2a:** a run can end waiting, and is then not reported as done ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1112](https://github.com/anis-marrouchi/agentx/issues/1112)) ([f4ef0a6](https://github.com/anis-marrouchi/agentx/commit/f4ef0a6fae6b8dbd19f4b0c5946322a680b90a75))
+* **a2a:** one session per piece of work, and a note when two runs share it ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1110](https://github.com/anis-marrouchi/agentx/issues/1110)) ([4445ea1](https://github.com/anis-marrouchi/agentx/commit/4445ea1584ca1d8d56c8320860c65591f3ce04d2))
+* **screen:** titles in words, a To do line, honest changed time, and a what-is-on-screen view ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1104](https://github.com/anis-marrouchi/agentx/issues/1104)) ([c85a49d](https://github.com/anis-marrouchi/agentx/commit/c85a49d84d615709f5916bb603d7e9d7d06b6fcc))
+
+
+### Bug Fixes
+
+* **a2a:** an agent's send comes back to the asker's own chat ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1101](https://github.com/anis-marrouchi/agentx/issues/1101)) ([0547d53](https://github.com/anis-marrouchi/agentx/commit/0547d53e2e3ba85b1e271d317f702732f602f271))
+* **a2a:** close the send-routing leftovers from [#1101](https://github.com/anis-marrouchi/agentx/issues/1101) ([#1111](https://github.com/anis-marrouchi/agentx/issues/1111)) ([1467572](https://github.com/anis-marrouchi/agentx/commit/1467572bc6264f38dea6787218ce3b0dccf97636))
+* **approvals:** keep a forwarded card's node when the agent id also exists here; test doctor's token lookup ([#1102](https://github.com/anis-marrouchi/agentx/issues/1102) follow-up) ([#1108](https://github.com/anis-marrouchi/agentx/issues/1108)) ([56347f1](https://github.com/anis-marrouchi/agentx/commit/56347f12fb118c3e491b6d1b4eb9ee82dc79371d))
+* **approvals:** refuse a second pending card on the same source; doctor warns on a shared peer token ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1102](https://github.com/anis-marrouchi/agentx/issues/1102)) ([0638c34](https://github.com/anis-marrouchi/agentx/commit/0638c347b82a21624dfbf7c7020409be2dd488f6))
+* **context:** keep the newest turns when history is cut to budget ([#1090](https://github.com/anis-marrouchi/agentx/issues/1090)) ([#1091](https://github.com/anis-marrouchi/agentx/issues/1091)) ([bd1270a](https://github.com/anis-marrouchi/agentx/commit/bd1270a327fb9307b897d5e82762c957d0cf22ec))
+* **demo:** close the front-door gaps found on 0.148.0 ([#1085](https://github.com/anis-marrouchi/agentx/issues/1085) + [#1084](https://github.com/anis-marrouchi/agentx/issues/1084) wording) ([#1089](https://github.com/anis-marrouchi/agentx/issues/1089)) ([a5c89cc](https://github.com/anis-marrouchi/agentx/commit/a5c89cca0a85a5a89b2bfedf48dd1106dfb441d2))
+* **point:** a lone control answers --json in the usual shape ([#1092](https://github.com/anis-marrouchi/agentx/issues/1092)) ([#1107](https://github.com/anis-marrouchi/agentx/issues/1107)) ([b7f4d50](https://github.com/anis-marrouchi/agentx/commit/b7f4d50200178a272daa3de64d589d3236392281))
+* **point:** a lone control with no place on screen stops with exit 2 ([#1107](https://github.com/anis-marrouchi/agentx/issues/1107) follow-up) ([#1114](https://github.com/anis-marrouchi/agentx/issues/1114)) ([49bd07a](https://github.com/anis-marrouchi/agentx/commit/49bd07a675efa6e6c5cd1cd8d01e66a385a91767))
+* **point:** close guard holds for cmd+w and Electron close controls ([#1094](https://github.com/anis-marrouchi/agentx/issues/1094)) ([#1098](https://github.com/anis-marrouchi/agentx/issues/1098)) ([90abc66](https://github.com/anis-marrouchi/agentx/commit/90abc66ce4f30a3bfac91f32b58cc5392e3a9870))
+* **point:** no x/y in --json when the close guard blocks ([#1092](https://github.com/anis-marrouchi/agentx/issues/1092)) ([#1103](https://github.com/anis-marrouchi/agentx/issues/1103)) ([b724b07](https://github.com/anis-marrouchi/agentx/commit/b724b0756f723b062ac4be066c2ddb714bc5e428))
+* **screen:** a card with no title or ask is returned, not a crash ([#1104](https://github.com/anis-marrouchi/agentx/issues/1104) follow-up) ([#1109](https://github.com/anis-marrouchi/agentx/issues/1109)) ([18315a4](https://github.com/anis-marrouchi/agentx/commit/18315a4811091d16b4500c9de353af95e46f8585))
+* **screen:** a returned card with no title is named without "undefined" ([#1109](https://github.com/anis-marrouchi/agentx/issues/1109) follow-up) ([#1116](https://github.com/anis-marrouchi/agentx/issues/1116)) ([a4dab17](https://github.com/anis-marrouchi/agentx/commit/a4dab177855d692a0ff17b65c2db16d965e4f48c))
+
+## [0.150.0](https://github.com/anis-marrouchi/agentx/compare/v0.149.0...v0.150.0) (2026-10-20)
+
+
+### Features
+
+* **point:** offer browser controls, name unnamed controls, raise the cap ([#1092](https://github.com/anis-marrouchi/agentx/issues/1092)) ([#1094](https://github.com/anis-marrouchi/agentx/issues/1094)) ([1fee37a](https://github.com/anis-marrouchi/agentx/commit/1fee37abee20c07d415035404c8ccc086235b5e7))
+
+## [0.149.0](https://github.com/anis-marrouchi/agentx/compare/v0.148.0...v0.149.0) (2026-10-20)
+
+
+### Features
+
+* **point:** reach browser chrome, named images and long pages ([#1092](https://github.com/anis-marrouchi/agentx/issues/1092)) ([#1093](https://github.com/anis-marrouchi/agentx/issues/1093)) ([cd11997](https://github.com/anis-marrouchi/agentx/commit/cd11997c2fd263746769621a22dc494bd62e1077))
+
+
+### Bug Fixes
+
+* **approvals:** plain yes on a choice card takes the suggested option ([#1064](https://github.com/anis-marrouchi/agentx/issues/1064)) ([#1065](https://github.com/anis-marrouchi/agentx/issues/1065)) ([5a422f1](https://github.com/anis-marrouchi/agentx/commit/5a422f144527f31e612a37d189b5ec0070c5f5d7))
+* **approvals:** tell retro agents a fix came from a plain yes ([#1065](https://github.com/anis-marrouchi/agentx/issues/1065) follow-up) ([#1067](https://github.com/anis-marrouchi/agentx/issues/1067)) ([7eb02db](https://github.com/anis-marrouchi/agentx/commit/7eb02dbe9f4265be6712ad898d2e144c76afcbc9))
+
+## [0.148.0](https://github.com/anis-marrouchi/agentx/compare/v0.147.0...v0.148.0) (2026-10-19)
+
+
+### Features
+
+* **native:** agents put ideas in Apple Notes with agentx_note ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 9) ([#1075](https://github.com/anis-marrouchi/agentx/issues/1075)) ([490f4fc](https://github.com/anis-marrouchi/agentx/commit/490f4fca4f07040573be72c9c209f502283a4c04))
+
+## [0.147.0](https://github.com/anis-marrouchi/agentx/compare/v0.146.0...v0.147.0) (2026-10-19)
+
+
+### Features
+
+* **agents:** add skills where each runtime reads them ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 10) ([#1074](https://github.com/anis-marrouchi/agentx/issues/1074)) ([61c1253](https://github.com/anis-marrouchi/agentx/commit/61c1253701b70e2fccc0b24dbf48853c3a6d8735))
+* **approvals:** Reminders mirror for waiting cards and requests ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 5) ([#1073](https://github.com/anis-marrouchi/agentx/issues/1073)) ([be7ef91](https://github.com/anis-marrouchi/agentx/commit/be7ef91407fe12c87af2ef765e666a34e2ad1f93))
+* **native:** add, update and remove Apple Reminders on macOS ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 4) ([#1072](https://github.com/anis-marrouchi/agentx/issues/1072)) ([f52e588](https://github.com/anis-marrouchi/agentx/commit/f52e5880e25d6576c07315f5cfedf65c2081df56))
+* **native:** NativeAdapter types, none adapter and doctor line ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 2) ([#1068](https://github.com/anis-marrouchi/agentx/issues/1068)) ([3981ff9](https://github.com/anis-marrouchi/agentx/commit/3981ff94e8d56b4b88949a79282c9e825a93a5d6))
+
+## [0.146.0](https://github.com/anis-marrouchi/agentx/compare/v0.145.0...v0.146.0) (2026-10-19)
+
+
+### Features
+
+* **requests:** plan gate at task start for code work and long tasks ([#1048](https://github.com/anis-marrouchi/agentx/issues/1048)) ([#1050](https://github.com/anis-marrouchi/agentx/issues/1050)) ([3b964e7](https://github.com/anis-marrouchi/agentx/commit/3b964e73b25262823a46307302992920f483861f))
+* **watchers:** done carries evidence, checked per task type ([#1049](https://github.com/anis-marrouchi/agentx/issues/1049)) ([#1051](https://github.com/anis-marrouchi/agentx/issues/1051)) ([6612b35](https://github.com/anis-marrouchi/agentx/commit/6612b35a69dff9e3c1cf0b9ad7088ed926ec9f84))
+
+## [0.145.0](https://github.com/anis-marrouchi/agentx/compare/v0.144.0...v0.145.0) (2026-10-19)
+
+
+### Features
+
+* **quality:** merge policy, core paths need a person's approval ([#1047](https://github.com/anis-marrouchi/agentx/issues/1047)) ([#1053](https://github.com/anis-marrouchi/agentx/issues/1053)) ([3006c6a](https://github.com/anis-marrouchi/agentx/commit/3006c6aba5b4db5af5171a2143269115e4e84014))
+
+## [0.144.0](https://github.com/anis-marrouchi/agentx/compare/v0.143.0...v0.144.0) (2026-10-18)
+
+
+### Features
+
+* **approvals:** screen gate and call check for the owner's screen ([#394](https://github.com/anis-marrouchi/agentx/issues/394) b3) ([#1046](https://github.com/anis-marrouchi/agentx/issues/1046)) ([0309b01](https://github.com/anis-marrouchi/agentx/commit/0309b014515d9880d24a89923ed280708215aa11))
+* **quality:** agentx quality report — fix share, regressions, lead time, CI and cost per PR ([#988](https://github.com/anis-marrouchi/agentx/issues/988)) ([#1002](https://github.com/anis-marrouchi/agentx/issues/1002)) ([6c583b3](https://github.com/anis-marrouchi/agentx/commit/6c583b3d9fa3552a53ebda4b3bcb8a3e535c8919))
+* **requests:** homes as request links, GET /requests filters, requests today ([#394](https://github.com/anis-marrouchi/agentx/issues/394) b2) ([#1045](https://github.com/anis-marrouchi/agentx/issues/1045)) ([0a770b1](https://github.com/anis-marrouchi/agentx/commit/0a770b1adc402cbab576df35d67d7ddf27a2373e))
+* **workflows:** pilot-report compares a dry-run pilot with the live workflow ([#928](https://github.com/anis-marrouchi/agentx/issues/928)) ([#929](https://github.com/anis-marrouchi/agentx/issues/929)) ([f4e1a61](https://github.com/anis-marrouchi/agentx/commit/f4e1a6101c18300c1203729a9fe4b4fdf68de436))
+
+
+### Bug Fixes
+
+* **requests:** refuse a home on step, keep the newest in ?since (follow-up to [#1035](https://github.com/anis-marrouchi/agentx/issues/1035)) ([#1036](https://github.com/anis-marrouchi/agentx/issues/1036)) ([4a981d9](https://github.com/anis-marrouchi/agentx/commit/4a981d91c720c8a118e23672a7dfeab9076245eb))
+* **requests:** tidy open-loop edges from the [#1040](https://github.com/anis-marrouchi/agentx/issues/1040) review ([#1041](https://github.com/anis-marrouchi/agentx/issues/1041)) ([19a05c9](https://github.com/anis-marrouchi/agentx/commit/19a05c97b7cce397a83c1ac32f41fddb3f75fd68))
+
+## [0.143.0](https://github.com/anis-marrouchi/agentx/compare/v0.142.0...v0.143.0) (2026-10-18)
+
+
+### Features
+
+* **requests:** open-loop ledger with evidence-checked close ([#1040](https://github.com/anis-marrouchi/agentx/issues/1040)) ([313551f](https://github.com/anis-marrouchi/agentx/commit/313551fc79235c98f030dce9095bfed038bcfe25))
+
+## [0.142.0](https://github.com/anis-marrouchi/agentx/compare/v0.141.1...v0.142.0) (2026-10-18)
+
+
+### Features
+
+* **requests:** record where a request's work lives, list requests since a time ([#1035](https://github.com/anis-marrouchi/agentx/issues/1035)) ([c574305](https://github.com/anis-marrouchi/agentx/commit/c5743050b76a0a85df67a03c3e3f78fce06cac21))
+
+## [0.141.1](https://github.com/anis-marrouchi/agentx/compare/v0.141.0...v0.141.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **channels:** send WhatsApp replies once; find sanitized chatIds in recent ([621d58c](https://github.com/anis-marrouchi/agentx/commit/621d58c14e20814e27ebbe895114b6d56caa8fea))
+
+## [0.141.0](https://github.com/anis-marrouchi/agentx/compare/v0.140.0...v0.141.0) (2026-10-18)
+
+
+### Features
+
+* **ci:** ui-evidence check, with the [#996](https://github.com/anis-marrouchi/agentx/issues/996) review fixes ([#1004](https://github.com/anis-marrouchi/agentx/issues/1004)) ([604efa9](https://github.com/anis-marrouchi/agentx/commit/604efa937deee3faad7c3fc5cf5f67191397318c))
+* **daemon:** canary soak gate before deploying a release to a second host ([#993](https://github.com/anis-marrouchi/agentx/issues/993)) ([#999](https://github.com/anis-marrouchi/agentx/issues/999)) ([ada9950](https://github.com/anis-marrouchi/agentx/commit/ada99504c9517d8462640d4638fe1a3935f37c96))
+* **quality:** pre-merge review gate checks agent PRs against their issue ([#990](https://github.com/anis-marrouchi/agentx/issues/990)) ([#1003](https://github.com/anis-marrouchi/agentx/issues/1003)) ([aa48f18](https://github.com/anis-marrouchi/agentx/commit/aa48f18a8776c0785e9c6c2845ff14a2a6e915d2))
+* **quality:** spec-first tests from the issue text by a separate agent ([#992](https://github.com/anis-marrouchi/agentx/issues/992)) ([#998](https://github.com/anis-marrouchi/agentx/issues/998)) ([0778e73](https://github.com/anis-marrouchi/agentx/commit/0778e73b1c6e2a59bfd94f6ca52c54d3bb26d6a4))
+
+## [0.140.0](https://github.com/anis-marrouchi/agentx/compare/v0.139.2...v0.140.0) (2026-10-18)
+
+
+### Features
+
+* **readme:** harness tagline, Claude Code plugin pack, Arabic README ([#1024](https://github.com/anis-marrouchi/agentx/issues/1024)) ([#1026](https://github.com/anis-marrouchi/agentx/issues/1026)) ([17cb86b](https://github.com/anis-marrouchi/agentx/commit/17cb86b0cbf986e346784192712e7599c69c48d8))
+* **watchers:** watcher checkpoint at every task start, explicit done mode ([#1030](https://github.com/anis-marrouchi/agentx/issues/1030)) ([#1032](https://github.com/anis-marrouchi/agentx/issues/1032)) ([1a266a0](https://github.com/anis-marrouchi/agentx/commit/1a266a0adaca717ba9b2b51e198ca9bb89c7fcce))
+
+## [0.139.2](https://github.com/anis-marrouchi/agentx/compare/v0.139.1...v0.139.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **gitlab:** surface failed writes instead of reporting success ([#984](https://github.com/anis-marrouchi/agentx/issues/984)) ([#985](https://github.com/anis-marrouchi/agentx/issues/985)) ([fb74666](https://github.com/anis-marrouchi/agentx/commit/fb74666950ac4fca3dbfb14f929d46393c1c7a60))
+* **whatsapp:** treat 408 on a paired session as a network timeout, not a conflict ([#983](https://github.com/anis-marrouchi/agentx/issues/983)) ([4bbbc5a](https://github.com/anis-marrouchi/agentx/commit/4bbbc5a334a554b38cb2752fb147c074a407c072)), closes [#982](https://github.com/anis-marrouchi/agentx/issues/982)
+
+## [0.139.1](https://github.com/anis-marrouchi/agentx/compare/v0.139.0...v0.139.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **calls:** clear the waiting mark when a call stops ringing ([#977](https://github.com/anis-marrouchi/agentx/issues/977) follow-up) ([ce99a27](https://github.com/anis-marrouchi/agentx/commit/ce99a27ac0a7eef1d9bd206774540fac2785d8ef))
+* **calls:** clear the waiting mark when a call stops ringing ([#977](https://github.com/anis-marrouchi/agentx/issues/977) follow-up) ([860d0ce](https://github.com/anis-marrouchi/agentx/commit/860d0cef32a6a5607149a8a6153f2a37a565152b))
+* **calls:** keep waiting calls across a restart, name the time zone ([#971](https://github.com/anis-marrouchi/agentx/issues/971) follow-up) ([4cba50e](https://github.com/anis-marrouchi/agentx/commit/4cba50e3e9128286179236a45726321a48893071))
+* **calls:** keep waiting calls across a restart, name the time zone ([#971](https://github.com/anis-marrouchi/agentx/issues/971)) ([6a175a3](https://github.com/anis-marrouchi/agentx/commit/6a175a3897684ca5d08f06cba33b63ad14f4864b))
+
+## [0.139.0](https://github.com/anis-marrouchi/agentx/compare/v0.138.1...v0.139.0) (2026-10-13)
+
+
+### Features
+
+* **calls:** busy owner tells the caller, reminds the owner, caller can withdraw ([#969](https://github.com/anis-marrouchi/agentx/issues/969)) ([#971](https://github.com/anis-marrouchi/agentx/issues/971)) ([7ee6a0c](https://github.com/anis-marrouchi/agentx/commit/7ee6a0c42042eb9f54512eea33a4778ce4ca13e1))
+
+## [0.138.1](https://github.com/anis-marrouchi/agentx/compare/v0.138.0...v0.138.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **app:** show "Working now" on the Desk by matching runs on the trace id ([#959](https://github.com/anis-marrouchi/agentx/issues/959)) ([#962](https://github.com/anis-marrouchi/agentx/issues/962)) ([a75c998](https://github.com/anis-marrouchi/agentx/commit/a75c998256a0a79fee6479623a5d64557f2f12ff))
+
+## [0.138.0](https://github.com/anis-marrouchi/agentx/compare/v0.137.3...v0.138.0) (2026-10-13)
+
+
+### Features
+
+* **app:** Desk tab on the phone, one board over what waits and what runs ([#959](https://github.com/anis-marrouchi/agentx/issues/959)) ([#960](https://github.com/anis-marrouchi/agentx/issues/960)) ([0258384](https://github.com/anis-marrouchi/agentx/commit/025838427f08a0d14f2524efe243c9bcd014683c))
+
+## [0.137.3](https://github.com/anis-marrouchi/agentx/compare/v0.137.2...v0.137.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* **daemon:** name the ntfy send limit, honor --config in the CLI ([#933](https://github.com/anis-marrouchi/agentx/issues/933) follow-up) ([#939](https://github.com/anis-marrouchi/agentx/issues/939)) ([0058fb1](https://github.com/anis-marrouchi/agentx/commit/0058fb1cad8db1f61dd594d62c1b7e8bdef3145c))
+
+## [0.137.2](https://github.com/anis-marrouchi/agentx/compare/v0.137.1...v0.137.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **daemon:** bound ntfy sends, never re-post a stored push, cover the CLI ([#931](https://github.com/anis-marrouchi/agentx/issues/931) follow-up) ([#933](https://github.com/anis-marrouchi/agentx/issues/933)) ([8efe57e](https://github.com/anis-marrouchi/agentx/commit/8efe57ecfee4b8cbfe4e3d334d872b59b6cd9954))
+
+## [0.137.1](https://github.com/anis-marrouchi/agentx/compare/v0.137.0...v0.137.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **daemon:** stop slow links failing every fetch with ETIMEDOUT ([#930](https://github.com/anis-marrouchi/agentx/issues/930)) ([#931](https://github.com/anis-marrouchi/agentx/issues/931)) ([6eb558f](https://github.com/anis-marrouchi/agentx/commit/6eb558f88fbcf39be11f20c792f94231d6e62fac))
+
+## [0.137.0](https://github.com/anis-marrouchi/agentx/compare/v0.136.1...v0.137.0) (2026-10-11)
+
+
+### Features
+
+* **voice:** one speaker at a time, with a floor others must respect ([#924](https://github.com/anis-marrouchi/agentx/issues/924)) ([#925](https://github.com/anis-marrouchi/agentx/issues/925)) ([7fb30d2](https://github.com/anis-marrouchi/agentx/commit/7fb30d2480530ad08abd7b6d9d7e47a6d711f3d7))
+
+## [0.136.1](https://github.com/anis-marrouchi/agentx/compare/v0.136.0...v0.136.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **wiki:** restore and curator edits hold the page lock ([#916](https://github.com/anis-marrouchi/agentx/issues/916) follow-up) ([#919](https://github.com/anis-marrouchi/agentx/issues/919)) ([779a43d](https://github.com/anis-marrouchi/agentx/commit/779a43d0fbdf357631afa8a80a596aa382a77767))
+* **wiki:** wiki rules holds each page's lock from re-read to write ([#918](https://github.com/anis-marrouchi/agentx/issues/918)) ([b624e67](https://github.com/anis-marrouchi/agentx/commit/b624e67977cecd120de172aa06daef7c6f4fe914)), closes [#920](https://github.com/anis-marrouchi/agentx/issues/920)
+
+## [0.136.0](https://github.com/anis-marrouchi/agentx/compare/v0.135.1...v0.136.0) (2026-10-09)
+
+
+### Features
+
+* **approvals:** an agent closes its own card once the owner answered in chat ([#910](https://github.com/anis-marrouchi/agentx/issues/910)) ([2d23e0b](https://github.com/anis-marrouchi/agentx/commit/2d23e0b4830dfad7c5a98fa0555281ab3859abfa)), closes [#909](https://github.com/anis-marrouchi/agentx/issues/909)
+* **wiki:** one rule page per obligation, keeping a confirmed penalty ([#915](https://github.com/anis-marrouchi/agentx/issues/915)) ([6de23ca](https://github.com/anis-marrouchi/agentx/commit/6de23cae6de27440a1a97bf9a46d36cfae70fd45))
+
+
+### Bug Fixes
+
+* **wiki:** hold a page lock from re-read to write in wiki events and enrich ([#907](https://github.com/anis-marrouchi/agentx/issues/907) follow-up) ([#916](https://github.com/anis-marrouchi/agentx/issues/916)) ([14fc384](https://github.com/anis-marrouchi/agentx/commit/14fc384cee3d46329de2377a6a0044a6cba88292))
+* **wiki:** leave no-catalog lines out of query-runs p50/p95 (follow-up to [#906](https://github.com/anis-marrouchi/agentx/issues/906)) ([#914](https://github.com/anis-marrouchi/agentx/issues/914)) ([c2354b4](https://github.com/anis-marrouchi/agentx/commit/c2354b4e4b84c43e5968755d7ee787fdb4339e1a))
+
+## [0.135.1](https://github.com/anis-marrouchi/agentx/compare/v0.135.0...v0.135.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **wiki:** count failed model calls as unpriced; record catalog models in score settings ([#901](https://github.com/anis-marrouchi/agentx/issues/901)) ([#905](https://github.com/anis-marrouchi/agentx/issues/905)) ([440005e](https://github.com/anis-marrouchi/agentx/commit/440005eb059899b685ac91cb67ee0e2a1ce7b3f6))
+* **wiki:** count tool queries and thrown queries; cap _query-runs.jsonl ([#902](https://github.com/anis-marrouchi/agentx/issues/902)) ([#906](https://github.com/anis-marrouchi/agentx/issues/906)) ([581f796](https://github.com/anis-marrouchi/agentx/commit/581f7960d9a04ebd85e05b60578ebeb3c80f6b42))
+* **wiki:** wiki events keeps page dates, re-reads before writing, and spares damage titles ([#900](https://github.com/anis-marrouchi/agentx/issues/900)) ([#907](https://github.com/anis-marrouchi/agentx/issues/907)) ([0460a44](https://github.com/anis-marrouchi/agentx/commit/0460a448be3556a4247e2491a498d3569378414f)), closes [#811](https://github.com/anis-marrouchi/agentx/issues/811)
+
+## [0.135.0](https://github.com/anis-marrouchi/agentx/compare/v0.134.0...v0.135.0) (2026-10-09)
+
+
+### Features
+
+* **wiki:** give each event an importance level and the pages it is about ([#811](https://github.com/anis-marrouchi/agentx/issues/811)) ([#900](https://github.com/anis-marrouchi/agentx/issues/900)) ([85ebaad](https://github.com/anis-marrouchi/agentx/commit/85ebaad83dfafbb0a3621bad7d420a48e629b55b))
+* **wiki:** score reports record settings, time and cost per question ([#863](https://github.com/anis-marrouchi/agentx/issues/863)) ([#901](https://github.com/anis-marrouchi/agentx/issues/901)) ([43aa86e](https://github.com/anis-marrouchi/agentx/commit/43aa86e9074feb1c62ffca766b5026b5967f973a))
+
+
+### Bug Fixes
+
+* **runtime:** keep a claude-code task open while its background work runs ([#892](https://github.com/anis-marrouchi/agentx/issues/892)) ([#894](https://github.com/anis-marrouchi/agentx/issues/894)) ([227f67f](https://github.com/anis-marrouchi/agentx/commit/227f67f624f3f8a03ed2226df9063e241e4d6ccb))
+* **wiki:** absorb and query exit 1 when they fail; count failed queries ([#603](https://github.com/anis-marrouchi/agentx/issues/603)) ([#902](https://github.com/anis-marrouchi/agentx/issues/902)) ([40224c2](https://github.com/anis-marrouchi/agentx/commit/40224c2ac4a400bbfd52eab6533fa5d78b2100ea))
+
 ## [0.134.0](https://github.com/anis-marrouchi/agentx/compare/v0.133.0...v0.134.0) (2026-10-09)
 
 

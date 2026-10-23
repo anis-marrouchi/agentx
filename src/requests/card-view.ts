@@ -1,6 +1,8 @@
 import { markdownToHtml } from "@/utils/markdown-html"
 import type { RequestRecord, RequestStore } from "./store"
 import type { PlanState, PlanStore, StepState } from "./plan-store"
+import { describeCloseWhen } from "./checkers"
+import { activeStepAgentOf, stalledWhy, waitsOn, type StallGroup } from "./loops"
 
 // --- One open request as a card the owner can read in seconds (#459) ---
 //
@@ -8,21 +10,57 @@ import type { PlanState, PlanStore, StepState } from "./plan-store"
 // summary, where it stands and why it is not finished, then the words the
 // owner used and the agent's last answer, both rendered. markdownToHtml
 // escapes before it marks up, so nothing an agent or a channel wrote
-// reaches the page as HTML. No model call: the summary is the start of the
-// request's own words, without the markdown marks.
+// reaches the page as HTML. The summary is the request's headline (#1126);
+// a request without one yet falls back to the start of its own words,
+// without the markdown marks.
 
 export const SUMMARY_MAX = 200
 /** An answer of pages is cut: the card is for reading quickly. */
 export const ANSWER_MAX = 4000
 
+/** What a request needs from the owner when nothing does. */
+export const NOTHING_NEEDED = "Nothing, just so you know."
+
+/** A request as every surface titles it (#1126): what it is, the one
+ *  thing needed from the owner, and the owner's own words. The need
+ *  follows where it stands: a request that needs attention or waits on
+ *  the owner's answer says so, whatever the agent wrote earlier. */
+export function cardWords(
+  r: Pick<RequestRecord, "text" | "headline" | "need" | "state" | "question" | "agentId">,
+  max = SUMMARY_MAX,
+): { headline: string; need: string; said: string } {
+  const headline = r.headline ? (r.headline.length > max ? `${r.headline.slice(0, max - 1)}…` : r.headline) : summarize(r.text, max)
+  const need = r.state === "needs_attention" ? `Hand it back to ${r.agentId}, or drop it.`
+    : r.state === "waiting_owner" ? (r.need ?? (r.question ? `Answer: ${summarize(r.question, 150)}` : "Your answer."))
+    : r.state === "candidate" || r.state === "in_progress" || r.state === "waiting_other" ? (r.need ?? NOTHING_NEEDED)
+    : NOTHING_NEEDED
+  return { headline, need, said: plain(r.text) }
+}
+
 export interface RequestCard extends RequestRecord {
   summary: string
+  /** The one thing needed from the owner, in words: the agent's `need`
+   *  or what follows from where the request stands (cardWords). */
+  needed: string
   /** The request in the owner's words (the transcript, when spoken). */
   textHtml: string
   /** Why it is not finished, or what is being asked. Null: work is under way. */
   why: string | null
   ownerNoteHtml: string | null
   lastAnswer: { agentId: string; at: number; html: string } | null
+  /** The open loop (#1039): who it is owed to, when it is due, what
+   *  closes it. Null on a request with none of it. */
+  loop: {
+    owedTo: string | null
+    promise: boolean
+    dueAt: number | null
+    /** What its check waits for, in words. */
+    check: string | null
+    verifyState: string | null
+    verifyDetail: string | null
+  } | null
+  /** Stalled, and what it waits on. Null: not stalled, or not asked. */
+  stall: { group: StallGroup; who: string; why: string } | null
   /** Its tracked plan (#788), step by step. Null: no plan. */
   plan: {
     state: PlanState
@@ -50,17 +88,33 @@ export function summarize(md: string, max = SUMMARY_MAX): string {
   return end > max / 2 ? cut.slice(0, end + 1) : `${cut.slice(0, max - 1).trimEnd()}…`
 }
 
-export function requestCard(r: RequestRecord, store: Pick<RequestStore, "lastAnswer">, plans?: Pick<PlanStore, "get" | "steps"> | null): RequestCard {
+/** What the stall view needs: the quiet time, the clock, and which ids are agents. */
+export interface StallLookup { staleAfterHours: number; now: number; isAgent: (id: string) => boolean }
+
+export function requestCard(
+  r: RequestRecord,
+  store: Pick<RequestStore, "lastAnswer">,
+  plans?: Pick<PlanStore, "get" | "steps"> | null,
+  stall?: StallLookup,
+): RequestCard {
   const plan = plans?.get(r.id)
+  const why = stall ? stalledWhy(r, stall.staleAfterHours, stall.now) : null
   const answer = store.lastAnswer(r.id)
   const cutAnswer = answer && answer.text.length > ANSWER_MAX ? `${answer.text.slice(0, ANSWER_MAX)}\n\n…` : answer?.text
+  const words = cardWords(r)
   return {
     ...r,
-    summary: summarize(r.text),
+    summary: words.headline,
+    needed: words.need,
     textHtml: markdownToHtml(r.text),
     why: r.state === "waiting_owner" ? r.question : r.state === "needs_attention" ? r.attentionReason : null,
     ownerNoteHtml: r.ownerNote ? markdownToHtml(r.ownerNote) : null,
     lastAnswer: answer ? { agentId: answer.agentId, at: answer.at, html: markdownToHtml(cutAnswer!) } : null,
+    loop: r.promise || r.dueAt !== null || r.closeWhen ? {
+      owedTo: r.owedTo, promise: r.promise, dueAt: r.dueAt, check: r.closeWhen ? describeCloseWhen(r.closeWhen) : null,
+      verifyState: r.verifyState, verifyDetail: r.verifyDetail,
+    } : null,
+    stall: stall && why ? { ...waitsOn(r, { isAgent: stall.isAgent, activeStepAgent: activeStepAgentOf(plans) }), why } : null,
     plan: plan ? {
       state: plan.state,
       steps: plans!.steps(r.id).map((s) => ({

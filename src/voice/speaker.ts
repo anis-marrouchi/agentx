@@ -49,6 +49,8 @@ export interface Utterance {
   /** Who says it and why; shown in the speaking queue. */
   agentId?: string
   kind?: SpeechKind
+  /** The floor this line speaks under: it plays while that floor is held. */
+  floor?: string
 }
 
 /** Audio for a line: an mp3 file, or null to speak it with the system voice. */
@@ -58,8 +60,9 @@ export type Play = (file: string | null, u: Utterance) => ChildProcess
 
 /** Why a line that had started playing stopped: it played to the end,
  *  its player failed, it ran past its bound, the listener spoke (pause),
- *  or it was skipped, cancelled with its kind, or stopped with the queue. */
-export type SpeechEndReason = "finished" | "failed" | "watchdog" | "paused" | "skipped" | "cancelled" | "stopped"
+ *  the floor was taken, or it was skipped, cancelled with its kind, or
+ *  stopped with the queue. */
+export type SpeechEndReason = "finished" | "failed" | "watchdog" | "paused" | "floor" | "skipped" | "cancelled" | "stopped"
 
 export interface SpeechEvents {
   onStart?: (u: Utterance, at: number) => void

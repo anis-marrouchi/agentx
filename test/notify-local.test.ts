@@ -21,7 +21,7 @@ describe("notifications.local config", () => {
 
   it("keeps what the operator set and fills the rest", () => {
     const cfg = daemonConfigSchema.parse({ ...minimal, notifications: { local: { banner: false, volume: 0.8 } } })
-    expect(cfg.notifications.local).toEqual({ banner: false, sound: true, soundName: "Glass", volume: 0.8 })
+    expect(cfg.notifications.local).toEqual({ banner: false, sound: true, soundName: "Glass", volume: 0.8, quietWaitSeconds: 15 })
   })
 
   it("refuses a volume out of range and a sound name that is a path", () => {

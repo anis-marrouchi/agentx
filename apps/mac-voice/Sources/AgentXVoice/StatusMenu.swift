@@ -39,6 +39,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// Set by the app.
     var onStop: (() -> Void)?
+    /// Who holds the floor (#924): a row says so, with a way to take it back.
+    var floor = FloorState.free { didSet { if floor != oldValue { rebuild() } } }
+    var onTakeFloorBack: (() -> Void)?
     var onHoldChanged: ((Bool) -> Void)?
     var onTargetChanged: ((String) -> Void)?
     var onPillChanged: ((Bool) -> Void)?
@@ -245,6 +248,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         recent.addItems(to: menu, name: name(of:))
 
         menu.addItem(.separator())
+        if let held = floor.menuTitle(now: Date().timeIntervalSince1970) {
+            menu.addItem(disabled(held))
+            menu.addItem(action("Take the floor back", #selector(takeFloorBack), key: ""))
+        }
         menu.addItem(action("Stop speaking", #selector(stop), key: ".", modifiers: [.command, .option]))
         let hold = action("Hold notifications", #selector(toggleHold), key: "")
         hold.state = Hold.isOn ? .on : .off
@@ -316,6 +323,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func stop() { onStop?() }
+    @objc private func takeFloorBack() { onTakeFloorBack?() }
 
     @objc private func toggleHold() {
         onHoldChanged?(Hold.toggle())

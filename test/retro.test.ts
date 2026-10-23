@@ -190,6 +190,16 @@ describe("the result the agent gets", () => {
     expect(msg).toContain("retro:T-deploy")
   })
 
+  it("tells the agent when the fix came from a plain yes (#1064)", async () => {
+    const plain = await decided("yes")
+    expect(plain).toContain("The operator picked this fix:")
+    expect(plain).toContain("plain yes, taken as the suggested option")
+  })
+
+  it("does not call an explicit pick a plain yes", async () => {
+    expect(await decided("yes", 1)).not.toContain("plain yes")
+  })
+
   it("passes the operator's edited text as their note", async () => {
     const msg = await decided("yes", 2, "Build the guard rule, but only for the release script")
     expect(msg).toContain("The operator's note on the fix:\nBuild the guard rule, but only for the release script")

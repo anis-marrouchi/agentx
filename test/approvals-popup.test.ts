@@ -84,6 +84,30 @@ describe("card choices", () => {
     expect(resolveAnswer({}, "yes", { choice: 1 }).ok).toBe(false)
   })
 
+  it("a plain yes takes the suggested option (#1064)", () => {
+    const card = { choices: SLOTS, draft: "How about {choice}?", recommend: `${SLOTS[1]}: the calendar is free` }
+    expect(resolveAnswer(card, "yes", {})).toEqual({ ok: true, choice: SLOTS[1], text: `How about ${SLOTS[1]}?`, suggested: true })
+    // An explicit pick still wins over the suggestion.
+    expect(resolveAnswer(card, "yes", { choice: 1 })).toEqual({ ok: true, choice: SLOTS[0], text: `How about ${SLOTS[0]}?` })
+  })
+
+  it("a plain yes with no suggested option is refused, naming the options", () => {
+    const r = resolveAnswer({ choices: SLOTS, recommend: "Thursday: the calendar is free" }, "yes", {})
+    expect(r.ok).toBe(false)
+    if (!r.ok) for (const s of SLOTS) expect(r.error).toContain(s)
+  })
+
+  it("the agent is told a plain yes was taken as the suggestion", async () => {
+    const c = raise({ choices: SLOTS, recommend: `${SLOTS[2]}: only free slot` })
+    const r = await decide({ root, now: NOW }, `card:${c.id}`, "yes", {})
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.message).toContain(`${SLOTS[2]}, the suggested option`)
+    const saved = readCard(root, c.id)!
+    expect(saved.choice).toBe(SLOTS[2])
+    expect(saved.choice_suggested).toBe(true)
+    expect(verdictMessage(saved)).toContain(`Chosen: ${SLOTS[2]} (a plain yes, taken as the suggested option)`)
+  })
+
   it("the agent is told the pick and the exact text", () => {
     const c = raise({ choices: SLOTS, draft: "How about {choice}?" })
     const r = decideCard(root, c.id, "yes", { choice: 1, text: "Edited: Thursday works", now: NOW })

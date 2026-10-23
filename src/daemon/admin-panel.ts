@@ -5,7 +5,7 @@ import { mutateAgentxConfig } from "./config-mutate"
 import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
 import { TokenStore } from "./token-store"
-import { loadDaemonConfig } from "./config"
+import { crossFieldProblems, daemonConfigSchema, expandEnvVars, loadDaemonConfig } from "./config"
 import { localSettings, patchLocal } from "@/notify/local"
 import { patchScreen, screenSettings } from "@/computer-use/capture-settings"
 import { patchWikiNotes, wikiNotesSettings, type WikiNotesPatch } from "@/wiki/notes-settings"
@@ -1084,6 +1084,11 @@ function replaceConfigRaw(body: any): { summary: string; backupPath?: string } {
   let parsed: any
   try { parsed = JSON.parse(raw) }
   catch (e: any) { throw new Error(`Invalid JSON: ${e.message}`) }
+  // Rules across sections (#1062): refused here rather than at the next
+  // daemon start.
+  const checked = daemonConfigSchema.safeParse(expandEnvVars(parsed))
+  const crossed = checked.success ? crossFieldProblems(checked.data) : []
+  if (crossed.length) throw new Error(crossed.join(" "))
   const file = resolve(process.cwd(), "agentx.json")
   const backupPath = `${file}.bak.${Date.now()}`
   if (existsSync(file)) {

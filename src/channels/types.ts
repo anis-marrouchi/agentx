@@ -107,6 +107,10 @@ export interface OutgoingMessage {
   /** URL inline buttons (Phase 1). Telegram renders an inline_keyboard;
    *  channels without button support ignore them. */
   buttons?: Array<{ label: string; url: string }>
+  /** For a message to the owner (#1126): what it is about, for the
+   *  told-the-owner gate (notify/told.ts). `passed`: the caller already
+   *  went through the gate, so the router does not decide again. */
+  told?: { key?: string; requestId?: string; kind?: "notice" | "nag"; urgent?: boolean; from?: string; passed?: boolean }
 }
 
 export interface ChannelAdapter {

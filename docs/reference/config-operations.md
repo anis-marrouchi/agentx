@@ -45,6 +45,7 @@ The mesh links several AgentX machines so their agents can reach each other. See
 | `mesh.delegation.asyncWhenHuman` | boolean | `true` | When a person started the conversation, an agent that asks another agent gets its answer later, as a new message, instead of waiting. See [When an agent asks another agent](/jobs/ask-another-agent). Applies without the mesh too. |
 | `mesh.delegation.timeoutMinutes` | number | `30` | Minutes a helper agent has to answer before the asking agent is told it timed out. From 1 to 240. |
 | `mesh.delegation.requeueRelayOnRestart` | boolean | `true` | If a restart stops your agent while it is passing a helper's answer on to you, your agent tries once more after the restart. If that try fails too, you get a short message saying the answer did not come through, and your open request is marked as needing attention. Turn it off (`false`) to skip the second try. |
+| `mesh.delegation.callbackSends` | boolean | `true` | An agent's `agentx_send_agent` that no person waits on comes back to it: the answer, failure or timeout arrives as a new message in the chat it sent from, and a message the other agent writes back lands there too. See [When an agent asks another agent](/jobs/ask-another-agent). Off: such sends are only queued. |
 
 Each entry in `mesh.peers`:
 
@@ -267,6 +268,30 @@ The wiki as seen from its pages. See [Wiki › Ask an agent to curate a page](/d
 |---|---|---|---|
 | `wiki.curator.enabled` | boolean | `true` | Shows the chat button on every wiki page in the dashboard. Off, the button is hidden and curator requests are refused. |
 | `wiki.curator.agent` | string | — | Agent that answers on every page. Unset, the page's owner agent answers. |
+
+## quality
+
+Gates that check agent pull requests before they merge. Each one is off by default. See [Have a second agent review pull requests](/jobs/review-gate).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `quality.reviewGate.enabled` | boolean | `false` | A different agent reviews each agent pull request against its linked issue and posts the `agentx/review` status. |
+| `quality.reviewGate.mode` | `"advisory"` or `"required"` | `"advisory"` | Advisory marks the status "[advisory]". Required blocks merges once `agentx/review` is a required check on GitHub. |
+| `quality.reviewGate.reviewer.agent` | string | — | The reviewing agent. Must not be the pull request's author. |
+| `quality.reviewGate.reviewer.model` | string | the agent's model | Model for reviews; pick one other than the author's. |
+| `quality.reviewGate.paths` | string[] | `[]` | Only review pull requests that change a matching file. Empty: all. |
+| `quality.reviewGate.maxCostPerReview` | number | `2` | US dollars; a dearer review ends as `error`. `0`: no limit. |
+| `quality.reviewGate.maxMinutes` | number | `10` | A longer review is stopped and ends as `error`. |
+| `quality.reviewGate.maxReviewsPerPrPerDay` | number | `6` | Most reviews of one pull request in 24 hours; past it the status is `error`. `0`: no limit. |
+| `quality.reviewGate.ciWaitMinutes` | number | `5` | How long to wait for other checks before reviewing. |
+| `quality.reviewGate.maxDiffKb` | number | `256` | A longer diff is cut, and the reviewer is told. |
+| `quality.mergePolicy.enabled` | boolean | `false` | Posts the `agentx/merge-policy` status on every pull request: core paths need a person's approval. See [Let agents merge only edge changes](/jobs/merge-policy). |
+| `quality.mergePolicy.mode` | `"advisory"` or `"required"` | `"advisory"` | Advisory marks an unapproved core change "[advisory]" and passes it. Required leaves it pending until a person approves. |
+| `quality.mergePolicy.corePaths` | string[] | `[]` | Core files, as patterns. Empty: nothing is core. |
+| `quality.mergePolicy.edgePaths` | string[] | `[]` | Exceptions inside core folders that count as edge. |
+| `quality.mergePolicy.label` | string | `"core-change"` | Label put on a pull request that changes a core path. |
+| `quality.mergePolicy.approvers` | string[] | `[]` | GitHub logins whose reviews count. Empty: owners, members and collaborators, except the author and AgentX's own accounts. |
+| `quality.mergePolicy.ownerCard` | boolean | `true` | In required mode, ask the owner on an approvals card; YES approves that commit. |
 
 ## decisions
 

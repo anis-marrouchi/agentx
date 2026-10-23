@@ -85,6 +85,29 @@ export const GITHUB_EVENT_DEFAULTS = {
  *  token owner is often a person who opens issues by hand. */
 const ALWAYS_COUNTED_ACTIONS = new Set(["opened", "reopened"])
 
+/** A pull_request_review webhook, for the merge policy (#1047). */
+export interface PullRequestReviewEventInfo {
+  action: string
+  repo: string
+  number: number
+  /** approved | changes_requested | commented | dismissed (lower case). */
+  state: string
+  login: string
+}
+
+/** A pull_request event as the review gate sees it (#990). */
+export interface PullRequestEventInfo {
+  action: string
+  repo: string
+  number: number
+  headSha: string
+  pushedAt: number
+  draft: boolean
+  authorLogin: string
+  title: string
+  body: string
+}
+
 // --- GitHub event type definitions ---
 
 interface GitHubUser {
@@ -123,9 +146,11 @@ interface GitHubPREvent {
     state: string
     body: string
     html_url: string
-    head: { ref: string }
+    head: { ref: string; sha?: string }
     base: { ref: string }
     user: GitHubUser
+    draft?: boolean
+    updated_at?: string
   }
   /** Who caused the event: the person or app that labeled, assigned,
    *  closed or edited. Differs from `pull_request.user`, the author. */
@@ -228,6 +253,8 @@ export class GitHubAdapter implements ChannelAdapter {
   readonly name = "github"
   private config: GitHubChannelConfig
   private handler?: (msg: IncomingMessage) => Promise<void>
+  private prListener?: (event: PullRequestEventInfo) => void
+  private reviewListener?: (event: PullRequestReviewEventInfo) => void
   private globalToken?: string
   private botUsernames: Set<string> = new Set()
   /** Logins AgentX posts with: the App bot and the owners of its PATs.
@@ -282,6 +309,19 @@ export class GitHubAdapter implements ChannelAdapter {
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
     this.handler = handler
+  }
+
+  /** Every pull_request event, whoever opened the PR and whatever the
+   *  event gate says (the review gate, #990). A listener error never
+   *  stops the event from reaching agents. */
+  onPullRequestEvent(listener: (event: PullRequestEventInfo) => void): void {
+    this.prListener = listener
+  }
+
+  /** Every pull_request_review event, whoever wrote the review (the merge
+   *  policy, #1047). A listener error never stops the event. */
+  onPullRequestReviewEvent(listener: (event: PullRequestReviewEventInfo) => void): void {
+    this.reviewListener = listener
   }
 
   async start(): Promise<void> {
@@ -390,9 +430,11 @@ export class GitHubAdapter implements ChannelAdapter {
         await this.handleIssueComment(body as unknown as GitHubIssueCommentEvent)
         break
       case "pull_request":
+        this.notifyPullRequest(body as unknown as GitHubPREvent)
         await this.handlePR(body as unknown as GitHubPREvent)
         break
       case "pull_request_review":
+        this.notifyPullRequestReview(body as unknown as GitHubPRReviewEvent)
         await this.handlePRReview(body as unknown as GitHubPRReviewEvent)
         break
       case "pull_request_review_comment":
@@ -670,6 +712,28 @@ export class GitHubAdapter implements ChannelAdapter {
     this.handler(incoming).catch(e => this.log(`Error handling issue_comment: ${e.message}`))
   }
 
+  private notifyPullRequest(event: GitHubPREvent): void {
+    const pr = event.pull_request
+    if (!this.prListener || !pr?.head?.sha) return
+    try {
+      this.prListener({
+        action: event.action,
+        repo: event.repository.full_name,
+        number: pr.number,
+        headSha: pr.head.sha,
+        // When GitHub last saw the PR change: the push, for synchronize
+        // and opened. Arrival time only when the payload has none.
+        pushedAt: Date.parse(pr.updated_at ?? "") || Date.now(),
+        draft: !!pr.draft,
+        authorLogin: pr.user?.login ?? "",
+        title: pr.title ?? "",
+        body: pr.body ?? "",
+      })
+    } catch (e: any) {
+      this.log(`pull_request listener failed: ${e?.message || e}`)
+    }
+  }
+
   private async handlePR(event: GitHubPREvent): Promise<void> {
     if (!this.handler) return
 
@@ -719,6 +783,21 @@ export class GitHubAdapter implements ChannelAdapter {
       runbookPath: projectRule?.runbook,
       runbookFiles: projectRule?.runbookFiles,
     }))
+  }
+
+  private notifyPullRequestReview(event: GitHubPRReviewEvent): void {
+    if (!this.reviewListener || !event.pull_request?.number || !event.review) return
+    try {
+      this.reviewListener({
+        action: event.action,
+        repo: event.repository.full_name,
+        number: event.pull_request.number,
+        state: String(event.review.state ?? "").toLowerCase(),
+        login: event.review.user?.login ?? "",
+      })
+    } catch (e: any) {
+      this.log(`pull_request_review listener failed: ${e?.message || e}`)
+    }
   }
 
   private async handlePRReview(event: GitHubPRReviewEvent): Promise<void> {
@@ -940,6 +1019,18 @@ export class GitHubAdapter implements ChannelAdapter {
   }
 
   // --- Helpers ---
+
+  /** The agent routed for a repository, if any. */
+  agentFor(repo: string): string | undefined {
+    return this.resolveAgent(repo)
+  }
+
+  /** True for a login AgentX posts with (its App bot, a PAT owner, a
+   *  mapped agent account): PRs it opens are agent PRs. Other bots, such
+   *  as a dependency updater, are not. */
+  isAgentLogin(login: string): boolean {
+    return this.postsAs(login) || this.isBotUser(login)
+  }
 
   private resolveAgent(repo: string): string | undefined {
     for (const route of this.config.routes) {

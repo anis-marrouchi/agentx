@@ -32,7 +32,7 @@ export interface SnapshotNode {
     errors: number
     lastActive?: string
     lastSummary?: { text: string; at: string; ok: boolean }
-    runningTasks?: Array<{ id: string; messagePreview: string; channel: string; chatId?: string; sender?: string; startedAt: string }>
+    runningTasks?: Array<{ id: string; traceId?: string; messagePreview: string; channel: string; chatId?: string; sender?: string; startedAt: string }>
   }>
   crons?: Array<{ id: string; enabled: boolean; schedule: string; agent: string; kind?: string; nextRun?: string; consecutiveErrors: number }>
   cronRuns?: Array<{ jobId: string; startedAt: string; status: string; responseSummary?: string; errorSummary?: string; isRetry?: boolean }>
@@ -52,6 +52,9 @@ export interface ApprovalItem {
   choices?: string[]
   /** Cards: the suggested message, `{choice}` not filled in yet. */
   draft?: string
+  /** A short excerpt of what is being decided, for the Desk (#959). */
+  detail?: string
+  createdAt?: string
 }
 
 /** A card's pick (1-based number or label) and the message as edited. */

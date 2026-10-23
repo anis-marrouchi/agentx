@@ -19,14 +19,16 @@
 
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
-import { DelegationManager, type CallerTurn, type DelegationDeps } from "@/a2a/delegation"
+import { DelegationManager, type CallerTurn, type DelegationDeps, type DelegationOrigin } from "@/a2a/delegation"
 import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
+import type { SessionStore } from "@/agents/sessions"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { MessageRouter } from "@/channels/router"
 import type { DaemonConfig } from "./config"
 import { isLoopback } from "./mesh-auth"
 import { getEventBus } from "@/events/bus"
+import { WATCHER_CHANNEL } from "@/watchers/checkpoint"
 
 /** Channels with no adapter or thread of their own: a callback reply
  *  reaches the person as a push notification. The phone app ("app") is not
@@ -263,7 +265,7 @@ export function gateAnswer(
 }
 
 /** The 202 body a caller gets back; its `note` is written for the agent. */
-export function acceptedBody(taskId: string, callee: string, peer?: string): Record<string, unknown> {
+export function acceptedBody(taskId: string, callee: string, peer?: string, send = false): Record<string, unknown> {
   const who = peer ? `${callee} on ${peer}` : callee
   return {
     accepted: true,
@@ -271,10 +273,95 @@ export function acceptedBody(taskId: string, callee: string, peer?: string): Rec
     taskId,
     agent: callee,
     ...(peer ? { peer } : {}),
-    note:
-      `Delegated to ${who} (task ${taskId}). Their answer will reach you as a new message in this conversation. ` +
-      `Tell the person who you asked and why, then end your turn. Do not wait or poll for the result.`,
+    note: send
+      ? `Sent to ${who} (task ${taskId}). The message is delivered; do not send it again. ` +
+        `Its answer, or its failure, will reach you as a new message in this conversation. Do not wait or poll for it.`
+      : `Delegated to ${who} (task ${taskId}). Their answer will reach you as a new message in this conversation. ` +
+        `Tell the person who you asked and why, then end your turn. Do not wait or poll for the result.`,
   }
+}
+
+/** How long a called-back send to a local agent may take (#1100): the
+ *  callee's own time limit, plus the wait for a free slot (a2a runs wait
+ *  up to 25 min) and a margin. The plain delegation timeout would cut a
+ *  long build off half way. */
+export function sendTimeoutMs(maxExecutionMinutes: number | undefined): number {
+  return ((maxExecutionMinutes ?? 20) + 25 + 5) * 60_000
+}
+
+/** Point a callee's new chat at the agent session of its earlier chats on
+ *  the same home (#1100), newest first: the first that has one is
+ *  continued, with the counters the rotation checks read (SessionStore.
+ *  continueFrom). The earlier run has ended: the delegation waits for it.
+ *  False when there was nothing to continue, so the run starts fresh. */
+export function continueSession(
+  store: Pick<SessionStore, "continueFrom">,
+  agentId: string,
+  from: ReadonlyArray<{ channel: string; chatId: string }>,
+  to: { channel: string; chatId: string },
+): boolean {
+  if (!to.chatId) return false
+  try {
+    return from.some((f) => store.continueFrom(agentId, f, to))
+  } catch {
+    return false
+  }
+}
+
+/** What a run that says it ends to wait gets back (#1100). */
+export function waitingBody(w: { delegation: string | null; asker: string | null; watcher: string | null; on: string; dueAt?: number }): Record<string, unknown> {
+  const due = w.dueAt ? ` by ${new Date(w.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""
+  const told = w.delegation
+    ? `When this run ends, ${w.asker} is told the work is waiting for ${w.on}${due}, not done.`
+    : "No delegation on this node waits on this run, so no one is called back; say it in your reply."
+  const watch = w.watcher
+    ? ` Its watcher ${w.watcher} stays open${due ? ` and is due${due}` : ""}; mark it done with its evidence when the work is finished.`
+    : ""
+  return {
+    ok: true,
+    delegation: w.delegation,
+    watcher: w.watcher,
+    note: `Recorded: this run ends waiting for ${w.on}${due}. ${told}${watch} When the wait is over, finish the work and report it to whoever asked.`,
+  }
+}
+
+/** What a callee gets back when its message to the agent that asked it
+ *  was passed into that agent's conversation (#1100). */
+export function replyBody(taskId: string, caller: string): Record<string, unknown> {
+  return {
+    accepted: true,
+    status: "delivered",
+    taskId,
+    agent: caller,
+    note: `Passed to ${caller} in the conversation it asked you from (task ${taskId}). Do not send it again.`,
+  }
+}
+
+type AskedFrom = { caller: string; origin: DelegationOrigin; depth: number }
+
+/** The chat a watcher alert to `agentId` about task `taskKey` belongs in
+ *  (#1100): the one it asked from, when the task is its own delegation
+ *  and that chat is an agent's own (a2a or mcp). In a person's chat a
+ *  queued alert's answer would be posted to the person. */
+export function alertChatOf(
+  agentId: string,
+  taskKey: string,
+  originFor: (id: string) => AskedFrom | null,
+): AskedFrom | null {
+  const found = taskKey.startsWith("dlg-") ? originFor(taskKey) : null
+  if (!found || found.caller !== agentId) return null
+  return found.origin.channel === "a2a" || found.origin.channel === "mcp" ? found : null
+}
+
+/** The context a watcher alert runs in. `free` says the asking chat's turn
+ *  ended within the wait: if not, the alert goes to the watcher's own chat
+ *  rather than run beside that turn. Either way it counts one callback hop
+ *  past the asking turn, so its sends stay under MAX_SEND_DEPTH. */
+export function alertContext(asked: AskedFrom | null, watcherId: string, free: boolean): Record<string, unknown> {
+  const hops = asked ? { sendDepth: asked.depth + 1 } : {}
+  return asked && free
+    ? { ...asked.origin, sender: "system:watcher", ...hops }
+    : { channel: WATCHER_CHANNEL, chatId: watcherId, sender: "watcher", ...hops }
 }
 
 export interface DelegationWiring {
@@ -416,7 +503,11 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       agentId: callee,
       message,
       context: context as any,
-      freshSession: true,
+      // A follow-up on the same home continues that run's session (#1100).
+      freshSession: !(opts.resumeFrom && continueSession(w.registry.getSessionStore(), callee, opts.resumeFrom, {
+        channel: String((context as any).channel ?? "a2a"),
+        chatId: String((context as any).chatId ?? ""),
+      })),
       timeoutMinutes: Math.ceil(opts.timeoutMs / 60_000),
       onStart: opts.onStart,
       ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),

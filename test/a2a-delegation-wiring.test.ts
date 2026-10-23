@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, resolveCallerTurn, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
+import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, waitingBody, type CallerHint } from "../src/daemon/delegation-wiring"
 import { getEventBus } from "../src/events/bus"
 import { persistentCallerEnv } from "../src/agents/claude-process-factory"
 import { callerFields } from "../src/mcp/index"
@@ -272,7 +272,7 @@ describe("createDelegations wiring", () => {
 
   it("reads the delegation settings", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(cfg.mesh.delegation).toEqual({ asyncWhenHuman: true, timeoutMinutes: 30, requeueRelayOnRestart: true })
+    expect(cfg.mesh.delegation).toEqual({ asyncWhenHuman: true, timeoutMinutes: 30, requeueRelayOnRestart: true, callbackSends: true })
   })
 })
 
@@ -286,5 +286,59 @@ describe("caller identity for the tools an agent launches", () => {
     expect(callerFields({ AGENTX_TASK_ID: "run-1", AGENTX_CHANNEL: "telegram", AGENTX_CHAT_ID: "chat-1" }))
       .toEqual({ callerTaskId: "run-1", callerChannel: "telegram", callerChatId: "chat-1" })
     expect(callerFields({})).toEqual({})
+  })
+})
+
+describe("called-back sends (#1100)", () => {
+  it("say the answer comes back, without the person wording", () => {
+    const b = acceptedBody("dlg-1", "builder", undefined, true)
+    expect(b).toMatchObject({ accepted: true, mode: "callback", taskId: "dlg-1" })
+    expect(String(b.note)).toContain("will reach you as a new message in this conversation")
+    expect(String(b.note)).not.toContain("Tell the person")
+  })
+
+  it("wait as long as the callee may run, plus its slot wait", () => {
+    expect(sendTimeoutMs(90)).toBe(120 * 60_000)
+    expect(sendTimeoutMs(undefined)).toBe(50 * 60_000)
+  })
+
+  it("tell a callee its message reached the asker", () => {
+    expect(replyBody("dlg-2", "planner")).toMatchObject({ accepted: true, status: "delivered", taskId: "dlg-2", agent: "planner" })
+  })
+})
+
+describe("watcher alerts for a delegation (#1100)", () => {
+  const asked = { caller: "planner", origin: { channel: "mcp", chatId: "mcp:lead:planner:work-1" }, depth: 2 }
+  const originFor = (id: string) => (id === "dlg-1" ? asked : id === "dlg-2" ? { ...asked, origin: { channel: "telegram", chatId: "chat-1" } } : null)
+
+  it("go to the chat the delegator asked from, when it is an agent's own", () => {
+    expect(alertChatOf("planner", "dlg-1", originFor)).toBe(asked)
+  })
+
+  it("never go to a person's chat, another agent's work, or a plain task", () => {
+    expect(alertChatOf("planner", "dlg-2", originFor)).toBeNull()
+    expect(alertChatOf("builder", "dlg-1", originFor)).toBeNull()
+    expect(alertChatOf("planner", "run-9", originFor)).toBeNull()
+    expect(alertChatOf("planner", "dlg-unknown", originFor)).toBeNull()
+  })
+
+  it("run in that chat once its turn ended, one hop past the asking turn", () => {
+    expect(alertContext(asked, "w-1", true)).toEqual({ channel: "mcp", chatId: "mcp:lead:planner:work-1", sender: "system:watcher", sendDepth: 3 })
+  })
+
+  it("go to the watcher's own chat when that turn is still busy, keeping the count", () => {
+    expect(alertContext(asked, "w-1", false)).toEqual({ channel: "watchers", chatId: "w-1", sender: "watcher", sendDepth: 3 })
+    expect(alertContext(null, "w-1", false)).toEqual({ channel: "watchers", chatId: "w-1", sender: "watcher" })
+  })
+})
+
+describe("a run that says it ends waiting (#1100)", () => {
+  it("is told who hears it and what keeps its watcher open", () => {
+    const b = waitingBody({ delegation: "dlg-1", asker: "lead", watcher: "w-1", on: "the build", dueAt: Date.parse("2030-01-01T12:00:00Z") })
+    expect(b).toMatchObject({ ok: true, delegation: "dlg-1", watcher: "w-1" })
+    expect(String(b.note)).toContain("lead is told the work is waiting for the build by 2030-01-01 12:00 UTC, not done")
+    expect(String(b.note)).toContain("w-1")
+    const alone = waitingBody({ delegation: null, asker: null, watcher: null, on: "x" })
+    expect(String(alone.note)).toContain("no one is called back")
   })
 })

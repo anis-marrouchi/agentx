@@ -4,6 +4,7 @@ import { createRequire } from "module"
 import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
 import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
+import { handleAppDesk, type AppDeskDeps } from "./app-desk"
 import { handleAppPush, type AppPushDeps } from "./app-push"
 import { handleAppAnnounce, type AppAnnounceDeps } from "./app-announce"
 import { handleAppChat, type AppChatDeps } from "./app-chat"
@@ -11,6 +12,7 @@ import { handleAppFiles } from "./app-files"
 import { handleAppVoice, type AppVoiceDeps } from "./app-voice"
 import { handleAppCamera, type AppCameraDeps } from "./app-camera"
 import { handleAppPlaces, type PlacesDeps } from "./app-places"
+import { handleAppPins, type PinsDeps } from "./app-pins"
 import { PairAttemptLimiter, redeemPairCode } from "./app-pair-code"
 import { PairCodeStore } from "./pair-codes"
 import { RejectLog, credentialState, rejectFields } from "./app-auth-log"
@@ -50,12 +52,14 @@ export interface AppRouteCtx {
   nodeName?: string
   tokens?: TokenStore
   fleet?: AppFleetDeps
+  desk?: AppDeskDeps
   push?: AppPushDeps
   announce?: AppAnnounceDeps
   chat?: AppChatDeps
   voice?: AppVoiceDeps
   camera?: AppCameraDeps
   places?: PlacesDeps
+  pins?: PinsDeps
   /** The statement served at /.well-known/assetlinks.json, or null for 404. */
   assetLinks?: () => unknown[] | null
   pairCodes?: PairCodeStore
@@ -150,6 +154,7 @@ export async function handleAppRequest(
     return sendJson(res, 200, { id: rec.id, device: rec.name, node: ctx.nodeName ?? null })
   }
   if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet)) return true
+  if (ctx.desk && await handleAppDesk(req, res, path, method, ctx.desk)) return true
   if (ctx.push && await handleAppPush(req, res, path, method, rec, ctx.push)) return true
   if (ctx.announce && await handleAppAnnounce(req, res, path, method, rec, ctx.announce)) return true
   if (ctx.chat && await handleAppChat(req, res, path, method, rec, ctx.chat)) return true
@@ -157,6 +162,7 @@ export async function handleAppRequest(
   if (ctx.voice && await handleAppVoice(req, res, path, method, rec, ctx.voice)) return true
   if (ctx.camera && await handleAppCamera(req, res, path, method, ctx.camera)) return true
   if (ctx.places && await handleAppPlaces(req, res, path, method, rec, ctx.places)) return true
+  if (ctx.pins && await handleAppPins(req, res, path, method, ctx.pins)) return true
   return sendJson(res, 404, { error: "not found" })
 }
 

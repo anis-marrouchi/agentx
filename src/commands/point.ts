@@ -13,7 +13,8 @@ import {
   type UICandidate,
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
-import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
+import { HELPER, readScreen, rectFor, type ScreenRead } from "@/computer-use/screen"
+import { closeBlocked } from "@/computer-use/candidates"
 import { daemon } from "@/commands/call"
 import { GUIDE_EXPRESSIONS, GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
 
@@ -44,23 +45,72 @@ interface Snapshot {
 
 type ScreenRect = { x: number; y: number; width: number; height: number }
 
+/**
+ * Who holds the floor when it is not this command's, else null. The holder
+ * itself (`AGENTX_FLOOR` still answered 200) gets the cursor when no
+ * character is on screen: the floor is its turn, not a ban (#924).
+ */
+export async function floorHeldByOther(
+  call: typeof daemon = daemon,
+  own: string | undefined = process.env.AGENTX_FLOOR,
+): Promise<string | null> {
+  const floor = await call("GET", "/voice/floor").catch(() => null)
+  if (!floor?.held) return null
+  if (own && await call("GET", `/voice/floor/${own}`).then(() => true, () => false)) return null
+  return floor.holder ?? "someone"
+}
+
 /** Show `rect`: the character when it is on screen, else the cursor. */
 async function show(rect: ScreenRect, label: string, opts: { mark: string; hold?: string; text?: string; expression?: string }): Promise<void> {
   const shown = await daemon("POST", "/voice/guide", {
     rect, mark: opts.mark, ...(opts.hold ? { hold: Number(opts.hold) } : {}), ...(opts.text ? { text: opts.text } : {}),
     ...(opts.expression ? { expression: opts.expression } : {}),
+    // Inside `agentx voice floor run`, the character obeys this command.
+    ...(process.env.AGENTX_FLOOR ? { floor: process.env.AGENTX_FLOOR } : {}),
   })
     .then((r) => r?.shown === true, () => false)
   if (shown) return
+  // Someone else holds the floor: the cursor would draw over them too (#924).
+  const other = await floorHeldByOther()
+  if (other) {
+    console.log(chalk.yellow(`  the floor is held by ${other}: nothing is pointed at until it is free`))
+    process.exit(3)
+  }
   await run(HELPER, ["point", "--x", String(rect.x), "--y", String(rect.y),
                      "--w", String(rect.width), "--h", String(rect.height), "--label", label])
+}
+
+/** The `--json` answer, the same shape whether the seat chose among many
+ *  controls or there was only one. A blocked pick names the control but
+ *  gives no place: a caller that clicks wherever `chosen` says must have
+ *  nothing to click. */
+function printJson(
+  screen: ScreenRead, request: string, candidates: UICandidate[], rect: ScreenRect, blocked: boolean,
+  sel: { id: number; confidence: number; present: number | null; ranked: { id: number; score: number }[] },
+): void {
+  const cand = candidates.find((c) => c.id === sel.id)
+  console.log(JSON.stringify({
+    app: screen.app, request, ...(blocked ? { blocked: "closes a window, tab or app; the request does not ask to close anything" } : {}),
+    chosen: {
+      ...(blocked ? {} : rect), label: cand?.label ?? "", ...(cand?.shown ? { shown: cand.shown } : {}),
+      fromOCR: screen.ocrRects.has(sel.id), inBrowser: cand?.area === "browser", ...(cand?.closes ? { closes: true } : {}),
+    },
+    present: sel.present,
+    confidence: sel.confidence,
+    ranked: sel.ranked.slice(0, 5).map((r) => ({
+      ...r, label: candidates.find((c) => c.id === r.id)?.label, shown: candidates.find((c) => c.id === r.id)?.shown,
+    })),
+  }, null, 2))
 }
 
 export const point = new Command()
   .name("point")
   .description("point at the on-screen control matching a description (does not click)")
   .argument("<request>", 'what you mean, e.g. "the send button"')
-  .option("--max <n>", "candidates to consider", "40")
+  // 100, not 40: on Wikipedia the flag, the anthem player and the page's
+  // own menus were all past the 60th candidate (#1092). A hundred costs
+  // about a second and a hundredth of a cent per lookup.
+  .option("--max <n>", "candidates to consider", "100")
   .option("--json", "emit the decision as JSON instead of pointing")
   .option("--min-present <p>", "refuse below this P(control exists)", "0.5")
   .option("--mark <kind>", `how the character marks it: ${GUIDE_MARKS.join(", ")}`, "box")
@@ -85,12 +135,12 @@ export const point = new Command()
       process.exit(1)
     }
 
-    let screen
+    let screen: ScreenRead
     try {
       // Reads the accessibility tree, and falls back to local OCR when the
       // tree is too thin to choose from — which is the only thing that
       // makes Electron apps addressable at all.
-      screen = await readScreen({ max: Number(opts.max) || 40 })
+      screen = await readScreen({ max: Number(opts.max) || 100, request })
     } catch (e: any) {
       console.log(chalk.red(`  could not read the screen: ${e?.message ?? e}`))
       process.exit(1)
@@ -103,11 +153,28 @@ export const point = new Command()
     }
     if (candidates.length === 1) {
       const only = rectFor(screen, candidates[0].id)
-      if (only) {
-        console.log(chalk.yellow(`  ${screen.app} exposes exactly one target — pointing at it: `) +
-                    chalk.bold(candidates[0].label))
-        await show(only, candidates[0].label, opts)
+      // No place on screen means nothing to point at, the same answer the
+      // seat path gives when its pick has no rect.
+      if (!only) {
+        console.log(chalk.yellow(`  ${screen.app} exposes only ${chalk.bold(candidates[0].shown ?? candidates[0].label)}, which has no place on screen`))
+        process.exit(2)
       }
+      const loneBlocked = closeBlocked(candidates[0], request)
+      if (opts.json) {
+        // No seat is asked for a lone control, so there is no P(exists):
+        // `present` is null, which reads as "not shown" to a threshold check.
+        printJson(screen, request, candidates, only, loneBlocked,
+                  { id: candidates[0].id, confidence: 1, present: null, ranked: [{ id: candidates[0].id, score: 1 }] })
+        if (loneBlocked) process.exit(4)
+        return
+      }
+      if (loneBlocked) {
+        console.log(chalk.yellow(`  ${screen.app} exposes only ${chalk.bold(candidates[0].shown ?? candidates[0].label)}, which closes something; not pointing at it`))
+        process.exit(4)
+      }
+      console.log(chalk.yellow(`  ${screen.app} exposes exactly one target — pointing at it: `) +
+                  chalk.bold(candidates[0].label))
+      await show(only, candidates[0].label, opts)
       return
     }
 
@@ -124,7 +191,9 @@ export const point = new Command()
 
     const sel = toSelection(result.answers as UIElementAnswers, candidates)
     const chosen = rectFor(screen, sel.id)
-    const chosenLabel = candidates.find((c) => c.id === sel.id)?.label ?? ""
+    const chosenCand = candidates.find((c) => c.id === sel.id)
+    const chosenLabel = chosenCand?.label ?? ""
+    const inBrowser = chosenCand?.area === "browser"
     const fromOCR = screen.ocrRects.has(sel.id)
 
     // `present` is read BEFORE `target`, always. A Choice over a candidate
@@ -139,21 +208,28 @@ export const point = new Command()
       process.exit(2)
     }
 
+    // A close window / close tab / quit control is only for a request that
+    // asks to close something. Otherwise it is reported, not shown: a
+    // caller that clicks where point points would lose the window.
+    const blocked = closeBlocked(chosenCand, request)
+
     if (opts.json) {
-      console.log(JSON.stringify({
-        app: screen.app, request, chosen: { ...chosen, label: chosenLabel, fromOCR }, present: sel.present,
-        confidence: sel.confidence,
-        ranked: sel.ranked.slice(0, 5).map((r) => ({
-          ...r, label: candidates.find((c) => c.id === r.id)?.label,
-        })),
-      }, null, 2))
+      printJson(screen, request, candidates, chosen, blocked, sel)
+      if (blocked) process.exit(4)
       return
     }
 
     const name = chosenLabel
+    if (blocked) {
+      console.log(
+        chalk.yellow(`  the best match, ${chalk.bold(chosenCand?.shown ?? name)}, would close a window, tab or app; not pointing at it`) +
+        chalk.dim(` (ask to close it by name if that is what you mean)`),
+      )
+      process.exit(4)
+    }
     console.log(
       `  ${chalk.green("→")} ${chalk.bold(name)} ` +
-      chalk.dim(`(${fromOCR ? "read from screen" : "control"}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),
+      chalk.dim(`(${fromOCR ? "read from screen" : inBrowser ? "browser control" : "control"}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),
     )
     await show(chosen, name, opts)
   })

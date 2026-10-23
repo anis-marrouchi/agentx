@@ -8,6 +8,7 @@ import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { NOISE_MARKERS } from "@/voice/noise"
+import { FLOOR_DEFAULTS } from "@/voice/floor"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
 import { unknownAgentxTools } from "@/mcp/tool-names"
@@ -767,6 +768,10 @@ const cronJobSchema = z.object({
    *  but appending an instruction to the prompt is reliably honored. Use
    *  1500 for briefs, 500 for status pings, 300 for pure classifiers. */
   maxOutputTokens: z.number().int().min(50).max(8000).optional(),
+  /** The task type of each run (`context.taskType`): picks the evidence a
+   *  watcher's done needs (`watchers.evidence.<type>`, #1049). Unset: the
+   *  `cron` rule, if there is one. */
+  taskType: z.string().trim().min(1).max(64).optional(),
   /** How much this routine may do: `report` (read-only), `propose` (branch,
    *  commit, MR/draft; never merge/deploy/delete) or `act` (the agent's full
    *  permissions — the default). Enforced per run by the guard, not by the
@@ -970,6 +975,11 @@ const meshConfigSchema = z.object({
      *  the person (#846): run that turn once more after the next start,
      *  and if it fails again, tell the person and note the open request. */
     requeueRelayOnRestart: z.boolean().default(true),
+    /** An agent's send_agent from a turn no person waits on (#1100): the
+     *  answer, failure or timeout comes back as a turn in the asking
+     *  agent's own chat, and a message the callee writes back to it lands
+     *  there too. Off: such a send is queued and its answer only logged. */
+    callbackSends: z.boolean().default(true),
   }).default({}),
 })
 
@@ -1147,6 +1157,18 @@ export const callsSchema = z.object({
   /** After hang-up, ask the agent for a short summary and file it in the
    *  dashboard's conversation history. */
   summary: z.boolean().default(true),
+  /** A call that arrives while AgentX Voice is busy (the owner is in
+   *  another call, in a turn, or recording) waits for it. */
+  busy: z.object({
+    /** The owner is told again that a call waits, this often. */
+    retryMinutes: z.number().int().min(1).max(60).default(5),
+    /** The longest a call waits. Still busy then, it counts as missed. */
+    maxWaitMinutes: z.number().int().min(1).max(240).default(10),
+    /** Title of the call-waiting notice; {agent} is the caller's name. */
+    title: z.string().min(1).max(120).default("Call waiting: {agent}"),
+    /** Its second line, under the caller's reason. */
+    notice: z.string().min(1).max(200).default("AgentX Voice is busy. The call rings when it is free."),
+  }).default({}),
 }).default({})
 
 export type CallsConfig = z.infer<typeof callsSchema>
@@ -1181,6 +1203,25 @@ const notificationsSchema = z.object({
     /** Image for the AgentX Helper icon on banners (.png, .jpg, .icns).
      *  Unset: the AgentX logo. Applied by `agentx desktop install`. */
     icon: z.string().optional(),
+    /** Seconds the sound waits while something else speaks on this
+     *  machine (#1126); still speaking after that, the banner shows
+     *  without it. 0: never wait. */
+    quietWaitSeconds: z.number().int().min(0).max(120).default(15),
+  }).default({}),
+  /** The told-the-owner record (src/notify/told.ts, #1126): everything sent
+   *  to the owner's own addresses is recorded once, an item already told
+   *  on any of them is not told again, and system nags wait for the
+   *  daily digest (approvals.digest) instead of a push each. */
+  told: z.object({
+    enabled: z.boolean().default(true),
+    /** An item told within this many hours is not told again, on any channel. */
+    repeatWindowHours: z.number().positive().max(24 * 30).default(24),
+    /** Channels that only ever reach the owner: everything on them passes the gate. */
+    channels: z.array(z.string().min(1)).default(["push", "ntfy"]),
+    /** Other owner addresses, as "channel:chatId" (a private Telegram chat). */
+    addresses: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:chatId, for example telegram:123456789")).default([]),
+    /** Nags wait for the daily digest. Off: each is sent like any notice. */
+    digestNags: z.boolean().default(true),
   }).default({}),
 }).default({})
 
@@ -1216,6 +1257,111 @@ const screenSchema = z.object({
   }).default({}),
 }).default({})
 
+/** Pre-merge review gate (src/quality/review-gate.ts, #990). The reviewer
+ *  sees only the linked issue, the diff and the CI result. `mode` says
+ *  whether the status is meant to block merges: "required" only takes
+ *  effect once `agentx/review` is a required check in branch protection. */
+export const reviewGateConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  mode: z.enum(["advisory", "required"]).default("advisory"),
+  reviewer: z.object({
+    /** The agent that reviews. Must not be the agent that wrote the PR. */
+    agent: z.string().min(1).optional(),
+    /** Model for the review. Unset: the reviewer agent's own model. Pick
+     *  one that differs from the author agent's model when you can. */
+    model: z.string().min(1).optional(),
+  }).default({}),
+  /** Only PRs that change a file matching one of these globs are
+   *  reviewed (`*` within a folder, `**` across folders). Empty: all. */
+  paths: z.array(z.string().min(1)).default([]),
+  /** Review cost above this many US dollars ends as `error`. 0: no limit. */
+  maxCostPerReview: z.number().min(0).default(2),
+  /** Review time above this many minutes ends as `error`. */
+  maxMinutes: z.number().positive().max(120).default(10),
+  /** Most reviewer runs one PR gets in 24 hours. Each failure comment can
+   *  bring a fix push and each push a review; past the limit the status
+   *  is `error` and a person takes over. 0: no limit. */
+  maxReviewsPerPrPerDay: z.number().int().min(0).max(100).default(6),
+  /** How long to wait for other CI checks to finish before reviewing. */
+  ciWaitMinutes: z.number().min(0).max(60).default(5),
+  /** Diffs longer than this many kilobytes are cut, and the reviewer is
+   *  told the diff is incomplete. */
+  maxDiffKb: z.number().int().positive().max(2048).default(256),
+}).default({})
+/** Merge policy (#1047): pull requests that change a core path wait for a
+ *  person's approval; edge-only ones merge on green CI. Both path lists
+ *  start empty, so nothing is core until the repository's owner says so.
+ *  The status `agentx/merge-policy` blocks a merge only once it is a
+ *  required check on the protected branch. */
+export const mergePolicyConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Advisory posts success marked "[advisory]" on an unapproved core PR;
+   *  required posts pending until a person approves. */
+  mode: z.enum(["advisory", "required"]).default("advisory"),
+  /** Core files, as globs (`*` within a folder, `**` across folders, a
+   *  folder name covers everything under it). */
+  corePaths: z.array(z.string().min(1)).default([]),
+  /** Exceptions carved out of corePaths: a file matching one is edge. */
+  edgePaths: z.array(z.string().min(1)).default([]),
+  /** Label put on a PR that changes a core path, and taken off when it no
+   *  longer does. */
+  label: z.string().min(1).max(50).default("core-change"),
+  /** GitHub logins whose reviews count. Empty: the repository's owners,
+   *  members and collaborators, other than the PR's author and the
+   *  accounts AgentX posts with. */
+  approvers: z.array(z.string().min(1)).default([]),
+  /** In required mode, raise an approvals card for the owner on each
+   *  unapproved core commit; YES approves that commit. */
+  ownerCard: z.boolean().default(true),
+}).default({})
+/** Task watchers (src/watchers, #1030). At every task start (a dispatch, a
+ *  delegation, a cron run) the `task-watch` decision seat says whether the
+ *  task carries a deadline, a promise or a hand-off; a watcher is attached
+ *  unless the seat is active and confidently says no. A watcher tells the
+ *  delegating agent, then the owner, when the due time passes with no done
+ *  signal or the task ends without a result. */
+export const watchersConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Channels whose runs are never checked (the watchers' own alert turns
+   *  never are). */
+  skipChannels: z.array(z.string().min(1)).default([]),
+  /** The due time of a task that gives none, from its start. */
+  defaultDueMinutes: z.number().positive().max(30 * 24 * 60).default(120),
+  /** A seat probability below this is a confident "no". Only an active
+   *  seat skips the watcher on it. */
+  noBelow: z.number().min(0).max(1).default(0.2),
+  /** At or above: "yes". Between `noBelow` and this: "uncertain", which
+   *  attaches a watcher (fail-safe). */
+  yesAt: z.number().min(0).max(1).default(0.7),
+  /** After the delegating agent is told, the owner is told this much later
+   *  if the task is still not done. */
+  escalateAfterMinutes: z.number().positive().max(7 * 24 * 60).default(30),
+  /** Where the owner is told. Unset: the default notification channel. */
+  owner: z.object({
+    channel: z.string().min(1).optional(),
+    chatId: z.string().min(1).optional(),
+  }).default({}),
+  /** Finished watchers are deleted after this many days. */
+  retentionDays: z.number().positive().max(3650).default(30),
+  /** What closes a watcher. "result": the run ends with a reply, or the
+   *  delegation answers. "explicit": only POST /watchers/:id/done, so a
+   *  reply that only promises ("I'll publish at 18:00") keeps it open. */
+  doneSignal: z.enum(["result", "explicit"]).default("result"),
+  /** Evidence a done needs, by task type (#1049): the caller's
+   *  `context.taskType`, else the watcher's kind (dispatch, delegation,
+   *  cron). A task of a type with a rule closes only on a done whose
+   *  evidence the rule accepts; its reply never closes it. Types with no
+   *  rule close as `doneSignal` says. */
+  evidence: z.record(z.string().min(1), z.object({
+    /** The kinds of proof that count: any one of them closes the task. */
+    accept: z.array(z.enum(["test", "output", "link"])).min(1),
+    /** The shortest output text accepted. */
+    minOutputChars: z.number().int().min(1).max(2000).default(40),
+    /** Hosts a link must be on (or a subdomain of). Empty: any host. */
+    linkHosts: z.array(z.string().min(1)).default([]),
+  })).default({}),
+}).default({}).refine((w) => w.noBelow <= w.yesAt, { message: "watchers.noBelow must not be above watchers.yesAt" })
+
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and
  *  when the operator hears about what is waiting. */
 export const requestsConfigSchema = z.object({
@@ -1231,6 +1377,10 @@ export const requestsConfigSchema = z.object({
   from: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:id, for example telegram:123456789")).default([]),
   /** An open request with no activity for this long comes back to the owner. */
   staleAfterHours: z.number().positive().max(24 * 365).default(24),
+  /** A request in progress whose handed work all came back done, quiet
+   *  for staleAfterHours, closes as done with its delegate's link (or
+   *  marked unproven) instead of coming back to the owner (#1138). */
+  settleHandedBack: z.boolean().default(true),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
   /** Tracked plans (src/requests/plans.ts, #788): a request with two or
@@ -1247,6 +1397,46 @@ export const requestsConfigSchema = z.object({
     approveKinds: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,30}$/, "a step kind: a short lower-case word")).default(["message"]),
     /** Agents that may not open a plan. */
     disabledAgents: z.array(z.string().min(1)).default([]),
+    /** The plan gate (#1048): kinds of work an agent must plan before it
+     *  starts. An accept that names one of these as its `work` is refused
+     *  without steps. Empty: no kind needs a plan. */
+    requireForWork: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,30}$/, "a kind of work: a short lower-case word")).default(["code"]),
+    /** An accept whose `estimateMinutes` is over this needs a plan too.
+     *  0: no estimate needs one. */
+    requireOverMinutes: z.number().min(0).max(7 * 24 * 60).default(30),
+  }).default({}),
+  /** Checkers that close an open loop on evidence (src/requests/checkers,
+   *  #1039). A loop with a `closeWhen` closes when its check is met; an
+   *  agent's done on it is refused while the check says not met. */
+  checkers: z.object({
+    /** Kinds agents may use. A loop of a kind turned off is unverifiable. */
+    enabled: z.array(z.enum(["url", "issue", "git-ancestor", "reply"])).default(["url", "issue", "git-ancestor", "reply"]),
+    /** How often each open loop's check runs. */
+    checkEveryMinutes: z.number().positive().max(24 * 60).default(10),
+    /** Local clones the git-ancestor check may read, by name: { "app": "/srv/app" }. */
+    repos: z.record(z.string(), z.string().min(1)).default({}),
+    /** The issue check's GitHub connector. Unset: channels.github.token. */
+    github: z.object({
+      apiUrl: z.string().url().default("https://api.github.com"),
+      token: z.string().optional(),
+    }).optional(),
+    /** The issue check's GitLab connector. Unset: channels.gitlab.host and token. */
+    gitlab: z.object({
+      url: z.string().url().optional(),
+      token: z.string().optional(),
+    }).optional(),
+  }).default({}),
+  /** Headlines (src/requests/headline.ts, #1126): a request the agent did
+   *  not describe gets a few words saying what it is, written once by one
+   *  small model call, so its card, push and Desk line are not titled with
+   *  the owner's raw transcript. Off: the start of the owner's words. */
+  headlines: z.object({
+    enabled: z.boolean().default(true),
+    /** Provider for the call. "claude-code" uses the auth the operator set
+     *  up (subscription or API key); no new paid path is opened. */
+    provider: z.string().min(1).default("claude-code"),
+    model: z.string().min(1).default("claude-haiku-4-5-20251001"),
+    timeoutSeconds: z.number().int().min(5).max(120).default(30),
   }).default({}),
 }).default({})
 
@@ -1295,6 +1485,41 @@ export const requestStatusConfigSchema = z.object({
    *  kept up to date by the daemon. Empty: off. */
   channels: z.array(z.string().min(1)).default([]),
 }).default({})
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD")
+
+/** The weekly quality report on the epic issue (src/quality, #994). */
+export const qualityReportConfigSchema = z.object({
+  /** Post the report every week. Off by default. */
+  enabled: z.boolean().default(false),
+  /** Where it goes: "owner/name" and the epic issue number. */
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, "use owner/name").optional(),
+  issue: z.number().int().positive().optional(),
+  /** Monday, local time, 24-hour HH:MM. */
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM, 24-hour").default("08:00"),
+  /** IANA timezone for `time`. Unset: this machine's. */
+  timezone: z.string().refine((tz) => {
+    try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true } catch { return false }
+  }, "unknown timezone").optional(),
+  /** The command whose output is posted, as a code block. AgentX adds
+   *  `--repo <repo>` (unless the command names one), `--since <Monday>
+   *  --until <Sunday>` for the week and `--compare <baseline>`. It must print no cost amounts and no names. */
+  command: z.array(z.string().min(1)).min(1).default(["agentx", "quality", "report", "--public"]),
+  /** The baseline saved with `agentx quality report --save-baseline`:
+   *  each week is compared with it, and the verdict quotes its fix share. */
+  baseline: z.string().regex(/^[\w.-]{1,64}$/, "use letters, digits, dot, dash or underscore").default("baseline"),
+  timeoutSeconds: z.number().int().min(10).max(3600).default(600),
+  /** The gates and the dates they were turned on (and off), so each week's
+   *  comment says which gates were on. */
+  gates: z.array(z.object({
+    id: z.string().min(1),
+    label: z.string().min(1).optional(),
+    since: isoDate,
+    until: isoDate.optional(),
+  })).default([]),
+}).default({}).superRefine((q, ctx) => {
+  if (q.enabled && (!q.repo || !q.issue)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "qualityReport.enabled needs repo and issue" })
+})
 
 export const approvalsConfigSchema = z.object({
   /** A card without an `expires` gets this many days. */
@@ -1378,6 +1603,10 @@ export const daemonConfigSchema = z.object({
     bind: z.string().default("127.0.0.1:18800"),
     /** Default agent for voice/API calls that don't specify one (e.g. Siri) */
     defaultAgent: z.string().optional(),
+    /** Time each address gets to connect before Node tries the next one,
+     *  in ms. Node's own 250 ms fails every request on a slow link when the
+     *  host also resolves IPv6 (#930). Applied at daemon start. */
+    connectAttemptTimeoutMs: z.number().int().min(250).max(60_000).default(5000),
   }),
   providers: z.record(z.string(), providerConfigSchema).default({}),
   agents: z.record(z.string(), agentConfigSchema).default({}),
@@ -1485,6 +1714,58 @@ export const daemonConfigSchema = z.object({
   /** Watched WhatsApp chats triaged by an agent (src/whatsapp-triage). */
   whatsappTriage: whatsappTriageSchema,
   approvals: approvalsConfigSchema,
+  /** Quality gates for agent-written changes (#987). Each is off by default. */
+  quality: z.object({
+    /** Spec-first tests (#992): for an issue that names a pilot path and
+     *  goes to a Claude cloud session, a separate test agent writes tests
+     *  from the issue text only and pushes them to `spec-tests/issue-N` for
+     *  the coding session to merge. See src/agents/spec-tests.ts. */
+    specTests: z.object({
+      enabled: z.boolean().default(false),
+      /** Path prefixes; an issue that names one of them is in the pilot. */
+      paths: z.array(z.string().min(1)).default(["src/daemon"]),
+      /** The test agent's name: the spec-test commit's author. Must not be
+       *  the coding agent's id. */
+      agent: z.string().min(1).default("spec-tests"),
+      /** Model for the test agent. Unset: the `claude` CLI default. */
+      model: z.string().min(1).optional(),
+      /** USD cap for one issue's test agent run; it stops when spent. */
+      maxCostPerIssue: z.number().positive().max(100).default(2),
+      /** Minutes cap for one issue's test agent run. */
+      maxMinutes: z.number().int().min(1).max(120).default(20),
+    }).default({}),
+    /** Canary soak (#993): `agentx daemon deploy` only ships a commit that
+     *  has run on this (local) daemon for soakMinutes without new trouble.
+     *  Judged from the boot log and task history (src/daemon/canary-soak). */
+    canary: z.object({
+      /** Deploy reads only this key from the raw file (no .env, no
+       *  validation), so only a literal `true` turns the gate on. */
+      enabled: z.boolean().default(false),
+      soakMinutes: z.number().int().min(1).max(10_080).default(120),
+      thresholds: z.object({
+        /** Clean restarts allowed during the soak (not counting the one
+         *  that started it). */
+        maxRestarts: z.number().int().min(0).default(1),
+        /** Unclean stops (crash, kill) allowed during the soak. */
+        maxCrashes: z.number().int().min(0).default(0),
+        /** Failed or timed-out tasks allowed during the soak (stopped ones
+         *  do not count). */
+        maxFailedTasks: z.number().int().min(0).default(3),
+        /** Largest rise in the share of failed tasks vs the previous
+         *  release, as a fraction (0.1 = 10 percentage points). */
+        maxErrorRateIncrease: z.number().min(0).max(1).default(0.1),
+        /** Fewer tasks than this during the soak skips the rate check. */
+        minTasksForRate: z.number().int().min(1).default(10),
+      }).default({}),
+    }).default({}),
+    /** Pre-merge review gate (#990): a different agent, in a fresh
+     *  session, checks an agent's pull request against its linked issue
+     *  and posts the commit status `agentx/review` on the head commit. */
+    reviewGate: reviewGateConfigSchema,
+    /** Merge policy (#1047): core paths need a person's approval; the
+     *  commit status `agentx/merge-policy` says which a PR is. */
+    mergePolicy: mergePolicyConfigSchema,
+  }).default({}),
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({
     /** Wait this long for runs to finish before cutting them off (they are
@@ -1550,12 +1831,18 @@ export const daemonConfigSchema = z.object({
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */
   requests: requestsConfigSchema,
+  /** Task watchers (src/watchers, #1030): every task start decides whether
+   *  the task needs a watcher and attaches one. Off by default. */
+  watchers: watchersConfigSchema,
   people: peopleConfigSchema,
   members: membersConfigSchema,
   /** Request status where the request was made (src/requests/status-board,
    *  #383): each person sees the state of their own request in the place
    *  they asked. Off by default. */
   requestStatus: requestStatusConfigSchema,
+  /** Weekly quality report posted on the epic issue (src/quality, #994).
+   *  Off by default. */
+  qualityReport: qualityReportConfigSchema,
   /** Hand due Apple Reminders back to the agent that created them
    *  (src/reminders). macOS only; reads reminders whose notes end with the
    *  mac-pim skill's `agentx: agent=<id>` trailer. */
@@ -1568,6 +1855,33 @@ export const daemonConfigSchema = z.object({
     lookbackHours: z.number().positive().default(24),
     /** The remindctl binary, when it isn't on the daemon's PATH. */
     command: z.string().min(1).default("remindctl"),
+  }).default({}),
+  /** The OS layer (src/native, #1062): banners, sounds, Focus and the OS
+   *  task app go through one adapter per OS. "none" turns it off here. */
+  native: z.object({
+    adapter: z.enum(["auto", "none"]).default("auto"),
+    /** The Reminders mirror (src/approvals/mirror.ts, #1062): each waiting
+     *  card and request becomes a task in the OS task app. Off by default. */
+    mirror: z.object({
+      enabled: z.boolean().default(false),
+      /** Not "AgentX": that is reminders.lists' default, and a list both
+       *  mirrored and watched would loop. */
+      list: z.string().min(1).refine((l) => !l.startsWith("-"), "must not start with \"-\"").default("AgentX Desk"),
+      dueAfterMinutes: z.number().int().min(0).max(1440).default(5),
+      include: z.array(z.enum(["card", "request"])).min(1).default(["card", "request"]),
+      /** Where the owner answers. Unset: the local dashboard's Approvals page. */
+      answerUrl: z.string().url().optional(),
+    }).default({}),
+    /** The mesh peer that has the owner's notes app, for a node without
+     *  one. Unset: approvals.forwardTo. */
+    forwardTo: z.string().min(1).optional(),
+    /** Ideas to the owner's notes app (agentx_note, src/native/notes-api.ts).
+     *  Off by default. */
+    notes: z.object({
+      enabled: z.boolean().default(false),
+      folder: z.string().min(1).default("AgentX"),
+      perAgentPerDay: z.number().int().min(1).max(50).default(10),
+    }).default({}),
   }).default({}),
   /** The phone app (/app) beyond pairing and notifications (#676). */
   app: z.object({
@@ -1604,6 +1918,27 @@ export const daemonConfigSchema = z.object({
       /** How often the Android app checks for changed places, in minutes.
        *  Android runs background checks at most every 15 minutes. */
       syncMinutes: z.number().int().min(15).max(1440).default(60),
+    }).default({}),
+    /** Pinned pages: https pages the owner opens from a button in the
+     *  phone app (#1120). Added, renamed and removed from the app or with
+     *  `agentx app pin`. */
+    pins: z.object({
+      /** Where the list is kept. Relative paths resolve from the folder
+       *  the daemon runs in (the one holding agentx.json). */
+      file: z.string().min(1).default(".agentx/app-pins.json"),
+      max: z.number().int().min(1).max(50).default(12),
+      /** Buttons for every paired phone, set here rather than in the app
+       *  (#1121). Read only from the phone and `agentx app`; they count
+       *  toward `max`. https only, with no user name or password. */
+      pages: z.array(z.object({
+        label: z.string().trim().min(1).max(40),
+        url: z.string().max(2000).refine((u) => {
+          try { const x = new URL(u); return x.protocol === "https:" && !!x.hostname && !x.username && !x.password } catch { return false }
+        }, "must be an https:// address with no user name or password"),
+      }).strict()).max(50).default([]),
+    }).refine((p) => p.pages.length <= p.max, {
+      path: ["pages"],
+      message: "has more pages than app.pins.max allows; raise app.pins.max or remove some pages",
     }).default({}),
   }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */
@@ -1712,6 +2047,18 @@ export const daemonConfigSchema = z.object({
     /** The orb and character palette of an agent that set neither
      *  presence.palette nor presence.color. */
     palette: z.enum(ORB_PALETTE_IDS).default(DEFAULT_PALETTE),
+    /** The floor (#924): something that speaks or draws by itself, such
+     *  as a demo script or a screen recording, takes it for a while and
+     *  everything else waits: agents' spoken answers, notices, the
+     *  character. See src/voice/floor.ts. Off: nobody can take it. */
+    floor: z.object({
+      enabled: z.boolean().default(true),
+      /** Seconds a holder keeps the floor when it names no time. */
+      defaultSeconds: z.number().int().min(5).max(3600).default(FLOOR_DEFAULTS.defaultSeconds),
+      /** The longest one take or one renewal may ask for, in seconds.
+       *  A holder that needs longer renews. */
+      maxSeconds: z.number().int().min(5).max(14400).default(FLOOR_DEFAULTS.maxSeconds),
+    }).default({}),
     /** The answer text AgentX Voice shows inside its pill. */
     card: z.object({
       /** Seconds the answer stays open once it has been spoken; 0 keeps
@@ -2158,7 +2505,21 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
+  const crossed = crossFieldProblems(result.data)
+  if (crossed.length) throw new Error(`Config validation failed (${foundPath}):\n${crossed.map((p) => `  ${p}`).join("\n")}`)
+
   return withSummariesJob(withContributionJobs(result.data))
+}
+
+/** Rules that span two sections, checked after the schema. */
+export function crossFieldProblems(cfg: Pick<DaemonConfig, "native" | "reminders" | "approvals">): string[] {
+  const problems: string[] = []
+  const m = cfg.native?.mirror
+  if (m?.enabled) {
+    if (cfg.reminders?.lists?.includes(m.list)) problems.push(`native.mirror.list: "${m.list}" is also in reminders.lists; a mirrored task would be handed back to an agent. Use another list.`)
+    if (cfg.approvals?.checkin?.lists?.includes(m.list)) problems.push(`native.mirror.list: "${m.list}" is also in approvals.checkin.lists; a mirrored task would come back as a card. Use another list.`)
+  }
+  return problems
 }
 
 /**

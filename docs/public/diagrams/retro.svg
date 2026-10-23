@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 950" width="920" height="950" role="img" aria-labelledby="t d" style="--cycle:4.2s">
 <title id="t">How a run that struggled becomes a fix</title>
-<desc id="d">Six steps in two parts. A run struggles: it fails, is cut off by a restart, takes far longer than usual, or the session monitor notes friction. You run agentx retro with its task id. A reviewer reads the run and proposes up to four fixes, each tied to a step of the run. One decision card lists them, with None of these last. You pick one on the dashboard, the phone app, the Mac card or the terminal, and may edit the spec. The agent that ran the task builds the fix as a pull request or a guard rule in warn mode, and you review it again. A card nobody answers is discarded.</desc>
+<desc id="d">Six steps in two parts. A run struggles: it fails, is cut off by a restart, takes far longer than usual, or the session monitor notes friction. You run agentx retro with its task id. A reviewer reads the run and proposes up to two fixes, each tied to a step of the run. One decision card lists them, with None of these last. You pick one on the dashboard, the phone app, the Mac card or the terminal, and may edit the spec. The agent that ran the task builds the fix as a pull request or a guard rule in warn mode, and you review it again. A card nobody answers is discarded.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
@@ -65,7 +65,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="638" cy="176" r="15" fill="#0B0D12"/>
 <text x="638" y="181" class="num" text-anchor="middle">3</text>
 <text x="628" y="220" class="title" text-anchor="start">A reviewer proposes</text>
-<text x="628" y="241" class="title" text-anchor="start">up to four fixes</text>
+<text x="628" y="241" class="title" text-anchor="start">up to two fixes</text>
 <text x="628" y="263" class="note" text-anchor="start">each one tied to a step</text>
 </g>
 <g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>

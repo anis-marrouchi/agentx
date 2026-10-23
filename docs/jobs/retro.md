@@ -1,10 +1,10 @@
 # Stop a mistake from coming back
 
-![A run struggles, you run agentx retro, a reviewer proposes up to four fixes tied to steps of the run, one card lists them in Approvals, you pick one, and the agent that ran the task builds it for you to review. A card nobody answers is discarded.](/diagrams/retro.svg)
+![A run struggles, you run agentx retro, a reviewer proposes up to two fixes tied to steps of the run, one card lists them in Approvals, you pick one, and the agent that ran the task builds it for you to review. A card nobody answers is discarded.](/diagrams/retro.svg)
 
 Writing a lesson down doesn't always stop the same mistake from happening again. A *retro* (short for retrospective: looking back at what went wrong) turns one run that went badly into a change to the agents' setup: a check that fails, a script, a fix to a tool, or wider access to information.
 
-A retro only proposes. It reads the run, suggests up to four fixes, and puts them on one *decision card* in [Approvals](../dashboard/approvals.md). Nothing changes until you pick one. If nobody answers, the card is discarded.
+A retro only proposes. It reads the run, suggests up to two fixes (with **None of these**, three answers: the most a card may offer), and puts them on one *decision card* in [Approvals](../dashboard/approvals.md). Nothing changes until you pick one. If nobody answers, the card is discarded.
 
 ## What a retro looks at
 
@@ -66,7 +66,7 @@ The card lists the fixes, most severe first, then **None of these**. The most se
 
 1. **Browser:** open **Approvals** on the dashboard. Find the card, pick a fix, and change the text below it if you like.
 
-   ![A retro card on the Approvals page: four choices with the recommended one picked, and the message the agent gets](/screenshots/approvals/choices.png)
+   ![A retro card on the Approvals page: choices with the recommended one picked, and the message the agent gets](/screenshots/approvals/choices.png)
 
 2. **Browser:** click **Yes**.
 
@@ -205,4 +205,5 @@ Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings)
 - **The before and after numbers say `no runs`:** the agent ran nothing in that span, or the rule's retro card was never answered and it has never fired. The card then recommends **Loosen it**.
 - **"No trace database":** run the command in the folder the daemon runs from, or pass `--path`.
 - **Yes does nothing on the dashboard:** the card offers choices. Pick one first; the page says so in red.
+- **A plain yes enacted a fix I didn't pick:** a Yes with no choice (for example `agentx approvals approve <key>` without `--choice`) takes the suggested fix, the first one in the recommendation. The agent is told it was a plain yes. To pick another fix, use `--choice <n>`, or choose on the dashboard.
 - **The agent never started on the fix:** check the daemon log for a line starting `[approvals]`, and that `notifyAgent` is on in [Approvals settings](../dashboard/approvals.md#settings).

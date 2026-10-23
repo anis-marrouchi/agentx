@@ -8,9 +8,10 @@ import { generate } from "@/agent"
 import type { OutputType } from "@/agent/providers/types"
 import { existsSync, readFileSync } from "fs"
 import { describeQueue } from "@/daemon/voice-queue-api"
+import { describeScreen, type ScreenView } from "@/daemon/screen-api"
 import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
-import { callerHeaders } from "@/calls/service"
+import { busyText, callerHeaders } from "@/calls/service"
 import { READ_TOOL_NAMES, type McpToolSet } from "./tool-names"
 
 // --- MCP Server: expose agentx as a Model Context Protocol server ---
@@ -558,6 +559,14 @@ const TOOLS = [
           type: "string",
           description: "Optional. The agentId on whose behalf this call is being made. Recorded in route_traces and (with A2A protocolVersion >= 2) validated by the receiving daemon.",
         },
+        taskType: {
+          type: "string",
+          description: "Optional. The kind of task (e.g. 'code-change', 'report'). When this node's watchers.evidence has a rule for it, the task counts as done only with the proof that rule asks for.",
+        },
+        home: {
+          type: "string",
+          description: "Optional but recommended for follow-ups: the issue or merge request this work is about (its link, or 'group/project#12'). A new message on the same home to the same agent waits for the run already on it and continues that session, instead of starting a second one beside it.",
+        },
       },
       required: ["agentId", "text"],
     },
@@ -632,6 +641,21 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_waiting",
+    description:
+      "Say that this run ends to WAIT for something before the work is done: a build, a deploy, a monitor, another agent's answer, a time. " +
+      "Call it before you end the run instead of reporting the work as done. The agent that asked you is then told the work is waiting for that, not finished; " +
+      "its watcher stays open, due when you say the wait should end. When the wait is over, finish the work and report it with its proof.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        on: { type: "string", description: "What the work waits for, in plain words (e.g. 'the release build to finish', 'the reviewer's verdict')." },
+        due: { type: "string", description: "Optional. When the wait should be over: an ISO time (2030-01-31T17:00:00Z). Past it, the asker is told." },
+      },
+      required: ["on"],
+    },
+  },
+  {
     name: "agentx_send_contact",
     description:
       "Send a message to a HUMAN CONTACT by name. Resolves through .agentx/contacts.json (id → exact alias → fuzzy substring). Refuses fuzzy matches without confirmed:true so the agent must ask the user to disambiguate before sending. Refuses when the name also matches a registered agent (use agentx_send_agent for those). Use this when the target is a person, not a bot.",
@@ -690,6 +714,14 @@ const TOOLS = [
           type: "string",
           description: "Optional stable chat/session id for this delegated task. Omit for a one-off isolated delegation.",
         },
+        taskType: {
+          type: "string",
+          description: "Optional. The kind of task (e.g. 'code-change', 'report'). When this node's watchers.evidence has a rule for it, the task counts as done only with the proof that rule asks for.",
+        },
+        home: {
+          type: "string",
+          description: "Optional but recommended for follow-ups: the issue or merge request this work is about (its link, or 'group/project#12'). A follow-up on the same home to the same agent continues the session already on it instead of starting a second one, and a run that starts while another works on it is told so.",
+        },
       },
       required: ["agent", "message"],
     },
@@ -716,7 +748,19 @@ const TOOLS = [
   {
     name: "agentx_voice_queue",
     description:
-      "See what this host is saying out loud and what waits to be said: every agent's spoken answers, narration, talks and lessons share one speaking queue. Use it before speaking at length, or when asked who is talking.",
+      "See what this host is saying out loud and what waits to be said: every agent's spoken answers, narration, talks and lessons share one speaking queue. It also says who holds the floor (a demo, a recording): while it is held, your spoken lines wait and the character does not move for you. Use it before speaking at length, or when asked who is talking.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
+    name: "agentx_screen",
+    description:
+      "See what is in front of the owner right now: decision cards waiting for an answer, notices held by Focus or a call, " +
+      "lines waiting to be spoken, and open requests waiting on the owner. Titles and who raised each, never the bodies. " +
+      "Read it before you put something new in front of the owner (a card, a notice, a call, a spoken line): " +
+      "if the same thing is already there, do not add it again, and if a lot is waiting, ask yourself whether yours can wait.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -725,17 +769,20 @@ const TOOLS = [
   {
     name: "agentx_call_owner",
     description:
-      "Ring the owner for a live voice call on their desktop widget, when you need them directly and a message will not do. " +
+      "Ring the owner for a live voice call on their desktop widget. A call interrupts them: place one only when they asked you to call, " +
+      "or when you are blocked on something only they can decide and a message would be too slow. Otherwise send a message. " +
       "When they answer you speak first, so give the reason in one line. Only agents the owner allowed (calls.allow) can call; " +
       "a few calls an hour at most. urgency 'urgent' rings through Focus: use it only for something that cannot wait. " +
+      "If the owner is busy in another call, they get a call-waiting notice and your call waits and rings by itself when they are free: " +
+      "the result says so, do not call again. cancel: true withdraws your waiting call, for example to send a message instead. " +
       "Returns how it rang, or why it did not.",
     inputSchema: {
       type: "object" as const,
       properties: {
         reason: { type: "string", description: "Why you are calling, in one line (at most 200 characters)." },
         urgency: { type: "string", enum: ["normal", "urgent"], description: "Default normal: held as a missed call during Focus." },
+        cancel: { type: "boolean", description: "true: withdraw your call that is still waiting or ringing. No reason needed." },
       },
-      required: ["reason"],
     },
   },
   {
@@ -846,28 +893,49 @@ const TOOLS = [
       "Ask the operator for a yes/no decision by raising a decision card in their Approvals inbox, instead of asking in chat. " +
       "Lead with your recommendation. Every card expires: say what should happen if nobody answers (if_silent). " +
       "You get a message with the result when it is decided or expires. You cannot approve anything with this tool. " +
-      "Actions: create (default), status. " +
+      "Actions: create (default), status, resolve. " +
+      "If the operator answers the same question in chat and you act on it, close your card with resolve (id and reason, e.g. 'approved in chat, done'), so it is not asked again. " +
+      "A no on a card whose action you already carried out does not undo it by itself: ask the requester one clear question first. " +
       "To offer ready-made answers, add choices (and optionally a draft message); the operator's pick and final text come back with the result. " +
       "Example: {title:'Publish the launch post draft', ask:'Publish the draft on Monday?', recommend:'Yes: it is reviewed and the date is agreed', if_silent:'discard', expires:'2d', source:'https://example.com/drafts/42'}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["create", "status"], description: "create (default) or status." },
+        action: { type: "string", enum: ["create", "status", "resolve"], description: "create (default), status, or resolve (close your own pending card because the operator already answered it in chat and you acted on it)." },
         title: { type: "string", description: "create: what it is, in one line (max 120 characters)." },
-        ask: { type: "string", description: "create: the yes/no question (max 300 characters)." },
+        ask: { type: "string", description: "create: the yes/no question, one question only (max 300 characters)." },
         recommend: { type: "string", description: "create: your advice and why, in one line (max 300 characters). With choices, start with the exact label you advise: the Mac card marks it and opens with it picked." },
         if_silent: { type: "string", enum: ["discard", "keep", "pause"], description: "create: what applies if nobody answers before it expires. A card never approves itself: only the operator says yes." },
         expires: { type: "string", description: "create: when the default applies. ISO date/time, or relative like '12h' or '3d'. Default: the node's setting (3 days)." },
         source: { type: "string", description: "create: link to the draft, PR or issue." },
-        choices: { type: "array", items: { type: "string" }, description: "create, optional: 1-5 ready-made answers the operator picks from (e.g. three free meeting slots). A yes then carries the pick." },
+        choices: { type: "array", items: { type: "string" }, description: "create, optional: 1-3 ready-made answers the operator picks from (e.g. three free meeting slots). A yes then carries the pick." },
+        followup: { type: "string", enum: ["resurface", "bring-back", "weekly", "cleanup"], description: "create, optional: mark a follow-up card (a parked item coming back, an expired ask brought back, the weekly card, the clean-up card). Follow-up cards share a budget of 5 a day, at most 3 resurface; past it the card is refused until tomorrow." },
         draft: { type: "string", description: "create, optional: a suggested message the operator may edit before approving. {choice} is replaced by the pick. On yes you get the final text: send exactly that." },
         say: { type: "string", description: "create, optional: one short line the Mac popup speaks (max 160 characters). Default: the title." },
         context: { type: "string", description: "create, optional: a few lines of background shown above the question, e.g. what the other person said (max 600 characters)." },
-        id: { type: "string", description: "status: the card id you got from create." },
+        id: { type: "string", description: "status, resolve: the card id you got from create." },
+        reason: { type: "string", description: "resolve: where the operator answered and what you did, e.g. 'approved in chat, done' (max 300 characters)." },
         channel: { type: "string", description: "Current chat's channel, from your task context, so the result can mention it." },
         chatId: { type: "string", description: "Current chat id, from your task context." },
         callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
       },
+    },
+  },
+  {
+    name: "agentx_note",
+    description:
+      "Put an idea for the owner into their notes app (Apple Notes, folder AgentX), instead of sending it in chat. " +
+      "Use it for ideas and suggestions the owner can read when they have time, not for questions (use agentx_approval) or work (use agentx_request). " +
+      "Off unless the owner turned it on; a few notes a day per agent at most. The note is signed with your agent id and the date. " +
+      "Example: {title:'Idea: weekly digest of client replies', body:'Most client replies arrive on Thursday...'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        title: { type: "string", description: "The idea in one line (max 120 characters)." },
+        body: { type: "string", description: "The idea in a few short paragraphs (max 4000 characters)." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+      required: ["title", "body"],
     },
   },
   {
@@ -880,13 +948,21 @@ const TOOLS = [
       "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
       "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
       "The daemon hands each step to its agent in order, nudges a step that goes quiet, sends an owner-approved message itself, and tells the owner at the end or when a step is blocked. " +
+      "Every accept says what the work is: work (code, research, writing…) and estimateMinutes. " +
+      "Before you start code work, or work you expect to take longer than the owner's limit, write the plan: accept with steps too. " +
+      "An accept of such work without steps is refused (the owner sets which kinds and the limit). " +
       "Report on a step you own with action step (status progress, done with evidence, or blocked with a note). " +
+      "When you commit to something for someone (the owner, another agent, an outside person: 'I will send the file by Friday'), record it with promise (owedTo, text, due, closeWhen): it stays open until it is kept. " +
+      "On accept, wait or promise, give headline (what it is, in a few plain words: it titles the owner's card, push and Desk line instead of their own transcript) and need (the one thing you need from them, or 'Nothing, just so you know.'); describe changes them later. " +
       "Example: {action:'done', evidence:'https://example.com/pull/42'}. " +
+      "Describe example: {action:'accept', work:'research', estimateMinutes:20, headline:'Compare three hosting offers', need:'Nothing, just so you know.'}. " +
       "Plan example: {action:'accept', steps:[{name:'Build the fix', done:'PR merged'}, {name:'Deploy', agent:'devops', kind:'deploy', done:'release live', check:{url:'https://example.com/version', contains:'1.2.3'}}, {name:'Tell the client', kind:'message', message:'The fix is live.', to:{channel:'telegram', chatId:'123'}}]}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "list"], description: "list (default), accept, wait, done, decline or step." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "list"], description: "list (default), accept, wait, done, decline, step, promise or describe." },
+        headline: { type: "string", description: "accept, wait, promise, describe: what the request is, in a few plain words (at most 80 characters, no bare ids or links). Titles the owner's card, push and Desk line." },
+        need: { type: "string", description: "accept, wait, promise, describe: the one thing you need from the owner (at most 160 characters), or 'Nothing, just so you know.'" },
         id: { type: "string", description: "The request id, when it is not the request of this turn. Always pass it for step." },
         steps: {
           type: "array",
@@ -906,12 +982,29 @@ const TOOLS = [
             required: ["name"],
           },
         },
+        work: { type: "string", description: "accept: what kind of work it is, one short word: code, research, writing, ops… Needed on an accept without steps. Code work needs steps." },
+        estimateMinutes: { type: "number", description: "accept: how many minutes you expect the work to take. Over the configured limit it needs steps." },
         step: { type: "number", description: "step: the step's number in the plan (1 is the first)." },
         status: { type: "string", enum: ["progress", "done", "blocked"], description: "step: progress (still under way), done (give evidence) or blocked (give note)." },
         note: { type: "string", description: "step: what is happening, or why it is blocked." },
         question: { type: "string", description: "wait: what you are asking the owner." },
         evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
         reason: { type: "string", description: "decline: why you will not do it." },
+        owedTo: { type: "string", description: "promise: who you owe it to: \"owner\", an agent id, or a person id." },
+        text: { type: "string", description: "promise: what you promised, in one sentence." },
+        due: { type: "string", description: "promise, accept, wait, optional: when it is due, as an ISO date. Past it, the owner sees it as stalled." },
+        closeWhen: {
+          type: "object",
+          description: "promise, accept, wait, optional: what proves it is finished; the daemon checks it and closes the loop when it is met, and refuses your done while it is not. " +
+            "One of {kind:'url', url, contains?}, {kind:'issue', provider:'github'|'gitlab', ref:'owner/repo#12', state?:'closed'|'merged'|'open', notePattern?:<plain text a comment contains>}, " +
+            "{kind:'git-ancestor', repo:<name>, commit, ref?}, {kind:'reply', channel, chatId, from:<person id>}.",
+        },
+        home: {
+          type: "object",
+          description: "accept, wait, done, optional: where the work lives, so the owner's \"what did I ask today\" list shows where it landed. kind: issue (the issue URL), idea (the ideas/ file), approval (the card id), erp (the ERP record), card (the Desk card id); link: that URL, path or id.",
+          properties: { kind: { type: "string", enum: ["issue", "idea", "approval", "erp", "card"] }, link: { type: "string" } },
+          required: ["kind", "link"],
+        },
         channel: { type: "string", description: "Current chat's channel, from your task context." },
         chatId: { type: "string", description: "Current chat id, from your task context." },
         callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
@@ -1205,7 +1298,7 @@ async function handleToolCall(
           content: [
             {
               type: "text",
-              text: "No matching skills found. Install skills with: agentx skill install <owner/repo>",
+              text: "No matching skills found. Add skills with the runtime's own command, for example: npx -y skills add <owner/repo>",
             },
           ],
         }
@@ -1323,17 +1416,18 @@ async function handleToolCall(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, chatId, text, agentId: args.agentId }),
       })
-      const data = await res.json() as any
-      if (!res.ok) {
-        return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
-      }
-      return { content: [{ type: "text", text: `Message sent. ID: ${data.messageId || "ok"}` }] }
+      const data = await res.json().catch(() => ({})) as any
+      // Never "ok" in place of a missing ID: that hid lost GitLab notes (#984).
+      const { sendResultText } = await import("@/daemon/send-answer")
+      return { content: [{ type: "text", text: sendResultText(res.ok, data, res.statusText) }] }
     }
 
     case "agentx_send_agent": {
       const agentId = args.agentId as string | undefined
       const text = args.text as string | undefined
       const senderAgentId = args.senderAgentId as string | undefined
+      const taskType = typeof args.taskType === "string" && args.taskType.trim() ? args.taskType.trim() : undefined
+      const home = typeof args.home === "string" && args.home.trim() ? args.home.trim() : undefined
       if (!agentId || !text) {
         return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
       }
@@ -1346,7 +1440,7 @@ async function handleToolCall(
         res = await daemonFetch(`${daemonUrl()}/send/agent`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...callerFields() }),
+          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...(taskType ? { taskType } : {}), ...(home ? { home } : {}), ...callerFields() }),
           signal: AbortSignal.timeout(SEND_AGENT_TIMEOUT_MS),
         })
       } catch (e) {
@@ -1433,6 +1527,8 @@ async function handleToolCall(
       const explicitFresh = typeof args.freshSession === "boolean" ? args.freshSession as boolean : undefined
       const freshSession = explicitFresh !== undefined ? explicitFresh : (senderAgentId ? true : undefined)
       const explicitChatId = args.chatId as string | undefined
+      const taskType = typeof args.taskType === "string" && args.taskType.trim() ? args.taskType.trim() : undefined
+      const home = typeof args.home === "string" && args.home.trim() ? args.home.trim() : undefined
 
       // Elicit missing params
       if (!agent || !message) {
@@ -1462,12 +1558,13 @@ async function handleToolCall(
         channel: "mcp",
         sender: senderAgentId ? `agent:${senderAgentId}` : "mcp",
         chatId,
+        ...(home ? { home } : {}),
       } : undefined
 
       const res = await daemonFetch(`${daemonUrl()}/task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context, ...callerFields() }),
+        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context, ...(taskType ? { taskType } : {}), ...(home ? { home } : {}), ...callerFields() }),
       })
       const data = await res.json() as any
       // #277 — the daemon took it in the background (a person is waiting
@@ -1500,10 +1597,25 @@ async function handleToolCall(
       return { content: [{ type: "text", text: describeQueue(await res.json() as QueueView) }] }
     }
 
+    case "agentx_screen": {
+      const res = await daemonFetch(`${daemonUrl()}/screen`)
+      if (!res.ok) return { content: [{ type: "text", text: `Could not read what is on the owner's screen: HTTP ${res.status}` }] }
+      return { content: [{ type: "text", text: describeScreen(await res.json() as ScreenView) }] }
+    }
+
     case "agentx_call_owner": {
       // The daemon checks this against a running turn of the agent.
       const agentId = process.env.AGENTX_AGENT_ID
       if (!agentId) return { content: [{ type: "text", text: "Call not placed: only an agent's own run can call (AGENTX_AGENT_ID is not set)." }] }
+      if (args.cancel === true) {
+        const res = await daemonFetch(`${daemonUrl()}/calls/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...callerHeaders() },
+          body: JSON.stringify({ agentId }),
+        })
+        const data = await res.json().catch(() => ({})) as any
+        return { content: [{ type: "text", text: res.ok ? `Call ${data.call?.id} withdrawn. It will not ring.` : `Not withdrawn: ${data?.error || `HTTP ${res.status}`}` }] }
+      }
       const res = await daemonFetch(`${daemonUrl()}/calls`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...callerHeaders() },
@@ -1513,6 +1625,7 @@ async function handleToolCall(
       if (!res.ok) return { content: [{ type: "text", text: `Call not placed: ${data?.error || `HTTP ${res.status}`}` }] }
       const how = data.rang === "widget" ? "It is ringing on the owner's desktop widget. When they answer you will be asked to open the conversation."
         : data.rang === "notify" ? "The desktop widget is not running, so the owner got a notification instead."
+        : data.rang === "waiting" && data.busy ? `${busyText(data.busy)} If a message will do, withdraw the call (cancel: true) and send the message.`
         : `It did not ring (${data.call?.note ?? "held"}); the owner sees it as a missed call.`
       return { content: [{ type: "text", text: `Call ${data.call?.id} placed. ${how}` }] }
     }
@@ -1617,6 +1730,21 @@ async function handleToolCall(
       return { content: [{ type: "text", text: renderEventsAnswer(agentId, data, formatEventLine) }] }
     }
 
+    case "agentx_waiting": {
+      const on = typeof args.on === "string" ? args.on.trim() : ""
+      if (!on) return { content: [{ type: "text", text: "Error: say what the work waits for (on)." }] }
+      const due = typeof args.due === "string" && args.due.trim() ? args.due.trim() : undefined
+      const res = await daemonFetch(`${daemonUrl()}/runs/waiting`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({ on, ...(due ? { due } : {}), senderAgentId: process.env.AGENTX_AGENT_ID, ...callerFields() }),
+        signal: AbortSignal.timeout(10_000),
+      }).catch((e: any) => ({ ok: false, status: 0, json: async () => ({ error: e?.message ?? String(e) }) }) as any)
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || `HTTP ${res.status}`}` }] }
+      return { content: [{ type: "text", text: String(data.note ?? "Recorded.") }] }
+    }
+
     case "agentx_signal": {
       const action = String(args.action ?? "")
       const self = process.env.AGENTX_AGENT_ID
@@ -1702,6 +1830,12 @@ async function handleToolCall(
       return { content: [{ type: "text", text }] }
     }
 
+    case "agentx_note": {
+      const { runNoteTool } = await import("@/native/note-tool")
+      const text = await runNoteTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
     case "agentx_request": {
       const { runRequestTool } = await import("@/requests/tool")
       const text = await runRequestTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
@@ -1736,7 +1870,12 @@ async function handleToolCall(
           if (existsSync(catPath)) { agentId = id; break }
         }
       }
+      // Counted in _query-runs.jsonl beside CLI queries, so `wiki query-runs`
+      // sees the queries agents make through this tool too.
+      const { QUERY_RUNS_FILE, recordQueryRun, timedQuery } = await import("@/wiki/query-runs")
+      const runsFile = resolve(hub.getBaseDir(), QUERY_RUNS_FILE)
       if (!agentId) {
+        recordQueryRun(runsFile, { at: new Date().toISOString(), agent: "", status: "no-catalog", source: "tool", wallMs: 0 })
         return { content: [{ type: "text", text: "Error: no agent has a wiki catalog yet. Run `agentx wiki absorb` first." }] }
       }
       const store = hub.getAgentWiki(agentId)
@@ -1752,9 +1891,10 @@ async function handleToolCall(
       // `wiki.query` decides the method: page summaries plus a live read
       // once summaries exist, the catalog walk until then (#855).
       const settings = await loadQuerySettings()
-      const result = await agenticQuery(question, store, agentId, {
+      const shared = (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined
+      const result = await timedQuery(runsFile, agentId, "tool", () => agenticQuery(question, store, agentId, {
         maxHops,
-        shared: (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined,
+        shared,
         messagePath: branch?.path,
         ...(branch?.graphWeight !== undefined ? { graphWeight: branch.graphWeight } : {}),
         method: settings.method,
@@ -1762,7 +1902,7 @@ async function handleToolCall(
         // Notes only for the agent this runtime runs as: `agent` is the
         // caller's word, and another agent's notes are private to it (#867).
         notes: toolNoteSourceFor(settings, agentId),
-      })
+      }))
       if (result.status !== "ok") {
         return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
       }

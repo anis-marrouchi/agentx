@@ -48,16 +48,22 @@ export interface ScreenRead {
  *  labelled control VS Code offers. */
 const THIN_TREE = 6
 
-export async function readScreen(opts: { max?: number; ocr?: boolean } = {}): Promise<ScreenRead> {
+/** Elements the helper keeps before it stops walking. 400 cut a settings
+ *  page short: "Restart when idle" sat past it and was never offered
+ *  (#1092). The helper spends this budget only on elements worth choosing
+ *  between, and the candidate cap still bounds what reaches the model. */
+export const READ_MAX = 1000
+
+export async function readScreen(opts: { max?: number; ocr?: boolean; request?: string } = {}): Promise<ScreenRead> {
   if (!existsSync(HELPER)) throw new Error("helper not built — run apps/mac-helper/build.sh")
 
-  const { stdout } = await run(HELPER, ["read", "--max", "400"])
+  const { stdout } = await run(HELPER, ["read", "--max", String(READ_MAX)], { maxBuffer: 8 * 1024 * 1024 })
   const snap = JSON.parse(stdout) as {
     app: string
     window?: string | null
     elements: RawElement[]
   }
-  const candidates = buildCandidates(snap.elements, opts.max ?? 60)
+  const candidates = buildCandidates(snap.elements, opts.max ?? 60, { request: opts.request })
   const ocrRects = new Map<number, { x: number; y: number; width: number; height: number }>()
 
   const wantOCR = opts.ocr !== false && candidates.length < THIN_TREE

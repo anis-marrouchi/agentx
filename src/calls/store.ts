@@ -38,6 +38,20 @@ export interface Call {
   summary: string | null
 }
 
+/** A call waiting for a busy owner: since when, and when the owner was
+ *  last told. Ms since the epoch. */
+export interface Waiting {
+  since: number
+  toldAt: number
+}
+
+/** A call that stops ringing (answered, snoozed, missed...) is no longer
+ *  waiting: the mark goes in the same write, so a call that rings again
+ *  later starts a fresh wait, even across a restart. */
+function leaving(patch: { status?: CallStatus }): string {
+  return patch.status && patch.status !== "ringing" ? ", waiting_since=NULL, told_at=NULL" : ""
+}
+
 /** Calls still in progress: an agent has at most one of these. */
 export const LIVE: CallStatus[] = ["ringing", "answered", "later"]
 
@@ -59,6 +73,22 @@ export class CallStore {
     if (!have.has("kind")) db.exec("ALTER TABLE calls ADD COLUMN kind TEXT NOT NULL DEFAULT 'voice'")
     if (!have.has("channel")) db.exec("ALTER TABLE calls ADD COLUMN channel TEXT")
     if (!have.has("chat_id")) db.exec("ALTER TABLE calls ADD COLUMN chat_id TEXT")
+    // A call waiting for a busy owner (#969), kept so a restart does not
+    // forget it: since when it waits, and when the owner was last told.
+    if (!have.has("waiting_since")) db.exec("ALTER TABLE calls ADD COLUMN waiting_since INTEGER")
+    if (!have.has("told_at")) db.exec("ALTER TABLE calls ADD COLUMN told_at INTEGER")
+  }
+
+  /** Ringing calls marked as waiting for a busy owner, by id. */
+  waiting(): Map<string, Waiting> {
+    const rows = this.db.prepare("SELECT id, waiting_since AS since, told_at AS toldAt FROM calls WHERE waiting_since IS NOT NULL AND status='ringing'")
+      .all() as Array<{ id: string } & Waiting>
+    return new Map(rows.map(({ id, since, toldAt }) => [id, { since, toldAt: toldAt ?? since }]))
+  }
+
+  /** Mark a call as waiting, or clear the mark with null. */
+  setWaiting(id: string, w: Waiting | null): void {
+    this.db.prepare("UPDATE calls SET waiting_since=?, told_at=? WHERE id=?").run(w?.since ?? null, w?.toldAt ?? null, id)
   }
 
   insert(call: Call): void {
@@ -80,7 +110,7 @@ export class CallStore {
     }
     const keys = Object.keys(patch).filter((k) => k in cols)
     if (keys.length) {
-      const set = keys.map((k) => `${cols[k]}=?`).join(", ")
+      const set = keys.map((k) => `${cols[k]}=?`).join(", ") + leaving(patch)
       this.db.prepare(`UPDATE calls SET ${set} WHERE id=?`).run(...keys.map((k) => (patch as any)[k] ?? null), id)
     }
     return this.get(id)
@@ -96,7 +126,7 @@ export class CallStore {
       ringAgainAt: "ring_again_at", note: "note", summary: "summary",
     }
     const keys = Object.keys(patch).filter((k) => k in cols)
-    const set = keys.map((k) => `${cols[k]}=?`).join(", ")
+    const set = keys.map((k) => `${cols[k]}=?`).join(", ") + leaving(patch)
     const marks = statuses.map(() => "?").join(",")
     const changed = this.db.prepare(`UPDATE calls SET ${set} WHERE id=? AND status IN (${marks})`)
       .run(...keys.map((k) => (patch as any)[k] ?? null), id, ...statuses).changes

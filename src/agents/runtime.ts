@@ -168,6 +168,13 @@ export interface AgentTask {
    *  that pattern without requiring callers to invent unique
    *  chatIds. */
   freshSession?: boolean
+  /** A run that must see only its own message (the review gate, #990).
+   *  The registry pushes nothing from the agent's other chats, its memory,
+   *  wiki, patterns or landscape; a claude-code run starts with no MCP
+   *  server, no built-in tool and Claude Code's auto-memory off; and the
+   *  run is held at autonomy `report`, so a tier or peer that cannot
+   *  enforce that refuses it instead of running it with its usual tools. */
+  isolated?: boolean
   /** Transcript held by a client that owns the conversation (OpenCode).
    *  Seeds an empty AgentX session the same way a channel adapter's
    *  seedHistory does, so a new or rotated session starts with it. */
@@ -229,6 +236,9 @@ export interface AgentTask {
     initiator?: import("@/a2a/initiator").RootInitiator
     /** Set on a callback turn: the delegation whose result it carries. */
     delegation?: { taskId: string; from: string; peer?: string; status: string }
+    /** The issue or merge request the work is about, when the delegating
+     *  agent named it (#1100). */
+    home?: string
   }
 }
 
@@ -541,6 +551,13 @@ export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.P
   return env
 }
 
+/** Env for an isolated run (#990): Claude Code's own auto-memory
+ *  (MEMORY.md) would otherwise load into the run whatever the flags say. */
+export function withIsolationEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.ProcessEnv {
+  if (task.isolated) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1"
+  return env
+}
+
 /** The channel and chat a warm process is keyed by, and so the pair it
  *  sends as proof of its running turn. A run with no chat falls back to
  *  its sender, then to "default". The registry matches a running turn
@@ -847,7 +864,7 @@ export async function executeClaudeCode(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode, killed } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string; killed: boolean }>((resolve) => {
-      const childEnv = claudeBillingEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), agent.billing)
+      const childEnv = claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing)
       let killed = false
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
@@ -1008,7 +1025,7 @@ export async function executeClaudeCodeStreaming(
 
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    const spawnEnv = claudeBillingEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), agent.billing)
+    const spawnEnv = claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing)
     const proc = execa("claude", args, {
       cwd: agent.workspace,
       timeout: streamTimeoutMs,

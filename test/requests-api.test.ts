@@ -202,7 +202,7 @@ describe("settings", () => {
   it("reads defaults, saves changes through the config schema and rejects bad values", async () => {
     const configPath = path.join(tmp, "agentx.json")
     writeFileSync(configPath, JSON.stringify({ node: { id: "n", name: "n" }, agents: {} }))
-    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [] } })
+    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
     const ok = await updateRequestSettings({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 }, { configPath, reload: false })
     expect(ok.success).toBe(true)
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests).toEqual({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 })
@@ -214,7 +214,192 @@ describe("settings", () => {
     // Plans (#788): only the fields given are written.
     expect((await updateRequestSettings({ plans: { stallMinutes: 45, disabledAgents: ["bot"] } }, { configPath, reload: false })).success).toBe(true)
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests.plans).toEqual({ stallMinutes: 45, disabledAgents: ["bot"] })
-    expect(readRequestSettings(configPath).plans).toEqual({ enabled: true, stallMinutes: 45, maxNudges: 3, approveKinds: ["message"], disabledAgents: ["bot"] })
+    expect(readRequestSettings(configPath).plans).toEqual({ enabled: true, stallMinutes: 45, maxNudges: 3, approveKinds: ["message"], disabledAgents: ["bot"], requireForWork: ["code"], requireOverMinutes: 30 })
     expect((await updateRequestSettings({ plans: { maxNudges: -1 } }, { configPath, reload: false })).success).toBe(false)
+    // Headlines (#1126): the switch only; provider, model and timeout stay as set.
+    const withHeadlines = JSON.parse(readFileSync(configPath, "utf-8"))
+    withHeadlines.requests.headlines = { model: "small-model" }
+    writeFileSync(configPath, JSON.stringify(withHeadlines))
+    expect((await updateRequestSettings({ headlines: { enabled: false } }, { configPath, reload: false })).success).toBe(true)
+    expect(JSON.parse(readFileSync(configPath, "utf-8")).requests.headlines).toEqual({ model: "small-model", enabled: false })
+    expect(readRequestSettings(configPath).headlines).toMatchObject({ enabled: false, model: "small-model" })
+  })
+})
+
+describe("home and the since list (#394)", () => {
+  const getSince = (since: string) =>
+    handleRequestsApi("GET", "/requests", undefined, {
+      store, tracker, enabled, hasAgent: () => true, runningTurn: () => null, query: new URLSearchParams({ since }),
+    })
+
+  it("accept, wait and done record where the work lives", () => {
+    turn("t1")
+    expect(say("accept", { home: { kind: "issue", link: "https://gitlab.noqta.tn/noqta/noqta/-/issues/394" } }).status).toBe(200)
+    expect(store.get("req-t1")?.home).toEqual({ kind: "issue", link: "https://gitlab.noqta.tn/noqta/noqta/-/issues/394" })
+    expect(say("wait", { question: "Ship it?", home: { kind: "card", link: "followup-394" } }).status).toBe(200)
+    expect(store.get("req-t1")?.home).toEqual({ kind: "card", link: "followup-394" })
+    expect(say("done", { evidence: "https://example.com/pull/1", home: { kind: "issue", link: "https://example.com/i/1" } }).status).toBe(200)
+    expect(store.get("req-t1")).toMatchObject({ state: "done", home: { kind: "issue", link: "https://example.com/i/1" } })
+  })
+
+  it("refuses a malformed home and changes nothing", () => {
+    turn("t1")
+    expect(say("accept", { home: { kind: "chat", link: "x" } }).status).toBe(400)
+    expect(say("accept", { home: { kind: "issue" } }).status).toBe(400)
+    expect(say("accept", { home: { kind: "idea", link: "x".repeat(501) } }).status).toBe(400)
+    expect(say("decline", { reason: "no", home: { kind: "idea", link: "ideas/a.md" } }).status).toBe(400)
+    expect(store.get("req-t1")).toMatchObject({ state: "candidate", home: null })
+  })
+
+  it("two requests can share one home", () => {
+    turn("t1")
+    say("accept", { home: { kind: "issue", link: "https://example.com/i/394" } })
+    endTurn("t1")
+    running.set("run-t2", { agentId: "coder", channel: "telegram", chatId: "chat-1" })
+    turn("t2")
+    expect(api("POST", "/requests", { action: "accept", agentId: "coder", home: { kind: "issue", link: "https://example.com/i/394" } }, { taskId: "run-t2" }).status).toBe(200)
+    expect(store.get("req-t1")?.home?.link).toBe("https://example.com/i/394")
+    expect(store.get("req-t2")?.home?.link).toBe("https://example.com/i/394")
+  })
+
+  it("GET /requests?since lists open and closed requests made since then, with links", () => {
+    turn("t1")
+    say("accept")
+    say("done", { evidence: "https://example.com/pull/1" })
+    endTurn("t1")
+    const body = getSince("0").body as any
+    expect(body.items.map((r: any) => [r.id, r.state])).toEqual([["req-t1", "done"]])
+    expect(body.items[0].links).toEqual([{ kind: "run", ref: "t1", at: 5_000 }])
+    expect((getSince("6000").body as any).items).toEqual([])
+    expect(getSince("soon").status).toBe(400)
+    expect(getSince("").status).toBe(400)
+  })
+
+  it("past 100, the since list keeps the newest, oldest first", () => {
+    for (let i = 0; i < 105; i++) {
+      store.addCandidate({ id: `req-${i}`, runId: `r${i}`, channel: "telegram", chatId: "chat-1", agentId: "coder", text: "x", now: 1_000 + i })
+      store.progress(`req-${i}`, 1_000 + i)
+    }
+    const body = getSince("0").body as any
+    expect(body).toMatchObject({ count: 100, truncated: true })
+    expect(body.items[0].id).toBe("req-5")
+    expect(body.items[99].id).toBe("req-104")
+  })
+
+  it("a step report with a home is refused", () => {
+    turn("t1")
+    say("accept")
+    expect(say("step", { step: 1, status: "done", home: { kind: "issue", link: "https://example.com/i/1" } })).toMatchObject({
+      status: 400, body: { error: expect.stringContaining("takes no home") },
+    })
+    expect(store.get("req-t1")?.home).toBeNull()
+  })
+
+  it("a home is also a request link, so a request keeps every home and an issue leads back to it", () => {
+    turn("t1")
+    say("accept", { home: { kind: "issue", link: "https://example.com/i/394" } })
+    say("wait", { question: "Which file?", home: { kind: "idea", link: "ideas/followup.md" } })
+    say("done", { evidence: "https://example.com/pull/1", home: { kind: "card", link: "followup-394" } })
+    expect(store.links("req-t1").map((l) => [l.kind, l.ref])).toEqual([
+      ["run", "t1"], ["issue", "https://example.com/i/394"], ["idea", "ideas/followup.md"],
+    ])
+    expect(store.get("req-t1")?.home).toEqual({ kind: "card", link: "followup-394" })
+    expect(store.byLink("issue", "https://example.com/i/394")?.id).toBe("req-t1")
+  })
+
+  it("approval and erp homes are links too; a promise's home is linked when it is made", () => {
+    turn("t1")
+    say("accept", { home: { kind: "approval", link: "2026-10-18-x-uw01" } })
+    say("done", { evidence: "e", home: { kind: "erp", link: "SO-2026-0042" } })
+    expect(store.links("req-t1").map((l) => l.kind)).toEqual(["run", "approval", "erp"])
+    const p = say("promise", { owedTo: "owner", text: "send the brochure", home: { kind: "issue", link: "https://example.com/i/20" } }).body as any
+    expect(store.links(p.request.id)).toEqual([{ kind: "issue", ref: "https://example.com/i/20", at: 6_000 }])
+  })
+
+  it("a second request on the same issue keeps it in its column; the link stays with the first", () => {
+    turn("t1")
+    say("accept", { home: { kind: "issue", link: "https://example.com/i/394" } })
+    endTurn("t1")
+    running.set("run-t2", { agentId: "coder", channel: "telegram", chatId: "chat-1" })
+    turn("t2")
+    api("POST", "/requests", { action: "accept", agentId: "coder", home: { kind: "issue", link: "https://example.com/i/394" } }, { taskId: "run-t2" })
+    expect(store.byLink("issue", "https://example.com/i/394")?.id).toBe("req-t1")
+    expect(store.get("req-t2")?.home?.link).toBe("https://example.com/i/394")
+  })
+
+  it("the tool passes home through", async () => {
+    let sent: any
+    const fakeFetch = (async (_u: string, init: any) => {
+      sent = JSON.parse(init.body)
+      return new Response(JSON.stringify({ request: { id: "req-x" } }), { status: 200 })
+    }) as typeof fetch
+    await runRequestTool({ action: "accept", home: { kind: "idea", link: "ideas/a.md" } }, { daemonUrl: "http://d", fetch: fakeFetch, env: { AGENTX_AGENT_ID: "coder" } })
+    expect(sent.home).toEqual({ kind: "idea", link: "ideas/a.md" })
+  })
+
+  it("the tool passes the work and its estimate through, for the plan gate (#1048)", async () => {
+    let sent: any
+    const fakeFetch = (async (_u: string, init: any) => {
+      sent = JSON.parse(init.body)
+      return new Response(JSON.stringify({ error: "Not started: code work needs a plan before it starts." }), { status: 409 })
+    }) as typeof fetch
+    const said = await runRequestTool({ action: "accept", work: "code", estimateMinutes: 90 }, { daemonUrl: "http://d", fetch: fakeFetch, env: { AGENTX_AGENT_ID: "coder" } })
+    expect(sent).toMatchObject({ work: "code", estimateMinutes: 90 })
+    expect(said).toBe("Error: Not started: code work needs a plan before it starts.")
+  })
+})
+
+describe("GET /requests filters (#394)", () => {
+  const get = (q: Record<string, string>) =>
+    handleRequestsApi("GET", "/requests", undefined, {
+      store, tracker, enabled, hasAgent: () => true, runningTurn: () => null, query: new URLSearchParams(q),
+    }) as { status: number; body: any }
+  /** Requests req-0 … req-(n-1), one ms apart; every third one closed, every third + 1 needing attention. */
+  function seed(n: number) {
+    for (let i = 0; i < n; i++) {
+      store.addCandidate({ id: `req-${i}`, runId: `r${i}`, channel: "telegram", chatId: "chat-1", agentId: "coder", text: `ask ${i}`, now: 1_000 + i })
+      store.progress(`req-${i}`, 1_000 + i)
+      if (i % 3 === 0) store.close(`req-${i}`, "done", "https://example.com/pull/1", 2_000 + i)
+      if (i % 3 === 1) store.needsAttention(`req-${i}`, "quiet", 2_000 + i)
+    }
+  }
+  const ids = (b: any) => b.items.map((r: any) => r.id)
+
+  it("without filters: open ones only, without links, as before", () => {
+    seed(6)
+    const { body } = get({})
+    expect(ids(body)).toEqual(["req-1", "req-2", "req-4", "req-5"])
+    expect(body).toMatchObject({ count: 4, total: 4, truncated: false })
+    expect(body.items[0].links).toBeUndefined()
+  })
+
+  it("state picks states and groups; closed=1 adds the closed ones; links=1 adds links", () => {
+    seed(6)
+    expect(ids(get({ state: "needs_attention" }).body)).toEqual(["req-1", "req-4"])
+    expect(ids(get({ state: "closed" }).body)).toEqual(["req-0", "req-3"])
+    expect(ids(get({ state: "done,needs_attention" }).body)).toEqual(["req-0", "req-1", "req-3", "req-4"])
+    expect(get({ closed: "1" }).body.total).toBe(6)
+    expect(get({ state: "needs_attention", links: "1" }).body.items[0].links).toEqual([{ kind: "run", ref: "r1", at: 1_001 }])
+  })
+
+  it("closedSince counts what closed since then, whenever it was made", () => {
+    seed(6)
+    expect(ids(get({ closedSince: "2003" }).body)).toEqual(["req-3"])
+  })
+
+  it("pages from the oldest with limit and offset", () => {
+    seed(7)
+    const first = get({ closed: "1", limit: "3", offset: "0" }).body
+    expect(ids(first)).toEqual(["req-0", "req-1", "req-2"])
+    expect(first).toMatchObject({ total: 7, truncated: true, nextOffset: 3 })
+    const last = get({ closed: "1", limit: "3", offset: "6" }).body
+    expect(ids(last)).toEqual(["req-6"])
+    expect(last.nextOffset).toBeUndefined()
+  })
+
+  it("refuses a bad filter", () => {
+    for (const q of [{ state: "lost" }, { state: "," }, { limit: "0" }, { limit: "501" }, { limit: "2.5" }, { offset: "-1" }, { closedSince: "x" }]) {
+      expect(get(q).status).toBe(400)
+    }
   })
 })

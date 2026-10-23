@@ -1,6 +1,7 @@
-import { readFocus, focusLabel, flushHeld, NotificationQueue, type LocalAlert, type Sender } from "@/notify"
+import { readHold, focusLabel, flushHeld, NotificationQueue, type LocalAlert, type Sender } from "@/notify"
 
-// Delivering what Focus held, the moment Focus ends.
+// Delivering what Focus held, the moment Focus ends. A call holds the
+// same way (#394): the hold is Focus or a call, and it ends when neither is on.
 //
 // Without this the queue is a hole rather than a delay: `agentx notify`
 // puts a message aside during Focus and nothing ever takes it out again.
@@ -31,12 +32,12 @@ export function attachFocusWatcher(
   // the daemon while Focus is on would otherwise look like a transition the
   // moment it is switched off — which is right — but starting while Focus
   // is off must not look like one immediately.
-  let wasActive = readFocus().active
+  let wasActive = readHold().active
 
   const timer = setInterval(() => {
     let state
     try {
-      state = readFocus()
+      state = readHold()
     } catch {
       return // reading it is best-effort; never take the daemon down for this
     }

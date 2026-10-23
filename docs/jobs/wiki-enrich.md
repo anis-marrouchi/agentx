@@ -15,6 +15,7 @@ It works for people, organizations, projects, places, devices, servers, apps, do
 - **Private stays private.** The run writes to one page of the entity, and reads only pages that everyone who can read that page can already read. Text from an owner-only page never ends up in a shared or public one.
 - **The model gets no tools.** The call that writes can't run commands, use connected services or send messages. It only returns text.
 - **Old text is kept.** Each write saves the previous version of the page, so you can see what changed.
+- **Newer text wins.** Just before it writes, the run reads the page again and adds the overview to what is there now. While it reads and writes, the run holds the page, so another write waits a moment instead of being lost.
 - **Spending has a cap.** Each entity costs one model call. A run stops before the next call once it has spent `--max-cost`.
 - **Only what changed is redone.** An entity is done again only when it has a new source, page, linked event or mentioning page. `--force` redoes it anyway.
 
@@ -108,6 +109,8 @@ A page whose **alias** (another name listed in its header) matches an agent also
 - **`dropped: source not among those given`:** the model cited something the run did not show it. The fact is left out. Nothing to fix; a later run can find it when a source mentions it.
 - **`dropped: value is a project, expected organization`:** the name points at a page of another type. Give the real organization its own page (see [Add a page for something only mentioned](#add-a-page-for-something-only-mentioned)), then run it again with `--force`.
 - **`write refused`:** the page belongs to another agent or was copied from another machine. Run the job on the machine that holds the page.
+- **`the page was moved or removed during the run`:** absorb renamed or merged the page while the run waited for the model. The next run finds it under its new name.
+- **`the page was busy; run again`:** another job was writing the page and did not finish within 5 seconds. Run again. If it keeps happening and no `agentx` command is running, delete the page's file under `_locks/` in the agent's wiki folder.
 - **A fact or a sentence you expected is missing:** it may come from a page fewer agents can read than the page being written. The run leaves such pages out. Share that page more widely, or write the fact on it by hand.
 - **The scheduled job shows `timeout`:** raise `timeout` (about 270 per entity), or lower `--max`. The entities it finished are kept and not paid for again.
 - **`--max must be a whole number`:** give `--max` a number such as `10`.

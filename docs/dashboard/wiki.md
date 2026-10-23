@@ -50,6 +50,12 @@ The per-agent view is still there: click **Agent wikis** at the top.
 
 Every event is **minor**, **normal** or **major**. Pages show major and normal events and fold minor ones under a count. When five or more minor events happen in 30 days, the page shows them as one **Recurring** line. Only the owner sets **major**; an agent can propose it.
 
+A new event page has no level yet and shows as **normal**. `agentx wiki events` gives every event its level and the page it is about. See [Sort wiki events by importance](../jobs/wiki-events.md).
+
+## Rule pages
+
+A rule page (an **obligation**) holds one rule once: what to do, who, the deadline, the penalty, the source and the date of that source. People and organizations that must follow it list it under **Obligations**. `agentx wiki rules` writes these pages from the pages that state rules. See [Keep each rule on one page](../jobs/wiki-rules.md).
+
 ## Private facts
 
 A statement marked `access: private` (an ID number, an account number) shows as `••••` on Z2 and Z3. Its value appears only on its Z4 page. The **Discussed** panel lists the conversations a page was written from and is marked private to the owner.
@@ -188,6 +194,7 @@ You can also curate a page and manage its versions from a terminal, with the dae
 - **The chat says there is no agent with that name:** the agent set under **Agent that answers** was removed, or the page's owner is not an agent on this computer. Pick another agent in **Settings**, or run `agentx wiki curator --agent <agent-id>`.
 - **The chat says the page is a copy from another node:** that agent's pages are copied from another computer and can only be changed there. Open the wiki on that computer.
 - **The chat says the page changed while the agent was working:** someone else saved the page meanwhile, so nothing was written. Send the instruction again.
+- **The chat says the page was busy, or restore says the page was busy:** another job (for example a wiki events or enrich run) was saving the same page at that moment, so nothing was written. Wait a few seconds and try again.
 - **The chat says the reply would cut the page and nothing was written:** the agent sent back much less than the page held, and your instruction did not ask to remove anything. Send the instruction again, or say plainly what to remove, such as "remove the history section".
 - **The chat says the wiki could not save the previous version:** the wiki folder could not be written to, so the change was dropped. **Terminal:** check there is free disk space and that the daemon can write to `.agentx/wiki/`, then send the instruction again.
 - **Restore the previous version says the curator is turned off:** the chat's restore button only works while the curator is on. Turn it on, or **Terminal:** run `agentx wiki restore <agent> "<page title>" [version]`.

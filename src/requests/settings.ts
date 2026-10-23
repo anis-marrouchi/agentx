@@ -4,6 +4,7 @@ import { expandEnvVars, requestsConfigSchema } from "@/daemon/config"
 import { HUMAN_CHANNELS } from "@/a2a/initiator"
 import type { RequestSettings } from "./tracker"
 import type { PlanSettings } from "./plans"
+import type { CheckerSettings } from "./checkers"
 
 // --- Requests settings: read and change `requests` in agentx.json ---
 //
@@ -20,7 +21,13 @@ export function readRequestSettings(configPath?: string): RequestSettings {
   return parsed.success ? parsed.data : requestsConfigSchema.parse(undefined)
 }
 
-export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans">> & { plans?: Partial<PlanSettings> }
+export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines">> & {
+  /** Only the switch. Provider, model and timeout are set in agentx.json. */
+  headlines?: { enabled?: boolean }
+  plans?: Partial<PlanSettings>
+  /** The checkers' kinds and pace. Repos and connectors are set in agentx.json. */
+  checkers?: Partial<Pick<CheckerSettings, "enabled" | "checkEveryMinutes">>
+}
 
 export async function updateRequestSettings(
   patch: RequestSettingsPatch,
@@ -34,13 +41,20 @@ export async function updateRequestSettings(
   }
   return applyConfigMutation((cfg) => {
     const r = (cfg.requests ??= {})
-    for (const key of ["enabled", "channels", "from", "staleAfterHours", "retentionDays"] as const) {
+    for (const key of ["enabled", "channels", "from", "staleAfterHours", "retentionDays", "settleHandedBack"] as const) {
       if (patch[key] !== undefined) r[key] = patch[key]
     }
     if (patch.plans) {
       const p = (r.plans ??= {})
-      for (const key of ["enabled", "stallMinutes", "maxNudges", "approveKinds", "disabledAgents"] as const) {
+      for (const key of ["enabled", "stallMinutes", "maxNudges", "approveKinds", "disabledAgents", "requireForWork", "requireOverMinutes"] as const) {
         if (patch.plans[key] !== undefined) p[key] = patch.plans[key]
+      }
+    }
+    if (patch.headlines?.enabled !== undefined) (r.headlines ??= {}).enabled = patch.headlines.enabled
+    if (patch.checkers) {
+      const c = (r.checkers ??= {})
+      for (const key of ["enabled", "checkEveryMinutes"] as const) {
+        if (patch.checkers[key] !== undefined) c[key] = patch.checkers[key]
       }
     }
   }, { configPath: opts.configPath, reload: opts.reload })

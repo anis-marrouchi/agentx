@@ -37,6 +37,16 @@ export function parseTrailer(notes: string | null | undefined): ReminderTrailer 
   }
 }
 
+/** True when the notes end with the Reminders mirror's trailer
+ *  (`agentx: card=<id>` or `agentx: request=<id>`, approvals/mirror.ts).
+ *  Such a task stands for a card or request already on the Desk: check-ins
+ *  and the hand-back leave it alone. */
+export function isMirrorTrailer(notes: string | null | undefined): boolean {
+  const lines = (notes ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  const last = lines[lines.length - 1] ?? ""
+  return /^agentx:\s*(?:.*\s)?(?:card|request)=\S+/.test(last)
+}
+
 /** "telegram:123" → { channel: "telegram", chatId: "123" }; null when it has no channel part. */
 export function splitContext(context: string | undefined): { channel: string; chatId: string } | null {
   if (!context) return null

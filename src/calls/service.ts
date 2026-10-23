@@ -5,7 +5,11 @@
 // the widget's hands-free conversation with that agent, which opens with
 // its reason. When the widget is not running, `notify` stands in. While
 // the widget is busy (a turn, the microphone, another call) the call waits
-// for it: its ring time does not run, and the owner is told once (#408).
+// for it: its ring time does not run, and the owner gets a call-waiting
+// notice (#408), again every calls.busy.retryMinutes. The caller is told
+// the owner is busy, with whom, and until when its call waits (#969). It
+// rings by itself once the widget is free, oldest first; the caller may
+// withdraw it meanwhile (`cancel`).
 //
 // Checked before anything rings, in this order:
 //   0. the caller is that agent: a turn of it is running now, named by its
@@ -26,15 +30,30 @@
 import { randomUUID } from "crypto"
 import { focusLabel, readFocus, type FocusState } from "@/notify/focus"
 import type { CallsConfig } from "@/daemon/config"
-import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency } from "./store"
+import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency, type Waiting } from "./store"
 
 export const REASON_MAX = 200
 /** The widget polls every 2 s; missing this long means it is not running. */
 export const WIDGET_FRESH_MS = 10_000
-/** The longest a call waits for a busy widget before its ring time runs. */
-export const BUSY_WAIT_MAX_MS = 10 * 60_000
+/** An answered call older than this holds nothing: one never marked ended
+ *  must not hold the owner's notices forever. */
+export const CALL_HOLD_MAX_MS = 2 * 3_600_000
 export const LATER_DEFAULT_MINUTES = 10
 export const LATER_MAX_MINUTES = 240
+
+/** What a caller is told when the owner cannot take its call now (#969). */
+export interface BusyInfo {
+  /** "call": the owner is in a call; "ringing": another call is ringing;
+   *  "voice": AgentX Voice is in a turn of the owner's, or recording. */
+  why: "call" | "ringing" | "voice"
+  /** The agent the owner is in a call with, or whose call is ringing. */
+  with: string | null
+  /** When the owner is told again that this call waits, if still busy
+   *  then; null when the wait ends first. Ms since the epoch. */
+  remindAt: number | null
+  /** The call stops waiting then: still busy, it counts as missed. */
+  waitsUntil: number
+}
 
 export type CallResult =
   | { ok: true; call: Call }
@@ -102,17 +121,29 @@ export const SUMMARY_PROMPT =
 
 export class CallService {
   private widgetSeenAt = 0
-  /** Calls waiting for a busy widget, and since when. */
-  private waiting = new Map<string, number>()
+  /** What the widget said with its last poll. */
+  private widget: WidgetState = {}
+  /** Calls waiting for a busy widget: since when, and when the owner was
+   *  last told. Written through to the store, so a restart keeps them. */
+  private waiting: Map<string, Waiting>
 
-  constructor(private deps: CallDeps) {}
+  constructor(private deps: CallDeps) {
+    this.waiting = deps.store.waiting()
+  }
+
+  private setWaiting(id: string, w: Waiting | null): void {
+    if (w) this.waiting.set(id, w)
+    else if (!this.waiting.delete(id)) return
+    this.deps.store.setWaiting(id, w)
+  }
 
   private now(): number { return this.deps.now?.() ?? Date.now() }
   private name(agentId: string): string { return this.deps.agentName(agentId) ?? agentId }
 
-  /** An agent asks for a call, or to see (kind "camera"). 201 ringing,
-   *  202 held as missed (Focus). */
-  async request(input: { agentId?: unknown; reason?: unknown; urgency?: unknown; kind?: unknown }, proof: CallerProof = {}): Promise<CallResult & { rang?: "widget" | "notify" | false }> {
+  /** An agent asks for a call, or to see (kind "camera"). 201 ringing, or
+   *  waiting for a busy owner (`rang: "waiting"`, with `busy`); 202 held
+   *  as missed (Focus). */
+  async request(input: { agentId?: unknown; reason?: unknown; urgency?: unknown; kind?: unknown }, proof: CallerProof = {}): Promise<CallResult & { rang?: Rang; busy?: BusyInfo }> {
     const agentId = String(input.agentId ?? "").trim()
     const reason = String(input.reason ?? "").replace(/\s+/g, " ").trim()
     const urgency: CallUrgency = input.urgency === "urgent" ? "urgent" : "normal"
@@ -152,11 +183,32 @@ export class CallService {
     this.deps.log?.(`[calls] ${agentId} asks ${kind === "camera" ? "to see" : "for a call"} (${urgency}): ${reason}`)
     const rang = await this.ring(call)
     const saved = this.deps.store.get(call.id)!
-    return { ok: true, call: saved, rang }
+    if (rang !== "waiting") return { ok: true, call: saved, rang }
+    // The widget may have come free while the owner was being told.
+    return this.waiting.has(call.id) ? { ok: true, call: saved, rang, busy: this.busyInfo(call) } : { ok: true, call: saved, rang: "widget" }
   }
 
-  /** Ring now, or hold as missed in Focus. Returns how it rang. */
-  private async ring(call: Call): Promise<"widget" | "notify" | false> {
+  /** The caller withdraws its own voice call while it waits or rings, for
+   *  example to send a message instead (#969). */
+  async cancel(input: { agentId?: unknown }, proof: CallerProof = {}): Promise<CallResult> {
+    const agentId = String(input.agentId ?? "").trim()
+    if (!agentId) return { ok: false, status: 400, error: "Required: agentId" }
+    if (!this.deps.isRunningTurn(agentId, proof)) {
+      return { ok: false, status: 403, error: `No running turn of ${agentId} asked for this. An agent withdraws its own call from inside its run.` }
+    }
+    // No sweep first: a call back that is due must not ring just to be withdrawn.
+    const mine = this.deps.store.list({ status: ["ringing", "later"], kind: "voice", limit: 200 }).find((c) => c.agentId === agentId)
+    if (!mine) return { ok: false, status: 404, error: `${agentId} has no call waiting or ringing` }
+    const ended = this.deps.store.transition(mine.id, ["ringing", "later"], { status: "ended", endedAt: this.now(), ringingSince: null, ringAgainAt: null, note: CANCELLED_NOTE })
+    if (!ended) return { ok: false, status: 409, error: `call is ${this.deps.store.get(mine.id)?.status}` }
+    this.setWaiting(mine.id, null)
+    this.deps.log?.(`[calls] ${mine.id} withdrawn by ${agentId}`)
+    return { ok: true, call: ended }
+  }
+
+  /** Ring now, wait for a busy widget, or hold as missed in Focus.
+   *  Returns how it rang. */
+  private async ring(call: Call): Promise<Rang> {
     const focus = (this.deps.focus ?? readFocus)()
     if (focus.active && call.urgency !== "urgent") {
       if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: focusLabel(focus) })) return false
@@ -169,7 +221,13 @@ export class CallService {
         `Open the phone app and tap Show within ${this.deps.config().ringSeconds} s.`)
       return "notify"
     }
-    if (this.widgetAlive()) return "widget"
+    if (this.widgetAlive()) {
+      // Busy by its last poll, or by a call placed since that it will show first.
+      if (!this.widget.busy && !this.otherCalls(call).length) return "widget"
+      this.startWaiting(call)
+      await this.callWaiting(call)
+      return "waiting"
+    }
     await this.notice(call, `${this.name(call.agentId)} is calling`,
       `Open AgentX Voice to answer within ${this.deps.config().ringSeconds} s.`)
     return "notify"
@@ -186,8 +244,55 @@ export class CallService {
     }
   }
 
+  /** The call starts waiting for the busy widget. */
+  private startWaiting(call: Call): void {
+    const now = this.now()
+    this.setWaiting(call.id, { since: now, toldAt: now })
+    this.deps.log?.(`[calls] ${call.id} from ${call.agentId} waits: the widget is busy`)
+  }
+
+  /** Voice calls ringing or answered other than `call`, oldest first. */
+  private otherCalls(call: Call): Call[] {
+    return this.deps.store.list({ status: ["ringing", "answered"], kind: "voice", limit: 200 }).filter((c) => c.id !== call.id).reverse()
+  }
+
+  private async callWaiting(call: Call): Promise<void> {
+    const busy = this.deps.config().busy
+    await this.notice(call, busy.title.replaceAll("{agent}", this.name(call.agentId)), busy.notice)
+  }
+
+  /** Why the owner cannot take `call` now, and how long it waits. */
+  private busyInfo(call: Call): BusyInfo {
+    const cfg = this.deps.config().busy
+    const { since, toldAt } = this.waiting.get(call.id) ?? { since: this.now(), toldAt: this.now() }
+    const others = this.otherCalls(call)
+    const talking = others.find((c) => c.status === "answered")
+    // The call on the pill, or the oldest one it has yet to show.
+    const showing = others.find((c) => c.id === this.widget.showing) ?? others.find((c) => !this.waiting.has(c.id))
+    // After the wait the ring time runs once more before it is missed.
+    const waitsUntil = since + cfg.maxWaitMinutes * 60_000 + this.deps.config().ringSeconds * 1000
+    const remindAt = toldAt + cfg.retryMinutes * 60_000
+    const stopsWaiting = since + cfg.maxWaitMinutes * 60_000
+    return {
+      why: talking ? "call" : showing ? "ringing" : "voice",
+      with: talking ? this.name(talking.agentId) : showing ? this.name(showing.agentId) : null,
+      remindAt: remindAt < stopsWaiting ? remindAt : null,
+      waitsUntil,
+    }
+  }
+
   private missedTitle(call: Call): string {
     return call.kind === "camera" ? `${this.name(call.agentId)} asked to see through your camera` : `Missed call from ${this.name(call.agentId)}`
+  }
+
+  /** Why the owner is in a call now, or null (#394, the call check): a
+   *  voice call answered in the last two hours and not ended, or a live
+   *  widget that says it is busy (a call, the microphone, a turn). */
+  inCall(): string | null {
+    if (this.widgetAlive() && this.widget.busy) return "the widget is busy"
+    const since = this.now() - CALL_HOLD_MAX_MS
+    const live = this.deps.store.list({ status: ["answered"], limit: 5 }).find((c) => (c.answeredAt ?? 0) >= since)
+    return live ? `on a call with ${this.name(live.agentId)}` : null
   }
 
   /** True when the widget polled recently. */
@@ -198,32 +303,43 @@ export class CallService {
   /** The widget's poll: voice calls ringing now, oldest first. Marks it alive. */
   async ringing(widget: WidgetState = {}): Promise<Call[]> {
     this.widgetSeenAt = this.now()
+    this.widget = widget
     await this.hold(widget)
     await this.sweep()
     return this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 }).reverse()
   }
 
   /** A busy widget cannot ring: the ring time of each call it is not
-   *  showing starts over at every poll, for BUSY_WAIT_MAX_MS at most, and
-   *  the owner is told once that the call waits. It starts over once more
-   *  when the widget first shows a call that waited. */
+   *  showing starts over at every poll, for calls.busy.maxWaitMinutes at
+   *  most. The owner is told that the call waits, and again every
+   *  calls.busy.retryMinutes. The ring time starts over once more when the
+   *  widget first shows a call that waited. */
   private async hold(widget: WidgetState): Promise<void> {
     const now = this.now()
+    const busy = this.deps.config().busy
+    // Told after the loop: a poll that overlaps a slow notice must not
+    // carry on from a list and a widget state that are out of date.
+    const tell: Call[] = []
     const live = this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 })
-    for (const id of this.waiting.keys()) if (!live.some((c) => c.id === id)) this.waiting.delete(id)
+    for (const id of [...this.waiting.keys()]) if (!live.some((c) => c.id === id)) this.setWaiting(id, null)
     for (const call of live) {
       if (call.id === widget.showing) {
-        if (this.waiting.delete(call.id)) this.deps.store.transition(call.id, "ringing", { ringingSince: now })
+        if (this.waiting.has(call.id)) {
+          this.setWaiting(call.id, null)
+          this.deps.store.transition(call.id, "ringing", { ringingSince: now })
+        }
         continue
       }
       if (!widget.busy) continue
-      const since = this.waiting.get(call.id)
-      if (since !== undefined && now - since >= BUSY_WAIT_MAX_MS) continue
-      if (!this.deps.store.transition(call.id, "ringing", { ringingSince: now }) || since !== undefined) continue
-      this.waiting.set(call.id, now)
-      this.deps.log?.(`[calls] ${call.id} from ${call.agentId} waits: the widget is busy`)
-      await this.notice(call, `${this.name(call.agentId)} is calling`, "AgentX Voice is busy. The call rings when it is free.")
+      const held = this.waiting.get(call.id)
+      if (held && now - held.since >= busy.maxWaitMinutes * 60_000) continue
+      if (!this.deps.store.transition(call.id, "ringing", { ringingSince: now })) continue
+      if (!held) this.startWaiting(call)
+      else if (now - held.toldAt >= busy.retryMinutes * 60_000) this.setWaiting(call.id, { since: held.since, toldAt: now })
+      else continue
+      tell.push(call)
     }
+    for (const call of tell) await this.callWaiting(call)
   }
 
   /** The phone app's poll: camera asks waiting for the owner, oldest first.
@@ -251,7 +367,10 @@ export class CallService {
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} ended: no hang-up in ${this.deps.config().maxCallMinutes} min`)
       } else if (call.status === "later" && call.ringAgainAt !== null && now >= call.ringAgainAt) {
         const again = this.deps.store.transition(call.id, "later", { status: "ringing", ringingSince: now, ringAgainAt: null })
-        if (again) await this.ring(again)
+        if (!again) continue
+        // A wait from before the snooze does not carry over.
+        this.setWaiting(call.id, null)
+        await this.ring(again)
       }
     }
   }
@@ -323,6 +442,25 @@ export class CallService {
   get(id: string): Call | undefined { return this.deps.store.get(id) }
 
   list(opts: Parameters<CallStore["list"]>[0] = {}): Call[] { return this.deps.store.list(opts) }
+}
+
+/** How a call reached the owner: on the widget, through notify, waiting
+ *  for a busy widget, or not at all (held as missed). */
+export type Rang = "widget" | "notify" | "waiting" | false
+
+/** The note on a call its caller withdrew. */
+export const CANCELLED_NOTE = "withdrawn by the caller"
+
+/** What the caller reads when its call waits for a busy owner. Times are
+ *  in the host's time zone (or `timeZone`), and say which one. */
+export function busyText(busy: BusyInfo, now: number = Date.now(), timeZone?: string): string {
+  const at = (ms: number) => `${new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short", timeZone })} (in ${Math.max(1, Math.round((ms - now) / 60_000))} min)`
+  const why = busy.why === "call" ? `The owner is busy in another call${busy.with ? ` (with ${busy.with})` : ""}.`
+    : busy.why === "ringing" ? `The owner is busy: another call${busy.with ? ` (from ${busy.with})` : ""} is ringing.`
+    : "The owner is busy on the voice widget."
+  return `${why} They were told you are calling, and why. Your call waits and rings by itself as soon as they are free: do not call again. ` +
+    (busy.remindAt !== null ? `Still busy at ${at(busy.remindAt)}, they are told again that you are waiting. ` : "") +
+    `It waits until ${at(busy.waitsUntil)} at most, then counts as a missed call.`
 }
 
 const unknown = (id: string): CallResult => ({ ok: false, status: 404, error: `No such call: ${id}` })

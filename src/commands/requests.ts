@@ -1,13 +1,17 @@
 import { Command } from "commander"
-import { existsSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
-import { RequestStore, type RequestRecord } from "@/requests/store"
+import { CLOSED_STATES, OPEN_STATES, RequestStore, type RequestRecord } from "@/requests/store"
+import { LIST_MAX } from "@/requests/daemon-api"
+import { startOfDay, todayRows } from "@/requests/today"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { findConfigPath } from "@/daemon/config-mutator"
 import { PlanStore, type PlanStep } from "@/requests/plan-store"
 import { ownerStepAction, type OwnerStepAction } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
+import { CHECK_KINDS, DEFAULT_CHECKER_SETTINGS, describeCloseWhen, type CheckKind } from "@/requests/checkers"
+import { activeStepAgentOf, STALL_GROUPS, stalledLoops, waitsOnWords } from "@/requests/loops"
 
 // --- agentx requests — what you asked for that is not finished (#356) ---
 //
@@ -62,12 +66,31 @@ function store(): RequestStore | null {
 
 const when = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
 
+/** "code, about 90 minute(s)": what an agent declared on accept (#1048). */
+function workLabel(work: string | null, minutes: number | null): string {
+  return [work ?? "", minutes !== null ? `about ${Math.round(minutes)} minute(s)` : ""].filter(Boolean).join(", ")
+}
+
 function printRequest(r: RequestRecord): void {
   const colour = r.state === "needs_attention" ? chalk.red : r.state === "waiting_owner" ? chalk.yellow : chalk.dim
   console.log(`  ${chalk.cyan(r.id)}  ${colour(`[${STATE_LABEL[r.state] ?? r.state}]`)} ${chalk.dim(`${when(r.createdAt)} · ${r.channel} · ${r.agentId}`)}`)
-  console.log(`    ${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
+  // What it is first, the owner's words below it (#1126).
+  if (r.headline) console.log(`    ${chalk.bold(r.headline)}${r.headlineBy === "model" ? chalk.dim(" (written by AgentX)") : ""}`)
+  console.log(`    ${r.headline ? chalk.dim("You said: ") : ""}${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
+  if (r.need) console.log(chalk.dim(`    Needed from you: ${r.need}`))
   if (r.state === "waiting_owner" && r.question) console.log(chalk.yellow(`    Question: ${r.question}`))
   if (r.state === "needs_attention" && r.attentionReason) console.log(chalk.red(`    ${r.attentionReason}`))
+  if (r.work || r.estimateMinutes !== null) {
+    const first = workLabel(r.firstWork, r.firstEstimateMinutes)
+    const now = workLabel(r.work, r.estimateMinutes)
+    console.log(chalk.dim(`    Work: ${now}${first && first !== now ? ` (first declared: ${first})` : ""}`))
+  }
+  if (r.promise && r.owedTo) console.log(chalk.dim(`    Promised to ${r.owedTo}`))
+  if (r.dueAt) console.log((r.closedAt === null && Date.now() > r.dueAt ? chalk.red : chalk.dim)(`    Due ${when(r.dueAt)}`))
+  if (r.closeWhen) {
+    const v = r.verifyState ? ` [${r.verifyState}${r.verifyDetail ? `: ${r.verifyDetail}` : ""}]` : ""
+    console.log((r.verifyState === "failed" || r.verifyState === "unverified" ? chalk.yellow : chalk.dim)(`    Closes when ${describeCloseWhen(r.closeWhen)}${v}`))
+  }
   if (r.evidence) console.log(chalk.green(`    Evidence: ${r.evidence}`))
   if (r.closeReason) console.log(chalk.dim(`    Reason: ${r.closeReason}`))
 }
@@ -77,9 +100,11 @@ requests
   .alias("ls")
   .description("open requests, oldest first")
   .option("--json", "machine-readable output")
-  .action((opts: { json?: boolean }) => {
+  .option("--stalled", "only the stalled ones (past their due time, or quiet too long), grouped by what they wait on")
+  .action((opts: { json?: boolean; stalled?: boolean }) => {
     const s = store()
     if (!s) return
+    if (opts.stalled) { printStalled(s, !!opts.json); return }
     const items = s.listOpen()
     if (opts.json) { console.log(JSON.stringify(items, null, 2)); return }
     if (!readRequestSettings().enabled) console.log(chalk.dim("  requests are off: turn them on with `agentx requests settings --enabled on`"))
@@ -87,6 +112,62 @@ requests
     for (const r of items) printRequest(r)
     console.log(chalk.dim(`\n  ${items.length} open. Close one: agentx requests done <id> --evidence <link> · agentx requests drop <id>`))
   })
+
+requests
+  .command("today")
+  .description("what you asked since 00:00 Tunis and where each one landed; no home first, in red")
+  .option("--json", "machine-readable output, for the Desk and voice")
+  .action((opts: { json?: boolean }) => {
+    const s = store()
+    if (!s) return
+    const since = startOfDay(Date.now())
+    const { items, total } = s.query({ states: [...OPEN_STATES, ...CLOSED_STATES], since, limit: LIST_MAX, newest: true })
+    const plans = planStore()
+    const rows = todayRows(items.map((r) => ({ ...r, links: s.links(r.id) })), { hasPlan: (id) => !!plans?.get(id) })
+    const counts = {
+      total, noHome: rows.filter((r) => r.noHome).length,
+      open: rows.filter((r) => (OPEN_STATES as readonly string[]).includes(r.state)).length,
+      done: rows.filter((r) => r.state === "done").length,
+    }
+    if (opts.json) { console.log(JSON.stringify({ since, counts, truncated: total > items.length, rows }, null, 2)); return }
+    console.log(`  Since 00:00 Tunis: ${counts.total} request(s), ${counts.open} open, ${counts.done} done, ` +
+      (counts.noHome ? chalk.red(`${counts.noHome} with no home`) : "all with a home"))
+    if (total > items.length) console.log(chalk.dim(`  only the newest ${items.length} are listed`))
+    for (const r of rows) {
+      const where = r.noHome ? chalk.red("no home") : chalk.dim(r.landed.map((l) => `${l.kind} ${l.ref}`).join(" · "))
+      console.log(`  ${(r.noHome ? chalk.red : chalk.white)(r.time)}  ${chalk.dim(`[${STATE_LABEL[r.state] ?? r.state}] ${r.owner}`)}  ${r.words}`)
+      console.log(`         → ${where}  ${chalk.dim(r.id)}`)
+    }
+  })
+
+/** This node's agent ids, from agentx.json. Empty when it cannot be read. */
+function agentIds(): Set<string> {
+  try { return new Set(Object.keys(JSON.parse(readFileSync(findConfigPath(), "utf-8"))?.agents ?? {})) } catch { return new Set() }
+}
+
+function printStalled(s: RequestStore, json: boolean): void {
+  const agents = agentIds()
+  const groups = stalledLoops(s.listOpen(), readRequestSettings().staleAfterHours, Date.now(), {
+    isAgent: (id) => agents.has(id), activeStepAgent: activeStepAgentOf(planStore()),
+  })
+  if (json) {
+    console.log(JSON.stringify(Object.fromEntries(STALL_GROUPS.map((g) => [g, groups[g].map((l) => ({ ...l.request, waitsOn: l.who, why: l.why }))])), null, 2))
+    return
+  }
+  const title: Record<string, string> = { owner: "Waiting on you", agent: "Waiting on an agent", person: "Waiting on an outside person" }
+  let n = 0
+  for (const g of STALL_GROUPS) {
+    if (!groups[g].length) continue
+    console.log(chalk.bold(`\n  ${title[g]} (${groups[g].length})`))
+    for (const l of groups[g]) {
+      printRequest(l.request)
+      console.log(chalk.red(`    Stalled: ${l.why}${g === "owner" ? "" : ` · waiting on ${waitsOnWords(g, l.who)}`}`))
+      n++
+    }
+  }
+  if (!n) { console.log(chalk.dim("  nothing is stalled")); return }
+  console.log(chalk.dim(`\n  ${n} stalled. Close one by hand: agentx requests done <id> --reason <text> · agentx requests drop <id>`))
+}
 
 requests
   .command("show <id>")
@@ -130,14 +211,18 @@ requests
   })
 
 function closeCommand(name: "done" | "drop", description: string, flag: string, missing: string): void {
-  requests
+  const cmd = requests
     .command(`${name} <id>`)
     .description(description)
     .option(flag, name === "done" ? "link to the proof: PR, issue, message, deploy" : "why it is dropped")
-    .action((id: string, opts: { evidence?: string; reason?: string }) => {
+  if (name === "done") cmd.option("--reason <text>", "close it by hand without a link, saying why (\"checked by hand\"); also closes a loop its check cannot verify")
+  cmd.action((id: string, opts: { evidence?: string; reason?: string }) => {
       const s = store()
       if (!s) return
-      const detail = name === "done" ? opts.evidence : opts.reason ?? "dropped by the owner"
+      // The owner's hand close (#1039): the record says it skipped any check.
+      const detail = name === "done"
+        ? opts.evidence ?? (opts.reason ? `closed by owner: ${opts.reason}` : undefined)
+        : opts.reason ?? "dropped by the owner"
       if (!detail) { console.error(chalk.red(`  ${missing}`)); process.exitCode = 1; return }
       const r = s.get(id)
       if (!r || r.state === "candidate") { console.error(chalk.red(`  no request "${id}"`)); process.exitCode = 1; return }
@@ -147,7 +232,7 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
       console.log(chalk.green(`  ✓ ${id} ${name === "done" ? "closed as done" : "dropped"}`))
     })
 }
-closeCommand("done", "close a request as finished, with a link to the evidence", "--evidence <link>", "a finished request needs --evidence <link>")
+closeCommand("done", "close a request as finished, with a link to the evidence or the reason", "--evidence <link>", "a finished request needs --evidence <link> or --reason <text>")
 closeCommand("drop", "drop a request you no longer want", "--reason <text>", "")
 
 requests
@@ -158,11 +243,17 @@ requests
   .option("--channels <name,...>", "channels to record on; \"all\" for every channel a person writes on")
   .option("--stale-hours <n>", "hours without activity before an open request comes back to you")
   .option("--retention-days <n>", "days a closed request is kept")
+  .option("--headlines <on|off>", "write a headline for a request its agent did not describe (one small model call each)")
+  .option("--settle <on|off>", "close a quiet request whose handed work all came back done, instead of bringing it back to you")
   .option("--plans <on|off>", "follow requests of two or more steps as tracked plans")
   .option("--stall-minutes <n>", "minutes without progress before a plan step's agent is nudged")
   .option("--max-nudges <n>", "nudges per step before it counts as blocked and you are told")
   .option("--approve-kinds <kind,...>", "step kinds you approve once when the plan is made; \"none\" to clear")
   .option("--plans-off-for <agent,...>", "agents that may not open a plan; \"none\" to clear")
+  .option("--plan-for <work,...>", "kinds of work an agent must plan before it starts (default code); \"none\" to clear")
+  .option("--plan-over <minutes>", "work estimated over this many minutes needs a plan (default 30); 0 turns it off")
+  .option("--checks <kind,...>", `checks agents may use to close a loop (${CHECK_KINDS.join(", ")}); "none" to turn them all off`)
+  .option("--check-every <minutes>", "how often each open loop's check runs")
   .action(async (opts: Record<string, string | undefined>) => {
     const patch: RequestSettingsPatch = {}
     try {
@@ -182,6 +273,14 @@ requests
       patch.channels = list(opts.channels, "all")
       patch.staleAfterHours = num("--stale-hours", opts.staleHours)
       patch.retentionDays = num("--retention-days", opts.retentionDays)
+      if (opts.headlines !== undefined) {
+        if (opts.headlines !== "on" && opts.headlines !== "off") throw new Error("--headlines takes on or off")
+        patch.headlines = { enabled: opts.headlines === "on" }
+      }
+      if (opts.settle !== undefined) {
+        if (opts.settle !== "on" && opts.settle !== "off") throw new Error("--settle takes on or off")
+        patch.settleHandedBack = opts.settle === "on"
+      }
       const plans: NonNullable<RequestSettingsPatch["plans"]> = {}
       if (opts.plans !== undefined) {
         if (opts.plans !== "on" && opts.plans !== "off") throw new Error("--plans takes on or off")
@@ -195,7 +294,22 @@ requests
       }
       plans.approveKinds = list(opts.approveKinds, "none")
       plans.disabledAgents = list(opts.plansOffFor, "none")
+      plans.requireForWork = list(opts.planFor, "none")
+      if (opts.planOver !== undefined) {
+        const n = Number(opts.planOver)
+        if (!(n >= 0)) throw new Error("--plan-over must be a number of minutes, 0 or more")
+        plans.requireOverMinutes = n
+      }
       if (Object.values(plans).some((v) => v !== undefined)) patch.plans = plans
+      const checkers: NonNullable<RequestSettingsPatch["checkers"]> = {}
+      const kinds = list(opts.checks, "none")
+      if (kinds) {
+        const bad = kinds.filter((k) => !(CHECK_KINDS as readonly string[]).includes(k))
+        if (bad.length) throw new Error(`unknown check ${bad.join(", ")}: use ${CHECK_KINDS.join(", ")}`)
+        checkers.enabled = kinds as CheckKind[]
+      }
+      checkers.checkEveryMinutes = num("--check-every", opts.checkEvery)
+      if (Object.values(checkers).some((v) => v !== undefined)) patch.checkers = checkers
     } catch (e: any) {
       console.error(chalk.red(`  ${e.message}`)); process.exitCode = 1; return
     }
@@ -210,9 +324,18 @@ requests
     console.log(`  Counts as you           ${s.from.length ? s.from.join(", ") : "only voice, the app and the dashboard on this machine"}`)
     console.log(`  Comes back after        ${s.staleAfterHours} hour(s) without activity`)
     console.log(`  Closed requests kept    ${s.retentionDays} day(s)`)
+    console.log(`  Headlines               ${s.headlines?.enabled === false ? "off: titled with the start of your words" : "on: written when the agent gave none"}`)
+    console.log(`  Handed work came back   ${s.settleHandedBack === false ? "comes back to you when quiet" : "closed when quiet, with its link or marked unproven"}`)
     const p = s.plans ?? DEFAULT_PLAN_SETTINGS
     console.log(`  Plans                   ${p.enabled ? "on" : "off"}`)
     console.log(`  Nudge a quiet step      after ${p.stallMinutes} minute(s), up to ${p.maxNudges} time(s)`)
     console.log(`  You approve up front    ${p.approveKinds.length ? p.approveKinds.join(", ") : "nothing"}`)
     console.log(`  Plans off for           ${p.disabledAgents.length ? p.disabledAgents.join(", ") : "no agent"}`)
+    const over = p.requireOverMinutes ?? DEFAULT_PLAN_SETTINGS.requireOverMinutes
+    const kinds = p.requireForWork ?? DEFAULT_PLAN_SETTINGS.requireForWork
+    console.log(`  Plan before starting    ${[kinds.length ? `${kinds.join(", ")} work` : "", over > 0 ? `work over ${over} minute(s)` : ""].filter(Boolean).join("; ") || "never required"}`)
+    const c = s.checkers ?? DEFAULT_CHECKER_SETTINGS
+    console.log(`  Loop checks             ${c.enabled.length ? c.enabled.join(", ") : "off"}, every ${c.checkEveryMinutes} minute(s)`)
+    const repos = Object.keys(c.repos)
+    console.log(`  Repos for git-ancestor  ${repos.length ? repos.join(", ") : "none (requests.checkers.repos in agentx.json)"}`)
   })

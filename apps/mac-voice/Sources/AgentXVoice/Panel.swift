@@ -36,6 +36,9 @@ final class Panel: NSPanel {
     let separator = NSBox()
     /// Hidden by close, Esc or the menu until the next talk key.
     var dismissed = false
+    /// A recording holds the floor (#924): out until it ends, whatever is
+    /// rendered meanwhile, then back as it would be.
+    private(set) var concealed = false
     /// Full, or reduced (#457): the orb alone, a small circle with no words
     /// and no buttons, dragged and remembered apart from the pill; with the
     /// character standing in for the orb, the character alone, its speech
@@ -531,6 +534,14 @@ final class Panel: NSPanel {
         render(current)
     }
 
+    /// Out for a recording, and back when it ends.
+    @MainActor
+    func setConcealed(_ on: Bool) {
+        guard concealed != on else { return }
+        concealed = on
+        render(current)
+    }
+
     /// The orb at the pill's head, or none while the character shows.
     @MainActor
     func setShowsOrb(_ on: Bool) {
@@ -642,7 +653,7 @@ final class Panel: NSPanel {
         // A caption shows like any words; away with none, the hint does not.
         let quiet = state.isMeta && !expanded && busyCount == 0
         let gone = reduced && !showsOrb
-        if dismissed || gone || (quiet && idle == .nothing) || (quiet && idle == .hint && !alwaysVisible && !reduced) { hide() } else { show() }
+        if dismissed || concealed || gone || (quiet && idle == .nothing) || (quiet && idle == .hint && !alwaysVisible && !reduced) { hide() } else { show() }
         // After showing or hiding: a still character draws its bubble's
         // tail only while the bubble is on screen.
         onLook?(state, tint, colors)

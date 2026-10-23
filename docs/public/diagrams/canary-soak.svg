@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 860" width="920" height="860" role="img" aria-labelledby="t d" style="--cycle:4.2s">
+<title id="t">How a release soaks before it reaches a second machine</title>
+<desc id="d">Six steps in two parts. On this machine: build the release, restart the daemon on it, and let it run for the soak time while AgentX counts restarts, crashes and failed tasks. Then the deploy: agentx daemon deploy checks the soak, copies the same release to the second machine, and that machine restarts when idle. A release that is still soaking or failed is refused, with the time left or the failed check.</desc>
+<defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
+.h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.sub { font-size: 16px; fill: #475569; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
+.band.warn { fill: #B45309; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: #475569; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: #475569; }
+.card { fill: #fff; stroke: #E2E8F0; stroke-width: 1.25; filter: url(#soft); }
+.card.accent { stroke: #C7D9FF; }
+.card.win { stroke: #0B0D12; stroke-width: 1.5; }
+.link { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wrap { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; animation: draw 0.9s ease-in-out backwards; }
+.rise { animation: rise 0.55s cubic-bezier(.2,.7,.2,1) backwards; }
+.fade { animation: fade 0.4s ease-out backwards; }
+.pulse { transform-box: fill-box; transform-origin: center; opacity: 0; animation: pulse var(--cycle) ease-out infinite; }
+.blink { animation: blink 1.6s ease-in-out infinite; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0% { opacity: .7; transform: scale(1); } 9% { opacity: 0; transform: scale(1.9); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
+</style>
+<rect width="920" height="860" rx="24" fill="#FFFFFF"/>
+<text x="44" y="56" class="h1" text-anchor="start">A release soaks before it travels</text>
+<text x="44" y="82" class="sub" text-anchor="start">It runs here first. Only a release that stayed healthy is copied on.</text>
+<circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">This machine (you)</text>
+<circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">The second machine</text>
+<rect x="20" y="104" width="880" height="200" rx="20" fill="#F3F7FF"/>
+<text x="44" y="132" class="band" text-anchor="start">IT RUNS HERE FIRST</text>
+<g class="rise" style="animation-delay:0.32s">
+<rect x="44" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:4.62s"/>
+<circle cx="70" cy="176" r="15" fill="#1A66FF"/>
+<text x="70" y="181" class="num" text-anchor="middle">1</text>
+<text x="60" y="220" class="title" text-anchor="start">Build the release</text>
+<text x="60" y="242" class="note" text-anchor="start">commit, then build;</text>
+<text x="60" y="259" class="note" text-anchor="start">the commit is the release</text>
+</g>
+<g class="rise" style="animation-delay:0.64s">
+<rect x="328" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:5.32s"/>
+<circle cx="354" cy="176" r="15" fill="#1A66FF"/>
+<text x="354" y="181" class="num" text-anchor="middle">2</text>
+<text x="344" y="220" class="title" text-anchor="start">Restart this daemon</text>
+<text x="344" y="241" class="title" text-anchor="start">on it</text>
+<text x="344" y="263" class="note" text-anchor="start">agentx daemon restart</text>
+<text x="344" y="280" class="note" text-anchor="start">--when-idle</text>
+</g>
+<g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
+<g class="rise" style="animation-delay:0.96s">
+<rect x="612" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="638" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:6.02s"/>
+<circle cx="638" cy="176" r="15" fill="#1A66FF"/>
+<text x="638" y="181" class="num" text-anchor="middle">3</text>
+<text x="628" y="220" class="title" text-anchor="start">It soaks for 2 hours</text>
+<text x="628" y="242" class="note" text-anchor="start">restarts, crashes and</text>
+<text x="628" y="259" class="note" text-anchor="start">failed tasks are counted</text>
+</g>
+<g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
+<rect x="20" y="320" width="880" height="200" rx="20" fill="#F6F7F9"/>
+<text x="92" y="348" class="band" text-anchor="start">THEN IT TRAVELS</text>
+<path d="M744 284 V302 Q744 312 734 312 H80 Q70 312 70 322 V360" class="wrap" pathLength="100" style="animation-delay:1.26s"/>
+<path d="M65 355 L70 361 L75 355" class="link fade" style="animation-delay:2.16s"/>
+<g class="fade" style="animation-delay:1.56s"><rect x="651" y="301" width="63" height="22" rx="11" fill="#1A66FF"/><text x="682.5" y="316.5" class="pill" text-anchor="middle">Passed</text></g>
+<g class="rise" style="animation-delay:1.28s">
+<rect x="44" y="364" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="392" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:6.72s"/>
+<circle cx="70" cy="392" r="15" fill="#1A66FF"/>
+<text x="70" y="397" class="num" text-anchor="middle">4</text>
+<text x="60" y="436" class="title" text-anchor="start">Run the deploy</text>
+<text x="60" y="458" class="note" text-anchor="start">agentx daemon deploy</text>
+<text x="60" y="475" class="note" text-anchor="start">checks the soak first</text>
+</g>
+<g class="rise" style="animation-delay:1.60s">
+<rect x="328" y="364" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="392" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:7.42s"/>
+<circle cx="354" cy="392" r="15" fill="#1A66FF"/>
+<text x="354" y="397" class="num" text-anchor="middle">5</text>
+<text x="344" y="436" class="title" text-anchor="start">The same release</text>
+<text x="344" y="457" class="title" text-anchor="start">is copied</text>
+<text x="344" y="479" class="note" text-anchor="start">nothing else changes</text>
+<text x="344" y="496" class="note" text-anchor="start">on the way</text>
+</g>
+<g class="fade" style="animation-delay:1.43s"><path d="M311 432 H323" class="link"/><path d="M319 428 L324 432 L319 436" class="link"/></g>
+<g class="rise" style="animation-delay:1.92s">
+<rect x="612" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:8.12s"/>
+<circle cx="638" cy="392" r="15" fill="#0B0D12"/>
+<text x="638" y="397" class="num" text-anchor="middle">6</text>
+<text x="628" y="436" class="title" text-anchor="start">It restarts</text>
+<text x="628" y="457" class="title" text-anchor="start">when idle</text>
+<text x="628" y="479" class="note" text-anchor="start">no running task</text>
+<text x="628" y="496" class="note" text-anchor="start">is cut off</text>
+</g>
+<g class="fade" style="animation-delay:1.75s"><path d="M595 432 H607" class="link"/><path d="M603 428 L608 432 L603 436" class="link"/></g>
+<g class="rise" style="animation-delay:2.32s"><rect x="44" y="548" width="264" height="68" rx="14" class="card"/><rect x="44" y="548" width="6" height="68" rx="3" fill="#DC2626"/><text x="66" y="577" class="title" text-anchor="start">Still soaking, or failed</text><text x="66" y="599" class="note" text-anchor="start">The deploy stops and says why.</text></g>
+<g class="rise" style="animation-delay:3.12s"><text x="44" y="664" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
+<g class="rise" style="animation-delay:3.32s"><circle cx="49" cy="690.5" r="4" fill="#B45309"/><text x="62" y="696" class="symptom" text-anchor="start">“soaking: 75 min left”</text><text x="62" y="716" class="note" text-anchor="start">Wait, then run the deploy again.</text></g>
+<g class="rise" style="animation-delay:3.57s"><circle cx="465" cy="690.5" r="4" fill="#B45309"/><text x="478" y="696" class="symptom" text-anchor="start">“failed: crashes …”</text><text x="478" y="716" class="note" text-anchor="start">Fix it, commit, and soak the new release.</text></g>
+<g class="rise" style="animation-delay:3.82s"><circle cx="49" cy="742.5" r="4" fill="#B45309"/><text x="62" y="748" class="symptom" text-anchor="start">“has not run on this daemon”</text><text x="62" y="768" class="note" text-anchor="start">Restart this daemon on that commit.</text></g>
+<g class="rise" style="animation-delay:4.07s"><circle cx="465" cy="742.5" r="4" fill="#B45309"/><text x="478" y="748" class="symptom" text-anchor="start">“uncommitted changes”</text><text x="478" y="768" class="note" text-anchor="start">Commit first: a release is a commit.</text></g>
+</svg>

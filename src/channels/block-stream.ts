@@ -147,21 +147,19 @@ export class BlockStream {
     const block = this.buffer.slice(0, cutAt)
     this.buffer = this.buffer.slice(cutAt)
 
-    if (this.config.humanPacing) {
-      const delay = 800 + Math.random() * 1700 // 800-2500ms
-      setTimeout(() => this.emitImmediate(block), delay)
-    } else {
-      this.emitImmediate(block)
-    }
+    // Human pacing delays inside the chain (not via a detached timer), so
+    // paced blocks stay in order and flush() waits for them.
+    const delay = this.config.humanPacing ? 800 + Math.random() * 1700 : 0 // 800-2500ms
+    this.emitImmediate(block, delay)
   }
 
-  private emitImmediate(block: string): void {
+  private emitImmediate(block: string, delayMs = 0): void {
     this.lastEmitTime = Date.now()
     // Append to the serialized chain so emissions run in order and flush()
     // can await the tail. Swallow per-emission errors — streaming is
     // best-effort and must not break the chain for subsequent blocks.
     this.lastEmission = this.lastEmission.then(() =>
-      Promise.resolve()
+      (delayMs > 0 ? new Promise<void>((r) => setTimeout(r, delayMs)) : Promise.resolve())
         .then(() => this.emitter(block))
         .catch(() => { /* best-effort */ })
     )

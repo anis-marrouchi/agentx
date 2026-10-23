@@ -94,6 +94,7 @@ agentx desktop start
 | `agentx doctor` | Check local installation and prerequisites |
 | `agentx notify "<message>"` | Notify the phone app and show a Mac banner, held during Focus; `--proof` captures the banner; see [Get notified](../jobs/notifications.md) |
 | `agentx call request --reason "…"` | From inside an agent's run: ring the owner for a live voice call (`--urgent`); see [Calls from your agents](../dashboard/calls.md) |
+| `agentx call cancel` | From inside an agent's run: withdraw its call that is still waiting or ringing |
 | `agentx call list` | Recent calls (`--status missed`, `--limit`, `--json`) |
 | `agentx call answer <id>`, `agentx call decline <id>`, `agentx call hangup <id>`, `agentx call later <id> [minutes]` | Act on a call from the terminal |
 | `agentx call allow <agent>`, `agentx call disallow <agent>` | Who may call you (`calls.allow`; `"*"` for every agent). The same list lets an agent ask to see through your phone camera |
@@ -176,6 +177,7 @@ agentx attach as helper
 | `agentx workflow add <file>` | Import a definition |
 | `agentx workflow run <id-or-file>` | Execute the named workflow; may perform external actions. Fails if the workflow is not active |
 | `agentx workflow runs [id]` | Inspect runs |
+| `agentx workflow pilot-report <live> <pilot>` | Compare a pilot workflow with the live one it ran beside: cost per run, hand-backs, failures |
 | `agentx workflow trace <id>` | Inspect execution details |
 | `agentx workflow cancel <runId>` | Stop a run; a followed run's reminders stop and you get its summary |
 | `agentx workflow run <id> --follow --title "…" --tag client:example-co` | Start a run AgentX follows to the end ([follow a request](../jobs/follow-up-workflows.md)) |
@@ -208,7 +210,7 @@ One list of every decision waiting for you: [Approvals](../dashboard/approvals.m
 | Command | What it does |
 |---|---|
 | `agentx approvals list [--all] [--json]` | What is waiting, most urgent first; `--all` includes items put off |
-| `agentx approvals approve <key> [--note] [--force] [--choice] [--text]` | Say yes; `--force` approves a wiki lesson whose article changed since; `--choice` and `--text` answer a card that offers choices |
+| `agentx approvals approve <key> [--note] [--force] [--choice] [--text]` | Say yes; `--force` approves a wiki lesson whose article changed since; `--choice` and `--text` answer a card that offers choices; without `--choice`, the suggested choice is taken |
 | `agentx approvals reject <key> [--note]` | Say no |
 | `agentx approvals later <key> [--hours]` | Put an item off (default 24 hours) |
 | `agentx approvals request --agent … --title … --ask … --recommend … --if-silent … [--choice …] [--draft] [--say] [--context]` | Raise a decision card yourself, for example to test |
@@ -223,12 +225,12 @@ What you asked agents for that is not finished: [Keep track of what you asked fo
 
 | Command | What it does |
 |---|---|
-| `agentx requests list [--json]` | Open requests, oldest first |
+| `agentx requests list [--json] [--stalled]` | Open requests, oldest first; `--stalled` for the stalled ones, grouped by what they wait on |
 | `agentx requests show <id>` | One request and the runs, delegations and cards linked to it; its plan, step by step, and the plan's log |
 | `agentx requests step <id> <step> --retry\|--skip\|--done [--note]` | Move a step of a request's plan on: hand it over again, skip it, or mark it done |
-| `agentx requests done <id> --evidence <link>` | Close a request as finished, with a link to the proof |
+| `agentx requests done <id> --evidence <link>\|--reason <text>` | Close a request as finished, with a link to the proof, or by hand with the reason |
 | `agentx requests drop <id> [--reason]` | Drop a request you no longer want |
-| `agentx requests settings [options]` | Show or change who counts as you, the channels, the quiet time, how long closed requests are kept, and the plan settings (`--plans`, `--stall-minutes`, `--max-nudges`, `--approve-kinds`, `--plans-off-for`) |
+| `agentx requests settings [options]` | Show or change who counts as you, the channels, the quiet time, how long closed requests are kept, the headlines (`--headlines`), the plan settings (`--plans`, `--stall-minutes`, `--max-nudges`, `--approve-kinds`, `--plans-off-for`, `--plan-for`, `--plan-over`) and the checks (`--checks`, `--check-every`) |
 
 ## Agent memory
 

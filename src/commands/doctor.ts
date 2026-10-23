@@ -9,6 +9,8 @@ import { loadDaemonConfig } from "@/daemon/config"
 import { findOnPath, plistPathEnv } from "@/desktop/install"
 import { localSettings } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
+import { loadNativeAdapter, type NativeAdapter } from "@/native"
+import { readMirror } from "@/approvals/mirror"
 import { nodeVersionSupported } from "@/utils/node-version"
 
 // --- agentx doctor ---
@@ -49,9 +51,12 @@ export async function runDoctorChecks(
   if (cfg) runWorkspaceChecks(checks, cfg)
   if (cfg) runWorkspaceSettingsChecks(checks, cfg)
   if (cfg) runRoutingChecks(checks, cfg)
+  if (cfg) runMeshTokenChecks(checks, cfg)
   if (cfg) runCodegraphChecks(checks, cfg)
   if (cfg) await runNotificationChecks(checks, cfg)
   if (cfg) runReminderChecks(checks, cfg)
+  if (cfg) await runNativeChecks(checks, cfg)
+  if (cfg) runMirrorChecks(checks, cfg)
   if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
   return { checks, summary: summarize(checks) }
 }
@@ -86,6 +91,53 @@ export async function runNotificationChecks(checks: Check[], cfg: any, status = 
     title: helper.message,
     detail: helper.path,
     fix: helper.fix,
+  })
+}
+
+/** Which native apps AgentX can use on this machine (#1062). Shown on every
+ *  OS. A missing capability is information, not a fault: the features that
+ *  need one say so in their own checks. */
+export async function runNativeChecks(checks: Check[], cfg: any, adapter?: NativeAdapter): Promise<void> {
+  let d: Awaited<ReturnType<NativeAdapter["describe"]>>
+  try {
+    d = await (adapter ?? loadNativeAdapter(cfg)).describe()
+  } catch (e: any) {
+    checks.push({ severity: "warn", group: "Native", title: "Native apps: could not be read", detail: e?.message ?? String(e) })
+    return
+  }
+  const can = (["tasks", "notes", "banner", "sound", "focus"] as const).filter((c) => d[c])
+  checks.push({
+    severity: "ok",
+    group: "Native",
+    title: d.os === "none" ? "Native apps: none on this machine" : `Native apps (${d.os}): ${can.join(", ") || "nothing available"}`,
+    detail: d.problems.join(" ") || undefined,
+  })
+}
+
+/** native.mirror.enabled: is there a task app, and how did the last passes go? */
+export function runMirrorChecks(checks: Check[], cfg: any, root = process.cwd(), adapter: NativeAdapter = loadNativeAdapter(cfg)): void {
+  const m = cfg.native?.mirror
+  if (!m?.enabled) return
+  if (!adapter.tasks) {
+    checks.push({
+      severity: "warn",
+      group: "Native",
+      title: "Reminders mirror is on, but this machine has no task app",
+      detail: "native.mirror.enabled is set; nothing is mirrored here.",
+      fix: "Turn it on on the machine that holds the owner's cards (the Mac), or set native.mirror.enabled to false here.",
+    })
+    return
+  }
+  const file = readMirror(root)
+  const entries = Object.values(file.items)
+  const open = entries.filter((e) => e.state === "open").length
+  const failed = entries.filter((e) => e.state === "failed").length
+  checks.push({
+    severity: file.lastError || failed ? "warn" : "ok",
+    group: "Native",
+    title: `Reminders mirror: ${open} open in "${m.list}"${failed ? `, ${failed} could not be added` : ""}`,
+    detail: file.lastError ? `Last error ${file.lastError.at}: ${file.lastError.message}` : undefined,
+    fix: file.lastError ? "Run remindctl status, and allow Reminders for the app that runs the daemon in System Settings › Privacy & Security › Reminders." : undefined,
   })
 }
 
@@ -321,14 +373,7 @@ function runReferenceChecks(checks: Check[], cfg: any): void {
     checks.push({ severity: "ok", group: "Secrets", title: "No ${VAR} references in agentx.json" })
     return
   }
-  const envFile = resolve(process.cwd(), ".env")
-  const envFromFile: Record<string, string> = {}
-  if (existsSync(envFile)) {
-    for (const line of readFileSync(envFile, "utf-8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i)
-      if (m) envFromFile[m[1]] = m[2]
-    }
-  }
+  const envFromFile = readEnvFile()
   const missing: string[] = []
   const empty: string[] = []
   for (const name of refs) {
@@ -357,6 +402,67 @@ function runReferenceChecks(checks: Check[], cfg: any): void {
       })
     }
   }
+}
+
+/** The install's .env as name -> raw value; empty when there is none. */
+function readEnvFile(): Record<string, string> {
+  const envFile = resolve(process.cwd(), ".env")
+  const out: Record<string, string> = {}
+  if (existsSync(envFile)) {
+    for (const line of readFileSync(envFile, "utf-8").split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i)
+      if (m) out[m[1]] = m[2]
+    }
+  }
+  return out
+}
+
+/** A mesh peer with no token of its own, or with this node's MESH_TOKEN,
+ *  can't be told apart from any other caller holding that token. The
+ *  daemon then treats its calls as the owner's, not that peer's. Warn,
+ *  never fail: a small mesh may run on one shared token on purpose. */
+export function meshPeerTokenChecks(
+  peers: ReadonlyArray<{ name: string; token?: string }>,
+  meshToken: string | undefined,
+): Check[] {
+  const why = "With a shared token this node cannot tell which peer is calling. " +
+    "For example, closing an approval card forwarded from that peer is refused, and its stop/resume signals are judged as the owner's."
+  const fix = "Give this pair a token of its own: set the same new value as mesh.peers[].token here and on the peer."
+  const out: Check[] = []
+  for (const p of peers) {
+    const token = (p.token ?? "").trim()
+    if (!token) {
+      out.push({ severity: "warn", group: "Mesh", title: `mesh peer "${p.name}" has no token; calls to it use the shared MESH_TOKEN`, detail: why, fix })
+    } else if (meshToken && token === meshToken) {
+      out.push({ severity: "warn", group: "Mesh", title: `mesh peer "${p.name}" uses this node's own MESH_TOKEN`, detail: why, fix })
+    }
+  }
+  if (peers.length > 0 && out.length === 0) {
+    out.push({ severity: "ok", group: "Mesh", title: `${peers.length} mesh peer(s), each with a token of its own` })
+  }
+  return out
+}
+
+function runMeshTokenChecks(checks: Check[], cfg: any): void {
+  checks.push(...meshTokenChecksFromConfig(cfg))
+}
+
+/** meshPeerTokenChecks on agentx.json, with tokens and MESH_TOKEN read
+ *  from the environment and the install's .env. */
+export function meshTokenChecksFromConfig(
+  cfg: any,
+  procEnv: Record<string, string | undefined> = process.env,
+  fileEnv: Record<string, string> = readEnvFile(),
+): Check[] {
+  // As the daemon reads it (loadDotEnv): an empty variable falls through
+  // to .env, and quotes are kept as part of the value.
+  const value = (name: string) => (procEnv[name] || fileEnv[name] || "").trim()
+  // agentx.json may name a token as ${VAR}; the daemon expands it from the environment.
+  const expand = (raw: unknown) => typeof raw === "string" ? raw.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/gi, (_, n) => value(n)) : undefined
+  const peers = ((cfg.mesh?.peers ?? []) as Array<{ name?: unknown; token?: unknown }>)
+    .filter((p) => typeof p?.name === "string")
+    .map((p) => ({ name: p.name as string, token: expand(p.token) }))
+  return meshPeerTokenChecks(peers, value("MESH_TOKEN") || undefined)
 }
 
 function collectEnvRefs(node: unknown, into: Set<string>): void {

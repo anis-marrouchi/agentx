@@ -40,7 +40,14 @@ export function isMeshGatedPath(path: string): boolean {
     // Approvals list held memory facts and draft wiki articles, and a card
     // written from off-box would ask the operator in an agent's name.
     path === "/approvals" || path.startsWith("/approvals/") ||
+    // What is on the owner's screen (#1100): card titles, held notices,
+    // queued spoken lines and requests, with who raised each.
+    path === "/screen" ||
+    // A note is written in an agent's name into the owner's notes (#1062).
+    path === "/native/notes" ||
     path === "/requests" || path.startsWith("/requests/") ||
+    // Watchers carry each watched task's summary and who handed it over (#1030).
+    path === "/watchers" || path.startsWith("/watchers/") ||
     // Follow-up runs name people, chats and what was said to them (#788).
     path === "/follow-up" || path.startsWith("/follow-up/") ||
     // Recent events name agents, chats and errors across the node.
@@ -79,7 +86,11 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/api/wiki/curate" || path === "/api/wiki/curate/restore" ||
     // Stopped tasks and their resume plans (#857): each holds the request
     // and what the agent did. Stop and resume are control posts below.
-    path === "/api/signals/stopped" || path.startsWith("/api/signals/stopped/")
+    path === "/api/signals/stopped" || path.startsWith("/api/signals/stopped/") ||
+    // Pre-merge reviews (#990): PRs, verdicts and what each review cost.
+    path === "/api/review-gate/reviews" ||
+    // What the owner was told (#1126): the words of every notice.
+    path === "/owner/told"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
@@ -100,7 +111,9 @@ export function isControlPost(path: string): boolean {
     // Stopping a workflow run (#788).
     /^\/workflow-runs\/[^/]+\/cancel$/.test(path) ||
     // Stop and resume signals (#857).
-    path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop"
+    path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" ||
+    // Replaying past PRs through the review gate spends model budget (#990).
+    path === "/api/review-gate/replay"
 }
 
 /** True when the socket peer is on this host. Used by loopback-only

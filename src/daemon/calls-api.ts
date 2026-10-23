@@ -4,11 +4,17 @@
 //                               kind?: "camera"}
 //                               with X-AgentX-Task, or X-AgentX-Channel +
 //                               X-AgentX-Chat: a running turn of agentId
-//                               201 ringing {call, rang}; 202 held as a
-//                               missed call (Focus) {call, rang: false};
+//                               201 ringing {call, rang}, or waiting
+//                               for a busy owner {call, rang: "waiting",
+//                               busy: {why, with, remindAt, waitsUntil}};
+//                               202 held as a missed call (Focus)
+//                               {call, rang: false};
 //                               403 no such running turn, or not in
 //                               calls.allow; 409 one already in
 //                               progress; 429 over calls.maxPerHour
+//   POST /calls/cancel          {agentId}, same proof: the caller withdraws
+//                               its voice call that waits or rings
+//                               200 {call}; 404 it has none
 //   GET  /calls?status=&kind=&limit=  newest first; status is a comma list
 //   GET  /calls/ringing?busy=1&showing=<id>
 //                               the widget's poll: voice calls {calls,
@@ -52,7 +58,7 @@ export async function handleCalls(
     if (method === "POST") {
       const r = await calls.request(body, proof)
       if (!r.ok) return { status: r.status, body: { error: r.error } }
-      return { status: r.rang === false ? 202 : 201, body: { call: r.call, rang: r.rang } }
+      return { status: r.rang === false ? 202 : 201, body: { call: r.call, rang: r.rang, ...(r.busy ? { busy: r.busy } : {}) } }
     }
     if (method !== "GET") return { status: 405, body: { error: "GET or POST" } }
     await calls.sweep()
@@ -61,6 +67,11 @@ export async function handleCalls(
     const kind = kindParam === "voice" || kindParam === "camera" ? kindParam : undefined
     const limit = parseInt(query.get("limit") || "", 10)
     return { status: 200, body: { calls: calls.list({ status, kind, limit: Number.isFinite(limit) ? limit : undefined }) } }
+  }
+
+  if (path === "/calls/cancel") {
+    if (method !== "POST") return { status: 405, body: { error: "POST" } }
+    return reply(await calls.cancel(body, proof))
   }
 
   if (path === "/calls/ringing") {

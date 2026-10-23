@@ -28,7 +28,10 @@ export const express = new Command()
       process.exit(1)
     }
     try {
-      await daemon("POST", "/voice/guide", { expression: name, ...(opts.hold ? { hold: Number(opts.hold) } : {}) })
+      await daemon("POST", "/voice/guide", {
+        expression: name, ...(opts.hold ? { hold: Number(opts.hold) } : {}),
+        ...(process.env.AGENTX_FLOOR ? { floor: process.env.AGENTX_FLOOR } : {}),
+      })
       console.log(`  ${chalk.green("→")} ${chalk.bold(name)} ${chalk.dim(`for ${opts.hold ?? GUIDE_HOLD.default} seconds`)}`)
     } catch (e: any) {
       console.log(chalk.red(`  ${e?.message ?? e}`))

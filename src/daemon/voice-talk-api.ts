@@ -13,7 +13,8 @@
 //                     ended: it waits for the words. Returns what was speaking:
 //                     {active, kind, agentId}; kind "queue" for a queued line.
 //   POST /voice/stop  the same silence, for a hotkey, menu, Siri or a
-//                     Shortcut; the queue is emptied, nothing waits.
+//                     Shortcut; the queue is emptied, nothing waits, and
+//                     the floor is taken back from whoever holds it.
 //   POST /voice/door  {text}  the listener spoke and the queue resumes: a
 //                     talk or lesson answers it first; "stop" ends it,
 //                     silences the narrated task, and empties the queue.
@@ -36,6 +37,7 @@ import { createLineModel, type LineModel } from "@/voice/talk-model"
 import { resolveAgentVoice, talkSpeaker, voiceRef, type VoiceIntroTracker, type VoiceSettings } from "@/voice/agent-voice"
 import { LiveTeach, type TeachMode } from "@/voice/live-teach"
 import { CharacterPresence, GuideFeed } from "@/voice/guide"
+import { Floor, type FloorDeps, type FloorView } from "@/voice/floor"
 import { PresenceHost, type PresenceHostDeps } from "@/daemon/voice-presence"
 
 export { talkSpeaker }
@@ -58,6 +60,9 @@ export interface VoiceTalkDeps {
   stopSpeakers?: () => void
   /** Told of every change to the speaking queue. */
   onQueue?: (view: QueueView) => void
+  /** Told of every change to the floor. */
+  onFloor?: (view: FloorView) => void
+  floor?: Pick<FloorDeps, "now" | "alive">
 }
 
 type VoiceSession = Talk | LiveTeach
@@ -68,6 +73,10 @@ export class VoiceTalkService {
   readonly presence: PresenceHost
   /** Where an agent sends the character to show something (#482). */
   readonly guide = new GuideFeed()
+  /** Who may speak and show a bubble (#924): the queue is reserved for
+   *  its holder, and a talk or lesson does not start while it is held. */
+  readonly floor: Floor
+  private floorId: string | null = null
   private session: VoiceSession | null = null
   /** The narrated task the last hush silenced, until the listener speaks. */
   private hushed: { taskId: string; agentId: string } | null = null
@@ -95,6 +104,26 @@ export class VoiceTalkService {
     this.stopSpeakers = deps.stopSpeakers ?? (() => stopAllSpeakers())
     const settings: () => VoiceSettings = deps.voiceSettings ?? (() => ({}))
     this.settings = settings
+    this.floor = new Floor({
+      ...deps.floor,
+      settings: () => settings().floor,
+      // A talk or lesson already has the speakers and the screen.
+      busy: () => (this.live ? `a ${this.kind(this.live)}` : null),
+      onChange: (view, id) => {
+        // A renewal changes the time only.
+        const renewed = !!id && id === this.floorId
+        this.floorId = id
+        if (id) this.speech.reserve(id)
+        // Taken back or timed out: the holder has no more to say here.
+        else this.speech.release(view.ended === "owner" || view.ended === "expired")
+        if (renewed) { /* nothing new to say */ } else if (view.held) {
+          this.log(`[floor] held by ${view.holder} until ${new Date(view.expiresAt!).toISOString()}${view.sound ? ", plays sound" : ""}${view.hide ? ", character and bubbles hidden" : ""}`)
+          // The character goes home: only the holder sends it from here.
+          this.guide.home()
+        } else this.log(`[floor] free (${view.ended})`)
+        deps.onFloor?.(view)
+      },
+    })
     this.presence = new PresenceHost(agents, log, {
       voiceSettings: settings,
       character: (id) => settings().look === "character" && this.guide.listening ? new CharacterPresence(this.guide, id) : null,
@@ -138,7 +167,9 @@ export class VoiceTalkService {
         this.speech.stop()
         this.hushed = null
         this.heldQueue = false
-        return { status: reply.status, body: { ...(reply.body as object), active: false } }
+        // The owner's stop is above any holder: the floor is theirs again.
+        const revoked = this.floor.revoke()
+        return { status: reply.status, body: { ...(reply.body as object), active: false, ...(revoked ? { floorRevoked: true } : {}) } }
       }
       case "POST /talk/door":
       case "POST /voice/door": {
@@ -217,6 +248,7 @@ export class VoiceTalkService {
 
   close(): void {
     this.session?.stop("daemon stopping")
+    this.floor.close()
     this.narrator.close()
     this.presence.close()
   }
@@ -230,6 +262,8 @@ export class VoiceTalkService {
    *  presence-mode seat routes to teach, watch or act (with the turn's app). */
   startLesson(agentId: string, goal: string, mode: TeachMode, app?: string): Reply {
     if (this.live) return { status: 409, body: { error: "A talk or lesson is already running", ...this.view(this.live) } }
+    const held = this.floorHeld()
+    if (held) return held
     const lesson = this.presence.lesson(agentId, goal, mode, this.speech, this.model, app)
     // The daemon log has no times of its own, and a lesson that shows
     // nothing for 40 s needs them: each line is stamped, and a step says
@@ -252,7 +286,9 @@ export class VoiceTalkService {
 
   private start(body: Record<string, unknown>): Reply {
     if (this.live) return { status: 409, body: { error: "A talk or lesson is already running", ...this.view(this.live) } }
-    const ids = Array.isArray(body.agents) ? body.agents.map(String) : []
+    const held = this.floorHeld()
+    if (held) return held
+    const ids =Array.isArray(body.agents) ? body.agents.map(String) : []
     const topic = String(body.topic ?? "").trim()
     const agents = this.agents()
     if (ids.length !== 2 || ids[0] === ids[1] || !topic) return { status: 400, body: { error: "Required: agents (two different ids) and topic" } }
@@ -284,6 +320,12 @@ export class VoiceTalkService {
     void talk.run()
     this.log(`[talk] ${speakers[0].name} and ${speakers[1].name} on "${topic.slice(0, 80)}"`)
     return { status: 201, body: this.view(talk) }
+  }
+
+  /** A talk or lesson would speak for minutes over the holder: refused. */
+  private floorHeld(): Reply | null {
+    const floor = this.floor.view()
+    return floor.held ? { status: 409, body: { error: `The floor is held by ${floor.holder}`, floor } } : null
   }
 
   private kind(t: VoiceSession): "talk" | "lesson" { return t instanceof LiveTeach ? "lesson" : "talk" }

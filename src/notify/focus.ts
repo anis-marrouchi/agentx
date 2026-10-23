@@ -119,6 +119,7 @@ export function readSystemFocus(path = ASSERTIONS): FocusState {
 export function focusLabel(state: FocusState): string {
   if (!state.active) return "not in Focus"
   if (state.mode === "widget") return "holding (widget)"
+  if (state.mode === "call") return "in a call"
   if (!state.mode) return "in Focus"
   // com.apple.sleep.sleep-mode -> sleep mode
   const tail = state.mode.split(".").pop() ?? state.mode

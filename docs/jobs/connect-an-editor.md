@@ -30,6 +30,8 @@ The tool server finds your node and its token by itself:
 
 ## Add it to Claude Code
 
+The quickest way is the AgentX plugin. It adds this tool server and two AgentX skills with one command: [Install the AgentX plugin in Claude Code](./install-the-plugin.md). To add only the tool server:
+
 1. **Terminal:** run this command, with your own install folder:
 
    ```bash

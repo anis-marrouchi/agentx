@@ -90,18 +90,20 @@ export const APP_FLEET_SCRIPT = `
     var input = document.getElementById('fx-input');
     var box = document.getElementById('fx-choices');
     var p = opts.pick;
+    // p.sel: the choice the owner already tapped (the Desk); else the advised one.
+    var sel = p ? (p.sel != null ? p.sel : p.rec) : -1;
     box.hidden = !p;
     box.innerHTML = p ? '<legend>Pick one</legend>' + p.choices.map(function (c, n) {
-      return '<label class="fx-opt"><input type="radio" name="fx-choice" required value="' + (n + 1) + '"' + (n === p.rec ? ' checked' : '') + '><span>' + esc(c) + (n === p.rec ? ' <em>suggested</em>' : '') + '</span></label>';
+      return '<label class="fx-opt"><input type="radio" name="fx-choice" required value="' + (n + 1) + '"' + (n === sel ? ' checked' : '') + '><span>' + esc(c) + (n === p.rec ? ' <em>suggested</em>' : '') + '</span></label>';
     }).join('') : '';
     field.hidden = !opts.input && !(p && p.draft);
     document.getElementById('fx-field-label').textContent = p && p.draft ? 'Message the agent gets (you can edit it)' : 'Message';
     input.rows = p && p.draft ? 6 : 3;
-    input.value = p && p.draft ? fill(p.draft, p.rec >= 0 ? p.choices[p.rec] : '') : '';
+    input.value = p && p.draft ? fill(p.draft, sel >= 0 ? p.choices[sel] : '') : '';
     delete input.dataset.edited;
     pending = opts;
     if (sheet.showModal) { sheet.showModal(); if (opts.input) input.focus(); }
-    else if (p) flash(opts.panel, 'This card offers choices: answer it on the dashboard.', true);
+    else if (p) flash(opts.panel, 'This card offers choices: pick one on the dashboard.', true);
     else if (window.confirm(opts.title)) run(opts, opts.input ? window.prompt('Message') || '' : '');
   }
   sheet.addEventListener('change', function (ev) {
@@ -122,7 +124,7 @@ export const APP_FLEET_SCRIPT = `
     if (opts.input && !text) { flash(opts.panel, 'Nothing sent: the message was empty.', true); return; }
     api('POST', opts.path, opts.body(text, choice)).then(function (b) {
       flash(opts.panel, opts.done(b), false);
-      refresh();
+      (opts.refresh || refresh)();
     }).catch(function (e) { flash(opts.panel, opts.title + ' failed: ' + e.message, true); });
   }
   // The refresh that follows an action re-renders the panel, so the last
@@ -139,6 +141,9 @@ export const APP_FLEET_SCRIPT = `
     if (m && Date.now() - m.at < 10000) return '<p class="fx-status' + (m.bad ? ' fx-bad' : '') + '" role="status" aria-live="polite">' + esc(m.text) + '</p>';
     return '<p class="fx-status" role="status" aria-live="polite">Updated ' + esc(new Date(ts).toLocaleTimeString()) + '</p>';
   }
+
+  // The Desk tab (app-desk.client.ts) asks through the same sheet.
+  window.AXAsk = { ask: ask, api: api, esc: esc, ago: ago, advised: advised, flash: flash, statusLine: statusLine, open: function () { return sheet.open; } };
 
   function statusPill(n) {
     if (!n.reachable) return '<span class="fx-pill fx-off"><span aria-hidden="true">⊘ </span>Offline</span>';

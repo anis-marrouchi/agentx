@@ -35,9 +35,11 @@ beforeEach(() => {
   // Commander keeps option values between parses of the same command.
   for (const c of wiki.commands) for (const o of c.options) c.setOptionValue(o.attributeName(), o.defaultValue)
   vi.spyOn(console, "log").mockImplementation(() => {})
+  process.exitCode = undefined
 })
 
 afterEach(() => {
+  process.exitCode = undefined
   vi.restoreAllMocks()
   rmSync(dir, { recursive: true, force: true })
 })
@@ -94,6 +96,37 @@ describe("absorb telemetry", () => {
     await wiki.parseAsync(["absorb", "--dir", dir, "--agent", "coder", "--no-facts"], { from: "user" })
 
     expect(telemetry()[0]).toMatchObject({ kind: "call", failed: true, articles: 0 })
+  })
+
+  // #603: a schedule running absorb as a command sees the failure.
+  it("exits 1 and counts the failure on the run line when a call fails", async () => {
+    addEntry("coder", "e1")
+    mocks.execSync.mockImplementationOnce(() => { throw Object.assign(new Error("claude not found"), { stdout: "" }) })
+
+    await wiki.parseAsync(["absorb", "--dir", dir, "--agent", "coder", "--no-facts"], { from: "user" })
+
+    expect(process.exitCode).toBe(1)
+    expect(telemetry()[1]).toMatchObject({ kind: "run", failed: 1 })
+    expect(hub.getUnabsorbedEntries("coder").map((e) => e.id)).toEqual(["e1"])
+  })
+
+  it("exits 1 when the model reports an error", async () => {
+    addEntry("coder", "e1")
+    mocks.execSync.mockReturnValueOnce(envelope({ articles: [], gaps: [] }, { is_error: true }))
+
+    await wiki.parseAsync(["absorb", "--dir", dir, "--agent", "coder", "--no-facts"], { from: "user" })
+
+    expect(process.exitCode).toBe(1)
+  })
+
+  it("exits 0 when every call succeeds", async () => {
+    addEntry("coder", "e1")
+    mocks.execSync.mockReturnValueOnce(envelope({ articles: [], gaps: [] }))
+
+    await wiki.parseAsync(["absorb", "--dir", dir, "--agent", "coder", "--no-facts"], { from: "user" })
+
+    expect(process.exitCode).toBeUndefined()
+    expect(telemetry()[1]).toMatchObject({ kind: "run", failed: 0 })
   })
 
   it("writes nothing on a dry run", async () => {

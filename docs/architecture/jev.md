@@ -10,9 +10,29 @@ When you run `agentx point "the search field"`:
 
 1. The native helper reads the active application's accessibility tree (the list of buttons, fields and labels that macOS exposes for screen readers).
 2. If the tree is too sparse, local OCR (reading text from the screen image) supplies readable text and its position.
-3. AgentX creates a bounded list of candidate controls.
+3. AgentX creates a bounded list of candidate controls. When a busy screen has more controls than fit, the ones whose names share words with your request are kept first. Pictures, such as icons and small charts, are included.
 4. The `ui-element` decision seat asks whether the requested control is present, and which candidate matches it.
 5. The caller checks the answer and maps the chosen ID to coordinates before drawing a highlight.
+
+In a web browser, the list holds the web page and, in a few reserved places, the browser's own controls (its toolbar, tabs and window buttons, called the *browser chrome*). Each browser control is shown to the model as "outside the page: Reload", so "the search box" still finds the page's search box and not the address bar, while "the reload button" or "close the tab" finds the browser's control. Window buttons with no label are named by what they do, for example "close window (red traffic light)".
+
+With `--json`, the chosen control shows `"inBrowser": true` when it sits outside the page.
+
+### Controls that close something
+
+Some controls close a tab or a window, or quit the app: the red window button, a tab's "x", menu items such as "Close Window" or "Quit", and an app's own close buttons such as "Close Editor" or "Close (⌘W)". AgentX marks these, so a request that does not ask to close anything never lands on one by mistake. A plain "Close" inside a web page is not marked, because it usually shuts a pop-up on the page, not the page itself.
+
+A request asks to close something when it says "close", "closes", "closing" or "quit". "Exit full screen", "close-up" and "close to" do not count.
+
+What happens when a marked control is chosen and the request does not ask to close anything:
+
+| Command | What it does |
+|---|---|
+| `agentx point` | Does not point at it. It stops with exit code 4. With `--json`, the answer has a `blocked` field, and `chosen` gives the control's name but no `x`, `y`, `width` or `height`, so a script that clicks wherever `chosen` says has nothing to click. |
+| `agentx teach` | Stops before a click step on it. A step that only shows a control may still highlight it, because nothing is pressed. |
+| Live lessons | Shows the control instead of clicking it or typing into it. It also refuses keyboard shortcuts that close a tab or window (⌘W, ⌘⇧W, ⌘⌥W) and stops the lesson. ⌘Q is always refused, because it leaves the app. |
+
+When the app shows only one control, `agentx point` uses it without asking the model. With `--json`, the answer has the same fields as usual, but `present` is `null` (nobody judged whether it matches) and `confidence` is `1`. A script that reads `blocked` or the exit code first, then checks `present`, handles both cases. If that one control has no place on screen (for example, it is scrolled out of view), `agentx point` prints a short message and stops with exit code 2, the same code it uses when nothing matches, with or without `--json`.
 
 A candidate-selection question always has a choice to return. The separate “is it present?” question lets AgentX refuse to highlight an unrelated control.
 
@@ -33,6 +53,7 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `session-continuity` | Does this turn need the earlier conversation, or can the session start fresh early? |
 | `intent-path` | Which intent-graph category, then which verb within it, does this message belong to? Replaces the model call the classifier makes on a cache miss. |
 | `task-tier` | Does this task need the strongest model, or would a cheaper one do? Steers model routing when `active` and `decisions.routing` names a cheap model. |
+| `task-watch` | Does a task that is starting carry a deadline, a promise to the owner, or a hand-off, so something should watch it? Asked at every task start while `watchers.enabled` is on. Only an `active` seat's confident "no" skips the watcher; see [Watch tasks that must finish](/automations/task-watchers). |
 | `wake-gate` | Does this event need an agent run at all? Not yet asked on the live path; replayed on recorded runs by the [backtest](./jev-backtest.md). |
 | `tool-set` | Which set of built-in tools does a new Claude Code session need: read-only, change code, or everything? Shadow only: it records, the session still gets every tool. See [Tool set](#tool-set). |
 
@@ -174,4 +195,5 @@ A wrong choice in a future active mode would stop an agent in the middle of its 
 
 - **The seat doesn't appear in `decisions stats`:** check that `decisions.enabled` is `true`, that the seat's name is spelled exactly as in the table, that the daemon was restarted, and that the feature that uses the seat actually ran.
 - **Every call fails:** run `agentx decisions backends`. A missing or wrong `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is the usual cause.
+- **`agentx point` picks a control on the page when you meant the browser's:** say so in the request, for example `agentx point "the browser's reload button"`. If it still misses, run with `--json`: the browser's controls in `ranked` have a `shown` name starting with "outside the page:", and the chosen one has `"inBrowser": true`.
 - **Behavior changed in a way you didn't want:** set the seat back to `shadow` or `off` and restart the daemon. In shadow mode the existing behavior is authoritative again.

@@ -21,9 +21,10 @@ import type { VoiceRef } from "./speaker"
 import type { SpeechOut } from "./speaking-queue"
 import type { Presence, Rect } from "./presence"
 import { DEFAULT_LISTENER, isStop } from "./talk"
-import { bubbleText, findControl, leavesApp, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
+import { bubbleText, closesByKeys, findControl, leavesApp, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
+import { asksToClose, closeBlocked } from "@/computer-use/candidates"
 
-export { leavesApp, parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
+export { closesByKeys, leavesApp, parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
 
 export type TeachMode = "teach" | "watch" | "act"
 export type StepAction = "point" | "highlight" | "click" | "type" | "key" | "wait_for_user" | "done"
@@ -31,7 +32,9 @@ export type StepAction = "point" | "highlight" | "click" | "type" | "key" | "wai
 export interface ScreenView {
   app: string
   window: string | null
-  candidates: Array<{ id: number; role: string; label: string; value?: string | null }>
+  /** `label` is the app's own name (clicks are checked against it);
+   *  `shown`, when set, is the fuller text the planner reads. */
+  candidates: Array<{ id: number; role: string; label: string; shown?: string; value?: string | null; closes?: boolean }>
   rectOf(id: number): Rect | null
 }
 
@@ -210,7 +213,7 @@ export class LiveTeach {
       `Mode: ${this.opts.mode}. ${modeLine}`,
       `App: ${screen.app}${screen.window ? ` — window "${screen.window}"` : ""}`,
       "On screen:",
-      ...screen.candidates.slice(0, 80).map((c) => `${c.id} ${c.role} "${c.label.slice(0, 60)}"${c.value ? ` = "${String(c.value).slice(0, 40)}"` : ""}`),
+      ...screen.candidates.slice(0, 80).map((c) => `${c.id} ${c.role} "${(c.shown ?? c.label).slice(0, 60)}"${c.value ? ` = "${String(c.value).slice(0, 40)}"` : ""}`),
       this.history.length ? `So far:\n${this.history.slice(-8).join("\n")}` : "This is the first step.",
     ].join("\n")
     const signal = this.ac.signal
@@ -256,9 +259,15 @@ export class LiveTeach {
     const { screen, target } = fresh
     const rect = target !== null ? screen.rectOf(target) : null
     const label = target !== null ? screen.candidates.find((c) => c.id === target)?.label ?? "" : ""
-    const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed
+    // A close window / close tab / quit control is clicked only when the
+    // goal asks to close something; otherwise it is shown, not pressed.
+    // Typing clicks the target first, so it is held back too.
+    const closes = target !== null && closeBlocked(screen.candidates.find((c) => c.id === target), this.opts.goal)
+    const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed && !((plan.action === "click" || plan.action === "type") && closes)
     // The lesson never leaves its app to go and find another one.
     if (mayAct && plan.action === "key" && plan.text && leavesApp(plan.text)) return this.refuseToLeave(n, plan.text, screen.app)
+    // Nor closes a tab or window from the keyboard unless the goal asks to.
+    if (mayAct && plan.action === "key" && plan.text && closesByKeys(plan.text) && !asksToClose(this.opts.goal)) return this.refuseToClose(n, plan.text)
     // Click and type only when allowed; otherwise show it instead.
     const action: StepAction =
       plan.action === "key" ? (mayAct && plan.text ? "key" : rect ? "highlight" : "wait_for_user")
@@ -330,6 +339,16 @@ export class LiveTeach {
     this.deps.presence.say(line)
     await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line, agentId: this.opts.speaker.agentId, kind: "lesson" })
     this.stop(`${keys} would leave ${app}`)
+    return "stopped"
+  }
+
+  private async refuseToClose(n: number, keys: string): Promise<"stopped"> {
+    const line = "That would close a tab or window you didn't ask to close, so I'll stop here."
+    this.emit({ type: "acted", n, error: `refused ${keys}: it closes a tab or window` })
+    await this.speaking
+    this.deps.presence.say(line)
+    await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line, agentId: this.opts.speaker.agentId, kind: "lesson" })
+    this.stop(`${keys} would close a tab or window`)
     return "stopped"
   }
 

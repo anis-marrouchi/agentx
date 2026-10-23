@@ -14,6 +14,7 @@ The machine this daemon runs on.
 | `node.name` | string | required | Readable name of this machine, shown in logs and mesh listings. |
 | `node.bind` | string | `"127.0.0.1:18800"` | Address and port the daemon API listens on. |
 | `node.defaultAgent` | string | — | Agent used by voice and API calls that do not name one. |
+| `node.connectAttemptTimeoutMs` | number (250–60000) | `5000` | How long, in milliseconds, the daemon waits for each address of a server to answer before it tries the next one. Raise it on a slow internet link where every outgoing request fails with `ETIMEDOUT`. Read when the daemon starts, and by every `agentx` command: from the file given with `--config`, or else from the config file in the current folder. Write the path as `--config <file>`, `--config=<file>` or `-c <file>.json`; the short form `-c` counts only when the file name ends in `.json`, and `-c<file>` written as one word is not seen. |
 
 ## providers
 
@@ -214,7 +215,7 @@ When a conversation's memory is rotated or treated as stale.
 | `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. |
 | `session.lean.tools` | list of string | `[]` | Built-in Claude Code tools a lean session gets, such as `Bash`, `Read`, `Edit`. Empty keeps every built-in tool. A short list is what brings a lean start under 20k tokens; an agent that lacks a tool it needs fails mid-task. The `agentx` tools are not affected. `claude-code` agents only. See [Fewer built-in tools](#fewer-built-in-tools). |
 | `session.lean.toolsByChannel` | object of channel → list of string | `{}` | The same list per channel. A channel's own list wins over `session.lean.tools`; an empty list falls back to it. |
-| `session.lean.agentxTools` | list of string | `[]` | The `agentx_` tools a lean session is told about, such as `agentx_channel_reply`. Empty lists every `agentx` tool. Saves little while `ToolSearch` is on. A name that is not an `agentx` tool fails `agentx config check`. `agentx_approval`, `agentx_request`, `agentx_events` and `agentx_attach_next` are always kept, and so are `agentx_agents`, `agentx_recent` and `agentx_wiki_query` while `session.lean.contextOnDemand` is on. `claude-code` agents only. See [Fewer agentx tools](#fewer-agentx-tools). |
+| `session.lean.agentxTools` | list of string | `[]` | The `agentx_` tools a lean session is told about, such as `agentx_channel_reply`. Empty lists every `agentx` tool. Saves little while `ToolSearch` is on. A name that is not an `agentx` tool fails `agentx config check`. `agentx_approval`, `agentx_request`, `agentx_events`, `agentx_attach_next`, `agentx_workflow` and `agentx_waiting` are always kept, and so are `agentx_agents`, `agentx_recent` and `agentx_wiki_query` while `session.lean.contextOnDemand` is on. `claude-code` agents only. See [Fewer agentx tools](#fewer-agentx-tools). |
 | `session.lean.agentxToolsByChannel` | object of channel → list of string | `{}` | The same list per channel. A channel's own list wins over `session.lean.agentxTools`; an empty list falls back to it. |
 | `session.triage.models.claude-code` | string | unset (off) | A cheaper Claude model, such as `claude-haiku-4-5-20251001`, for runs a GitHub triage event started. See [A cheaper model for triage events](#a-cheaper-model-for-triage-events). |
 | `session.triage.models.codex-cli` | string | unset (off) | The same for `codex-cli` agents, such as a `gpt-` model. |
@@ -305,7 +306,7 @@ You can also tell lean sessions about fewer of the `agentx_` tools, the AgentX t
 - It saves more, about 5,500 tokens, only where Claude Code's tool search is off, for example when `ENABLE_TOOL_SEARCH=false` is set or `ANTHROPIC_BASE_URL` points to a server other than Anthropic's. Then Claude Code sends every tool's full description.
 - The cost: a tool left off the list is gone for that session. The agent cannot find it, not even with `ToolSearch`.
 
-Some tools are always kept, because AgentX's own messages to the agent ask for them by name: `agentx_approval`, `agentx_request`, `agentx_events` and `agentx_attach_next`, plus `agentx_agents`, `agentx_recent` and `agentx_wiki_query` while `session.lean.contextOnDemand` is on.
+Some tools are always kept, because AgentX's own messages to the agent ask for them by name: `agentx_approval`, `agentx_request`, `agentx_events`, `agentx_attach_next`, `agentx_workflow` and `agentx_waiting`, plus `agentx_agents`, `agentx_recent` and `agentx_wiki_query` while `session.lean.contextOnDemand` is on.
 
 To tell lean sessions about fewer `agentx` tools:
 
@@ -491,6 +492,7 @@ A warm process answers only the question it was asked. When a background task of
 ## If something is wrong
 
 - **`config check` names a field:** the value has the wrong type or is out of range. Compare it with the table above.
+- **On a slow internet link, every message, notification or poll fails with `fetch failed` or `ETIMEDOUT`, while `curl` from the same machine works:** the daemon gave up connecting too early. The start of the daemon log shows `Connect attempt timeout: N ms`. Raise `node.connectAttemptTimeoutMs`, for example to `10000`, and restart the daemon.
 - **An `sdk` agent fails with `No API key for provider`:** set `providers.<name>.apiKey`, or check that the environment variable it points to is in `.env`.
 - **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.

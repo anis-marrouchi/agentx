@@ -84,6 +84,12 @@ export class StatusStore {
         PRIMARY KEY (kind, ref),
         FOREIGN KEY (status_id) REFERENCES request_status(id) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS request_status_waits (
+        delegation_id TEXT PRIMARY KEY,
+        status_id TEXT NOT NULL,
+        until INTEGER NOT NULL,
+        FOREIGN KEY (status_id) REFERENCES request_status(id) ON DELETE CASCADE
+      );
     `)
     db.pragma("foreign_keys = ON")
   }
@@ -113,6 +119,24 @@ export class StatusStore {
 
   ref(id: string, kind: RefKind, ref: string): void {
     this.db.prepare("INSERT OR IGNORE INTO request_status_refs (kind, ref, status_id) VALUES (?, ?, ?)").run(kind, ref, id)
+  }
+
+  /** A delegation of this request ended its run waiting (#1100): the
+   *  request waits on it until the wait ends, and at the latest `until`. */
+  wait(delegationId: string, id: string, until: number): void {
+    this.db.prepare("INSERT OR REPLACE INTO request_status_waits (delegation_id, status_id, until) VALUES (?, ?, ?)").run(delegationId, id, until)
+  }
+
+  /** The wait of this delegation is over. False when none was recorded
+   *  (or it already ended): a delegation that did not end waiting. */
+  endWait(delegationId: string): boolean {
+    return this.db.prepare("DELETE FROM request_status_waits WHERE delegation_id = ?").run(delegationId).changes > 0
+  }
+
+  /** Delegations whose wait passed its latest end. */
+  overdueWaits(now: number): string[] {
+    return (this.db.prepare("SELECT delegation_id FROM request_status_waits WHERE until <= ? ORDER BY until").all(now) as Array<{ delegation_id: string }>)
+      .map((r) => r.delegation_id)
   }
 
   /** The newest request of this agent in this chat that matches. */

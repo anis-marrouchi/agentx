@@ -1,8 +1,10 @@
-import { readFocus, focusLabel, type FocusState } from "./focus"
+import { focusLabel, type FocusState } from "./focus"
+import { readHold } from "./hold"
 import { NotificationQueue, digest, byDestination, type PendingNotification } from "./queue"
 import { localAlert, DEFAULT_LOCAL, type LocalAlert } from "./local"
 
 export { readFocus, focusLabel, type FocusState } from "./focus"
+export { readCall, readHold, writeCallHold, CALL_HOLD } from "./hold"
 export { NotificationQueue, digest, byDestination, type PendingNotification } from "./queue"
 export { localAlert, localSettings, DEFAULT_LOCAL, type LocalAlert, type LocalSettings } from "./local"
 
@@ -10,8 +12,8 @@ export { localAlert, localSettings, DEFAULT_LOCAL, type LocalAlert, type LocalSe
 //
 // Three things happen here and they are deliberately in this order:
 //
-//   1. Ask whether they are in Focus. If they are, the message is HELD,
-//      not dropped and not sent anyway.
+//   1. Ask whether they are in Focus, or in a call (#394). If they are,
+//      the message is HELD, not dropped and not sent anyway.
 //   2. Otherwise hand it to the channel router, which already knows how to
 //      push (ntfy), so this adds no new delivery path.
 //   3. Show a banner and play a sound locally, because a push to a phone
@@ -67,7 +69,7 @@ export async function notify(
   opts: { queue?: NotificationQueue; alert?: AlertOption; focus?: FocusState } = {},
 ): Promise<NotifyResult> {
   const queue = opts.queue ?? new NotificationQueue()
-  const state = opts.focus ?? readFocus()
+  const state = opts.focus ?? readHold()
   const title = input.title ?? "AgentX"
 
   if (state.active && !input.urgent) {

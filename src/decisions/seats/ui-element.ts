@@ -27,6 +27,20 @@ export interface UICandidate {
   label: string
   value?: string | null
   enabled: boolean
+  /** Coarse place in the window ("top right"), when known. */
+  where?: string
+  /** What the model is shown instead of `label`, when the label alone
+   *  cannot say what the control is: "outside the page: Reload",
+   *  'history → in "@marketing-agent"'. `label` stays the app's own name. */
+  shown?: string
+  /** Set when the control sits outside the web page: the browser's toolbar,
+   *  tabs and window buttons, or a native app's own controls around a web
+   *  view. The model reads this through `shown` ("outside the page: …"). */
+  area?: "browser"
+  /** Set when pressing it closes a window or tab, or quits the app. Such a
+   *  control is never pressed, or pointed at, unless the request asks to
+   *  close something (`closeBlocked`). */
+  closes?: true
 }
 
 /** Something already attempted on this screen, and what came of it. */
@@ -75,9 +89,10 @@ export function uiElementState(input: UIElementInput): StateValue {
     controls: input.candidates.map((c) => ({
       id: String(c.id),
       role: humanRole(c.role),
-      label: clip(c.label, 120),
+      label: clip(c.shown ?? c.label, 120),
       value: c.value ? clip(c.value, 80) : null,
       enabled: c.enabled,
+      ...(c.where ? { where: c.where } : {}),
     })),
   }
 }
@@ -86,8 +101,8 @@ export function uiElementState(input: UIElementInput): StateValue {
 export function uiElementQuestions(candidates: UICandidate[]) {
   const criteria: Record<string, string> = {}
   for (const c of candidates) {
-    const name = c.label || c.value || "(unlabelled)"
-    criteria[String(c.id)] = `${humanRole(c.role)}: ${clip(name, 80)}`
+    const name = c.shown || c.label || c.value || "(unlabelled)"
+    criteria[String(c.id)] = `${humanRole(c.role)}: ${clip(name, 80)}${c.where ? ` (${c.where})` : ""}`
   }
   return {
     target: choice(
@@ -98,7 +113,9 @@ export function uiElementQuestions(candidates: UICandidate[]) {
     present: noul(
       "The screen actually contains a control matching the request.",
       {
-        true: "One of the listed controls is plainly the thing the request names, or is the obvious way to perform it.",
+        true: "One of the listed controls is plainly the thing the request names, or is the obvious way to perform it. " +
+          "Requests often describe an icon or logo by how it looks while the control is named by what it does " +
+          "or where it goes, not by its picture. A control whose name fits what such an icon would do counts.",
         false:
           "Nothing listed corresponds to the request — the right control is on another screen, behind a menu, not yet visible, or this application simply cannot do what was asked.",
       },

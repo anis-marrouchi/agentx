@@ -29,6 +29,49 @@ export interface NtfyConfig {
   defaultPriority?: number
   /** Notification title. Per-message titles override it. */
   defaultTitle?: string
+  /** Test hook, not in the config schema: waits between attempts when a
+   *  publish is safe to repeat. One attempt more than there are entries. */
+  retryDelaysMs?: number[]
+  /** Test hook, not in the config schema: time limit for one send, all
+   *  attempts and waits included. */
+  sendTimeoutMs?: number
+}
+
+const DEFAULT_RETRY_DELAYS_MS = [1000, 3000, 8000]
+const DEFAULT_SEND_TIMEOUT_MS = 20_000
+
+/** `fetch failed` hides the reason in `cause`; surface its code so a log
+ *  line says ETIMEDOUT or ECONNREFUSED rather than nothing useful (#930). */
+export function describeFetchError(e: unknown): string {
+  const err = e as { message?: string; cause?: { code?: string; message?: string } }
+  const message = err?.message ?? String(e)
+  const cause = err?.cause
+  if (cause?.code) return `${message} code=${cause.code}`
+  if (cause?.message && cause.message !== message) return `${message} (${cause.message})`
+  return message
+}
+
+// A publish is retried only when the server cannot have stored it: ntfy has
+// no key to drop a repeat, so re-posting after a 500 or a reset mid-response
+// could put the same notification on the phone twice.
+
+/** The connection never opened, so the request never reached the server.
+ *  ETIMEDOUT can also, rarely, mean an open connection went silent; then a
+ *  repeat is possible. Telling the two apart would need to know whether the
+ *  body was written, which fetch does not expose. */
+const CONNECT_FAILURE_CODES = new Set([
+  "ECONNREFUSED", "ETIMEDOUT", "ENETUNREACH", "EHOSTUNREACH", "EADDRNOTAVAIL",
+  "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT",
+])
+
+function isRetryableFetchError(e: unknown): boolean {
+  const code = (e as { cause?: { code?: string } })?.cause?.code
+  return !!code && CONNECT_FAILURE_CODES.has(code)
+}
+
+/** 429 and 503 say the server turned the request away without handling it. */
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 503
 }
 
 /**
@@ -105,18 +148,47 @@ export class NtfyAdapter implements ChannelAdapter {
       headers["Actions"] = encodeHeader(actions)
     }
 
-    const res = await fetch(`${this.serverUrl()}/${encodeURIComponent(topic)}`, {
-      method: "POST",
-      headers,
-      body: split.body || msg.text || "",
-    })
+    const url = `${this.serverUrl()}/${encodeURIComponent(topic)}`
+    const body = split.body || msg.text || ""
+    const delays = this.config.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS
+    const attempts = delays.length + 1
+    // Each try can spend several seconds per address on a dead link, so the
+    // whole send gets one time limit and callers never wait much past it.
+    const limitMs = this.config.sendTimeoutMs ?? DEFAULT_SEND_TIMEOUT_MS
+    const deadline = Date.now() + limitMs
 
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "")
-      throw new Error(`ntfy: ${res.status} ${detail.slice(0, 200)}`)
+    // A slow or flapping link loses pushes that a few seconds later would
+    // go through. Retry only what cannot have been stored (see above).
+    for (let attempt = 1; ; attempt++) {
+      let res: Response | undefined
+      let failure!: Error
+      let retryable = false
+      try {
+        const signal = AbortSignal.timeout(Math.max(1, deadline - Date.now()))
+        res = await fetch(url, { method: "POST", headers, body, signal })
+      } catch (e) {
+        // The abort only says "aborted due to timeout"; name the send limit.
+        failure = (e as { name?: string })?.name === "TimeoutError"
+          ? new Error(`ntfy: send time limit of ${limitMs} ms reached`, { cause: e })
+          : new Error(`ntfy: ${describeFetchError(e)}`, { cause: e })
+        retryable = isRetryableFetchError(e)
+      }
+      if (res) {
+        if (res.ok) {
+          const json = await res.json().catch(() => null) as { id?: string } | null
+          return json?.id
+        }
+        const detail = await res.text().catch(() => "")
+        failure = new Error(`ntfy: ${res.status} ${detail.slice(0, 200)}`)
+        retryable = isRetryableStatus(res.status)
+      }
+      const wait = delays[attempt - 1]
+      if (!retryable || attempt >= attempts || Date.now() + wait >= deadline) {
+        this.log(`ntfy: send failed after ${attempt} attempt(s): ${failure.message}`)
+        throw failure
+      }
+      this.log(`ntfy: attempt ${attempt}/${attempts} failed (${failure.message}); retrying in ${wait} ms`)
+      await new Promise(r => setTimeout(r, wait))
     }
-
-    const json = await res.json().catch(() => null) as { id?: string } | null
-    return json?.id
   }
 }

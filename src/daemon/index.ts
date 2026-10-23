@@ -26,7 +26,8 @@ import { MessageRouter } from "@/channels/router"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
-import { GitLabAdapter } from "@/channels/gitlab"
+import { GitLabAdapter, gitlabErrorDetail } from "@/channels/gitlab"
+import { sendAnswer, type PostingIdentity } from "./send-answer"
 import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
 import { WebRtcSignalBroker, ringNotice, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { WebRtcBot, nativeI420ToRgba } from "@/channels/webrtc-bot"
@@ -41,6 +42,7 @@ import { buildRoutines, type Routine, type RoutineWorkflow } from "./routines"
 import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
+import { applyConnectAttemptTimeout, DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS } from "./net-family"
 import { buildInfo, diskBuild } from "@/utils/build-info"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
@@ -55,7 +57,9 @@ import type { AppPushDeps, AppPushResult } from "./app-push"
 import { pushBridgeCaller } from "./push-bridge"
 import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
-import { localAlert, localSettings, notify, type Sender } from "@/notify"
+import { localAlert, localSettings, notify, writeCallHold, NotificationQueue, type Sender } from "@/notify"
+import { DEFAULT_TELL_SETTINGS, OwnerGate, splitTitle, TOLD_KEEP_DAYS, toldOfBody, ToldLedger, type TellKind, type TellMeta } from "@/notify/told"
+import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
@@ -69,15 +73,24 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
-import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
+import { runMirror } from "@/approvals/mirror"
+import { requestStoreFor } from "@/approvals/inbox"
+import { configToken, githubIssueComments, postWeekly, runReportCommand } from "@/quality/epic-report"
+import { createCard, listCards, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
-import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
+import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
+import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
+import { handleWatchersApi } from "@/watchers/daemon-api"
+import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
+import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
+import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
+import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
@@ -88,11 +101,15 @@ import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/
 import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
 import { PairAttemptLimiter } from "@/daemon/app-pair-code"
-import { handleRequestsApi, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
+import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
+import { DEFAULT_CHECKER_SETTINGS, type CheckContext } from "@/requests/checkers"
+import { forgeReader } from "@/requests/checkers/issue"
+import { loopChecker, parseDue } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
-import { remindctlSource } from "@/reminders/source"
+import { loadNativeAdapter } from "@/native"
+import { handleNoteRequest, noteCaller, type NoteReply } from "@/native/notes-api"
 import { claimFile } from "@/reminders/store"
 import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
@@ -167,6 +184,7 @@ import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-ap
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { handleGuide, isGuidePath } from "@/daemon/voice-guide-api"
+import { handleFloor, isFloorPath } from "@/daemon/voice-floor-api"
 import { GUIDE_INSTRUCTION } from "@/voice/guide"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
@@ -198,8 +216,9 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
-import { isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
-import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
+import { homeOfBody } from "@/a2a/home"
+import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -209,6 +228,11 @@ import { listAgentFiles } from "./file-ops"
 import { ScreenBuffer, sweepStaleDumps } from "./screen-buffer"
 import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
+import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
+import { createMergePolicyGitHub, createReviewGateGitHub } from "@/quality/review-gate-github"
+import { approvalCardInput, cardVerdict, MergePolicy } from "@/quality/merge-policy"
+import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
+import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -220,6 +244,11 @@ import { findHelper } from "@/notify/local"
 
 export class AgentXDaemon {
   private config: DaemonConfig
+  /** The OS layer (src/native). Read from the config on each use, so a
+   *  reload that changes native.adapter or reminders.command applies. */
+  private get native() {
+    return loadNativeAdapter(this.config)
+  }
   private registry: AgentRegistry
   private router: MessageRouter
   private cron: CronScheduler
@@ -249,6 +278,13 @@ export class AgentXDaemon {
   private taskRunPrune?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
+  /** Pre-merge review gate (#990). Built with the GitHub channel; does
+   *  nothing while quality.reviewGate.enabled is false. */
+  private reviewGate?: ReviewGate
+  /** Core vs edge paths (#1047); does nothing while
+   *  quality.mergePolicy.enabled is false. */
+  private mergePolicy?: MergePolicy
+  private reviewLedger = new FileReviewLedger(reviewLedgerPath(), (m) => this.log(`[review-gate] ${m}`))
   private webrtc?: WebRtcSignalBroker
   private botManager?: BotManager
   /** Agents watching the phone camera (#325); needs channels.webrtc. */
@@ -373,8 +409,13 @@ export class AgentXDaemon {
       voiceSettings: () => this.config?.voice ?? {},
       // Who is speaking and who waits, live for the menu and any client.
       onQueue: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:queue", ...view })),
+      onFloor: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:floor", ...view })),
     })
     this.voiceTalk.speech.pronounce = this.sayAs
+    // A line waits while something outside the queue speaks here, such as
+    // an agent's own `say` narration (#1126). The daemon's own players
+    // are its children and do not count.
+    this.voiceTalk.speech.othersSpeaking = async () => (await this.native.speech?.othersSpeaking({ exceptParents: [process.pid] })) ?? null
     this.voiceTalk.narrator.attach(getAgentEventBus())
 
     getAgentEventBus().on("task:step", (e: AgentXEvents["task:step"]) => {
@@ -543,12 +584,24 @@ export class AgentXDaemon {
       replies: this.callbackReplies,
       recordDispatch: (agentId, context, message, senderAgentId) =>
         this.recordInboundDispatch(agentId, context, message, senderAgentId),
-      onStarted: (rec) => { this.requests?.tracker.delegationStarted(rec); this.status?.board.delegationStarted(rec) },
+      onStarted: (rec) => {
+        this.requests?.tracker.delegationStarted(rec)
+        this.status?.board.delegationStarted(rec)
+        void this.watchers?.checkpoint.delegationStarted(rec)
+      },
       onDone: (rec, result) => {
         this.requests?.tracker.delegationDone(rec, result.status, result.text)
-        this.status?.board.delegationDone(rec, result.status)
+        this.status?.board.delegationDone(rec, result.status, result.waiting?.dueAt)
+        this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text, result.waiting?.dueAt)
+          .catch((e: any) => this.log(`[watchers] end of ${rec.id}: ${e?.message ?? e}`))
       },
-      callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
+      callbackNote: (rec) => {
+        const notes = [
+          this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
+          this.config.watchers.enabled ? this.watchers?.checkpoint.doneNote(rec.id) : undefined,
+        ].filter(Boolean)
+        return notes.length ? notes.join("\n\n") : undefined
+      },
       onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
     })
 
@@ -590,11 +643,44 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
         }
+        // The told-the-owner record (#1126): one gate for every send to
+        // the owner's own addresses, the daemon's notices and the router's
+        // sends alike. Settings are read on every decision.
+        try {
+          // A nag waits for the digest only when one can go out.
+          this.ownerGate = new OwnerGate(new ToldLedger(db), () => {
+            const digest = this.config.approvals.digest
+            return {
+              ...DEFAULT_TELL_SETTINGS, ...this.config.notifications.told,
+              digestAvailable: digest.enabled && !!(digest.destination ?? this.config.notifications?.destination),
+            }
+          })
+          this.router.setOwnerGate(this.ownerGate)
+        } catch (e: any) {
+          this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
+        }
+        // Task watchers (#1030). Attached whatever the setting says, like
+        // requests: the checkpoint reads `watchers.enabled` on every event.
+        try {
+          this.watchers = this.attachTaskWatchers(db)
+          // A cron or dispatch run is told how to close its own watcher.
+          const checkpoint = this.watchers.checkpoint
+          this.registry.setRunNote((started) => checkpoint.runNote(started))
+        } catch (e: any) {
+          this.log(`  Watchers: not available (${e?.message ?? e})`)
+        }
         // Request status where the request was made (#383). Attached the
         // same way; it does nothing for a channel that is not listed in
         // `requestStatus.channels`.
         try {
-          this.status = attachStatus(db, () => ({ channels: this.config.requestStatus.channels, retentionDays: this.config.requests.retentionDays }), {
+          this.status = attachStatus(db, () => ({
+            channels: this.config.requestStatus.channels,
+            retentionDays: this.config.requests.retentionDays,
+            // A request left waiting by a delegation that ended waiting
+            // (#1100) with no watcher to close it: the watchers' own times.
+            waitDefaultMinutes: this.config.watchers.defaultDueMinutes,
+            waitGraceMinutes: this.config.watchers.escalateAfterMinutes,
+          }), {
             post: async (row, text) =>
               (await this.router.getChannel(row.channel)?.send({ channel: row.channel, chatId: row.chatId, text, agentId: row.agentId })) || "",
             edit: async (row, ref, text) => {
@@ -713,6 +799,10 @@ export class AgentXDaemon {
     this.log("")
     this.log(`  Node: ${this.config.node.name} (${this.config.node.id})`)
     this.log(`  Bind: ${this.config.node.bind}`)
+    // Before any channel polls or pushes: Node's 250 ms per-address connect
+    // attempt fails every fetch on a slow dual-stack link (#930).
+    const attemptMs = applyConnectAttemptTimeout(this.config.node.connectAttemptTimeoutMs ?? DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS)
+    if (attemptMs !== undefined) this.log(`  Connect attempt timeout: ${attemptMs} ms`)
     const ffmpeg = findFfmpeg()
     this.log(ffmpeg
       ? `  Voice: ffmpeg ${ffmpeg}`
@@ -731,8 +821,17 @@ export class AgentXDaemon {
       (m) => this.log(m),
       // Read the settings per flush so a dashboard change applies without
       // a restart.
-      { alert: (title, message) => localAlert(localSettings(this.config.notifications.local))(title, message) },
+      { alert: (title, message) => localAlert(localSettings(this.config.notifications.local), { native: this.config.native })(title, message) },
     )
+    // The call check (#394): while the owner is in a call, notify and the
+    // popup hold like Focus. Written to a file so `agentx notify` in an
+    // agent's process reads it too; renewed while the call lasts.
+    if (process.platform === "darwin") {
+      const callTimer = setInterval(() => {
+        try { writeCallHold(this.calls?.inCall() ?? null, 60_000) } catch (e: any) { this.log(`[notify] call hold not written: ${e?.message ?? e}`) }
+      }, 15_000)
+      callTimer.unref?.()
+    }
 
     // The opt-in in-memory screen buffer (screen.buffer), for agents that
     // arrive after the moment they needed to see.
@@ -815,12 +914,9 @@ export class AgentXDaemon {
     if (process.platform === "darwin") {
       restoreSpokenVoice()
       this.voiceHealth = new VoiceHealth({
+        // A voice gone missing is a nag: the daily digest says it (#1126).
         notify: async (title, message) => {
-          // Push and ntfy take the title from the first line of the text.
-          const send = this.ownerSender()
-          await notify({ title, message, from: "voice" }, (m) => send({ ...m, message: `${m.title}\n${m.message}` }), {
-            alert: (t, m) => localAlert(localSettings(this.config.notifications.local))(t, m),
-          })
+          await this.tellOwner({ title, message, from: "voice", kind: "nag" })
         },
         log: (m) => this.log(m),
       })
@@ -868,6 +964,7 @@ export class AgentXDaemon {
     // midnight run; any restart before midnight lost that day's row.)
     this.scheduleMidnightHook()
     this.startApprovalsSweep()
+    this.startQualityReport()
     this.startReminders()
     // Messages received before the last stop but never handed to an agent.
     const waQueued = this.waTriage?.resume() ?? 0
@@ -1004,7 +1101,7 @@ export class AgentXDaemon {
     // finish connecting; fully isolated so nothing in it can affect the
     // running daemon.
     this.bootTimes = recordBoot(resolve(process.cwd(), ".agentx"))
-    this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1))
+    this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1), buildInfo)
     // Paused tasks whose plan-writing turn the restart cut off (#857): a
     // plan from the trace, so they can be resumed. Before the resume pass,
     // which skips the cut-off wind-down turns themselves.
@@ -1197,6 +1294,7 @@ export class AgentXDaemon {
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
     if (this.approvalsTimer) clearInterval(this.approvalsTimer)
+    if (this.qualityTimer) clearInterval(this.qualityTimer)
     if (this.pushRosterTimer) clearInterval(this.pushRosterTimer)
     this.stopReminders?.()
     this.waTriage?.stop()
@@ -1223,6 +1321,71 @@ export class AgentXDaemon {
     process.exit(this.exitCode)
   }
 
+  /** The merge policy (#1047). The owner's approval is an approvals card
+   *  whose origin names the commit; the card store is the record, so an
+   *  approval survives a restart. */
+  private buildMergePolicy(github: GitHubAdapter): MergePolicy {
+    const root = process.cwd()
+    const verdict = (repo: string, pr: number, sha: string) =>
+      cardVerdict([...listCards(root, "pending"), ...listCards(root, "decided")], repo, pr, sha)
+    return new MergePolicy({
+      config: () => this.config.quality.mergePolicy,
+      github: createMergePolicyGitHub((repo) => github.getTokenForRepo(repo)),
+      isAgentLogin: (login) => github.isAgentLogin(login),
+      cardApproval: (repo, pr, sha) => verdict(repo, pr, sha).approvedBy,
+      cardAsked: (repo, pr, sha) => verdict(repo, pr, sha).asked,
+      raiseCard: (req) => {
+        const res = createCard(root, approvalCardInput(req, github.agentFor(req.repo) ?? "agentx"), {
+          settings: this.config.approvals,
+          origin: { kind: "merge-policy", repo: req.repo, pr: req.number, sha: req.sha },
+        })
+        if (!res.ok) throw new Error(res.error)
+      },
+      log: (m) => this.log(`[merge-policy] ${m}`),
+    })
+  }
+
+  /** The review gate (#990): the reviewer runs as its own agent in a fresh
+   *  session keyed by the reviewed commit, so it never resumes the
+   *  author's conversation or an earlier review. */
+  private buildReviewGate(github: GitHubAdapter): ReviewGate {
+    return new ReviewGate({
+      config: () => this.config.quality.reviewGate,
+      github: createReviewGateGitHub((repo) => github.getTokenForRepo(repo)),
+      repoAgent: (repo) => github.agentFor(repo),
+      agentModel: (agentId) => this.registry.getAgent(agentId)?.model,
+      isAgentLogin: (login) => github.isAgentLogin(login),
+      ledger: this.reviewLedger,
+      log: (m) => this.log(`[review-gate] ${m}`),
+      runReviewer: async (req) => {
+        const started = Date.now()
+        const res = await this.registry.execute({
+          message: req.prompt,
+          agentId: req.agentId,
+          model: req.model,
+          freshSession: true,
+          // Only the prompt: no other chats, memory or recall, no MCP
+          // server, no write or shell tools, held at autonomy report.
+          isolated: true,
+          timeoutMinutes: req.timeoutMinutes,
+          callerSignal: req.signal,
+          context: { channel: REVIEW_CHANNEL, chatId: req.chatId, sender: REVIEW_CHANNEL },
+        })
+        const model = res.billedModel ?? req.model
+        const u = res.usage
+        return {
+          content: res.cloudSession ? "" : res.content,
+          error: res.cloudSession ? "the reviewer agent hands work to a cloud session; pick an agent that runs here" : res.error,
+          timedOut: res.errorKind === "timeout",
+          model,
+          tokens: u ? { input: u.inputTokens, output: u.outputTokens, cacheRead: u.cacheReadTokens, cacheWrite: u.cacheCreateTokens } : undefined,
+          costUsd: res.costUsd ?? (u ? this.registry.getTokenTracker().cost(u as any, model) : undefined),
+          durationMs: res.duration ?? Date.now() - started,
+        }
+      },
+    })
+  }
+
   /** Deliver a notice to the owner through the channel router: the
    *  address it was given, else notifications.channel (push or ntfy). */
   private ownerSender(): Sender {
@@ -1236,6 +1399,8 @@ export class AgentXDaemon {
         title,
         priority,
         agentId: this.config.node.defaultAgent,
+        // What Focus held was decided when it was held (#1126).
+        told: { passed: true },
       } as any)
     }
   }
@@ -1258,6 +1423,29 @@ export class AgentXDaemon {
       }
     }
     return out.sort((a, b) => b.ageSeconds - a.ageSeconds)
+  }
+
+  /** Which token a GitLab write for this agent would use (#984). */
+  private postingIdentity(channel: string, agentId?: string): PostingIdentity | undefined {
+    if (channel !== "gitlab") return undefined
+    return (this.router.getChannel("gitlab") as GitLabAdapter | undefined)?.postingIdentity?.(agentId)
+  }
+
+  /** GitLab token health for /health: absent when the channel is off. A
+   *  rejected global token is called out, since every agent without its
+   *  own token posts with it (#984). */
+  private gitlabHealth(): Record<string, unknown> | undefined {
+    const gitlab = this.router.getChannel("gitlab") as GitLabAdapter | undefined
+    if (!gitlab?.tokenHealth) return undefined
+    const tokens = gitlab.tokenHealth()
+    const bad = [
+      ...(tokens.global?.ok === false ? ["global"] : []),
+      ...Object.entries(tokens.agents).filter(([, t]) => !t.ok).map(([id]) => id),
+    ]
+    return {
+      tokens,
+      ...(bad.length ? { warning: `GitLab rejected ${bad.map((b) => b === "global" ? "the global token" : `the token of agent "${b}"`).join(", ")}; writes with ${bad.length === 1 ? "it" : "them"} fail until the token is replaced.` } : {}),
+    }
   }
 
   private inflightCounts(): { local: number; meshForwards: number; total: number } {
@@ -1926,6 +2114,9 @@ export class AgentXDaemon {
 
   /** Open requests (src/requests); null when the database is unavailable. */
   private requests: AttachedRequests | null = null
+  /** The told-the-owner gate (#1126). Null without a database. */
+  private ownerGate: OwnerGate | null = null
+  private toldPrunedAt = 0
   /** Guest meshes (#380): the grants this node opened, and the join limiter. */
   private guestStore = new GuestStore(process.cwd())
   private guestJoinLimiter = new PairAttemptLimiter()
@@ -1933,6 +2124,9 @@ export class AgentXDaemon {
    *  is the owner's (requests/operator, #393). */
   private operatorKey: string | null = null
   private requestsSweeping = false
+  /** Task watchers (src/watchers, #1030). */
+  private watchers: AttachedWatchers | null = null
+  private watchersSweeping = false
   private status: AttachedStatus | null = null
 
   /** Send a status-comment edit to the peer that holds the agent's token. */
@@ -1952,12 +2146,73 @@ export class AgentXDaemon {
       return r.ok && data.ok === true
     }
   }
+  private qualityTimer?: ReturnType<typeof setInterval>
+  private qualityPosting = false
+
+  /** Every minute: post the weekly quality report on the epic issue once
+   *  it is due (src/quality/epic-report.ts, #994). Failures are logged
+   *  and retried hourly; the settings are read on each tick. */
+  private startQualityReport(): void {
+    const tick = async () => {
+      const s = this.config.qualityReport
+      if (!s.enabled || !s.repo || !s.issue || this.qualityPosting || this.shuttingDown) return
+      this.qualityPosting = true
+      try {
+        const repo = s.repo
+        const github = this.router.getChannel("github") as { getTokenForRepo?: (repo?: string) => Promise<string | undefined> } | undefined
+        await postWeekly({
+          root: process.cwd(),
+          settings: s,
+          comments: githubIssueComments(repo, s.issue, async () => (await github?.getTokenForRepo?.(repo)) || configToken(this.config)),
+          runReport: (week) => runReportCommand(s.command, week, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000, baseline: s.baseline, repo: s.repo }),
+          log: this.log,
+        })
+      } catch (e: any) {
+        this.log(`[quality] weekly report failed: ${e?.message ?? e}`)
+      } finally {
+        this.qualityPosting = false
+      }
+    }
+    this.qualityTimer = setInterval(() => { void tick() }, 60_000)
+    this.qualityTimer.unref?.()
+  }
+
   private approvalsTimer?: ReturnType<typeof setInterval>
   /** On a push relay: sends the phone roster to the host (#711). */
   private pushRosterTimer?: ReturnType<typeof setInterval>
   /** On the push host: the subscriptions table relayed phones use (#711). */
   private pushHost?: AppPushDeps
   private approvalsSweeping = false
+  private mirroring = false
+
+  /** One pass of the Reminders mirror, when it is on and this machine
+   *  has a task app (src/approvals/mirror.ts). */
+  private mirrorTick(): void {
+    const m = this.config.native.mirror
+    const tasks = this.native.tasks
+    if (!m.enabled || !tasks || this.mirroring) return
+    this.mirroring = true
+    const root = process.cwd()
+    void runMirror({
+      root,
+      settings: m,
+      tasks,
+      cards: () => listCards(root, "pending"),
+      // No store is an error, not "nothing waiting": that would close
+      // every request's task and re-make it next pass.
+      requests: () => {
+        const store = requestStoreFor({ root })
+        if (!store) throw new Error("the requests database is not open")
+        return store.listByState("waiting_owner")
+      },
+      answerUrl: m.answerUrl ?? `http://localhost:${this.config.dashboard.port}/approvals`,
+      notify: (title, message) => this.notifyOwner(title, message, "mirror"),
+      log: this.log,
+    })
+      .then((r) => { if (r.created || r.completed || r.dismissed || r.failed) this.log(`[mirror] created ${r.created}, completed ${r.completed}, dismissed ${r.dismissed}, failed ${r.failed}`) })
+      .catch((e: any) => this.log(`[mirror] failed: ${e?.message ?? e}`))
+      .finally(() => { this.mirroring = false })
+  }
 
   /** Every minute: expire decision cards, tell agents their results, and
    *  send the day's digest when due (src/approvals/sweep.ts). */
@@ -1965,6 +2220,11 @@ export class AgentXDaemon {
     const tick = async () => {
       if (this.approvalsSweeping || this.shuttingDown) return
       this.approvalsSweeping = true
+      // The told-the-owner record keeps 90 days (#1126), trimmed once a day.
+      if (this.ownerGate && Date.now() - this.toldPrunedAt > 24 * 3_600_000) {
+        this.toldPrunedAt = Date.now()
+        try { this.ownerGate.prune(TOLD_KEEP_DAYS) } catch (e: any) { this.log(`[told] prune failed: ${e?.message ?? e}`) }
+      }
       try {
         const dest = this.config.notifications?.destination
         await runApprovalsSweep({
@@ -1976,6 +2236,7 @@ export class AgentXDaemon {
             this.requests?.tracker.cardResolved(card)
             this.status?.board.cardResolved(card)
             this.workflowCardResult(card)
+            void this.mergePolicy?.onCard(card)
           },
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
@@ -1987,9 +2248,29 @@ export class AgentXDaemon {
             if (!peer) throw new Error(`no mesh peer named "${node}"`)
             await deliverResult(card, { self: this.config.node.name, peer })
           },
+          // One digest a day, keyed by its day: the same words tomorrow are
+          // a new digest, not a repeat (#1126).
+          // The digest is once a day by its own schedule: recorded, never
+          // kept back, so the nags it carries are not cleared unsent (#1126).
           sendDigest: async (d, text) => {
-            await this.router.sendOutbound({ channel: d.channel, chatId: d.chatId, accountId: d.accountId, text })
+            const gate = this.ownerGate
+            const { title, body } = splitTitle(text)
+            const row = gate?.isOwnerAddress(d.channel, d.chatId)
+              ? gate.decide({ channel: d.channel, chatId: d.chatId, title, text: body }, { key: `digest:${Date.now()}`, urgent: true, from: "approvals" }).rowId
+              : undefined
+            await this.router.sendOutbound({
+              channel: d.channel, chatId: d.chatId, accountId: d.accountId, text, told: { passed: true },
+            }).catch((e) => {
+              if (row !== undefined) gate?.outcome(row, "failed")
+              throw e
+            })
           },
+          ...(this.ownerGate ? {
+            nags: {
+              line: () => this.ownerGate!.digestLine(),
+              done: (ids: number[]) => this.ownerGate!.markDigested(ids),
+            },
+          } : {}),
           log: this.log,
         })
         // Beside the sweep, never inside it: a notice that hangs must not
@@ -2003,11 +2284,27 @@ export class AgentXDaemon {
             .finally(() => { this.requestsSweeping = false })
         }
         this.status?.board.sweep()
+        // The Reminders mirror (#1062): beside the sweep, because the OS
+        // task app can take seconds to answer.
+        this.mirrorTick()
+        // Task watchers (#1030): overdue tasks fire, unanswered alerts go
+        // to the owner. Beside the sweep, like requests.
+        if (this.watchers && !this.watchersSweeping) {
+          this.watchersSweeping = true
+          void this.watchers.checkpoint.sweep()
+            .catch((e: any) => this.log(`[watchers] sweep failed: ${e?.message ?? e}`))
+            .finally(() => { this.watchersSweeping = false })
+        }
         // The Mac popup waits on a person, so it runs beside the sweep,
-        // never inside it (src/approvals/popup-runner.ts).
-        void popNext({
+        // never inside it (src/approvals/popup-runner.ts). Not over a
+        // demo or a recording: the card waits for the floor to be free.
+        if (!this.voiceTalk.floor.view().held) void popNext({
           ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log,
           agentName: (id) => this.registry.getAgent(id)?.name,
+          // The screen gate (#394): a card not shown goes back to its author.
+          returnToAuthor: (card, text) => card.node
+            ? this.log(`[approvals] ${card.id}: not shown; its author ${card.raised_by} is on ${card.node}, not told`)
+            : this.tellAgentCardResult(card, text),
           // Through the speaking queue, never straight to `say`: the line
           // waits while the owner is dictating (#493).
           speak: (text) => this.voiceTalk.speech.say({
@@ -2047,6 +2344,22 @@ export class AgentXDaemon {
 
   private forwardToWarned?: string
 
+  /** A note for the owner's notes app, sent to the peer that has it. */
+  private async forwardNote(peer: ForwardPeer, payload: Record<string, unknown>): Promise<NoteReply> {
+    const token = peer.token || process.env.MESH_TOKEN
+    try {
+      const res = await fetch(`${peer.url.replace(/\/+$/, "")}/native/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30_000),
+      })
+      return { status: res.status, body: await res.json().catch(() => ({})) }
+    } catch (e: any) {
+      return { status: 502, body: { error: `couldn't reach ${peer.name} (${peer.url}): ${e?.message ?? e}` } }
+    }
+  }
+
   /** Where this node's cards go when `approvals.forwardTo` is set: the
    *  named peer, or undefined (with one log line per name) when the name
    *  is no peer, so cards stay here rather than vanish. */
@@ -2076,24 +2389,33 @@ export class AgentXDaemon {
     return !!token && collectAcceptedMeshTokens(this.config).has(token)
   }
 
-  /** Tell the owner about a request: a push, and the Mac banner. */
-  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }): Promise<void> {
-    await notify({ title, message, from: r.agentId, priority: 4 }, async (m) => {
-      // A push that fails must not take the Mac banner with it.
+  /** GET /screen: every source read on its own, so one that fails is
+   *  named and the rest still show. */
+  private screenView() {
+    const errors: string[] = []
+    const read = <T>(what: string, fn: () => T, fallback: T): T => {
       try {
-        await this.router.sendOutbound({
-          channel: m.channel ?? defaultNotifyChannel(this.config),
-          chatId: m.chatId ?? "default",
-          text: `${m.title}\n${m.message}`,
-          priority: m.priority,
-          agentId: r.agentId,
-        } as any)
+        return fn()
       } catch (e: any) {
-        this.log(`[requests] push for ${r.id} failed: ${e?.message ?? e}`)
-        // No Mac banner to fall back on: nothing reached the owner.
-        if (process.platform !== "darwin") throw e
+        errors.push(`${what}: ${e?.message ?? e}`)
+        return fallback
       }
-    }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+    }
+    return buildScreen({
+      now: Date.now(),
+      cards: read("decision cards", () => listCards(process.cwd(), "pending"), []),
+      held: read("held notices", () => new NotificationQueue().list(), []),
+      voice: read("speaking queue", () => this.voiceTalk?.speech.view() ?? null, null),
+      requests: read("open requests", () => this.requests ? this.requests.store.listOpen() : null, null),
+      errors,
+    })
+  }
+
+  /** Tell the owner about a request: a push, and the Mac banner. `kind`
+   *  nag (a request that stopped) waits for the daily digest; its card is
+   *  on the Desk meanwhile (#1126). */
+  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }, kind: TellKind = "notice"): Promise<void> {
+    await this.tellOwner({ title, message, from: r.agentId, requestId: r.id, kind, key: kind === "nag" ? `request:${r.id}:attention` : undefined })
   }
 
   private plansSweeping = false
@@ -2158,16 +2480,74 @@ export class AgentXDaemon {
     }
   }
 
+  /** What the loop checkers read (#1039): the forges through the
+   *  configured connectors, the local clones under requests.checkers.repos,
+   *  and this node's own record of inbound turns. Built per check, so a
+   *  settings change applies without a restart. */
+  private requestCheckContext(requests: AttachedRequests): CheckContext {
+    const settings = this.config.requests.checkers ?? DEFAULT_CHECKER_SETTINGS
+    const gh = this.config.channels.github
+    let ghToken = settings.github?.token ?? gh?.token
+    if (!ghToken && gh?.tokenFile) {
+      try { ghToken = readFileSync(gh.tokenFile, "utf-8").trim().split("\n")[0].trim() || undefined } catch { /* no token: public reads only */ }
+    }
+    const gl = this.config.channels.gitlab
+    return {
+      now: Date.now(),
+      settings,
+      forge: forgeReader({
+        github: { apiUrl: settings.github?.apiUrl ?? "https://api.github.com", token: ghToken },
+        gitlab: { url: settings.gitlab?.url ?? gl?.host ?? "https://gitlab.com", token: settings.gitlab?.token ?? gl?.token },
+      }),
+      inbound: requests.inbound,
+    }
+  }
+
+  private headlines?: HeadlineWriter
+
+  /** Writes the headline of a request its agent did not describe (#1126):
+   *  one small call through the provider the operator set up, built on
+   *  first use and read from the settings at each call. */
+  private headlineWriter(requests: AttachedRequests): HeadlineWriter {
+    if (this.headlines) return this.headlines
+    let provider: AgentProvider | undefined
+    const settings = () => ({ ...DEFAULT_HEADLINE_SETTINGS, ...this.config.requests.headlines })
+    return this.headlines = new HeadlineWriter({
+      store: requests.store,
+      settings,
+      generate: async (prompt, signal) => {
+        const s = this.config.requests.headlines
+        provider ??= createProvider((s?.provider ?? "claude-code") as ProviderName)
+        const res = await provider.generate(
+          [
+            { role: "system", content: "You write short card headlines. Respond with a single JSON object on one line. No prose, no code fences." },
+            { role: "user", content: prompt },
+          ],
+          { model: s?.model ?? "claude-haiku-4-5-20251001", maxTokens: 200, abortSignal: signal, bare: true },
+        )
+        return res.content || ""
+      },
+      log: this.log,
+    })
+  }
+
   /** Requests that went quiet come back, each is raised once, and old
    *  closed ones are deleted (src/requests/sweep.ts). Plans first: a
    *  blocked step marks its request told, so the owner hears once. */
   private async sweepRequests(requests: AttachedRequests): Promise<void> {
     await this.sweepPlans(requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
+    const headlines = this.headlineWriter(requests)
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
-      notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
+      check: loopChecker(() => this.requestCheckContext(requests)),
+      describe: (r) => headlines.ensure(r),
+      fillHeadlines: () => headlines.fill(),
+      // A stopped request is a nag: its card is on the Desk at once, the
+      // line about it waits for the daily digest (#1126).
+      notify: (title, message, r) => this.notifyRequestOwner(title, message, r, "nag"),
       hasAgent: (id) => !!this.registry.getAgent(id),
+      inPlan: (id) => requests.plans.get(id)?.state === "active",
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
       tellAgent: async (agentId, text, r) => {
@@ -2188,24 +2568,125 @@ export class AgentXDaemon {
     })
   }
 
+  /** Wait, up to `maxMs`, for the agent's turn in this chat to end, so a
+   *  turn told there does not run beside it (#1100). False: still busy. */
+  private async waitForChat(agentId: string, channel: string, chatId: string, maxMs: number): Promise<boolean> {
+    const until = Date.now() + maxMs
+    while (this.registry.isChatBusy(agentId, channel, chatId)) {
+      if (Date.now() >= until) return false
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+    return true
+  }
+
+  /** The watcher checkpoint at every task start (src/watchers, #1030). */
+  private attachTaskWatchers(db: NonNullable<ReturnType<typeof openDb>>): AttachedWatchers {
+    const port = parseInt(this.config.node.bind.split(":")[1] || "18800", 10)
+    return attachWatchers(db, {
+      settings: () => this.config.watchers,
+      // A tracked plan already nudges its steps and tells the owner.
+      lookups: [({ key, traceId }) => {
+        const req = this.requests
+        if (!req) return null
+        const r = (traceId ? req.store.byLink("run", traceId) : null) ?? req.store.byLink("delegation", key)
+        return r && req.plans.get(r.id)?.state === "active" ? `plan ${r.id}` : null
+      }],
+      hasAgent: (id) => !!this.registry.getAgent(id),
+      // A mesh peer's delegation reaches this node as a run under its dlg
+      // chat; only the caller's node holds the delegation and watches it.
+      isLocalDelegation: (id) => this.delegations.isPending(id),
+      // execute() does not reject on a failed start; it reports { error }.
+      alertAgent: async (agentId, text, w) => {
+        // #1100 — the delegator hears it in the chat it asked from, where
+        // the work waiting on it lives, not in a new one.
+        // Only an agent's own chat: in a person's chat a queued alert's
+        // answer would be posted to the person. a2a and mcp turns wait for
+        // a slot instead of queueing.
+        const asked = alertChatOf(agentId, w.taskKey, (id) => this.delegations.originFor(id))
+        const free = asked ? await this.waitForChat(agentId, asked.origin.channel, asked.origin.chatId, 10 * 60_000) : false
+        const context = alertContext(asked, w.id, free)
+        const res = await this.registry.execute({ agentId, message: text, context: context as any })
+        // Queued behind the turn running in that chat: it is delivered.
+        if (res.error && !res.content?.trim() && !isQueued(res.error)) throw new Error(res.error)
+      },
+      alertOwner: async (title, text) => {
+        const to = this.config.watchers.owner
+        if (to.channel) {
+          await this.router.sendOutbound({ channel: to.channel, chatId: to.chatId ?? "default", text: `${title}\n${text}` } as any)
+          return
+        }
+        await this.notifyOwner(title, text, "watchers")
+      },
+      // #1100 — a request left waiting by a delegation that ended waiting
+      // follows that delegation's watcher.
+      onClosed: (w, outcome) => {
+        if (w.kind === "delegation" && w.taskKey.startsWith("dlg-")) this.status?.board.waitEnded(w.taskKey, outcome)
+      },
+      doneHint: (w, rule) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":${evidenceExample(rule)}}'`,
+      log: this.log,
+    })
+  }
+
   /** Tell the owner through the notify path: a push to the default
    *  channel, the Mac banner where there is one (#788). */
-  private async notifyOwner(title: string, message: string, from: string, priority = 4): Promise<void> {
-    await notify({ title, message, from, priority }, async (m) => {
+  private async notifyOwner(title: string, message: string, from: string, priority = 4, meta: TellMeta = {}): Promise<void> {
+    await this.tellOwner({ title, message, from, priority, ...meta })
+  }
+
+  /** The one way the daemon tells the owner something (#1126). The gate
+   *  decides first: an item already told is not told again, and a nag
+   *  waits for the daily digest. Otherwise notify() sends it, held in
+   *  Focus or a call, with the Mac banner. Rejects only when nothing at all
+   *  reached the owner (the send failed and there is no banner), unless
+   *  `soft`: then the failure is only logged. */
+  private async tellOwner(
+    input: { title: string; message: string; from: string; priority?: number; urgent?: boolean; channel?: string; chatId?: string } & TellMeta,
+    opts: { soft?: boolean } = {},
+  ): Promise<"sent" | "held" | "repeat" | "digest"> {
+    const channel = input.channel ?? defaultNotifyChannel(this.config)
+    const chatId = input.chatId ?? "default"
+    // The daemon's own notices: the same words again are a repeat.
+    const meta: TellMeta = { key: input.key, requestId: input.requestId, kind: input.kind, urgent: input.urgent, from: input.from, textKey: true }
+    const gate = this.ownerGate
+    let row: number | undefined
+    if (gate?.isOwnerAddress(channel, chatId)) {
+      const d = gate.decide({ channel, chatId, title: input.title, text: input.message }, meta)
+      if (d.verdict !== "send") {
+        this.log(`[told] ${d.verdict === "repeat" ? "already told" : "kept for the digest"}: ${input.title.slice(0, 80)}`)
+        return d.verdict
+      }
+      row = d.rowId
+    }
+    const res = await notify({ title: input.title, message: input.message, from: input.from, priority: input.priority ?? 4, urgent: input.urgent, channel, chatId }, async (m) => {
       try {
         await this.router.sendOutbound({
-          channel: m.channel ?? defaultNotifyChannel(this.config),
-          chatId: m.chatId ?? "default",
+          channel: m.channel ?? channel,
+          chatId: m.chatId ?? chatId,
           text: `${m.title}\n${m.message}`,
           priority: m.priority,
-          agentId: from,
+          agentId: input.from,
+          told: { ...meta, passed: true },
         } as any)
       } catch (e: any) {
-        this.log(`[workflows] push "${title}" failed: ${e?.message ?? e}`)
-        // No Mac banner to fall back on: nothing reached the owner.
-        if (process.platform !== "darwin") throw e
+        if (row !== undefined) gate?.outcome(row, "failed")
+        this.log(`[told] push "${input.title.slice(0, 80)}" from ${input.from} failed: ${e?.message ?? e}`)
+        // No banner on this machine to fall back on: nothing reached the owner.
+        if (!this.native.banner && !opts.soft) throw e
       }
-    }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+    }, { alert: this.ownerAlert() })
+    if (res.held && row !== undefined) gate?.outcome(row, "held")
+    return res.held ? "held" : "sent"
+  }
+
+  /** The banner and sound for one notice on this machine. The sound waits
+   *  while something else speaks here (#1126). */
+  private ownerAlert() {
+    const alert = localAlert(localSettings(this.config.notifications.local), { native: this.config.native })
+    // Not awaited: a sound waiting for quiet must not hold the check that
+    // is telling the owner about the next thing.
+    return async (title: string, message: string) => {
+      void alert(title, message).catch((e: any) => this.log(`[told] banner or sound failed: ${e?.message ?? e}`))
+    }
   }
 
   /** A card raised for a workflow (#788): a step's answer resumes its
@@ -2242,14 +2723,15 @@ export class AgentXDaemon {
     }
   }
 
-  /** A check-in pass when one is due, or `force` now. macOS only. */
+  /** A check-in pass when one is due, or `force` now. Needs the OS task app. */
   runCheckin(force?: PassKind) {
-    if (process.platform !== "darwin") return Promise.resolve(null)
+    const tasks = this.native.tasks
+    if (!tasks) return Promise.resolve(null)
     const deps: CheckinDeps = {
       root: process.cwd(),
       settings: this.config.approvals.checkin,
       cardSettings: this.config.approvals,
-      source: remindctlSource(this.config.reminders.command),
+      source: tasks,
       ...(this.config.reminders.enabled ? { claimsPath: claimFile(process.cwd()) } : {}),
       hasAgent: (id) => !!this.registry.getAgent(id),
       // "reminder" waits for a free slot instead of queueing (registry.ts),
@@ -2265,21 +2747,8 @@ export class AgentXDaemon {
         return res.content ?? ""
       },
       notify: async (title, message) => {
-        const from = this.config.approvals.checkin.agent
-        await notify({ title, message, from, priority: 4 }, async (m) => {
-          // A push that fails must not take the Mac banner with it.
-          try {
-            await this.router.sendOutbound({
-              channel: m.channel ?? defaultNotifyChannel(this.config),
-              chatId: m.chatId ?? "default",
-              text: `${m.title}\n${m.message}`,
-              priority: m.priority,
-              agentId: from,
-            } as any)
-          } catch (e: any) {
-            this.log(`[checkin] push for "${m.title}" failed: ${e?.message ?? e}`)
-          }
-        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+        // A push that fails must not take the Mac banner with it.
+        await this.tellOwner({ title, message, from: this.config.approvals.checkin.agent ?? "approvals" }, { soft: true })
       },
       log: this.log,
     }
@@ -2300,6 +2769,7 @@ export class AgentXDaemon {
       fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
       isStopping: () => this.shuttingDown,
       log: this.log,
+      native: this.config.native,
     })
   }
 
@@ -2401,6 +2871,12 @@ export class AgentXDaemon {
           // surface the pairing code in the browser.
           onQR: setWhatsAppQR,
           onStatus: setWhatsAppStatus,
+          // The channel stopped reconnecting: tell the owner instead of
+          // letting it stay silent until the next restart (#982).
+          onGiveUp: (message) => {
+            void this.notifyOwner("WhatsApp stopped reconnecting", `${message}\nRun \`agentx daemon restart\` once fixed.`, "whatsapp", 4, { kind: "nag", key: "channel-down:whatsapp" })
+              .catch((e: any) => this.log(`[whatsapp] give-up notification failed: ${e?.message ?? e}`))
+          },
         },
         this.log,
       )
@@ -2475,44 +2951,39 @@ export class AgentXDaemon {
         // the local global token resolves to (the group-access-token bot).
         gitlab.setSendNoteForwarder(async (node, project, noteableType, noteableIid, agentId, text): Promise<string> => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
-          if (!peer) {
-            this.log(`[gitlab] send-note forward: peer "${node}" not found or unhealthy`)
-            return ""
-          }
+          // Every failure throws, so the agent hears why its note did not
+          // land instead of reading an empty ID as success (#984).
+          if (!peer) throw new Error(`peer "${node}" not found or unhealthy`)
           const url = `${peer.peerUrl}/gitlab/send-note`
-          try {
-            const r = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
-              body: JSON.stringify({ project, noteableType, noteableIid, agentId, text }),
-            })
-            const data = await r.json().catch(() => ({}))
-            this.log(`[gitlab] send-note forward -> ${url} : ${r.status} noteId=${(data as any).noteId || "?"}`)
-            return (data as any).noteId || ""
-          } catch (e: any) {
-            this.log(`[gitlab] send-note forward FAILED -> ${url} : ${e.message}`)
-            return ""
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+            body: JSON.stringify({ project, noteableType, noteableIid, agentId, text }),
+          })
+          const data = await r.json().catch(() => ({})) as { noteId?: string; ok?: boolean; status?: number; error?: string }
+          this.log(`[gitlab] send-note forward -> ${url} : ${r.status} noteId=${data.noteId || "?"}`)
+          if (!r.ok || data.ok === false || !data.noteId) {
+            throw new Error(`GitLab answered ${data.status ?? r.status}: ${data.error || "no note ID returned"}`)
           }
+          return data.noteId
         })
 
         // Same for time tracking — peer posts /add_spent_time as its own user.
         gitlab.setLogTimeForwarder(async (node, project, noteableType, noteableIid, agentId, durationMs): Promise<void> => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
-          if (!peer) {
-            this.log(`[gitlab] log-time forward: peer "${node}" not found or unhealthy`)
-            return
-          }
+          if (!peer) throw new Error(`peer "${node}" not found or unhealthy`)
           const url = `${peer.peerUrl}/gitlab/log-time`
-          try {
-            const r = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
-              body: JSON.stringify({ project, noteableType, noteableIid, agentId, durationMs }),
-            })
-            const respText = await r.text().catch(() => "")
-            this.log(`[gitlab] log-time forward -> ${url} : ${r.status} ${respText.slice(0, 160)}`)
-          } catch (e: any) {
-            this.log(`[gitlab] log-time forward FAILED -> ${url} : ${e.message}`)
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+            body: JSON.stringify({ project, noteableType, noteableIid, agentId, durationMs }),
+          })
+          const respText = await r.text().catch(() => "")
+          this.log(`[gitlab] log-time forward -> ${url} : ${r.status} ${respText.slice(0, 160)}`)
+          let data: { ok?: boolean; status?: number; error?: string } = {}
+          try { data = JSON.parse(respText) } catch { /* not JSON */ }
+          if (!r.ok || data.ok === false) {
+            throw new Error(`GitLab answered ${data.status ?? r.status}: ${data.error || respText.slice(0, 200) || "no response body"}`)
           }
         })
       }
@@ -2570,6 +3041,19 @@ export class AgentXDaemon {
       // posting logins are ours too, or its agents answer themselves (#522).
       if (this.mesh) this.github.setPeerPostingLogins(() => this.mesh!.directory().flatMap((p) => p.githubLogins))
       this.github.setProjectRules(this.projectRules)
+      this.reviewGate = this.buildReviewGate(this.github)
+      this.mergePolicy = this.buildMergePolicy(this.github)
+      this.github.onPullRequestEvent((event) => {
+        void this.reviewGate?.onPullRequest(event)
+        void this.mergePolicy?.onPullRequest(event)
+      })
+      this.github.onPullRequestReviewEvent((event) => { void this.mergePolicy?.onReview(event) })
+      // YES answers from the last day: one given while the daemon was down,
+      // or that GitHub failed to hear, still reaches the PR's status.
+      const since = new Date(Date.now() - 86_400_000).toISOString()
+      void this.mergePolicy.recheck(listCards(process.cwd(), "decided")
+        .filter((c) => c.origin?.kind === "merge-policy" && c.verdict === "yes" && (c.decided_at ?? "") >= since)
+        .map((c) => ({ repo: (c.origin as { repo: string }).repo, pr: (c.origin as { pr: number }).pr })))
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }
@@ -3207,7 +3691,7 @@ export class AgentXDaemon {
     req: IncomingMessage,
     body: Record<string, unknown>,
     target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
-    opts: { callback?: boolean } = {},
+    opts: { callback?: boolean; send?: boolean } = {},
   ): DelegationGateResult {
     const hint = callerHintFrom(req, body)
     const caller = resolveCallerTurn(hint, this.registry)
@@ -3219,7 +3703,7 @@ export class AgentXDaemon {
       const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
       if (why) return { refused: why }
     }
-    const accepted = opts.callback === false ? null : this.startCallback(body, caller, target)
+    const accepted = opts.callback === false ? null : this.startCallback(body, caller, target, { send: opts.send === true })
     if (accepted) return { accepted }
     let runId: string | undefined
     return {
@@ -3241,9 +3725,14 @@ export class AgentXDaemon {
     body: Record<string, unknown>,
     caller: ReturnType<typeof resolveCallerTurn>,
     target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
+    opts: { send?: boolean } = {},
   ): Record<string, unknown> | null {
     const asyncFlag = body.async === true ? true : body.async === false ? false : undefined
-    if (!caller || !this.delegations.shouldCallback(caller, asyncFlag)) return null
+    // An agent's send that no person waits on still calls its asker back
+    // (#1100). A send that asked to wait (async:false) never gets here.
+    const send = !this.delegations.shouldCallback(caller, asyncFlag)
+    if (send && !(opts.send && asyncFlag !== false && this.config.mesh.delegation.callbackSends && this.delegations.shouldCallbackSend(caller))) return null
+    if (!caller) return null
     let peer = target.peer
     if (!peer && !this.registry.getAgent(target.callee)) {
       const found = this.mesh?.findAgentPeer(target.callee)
@@ -3271,8 +3760,12 @@ export class AgentXDaemon {
       message: target.message,
       calleeContext: target.calleeContext,
       extras,
+      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes) }) } : {}),
+      // One session per piece of work (#1100): the body's home, or the one
+      // a /task context carries.
+      ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
     })
-    return acceptedBody(taskId, target.callee, peer)
+    return acceptedBody(taskId, target.callee, peer, send)
   }
 
   /**
@@ -3469,21 +3962,9 @@ export class AgentXDaemon {
       config: () => this.config.whatsappTriage,
       stt: () => this.config.voice.stt,
       execute: (task) => this.registry.execute(task as any),
+      // A push that fails must not take the Mac banner with it.
       notify: async ({ title, message, from }) => {
-        await notify({ title, message, from, priority: 4 }, async (m) => {
-          // A push that fails must not take the Mac banner with it.
-          try {
-            await this.router.sendOutbound({
-              channel: m.channel ?? defaultNotifyChannel(this.config),
-              chatId: m.chatId ?? "default",
-              text: `${m.title}\n${m.message}`,
-              priority: m.priority,
-              agentId: from,
-            } as any)
-          } catch (e: any) {
-            this.log(`[whatsapp-triage] push for "${m.title}" failed: ${e?.message ?? e}`)
-          }
-        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+        await this.tellOwner({ title, message, from }, { soft: true })
       },
       log: (m) => this.log(m),
     })
@@ -3503,21 +3984,9 @@ export class AgentXDaemon {
         const run = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
         return run ? { channel: run.context.channel, chatId: run.context.chatId } : null
       },
+      // A push that fails must not take the Mac banner with it.
       alert: async ({ title, message, urgent, from }) => {
-        await notify({ title, message, urgent, from, priority: urgent ? 5 : 4 }, async (m) => {
-          // A push that fails must not take the Mac banner with it.
-          try {
-            await this.router.sendOutbound({
-              channel: m.channel ?? defaultNotifyChannel(this.config),
-              chatId: m.chatId ?? "default",
-              text: `${m.title}\n${m.message}`,
-              priority: m.priority,
-              agentId: from,
-            } as any)
-          } catch (e: any) {
-            this.log(`[calls] push for "${m.title}" failed: ${e?.message ?? e}`)
-          }
-        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+        await this.tellOwner({ title, message, urgent, from, priority: urgent ? 5 : 4 }, { soft: true })
       },
       // Same chat id as /ask, so the agent summarises the call it just had.
       summarize: async (call) => {
@@ -3726,6 +4195,15 @@ export class AgentXDaemon {
     return warmProcessChat(turn.context)
   }
 
+  /** The agent whose running turn `proof` names: the owner of its task,
+   *  or `claimed` when its channel and chat match a running turn of that
+   *  agent. Null when the call proves none. */
+  private provenAgent(proof: RequestCallerProof, claimed?: string): string | null {
+    if (proof.taskId) return this.registry.runningTaskOwner(proof.taskId)?.agentId ?? null
+    if (claimed && proof.channel && proof.chatId && this.provenTurn(claimed, proof)) return claimed
+    return null
+  }
+
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
     const path = url.pathname
@@ -3759,8 +4237,18 @@ export class AgentXDaemon {
         const voiceOf = (id: string) => agents[id]
           ? voiceRef(resolveAgentVoice(id, agents, this.config.voice))
           : this.voiceMesh.voices.speaker(id, false)?.voice ?? null
-        const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body)
+        const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body, this.voiceTalk.floor)
         // With wait, the client may have given up; the line still plays.
+        if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
+        return
+      }
+      // The floor: taking it silences every other voice on this host.
+      if (isFloorPath(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const gone = new AbortController()
+        res.once("close", () => gone.abort())
+        const reply = await handleFloor(this.voiceTalk.floor, req.method || "GET", path, url.searchParams, body, gone.signal)
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }
@@ -3771,7 +4259,7 @@ export class AgentXDaemon {
         // The app may go while it waits: then no character is there to send.
         const gone = new AbortController()
         res.once("close", () => gone.abort())
-        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body, gone.signal)
+        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body, gone.signal, this.voiceTalk.floor)
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }
@@ -3917,6 +4405,47 @@ export class AgentXDaemon {
         this.json(res, 405, { error: "Method not allowed" }); return
       }
 
+      // Ideas to the owner's notes app (#1062): from an agent's turn here,
+      // or forwarded by a peer whose agent wrote it.
+      if (path === "/native/notes") {
+        if (req.method !== "POST") { this.json(res, 405, { error: "Method not allowed" }); return }
+        const input = ((await readBody(req).catch(() => ({}))) ?? {}) as Record<string, unknown>
+        const claimed = typeof input.agentId === "string" ? input.agentId.trim() : undefined
+        const auth = req.headers.authorization
+        const caller = noteCaller({
+          node: typeof input.node === "string" ? input.node.trim() : "",
+          selfNode: this.config.node.name,
+          tokenPeer: peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN),
+          claimed,
+          isLocalAgent: (id) => !!this.registry.getAgent(id),
+          proven: () => this.provenAgent(this.callerProof(req), claimed),
+        })
+        if ("error" in caller) { this.json(res, 400, { error: caller.error }); return }
+        const fromPeer = caller.node !== ""
+        const agentId = caller.agentId
+        const peerName = this.config.native.forwardTo ?? this.config.approvals.forwardTo
+        const peer = !fromPeer && peerName ? this.approvalsPeer(peerName) : undefined
+        const reply = await handleNoteRequest(input, {
+          root: process.cwd(),
+          settings: this.config.native.notes,
+          notes: this.native.notes,
+          agentId,
+          node: caller.node,
+          forward: peer ? async (payload) => this.forwardNote(peer, { ...payload, node: this.config.node.name }) : undefined,
+        })
+        if (reply.status === 201) this.log(`[notes] ${agentId}${fromPeer ? ` on ${input.node}` : ""} added a note${this.native.notes ? "" : ` on ${peerName}`}`)
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // What is on the owner's screen now (#1100): read only, bounded.
+      // Gated like /approvals by isMeshGatedPath above.
+      if (path === "/screen") {
+        if (req.method !== "GET") { this.json(res, 405, { error: "GET only" }); return }
+        this.json(res, 200, this.screenView())
+        return
+      }
+
       // Approvals inbox, agent side: raise a card, read the inbox. Deciding
       // is refused here (operator surfaces only). Gated like agent memory
       // by isMeshGatedPath above.
@@ -3970,7 +4499,13 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           hasAgent,
           hasPeer: (node) => !!this.approvalsPeer(node),
-          ...(process.platform === "darwin" ? {
+          provenAgent: (claimed) => this.provenAgent(this.callerProof(req), claimed),
+          tokenPeerIs: (node) => {
+            const auth = req.headers.authorization
+            const peer = peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN)
+            return !!peer && this.approvalsPeer(node)?.name === peer
+          },
+          ...(this.native.tasks ? {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
         })
@@ -3981,6 +4516,30 @@ export class AgentXDaemon {
           const remote = await readForwardedCard(decodeURIComponent(one[1]), forward)
           this.json(res, remote.status, remote.body)
           return
+        }
+        // Closing a forwarded card (#909) is done there too.
+        const closing = /^\/approvals\/([^/]+)\/resolve$/.exec(path)
+        // The local handler has already proven the calling agent (a 404
+        // comes only after that check); the card is sent in its name.
+        if (forward && closing && req.method === "POST" && reply.status === 404) {
+          const input = (body ?? {}) as Record<string, unknown>
+          const by = this.provenAgent(this.callerProof(req), typeof input.raised_by === "string" ? input.raised_by.trim() : undefined)
+          if (!by) { this.json(res, 403, { error: "only the agent that raised the card can close it" }); return }
+          const remote = await resolveForwardedCard(decodeURIComponent(closing[1]), { raised_by: by, reason: input.reason }, forward)
+          if (remote.status === 200) {
+            const card = (remote.body as { card: DecisionCard }).card
+            this.log(`[approvals] ${card.id} closed on ${forward.peer.name} by ${card.raised_by}`)
+            this.requests?.tracker.cardResolved(card)
+            this.status?.board.cardResolved(card)
+          }
+          this.json(res, remote.status, remote.body)
+          return
+        }
+        if (closing && reply.status === 200) {
+          const card = (reply.body as { card: DecisionCard }).card
+          this.log(`[approvals] ${card.id} closed by ${card.raised_by}: ${card.resolution}`)
+          this.requests?.tracker.cardResolved(card)
+          this.status?.board.cardResolved(card)
         }
         raised(reply)
         this.json(res, reply.status, reply.body)
@@ -4006,16 +4565,32 @@ export class AgentXDaemon {
       if (path === "/requests" || path.startsWith("/requests/")) {
         if (!this.requests) { this.json(res, 503, { error: "requests need the database" }); return }
         const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
-        const reply = handleRequestsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, {
-          store: this.requests.store,
-          tracker: this.requests.tracker,
+        const requests = this.requests
+        const reply = await handleRequestsCall(req.method || "GET", path, body as Record<string, unknown> | undefined, {
+          store: requests.store,
+          tracker: requests.tracker,
           enabled: this.config.requests.enabled,
           hasAgent: (id) => !!this.registry.getAgent(id),
           runningTurn: (id, p) => this.provenTurn(id, p),
-          plans: this.requests.plans,
+          plans: requests.plans,
           planSettings: this.config.requests.plans,
           onPlanChange: () => this.kickPlans(),
+          query: url.searchParams,
+          checkers: this.config.requests.checkers,
+          check: loopChecker(() => this.requestCheckContext(requests)),
         }, this.callerProof(req))
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // Task watchers (#1030): list them, mark a task done.
+      if (path === "/watchers" || path.startsWith("/watchers/")) {
+        if (!this.watchers) { this.json(res, 503, { error: "watchers need the database" }); return }
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleWatchersApi(req.method || "GET", path, url.searchParams, body as Record<string, unknown> | undefined, {
+          store: this.watchers.store,
+          checkpoint: this.watchers.checkpoint,
+        })
         this.json(res, reply.status, reply.body)
         return
       }
@@ -5350,6 +5925,37 @@ export class AgentXDaemon {
         return
       }
 
+      // Review gate (#990): the review ledger, and replaying past PRs for
+      // the seeded check. Gated by isControlPost / isMeshGatedPath.
+      if (isReviewGatePath(path)) {
+        if (req.method === "GET" && path === "/api/review-gate/reviews") {
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(JSON.stringify(reviewsReply(this.reviewLedger, url.searchParams)))
+          return
+        }
+        if (req.method === "POST" && path === "/api/review-gate/replay") {
+          const parsed = parseReplayBody((await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>)
+          const gate = this.reviewGate
+          if ("error" in parsed || !gate) {
+            res.writeHead(400, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({ error: "error" in parsed ? parsed.error : "the GitHub channel is off on this node" }))
+            return
+          }
+          res.writeHead(200, { "Content-Type": "application/x-ndjson" })
+          const beat = setInterval(() => res.write("\n"), 30_000)
+          try {
+            await replayReviews(gate, parsed.repo, parsed.prs, (line) => res.write(JSON.stringify(line) + "\n"))
+          } finally {
+            clearInterval(beat)
+            res.end()
+          }
+          return
+        }
+        res.writeHead(405, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: "method not allowed" }))
+        return
+      }
+
       // Stop and resume signals (#857). Gated by isControlPost /
       // isMeshGatedPath before this point.
       if (isSignalsPath(path)) {
@@ -5590,6 +6196,8 @@ export class AgentXDaemon {
             // Whether this process can measure a phone recording (#233);
             // checked now, so it follows an ffmpeg install without a restart.
             voice: { canMeasure: findFfmpeg() != null, allowUnmeasured: this.config.voice.allowUnmeasured },
+            // Whether GitLab still accepts this node's tokens (#984).
+            gitlab: this.gitlabHealth(),
           })
           break
         }
@@ -5934,7 +6542,9 @@ export class AgentXDaemon {
             let noteId = ""
             try { noteId = String((JSON.parse(respBody) as any).id || "") } catch { /* ignore */ }
             this.log(`[gitlab/send-note] agent="${agentId}" -> POST ${ep} : ${glRes.status} noteId=${noteId || "?"}`)
-            this.json(res, 200, { ok: glRes.ok, status: glRes.status, noteId })
+            // GitLab's own message travels back, so the sending node can
+            // tell its agent why the note did not land (#984).
+            this.json(res, 200, { ok: glRes.ok, status: glRes.status, noteId, ...(glRes.ok ? {} : { error: gitlabErrorDetail(respBody) }) })
           } catch (e: any) {
             this.log(`[gitlab/send-note] FETCH ERROR: ${e.message}`)
             this.json(res, 500, { error: e.message })
@@ -5967,7 +6577,8 @@ export class AgentXDaemon {
               body: JSON.stringify({ duration }),
             })
             this.log(`[gitlab/log-time] agent="${agentId}" duration=${duration} -> POST ${ep} : ${glRes.status}`)
-            this.json(res, 200, { ok: glRes.ok, status: glRes.status, duration })
+            const error = glRes.ok ? undefined : gitlabErrorDetail(await glRes.text().catch(() => ""))
+            this.json(res, 200, { ok: glRes.ok, status: glRes.status, duration, ...(error ? { error } : {}) })
           } catch (e: any) {
             this.log(`[gitlab/log-time] FETCH ERROR: ${e.message}`)
             this.json(res, 500, { error: e.message })
@@ -6135,6 +6746,24 @@ export class AgentXDaemon {
           break
         }
 
+        case "POST /runs/waiting": {
+          // #1100 — a run that ends to wait for something (a build, another
+          // agent, a time) says so: the one who asked hears "waiting", not
+          // "done", and its watcher stays open. Only from the run itself.
+          const body = await readBody(req)
+          const on = typeof body.on === "string" ? body.on.trim() : ""
+          if (!on) { this.json(res, 400, { error: "Required: on (what the work waits for)" }); break }
+          const due = parseDue(body.due)
+          if (typeof due === "string") { this.json(res, 400, { error: due }); break }
+          const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+          if (!turn?.taskId) { this.json(res, 403, { error: "no running turn matches this call: use the agentx_waiting tool from inside your run" }); break }
+          const rec = this.delegations.markWaiting(turn.taskId, { on, ...(due ? { dueAt: due } : {}) })
+          const traceId = this.registry.runningTraceId(turn.agentId, turn.taskId)
+          const watcher = traceId && this.config.watchers.enabled ? this.watchers?.checkpoint.markWaiting(traceId, due) ?? null : null
+          this.json(res, 200, waitingBody({ delegation: rec?.id ?? null, asker: rec?.caller ?? null, watcher, on, dueAt: due }))
+          break
+        }
+
         case "POST /send/agent": {
           // Explicit A2A send: route to another agent via mesh (or local
           // dispatch when the target lives on this daemon). This is the
@@ -6156,6 +6785,9 @@ export class AgentXDaemon {
           const targetAgent = String(body.agentId)
           const text = String(body.text)
           const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+          // The task's type picks the evidence its watcher's done needs
+          // (#1049); it travels in the callee's context on every path.
+          const taskType = taskTypeOf(body)
           const wait = body.async === false
           const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
           const seen = wait ? null : this.sendAgentDedupe.get(dedupeKey)
@@ -6164,9 +6796,23 @@ export class AgentXDaemon {
             this.json(res, 202, duplicateBody(seen))
             break
           }
+          // #1100 — a callee writing to the agent that asked it, from that
+          // delegation's chat, is answering it: the message goes into the
+          // asker's conversation for that work, not into a new chat.
+          const from = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+          if (!wait && this.config.mesh.delegation.callbackSends) {
+            const rec = from ? this.delegations.replyTarget({ agentId: from.agentId, chatId: String(from.context.chatId ?? "") }, targetAgent) : null
+            if (rec) {
+              this.delegations.relayReply(rec, text)
+              const answer = replyBody(rec.id, targetAgent)
+              this.sendAgentDedupe.put(dedupeKey, answer)
+              this.json(res, 202, answer)
+              break
+            }
+          }
           // #277 — same gate as /task: refuse a cycle, or call back when a
-          // person started it.
-          const gate = this.delegationGate(req, body, { callee: targetAgent, message: text })
+          // person started it. #1100 — or when an agent sent it.
+          const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType ? { calleeContext: { taskType } } : {}) }, { send: true })
           if (!("track" in gate)) {
             const a = gateAnswer(gate)
             if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)
@@ -6174,13 +6820,21 @@ export class AgentXDaemon {
             break
           }
           // Local agent? Dispatch directly through the registry.
+          // The hop count goes on through a plain send too, local or to a
+          // peer, so two agents past the cap are not called back again (#1100).
+          const sendDepth = from ? callbackDepthOf(from.context) + 1 : 0
           const localDef = this.registry.getAgent(targetAgent)
           if (localDef) {
             const track = gate.track
             // Only a caller that waits holds the callee in syncWaits: a
             // queued send leaves the caller free, so it can't form a cycle.
             const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
-              const context = { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a" }
+              const context = {
+                channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}),
+                ...(sendDepth ? { sendDepth } : {}),
+                // What the work is about (#1100): a second run on it is told.
+                ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
+              }
               // A remote target records on its own node's /task; a local one
               // has no other hop that would put this delegation in the ledger.
               const intentRef = this.recordInboundDispatch(
@@ -6238,7 +6892,7 @@ export class AgentXDaemon {
           }
           if (wait) {
             try {
-              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
               this.json(res, 200, { ok: true, messageId, peer: peer.peer })
             } catch (e: any) {
               this.json(res, 500, { error: e.message, peer: peer.peer })
@@ -6250,7 +6904,7 @@ export class AgentXDaemon {
             peer: peer.peer,
             log: (m) => this.log(m),
             run: async () => {
-              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
               return { ok: true }
             },
           })
@@ -6325,7 +6979,8 @@ export class AgentXDaemon {
               agentId: body.agentId as string | undefined,
               accountId: body.accountId as string | undefined,
             })
-            this.json(res, 200, { ok: true, messageId: messageId || null, contactId: result.contact.id, channel: picked.channel })
+            const answer = sendAnswer(messageId, { channel: picked.channel, agentId: body.agentId as string | undefined, identity: this.postingIdentity(picked.channel, body.agentId as string | undefined) })
+            this.json(res, answer.status, { ...answer.body, contactId: result.contact.id, channel: picked.channel })
           } catch (e: any) {
             this.json(res, 400, { error: e.message })
           }
@@ -6339,6 +6994,23 @@ export class AgentXDaemon {
             return
           }
           try {
+            // To the owner's own addresses, the told-the-owner gate decides
+            // first (#1126), so the caller hears whether it went out. A
+            // caller may say what it is about; it may not skip the gate.
+            const told = toldOfBody(body.told, body.agentId)
+            const gate = this.ownerGate
+            let row: number | undefined
+            if (gate?.isOwnerAddress(String(body.channel), String(body.chatId))) {
+              const { title, body: rest } = splitTitle(String(body.text))
+              const d = gate.decide({ channel: String(body.channel), chatId: String(body.chatId), title, text: rest }, told)
+              if (d.verdict !== "send") {
+                this.log(`[told] /send kept back (${d.verdict}): ${title.slice(0, 80)}`)
+                this.json(res, 200, { ok: true, sent: false, told: d.verdict, key: d.key })
+                break
+              }
+              told.passed = true
+              row = d.rowId
+            }
             const messageId = await this.router.sendOutbound({
               channel: body.channel as string,
               chatId: body.chatId as string,
@@ -6352,11 +7024,26 @@ export class AgentXDaemon {
               buttons: body.buttons as any,
               poll: body.poll as any,
               media: body.media as any,
+              told,
+            }).catch((e) => {
+              if (row !== undefined) gate?.outcome(row, "failed")
+              throw e
             })
-            this.json(res, 200, { ok: true, messageId: messageId || null })
+            const answer = sendAnswer(messageId, { channel: body.channel as string, agentId: body.agentId as string | undefined, identity: this.postingIdentity(body.channel as string, body.agentId as string | undefined) })
+            this.json(res, answer.status, answer.body)
           } catch (e: any) {
             this.json(res, 400, { error: e.message })
           }
+          break
+        }
+
+        // What the owner was told (#1126): counts by outcome and the
+        // latest rows, since `since` (epoch ms; default: the last 24 h).
+        case "GET /owner/told": {
+          if (!this.ownerGate) { this.json(res, 409, { error: "The told-the-owner record needs the database." }); break }
+          const since = Number(url.searchParams.get("since") ?? Date.now() - 24 * 3_600_000)
+          if (!Number.isFinite(since)) { this.json(res, 400, { error: "since must be epoch milliseconds" }); break }
+          this.json(res, 200, { since, ...this.ownerGate.report(since, Math.min(500, Number(url.searchParams.get("limit") ?? 50) || 50)) })
           break
         }
 
@@ -6393,6 +7080,14 @@ export class AgentXDaemon {
           if (looksLikeA2A && !senderAgentId) {
             this.log(`[a2a] /task accepted without senderAgentId for agent="${agentId}" from ${(req.socket?.remoteAddress) || "unknown"} — caller should upgrade. Required in next release.`)
           }
+          // A top-level `taskType` (a mesh peer's /send/agent, #1049) joins
+          // the run's context, where the watcher reads it.
+          if (taskTypeOf(body)) body.context = contextWithTaskType(body)
+          // So does a top-level `home` (#1100): a second run on it is told.
+          const taskHome = homeOfBody(body)
+          if (taskHome) body.context = { ...(body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : {}), home: taskHome }
+          // So does a plain send's hop count (#1100).
+          if (body.sendDepth !== undefined) body.context = contextWithSendDepth(body)
           // #277 — an agent delegating from a turn a person started gets a
           // task id now and the answer later, as a new turn in its chat.
           // Streaming callers are watching the run, so they keep waiting.
@@ -6713,11 +7408,14 @@ export class AgentXDaemon {
           let message = url.searchParams.get("q") || url.searchParams.get("message") || ""
           let requestedAgent = url.searchParams.get("agent") || ""
           let voiceSession = url.searchParams.get("session") || ""
+          // The microphone opened by itself, no key held (#924).
+          let handsFree = url.searchParams.get("handsFree") === "true"
           if (req.method === "POST") {
             const body = await readBody(req)
             message = (body.message as string) || (body.q as string) || message
             requestedAgent = (body.agent as string) || (body.agentId as string) || requestedAgent
             voiceSession = (body.session as string) || voiceSession
+            handsFree = body.handsFree === true || handsFree
           }
 
           // An explicit agent is what makes this endpoint useful for more than
@@ -6742,6 +7440,16 @@ export class AgentXDaemon {
           // then talk like a colleague. A client that sends no session id
           // shares one per origin, which the 8h gap still keeps sensible.
           const session = voiceSession.trim() || origin
+
+          // The floor's holder plays sound, and nobody held a key to say
+          // this: the microphone heard the holder, not the owner (#924).
+          // It wakes no agent, switches to none, and nothing is said back.
+          const floor = this.voiceTalk.floor.view()
+          if (handsFree && floor.held && floor.sound) {
+            this.log(`[floor] ${requested}: hands-free words dropped while ${floor.holder} holds the floor (${JSON.stringify(message.slice(0, 60))})`)
+            this.json(res, 200, { agentId: requested, voice: null, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
+            break
+          }
 
           // "talk to Atlas" points this session at another agent, local or
           // on a mesh peer, until "back to secretary". The new agent
@@ -7818,6 +8526,9 @@ export class AgentXDaemon {
         agentId: typeof body.agentId === "string" ? body.agentId : undefined,
         // Set by a push relay, so a relay never forwards a relayed message.
         relayed: body.relayed === true ? true : undefined,
+        // The relaying node's own gate already decided it (#1126): deciding
+        // again here, by text alone, would lose its key and its urgency.
+        ...(body.relayed === true ? { told: { passed: true } } : {}),
         // The relaying node, so the host can address that node's phones:
         // the peer its token belongs to, not the name it gives (#711).
         origin,

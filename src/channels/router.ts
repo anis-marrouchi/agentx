@@ -28,6 +28,7 @@ import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/ro
 import type { LegacyOutcome } from "@/intent/divergence"
 import type { IntentResolutionStatus } from "@/intent/types"
 import { parseQueued, type QueuedAnswer } from "@/agents/queued"
+import { splitTitle, type OwnerGate } from "@/notify/told"
 import { unwrapMeshError } from "@/a2a/mesh-errors"
 import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from "./ui-directive"
 import type { Resumer } from "@/agents/resume/coordinator"
@@ -191,6 +192,14 @@ export class MessageRouter {
   private registry: AgentRegistry
   private config: DaemonConfig
   private channels: Map<string, ChannelAdapter> = new Map()
+  /** The told-the-owner gate (#1126). Unset: nothing is gated. */
+  private ownerGate: OwnerGate | null = null
+
+  /** Attach the told-the-owner gate: every send to the owner's own
+   *  addresses is recorded, repeats and nags are kept back. */
+  setOwnerGate(gate: OwnerGate | null): void {
+    this.ownerGate = gate
+  }
   private hooks?: HookRegistry
   private mesh?: A2AMesh
   private serviceMatcher?: ServiceMatcher
@@ -470,13 +479,39 @@ export class MessageRouter {
       }
     }
 
-    this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
+    // Everything to the owner's own addresses passes one gate (#1126): an
+    // item already told is not told again, and a nag waits for the digest.
+    // A caller that went through the gate itself marks the message passed.
+    let toldRow: number | undefined
+    const gate = this.ownerGate
+    if (gate && !msg.told?.passed && gate.isOwnerAddress(msg.channel, msg.chatId)) {
+      const { title, body } = splitTitle(msg.text)
+      const d = gate.decide({ channel: msg.channel, chatId: msg.chatId, title, text: body }, { from: msg.agentId, ...msg.told })
+      if (d.verdict !== "send") {
+        this.log(`${new Date().toISOString()} Outbound [${msg.channel}] -> ${msg.chatId}: not sent, ${d.verdict === "repeat" ? "already told" : "kept for the digest"}: ${title.slice(0, 80)}`)
+        return
+      }
+      toldRow = d.rowId
+    }
+    const { told: _told, ...wire } = msg
+    msg = wire
 
+    this.log(`${new Date().toISOString()} Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
+
+    // A failed send gets its own line, so the log never reads as if a push
+    // went out when it did not (#930).
     let messageId: string | void
-    if (adapter.name === "telegram" && accountId) {
-      messageId = await this.adapterSend(adapter, { ...msg, accountId })
-    } else {
-      messageId = await adapter.send(msg)
+    try {
+      if (adapter.name === "telegram" && accountId) {
+        messageId = await this.adapterSend(adapter, { ...msg, accountId })
+      } else {
+        messageId = await adapter.send(msg)
+      }
+    } catch (e: any) {
+      const code = e?.cause?.code ? ` code=${e.cause.code}` : ""
+      this.log(`${new Date().toISOString()} Outbound [${msg.channel}] -> ${msg.chatId}: send failed: ${e?.message ?? e}${code}`)
+      if (toldRow !== undefined) gate?.outcome(toldRow, "failed")
+      throw e
     }
 
     // Record into dedupe table after the send so a future repeat within the
@@ -924,7 +959,10 @@ export class MessageRouter {
     // live message is edited in place; once it grows past one Telegram chunk
     // it rolls into additional messages instead of freezing/truncating (the
     // old single-`sentMessageId` path clipped everything past ~3900 chars).
-    const canStream = typeof adapter.editMessage === "function"
+    // WhatsApp is excluded: its clients show an edited message as deleted,
+    // so a streamed reply (first block sent, the rest as edits) looks gone.
+    // Each WhatsApp reply goes out as one final message instead.
+    const canStream = typeof adapter.editMessage === "function" && msg.channel !== "whatsapp"
     let fullStreamText = ""
     let anchorSends = 0
     const streaming = canStream

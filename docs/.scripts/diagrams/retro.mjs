@@ -13,7 +13,7 @@ const d = createDiagram({
   title: "How a run that struggled becomes a fix",
   desc:
     "Six steps in two parts. A run struggles: it fails, is cut off by a restart, takes far longer than usual, or the session monitor notes friction. " +
-    "You run agentx retro with its task id. A reviewer reads the run and proposes up to four fixes, each tied to a step of the run. " +
+    "You run agentx retro with its task id. A reviewer reads the run and proposes up to two fixes, each tied to a step of the run. " +
     "One decision card lists them, with None of these last. You pick one on the dashboard, the phone app, the Mac card or the terminal, and may edit the spec. " +
     "The agent that ran the task builds the fix as a pull request or a guard rule in warn mode, and you review it again. A card nobody answers is discarded.",
 })
@@ -30,7 +30,7 @@ const readA = d.row(
   [
     { title: ["A run struggles"], note: ["an error, a restart, far slower", "than usual, or friction"], who: "ink" },
     { title: ["Run agentx retro", "with its task id"], note: ["the id is in agentx trace list"], who: "accent" },
-    { title: ["A reviewer proposes", "up to four fixes"], note: ["each one tied to a step"], who: "ink" },
+    { title: ["A reviewer proposes", "up to two fixes"], note: ["each one tied to a step"], who: "ink" },
   ],
   y,
 )

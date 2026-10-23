@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { LiveTeach, leavesApp, parsePlan, type ScreenView, type TeachDeps, type TeachMode } from "../src/voice/live-teach"
+import { LiveTeach, closesByKeys, leavesApp, parsePlan, type ScreenView, type TeachDeps, type TeachMode } from "../src/voice/live-teach"
 import { bubbleText, findControl, teachSystemPrompt } from "../src/voice/live-teach-plan"
 import { presenceLook, type Presence } from "../src/voice/presence"
 import { Channel, type LineModel } from "../src/voice/talk-model"
@@ -209,6 +209,29 @@ describe("LiveTeach", () => {
     for (const k of ["shift+.", "cmd+d", "cmd+f", "space", "escape", "r", "cmd+z"]) expect(leavesApp(k), k).toBe(false)
   })
 
+  it.each(["cmd+w", "cmd+shift+w", "Command + Option + W"])("act mode never closes a tab or window from the keyboard unless the goal asks: %s", async (keys) => {
+    const s = setup("act", [`TARGET: none\nACTION: key\nTEXT: ${keys}\nSAY: Let me tidy up.`, DONE], { actionsAllowed: true })
+    const ends: string[] = []
+    s.t.on((e) => { if (e.type === "end") ends.push(e.reason) })
+    await s.t.run()
+    expect(s.acted).toEqual([])
+    expect(s.said).toEqual(["That would close a tab or window you didn't ask to close, so I'll stop here."])
+    expect(ends).toEqual([`${keys} would close a tab or window`])
+  })
+
+  it("act mode presses cmd+w when the goal asks to close the tab", async () => {
+    const s = setup("act", ["TARGET: none\nACTION: key\nTEXT: cmd+w\nSAY: Closing the tab.", DONE], { actionsAllowed: true })
+    ;(s.t as any).opts.goal = "close this tab"
+    await s.t.run()
+    expect(s.said).not.toContain("That would close a tab or window you didn't ask to close, so I'll stop here.")
+    expect(s.acted).toEqual(["key cmd+w"])
+  })
+
+  it("closesByKeys: cmd+w with or without shift or option, nothing else", () => {
+    for (const k of ["cmd+w", "cmd+shift+w", "cmd+alt+w", "⌘+W"]) expect(closesByKeys(k), k).toBe(true)
+    for (const k of ["w", "shift+w", "ctrl+w", "cmd+e", "cmd+q"]) expect(closesByKeys(k), k).toBe(false)
+  })
+
   it("never plans or acts while another app has focus", async () => {
     const s = setup("act", [STEP1, DONE], { actionsAllowed: true })
     let front = "Google Chrome"
@@ -221,6 +244,34 @@ describe("LiveTeach", () => {
     // The first plan only happened once Notes was in front.
     expect(s.model.prompts[0]).toContain("App: Notes")
     expect(s.acted).toEqual(["click New"])
+  })
+
+  it("shows the planner the fuller name, and clicks by the app's own label", async () => {
+    // #1094: a browser's own controls are now in the read. The planner must
+    // see them marked, or "the search box" picks Chrome's address bar; the
+    // click must still be checked against the label the screen carries.
+    const s = setup("act", [STEP1, DONE], { actionsAllowed: true })
+    const inner = (s.t as any).deps.readScreen
+    ;(s.t as any).deps.readScreen = async () => {
+      const v = await inner()
+      return { ...v, candidates: v.candidates.map((c: any) => c.id === 1 ? { ...c, shown: "outside the page: New" } : c) }
+    }
+    await s.t.run()
+    expect(s.model.prompts[0]).toContain('"outside the page: New"')
+    expect(s.acted).toEqual(["click New"])
+  })
+
+  it.each(["click", "type"])("act: never %ss a control that closes something the goal never asked to close", async (action) => {
+    // Typing clicks the target first, so it is held back as well.
+    const s = setup("act", [`TARGET: 1\nACTION: ${action}\nTEXT: hi\nSAY: Use New.`, DONE], { actionsAllowed: true, userActsAfter: 40 })
+    const inner = (s.t as any).deps.readScreen
+    ;(s.t as any).deps.readScreen = async () => {
+      const v = await inner()
+      return { ...v, candidates: v.candidates.map((c: any) => c.id === 1 ? { ...c, closes: true } : c) }
+    }
+    await s.t.run()
+    expect(s.acted).toEqual([])
+    expect(s.log).toContain("move 10 highlight")
   })
 
   it("stop ends the lesson and removes the presence", async () => {

@@ -16,6 +16,7 @@
 import { createHash } from "crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { LockBusyError } from "./facts/ledger-file"
 import type { WikiHub } from "./hub"
 import { isWikiArticleType, type WikiArticleMeta, type WikiEntry } from "./types"
 import { normName, type Entity, type GraphPage, type WikiGraph } from "./ontology/graph"
@@ -471,17 +472,30 @@ export async function runEnrich(hub: WikiHub, g: WikiGraph, call: EnrichCall, op
       continue
     }
 
-    const content = r.overview ? withOverview(page.article.content, r.overview) : page.article.content
-    const meta = mergedMeta(page.article.meta, r, opts.today)
+    const withNew = (a: { content: string }) => (r.overview ? withOverview(a.content, r.overview) : a.content)
     if (opts.dryRun) {
-      run.outcomes.push({ ...outcome, status: "dry-run", preview: content, facts: r.statements })
+      run.outcomes.push({ ...outcome, status: "dry-run", preview: withNew(page.article), facts: r.statements })
       continue
     }
     const store = hub.getAgentWiki(page.agentId)
-    const ok = store.writeArticle(page.article.path, meta, content, page.article.meta.owner || page.agentId)
-    if (!ok) {
+    // Absorb may have changed the page while the run waited for the model:
+    // merge onto what is on disk now, not the copy read at the start. The
+    // page lock keeps another write from landing between this read and
+    // the write.
+    let why: string | undefined
+    try {
+      why = store.withArticleLock(page.article.path, () => {
+        const current = store.readArticle(page.article.path)
+        if (!current) return "the page was moved or removed during the run"
+        return store.writeArticle(page.article.path, mergedMeta(current.meta, r, opts.today), withNew(current), current.meta.owner || page.agentId) ? undefined : "write refused"
+      })
+    } catch (err) {
+      if (!(err instanceof LockBusyError)) throw err
+      why = "the page was busy; run again"
+    }
+    if (why) {
       outcome.status = "failed"
-      outcome.dropped.push("write refused")
+      outcome.dropped.push(why)
       run.outcomes.push(outcome)
       remember(e.id, fp, reply.costUsd, true)
       continue

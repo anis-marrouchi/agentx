@@ -136,4 +136,92 @@ describe("NtfyAdapter", () => {
 
     await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/no topic/)
   })
+
+  it("retries a network failure and logs its cause code (#930)", async () => {
+    const timeout = Object.assign(new TypeError("fetch failed"), { cause: { code: "ETIMEDOUT" } })
+    const fn = vi.fn()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: "late" }), text: async () => "" })
+    ;(globalThis as any).fetch = fn
+    const lines: string[] = []
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0, 0] }, (m) => lines.push(String(m)))
+
+    expect(await a.send({ channel: "ntfy", chatId: "", text: "hi" })).toBe("late")
+    expect(fn).toHaveBeenCalledTimes(2)
+    expect(lines.join("\n")).toMatch(/attempt 1\/3 failed \(ntfy: fetch failed code=ETIMEDOUT\)/)
+  })
+
+  it("gives up after the last retry, logs it and throws with the cause code", async () => {
+    const timeout = Object.assign(new TypeError("fetch failed"), { cause: { code: "ETIMEDOUT" } })
+    const fn = vi.fn().mockRejectedValue(timeout)
+    ;(globalThis as any).fetch = fn
+    const lines: string[] = []
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0, 0] }, (m) => lines.push(String(m)))
+
+    await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/ETIMEDOUT/)
+    expect(fn).toHaveBeenCalledTimes(3)
+    expect(lines.some(l => /failed after 3 attempt/.test(l))).toBe(true)
+  })
+
+  it("retries a 503 or 429, but not a 500 or 4xx the server may have stored", async () => {
+    const fn = mockFetch(503, { error: "busy" })
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0] }, quiet)
+    await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/503/)
+    expect(fn).toHaveBeenCalledTimes(2)
+
+    const fn429 = mockFetch(429, { error: "slow down" })
+    const b = new NtfyAdapter({ topic: "t", retryDelaysMs: [0] }, quiet)
+    await expect(b.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/429/)
+    expect(fn429).toHaveBeenCalledTimes(2)
+
+    for (const status of [500, 502, 403]) {
+      const once = mockFetch(status, { error: "no" })
+      const c = new NtfyAdapter({ topic: "t", retryDelaysMs: [0] }, quiet)
+      await expect(c.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(String(status))
+      expect(once).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it("does not re-post after the connection broke mid-request, so the phone never gets it twice", async () => {
+    const reset = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } })
+    const fn = vi.fn().mockRejectedValue(reset)
+    ;(globalThis as any).fetch = fn
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0, 0] }, quiet)
+
+    await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/ECONNRESET/)
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it("stops retrying once the next wait would pass the send time limit", async () => {
+    const timeout = Object.assign(new TypeError("fetch failed"), { cause: { code: "ETIMEDOUT" } })
+    const fn = vi.fn().mockRejectedValue(timeout)
+    ;(globalThis as any).fetch = fn
+    const lines: string[] = []
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0, 60_000], sendTimeoutMs: 1000 }, (m) => lines.push(String(m)))
+
+    await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/ETIMEDOUT/)
+    expect(fn).toHaveBeenCalledTimes(2)
+    expect(lines.some(l => /failed after 2 attempt/.test(l))).toBe(true)
+  })
+
+  it("names the send time limit when it cuts a try, and does not retry it", async () => {
+    const abort = new DOMException("The operation was aborted due to timeout", "TimeoutError")
+    const fn = vi.fn().mockRejectedValue(abort)
+    ;(globalThis as any).fetch = fn
+    const lines: string[] = []
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0], sendTimeoutMs: 1000 }, (m) => lines.push(String(m)))
+
+    await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/send time limit of 1000 ms reached/)
+    expect(fn).toHaveBeenCalledTimes(1)
+    expect(lines.some(l => /failed after 1 attempt\(s\): ntfy: send time limit of 1000 ms reached/.test(l))).toBe(true)
+  })
+
+  it("gives each request an abort signal bounded by the send time limit", async () => {
+    const fn = mockFetch()
+    const a = new NtfyAdapter({ topic: "t", sendTimeoutMs: 1000 }, quiet)
+
+    await a.send({ channel: "ntfy", chatId: "", text: "hi" })
+
+    expect((fn.mock.calls[0] as any)[1].signal).toBeInstanceOf(AbortSignal)
+  })
 })

@@ -152,6 +152,12 @@ export interface AgentXEvents {
      *  node's own surfaces (requests/operator): it started the turn itself,
      *  or the /task caller showed the operator key (#393). */
     operator?: boolean
+    /** When the task is due (ms), when the caller gave one in the run's
+     *  context as `dueAt` (watchers, #1030). */
+    dueAt?: number
+    /** The task's type, when the caller gave one in the run's context as
+     *  `taskType`: it picks the evidence a done needs (watchers, #1049). */
+    taskType?: string
   }
 
   /** A single step inside an in-flight task — typically a tool call or

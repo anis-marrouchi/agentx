@@ -25,6 +25,9 @@ enum AXTree {
         let x: Double, y: Double, width: Double, height: Double
         /// Index of the parent in the same flat array; -1 for the root.
         let parent: Int
+        /// AXSubrole. The window's traffic lights have no label, and this
+        /// is the only thing that says which one is "close".
+        let subrole: String?
     }
 
     struct Snapshot: Codable {
@@ -95,13 +98,21 @@ enum AXTree {
         // looks like it exposes nothing. Skipped nodes still have their
         // children walked; `parent` points at the nearest KEPT ancestor, so
         // the hierarchy stays usable for page-scoping.
+        //
+        // Nor on what is scrolled out of sight. A long article keeps its
+        // whole DOM in the tree: on Wikipedia 232 of 400 slots went to
+        // table cells below the fold, and controls on screen were cut.
+        let view = describe(root, id: 0, parent: -1).map {
+            CGRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)
+        }
         var queue: [(AXUIElement, Int)] = [(root, -1)]
         while !queue.isEmpty {
             if elements.count >= maxElements { truncated = true; break }
             let (node, parent) = queue.removeFirst()
 
             var keptIndex = parent
-            if let e = describe(node, id: elements.count, parent: parent), worthKeeping(e) {
+            if let e = describe(node, id: elements.count, parent: parent), worthKeeping(e),
+               view.map({ $0.intersects(CGRect(x: e.x, y: e.y, width: e.width, height: e.height)) }) ?? true {
                 keptIndex = elements.count
                 elements.append(e)
             }
@@ -164,7 +175,8 @@ enum AXTree {
                        enabled: enabled,
                        x: frame.origin.x, y: frame.origin.y,
                        width: frame.size.width, height: frame.size.height,
-                       parent: parent)
+                       parent: parent,
+                       subrole: string(node, kAXSubroleAttribute))
     }
 
     private static func string(_ node: AXUIElement, _ attr: String) -> String? {

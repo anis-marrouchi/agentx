@@ -2,14 +2,18 @@ import { existsSync, readFileSync } from "fs"
 import { planStoreFor, requestStoreFor, type InboxContext } from "@/approvals/inbox"
 import { requestCard } from "@/requests/card-view"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
+import { CHECK_KINDS, type CheckKind } from "@/requests/checkers"
+import { STALL_GROUPS, type StallGroup } from "@/requests/loops"
 import { findConfigPath } from "./config-mutator"
 
 // --- Dashboard API for open requests (#356) ---
 //
 // Lives under the Approvals admin prefix, so it sits behind the same token
 // gate and the same X-Requested-With check (approvals-panel.ts):
-//   GET  /api/admin/approvals/requests           open requests as cards, oldest first, this node's agents, and the settings
-//   POST /api/admin/approvals/requests/close     { id, action: done | drop, evidence?, reason? }
+//   GET  /api/admin/approvals/requests           open requests as cards, oldest first, this node's agents, the
+//                                                settings, and the stalled ones counted by what they wait on (#1039)
+//   POST /api/admin/approvals/requests/close     { id, action: done | drop, evidence?, reason? }: done by the
+//                                                owner skips a loop's check, with the reason
 //   POST /api/admin/approvals/requests/reply     { id, text }: the agent that has it gets the reply and goes on
 //   POST /api/admin/approvals/requests/handoff   { id, agentId, note? }: that agent has it from now on
 //   POST /api/admin/approvals/requests/settings  the settings form, plans included (#788)
@@ -53,14 +57,14 @@ async function route(
 ): Promise<{ status: number; body: unknown }> {
   if (method === "GET" && path === REQUESTS_PANEL_PREFIX) {
     const store = requestStoreFor(ctx)
-    return {
-      status: 200,
-      body: {
-        items: store ? store.listOpen().map((r) => requestCard(r, store, planStoreFor(ctx))) : [],
-        agents: agentsOf(ctx.configPath),
-        settings: readRequestSettings(ctx.configPath),
-      },
-    }
+    const agents = agentsOf(ctx.configPath)
+    const settings = readRequestSettings(ctx.configPath)
+    const ids = new Set(agents.map((a) => a.id))
+    const look = { staleAfterHours: settings.staleAfterHours, now: ctx.now ?? Date.now(), isAgent: (id: string) => ids.has(id) }
+    const items = store ? store.listOpen().map((r) => requestCard(r, store, planStoreFor(ctx), look)) : []
+    const stalled = Object.fromEntries(STALL_GROUPS.map((g) => [g, 0])) as Record<StallGroup, number>
+    for (const c of items) if (c.stall) stalled[c.stall.group]++
+    return { status: 200, body: { items, agents, settings, stalled } }
   }
 
   const act = path === `${REQUESTS_PANEL_PREFIX}/reply` ? "reply" : path === `${REQUESTS_PANEL_PREFIX}/handoff` ? "handoff" : null
@@ -92,8 +96,11 @@ async function route(
     const r = store?.get(id)
     if (!store || !r || r.state === "candidate") return { status: 404, body: { error: `no request "${id}"` } }
     // The owner's own word closes it: a link to the evidence is welcome, not required (agents must give one).
+    // A loop with a check is closed past it: the record says so (#1039).
+    const said = typeof body.evidence === "string" && body.evidence.trim() ? body.evidence.trim()
+      : typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : ""
     const detail = action === "done"
-      ? (typeof body.evidence === "string" && body.evidence.trim() ? body.evidence : "closed by the owner (dashboard)")
+      ? (r.closeWhen ? `closed by owner: ${said || "checked by hand"}` : said || "closed by the owner (dashboard)")
       : (typeof body.reason === "string" && body.reason.trim() ? body.reason : "dropped by the owner (dashboard)")
     if (!store.close(id, action === "done" ? "done" : "dropped", detail, ctx.now ?? Date.now())) {
       return { status: 409, body: { error: `${id} is already closed` } }
@@ -114,6 +121,7 @@ async function route(
     patch.channels = list(body.channels)
     patch.staleAfterHours = num("staleAfterHours")
     patch.retentionDays = num("retentionDays")
+    if (typeof body.headlines === "boolean") patch.headlines = { enabled: body.headlines }
     const plans: NonNullable<RequestSettingsPatch["plans"]> = {}
     if (typeof body.plansEnabled === "boolean") plans.enabled = body.plansEnabled
     plans.stallMinutes = num("stallMinutes")
@@ -123,7 +131,21 @@ async function route(
     }
     plans.approveKinds = list(body.approveKinds)
     plans.disabledAgents = list(body.plansOffFor)
+    plans.requireForWork = list(body.planForWork)
+    if (body.planOverMinutes !== undefined) {
+      if (typeof body.planOverMinutes !== "number" || !(body.planOverMinutes >= 0)) throw new Error("planOverMinutes must be a number, 0 or more")
+      plans.requireOverMinutes = body.planOverMinutes
+    }
     if (Object.values(plans).some((v) => v !== undefined)) patch.plans = plans
+    const checkers: NonNullable<RequestSettingsPatch["checkers"]> = {}
+    const kinds = list(body.checkKinds)
+    if (kinds) {
+      const bad = kinds.filter((k) => !(CHECK_KINDS as readonly string[]).includes(k))
+      if (bad.length) throw new Error(`unknown check ${bad.join(", ")}: use ${CHECK_KINDS.join(", ")}`)
+      checkers.enabled = kinds as CheckKind[]
+    }
+    checkers.checkEveryMinutes = num("checkEveryMinutes")
+    if (Object.values(checkers).some((v) => v !== undefined)) patch.checkers = checkers
     const r = await updateRequestSettings(patch, { configPath: ctx.configPath, reload: ctx.reload })
     if (!r.success) return { status: 400, body: { error: r.error } }
     return { status: 200, body: { ok: true, settings: readRequestSettings(ctx.configPath) } }

@@ -17,7 +17,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, openSync, 
 import { resolve, join } from "path"
 import { randomBytes } from "crypto"
 import { demoReportWorkflow } from "./demo-workflow"
-import { busyPorts, cliCommand, configStartupTimeout, resolveStartupTimeout } from "./demo-startup"
+import { busyPorts, cliCommand, configStartupTimeout, ledgerHint, resolveStartupTimeout } from "./demo-startup"
 import { openBrowser } from "@/utils/open-browser"
 
 interface NodeSpec {
@@ -34,7 +34,7 @@ interface NodeSpec {
 const KICKOFF = "[demo] Customer reports checkout is broken and CI is red on demo/shop. Handle it."
 const DELEGATION = "CI is red on demo/shop — checkout.test.ts failing on Node 22. Diagnose, fix, and report back."
 
-function buildSpecs(root: string, basePort: number, cmd: string): NodeSpec[] {
+function buildSpecs(root: string, basePort: number, cmd: string, filesKept: boolean): NodeSpec[] {
   return [
     {
       dir: join(root, "node-a"),
@@ -75,7 +75,7 @@ function buildSpecs(root: string, basePort: number, cmd: string): NodeSpec[] {
             match: "Builder reports",
             thinking: "Fix confirmed and pipeline green — close the loop with the customer.",
             reply:
-              "Resolved ✅ — builder patched checkout.test.ts (Node 22 crypto import), MR !47 merged, pipeline green. Customer thread updated. Every hop of this run is in the ledger: `" + cmd + " ledger`.",
+              "Resolved ✅ — builder patched checkout.test.ts (Node 22 crypto import), MR !47 merged, pipeline green. Customer thread updated." + ledgerHint(cmd, filesKept),
             delayMs: 800,
           },
         ],
@@ -214,7 +214,7 @@ export const demo = new Command()
     }
     const startupMs = startup.seconds * 1000
     const cmd = cliCommand()
-    const specs = buildSpecs(root, basePort, cmd)
+    const specs = buildSpecs(root, basePort, cmd, !opts.once || Boolean(opts.keep || opts.reuse))
     const tokenFile = join(root, "mesh-token")
     // A resumed demo keeps its history, so a container restart or a lesson
     // re-run lands on the same screen. Peers carry the token in config, so

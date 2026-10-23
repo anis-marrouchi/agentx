@@ -13,9 +13,9 @@ That note is the **resume plan**. Right after the stop, the agent gets one short
 | Next action | The first thing to do when the task is resumed. |
 | Half-applied | Anything started but not finished, such as a partial edit, an open branch or an unsent message. |
 
-The plan is written in a separate chat with the agent's usual tools. In it, the agent sees the original request and the list of tools it used, not the conversation that was stopped.
+The plan is written in a separate chat with the agent's usual tools, so nothing is posted in the chat the task came from. In it, the agent sees the original request and the list of tools it used, not the conversation that was stopped.
 
-The agent does nothing else in that turn. If it doesn't answer within the time limit (two minutes unless you change it), AgentX stops that turn too and writes the plan itself from the run's *trace* (the record of every tool the agent used). Such a plan says it was written by AgentX.
+The agent is asked to do nothing else in that turn. Its tools are not taken away: it is only told, in words, not to change anything. If it doesn't answer within the time limit (two minutes unless you change it), AgentX stops that turn too and writes the plan itself from the run's *trace* (the record of every tool the agent used). Such a plan says it was written by AgentX.
 
 A paused task is marked **stopped**, not failed. It waits until someone resumes it. Resuming runs it again in the same chat, with the plan placed before the original request, so the agent continues instead of starting over.
 
@@ -161,7 +161,7 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 - **"is not in signals.allowAgents":** an agent tried to signal a task it didn't hand out. Add it to `signals.allowAgents`, or pause the task yourself.
 - **"mesh peer … is not in signals.allowPeers":** on the machine that runs the task, add the other machine's name to `signals.allowPeers`.
 - **"no running task matches":** the task finished before the signal arrived, or several tasks run on that chat. Use the task id.
-- **"still writing its resume plan":** wait for the plan (at most `signals.windDownSeconds`), then resume.
+- **"still writing its resume plan":** wait for the plan (at most `signals.windDownSeconds`), then resume or drop the task.
 - **"is a step of workflow run …, which cannot pause here":** the workflow engine is off on this machine, or the run is not on that agent's step any more. Cancel the workflow run instead.
 - **"resume failed: workflow run … is not paused by a stop":** the workflow run was canceled, or went on, after the pause. Start the workflow again.
 - **"carried 6 signals today":** the loop brake stopped an agent's signal. Check which agents keep pausing and resuming this task before you raise `signals.maxPerRoot`.

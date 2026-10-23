@@ -516,6 +516,34 @@ export class SessionStore {
     this.save(session)
   }
 
+  /**
+   * Point a new chat at the agent session of an earlier chat (#1100): the
+   * native session ids, and with them what the rotation checks read (turn
+   * count, last context size, last use), so a continued session is still
+   * rotated when it grows or goes stale. False when the earlier chat has
+   * no session to continue; nothing is written then.
+   */
+  continueFrom(agentId: string, from: { channel: string; chatId: string }, to: { channel: string; chatId: string }): boolean {
+    if (from.channel === to.channel && from.chatId === to.chatId) return false
+    // Read without creating: getSession would write an empty record for a
+    // chat that never saved one (a run that failed early).
+    const key = this.sessionKey(agentId, from.channel, from.chatId)
+    const known = this.cache.has(key) || existsSync(this.sessionFile(key)) || this.loadPreviousDaySession(agentId, from.channel, from.chatId) !== null
+    if (!known) return false
+    const src = this.getSession(agentId, from.channel, from.chatId)
+    if (!src.claudeSessionId && !src.codexSessionId && !src.opencodeSessionId) return false
+    const dst = this.getSession(agentId, to.channel, to.chatId)
+    dst.claudeSessionId = src.claudeSessionId
+    dst.codexSessionId = src.codexSessionId
+    dst.opencodeSessionId = src.opencodeSessionId
+    dst.turnCount = src.turnCount
+    dst.lastTurnInputTokens = src.lastTurnInputTokens
+    dst.lastTurnContextTokens = src.lastTurnContextTokens
+    dst.updatedAt = src.updatedAt
+    this.save(dst)
+    return true
+  }
+
   getCodexSessionId(agentId: string, channel: string, chatId: string): string | undefined {
     const session = this.getSession(agentId, channel, chatId)
     return session.codexSessionId
@@ -769,8 +797,10 @@ export class SessionStore {
     // and day suffix vary so we filter those after parse. Note `chatId` may
     // itself contain colons (GitLab chatIds look like "group/project:issue:123"),
     // so we can't naively split on ":". Cheap pre-filter: must contain
-    // `:${channel}:${chatId}:` as a substring.
-    const key = `:${opts.channel}:${opts.chatId}:`
+    // `:${channel}:${chatId}:` as a substring, sanitized the way sessionFile()
+    // names the file (WhatsApp "…@s.whatsapp.net" and GitLab "a/b" chatIds
+    // are stored with "_" in place of "@", "." and "/").
+    const key = `:${opts.channel}:${opts.chatId}:`.replace(/[^a-zA-Z0-9_:-]/g, "_")
     const candidates = allFiles.filter((f) => {
       if (!f.includes(key)) return false
       // Day suffix prefilter — skip files whose day is older than sinceDay.

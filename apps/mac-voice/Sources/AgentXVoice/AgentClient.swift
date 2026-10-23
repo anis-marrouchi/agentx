@@ -27,6 +27,9 @@ enum AgentClient {
         let voice: VoiceChoice?
         /// Presence mode the daemon chose for this turn (talk, teach, …).
         var presenceMode: String? = nil
+        /// The daemon took the words for the floor holder's own sound
+        /// (#924): no agent was asked and nothing is said back.
+        var dropped = false
     }
 
     /// What, if anything, to say about the step now running.
@@ -265,7 +268,8 @@ enum AgentClient {
         return await agents()?.first?.id ?? ""
     }
 
-    static func ask(_ message: String, agent: String) async throws -> Answer {
+    /// `handsFree`: the microphone had opened by itself, no key held.
+    static func ask(_ message: String, agent: String, handsFree: Bool = false) async throws -> Answer {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)/ask")!)
         req.httpMethod = "POST"
         // An agent turn routinely takes minutes. The default 60s would cut
@@ -275,6 +279,7 @@ enum AgentClient {
         var payload: [String: Any] = ["message": message, "session": Config.voiceSession]
         // No agent known: the daemon answers with its default agent.
         if !agent.isEmpty { payload["agent"] = agent }
+        if handsFree { payload["handsFree"] = true }
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let (data, response) = try await URLSession.shared.data(for: req)
@@ -291,9 +296,14 @@ enum AgentClient {
             let ui: Ui?
             let error: String?
             let duration: Int?
+            let dropped: String?
         }
         let reply = try? JSONDecoder().decode(Reply.self, from: data)
         let voice = reply?.voice
+        if reply?.dropped != nil {
+            return Answer(text: "", written: nil, buttons: [], imageURL: nil, durationMs: nil,
+                          agentID: reply?.agentId, voice: voice, dropped: true)
+        }
 
         // 202 means accepted-but-busy: the daemon has already written a
         // speakable explanation into `text`. Falling through to the error

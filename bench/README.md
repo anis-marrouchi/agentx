@@ -64,6 +64,169 @@ same session log). It is an upper limit: it ignores compaction and what the
 agent reads back from a saved original. The recorded cost per channel, before
 and after, comes from `agentx usage channels`.
 
+### Cache rewrites after a pause (#947)
+
+`bench/cache-gap-replay.py` reads the same session logs and groups every
+model call by how long it came after the previous call in its session:
+under 5 minutes, 5 to 60 minutes, 1 to 24 hours, more than a day. For each
+group it shows the cache writes and reads from the logs' own usage fields,
+the share of writes already on the one-hour cache, and three what-ifs: every
+write on the one-hour cache (`ttl1h`), every write on the five-minute
+cache (`ttl5m`, the other direction, for a node on the subscription whose
+writes are all on the hour), and a fresh start with a short brief after a
+long pause (`rotate`). No model is called. It reads only the top-level
+`*/*.jsonl` files and skips sidechain lines, so calls made by subagents are
+not counted.
+
+```bash
+python3 bench/cache-gap-replay.py --from 2026-10-01 --to 2026-10-07
+python3 bench/cache-gap-replay.py --from 2026-10-01 --to 2026-10-07 --rotate-after 60 --brief 8000 --json gaps.json
+```
+
+Costs are in units of one uncached input token of the call's own model,
+with each model's cache-read rate. The `rotate` figure reprices only the
+first call after the pause, and ignores what the brief leaves out. What
+it found to look for, and why, is in
+[results/token-research-947.md](results/token-research-947.md).
+
+### Small reusable workflows (#928)
+
+#928 is closed: the owner stopped both the whole-job workflow and the
+reader trial on 2026-10-13, and nothing from it went live. What it
+measured, and what is still open, is in
+[results/workflows-928.md](results/workflows-928.md). Those figures come from
+other scripts, and this one gives different shares on the same logs (the
+page has both and the rule differences), so do not quote its output as the
+#928 figures.
+
+`bench/slice-replay.py` reads the same session logs and asks how much
+folding a repeated run of tool calls into one call (a registered action, or
+a short workflow that returns one result) could save. A run of 5 calls
+folded into 1 is 4 model requests not made, so 4 re-reads of the context
+not paid. No model is called.
+
+```bash
+# The count: slices of 2 to 5 calls seen in 5+ sessions on 2+ seats
+python3 bench/slice-replay.py count --from 2026-10-09 --to 2026-10-12 --skip-repeats
+python3 bench/slice-replay.py count --from ... --to ... --level kind --json count.json
+
+# The test, step 1: outlines of 60 sessions spread over the seats, for a mining agent
+python3 bench/slice-replay.py outline --from ... --to ... --sample 60 --out mine/
+# Step 2: mark and price the agent's catalog on the sessions it did not see
+python3 bench/slice-replay.py mark --from ... --to ... --catalog catalog.json --seen mine/seen.json --out marked/
+# Step 3: read marked/hand-check.md (30 places) and write pass or fail on each
+```
+
+- A **seat** is one project folder under `~/.claude/projects`. A **slice**
+  is named by the first command of each call (`bash:gh pr view`,
+  `Edit:memory`, an MCP tool name), or with `--level kind` only by its kind
+  (`shell`, `file`), which is too coarse for a script to run.
+- `--skip-repeats` leaves out one command repeated in a row, which is the
+  agent exploring.
+- The low figure prices only the cache re-reads of the requests a fold
+  removes; the high figure prices their whole cost. Both are shares of the
+  window's spend at list price, from the same table as the dashboard (a
+  test keeps the two equal).
+- A catalog is a JSON list of `{"id": "...", "steps": ["regex", ...]}`; each
+  step is matched against `label<TAB>arguments`, with numbers shown as
+  `<n>`, so `"^bash:gh pr view\\t"` matches any PR number.
+- Outlines and the hand check show each call's arguments cut at 120
+  characters and never the tool output (`ahead --sample` is the exception, below), but they still hold commands and
+  paths: keep them on the node.
+
+It finds only calls in a row and in the same order. The stop rule from #928:
+under 10% saved on unseen sessions, drop the token case for this form.
+
+Two more commands cover the look-ahead form (the agent fixes its next 2 to
+4 calls in one call and an engine runs them with no model):
+
+```bash
+# What one call costs by its place in a session, split into re-read, cache write, output and input
+python3 bench/slice-replay.py calls --from 2026-10-09 --to 2026-10-12
+# Windows of 2 to 4 calls whose later calls use nothing that first came back in a result inside the window
+python3 bench/slice-replay.py ahead --from 2026-10-09 --to 2026-10-12
+python3 bench/slice-replay.py ahead --from ... --to ... --known   # only sequences seen in 5+ sessions and 2+ seats
+# Sample 240 of those windows for grading whether a check on a result would have decided the next step
+python3 bench/slice-replay.py ahead --from ... --to ... --sample 240 --sample-out graded/
+# Any command, with other prices (for example what the runtime reports per call)
+python3 bench/slice-replay.py calls --from ... --to ... --prices runtime-prices.json
+```
+
+- `calls` sorts each request into the first call of a session, a tool call
+  right after a message, a tool call inside a chain, and an answer with no
+  tool. It also prints how often the agent already groups calls: several
+  tools in one request, several commands in one shell line.
+- `ahead` looks for named things (a path, a hash, a number of 2+ digits, a
+  dotted or dashed identifier). A window counts as fixed when no later call
+  in it carries one that first appeared in an earlier result of the same
+  window. It also prints how many round trips sit in such windows. It cannot
+  see a choice that depends on a result, so for steps fixed ahead it is an
+  upper bound. On a graded sample (#928) it missed about half of
+  the places where the next step used something the result gave (a line
+  number, a file name, a commit), so its share is about twice the real
+  one. Treat it as a loose ceiling. It is not one for a workflow that passes values between its
+  steps, or for a batch that stops at the first failed check.
+- `ahead --sample` writes `windows.jsonl`: each window's calls, the first 300
+  characters of each result, and the agent's own text or thinking between
+  them. Thinking is mostly not in the logs (a token count only), so most
+  windows have no text between calls. A grader (a person or a model run separately) marks whether a check
+  on the result would have decided the next step. No model is called here.
+  The file holds the start of real tool output, so keep it on the node.
+- `--prices` takes `{"<family>": {"input": ..., "output": ..., "cacheRead":
+  ..., "cacheCreate": ...}}` and replaces those rates; the families are the
+  keys `prices` prints. On 2026-10-13 the runtime's per-call cost for Opus
+  5.5 was a fifth below AgentX's table (#928); which one matches the invoice
+  is not checked.
+- Removing a call does not save all of its cost. The results still come
+  back to the agent and are written into the cache, so read the `write`
+  column of `calls` next to the `ahead` saving.
+
+One more command covers the reading design (a reader on a small model makes
+the look-ups and returns a short note; the main model decides, edits and
+answers):
+
+```bash
+# Spend by what each request does, and the stretches of 2+ reading calls in a row
+python3 bench/slice-replay.py phases --from 2026-10-09 --to 2026-10-12
+python3 bench/slice-replay.py phases --from ... --to ... --min-calls 3 --json phases.json
+```
+
+- A request is sorted by the strongest of its calls. **Changes something**
+  is a file edit, a shell line that commits, pushes, merges, posts, moves,
+  deletes, deploys or writes a file with `>`, or an MCP tool whose name
+  creates, updates, sends or posts. **Reads plus a run** is a shell line
+  that starts a program (`node`, `python3`, `make`, `pnpm <anything>`) or a
+  sub-agent. **Only reads** is everything else. These rules read only the
+  tool name and the command text, so check a sample before trusting a share.
+- A reading stretch is a run of read-only requests in one chain. The result
+  size is bytes / 4. What a reader would cost, and whether its notes are
+  good enough, needs a real run and is not here.
+
+These figures do not match the #928 results page, which came from the
+developer seat's own scripts. `calls`, `ahead` and `phases` can switch each
+of the four rules that may explain the gap, one at a time. The default is
+the first choice of each, which gives what the PR #954 check reported:
+
+| Option | Default | Other choice |
+|---|---|---|
+| `--first` | `file`: only the first request of a session file is a first call | `message`: so is every request right after a message |
+| `--change` | `broad`: `cp`, `mkdir`, `tee`, a `>` redirect to a file, and MCP tools named add, set or update are changes | `narrow`: they are not |
+| `--result-size` | `text`: only the text parts of a result count | `all`: images and other parts count too, at their length in the log |
+| `--chain` | `message`: a chain ends at any message | `answer`: it ends only at a request with no tool call |
+
+To find which rule closes the gap, on the node and window of the results
+page (terminal, from the repository root):
+
+1. Run `phases` with no rule option, and keep the output:
+   `python3 bench/slice-replay.py phases --from 2026-10-09 --to 2026-10-12 --json base.json`
+2. Run it again with one option changed, for example
+   `--change narrow --json change.json`.
+3. Compare the shares with the results page. Repeat step 2 for each option,
+   then with the options that moved the shares together.
+
+The JSON output has a `rules` field, and the first line of the printed
+report names every rule set away from its default.
+
 ### The history block (#636, parked)
 
 Pruning today's earlier messages with a Jev seat before a fresh session

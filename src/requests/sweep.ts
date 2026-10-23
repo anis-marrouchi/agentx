@@ -1,19 +1,31 @@
 import { isQueued } from "@/agents/queued"
 import type { RequestRecord, RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
+import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
+import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
+import { cardWords } from "./card-view"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
-//   1. Quiet: an open request nothing has touched for `staleAfterHours`
+//   0. Evidence (#1039): an open loop with a `close_when` has its checker
+//      run every `checkers.checkEveryMinutes`. Met closes it as done, with
+//      the checker's evidence.
+//   1. Settle (#1138): a request in progress, quiet for `staleAfterHours`,
+//      whose handed work all came back done, closes as done with the link
+//      its delegate gave, or marked unproven without one. The owner is not
+//      told: the work came back, and its record leaves their list.
+//      `settleHandedBack: false` raises it as quiet instead, as before.
+//   2. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
-//      reported an end. A request waiting on the owner is left alone; its
+//      reported an end. A loop with a due time needs attention once it is
+//      past it instead. A request waiting on the owner is left alone; its
 //      question is what reminds them.
-//   2. Tell once: every request that needs attention is sent to the owner
+//   3. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
 //      sent at all is tried again at the next check.
-//   3. Pick-ups: a request the owner said to pick up again is handed back
+//   4. Pick-ups: a request the owner said to pick up again is handed back
 //      to its agent as a new turn, once.
-//   4. Retention: closed requests older than `retentionDays` are deleted.
+//   5. Retention: closed requests older than `retentionDays` are deleted.
 //      Open requests never age out.
 //
 // Every step is isolated: a failure is logged and the next step runs.
@@ -27,11 +39,25 @@ export interface RequestSweepDeps {
    *  again. Fire and forget: the check never waits on a model. */
   tellAgent?: (agentId: string, text: string, request: RequestRecord) => Promise<void>
   hasAgent?: (agentId: string) => boolean
+  /** The request has an active tracked plan (#788): never settled here. */
+  inPlan?: (requestId: string) => boolean
+  /** Runs a loop's checker (#1039). Unset: loops are not checked. */
+  check?: LoopChecker
+  /** Gives a request its headline when it has none (#1126), so the owner
+   *  is told what it is. Returns it as it is when none could be written. */
+  describe?: (r: RequestRecord) => Promise<RequestRecord>
+  /** Writes missing headlines of other open requests in the background. */
+  fillHeadlines?: () => Promise<unknown>
   log: (msg: string) => void
   now?: number
 }
 
 export interface RequestSweepResult {
+  /** Loops whose checker ran, and those it closed. */
+  checked: number
+  verified: number
+  /** Quiet requests whose handed work came back done, closed (#1138). */
+  settled: number
   quiet: number
   notified: number
   pruned: number
@@ -80,22 +106,51 @@ export function pickupText(r: RequestRecord): string {
 }
 
 const HOUR = 3_600_000
+/** Time one check may spend writing headlines before it tells the owner. */
+export const DESCRIBE_BUDGET_MS = 45_000
 
-export function attentionText(r: RequestRecord): string {
+/** The notice's title (#1126): what the request is, then that it stopped. */
+export function attentionTitle(r: RequestRecord): string {
+  const { headline } = cardWords(r, 80)
+  return `${r.promise ? "Promise not kept" : "Not finished"}: ${headline}`
+}
+
+export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean = () => false): string {
   const words = r.text.replace(/\s+/g, " ").trim()
+  const said = words.length > 240 ? `${words.slice(0, 239)}…` : words
+  const on = waitsOn(r, { isAgent })
   return [
-    `A request you gave ${r.agentId} on ${r.channel} is not finished.`,
-    `You asked: ${words.length > 240 ? `${words.slice(0, 239)}…` : words}`,
+    r.promise
+      ? `A promise ${r.agentId} made to ${r.owedTo} is not kept yet.`
+      : `A request you gave ${r.agentId} on ${r.channel} is not finished.`,
     `What happened: ${r.attentionReason ?? "unknown"}`,
-    "Nothing is retrying it. Ask again, or drop it.",
+    `Waiting on: ${waitsOnWords(on.group, on.who)}`,
+    ...(r.verifyState === "unverified" && r.verifyDetail ? [`Its check could not say: ${r.verifyDetail}`] : []),
+    "Nothing is retrying it.",
+    r.closeWhen
+      ? `Needed from you: hand it back to ${r.agentId}, close it by hand with a reason, or drop it.`
+      : `Needed from you: ${cardWords(r).need}`,
+    // The owner's own words last, under the headline the title carries.
+    r.promise ? `It promised: ${said}` : `You said: ${said}`,
   ].join("\n")
 }
 
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
   if (!settings.enabled) return result
+
+  if (deps.check) {
+    try {
+      const every = (settings.checkers ?? DEFAULT_CHECKER_SETTINGS).checkEveryMinutes
+      const r = await checkLoops(store, deps.check, { everyMinutes: every, now, log })
+      result.checked = r.checked
+      result.verified = r.closed
+    } catch (e: any) {
+      log(`[requests] loop checks failed: ${e?.message ?? e}`)
+    }
+  }
 
   try {
     // takePickups clears the mark first: a turn that hangs or fails is not started twice.
@@ -121,6 +176,25 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     log(`[requests] pick-ups failed: ${e?.message ?? e}`)
   }
 
+  if (settings.settleHandedBack !== false) {
+    try {
+      for (const r of store.handedBack(now - settings.staleAfterHours * HOUR)) {
+        // A tracked plan follows its own steps and tells the owner itself.
+        if (deps.inPlan?.(r.id)) continue
+        const back = store.handBackProof(r.id)
+        const detail = back
+          ? `The work it handed on came back done with ${back.proof}; nobody closed it in ${settings.staleAfterHours} h.`
+          : `The work it handed on came back done without a link to proof; nobody closed it in ${settings.staleAfterHours} h.`
+        if (store.settle(r.id, back?.proof ?? null, detail, now)) {
+          result.settled++
+          log(`[requests] ${r.id} settled: ${back ? `handed work came back with ${back.proof}` : "handed work came back, unproven"}`)
+        }
+      }
+    } catch (e: any) {
+      log(`[requests] settle failed: ${e?.message ?? e}`)
+    }
+  }
+
   try {
     const hours = settings.staleAfterHours
     for (const r of store.quietSince(["candidate", "in_progress", "waiting_other"], now - hours * HOUR)) {
@@ -129,17 +203,31 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         : `No activity for ${hours} h`
       if (store.needsAttention(r.id, reason, now)) result.quiet++
     }
+    for (const r of store.overdue(now, now - hours * HOUR)) {
+      if (store.needsAttention(r.id, `Past its due time (${when(r.dueAt!)})`, now)) result.quiet++
+    }
   } catch (e: any) {
     log(`[requests] quiet check failed: ${e?.message ?? e}`)
   }
 
   try {
+    // Headlines get a share of the check, not all of it: past the budget
+    // a notice goes out with the owner's words, and the background fill
+    // writes its headline later.
+    let describing = 0
     for (const r of store.awaitingNotice()) {
       // Marked first: a notice that hangs must not be sent twice.
       store.markNotified(r.id, now)
       if (!deps.notify) continue
       try {
-        await deps.notify("Request not finished", attentionText(r), r)
+        // Told what it is, not only that it stopped (#1126).
+        let described = r
+        if (deps.describe && describing < DESCRIBE_BUDGET_MS) {
+          const started = Date.now()
+          described = await deps.describe(r)
+          describing += Date.now() - started
+        }
+        await deps.notify(attentionTitle(described), attentionText(described, deps.hasAgent), described)
         result.notified++
       } catch (e: any) {
         // Nothing reached the owner: try again at the next check.
@@ -150,6 +238,10 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   } catch (e: any) {
     log(`[requests] notices failed: ${e?.message ?? e}`)
   }
+
+  // Not awaited: the check never waits on a model for requests nobody
+  // is being told about right now.
+  if (deps.fillHeadlines) void deps.fillHeadlines().catch((e: any) => log(`[requests] headlines failed: ${e?.message ?? e}`))
 
   try {
     result.pruned = store.pruneClosed(now - settings.retentionDays * 24 * HOUR)

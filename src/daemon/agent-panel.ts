@@ -16,6 +16,7 @@ import { HandoverStore } from "@/channels/handover-store"
 import { loadDaemonConfig } from "./config"
 import { mutateAgentxConfig } from "./config-mutate"
 import { setWikiAbsorb } from "@/wiki/absorb-agents"
+import { getConventions } from "@/agents/conventions"
 import type { TopbarPeer } from "./topbar"
 import { renderAgentPage } from "./ui/pages/agent"
 
@@ -353,12 +354,15 @@ async function dispatchInstallPackage(
   }
   const worker = pickWorker(body?.worker)
   const { def } = getAgentDef(agentId)
+  // The runtime's own way to add skills, into the folder it reads (#1062).
+  const conv = getConventions(def.tier)
+  const command = conv?.addSkillCommand(pkg, def.workspace)
+  if (!conv || !command) throw new Error(`agent "${agentId}" runs on ${def.tier}, which does not use skills`)
   const message = [
     `Install the skills.sh package "${pkg}" into agent "${agentId}".`,
     `Workspace: ${def.workspace}`,
-    `Run: cd ${def.workspace} && npx -y skills add ${pkg}`,
-    `If that fails, fall back to: agentx skill install ${pkg}`,
-    `Skills should land under ${def.workspace}/.claude/skills/. Report what was installed and any errors.`,
+    `Run: ${command}`,
+    `Skills should land under ${conv.skillDirs(def.workspace)[0]}/. Report what was installed and any errors.`,
   ].join("\n")
   return dispatchTask(req, worker, message, `install-${pkg}:${Date.now()}`)
 }

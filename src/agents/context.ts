@@ -23,6 +23,7 @@ export interface ContextLayer {
   content: string        // rendered text
   tags: string[]         // metadata tags for filtering/matching
   rules?: string[]       // constraints/instructions specific to this layer
+  keep?: "head" | "tail" // which end survives a cut (default head)
 }
 
 export interface ContextConfig {
@@ -171,6 +172,12 @@ export interface ContextInput {
   // already has it from its first turn.
   attachHint?: string
 
+  // How to close the watcher that may follow this run, when only this run
+  // can close it (a cron or a dispatch whose task needs an explicit done,
+  // #1049). From watchers/checkpoint.ts runNote(); every turn, since each
+  // run gets its own watcher.
+  watcherNote?: string
+
   // Intent (graph classification — when absent, Intent layer falls back
   // to the legacy regex tag extractor).
   intent?: {
@@ -205,15 +212,13 @@ export function buildAgentContext(input: ContextInput, config: ContextConfig = D
     if (!layer.content) continue
 
     const layerMaxChars = layer.maxTokens * CHARS_PER_TOKEN
-    const trimmed = layer.content.length > layerMaxChars
-      ? layer.content.slice(0, layerMaxChars) + "..."
-      : layer.content
+    const trimmed = fitLayer(layer.content, layerMaxChars, layer.keep)
 
     if (totalChars + trimmed.length > maxChars) {
       // Budget exhausted — add what fits or skip
       const remaining = maxChars - totalChars
       if (remaining > 100) {
-        parts.push(trimmed.slice(0, remaining) + "...")
+        parts.push(fitLayer(trimmed, remaining, layer.keep))
       }
       break
     }
@@ -223,6 +228,46 @@ export function buildAgentContext(input: ContextInput, config: ContextConfig = D
   }
 
   return parts.join("\n\n")
+}
+
+/**
+ * Cut a layer's text to `max` chars. Most layers keep their start. A
+ * transcript keeps its end: the newest turns are the ones the next message
+ * follows from, and cutting them is what made a fresh session answer from
+ * an older subject. The header line stays so the block is still labelled.
+ */
+function fitLayer(text: string, max: number, keep: ContextLayer["keep"] = "head"): string {
+  if (text.length <= max) return text
+  if (keep !== "tail") return text.slice(0, max) + "..."
+  const marker = "...\n"
+  const nl = text.indexOf("\n")
+  const header = nl > 0 && nl + 1 + marker.length < max / 2 ? text.slice(0, nl + 1) : ""
+  const room = max - header.length - marker.length
+  let tail = wholeLineTail(text, room)
+  // A cut inside a 15-min bucket loses its "— HH:MM —" label; carry the
+  // label over so the oldest kept turns still have a time. Labels are all
+  // the same length, so the label in force after making room fits too.
+  if (!BUCKET_LABEL.test(tail.slice(0, tail.indexOf("\n") + 1 || undefined))) {
+    const before = (t: string) => text.slice(0, text.length - t.length).match(BUCKET_LABELS)?.pop()
+    const label = before(tail)
+    if (label && label.length + 1 < room / 2) {
+      tail = wholeLineTail(text, room - label.length - 1)
+      const current = BUCKET_LABEL.test(tail.slice(0, tail.indexOf("\n") + 1 || undefined)) ? "" : before(tail)
+      if (current) tail = current + "\n" + tail
+    }
+  }
+  return header + marker + tail
+}
+
+const BUCKET_LABEL = /^— \d\d:\d\d —(\n|$)/
+const BUCKET_LABELS = /^— \d\d:\d\d —$/gm
+
+/** The last `room` chars of `text`, starting on a whole line unless that
+ *  would throw away most of the room. */
+function wholeLineTail(text: string, room: number): string {
+  const tail = text.slice(text.length - room)
+  const lineStart = tail.indexOf("\n")
+  return lineStart >= 0 && lineStart < room / 2 ? tail.slice(lineStart + 1) : tail
 }
 
 /**
@@ -412,6 +457,7 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("history", 1200),
       content: history,
       tags: ["history", "conversation"],
+      keep: "tail",
     })
   }
 
@@ -505,6 +551,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("attachments", 250),
       content: input.attachHint,
       tags: ["channel", "attachments"],
+    })
+  }
+
+  // 7g. How to close this run's watcher. Every turn.
+  if (input.watcherNote) {
+    layers.push({
+      name: "watcher",
+      priority: 2.6,
+      maxTokens: budget("watcher", 400),
+      content: input.watcherNote,
+      tags: ["watcher", "done"],
     })
   }
 

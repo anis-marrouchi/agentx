@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { answerLines, buildChoices, draftFor, resolveAnswer, type CardChoices } from "./choices"
 import { isRetroOrigin, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
+import { cardRuleBreak, FOLLOWUP_KINDS, followupBudgetRefusal, type FollowupKind } from "./screen-gate"
 
 // --- Decision cards: what an agent asks the operator ---
 //
@@ -27,7 +28,10 @@ function asIfSilent(v: string): IfSilent | null {
   return IF_SILENT_VALUES.includes(v as IfSilent) ? (v as IfSilent) : null
 }
 
-export type CardStatus = "pending" | "decided" | "expired"
+// "resolved": closed by the agent that raised it, because the owner gave the
+// same answer somewhere else (in chat, #909) and the agent already acted on
+// it. Not a verdict: nothing is approved or rejected by it.
+export type CardStatus = "pending" | "decided" | "expired" | "resolved"
 export type Verdict = "yes" | "no"
 
 /** Where the agent was asked, so the verdict can be taken back there. */
@@ -67,12 +71,19 @@ export interface DecisionCard extends CardChoices {
   note?: string
   /** The option the operator picked, when the card offered choices. */
   choice?: string
+  /** Set when `choice` came from a plain yes taking the suggested option
+   *  (#1064), not from the operator picking it. */
+  choice_suggested?: boolean
   /** The message the operator approved, after any edit. */
   text?: string
   /** Set once the raising agent has been told the result. */
   agent_notified_at?: string
+  /** Why the raising agent closed it (status "resolved"). */
+  resolution?: string
   /** What the card is about, when the daemon raised it (origin.ts). */
   origin?: CardOrigin
+  /** A follow-up card (#394): counted in the daily screen budget. */
+  followup?: FollowupKind
 }
 
 export const CARD_LIMITS = {
@@ -81,6 +92,7 @@ export const CARD_LIMITS = {
   recommend: 300,
   source: 500,
   note: 500,
+  resolution: 300,
   /** Pending cards one agent may have open at a time. */
   pendingPerAgent: 25,
 } as const
@@ -110,7 +122,7 @@ function fileFor(root: string, id: string): string {
 export function newCardId(now: number, title: string): string {
   const day = new Date(now).toISOString().slice(0, 10)
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40)
-  return `${day}-${slug || "card"}-${Math.random().toString(36).slice(2, 6)}`
+  return `${day}-${slug || "card"}-${Math.random().toString(36).slice(2, 6).padEnd(4, "0")}`
 }
 
 export function saveCard(root: string, card: DecisionCard): void {
@@ -119,6 +131,30 @@ export function saveCard(root: string, card: DecisionCard): void {
   const tmp = `${path}.${process.pid}.tmp`
   writeFileSync(tmp, JSON.stringify(card, null, 2) + "\n")
   renameSync(tmp, path)
+}
+
+/**
+ * Save a card that is new. Its id is random, so two cards with the same
+ * title on the same day can draw the same one: then the id gets "-2", "-3"
+ * and so on, and a card already on disk is never overwritten. The link
+ * fails if the file exists, so this holds across processes too.
+ */
+function saveNewCard(root: string, card: DecisionCard): DecisionCard {
+  mkdirSync(approvalsDir(root), { recursive: true })
+  for (let n = 1; ; n++) {
+    const saved = n === 1 ? card : { ...card, id: `${card.id}-${n}` }
+    const path = fileFor(root, saved.id)
+    const tmp = `${path}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(saved, null, 2) + "\n")
+    try {
+      linkSync(tmp, path)
+      return saved
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e
+    } finally {
+      unlinkSync(tmp)
+    }
+  }
 }
 
 export function readCard(root: string, id: string): DecisionCard | null {
@@ -192,6 +228,7 @@ export interface CardInput {
   draft?: unknown
   say?: unknown
   context?: unknown
+  followup?: unknown
 }
 
 /** Validate what an agent sent and build a pending card. Never saves. */
@@ -235,6 +272,10 @@ export function buildCard(
   }
   const extras = buildChoices(input)
   if (!extras.ok) return extras
+  const followup = oneLine(input.followup).toLowerCase()
+  if (followup && !(FOLLOWUP_KINDS as readonly string[]).includes(followup)) {
+    return { ok: false, error: `followup must be one of ${FOLLOWUP_KINDS.join(", ")}` }
+  }
   let reply: ReplyTarget | undefined
   const r = input.reply as Record<string, unknown> | undefined
   if (r && typeof r === "object" && oneLine(r.channel) && oneLine(r.chatId)) {
@@ -258,9 +299,21 @@ export function buildCard(
       ...extras.value,
       // Set by the daemon only (check-ins), never from what an agent sent.
       ...(opts.origin ? { origin: opts.origin } : {}),
+      ...(followup ? { followup: followup as FollowupKind } : {}),
       status: "pending",
     },
   }
+}
+
+/** A pending card the same agent, on the same node, raised on the same
+ *  source. None when the new card has no source or the daemon raised it. */
+function sameSourcePending(pending: DecisionCard[], card: DecisionCard): DecisionCard | undefined {
+  if (!card.source || card.origin) return undefined
+  return pending.find((c) =>
+    !c.origin &&
+    c.source === card.source &&
+    c.raised_by === card.raised_by &&
+    (c.node ?? "") === (card.node ?? ""))
 }
 
 /** Validate, enforce the per-agent cap, and save. */
@@ -271,17 +324,32 @@ export function createCard(
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const built = buildCard(input, opts)
   if (!built.ok) return built
+  // The screen gate (#394): refused here, the reason goes back to the author.
+  const broken = cardRuleBreak(built.card)
+  if (broken) return { ok: false, error: broken }
+  if (built.card.followup) {
+    const full = followupBudgetRefusal(listCards(root), built.card.followup, opts.now ?? Date.now())
+    if (full) return { ok: false, error: full }
+  }
+  const pending = listCards(root, "pending")
+  // One open question per source: the same question raised twice comes
+  // back after it was answered. Only for cards an agent raised; cards the
+  // daemon raises (origin set) keep their own rules, such as a merge card
+  // per pushed commit on the same PR link.
+  const twin = sameSourcePending(pending, built.card)
+  if (twin) {
+    return { ok: false, error: `a card from you on this source is still pending: ${twin.id}. Wait for its answer, or resolve it first and then raise the new one.` }
+  }
   // Retro cards are raised for an agent, not by it: they get their own
   // count, so they never use up the agent's room for its own cards.
   const isRetro = (c: { origin?: CardOrigin }) => isRetroOrigin(c.origin)
   const retro = isRetro(built.card)
-  const open = listCards(root, "pending").filter((c) => c.raised_by === built.card.raised_by && isRetro(c) === retro).length
+  const open = pending.filter((c) => c.raised_by === built.card.raised_by && isRetro(c) === retro).length
   if (open >= CARD_LIMITS.pendingPerAgent) {
     const what = retro ? "retro cards" : "cards"
     return { ok: false, error: `${built.card.raised_by} already has ${open} ${what} waiting; wait for decisions before raising more` }
   }
-  saveCard(root, built.card)
-  return built
+  return { ok: true, card: saveNewCard(root, built.card) }
 }
 
 /** Record the operator's answer. Refuses anything no longer pending. */
@@ -305,10 +373,51 @@ export function decideCard(
     decided_at: new Date(opts.now ?? Date.now()).toISOString(),
     ...(note ? { note } : {}),
     ...(answer.choice ? { choice: answer.choice } : {}),
+    ...(answer.suggested ? { choice_suggested: true } : {}),
     ...(answer.text ? { text: answer.text } : {}),
   }
   saveCard(root, decided)
   return { ok: true, card: decided }
+}
+
+/** Cards whose answer the daemon acts on itself (a workflow run, a plan
+ *  step, a retro): only the operator closes those. A reminder card is the
+ *  agent's own to act on, so it may close it like one it raised. */
+const AGENT_RESOLVABLE_ORIGINS = new Set<string | undefined>([undefined, "reminder"])
+
+/**
+ * The raising agent closes its own pending card: the owner gave the same
+ * answer outside the card (in chat) and the agent has acted on it (#909).
+ * The card leaves the inbox, so no check-in or popup asks again. It is not
+ * a verdict, and the agent is not sent a result for it: it already knows.
+ */
+export function resolveCard(
+  root: string,
+  id: string,
+  opts: { by: string; reason?: unknown; node?: string; now?: number },
+): { ok: true; card: DecisionCard } | { ok: false; status: 400 | 403 | 404 | 409; error: string } {
+  const card = readCard(root, id)
+  if (!card) return { ok: false, status: 404, error: `no card "${id}"` }
+  if (card.raised_by !== opts.by || (card.node ?? "") !== (opts.node ?? "")) {
+    return { ok: false, status: 403, error: `card "${id}" was raised by another agent` }
+  }
+  if (!AGENT_RESOLVABLE_ORIGINS.has(card.origin?.kind)) {
+    return { ok: false, status: 409, error: `card "${id}" is answered by the operator only` }
+  }
+  if (card.status !== "pending") return { ok: false, status: 409, error: `card "${id}" is already ${card.status}` }
+  const reason = oneLine(opts.reason)
+  if (!reason) return { ok: false, status: 400, error: "reason is required: say where the owner answered and what you did" }
+  const at = new Date(opts.now ?? Date.now()).toISOString()
+  const resolved: DecisionCard = {
+    ...card,
+    status: "resolved",
+    decided_by: opts.by,
+    decided_at: at,
+    resolution: reason.slice(0, CARD_LIMITS.resolution),
+    agent_notified_at: at,
+  }
+  saveCard(root, resolved)
+  return { ok: true, card: resolved }
 }
 
 /** Apply `if_silent` to every pending card past its expiry. */
@@ -340,6 +449,9 @@ export function markAgentNotified(root: string, id: string, now: number = Date.n
   saveCard(root, { ...card, agent_notified_at: new Date(now).toISOString() })
 }
 
+export const NO_UNDO_LINE =
+  "A no does not by itself undo anything you already did. If you already carried this out (for example because the owner approved it in chat), do not reverse it: ask the requester one clear question first."
+
 /** What the raising agent is told. Plain text, one short message. */
 export function verdictMessage(card: DecisionCard): string {
   const retro = card.origin?.kind === "retro" ? card.origin : undefined
@@ -358,6 +470,9 @@ export function verdictMessage(card: DecisionCard): string {
   const check = card.origin?.kind === "retro-check" ? card.origin : undefined
   if (card.status === "decided" && card.verdict === "yes" && !retro && !check) lines.push(...answerLines(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
+  // A late no on something the owner already approved in chat must not
+  // quietly undo work that is done (#909).
+  if (card.status === "decided" && card.verdict === "no" && !retro && !check) lines.push(NO_UNDO_LINE)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
   if (retro || check) {

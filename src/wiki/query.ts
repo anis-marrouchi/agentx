@@ -35,6 +35,10 @@ import type { QueryMethod } from "./query-settings"
  * so callers can audit the retrieval path.
  */
 
+/** Models of the catalog method when no `selectorModel` / `synthModel` is given. */
+export const CATALOG_SELECTOR_MODEL = "haiku"
+export const CATALOG_SYNTH_MODEL = "sonnet"
+
 export interface AgenticQueryOptions {
   /** Candidate-selection model (cheap). Defaults to "haiku". */
   selectorModel?: string
@@ -144,8 +148,8 @@ export async function agenticQuery(
   requesterId: string | undefined,
   opts: AgenticQueryOptions = {},
 ): Promise<AgenticQueryResult> {
-  const selectorModel = opts.selectorModel ?? "haiku"
-  const synthModel = opts.synthModel ?? "sonnet"
+  const selectorModel = opts.selectorModel ?? CATALOG_SELECTOR_MODEL
+  const synthModel = opts.synthModel ?? CATALOG_SYNTH_MODEL
   const maxCandidates = opts.maxCandidates ?? 3
   const maxHops = opts.maxHops ?? 2
   const maxArticles = opts.maxArticles ?? 8

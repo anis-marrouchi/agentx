@@ -20,6 +20,15 @@ export function cliCommand(argv1: string = process.argv[1] ?? "", env: NodeJS.Pr
   return "agentx"
 }
 
+/** The closing pointer to the ledger, as a command that works from the
+ *  folder the demo was started in. Each node keeps its own ledger under
+ *  .agentx-demo/; a bare `ledger` only prints help. Empty when the folder
+ *  is deleted at exit (--once without --keep): there is nothing to read. */
+export function ledgerHint(cmd: string, filesKept: boolean): string {
+  if (!filesKept) return ""
+  return ` Every hop of this run is in the ledgers, one per node: \`${cmd} ledger events --cwd .agentx-demo/node-a\`.`
+}
+
 /** The ports in `ports` that something on this machine already answers on.
  *  The demo checks before it starts: its own daemons would fail to bind,
  *  and its health checks would then reach whatever holds the port, such

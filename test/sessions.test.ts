@@ -26,6 +26,16 @@ describe("SessionStore", () => {
     expect(store.getSession("a", "opencode", "ses_1").messages).toHaveLength(2)
   })
 
+  it("recentByChatId finds chatIds that the session filename sanitizes", () => {
+    store.addUserMessage("atlas", "whatsapp", "21600000000@s.whatsapp.net", "User", "salam")
+    store.addUserMessage("atlas", "gitlab", "group/project:issue:7", "User", "ping")
+
+    const wa = store.recentByChatId({ channel: "whatsapp", chatId: "21600000000@s.whatsapp.net" })
+    expect(wa.map(r => r.content)).toEqual(["salam"])
+    const gl = store.recentByChatId({ channel: "gitlab", chatId: "group/project:issue:7" })
+    expect(gl.map(r => r.content)).toEqual(["ping"])
+  })
+
   it("creates a session on first access", () => {
     const session = store.getSession("atlas", "telegram", "group-1")
     expect(session.agentId).toBe("atlas")

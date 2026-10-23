@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, the weekly quality report, resuming after a restart, due reminders, native apps and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -19,6 +19,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `timeout` | number | `600` | Time limit in seconds. Agent jobs get at least 2 hours; see [time limits](./config.md#time-limits-and-cancel). |
 | `model` | string | — | Model for this job only, instead of the agent's model. |
 | `maxOutputTokens` | number (50–8000) | — | Asks the agent to keep its answer under about this many tokens. A soft cap added to the prompt. |
+| `taskType` | string (up to 64 characters) | — | The type of task each run is. It picks the proof a watcher asks for before the run counts as done (`watchers.evidence.<type>`). Unset, or a type with no rule of its own: the rule for `cron`, if there is one. To exempt a job from proof, remove the `cron` rule rather than set a type. See [Require proof of done](/automations/task-watchers#_5-require-proof-of-done-optional). |
 | `autonomy` | `"report"` \| `"propose"` \| `"act"` | — (acts as `act`) | How much the run may do. See [routine autonomy](./config.md#routine-autonomy). Not allowed on command jobs. |
 | `onError` | `"log"` \| `"notify"` \| `"disable"`, or a list of them | `"log"` | What happens when a run fails: log it, send a message, or turn the job off after 3 failures in a row. From the second failure in a row a message is sent anyway. |
 | `notify` | object | — | Where this job's messages go: the answer from each successful run, and failure messages. |
@@ -176,6 +177,13 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 | `notifications.local.soundName` | string | `"Glass"` | A sound from `/System/Library/Sounds`, without the extension. |
 | `notifications.local.volume` | number (0–1) | `0.4` | Sound volume. |
 | `notifications.local.icon` | string | — | Image for the banner icon (`.png`, `.jpg` or `.icns`). Unset: the AgentX logo. Applied by `agentx desktop install`. |
+| `notifications.local.quietWaitSeconds` | whole number (0–120) | `15` | Seconds the sound waits while something else speaks on this computer, such as a spoken answer or a script using `say`. If something is still speaking after that, the banner shows without the sound. `0`: never wait. |
+| `notifications.told` | object | `{}` | The record of what you were told. Everything sent to your own addresses is written down once. Something you were already told is not sent again on any channel, and system reminders wait for the daily digest. See [Told once](/jobs/notifications#6-told-once-and-the-daily-digest). |
+| `notifications.told.enabled` | boolean | `true` | Records and checks every message to your own addresses. |
+| `notifications.told.repeatWindowHours` | number (up to 720) | `24` | Hours during which a notice with the same key is not told again, on any channel. A notice without a key is matched by its words for at most 20 hours. Agents' answers are never matched. |
+| `notifications.told.channels` | list of strings | `["push", "ntfy"]` | Channels that only ever reach you. Every message on them goes through the record. |
+| `notifications.told.addresses` | list of strings | `[]` | Your other private chats, as `channel:chatId`, for example `telegram:123456789`. |
+| `notifications.told.digestNags` | boolean | `true` | System reminders, such as "Not finished", a missing voice or a channel that stopped, wait for the daily digest (`approvals.digest`) instead of a notification each. Off, or with no digest destination: each is sent at once. |
 
 ## `calls`
 
@@ -189,6 +197,10 @@ Agents ringing you for a live voice call on AgentX Voice. See [Calls from your a
 | `calls.maxCallMinutes` | number (1–240) | `30` | An answered call nobody hung up ends after this many minutes (the widget quit or crashed, the Mac slept), so the agent can call again. |
 | `calls.ringSound` | string | `"Submarine"` | The ring: a sound from `/System/Library/Sounds`, without the extension. |
 | `calls.summary` | boolean | `true` | After hang-up, the agent writes a short summary, filed in the dashboard's Ask history. |
+| `calls.busy.retryMinutes` | number (1–60) | `5` | While a call waits because AgentX Voice is busy (you are in another call, in a turn, or recording), you get the call-waiting notice again this often. |
+| `calls.busy.maxWaitMinutes` | number (1–240) | `10` | The longest a call waits. Still busy then, it counts as missed. |
+| `calls.busy.title` | string | `"Call waiting: {agent}"` | Title of the call-waiting notice. `{agent}` becomes the caller's name. |
+| `calls.busy.notice` | string | `"AgentX Voice is busy. The call rings when it is free."` | Second line of that notice, under the caller's reason. |
 
 ## `approvals`
 
@@ -229,6 +241,19 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.checkin.maxAsksPerPass` | number (1 to 20) | `5` | Most agents one check-in asks to write a card, whatever they answer. |
 | `approvals.checkin.composeTimeoutSeconds` | number (30 to 3600) | `300` | How long an agent may take to write one card, counted from the start of its turn. The turn is stopped at the limit. |
 
+## `quality`
+
+Quality gates for agent-written changes. Each one is off by default.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `quality.specTests.enabled` | boolean | `false` | A separate test agent writes tests from the issue text for issues that go to a [Claude cloud session](/jobs/cloud-sessions). See [Have a second agent write tests from the issue](/jobs/spec-tests). |
+| `quality.specTests.paths` | list of strings | `["src/daemon"]` | Folders in the pilot. Only an issue that names one of them gets spec tests. |
+| `quality.specTests.agent` | string | `"spec-tests"` | The test agent's name, used as the author of the spec-test commit. Must not be the coding agent's id. |
+| `quality.specTests.model` | string | unset | Model the test agent uses. Unset: the `claude` command's default. |
+| `quality.specTests.maxCostPerIssue` | number (up to 100) | `2` | Most the test agent may spend on one issue, in US dollars. Past it, it stops and leaves a note on the issue. |
+| `quality.specTests.maxMinutes` | number (1–120) | `20` | Most minutes the test agent may run for one issue. Past it, it stops and leaves a note on the issue. |
+
 ## `requests`
 
 Open requests: what you asked an agent for is recorded and followed until it is done, declined or dropped. Off by default.
@@ -239,7 +264,9 @@ When it is on, AgentX notes every message you send to an agent. A message the ag
 - The run failed or hit its time limit.
 - A restart cut the run off.
 
-An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you, and nothing closes by getting old.
+An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you.
+
+One case is closed instead of coming back to you: a request whose handed-on work all came back done, and that nobody closed within `staleAfterHours`. It is closed as done. The proof is the first link in the other agent's answer. With no link, it is marked **unproven**. Turn this off with `settleHandedBack: false`.
 
 Who counts as you on this computer's own surfaces (voice, the phone app, the dashboard) is proven, not declared: the daemon marks the turns it starts itself, and the dashboard presents the key in `.agentx/operator.key` for the phone app. The daemon creates that file next to `agentx.json` at start, readable by your user only. A call to `POST /task` that names one of those channels without the key runs as an ordinary turn and is not recorded as your request. When the phone app talks to an agent on another computer, the computer it is paired with checks its own key on the forward and tells the other one the turn is yours; that other computer believes it only from a request that carries one of its `mesh.peers[].token` values and comes from another machine, never from a caller on the same machine or a bare header. A computer you let vouch is trusted for more than the list: the turn is yours for [people limits](/jobs/people) too. When the whole mesh shares one token, every computer in it can vouch, so share a token only between computers you own.
 
@@ -260,6 +287,7 @@ To turn it on by hand:
 | `requests.channels` | list of strings | `[]` | Channels to record on. Empty: every channel a person writes on (`telegram`, `whatsapp`, `slack`, `discord`, `gitlab`, `github`, `app`, `voice`, `dashboard`, `webrtc`). |
 | `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your id on that channel, as `channel:id`. That is your login on GitLab and GitHub, and the sender id everywhere else (the numeric id on Telegram, the number on WhatsApp). An entry only applies to its own channel. Usernames beside an id and display names are not matched, because the person chooses them. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
+| `requests.settleHandedBack` | boolean | `true` | A request in progress whose handed-on work all came back done, and that has no activity for `staleAfterHours`, is closed as done instead of coming back to you. The proof is the other agent's link, or the request is marked unproven. Promises, requests with a check or a due time, and tracked plans are never closed this way. |
 | `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
 | `requests.plans` | object | `{}` | Tracked plans: a request of two or more steps, each with an owner agent, followed until every step is done. Needs `requests.enabled`. See [Follow a request of several steps](/jobs/tracked-plans). |
 | `requests.plans.enabled` | boolean | `true` | Agents may make plans, and the daemon follows them. |
@@ -267,6 +295,42 @@ To turn it on by hand:
 | `requests.plans.maxNudges` | whole number (0 to 20) | `3` | Nudges per step before it counts as blocked and you are told. |
 | `requests.plans.approveKinds` | list of strings | `["message"]` | Step kinds you approve once, on a decision card, when the plan is made. An approved `message` step is sent by the daemon without asking again. |
 | `requests.plans.disabledAgents` | list of strings | `[]` | Agents that may not make a plan. |
+| `requests.plans.requireForWork` | list of strings | `["code"]` | Kinds of work an agent must plan before it starts. The agent is told to plan first: its accept without steps is turned down. While this list or `requireOverMinutes` is set, an accept without steps must name its `work`. Covers recorded requests only. `[]`: no kind needs a plan. See [Plan before starting](/jobs/tracked-plans#plan-before-starting). |
+| `requests.plans.requireOverMinutes` | number (0 to 10080) | `30` | Work the agent estimates at more than this many minutes needs a plan. `0` turns this off. |
+| `requests.checkers` | object | `{}` | Checks that close a request or a promise on evidence (`closeWhen`). See [Close on evidence, not on a claim](/jobs/open-requests#close-on-evidence-not-on-a-claim). |
+| `requests.checkers.enabled` | list of strings | all four | Checks agents may use: `url`, `issue`, `git-ancestor`, `reply`. A request whose check is not on the list is unverified. |
+| `requests.checkers.checkEveryMinutes` | number (up to 1440) | `10` | Minutes between two runs of a request's check. |
+| `requests.checkers.repos` | object | `{}` | Local copies of repositories the `git-ancestor` check may read, by name: `{ "app": "/srv/app" }`. Agents give the name, never a folder. |
+| `requests.checkers.github` | object | — | The `issue` check's GitHub access: `apiUrl` (default `https://api.github.com`) and `token`. Unset: `channels.github.token` (or `tokenFile`). |
+| `requests.checkers.gitlab` | object | — | The `issue` check's GitLab access: `url` and `token`. Unset: `channels.gitlab.host` and `channels.gitlab.token`. |
+| `requests.headlines` | object | `{}` | Headlines: a few words that say what a request is, used as the title of its card, its notification and its Desk line instead of your own words. The agent writes them; when it did not, AgentX writes the headline once with one short model call. See [What a request's card shows](/jobs/open-requests#what-a-request-s-card-shows). |
+| `requests.headlines.enabled` | boolean | `true` | Writes the missing headlines. Off: a card is titled with the start of your words, as before. Also `agentx requests settings --headlines on\|off`, or the box **Write a headline when the agent gave none** on the Approvals page. |
+| `requests.headlines.provider` | string | `"claude-code"` | Engine for the call. `claude-code` uses the sign-in this computer already has (subscription or API key); no new paid account is used. |
+| `requests.headlines.model` | string | `"claude-haiku-4-5-20251001"` | Model for the call. A small, fast model is enough. |
+| `requests.headlines.timeoutSeconds` | whole number (5 to 120) | `30` | Longest wait for one headline. A request whose headline could not be written keeps your words as its title and is not asked about again. |
+
+## `watchers`
+
+Task watchers: when a task starts (a message to an agent, a hand-off from one agent to another, a scheduled run), AgentX decides whether something should watch it. A watched task that passes its due time with no done signal, or that ends without a result, is reported to the agent that handed it over, and then to you. Off by default.
+
+The decision is the `task-watch` decision seat: it gives the chance that the task carries a deadline, a promise to you, or a hand-off. A watcher is attached unless the seat is `active` and the chance is below `noBelow`. A seat that is off, failed, in `shadow` mode or unsure attaches one. How it works, step by step: [Watch tasks that must finish](/automations/task-watchers).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `watchers.enabled` | boolean | `false` | Runs the check at every task start and follows the watchers. |
+| `watchers.skipChannels` | list of strings | `[]` | Channels whose tasks are never checked, for example `["voice"]`. The watchers' own alert turns (channel `watchers`) never are. |
+| `watchers.defaultDueMinutes` | number (up to 43200) | `120` | Minutes from the start of a task to its due time, when the task gives none. A caller gives one as `dueAt` (an ISO date or milliseconds) in the task's `context`. |
+| `watchers.noBelow` | number (0 to 1) | `0.2` | A chance below this is a confident "no". Only an `active` seat skips the watcher on it. |
+| `watchers.yesAt` | number (0 to 1) | `0.7` | A chance at or above this is recorded as "yes". Between `noBelow` and `yesAt` it is "uncertain", which attaches a watcher. |
+| `watchers.escalateAfterMinutes` | number (up to 10080) | `30` | Minutes after the agent that handed the task over is told before you are told too, if the task is still not done. |
+| `watchers.owner.channel` | string | — | Channel you are told on. Unset: your default notification channel. |
+| `watchers.owner.chatId` | string | — | Chat on that channel. Unset: `default`. |
+| `watchers.retentionDays` | number (up to 3650) | `30` | Days a finished watcher is kept before it is deleted. Watchers still watching are never deleted. |
+| `watchers.doneSignal` | `"result"` or `"explicit"` | `"result"` | What closes a watcher. `result`: the agent's run ends with a reply, or the delegation answers. `explicit`: only `POST /watchers/<id>/done`, so a reply that only promises ("I'll publish at 18:00") keeps the watcher open until its due time. A run that ends without a result fires at once in both modes. |
+| `watchers.evidence.<type>` | object | — | Proof a done needs for tasks of this type. The type is the task's `taskType` (from `POST /task`, `POST /send/agent`, the `agentx_send_agent` and `agentx_task` tools, or a cron job's `taskType`), else the watcher's kind: `dispatch`, `delegation` or `cron`. A task of a type with a rule is never closed by its reply, only by a done whose evidence the rule accepts; anything else is refused. A cron or dispatch run with a rule is told in its own instructions how to close its watcher. The proof is what the agent reports: AgentX checks its shape, not that it is true. Types with no rule close as `doneSignal` says. See [Require proof of done](/automations/task-watchers#_5-require-proof-of-done-optional). |
+| `watchers.evidence.<type>.accept` | list of `"test"`, `"output"`, `"link"` | required | The kinds of proof that count; any one of them closes the task. `test`: at least one test passed and none failed. `output`: the text the task produced. `link`: an `http` or `https` address. |
+| `watchers.evidence.<type>.minOutputChars` | number (1 to 2000) | `40` | The shortest `output` accepted. |
+| `watchers.evidence.<type>.linkHosts` | list of strings | `[]` | Sites a `link` must be on, for example `["example.com"]` (its subdomains count too). Empty: any site. |
 
 ## `requestStatus`
 
@@ -306,6 +370,26 @@ To turn it on:
 
 In a mesh, an edit is made with the same agent account that wrote the comment. When that account's token lives on another machine, the edit is sent there; that machine must run a version that has request status, or the comment stays at its first state.
 
+## `qualityReport`
+
+The weekly quality report posted on a GitHub issue every Monday, and the gates it reports on. Off by default. Turn it on on one computer only. See [post a weekly quality report](/jobs/quality-report).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `qualityReport.enabled` | boolean | `false` | Posts the report every week. Needs `repo` and `issue`. |
+| `qualityReport.repo` | string `owner/name` | — | The GitHub repository of the issue. |
+| `qualityReport.issue` | number | — | The issue the report is posted on. |
+| `qualityReport.time` | string `HH:MM` | `"08:00"` | When the report is due on Monday. A daemon that was off then posts later that week. |
+| `qualityReport.timezone` | string | — | The timezone `time` is read in, for example `Europe/Paris`. Unset: this computer's. |
+| `qualityReport.command` | list of strings | `["agentx", "quality", "report", "--public"]` | The command whose output is posted, shown as a fixed-width block. AgentX adds `--repo <repo>` (unless the command already has one), `--since <Monday> --until <Sunday>` for the week and `--compare <baseline>`. A leading `agentx` runs the same AgentX install as the daemon, whatever its `PATH`. The week is also in `AGENTX_QUALITY_WEEK`, `AGENTX_QUALITY_FROM` and `AGENTX_QUALITY_TO`, and the repository in `AGENTX_QUALITY_REPO`. |
+| `qualityReport.baseline` | string | `"baseline"` | The baseline saved with `agentx quality report --save-baseline`. Each week is compared with it, and the verdict quotes its fix share. |
+| `qualityReport.timeoutSeconds` | number (10–3600) | `600` | Time limit for the command. |
+| `qualityReport.gates` | list | `[]` | The gates and when they were on, shown in each comment. |
+| `qualityReport.gates[].id` | string | required | Short name, used by `agentx quality verdict --gate`. |
+| `qualityReport.gates[].label` | string | — | Name shown in the comment. Unset: `id`. |
+| `qualityReport.gates[].since` | string `YYYY-MM-DD` | required | The day the gate went on. The verdict is due three weeks after the first gate's `since`. |
+| `qualityReport.gates[].until` | string `YYYY-MM-DD` | — | The day the gate went off. |
+
 ## `shutdown`
 
 How a daemon stop treats tasks that are still running. See [restart without losing work](/jobs/restart-safely#change-how-long-it-waits).
@@ -333,6 +417,24 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.crashLoop.restarts` | number (1 or more) | `3` | This many restarts… |
 | `resume.crashLoop.windowMinutes` | number | `10` | …within this many minutes pauses picking up work. |
 
+## `quality`
+
+Release quality gates. Each one has its own switch and is off unless you turn it on.
+
+`quality.canary` holds a release back from a second machine until it has run on this one for a while without new trouble. See [soak a release before deploying it](/jobs/canary-soak).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `quality.canary.enabled` | boolean | `false` | Makes `agentx daemon deploy` refuse a release that has not passed its soak. Only the literal `true` turns it on. Off: deploys work as before. Other ways of shipping a release are not gated. |
+| `quality.canary.soakMinutes` | number (1–10080) | `120` | How long a release must run on this daemon. |
+| `quality.canary.thresholds.maxRestarts` | number | `1` | Restarts allowed during the soak, not counting the one that started it. |
+| `quality.canary.thresholds.maxCrashes` | number | `0` | Stops without being asked to (crash, forced kill) allowed during the soak. |
+| `quality.canary.thresholds.maxFailedTasks` | number | `3` | Failed or timed-out tasks allowed during the soak. Stopped tasks do not count. |
+| `quality.canary.thresholds.maxErrorRateIncrease` | number (0–1) | `0.1` | How much the share of failed tasks may rise over the release before, as a fraction: `0.1` is 10 percentage points. |
+| `quality.canary.thresholds.minTasksForRate` | number | `10` | Fewer tasks than this during the soak skips the error-rate check. |
+
+A crash loop (`resume.crashLoop` above) during the soak always fails it.
+
 ## `signals`
 
 Pausing a running task with a resume plan, and resuming it later. You may always pause or resume; an agent may pause or resume a task it handed out. See [Pause a task and resume it later](/jobs/pause-and-resume).
@@ -356,6 +458,23 @@ Hands due Apple Reminders back to the agent that created them. macOS only, off b
 | `reminders.pollSeconds` | number (15 or more) | `60` | How often the lists are read. |
 | `reminders.lookbackHours` | number | `24` | A reminder overdue by more than this (the daemon was off) is reported to its agent, not run. |
 | `reminders.command` | string | `"remindctl"` | The `remindctl` program, or its full path when the daemon can't find it. |
+
+## `native`
+
+How AgentX uses the apps that come with the operating system, such as Reminders and Notification Center. All of this goes through one adapter per operating system. `agentx doctor` shows a "Native" line that says what this machine offers.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `native.adapter` | `"auto"` or `"none"` | `"auto"` | `"auto"` picks the adapter for this operating system. `"none"` turns it off on this machine. A machine with no adapter yet gets `"none"` either way. |
+| `native.mirror.enabled` | boolean | `false` | Puts each waiting card and request in Reminders with a due time. See [See waiting decisions in Reminders and Calendar](/jobs/reminders-mirror). |
+| `native.mirror.list` | string | `"AgentX Desk"` | The Reminders list. Must not start with `-`, and must not be one of `reminders.lists` or `approvals.checkin.lists`. |
+| `native.mirror.dueAfterMinutes` | number (0–1440) | `5` | How long after a card is raised its reminder falls due. Never later than the card expires. |
+| `native.mirror.include` | list of `"card"`, `"request"` | `["card", "request"]` | What is mirrored: decision cards, requests waiting on you, or both. |
+| `native.mirror.answerUrl` | URL | — | The address in each reminder where you answer. Unset: `http://localhost:<dashboard.port>/approvals`. |
+| `native.forwardTo` | string | — | The mesh peer with the owner's notes app, for a machine without one. Unset: `approvals.forwardTo`. |
+| `native.notes.enabled` | boolean | `false` | Lets agents put ideas in Apple Notes with `agentx_note`. See [Get agents' ideas in Apple Notes](/jobs/ideas-to-notes). |
+| `native.notes.folder` | string | `"AgentX"` | The Notes folder. Created the first time. |
+| `native.notes.perAgentPerDay` | number (1–50) | `10` | Most notes one agent may add in a day. |
 
 ## `wiki`
 

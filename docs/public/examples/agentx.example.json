@@ -75,15 +75,14 @@
       "schedule": "0 0 * * *",
       "timezone": "UTC",
       "agent": "devops",
-      "timeout": 600,
-      "model": "claude-sonnet-4-6",
+      "timeout": 1800,
       "onError": ["notify", "disable"],
       "notify": {
         "channel": "telegram",
         "chatId": "-1001234567890",
         "accountId": "devops"
       },
-      "prompt": "Run: node dist/cli.js wiki absorb --max 20. Report how many articles were compiled per agent and any gaps flagged."
+      "command": "agentx wiki absorb --max 20"
     }
   },
   "mesh": {

@@ -6,13 +6,21 @@
 // an agent, done, or drop. Below, the `requests` settings. Requests that
 // need attention are also in the inbox list above, as the "Request" kind.
 // The card's rendered text comes from the server (requests/card-view.ts),
-// which escapes before it marks up.
+// which escapes before it marks up. Open loops (#1039): a card shows who
+// it is owed to, when it is due and what check closes it; the stalled
+// filter shows only the stalled ones, by what they wait on.
 
 export const REQUESTS_HTML = `
   <section class="apv__req" id="req-section" aria-labelledby="req-h">
     <h2 id="req-h">Open requests <span id="req-n"></span></h2>
     <p class="apv__lead">What you asked agents for that is not finished, oldest first. Reply, hand it to an agent, close it as done, or drop it. Nothing leaves this list by getting old.</p>
     <p id="req-off" class="apv__foot" hidden>Requests are off. Turn them on in the settings below.</p>
+    <div class="apv__stallbar" id="req-stall" role="group" aria-label="Show">
+      <button type="button" class="ax-chip apv__f is-on" data-stall="" aria-pressed="true">All</button>
+      <button type="button" class="ax-chip apv__f" data-stall="owner" aria-pressed="false">Stalled on you <span></span></button>
+      <button type="button" class="ax-chip apv__f" data-stall="agent" aria-pressed="false">Stalled on an agent <span></span></button>
+      <button type="button" class="ax-chip apv__f" data-stall="person" aria-pressed="false">Stalled on an outside person <span></span></button>
+    </div>
     <ol id="req-list" class="apv__list" aria-label="Open requests"></ol>
     <details class="apv__settings" id="req-settings">
       <summary>Settings: open requests</summary>
@@ -22,11 +30,16 @@ export const REQUESTS_HTML = `
         <label>Channels to record on (separated by commas; empty for all)<input type="text" name="channels" placeholder="voice, app, telegram" autocomplete="off"></label>
         <label>Comes back after this many hours without activity<input type="number" min="1" step="1" name="staleAfterHours" required></label>
         <label>Keep closed requests for (days)<input type="number" min="1" step="1" name="retentionDays" required></label>
+        <label class="apv__check"><input type="checkbox" name="headlines"> Write a headline when the agent gave none (one small model call per request)</label>
         <label class="apv__check"><input type="checkbox" name="plansEnabled"> Follow requests of two or more steps as plans</label>
         <label>Nudge a plan step's agent after this many minutes without progress<input type="number" min="1" step="1" name="stallMinutes" required></label>
         <label>Nudges per step before you are told it is blocked<input type="number" min="0" step="1" name="maxNudges" required></label>
         <label>Step kinds you approve once, when the plan is made (separated by commas)<input type="text" name="approveKinds" placeholder="message" autocomplete="off"></label>
         <label>Agents that may not open a plan (separated by commas)<input type="text" name="plansOffFor" autocomplete="off"></label>
+        <label>Kinds of work an agent must plan before it starts (separated by commas; empty for none)<input type="text" name="planForWork" placeholder="code" autocomplete="off"></label>
+        <label>Work estimated over this many minutes needs a plan (0: never)<input type="number" min="0" step="1" name="planOverMinutes" required></label>
+        <label>Checks agents may use to close a loop (separated by commas)<input type="text" name="checkKinds" placeholder="url, issue, git-ancestor, reply" autocomplete="off"></label>
+        <label>Run each loop's check every this many minutes<input type="number" min="1" step="1" name="checkEveryMinutes" required></label>
         <div><button type="submit" class="ax-btn ax-btn--primary">Save settings</button></div>
       </form>
     </details>
@@ -60,6 +73,12 @@ export const REQUESTS_CSS = `
 .apv__plan .is-done { color: var(--ax-ok, inherit); }
 .apv__plan .is-blocked { color: var(--ax-err); }
 .apv__plan small { display: block; color: var(--ax-muted); }
+.apv__stallbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.apv__loop { margin: 6px 0 0; font-size: 13px; color: var(--ax-text-2); overflow-wrap: anywhere; }
+.apv__loop b { color: var(--ax-text); font-weight: 600; }
+.apv__loop .is-failed, .apv__loop .is-unverified { color: var(--ax-amber-ink); }
+.apv__loop .is-verified { color: var(--ax-ok, inherit); }
+.apv__stalled { color: var(--ax-err); }
 `
 
 export const REQUESTS_SCRIPT = `
@@ -76,7 +95,9 @@ function headers(json){
 function say(text, kind){ var m = $('apv-msg'); m.textContent = text || ''; m.className = 'apv__msg' + (kind ? ' is-' + kind : ''); }
 function when(ms){ return new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'; }
 
-var AGENTS = [];
+var AGENTS = [], ITEMS = [], SHOW = '';
+var WAITS = { owner: 'you', agent: 'an agent', person: 'an outside person' };
+var VERIFY = { verified: 'check met', unverified: 'check could not say', failed: 'check not met' };
 var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 function agentName(id){ for (var i = 0; i < AGENTS.length; i++) if (AGENTS[i].id === id) return AGENTS[i].name; return id; }
 var STEP = { pending: 'Not started', active: 'In progress', done: 'Done', blocked: 'Blocked', skipped: 'Skipped' };
@@ -91,6 +112,22 @@ function plan(p){
       (extra ? '<small>' + esc(extra) + '</small>' : '') + '</li>';
   }).join('') + '</ol>';
 }
+function workLabel(work, minutes){ return [work || '', minutes != null ? 'about ' + Math.round(minutes) + ' min' : ''].filter(Boolean).join(', '); }
+// Who it is owed to, when it is due, what closes it, and why it is stalled (#1039).
+function loop(r){
+  var l = r.loop, bits = [];
+  if (l && l.promise && l.owedTo) bits.push('Promised to <b>' + esc(l.owedTo === 'owner' ? 'you' : agentName(l.owedTo)) + '</b>');
+  if (l && l.dueAt) bits.push('Due ' + esc(when(l.dueAt)));
+  // What the agent declared when it accepted (#1048).
+  // A change after a refused accept shows the first declaration too.
+  if (r.work || r.estimateMinutes != null) {
+    var now = workLabel(r.work, r.estimateMinutes), first = workLabel(r.firstWork, r.firstEstimateMinutes);
+    bits.push('Work: ' + esc(now) + (first && first !== now ? ' <small>(first declared: ' + esc(first) + ')</small>' : ''));
+  }
+  if (l && l.check) bits.push('Closes when ' + esc(l.check) + (l.verifyState ? ' <span class="is-' + esc(l.verifyState) + '">(' + esc(VERIFY[l.verifyState] || l.verifyState) + (l.verifyDetail ? ': ' + esc(l.verifyDetail) : '') + ')</span>' : ''));
+  var stalled = r.stall ? '<p class="apv__loop apv__stalled">Stalled, waiting on ' + esc(r.stall.group === 'agent' ? agentName(r.stall.who) : r.stall.group === 'person' ? r.stall.who : 'you') + ': ' + esc(r.stall.why) + '</p>' : '';
+  return (bits.length ? '<p class="apv__loop">' + bits.join(' · ') + '</p>' : '') + stalled;
+}
 function more(label, html){ return html ? '<details class="apv__detail"><summary>' + esc(label) + '</summary><div class="apv__md">' + html + '</div></details>' : ''; }
 
 // summary, why and the ids are escaped here; textHtml, ownerNoteHtml and
@@ -103,8 +140,10 @@ function item(r){
     '<div class="apv__meta"><span class="apv__state is-' + esc(r.state) + '">' + esc(STATE[r.state] || r.state) + '</span>' +
     '<span class="apv__with">With <b>' + esc(agentName(r.agentId)) + '</b></span>' +
     '<span>' + esc(when(r.createdAt)) + '</span><span>' + esc(r.channel) + '</span><code>' + esc(r.id) + '</code></div>' +
-    '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' + why + plan(r.plan) +
-    more(r.channel === 'voice' ? 'What you said' : 'What you asked', r.textHtml) +
+    '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' +
+    (r.needed && r.state !== 'waiting_owner' ? '<p class="apv__rec apv__need" dir="auto"><b>Needed from you:</b> ' + esc(r.needed) + '</p>' : '') +
+    why + loop(r) + plan(r.plan) +
+    more(r.loop && r.loop.promise ? 'What ' + agentName(r.agentId) + ' promised' : 'You said', r.textHtml) +
     more('Your last reply', r.ownerNoteHtml) +
     (r.lastAnswer ? more('Last answer from ' + agentName(r.lastAnswer.agentId) + ' (' + when(r.lastAnswer.at) + ')', r.lastAnswer.html) : '') +
     '<div class="apv__reply">' +
@@ -116,7 +155,7 @@ function item(r){
     (opts ? '<select class="apv__agent" aria-label="Agent to hand ' + esc(r.id) + ' to">' + opts + '</select><button type="button" class="ax-btn" data-req="handoff">Hand to agent</button>' : '') +
     '</div>' +
     '<div class="apv__acts">' +
-    '<input type="text" class="apv__evidence" placeholder="Link to the evidence (optional)" aria-label="Link to the evidence for ' + esc(r.id) + '">' +
+    '<input type="text" class="apv__evidence" placeholder="' + (r.loop && r.loop.check ? 'Why you close it by hand (skips its check)' : 'Link to the evidence (optional)') + '" aria-label="' + (r.loop && r.loop.check ? 'Reason for closing ' : 'Link to the evidence for ') + esc(r.id) + '">' +
     '<button type="button" class="ax-btn" data-req="done">Done</button>' +
     '<button type="button" class="ax-btn" data-req="drop">Drop</button>' +
     '</div></li>';
@@ -129,12 +168,18 @@ function fill(s){
   f.channels.value = (s.channels || []).join(', ');
   f.staleAfterHours.value = s.staleAfterHours;
   f.retentionDays.value = s.retentionDays;
+  f.headlines.checked = !s.headlines || s.headlines.enabled !== false;
   var p = s.plans || {};
   f.plansEnabled.checked = p.enabled !== false;
   f.stallMinutes.value = p.stallMinutes || 30;
   f.maxNudges.value = p.maxNudges == null ? 3 : p.maxNudges;
   f.approveKinds.value = (p.approveKinds || []).join(', ');
   f.plansOffFor.value = (p.disabledAgents || []).join(', ');
+  f.planForWork.value = (p.requireForWork || []).join(', ');
+  f.planOverMinutes.value = p.requireOverMinutes == null ? 30 : p.requireOverMinutes;
+  var c = s.checkers || {};
+  f.checkKinds.value = (c.enabled || []).join(', ');
+  f.checkEveryMinutes.value = c.checkEveryMinutes || 10;
   $('req-off').hidden = !!s.enabled;
 }
 
@@ -143,14 +188,36 @@ async function load(){
     var r = await fetch('/api/admin/approvals/requests', { headers: headers(false) });
     var d = await r.json();
     if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
-    var items = d.items || [];
+    ITEMS = d.items || [];
     AGENTS = d.agents || [];
-    $('req-n').textContent = items.length;
-    $('req-list').innerHTML = items.length ? items.map(item).join('')
-      : '<li class="apv__empty"><h2>No open requests</h2>Everything you asked for is closed.</li>';
+    $('req-n').textContent = ITEMS.length;
+    var st = d.stalled || {};
+    [].forEach.call($('req-stall').querySelectorAll('button[data-stall]'), function(b){
+      var g = b.getAttribute('data-stall');
+      if (g) b.querySelector('span').textContent = '(' + (st[g] || 0) + ')';
+    });
+    draw();
     if (d.settings && !$('req-form').contains(document.activeElement)) fill(d.settings);
   } catch (e) { say('Couldn’t load open requests: ' + e.message, 'err'); }
 }
+
+function draw(){
+  var shown = SHOW ? ITEMS.filter(function(r){ return r.stall && r.stall.group === SHOW; }) : ITEMS;
+  $('req-list').innerHTML = shown.length ? shown.map(item).join('')
+    : SHOW ? '<li class="apv__empty"><h2>Nothing stalled on ' + esc(WAITS[SHOW]) + '</h2>Every open loop of this kind is moving or not due yet.</li>'
+    : '<li class="apv__empty"><h2>No open requests</h2>Everything you asked for is closed.</li>';
+}
+
+$('req-stall').addEventListener('click', function(ev){
+  var b = ev.target.closest && ev.target.closest('button[data-stall]');
+  if (!b) return;
+  SHOW = b.getAttribute('data-stall');
+  [].forEach.call($('req-stall').querySelectorAll('button[data-stall]'), function(x){
+    x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+    x.classList.toggle('is-on', x === b);
+  });
+  draw();
+});
 
 async function post(path, body){
   try {
@@ -202,11 +269,16 @@ $('req-form').addEventListener('submit', async function(ev){
     channels: f.channels.value,
     staleAfterHours: Number(f.staleAfterHours.value),
     retentionDays: Number(f.retentionDays.value),
+    headlines: f.headlines.checked,
     plansEnabled: f.plansEnabled.checked,
     stallMinutes: Number(f.stallMinutes.value),
     maxNudges: Number(f.maxNudges.value),
     approveKinds: f.approveKinds.value,
-    plansOffFor: f.plansOffFor.value
+    plansOffFor: f.plansOffFor.value,
+    planForWork: f.planForWork.value,
+    planOverMinutes: Number(f.planOverMinutes.value),
+    checkKinds: f.checkKinds.value,
+    checkEveryMinutes: Number(f.checkEveryMinutes.value)
   };
   try {
     var r = await fetch('/api/admin/approvals/requests/settings', { method: 'POST', headers: headers(true), body: JSON.stringify(body) });

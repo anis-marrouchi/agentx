@@ -13,6 +13,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import type { WikiHub } from "@/wiki/hub"
 import type { WikiStore } from "@/wiki/store"
 import { isSafeArticlePath } from "@/wiki/article-sync"
+import { LockBusyError } from "@/wiki/facts/ledger-file"
 import type { WikiArticle } from "@/wiki/types"
 import {
   applyCuration, buildCuratePrompt, curatorAgentFor, pageFingerprint, parseCurateReply,
@@ -95,7 +96,12 @@ export class WikiCurateApi {
         if (!version || !page.store.getVersions(page.path).some(v => v.timestamp === version)) {
           return send(res, 404, { error: "no such version" })
         }
-        if (!page.store.restoreVersion(page.path, version)) return send(res, 500, { error: "restore failed" })
+        let restored: boolean
+        try { restored = page.store.restoreVersion(page.path, version) } catch (e) {
+          if (e instanceof LockBusyError) return send(res, 409, { error: "the page was busy; run again" })
+          throw e
+        }
+        if (!restored) return send(res, 500, { error: "restore failed" })
         const chat = this.chats.get(key(page.agentId, page.path)) ?? []
         for (const m of chat) if (m.edit?.version === version) m.edit.restored = true
         this.push(page.agentId, page.path, { role: "agent", agent: "AgentX", text: `Put the page back as it was on ${version.slice(0, 10)}, before that change.`, status: "done" })

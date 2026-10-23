@@ -76,6 +76,77 @@ export function isWhatsAppSenderAllowed(
   return false
 }
 
+/** Close counters behind the 408/440 reconnect policy (#982). Kept apart so
+ *  network timeouts never count toward the conflict give-up. */
+export interface WhatsAppReconnectState {
+  /** 440 conflict:replaced closes since the last stable connection. */
+  conflicts: number
+  /** 408 timeout closes since the last stable connection. */
+  timeouts: number
+}
+
+export type WhatsAppReconnectPlan =
+  | { kind: "retry"; delayMs: number; message: string }
+  | { kind: "give-up"; message: string }
+
+export const WHATSAPP_GIVE_UP_AFTER = 5
+/** How long a connection must stay open before the counters reset. */
+export const WHATSAPP_STABLE_AFTER_MS = 60_000
+const PAIRED_TIMEOUT_MAX_DELAY_MS = 300_000
+const LIMITED_MAX_DELAY_MS = 120_000
+
+function backoff(attempt: number, capMs: number): number {
+  return Math.min(10_000 * Math.pow(2, attempt - 1), capMs)
+}
+
+/** Decide what to do after a 408 or 440 close, updating `state` in place.
+ *  - 440 (another session took over): retry with backoff, give up after 5.
+ *  - 408 on a paired session: a network timeout; retry forever, 10 s doubling up to 5 min.
+ *  - 408 while pairing (QR shown, not scanned): retry with backoff, give up after 5. */
+export function planWhatsAppReconnect(
+  state: WhatsAppReconnectState,
+  statusCode: 408 | 440,
+  paired: boolean,
+): WhatsAppReconnectPlan {
+  if (statusCode === 440) {
+    const n = ++state.conflicts
+    if (n >= WHATSAPP_GIVE_UP_AFTER) {
+      return {
+        kind: "give-up",
+        message: `WhatsApp: giving up after ${n} conflict (440) closes. Another session is active for this number — close it or re-scan QR.`,
+      }
+    }
+    const delayMs = backoff(n, LIMITED_MAX_DELAY_MS)
+    return {
+      kind: "retry",
+      delayMs,
+      message: `WhatsApp conflict (440): another session replaced this one. Reconnecting in ${delayMs / 1000}s (attempt ${n}/${WHATSAPP_GIVE_UP_AFTER})...`,
+    }
+  }
+
+  const n = ++state.timeouts
+  if (paired) {
+    const delayMs = backoff(n, PAIRED_TIMEOUT_MAX_DELAY_MS)
+    return {
+      kind: "retry",
+      delayMs,
+      message: `WhatsApp network timeout (408). Reconnecting in ${delayMs / 1000}s (attempt ${n})...`,
+    }
+  }
+  if (n >= WHATSAPP_GIVE_UP_AFTER) {
+    return {
+      kind: "give-up",
+      message: `WhatsApp: giving up after ${n} pairing timeouts (408). The QR code was not scanned — run \`agentx connect whatsapp\` to pair.`,
+    }
+  }
+  const delayMs = backoff(n, LIMITED_MAX_DELAY_MS)
+  return {
+    kind: "retry",
+    delayMs,
+    message: `WhatsApp pairing timed out (408, QR not scanned). Reconnecting in ${delayMs / 1000}s (attempt ${n}/${WHATSAPP_GIVE_UP_AFTER})...`,
+  }
+}
+
 export class WhatsAppAdapter implements ChannelAdapter {
   readonly name = "whatsapp"
   private sessionDir: string
@@ -84,7 +155,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private routes: WhatsAppRoute[]
   private handler?: (msg: IncomingMessage) => Promise<void>
   private sock: any = null
-  private reconnectAttempts = 0
+  private reconnect: WhatsAppReconnectState = { conflicts: 0, timeouts: 0 }
+  /** Resets the reconnect counters once a connection has stayed open for a while. */
+  private stableTimer: ReturnType<typeof setTimeout> | null = null
   /** Generation counter — incremented on each start() to ignore stale socket events */
   private generation = 0
   private sentMessageIds: Set<string> = new Set()  // Track our own replies to prevent loops
@@ -107,6 +180,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private onQR?: (qr: string | null) => void
   /** Fires whenever the connection state changes (connecting / open / close). */
   private onStatus?: (status: "connecting" | "open" | "close", detail?: string) => void
+  /** Fires once when the adapter stops reconnecting, so the owner hears about a silent channel. */
+  private onGiveUp?: (message: string) => void
 
   constructor(
     config: {
@@ -116,6 +191,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
       routes?: WhatsAppRoute[]
       onQR?: (qr: string | null) => void
       onStatus?: (status: "connecting" | "open" | "close", detail?: string) => void
+      onGiveUp?: (message: string) => void
       /** Throttle settings for live Baileys reads. Falls back to safe defaults. */
       throttle?: { minMsBetweenCalls?: number; maxCallsPerMinute?: number }
     },
@@ -127,6 +203,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.routes = config.routes || []
     this.onQR = config.onQR
     this.onStatus = config.onStatus
+    this.onGiveUp = config.onGiveUp
     this.log = log
     this.cache = new WhatsAppCache(this.sessionDir)
     if (config.throttle?.minMsBetweenCalls) this.throttleMinMs = config.throttle.minMsBetweenCalls
@@ -205,6 +282,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(this.sessionDir)
+    // A QR-paired session has `me` set; a pairing-code one is `registered`.
+    const isPaired = () => !!(state.creds?.registered || state.creds?.me?.id)
 
     // Fetch latest WhatsApp Web version (critical for avoiding 405 errors)
     let version: [number, number, number] | undefined
@@ -302,6 +381,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
       }
 
       if (connection === "close") {
+        this.clearStableTimer()
         const statusCode = lastDisconnect?.error?.output?.statusCode
         const reason = lastDisconnect?.error?.output?.payload?.message || ""
         this.log(`WhatsApp connection closed (status: ${statusCode}, reason: ${reason})`)
@@ -310,17 +390,15 @@ export class WhatsAppAdapter implements ChannelAdapter {
           this.log("Logged out. Delete session dir and restart to re-scan QR.")
         } else if (statusCode === 440 || statusCode === 408) {
           // 440 = conflict:replaced (another session took over)
-          // 408 = connection timed out (QR not scanned)
-          this.reconnectAttempts++
-
-          if (this.reconnectAttempts >= 5) {
-            this.log(`WhatsApp: giving up after ${this.reconnectAttempts} conflict attempts. Another session is active for this number — close it or re-scan QR.`)
+          // 408 = timed out: a network timeout when paired, an unscanned QR when not (#982)
+          const plan = planWhatsAppReconnect(this.reconnect, statusCode, isPaired())
+          this.log(plan.message)
+          if (plan.kind === "give-up") {
+            try { this.onStatus?.("close", plan.message) } catch { /* */ }
+            try { this.onGiveUp?.(plan.message) } catch { /* */ }
             return // Stop reconnecting
           }
-
-          const delay = Math.min(10_000 * Math.pow(2, this.reconnectAttempts - 1), 120_000)
-          this.log(`Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts}/5)...`)
-          setTimeout(() => this.start(), delay)
+          setTimeout(() => this.start(), plan.delayMs)
         } else if (statusCode === 515) {
           // Stream error — restart after delay
           this.log("Stream error, reconnecting in 5s...")
@@ -333,19 +411,22 @@ export class WhatsAppAdapter implements ChannelAdapter {
       }
 
       if (connection === "open") {
-        // Don't reset reconnectAttempts here — it gets reset on first
-        // successful message send/receive (proving connection is stable)
+        // Reset the counters only once the connection proves stable: short
+        // open/close flaps must still count toward the limits.
         this.log("WhatsApp connected")
+        this.clearStableTimer()
+        this.stableTimer = setTimeout(() => {
+          this.stableTimer = null
+          if (myGeneration === this.generation) this.resetReconnect()
+        }, WHATSAPP_STABLE_AFTER_MS)
+        this.stableTimer.unref?.()
       }
     })
 
     // Handle incoming messages
     this.sock.ev.on("messages.upsert", async (m: any) => {
       // Connection is confirmed stable — reset reconnect backoff
-      if (this.reconnectAttempts > 0) {
-        this.log(`WhatsApp connection stable, resetting reconnect counter (was ${this.reconnectAttempts})`)
-        this.reconnectAttempts = 0
-      }
+      this.resetReconnect()
 
       this.log(`WA messages.upsert: ${m.messages?.length || 0} messages, type: ${m.type}`)
 
@@ -504,10 +585,23 @@ export class WhatsAppAdapter implements ChannelAdapter {
     // events stop firing once `sock.end()` runs, so anything we haven't
     // persisted is lost on restart otherwise.
     try { this.cache.save() } catch (e: any) { this.log(`cache save error: ${e.message}`) }
+    this.clearStableTimer()
     if (this.sock) {
       this.sock.end()
       this.sock = null
     }
+  }
+
+  private clearStableTimer(): void {
+    if (this.stableTimer) clearTimeout(this.stableTimer)
+    this.stableTimer = null
+  }
+
+  private resetReconnect(): void {
+    const { conflicts, timeouts } = this.reconnect
+    if (conflicts === 0 && timeouts === 0) return
+    this.log(`WhatsApp connection stable, resetting reconnect counters (conflicts ${conflicts}, timeouts ${timeouts})`)
+    this.reconnect = { conflicts: 0, timeouts: 0 }
   }
 
   async send(msg: OutgoingMessage): Promise<string> {
