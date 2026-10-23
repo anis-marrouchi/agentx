@@ -2711,8 +2711,10 @@ export class AgentXDaemon {
       raise: (w, reason) => {
         const s = this.config.requests
         if (!this.requests || !s.enabled || !promiseSettingsOf(s).watchers || this.config.watchers.owner.channel) return false
-        raiseWatcherLoop(this.requests.store, w, reason, Date.now())
-        return true
+        // Not raised (the request already needs attention, for another
+        // reason): no notice of the watcher's will go out, so it pushes its own.
+        const r = raiseWatcherLoop(this.requests.store, w, reason, Date.now())
+        return r.raised || r.opened
       },
       doneHint: (w, rule) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":${evidenceExample(rule)}}'`,
       log: this.log,
