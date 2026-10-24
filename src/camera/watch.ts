@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, rmSync, writeFileSync } from "fs"
+import { lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "fs"
 import { join, resolve } from "path"
 import type { VideoFrame } from "@/channels/webrtc-bot"
 import type { CameraBotConfig } from "@/daemon/config"
@@ -23,6 +23,12 @@ import { frameToPng, type I420Frame, type RgbaImage } from "./frame-image"
 // tier agent opens it with its Read tool. Unless camera.bot.keepFrames is
 // on, the folder is deleted when the watch ends. The watch ends when the
 // phone stops, when the owner stops it, or after camera.bot.maxSessionMinutes.
+//
+// Spike for #844 only: a local frame tap. When the daemon passes `tap`, the
+// newest frame is also written, shrunk, to <tap.dir>/<callId>/ every
+// tap.everyMs with no agent turn, so a local vision model on this machine
+// can watch the share while nothing goes to a model provider. The tap keeps
+// the last few files and deletes its folder when the watch ends.
 
 export interface TurnSession {
   channel: string
@@ -69,6 +75,16 @@ export interface WatchView {
   streamUntil: number | null
 }
 
+/** Spike (#844): where and how often the newest frame is written for a
+ *  local process, with no agent turn. */
+export interface FrameTapConfig {
+  /** Absolute folder; each share gets <dir>/<callId>/. */
+  dir: string
+  everyMs: number
+  /** Longer side of a tapped frame, in pixels. */
+  maxEdge: number
+}
+
 export interface CameraBotHandle {
   close(reason: string): void
 }
@@ -91,6 +107,8 @@ export interface CameraWatchDeps {
   onEnded?: (watch: WatchView, reason: string) => void
   /** Native I420 → RGBA when available; the pure JavaScript one otherwise. */
   toRgba?: (f: I420Frame) => RgbaImage
+  /** Spike (#844): the local frame tap, or null when it is off. */
+  tap?: () => FrameTapConfig | null
   cwd?: () => string
   now?: () => number
   log?: (m: string) => void
@@ -98,6 +116,9 @@ export interface CameraWatchDeps {
 
 export const NOTE_MAX = 300
 const REPLIES_KEPT = 20
+/** Tapped frames kept on disk per share: enough for a reader that is a
+ *  frame behind, never a recording. */
+export const TAP_FILES_KEPT = 3
 export const CALL_ID = /^[A-Za-z0-9_-]{4,64}$/
 /** The session a share the owner started runs in: the same one the voice
  *  widget and calls use, so a spoken follow-up lands with the picture. */
@@ -132,6 +153,8 @@ interface Watch {
   /** The agent's turns on this share, one at a time: a question asked while
    *  a streamed or interval turn runs waits for it, on the same session. */
   turns: Promise<void>
+  /** The local frame tap (#844 spike), when on. */
+  tap: { dir: string; timer: ReturnType<typeof setInterval>; lastSeq: number; maxEdge: number } | null
 }
 
 export class CameraWatchManager {
@@ -186,9 +209,11 @@ export class CameraWatchManager {
     }
     const timer = setTimeout(() => this.stop(callId, `time limit (${cfg.maxSessionMinutes} min)`), cfg.maxSessionMinutes * 60_000)
     timer.unref?.()
-    this.watches.set(callId, { view, sampler, bot, dir, timer, files: new Map(), ending: false, stream: null, turns: Promise.resolve() })
+    const w: Watch = { view, sampler, bot, dir, timer, files: new Map(), ending: false, stream: null, turns: Promise.resolve(), tap: null }
+    this.watches.set(callId, w)
     sampler.start()
     this.log(`${agentId} is watching share ${callId}` + (cfg.frameIntervalSeconds ? ` (a frame every ${cfg.frameIntervalSeconds} s)` : " (frames on demand)"))
+    this.startTap(w)
     return { ok: true, watch: this.snapshotView(view) }
   }
 
@@ -266,6 +291,10 @@ export class CameraWatchManager {
     this.watches.delete(callId)
     clearTimeout(w.timer)
     if (w.stream) clearTimeout(w.stream.timer)
+    if (w.tap) {
+      clearInterval(w.tap.timer)
+      try { rmSync(w.tap.dir, { recursive: true, force: true }) } catch (e: any) { this.log(`could not delete ${w.tap.dir}: ${e?.message ?? e}`) }
+    }
     w.sampler.stop()
     try { w.bot.close(reason) } catch { /* already closed */ }
     if (!this.deps.config().keepFrames) {
@@ -370,6 +399,39 @@ export class CameraWatchManager {
   private forget(w: Watch, frame: FrameFile): void {
     if (!w.files.delete(frame.seq)) return
     try { rmSync(frame.path, { force: true }) } catch { /* gone already */ }
+  }
+
+  /** Spike (#844): write the newest frame for a local reader every
+   *  tap.everyMs, only when a new one arrived. No turn, no look counted. */
+  private startTap(w: Watch): void {
+    let cfg: FrameTapConfig | null
+    try { cfg = this.deps.tap?.() ?? null } catch { cfg = null }
+    if (!cfg) return
+    const dir = join(resolve(cfg.dir), w.view.callId)
+    const timer = setInterval(() => this.tapOnce(w), Math.max(100, cfg.everyMs))
+    timer.unref?.()
+    w.tap = { dir, timer, lastSeq: 0, maxEdge: cfg.maxEdge }
+    this.log(`share ${w.view.callId}: local frame tap on, a frame every ${cfg.everyMs} ms to ${dir} (no agent turn)`)
+  }
+
+  private tapOnce(w: Watch): void {
+    const tap = w.tap
+    const latest = w.sampler.take()
+    if (!tap || w.ending || !latest || latest.seq === tap.lastSeq) return
+    tap.lastSeq = latest.seq
+    try {
+      const { png } = frameToPng(latest.frame, { maxEdge: tap.maxEdge, toRgba: this.deps.toRgba })
+      mkdirSync(tap.dir, { recursive: true })
+      const name = `frame-${String(latest.seq).padStart(6, "0")}.png`
+      // Write then rename: a reader polling for frame-*.png never sees half a file.
+      const tmp = join(tap.dir, `.${name}.part`)
+      writeFileSync(tmp, png)
+      renameSync(tmp, join(tap.dir, name))
+      const old = readdirSync(tap.dir).filter((f) => /^frame-\d+\.png$/.test(f)).sort()
+      for (const f of old.slice(0, Math.max(0, old.length - TAP_FILES_KEPT))) rmSync(join(tap.dir, f), { force: true })
+    } catch (e: any) {
+      this.log(`tap frame ${latest.seq} of share ${w.view.callId} failed: ${e?.message ?? e}`)
+    }
   }
 
   /** <workspace>/.agentx/camera/<callId>, never through a linked `.agentx`. */

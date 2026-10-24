@@ -1,0 +1,6 @@
+# Spike for #844 only. Versions from the d1-3B model card.
+transformers>=5.14
+torch
+torchvision
+pillow
+huggingface_hub
