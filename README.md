@@ -21,6 +21,36 @@
 
 AgentX is a harness that runs a team of AI agents on a machine you control. A harness is the program around an AI model: it gives the model its channels, tools, schedules and memory, and records what it did. AgentX connects your agents to Telegram, WhatsApp, GitLab, GitHub, schedules and webhooks, on Claude Code, Codex, OpenCode or any model API. Give each agent a clear job. Watch the result in a browser dashboard.
 
+## Problems we solve
+
+| Your problem | What AgentX does | See how |
+|---|---|---|
+| Customers write on WhatsApp after hours and wait until morning. | An agent answers in the same chat within a minute. | [Answer customers on WhatsApp](docs/jobs/answer-whatsapp.md) |
+| Clients keep asking where their request stands. | Each client gets a page of their own with what they asked for and where it stands. | [Give a client a page](docs/jobs/clients.md) |
+| The daily report depends on someone remembering it. | A schedule asks an agent for it at a set time, every day. | [Send a daily report](docs/jobs/daily-report.md) |
+| A job with several steps stalls when someone forgets one. | A follow-up workflow runs the steps in order, nudges the slow one, and asks you before a message goes to a person. | [Let a workflow follow a request](docs/jobs/follow-up-workflows.md) |
+| Things you asked for get lost between agents and restarts. | Open requests keeps each one on a list until it is closed (off until you turn it on). | [Keep track of what you asked for](docs/jobs/open-requests.md) |
+| Small code fixes wait days for a developer. | Mention an agent on a GitLab issue and it answers in the thread and can work on the fix; on GitHub, a second agent can review the pull request before merge. | [Watch GitLab work](docs/jobs/watch-gitlab.md), [review gate](docs/jobs/review-gate.md) |
+| You cannot tell what the AI did, or what still needs you. | Monitor shows the work that needs a person and the work agents can handle. | [Monitor](docs/dashboard/monitor.md) |
+
+## Is AgentX right for you?
+
+**Right for you if:**
+
+- your clients or your team already work in WhatsApp, Telegram, GitLab or GitHub;
+- you want the agents, and what they see, on a machine you control ([your data](docs/your-data.md));
+- you have someone technical for a 10 to 20 minute install;
+- you already use Claude Code, Codex, OpenCode or a model API key ([what it costs](docs/help/costs.md)).
+
+**Not for you yet if:**
+
+- you need Slack or Discord as a live channel ([channels](docs/reference/channels.md));
+- you need roles and permissions for many users (RBAC is not built yet);
+- you want a hosted service with nothing to install: there is none;
+- you need a hard dollar cap per agent: today AgentX caps the number of runs, not the money ([#1162](https://github.com/anis-marrouchi/agentx/issues/1162));
+- you run Windows only (untested; WSL may work);
+- you need a stable release: AgentX is still experimental.
+
 ## Watch it
 
 Short videos show AgentX running, one task each. Click the picture to open the **Learn AgentX** playlist on YouTube.
