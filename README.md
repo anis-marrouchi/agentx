@@ -6,7 +6,7 @@
 
 # AgentX
 
-**The self-hosted agent harness for small teams.**
+**AI agents that answer your clients, send your reports and fix your code, on a machine you own.**
 
 <a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
 
@@ -19,7 +19,7 @@
 
 </div>
 
-AgentX is a harness that runs a team of AI agents on a machine you control. A harness is the program around an AI model: it gives the model its channels, tools, schedules and memory, and records what it did. AgentX connects your agents to Telegram, WhatsApp, GitLab, GitHub, schedules and webhooks, on Claude Code, Codex, OpenCode or any model API. Give each agent a clear job. Watch the result in a browser dashboard.
+Give each agent a job and AgentX gets it done where your business already works: it answers clients on WhatsApp and Telegram, sends the daily report on schedule, and takes an issue from GitLab or GitHub and works on the fix. You see every result, and what still needs you, in a browser dashboard. Under the hood AgentX is a harness: the program around an AI model that gives it channels, tools, schedules and memory, and records what it did. It runs on Claude Code, Codex, OpenCode or any model API, on a machine you control.
 
 ## Watch it
 
