@@ -25,7 +25,7 @@ A post shows:
 - how many runs worked on it, how many failed, and how many minutes they took,
 - the links to its **home** (the issue, merge request or other record where the work lives), its **proof** once it is done, its **task record and trace**, and the agent's history.
 
-**Waits on** (in amber) says who the task is waiting for, since when, and why. **Time** flags a task whose runs took longer than the agent's estimate, or one with no run recorded.
+**Waits on** (in amber) says who the task is waiting for, since when, and why. **Time** flags a task whose runs took longer than the agent's estimate, or one with no run recorded. **Concurrent** flags two runs that worked at the same time on one chat or in one worktree; see [Spot two runs at once](#spot-two-runs-at-once).
 
 ## Open a post's thread
 
@@ -52,7 +52,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 The filters work for both the feed and the list:
 
-- **Owner**, **Status** (Open, **Blocked**, Waiting on owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only**, and a search box.
+- **Owner**, **Status** (Open, **Blocked**, Waiting on owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only**, **Concurrent only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
 
 The filters are part of the page's address. Copy the address to share the same view.
@@ -64,6 +64,21 @@ The filters are part of the page's address. Copy the address to share the same v
 3. Next time, select **My view**.
 
 The view is kept in this browser only. Nothing is stored in AgentX and nobody is notified.
+
+## Spot two runs at once
+
+A **concurrent** run is two runs going at the same time on the same chat, or in the same **worktree** (the folder on disk an agent works in). It usually means one task was sent to two agents, or one agent started on it twice. The two runs can then answer twice or change the same files.
+
+![A post flagged Concurrent, with both run ids, in the isolated demo](/screenshots/wall/concurrent.png)
+
+*Scripted demo data; your team's names will differ.*
+
+1. **Browser:** on the Wall, look for an amber line that starts with **⚠ Concurrent**. It sits on the post, and on the task under **Running now** while both runs are still going.
+2. Read the line. It names both run ids and their agents, what they shared (**on chat** or **in worktree**, which shows the folder's name only) and when both were running.
+3. Select a run id to open that run's task record.
+4. To see only these posts, tick **Concurrent only** in the filters. In the **List**, the **Runs** column shows **⚠ concurrent**.
+
+Two runs where one starts as the other ends are not flagged. Neither are runs on different chats in different folders. The Wall only shows the flag; it does not stop either run.
 
 ## See failures
 
@@ -91,6 +106,7 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**.
 4. Open `/live` in the browser. The classic Live page still opens.
+5. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 
 ## If something is wrong
 
@@ -98,4 +114,5 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 - **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **A machine says "posts not shown":** its dashboard is not reachable from this one. Check the machine with `agentx daemon status`, then see [Add a second machine](../jobs/second-machine.md).
 - **"Thread not available":** the task belongs to another machine that stopped answering. Try again when its card says **up**.
+- **Two runs overlapped but no Concurrent line shows:** the flag compares runs on the same chat or in the same agent folder that started within a day of each other, on machines that answer. A run on a machine marked **unreachable** is left out until it answers again.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.

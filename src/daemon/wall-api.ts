@@ -4,6 +4,7 @@ import { cardWords, summarize } from "@/requests/card-view"
 import { activeStepAgentOf, stalledWhy, waitsOn } from "@/requests/loops"
 import type { PlanStore } from "@/requests/plan-store"
 import { OPEN_STATES, type RequestRecord, type RequestStore } from "@/requests/store"
+import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 
 // --- The Wall's data (#1180) ---
 //
@@ -33,6 +34,8 @@ export interface WallDeps {
   now: number
   staleAfterHours: number
   isAgent: (id: string) => boolean
+  /** The workspace folder an agent runs in: its worktree (#1187). */
+  workspaceOf?: (id: string) => string | null | undefined
 }
 
 export interface WallRun {
@@ -43,6 +46,8 @@ export interface WallRun {
   finishedAt: number | null
   durationMs: number | null
   error: string | null
+  channel: string | null
+  chatId: string | null
 }
 
 export interface WallPost {
@@ -74,6 +79,9 @@ export interface WallPost {
   /** Estimate against measured run time, in words. Null: nothing to flag. */
   timeFlag: string | null
   lastRun: { taskId: string; agentId: string } | null
+  /** Runs of this post that overlapped another run on the same chat or in
+   *  the same worktree, with both run ids (#1187). Empty: none. */
+  concurrent: RunOverlap[]
 }
 
 export interface WallEvent {
@@ -130,7 +138,8 @@ function runsOf(db: Database.Database | null, requestId: string): WallRun[] {
   try {
     return (db.prepare(
       `SELECT l.ref AS taskId, t.agent_id AS agentId, t.status AS status, t.started_at AS startedAt,
-              t.finished_at AS finishedAt, t.duration_ms AS durationMs, t.error AS error
+              t.finished_at AS finishedAt, t.duration_ms AS durationMs, t.error AS error,
+              t.channel AS channel, t.chat_id AS chatId
        FROM request_links l LEFT JOIN task_traces t ON t.task_id = l.ref
        WHERE l.request_id = ? AND l.kind = 'run' ORDER BY l.at, l.rowid`,
     ).all(requestId) as WallRun[])
@@ -140,6 +149,47 @@ function runsOf(db: Database.Database | null, requestId: string): WallRun[] {
 }
 
 const FAILED = new Set(["error", "timeout"])
+
+/** How far back a run that overlaps one of a post's runs may have started. */
+const OVERLAP_LOOKBACK = DAY
+const OVERLAP_CANDIDATES = 200
+const traceAgents = new WeakMap<WallDeps, string[]>()
+
+function spanOf(t: { taskId: string; agentId: string | null; channel: string | null; chatId: string | null; status: string | null; startedAt: number | null; finishedAt: number | null; durationMs: number | null }, deps: WallDeps): RunSpan | null {
+  if (!t.agentId || t.startedAt == null) return null
+  const endedAt = t.finishedAt ?? (t.status === "in-flight" ? null : t.startedAt + (t.durationMs ?? 0))
+  return { runId: t.taskId, agentId: t.agentId, chat: chatKey(t.channel, t.chatId), worktree: worktreeKey(deps.workspaceOf?.(t.agentId)), startedAt: t.startedAt, endedAt }
+}
+
+/** The post's runs that overlapped another run on one chat or in one
+ *  worktree. Only run ids, agents and times leave here: no text. */
+export function concurrentOf(runs: WallRun[], deps: WallDeps): RunOverlap[] {
+  const db = deps.db
+  const own = runs.map((r) => spanOf(r, deps)).filter((s): s is RunSpan => s !== null)
+  if (!db || own.length === 0) return []
+  const agents = traceAgents.get(deps) ?? safe(() => (db.prepare("SELECT DISTINCT agent_id AS a FROM task_traces").all() as Array<{ a: string }>).map((x) => x.a), [] as string[])
+  traceAgents.set(deps, agents)
+  if (agents.length === 0) return []
+  // agent_id IN (…) keeps the read on idx_traces_agent_started.
+  const q = safe(() => db.prepare(
+    `SELECT task_id AS taskId, agent_id AS agentId, channel, chat_id AS chatId, status, started_at AS startedAt,
+            finished_at AS finishedAt, duration_ms AS durationMs
+     FROM task_traces WHERE agent_id IN (${agents.map(() => "?").join(",")}) AND started_at >= ? AND started_at < ?
+     ORDER BY started_at LIMIT ${OVERLAP_CANDIDATES}`,
+  ), null)
+  if (!q) return []
+  const spans = new Map(own.map((s) => [s.runId, s] as const))
+  for (const s of own) {
+    const rows = safe(() => q.all(...agents, s.startedAt - OVERLAP_LOOKBACK, s.endedAt ?? deps.now) as any[], [])
+    for (const row of rows) {
+      const o = spanOf(row, deps)
+      if (!o || spans.has(o.runId)) continue
+      if ((s.chat && o.chat === s.chat) || (s.worktree && o.worktree === s.worktree)) spans.set(o.runId, o)
+    }
+  }
+  const mine = new Set(own.map((s) => s.runId))
+  return findOverlaps([...spans.values()], deps.now).filter((x) => mine.has(x.runs[0]) || mine.has(x.runs[1]))
+}
 
 export function timeFlag(r: RequestRecord, runs: WallRun[], runMs: number, now: number, staleAfterHours: number): string | null {
   const open = (OPEN_STATES as readonly string[]).includes(r.state)
@@ -210,6 +260,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     failedRuns: runs.filter((x) => x.status && FAILED.has(x.status)).length,
     timeFlag: timeFlag(r, runs, runMs, deps.now, deps.staleAfterHours),
     lastRun: last ? { taskId: last.taskId, agentId: last.agentId! } : null,
+    concurrent: concurrentOf(runs, deps),
   }
 }
 

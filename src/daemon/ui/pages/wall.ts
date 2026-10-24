@@ -52,6 +52,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <label>Node <select id="f-node"><option value="">All</option></select></label>
     <label>Group <select id="f-group"><option value="">All</option></select></label>
     <label class="ax-wall__check"><input type="checkbox" id="f-time"> Time flags only</label>
+    <label class="ax-wall__check"><input type="checkbox" id="f-conc"> Concurrent only</label>
     <input id="f-q" type="search" placeholder="Search" aria-label="Search posts">
     <span class="ax-wall__saved">
       <button type="button" id="v-mine" class="ax-btn ax-btn--ghost">My view</button>
@@ -117,6 +118,9 @@ const WALL_PAGE_CSS = `
 .wp__links button { font: inherit; background: none; border: 0; color: var(--ax-accent); cursor: pointer; padding: 0; }
 .wp__block { margin-top: 6px; font-size: var(--ax-fs-sm); color: var(--ax-amber-ink, var(--ax-warn)); }
 .wp__flag { margin-top: 4px; font-size: var(--ax-fs-xs); color: var(--ax-warn); }
+.wp.is-concurrent { border-left: 3px solid var(--ax-amber); }
+.ax-conc { display: block; margin-top: 4px; font-size: var(--ax-fs-xs); color: var(--ax-amber-ink, var(--ax-warn)); overflow-wrap: anywhere; }
+.ax-conc a { color: inherit; font-family: var(--ax-mono); }
 .wt { list-style: none; margin: 10px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--ax-border); display: flex; flex-direction: column; gap: 8px; }
 .wt li { font-size: var(--ax-fs-sm); }
 .wt .who { font-weight: 600; }

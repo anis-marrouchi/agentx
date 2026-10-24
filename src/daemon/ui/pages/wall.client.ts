@@ -11,7 +11,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
   var OPEN = ['in_progress', 'waiting_owner', 'waiting_other', 'needs_attention'];
   var DAY = 864e5;
-  var FILTERS = ['owner', 'status', 'idle', 'project', 'node', 'group', 'time', 'q'];
+  var FILTERS = ['owner', 'status', 'idle', 'project', 'node', 'group', 'time', 'conc', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
   var S = { data: null, live: null, wf: null, view: 'feed', sort: { key: 'idle', dir: -1 }, threads: {} };
   var $ = function (id) { return document.getElementById(id); };
@@ -109,6 +109,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (f.node && p.node.name !== f.node) return false;
     if (f.group && groupKey(p) !== f.group) return false;
     if (f.time && !p.timeFlag) return false;
+    if (f.conc && !(p.concurrent && p.concurrent.length)) return false;
     if (f.q) {
       var hay = [p.headline, p.owner, p.id, p.project, p.home && p.home.link, p.askedBy].join(' ').toLowerCase();
       if (hay.indexOf(f.q.toLowerCase()) < 0) return false;
@@ -122,10 +123,19 @@ export const WALL_PAGE_SCRIPT = String.raw`
   }
   function uniq(xs) { return xs.filter(function (x, i) { return x && xs.indexOf(x) === i; }).sort(); }
 
+  // --- Concurrent sessions (#1187): two runs at once on one chat or worktree ---
+  function concHtml(o, runLink) {
+    var where = (o.on || []).map(function (k) { return k === 'chat' ? 'on chat ' + esc(o.chat) : 'in worktree ' + esc(o.worktree); }).join(' and ');
+    return '<span class="ax-conc" role="note">⚠ Concurrent: run ' + runLink(o.runs[0], o.agents[0]) + ' (' + esc(o.agents[0]) + ') and run ' +
+      runLink(o.runs[1], o.agents[1]) + ' (' + esc(o.agents[1]) + ') ' + where + ', from ' + when(o.from) +
+      (o.to ? ' to ' + when(o.to) : ', both still running') + '</span>';
+  }
+
   // --- Feed ---
   function postHtml(p) {
     var multi = S.data && S.data.nodes && S.data.nodes.length > 1;
-    var cls = 'wp' + (p.blocked ? ' is-blocked' : '') + (p.failedRuns ? ' is-failed' : '');
+    var conc = p.concurrent || [];
+    var cls = 'wp' + (p.blocked ? ' is-blocked' : '') + (p.failedRuns ? ' is-failed' : '') + (conc.length ? ' is-concurrent' : '');
     var meta = [
       'Owner <b><a href="/admin/agents/' + encodeURIComponent(p.owner) + '">' + esc(p.owner) + '</a></b>',
       p.askedBy ? 'Asked by <b>' + esc(p.askedBy) + '</b>' : '',
@@ -150,6 +160,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       '<div class="wp__head">' + stateBadge(p.state) + '<span class="wp__title">' + esc(p.headline) + '</span></div>' +
       (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
+      conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
       '<div class="wp__meta">' + meta + '</div>' +
       '<div class="wp__links">' + links.join('') + '</div>' +
       '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
@@ -230,7 +241,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
         '<td class="num">' + idleDays(p) + '</td>' +
         '<td>' + (p.blocked ? esc(p.blocked.who) + ' <small>(' + ago(p.blocked.since) + ')</small>' : '—') + '</td>' +
         '<td>' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + ' min' + (p.timeFlag ? ' <small title="' + esc(p.timeFlag) + '">⚠</small>' : '') + '</td>' +
-        '<td class="num">' + p.runs + (p.failedRuns ? ' <small>(' + p.failedRuns + ' failed)</small>' : '') + '</td></tr>';
+        '<td class="num">' + p.runs + (p.failedRuns ? ' <small>(' + p.failedRuns + ' failed)</small>' : '') +
+        (p.concurrent && p.concurrent.length ? ' <small title="Concurrent runs: ' + esc(p.concurrent.map(function (o) { return o.runs.join(' + '); }).join(', ')) + '">⚠ concurrent</small>' : '') + '</td></tr>';
     }).join('') + '</tbody></table>';
   }
 
@@ -302,7 +314,10 @@ export const WALL_PAGE_SCRIPT = String.raw`
         '<span class="' + (down ? 'ax-badge ax-badge--err' : 'ax-badge ax-badge--live') + '">' + (down ? (n.stale ? 'unreachable, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'unreachable') : 'up') + '</span></header>' +
         '<div class="ver">' + esc(n.version ? 'v' + n.version : 'version unknown') + '</div>' +
         (running.length ? '<ul>' + running.map(function (x) {
-          return '<li><a href="' + esc(taskHref(x.t.id, x.a.id, { daemonUrl: n.url }, false)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc((x.t.messagePreview || '').slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small></li>';
+          var rid = x.t.traceId || x.t.id;
+          var conc = ((S.live && S.live.concurrent) || []).filter(function (o) { return o.runs.indexOf(rid) >= 0; });
+          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(taskHref(x.t.id, x.a.id, { daemonUrl: n.url }, false)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc((x.t.messagePreview || '').slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
+            conc.map(function (o) { return concHtml(o, function (id) { return esc(id); }); }).join('') + '</li>';
         }).join('') + '</ul>' : '<div class="idle">' + (down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
         (ops.length ? '<details><summary>Ops details</summary>' + ops.map(esc).join(' · ') + '</details>' : '') + '</div>';
     });
