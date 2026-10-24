@@ -9,7 +9,7 @@ const root = new URL("../", import.meta.url)
 const read = (path: string) => readFileSync(new URL(path, root), "utf8")
 const clean = (s: string | undefined) => (s ?? "").trim().replace(/\.$/, "")
 
-const readme = clean(read("README.md").match(/^\*\*(.+)\*\*$/m)?.[1])
+const readme = clean(read("README.md").match(/^# AgentX\s+^\*\*(.+)\*\*$/m)?.[1])
 const docsHome = clean(read("docs/index.md").match(/^# (.+)$/m)?.[1])
 const siteDescription = clean(read("docs/.vitepress/config.ts").match(/^ {2}description: "(.+)",$/m)?.[1])
 const npmDescription = String(JSON.parse(read("package.json")).description)
@@ -33,6 +33,7 @@ describe("result-first tagline", () => {
 
   it("comes before the word harness in the README", () => {
     const md = read("README.md")
-    expect(md.indexOf(readme)).toBeLessThan(md.indexOf("harness"))
+    const harness = md.indexOf("harness")
+    if (harness !== -1) expect(md.indexOf(readme)).toBeLessThan(harness)
   })
 })

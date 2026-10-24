@@ -146,7 +146,7 @@ export default defineConfig({
   lastUpdated: true,
   head: [
     ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
-    ["meta", { property: "og:title", content: "AgentX — an AI teammate for your team" }],
+    ["meta", { property: "og:title", content: "AgentX — AI agents that get your work done" }],
     ["meta", { property: "og:description", content: "AI agents that answer your clients, send your reports and fix your code, on a machine you own." }],
     ["meta", { property: "og:image", content: "/agentx-symbol.png" }],
   ],
