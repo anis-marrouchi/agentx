@@ -228,7 +228,20 @@ db.transaction(() => {
   link.run(ids[1], "run", "docs-wall-3", ago(170))
   link.run(ids[1], "run", "docs-wall-4", ago(51))
   link.run(ids[2], "run", "docs-wall-5", ago(40))
+  // The newsletter question as a pending decision card on its post (#1185).
+  link.run(ids[1], "card", "docs-wall-newsletter-day", ago(50))
 })()
+{
+  const iso = (ms) => new Date(ms).toISOString()
+  mkdirSync(resolve(root, ".agentx/approvals"), { recursive: true })
+  writeFileSync(resolve(root, ".agentx/approvals/docs-wall-newsletter-day.json"), JSON.stringify({
+    id: "docs-wall-newsletter-day", title: "Newsletter day for the demo office",
+    ask: "Send the October newsletter to the demo office list on Monday?",
+    recommend: "Yes: Monday mornings get the most opens on this list",
+    if_silent: "pause", expires: iso(Date.now() + 18 * 3_600_000), raised_by: "cx",
+    created_at: iso(Date.now() - 50 * 60_000), status: "pending",
+  }, null, 2) + "\n")
+}
 db.close()
 
 // One real scheduled run, for the schedule drawer's Runs today: switch the
@@ -253,4 +266,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts, a webhook, a board, an action, two places, and two real scripted task runs.")
+console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts (one with a decision card), a webhook, a board, an action, two places, and two real scripted task runs.")

@@ -3,7 +3,9 @@
 // Reads only: /api/admin/wall?peer=fleet (posts across the mesh),
 // /api/admin/wall/thread (one post's timeline, sent to the node that owns
 // it), /api/live (what runs on each node now, with its ops details) and
-// /api/workflows/runs (failed workflow runs). Filters live in the URL
+// /api/workflows/runs (failed workflow runs). Pending owner decision
+// cards (#1185) come with their post and are shown without buttons:
+// answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
 // browser only. Nothing is written to the daemon.
 
@@ -47,6 +49,15 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (!ms) return '—';
     return '<time datetime="' + esc(new Date(ms).toISOString()) + '" title="' + esc(new Date(ms).toISOString()) + '">' + esc(stamp(ms)) + '</time> <small>(' + ago(ms) + ')</small>';
   }
+  function until(ms) {
+    var s = (ms - Date.now()) / 1000;
+    if (s <= 0) return 'passed';
+    if (s < 5400) return 'in ' + Math.max(1, Math.round(s / 60)) + ' min';
+    if (s < 129600) return 'in ' + Math.round(s / 3600) + ' h';
+    return 'in ' + Math.round(s / 86400) + ' d';
+  }
+  function cardsOf(p) { return p.ownerCards || []; }
+  function waitsOnOwner(p) { return p.state === 'waiting_owner' || cardsOf(p).length > 0; }
   function mins(ms) { return Math.round((ms || 0) / 60000); }
   function isOpen(p) { return OPEN.indexOf(p.state) >= 0; }
   function groupKey(p) { return p.group.channel + ' · ' + p.group.chatId; }
@@ -103,7 +114,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (f.status === 'open' && !isOpen(p)) return false;
     if (f.status === 'closed' && isOpen(p)) return false;
     if (f.status === 'blocked' && !p.blocked) return false;
-    if (f.status && ['open', 'closed', 'blocked'].indexOf(f.status) < 0 && p.state !== f.status) return false;
+    if (f.status === 'waiting_owner' && !waitsOnOwner(p)) return false;
+    if (f.status && ['open', 'closed', 'blocked', 'waiting_owner'].indexOf(f.status) < 0 && p.state !== f.status) return false;
     if (+f.idle && idleDays(p) < +f.idle) return false;
     if (f.project && p.project !== f.project) return false;
     if (f.node && p.node.name !== f.node) return false;
@@ -111,7 +123,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (f.time && !p.timeFlag && !forgeFlags(p).length) return false;
     if (f.conc && !(p.concurrent && p.concurrent.length)) return false;
     if (f.q) {
-      var hay = [p.headline, p.owner, p.id, p.project, p.home && p.home.link, p.askedBy].join(' ').toLowerCase();
+      var hay = [p.headline, p.owner, p.id, p.project, p.home && p.home.link, p.askedBy]
+        .concat(cardsOf(p).map(function (c) { return c.title + ' ' + c.ask; })).join(' ').toLowerCase();
       if (hay.indexOf(f.q.toLowerCase()) < 0) return false;
     }
     return true;
@@ -136,6 +149,25 @@ export const WALL_PAGE_SCRIPT = String.raw`
     return '<span class="ax-conc" role="note">⚠ Concurrent: run ' + runLink(o.runs[0], o.agents[0]) + ' (' + esc(o.agents[0]) + ') and run ' +
       runLink(o.runs[1], o.agents[1]) + ' (' + esc(o.agents[1]) + ') ' + where + ', from ' + when(o.from) +
       (o.to ? ' to ' + when(o.to) : ', both still running') + '</span>';
+  }
+
+  // --- Owner decision cards (#1185): read-only, answered on the Desk ---
+  function cardHtml(c) {
+    var expired = c.expiresAt <= Date.now();
+    var soon = !expired && c.expiresAt - Date.now() < 864e5;
+    return '<section class="wc' + (soon || expired ? ' is-soon' : '') + '" aria-label="Waiting on the owner: ' + esc(c.title) + '">' +
+      '<div class="wc__head"><span class="ax-badge ax-badge--warn">Waiting on the owner</span> <b>' + esc(c.title) + '</b></div>' +
+      (c.ask && c.ask !== c.title ? '<p class="wc__ask">' + esc(c.ask) + '</p>' : '') +
+      '<dl class="wc__facts">' +
+        '<dt>Recommends</dt><dd>' + esc(c.recommend || '—') + '</dd>' +
+        '<dt>If no answer</dt><dd>' + esc(c.silence) + ' <span class="k">(' + esc(c.ifSilent) + ')</span></dd>' +
+        '<dt>Expires</dt><dd>' + (expired ? 'Passed; the default applies at the next check. ' : until(c.expiresAt) + ', ') +
+          '<time datetime="' + esc(new Date(c.expiresAt).toISOString()) + '">' + esc(stamp(c.expiresAt)) + '</time></dd>' +
+      '</dl>' +
+      '<div class="wc__foot"><span>Raised by <b>' + esc(c.raisedBy) + '</b> ' + when(c.createdAt) + '</span>' +
+        (c.source ? '<span>Source: ' + linkOrText(c.source) + '</span>' : '') +
+        '<span>Answer it on the Desk: <a href="/approvals">Approvals</a></span></div>' +
+      '</section>';
   }
 
   // --- Feed ---
@@ -170,6 +202,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
       (forgeFlags(p).length ? '<div class="wp__flag">GitLab time: ' + esc(forgeFlags(p).join('; ')) + '</div>' : '') +
       conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
+      cardsOf(p).map(cardHtml).join('') +
       '<div class="wp__meta">' + meta + '</div>' +
       '<div class="wp__links">' + links.join('') + '</div>' +
       '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
@@ -248,7 +281,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
         '<td><a href="#" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a></td>' +
         '<td>' + esc(p.owner) + '</td><td>' + esc(p.project || '—') + '</td><td>' + esc(p.node.name) + '</td>' +
         '<td class="num">' + idleDays(p) + '</td>' +
-        '<td>' + (p.blocked ? esc(p.blocked.who) + ' <small>(' + ago(p.blocked.since) + ')</small>' : '—') + '</td>' +
+        '<td>' + (p.blocked ? esc(p.blocked.who) + ' <small>(' + ago(p.blocked.since) + ')</small>' : cardsOf(p).length ? 'owner' : '—') +
+          (cardsOf(p).length ? ' <small>card expires ' + until(cardsOf(p)[0].expiresAt) + '</small>' : '') + '</td>' +
         '<td>' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + ' min' + (p.timeFlag ? ' <small title="' + esc(p.timeFlag) + '">⚠</small>' : '') +
           (p.forgeTime ? '<br><small' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>GitLab ' + esc(forgeTimeText(p.forgeTime)) + '</small>' +
             (forgeFlags(p).length ? ' <small title="' + esc(forgeFlags(p).join('; ')) + '">⚠</small>' : '') : '') + '</td>' +

@@ -3049,6 +3049,7 @@ function wallDeps(config: DaemonConfig): WallDeps | null {
     staleAfterHours: readRequestSettings().staleAfterHours,
     isAgent: (id) => Object.prototype.hasOwnProperty.call(agents, id),
     workspaceOf: (id) => agents[id]?.workspace ?? null,
+    cards: () => listCards(ictx.root, "pending"),
   }
 }
 
