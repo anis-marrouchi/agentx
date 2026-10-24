@@ -278,6 +278,14 @@ describe("routes", () => {
       expect((await get("/api/admin/wall", { Authorization: "Bearer tok-123" })).status).toBe(200)
       expect((await get("/api/admin/wall?peer=fleet")).status).toBe(401)
       expect((await get("/api/admin/wall?peer=fleet", { Authorization: "Bearer tok-123" })).status).toBe(200)
+      // #1201: the fleet activity graph and the per-peer proxy run before the
+      // /api/admin/* gate and call peers with their tokens; they need it too.
+      expect((await get("/api/admin/activity-graph?peer=fleet")).status).toBe(401)
+      expect((await get("/api/admin/activity-graph", { "X-Agentx-Peer": "fleet" })).status).toBe(401)
+      expect((await get("/api/admin/activity-graph/stream?peer=fleet")).status).toBe(401)
+      expect((await get("/api/admin/activity-graph", { "X-Agentx-Peer": "fleet", Authorization: "Bearer wrong" })).status).toBe(401)
+      expect((await get("/api/agents", { "X-Agentx-Peer": "http://peer.example:4200" })).status).toBe(401)
+      expect((await get("/api/admin/activity-graph?peer=fleet", { Authorization: "Bearer tok-123" })).status).toBe(200)
     } finally {
       token = undefined
     }
