@@ -33,6 +33,7 @@ import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
+import { renderWallPage } from "./ui/pages/wall"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
@@ -74,7 +75,9 @@ import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX, liveRunRefs, type DeskRequest
 import { listCards, type DecisionCard } from "@/approvals/cards"
 import { readInboxState } from "@/approvals/state"
 import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
-import { decide, listInbox, requestStoreFor, type InboxItem } from "@/approvals/inbox"
+import { decide, listInbox, planStoreFor, requestStoreFor, type InboxItem } from "@/approvals/inbox"
+import { readRequestSettings } from "@/requests/settings"
+import { handleWallApi, WALL_PREFIX, type WallDeps } from "./wall-api"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
@@ -182,6 +185,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
 const DASHBOARD_PAGES = new Set([
   "/",
   "/live",
+  "/wall",
   "/mesh",
   "/monitor",
   "/activity",
@@ -272,11 +276,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
 
   if (method === "GET" && path === "/") {
-    // Home is Live, always. It answers the question an operator actually
-    // opens the dashboard for — who is alive and what are they doing.
-    // Boards used to take the root whenever any were configured, which meant
-    // the landing page silently changed identity based on config; now they
-    // live at /boards like every other surface.
+    // Home is the Wall (#1180, owner decision 2026-10-24): every request
+    // as a post with its thread, and what runs on each node now. Live
+    // stays at /live, and every other address is unchanged. Boards used to
+    // take the root whenever any were configured, which meant the landing
+    // page silently changed identity based on config; now they live at
+    // /boards like every other surface.
     //
     // The one exception is a machine with no agents yet, where there is
     // nothing live to show and the wizard is the only useful destination.
@@ -287,12 +292,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       return
     }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
     return
   }
   if (method === "GET" && path === "/boards") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderBoardsPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/wall") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
     return
   }
   if (method === "GET" && path === "/live") {
@@ -599,6 +609,15 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         await handleActivityGraphFleet(req, res, ctx)
         return
       }
+      if (path === WALL_PREFIX && method === "GET") {
+        // This branch runs before the /api/admin/* token gate below.
+        if (!adminTokenOk(req, ctx)) {
+          sendJson(res, 401, { error: "unauthorized" })
+          return
+        }
+        sendJson(res, 200, await buildWallFleet(url.searchParams, ctx))
+        return
+      }
       if (path === "/api/admin/activity-graph/stream") {
         await handleActivityGraphStream(req, res, path, (hours) => buildFleetActivitySnapshot(hours, ctx.config))
         return
@@ -741,17 +760,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // Local admin calls: enforce dashboard.token (if configured) BEFORE the
     // dispatcher runs. The legacy ctx.token check further down only catches
     // paths nothing else handled — admin routes were silently bypassing it.
-    if (ctx.token) {
-      const authHeader = req.headers.authorization || ""
-      const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-      if (got !== ctx.token) {
-        const tokStore = new TokenStore()
-        const rec = got ? tokStore.verify(got) : null
-        if (!rec || !recordHasScope(rec, "dashboard:write")) {
-          sendJson(res, 401, { error: "unauthorized" })
-          return
-        }
-      }
+    if (!adminTokenOk(req, ctx)) {
+      sendJson(res, 401, { error: "unauthorized" })
+      return
     }
   }
   if (method === "GET" && path === "/api/admin/config") {
@@ -762,6 +773,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // (src/voice/voice-health.ts); after the token gate above.
   if (method === "GET" && path === "/api/admin/voice-health") {
     sendJson(res, 200, readVoiceHealth() ?? { checkedAt: null, missing: [] })
+    return
+  }
+  // The Wall (#1180): read-only posts and threads from this node's records.
+  if (method === "GET" && (path === WALL_PREFIX || path.startsWith(`${WALL_PREFIX}/`))) {
+    const reply = handleWallApi(path, url.searchParams, wallDeps(ctx.config), localNodeName(ctx.config))
+    sendJson(res, reply.status, reply.body)
     return
   }
   if (path.startsWith("/api/admin/approvals")) {
@@ -1741,6 +1758,9 @@ interface NodeLive {
     waiting?: boolean
   }>
   uptimeSec?: number
+  /** The build the node runs (GET /health; undefined on older nodes). */
+  version?: string
+  commit?: string
   /** Tasks a restart would cut off (GET /health; undefined on older nodes). */
   inflight?: number
   /** A "restart when idle" request the node is holding (GET /health). */
@@ -1913,6 +1933,8 @@ export async function fetchDaemonAgents(
     if (healthRes && healthRes.ok) {
       const h: any = await healthRes.json().catch(() => ({}))
       base.uptimeSec = h.uptime
+      if (typeof h.version === "string") base.version = h.version
+      if (typeof h.commit === "string") base.commit = h.commit
       if (typeof h.inflight?.total === "number") base.inflight = h.inflight.total
       if (h.restart && typeof h.restart.state === "string") base.restart = h.restart
       base.name = h.node?.name || h.node?.id || url
@@ -2961,6 +2983,73 @@ async function handleActivityGraphFleet(
   const url = new URL(req.url || "/", "http://_")
   const hours = parseInt(url.searchParams.get("hours") || "6", 10) || 6
   sendJson(res, 200, await withForgeStatus(await buildFleetActivitySnapshot(hours, ctx.config)))
+}
+
+/** dashboard.token (if configured), or a stored token with dashboard:write. */
+function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
+  if (!ctx.token) return true
+  const authHeader = req.headers.authorization || ""
+  const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+  if (got === ctx.token) return true
+  const rec = got ? new TokenStore().verify(got) : null
+  return !!rec && recordHasScope(rec, "dashboard:write")
+}
+
+function localNodeName(config: DaemonConfig): string {
+  return config.node?.name || config.node?.id || "local"
+}
+
+/** What the Wall reads on this node; null when it keeps no requests. */
+function wallDeps(config: DaemonConfig): WallDeps | null {
+  const ictx = { root: process.cwd() }
+  const store = requestStoreFor(ictx)
+  if (!store) return null
+  const agents = config.agents ?? {}
+  return {
+    store,
+    plans: planStoreFor(ictx),
+    db: dashboardDb(),
+    now: Date.now(),
+    staleAfterHours: readRequestSettings().staleAfterHours,
+    isAgent: (id) => Object.prototype.hasOwnProperty.call(agents, id),
+  }
+}
+
+/** The Wall across the mesh: this node's posts, then each configured
+ *  peer's, every post tagged with the node it lives on. A peer that does
+ *  not answer is listed as unreachable; the others still show (#1180). */
+async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
+  const days = q.get("days") ?? "7"
+  const local = handleWallApi(WALL_PREFIX, new URLSearchParams({ days }), wallDeps(ctx.config), localNodeName(ctx.config)).body as any
+  const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string; syncedAt?: number }> = [
+    { name: local.node, peer: null, ok: true, syncedAt: local.syncedAt },
+  ]
+  const tag = (items: any[], name: string, peer: string | null, daemonUrl: string | null) =>
+    items.map((x) => ({ ...x, node: { name, peer, daemonUrl } }))
+  const posts = tag(local.posts, local.node, null, null)
+  const failures = tag(local.failures, local.node, null, null)
+  const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
+  await Promise.all(peers.map(async (d) => {
+    const id = d.url.replace(/\/+$/, "")
+    const name = d.name || id
+    const peer = findPeer(id, ctx.config)
+    if (!peer) { nodes.push({ name, peer: id, ok: false, error: "no dashboard address" }); return }
+    try {
+      const r = await fetch(`${peer.url}${WALL_PREFIX}?days=${encodeURIComponent(days)}`, {
+        headers: { Accept: "application/json", "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!r.ok) { nodes.push({ name, peer: id, ok: false, error: `answered ${r.status}` }); return }
+      const body = await r.json() as any
+      nodes.push({ name: body.node || name, peer: id, ok: true, syncedAt: body.syncedAt })
+      posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], body.node || name, id, id))
+      failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], body.node || name, id, id))
+    } catch (e: any) {
+      nodes.push({ name, peer: id, ok: false, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) })
+    }
+  }))
+  posts.sort((a, b) => b.updatedAt - a.updatedAt)
+  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, staleAfterHours: local.staleAfterHours }
 }
 
 async function buildFleetActivitySnapshot(hours: number, config: DaemonConfig): Promise<FleetSnapshot> {

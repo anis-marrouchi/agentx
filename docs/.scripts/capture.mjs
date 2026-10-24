@@ -27,6 +27,11 @@ const askSteps = [
   { wait: ".ax-chat__applybtn" },
 ]
 const shots = [
+  // The Wall (#1180): the home page, a post's thread, the list, and a phone.
+  { name: "wall/wall", path: "/wall", wait: ".wp" },
+  { name: "wall/thread", path: "/wall", wait: ".wp", steps: [{ click: "#post-req-docs-wall-handoff [data-thread]" }, { wait: "#post-req-docs-wall-handoff .wt li" }], clipTo: "#post-req-docs-wall-handoff" },
+  { name: "wall/list", path: "/wall#status=&view=list", wait: ".wl" },
+  { name: "wall/phone", path: "/wall", wait: ".wp", phone: true },
   { name: "live", path: "/live", wait: ".ax-agent__name" },
   { name: "operations", path: "/mesh", wait: "body" },
   { name: "operations/routines", path: "/mesh", wait: "body", steps: [{ clickText: "Operations" }, { wait: "#mx-routines .mx-flags" }, { scroll: "#mx-routines-title" }] },
@@ -157,6 +162,10 @@ try {
   const selected = requested ? shots.filter(s => requested.includes(s.name)) : shots
   if (!selected.length) throw new Error("No matching DOCS_SHOTS")
   for (const shot of selected) {
+    // A phone-sized page for the shots that say so; the desktop size after.
+    await cdp("Emulation.setDeviceMetricsOverride", shot.phone
+      ? { width: 390, height: 844, deviceScaleFactor: 3, mobile: true }
+      : { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
     await cdp("Page.navigate", { url: target + shot.path })
     await sleep(500)
     await wait(shot.wait)

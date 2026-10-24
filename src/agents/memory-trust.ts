@@ -72,6 +72,16 @@ export function containsSecret(text: string): boolean {
   return SECRET_PATTERNS.some((p) => p.test(text))
 }
 
+const SECRET_PATTERNS_ALL = SECRET_PATTERNS.map((p) => new RegExp(p.source, p.flags.includes("g") ? p.flags : p.flags + "g"))
+
+/** The text with every credential shape above replaced by [redacted],
+ *  for read-only views that show what agents and channels wrote (#1180). */
+export function redactSecrets(text: string): string {
+  let out = text
+  for (const p of SECRET_PATTERNS_ALL) out = out.replace(p, "[redacted]")
+  return out
+}
+
 /** The fields of a stored fact this module reads. Older facts have no
  *  trust or review; trust then comes from their source channel. */
 export interface FactTrustFields {
