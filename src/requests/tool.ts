@@ -1,5 +1,6 @@
 import { resolveScheduleCaller } from "@/crons/schedule-tool"
 import { callerHeaders } from "@/calls/service"
+import { awaitingQa, describeQa } from "./qa"
 
 // --- Agent-facing `agentx_request` tool (#356) ---
 //
@@ -21,6 +22,9 @@ import { callerHeaders } from "@/calls/service"
 //   describe what it is (headline) and what is needed from the owner
 //            (need), for every card, push and Desk line (#1126). accept,
 //            wait and promise take the two as well
+//   qa       a QA verdict on a request (#1188): block, risk or pass, with
+//            a note. accept, wait, promise and describe take needsQa to
+//            ask for one
 //   list     what is still open
 // It talks to the daemon's /requests endpoints. Dropping a request is the
 // owner's alone; there is no action for it here.
@@ -56,6 +60,7 @@ export function describeOpen(items: any[]): string {
       r.promise && r.owedTo ? ` Promised to ${r.owedTo}.` : "",
       r.dueAt ? ` Due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC.` : "",
       r.closeWhen ? ` Closes on its check (${r.closeWhen.kind})${r.verifyState ? `: ${r.verifyState}` : ""}.` : "",
+      awaitingQa(r) ? " Awaiting QA." : r.qa ? ` QA: ${describeQa(r.qa)}.` : "",
     ].join("")
     return `- ${r.id} [${STATE_WORDS[r.state] ?? r.state}] ${when} UTC, ${r.channel}, ${r.agentId}: ${words.length > 160 ? `${words.slice(0, 159)}…` : words}.${extra}${loop}`
   }).join("\n")
@@ -94,7 +99,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         id: args.id, question: args.question, evidence: args.evidence, proof: args.proof, reason: args.reason,
         steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
-        headline: args.headline, need: args.need,
+        headline: args.headline, need: args.need, needsQa: args.needsQa, verdict: args.verdict,
       }),
       signal: AbortSignal.timeout(action === "done" ? DONE_TIMEOUT_MS : 10_000),
     })
@@ -109,6 +114,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       ].join("\n")
     }
     if (action === "step") return [`Step reported. Plan of ${r.id}:`, ...describeSteps(data.steps)].join("\n")
+    if (action === "qa") return `Verdict recorded on ${r.id}: ${describeQa(r.qa)}. It shows on the request's card; nobody is told.`
     if (action === "describe") return `Request ${r.id} now reads "${r.headline ?? "(no headline)"}" on the owner's cards. Needed from them: ${r.need ?? "what follows from where it stands"}.`
     if (action === "accept") return `Request ${r.id} is open and in progress. Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.`
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`

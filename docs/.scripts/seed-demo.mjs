@@ -181,6 +181,16 @@ db.transaction(() => {
   step.run(1, "Build the fix", "task", "pull request merged", "done", 0, "none", null, null, null, "https://example.com/demo/shop/pull/48", ago(94), ago(40))
   step.run(2, "Deploy and check it is live", "deploy", "the shop shows version 2.4.1", "active", 0, "none", null, null, null, null, ago(2), ago(2))
   step.run(3, "Tell the shop", "message", "sent to telegram chat demo-shop", "pending", 1, "approved", "The checkout fix is live. Thank you for your patience.", "telegram", "demo-shop", null, null, ago(94))
+  // QA sign-off (#1188): one request awaiting a verdict, one with a block.
+  db.prepare("DELETE FROM requests WHERE id IN ('req-docs-qa-wait', 'req-docs-qa-block')").run()
+  const qa = db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, headline, need, headline_by,
+    work, qa_requested_at, qa_verdict, qa_by, qa_at, qa_note) VALUES (?, 'in_progress', 'dashboard', 'demo', 'Demo operator', 'cx', ?, ?, ?, ?, ?, 'agent', 'code', ?, ?, ?, ?, ?)`)
+  qa.run("req-docs-qa-wait", "add a search box to the demo shop", ago(60), ago(10), "Add a search box to the demo shop", "Nothing, just so you know.",
+    ago(10), null, null, null, null)
+  qa.run("req-docs-qa-block", "let customers export their orders as a spreadsheet", ago(80), ago(30), "Export orders as a spreadsheet", "Nothing, just so you know.",
+    ago(40), "block", "qa-check", ago(20), "The export fails when a customer has no orders.")
+  db.prepare("INSERT INTO request_verdicts (request_id, verdict, by_agent, at, note) VALUES ('req-docs-qa-block', 'block', 'qa-check', ?, ?)")
+    .run(ago(20), "The export fails when a customer has no orders.")
 })()
 
 // The Wall (#1180): a few more fictional requests, so the home page shows a

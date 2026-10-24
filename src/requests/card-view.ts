@@ -3,6 +3,7 @@ import type { RequestRecord, RequestStore } from "./store"
 import type { PlanState, PlanStore, StepState } from "./plan-store"
 import { describeCloseWhen } from "./checkers"
 import { activeStepAgentOf, stalledWhy, waitsOn, type StallGroup } from "./loops"
+import { awaitingQa } from "./qa"
 
 // --- One open request as a card the owner can read in seconds (#459) ---
 //
@@ -59,6 +60,9 @@ export interface RequestCard extends RequestRecord {
     verifyState: string | null
     verifyDetail: string | null
   } | null
+  /** Marked as needing QA, with no verdict since (#1188). The verdict
+   *  itself is `qa`, from the record. */
+  awaitingQa: boolean
   /** Stalled, and what it waits on. Null: not stalled, or not asked. */
   stall: { group: StallGroup; who: string; why: string } | null
   /** Its tracked plan (#788), step by step. Null: no plan. */
@@ -114,6 +118,7 @@ export function requestCard(
       owedTo: r.owedTo, promise: r.promise, dueAt: r.dueAt, check: r.closeWhen ? describeCloseWhen(r.closeWhen) : null,
       verifyState: r.verifyState, verifyDetail: r.verifyDetail,
     } : null,
+    awaitingQa: awaitingQa(r),
     stall: stall && why ? { ...waitsOn(r, { isAgent: stall.isAgent, activeStepAgent: activeStepAgentOf(plans) }), why } : null,
     plan: plan ? {
       state: plan.state,

@@ -13,6 +13,7 @@ import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { CHECK_KINDS, DEFAULT_CHECKER_SETTINGS, describeCloseWhen, type CheckKind } from "@/requests/checkers"
 import { activeStepAgentOf, STALL_GROUPS, stalledLoops, waitsOnWords } from "@/requests/loops"
 import { drift } from "./requests-drift"
+import { awaitingQa, describeQa, QA_FILTERS, type QaFilter } from "@/requests/qa"
 
 // --- agentx requests — what you asked for that is not finished (#356) ---
 //
@@ -93,6 +94,9 @@ function printRequest(r: RequestRecord): void {
     const v = r.verifyState ? ` [${r.verifyState}${r.verifyDetail ? `: ${r.verifyDetail}` : ""}]` : ""
     console.log((r.verifyState === "failed" || r.verifyState === "unverified" ? chalk.yellow : chalk.dim)(`    Closes when ${describeCloseWhen(r.closeWhen)}${v}`))
   }
+  // QA sign-off (#1188): the latest verdict, or that one is awaited.
+  if (awaitingQa(r)) console.log(chalk.yellow(`    Awaiting QA${r.qa ? ` (last: ${describeQa(r.qa)})` : ""}`))
+  else if (r.qa) console.log((r.qa.verdict === "block" ? chalk.red : r.qa.verdict === "risk" ? chalk.yellow : chalk.green)(`    QA: ${describeQa(r.qa)}`))
   if (r.evidence) console.log(chalk.green(`    Evidence: ${r.evidence}`))
   if (r.closeReason) console.log(chalk.dim(`    Reason: ${r.closeReason}`))
 }
@@ -103,15 +107,22 @@ requests
   .description("open requests, oldest first")
   .option("--json", "machine-readable output")
   .option("--stalled", "only the stalled ones (past their due time, or quiet too long), grouped by what they wait on")
-  .action((opts: { json?: boolean; stalled?: boolean }) => {
+  .option("--qa <filter>", "by QA sign-off, open or closed: awaiting (no verdict yet), block, risk or pass")
+  .action((opts: { json?: boolean; stalled?: boolean; qa?: string }) => {
     const s = store()
     if (!s) return
     if (opts.stalled) { printStalled(s, !!opts.json); return }
-    const items = s.listOpen()
+    if (opts.qa !== undefined && !(QA_FILTERS as readonly string[]).includes(opts.qa)) {
+      console.error(chalk.red(`  --qa takes ${QA_FILTERS.join(", ")}`)); process.exitCode = 1; return
+    }
+    const items = opts.qa
+      ? s.query({ states: [...OPEN_STATES, ...CLOSED_STATES], qa: opts.qa as QaFilter, limit: LIST_MAX }).items
+      : s.listOpen()
     if (opts.json) { console.log(JSON.stringify(items, null, 2)); return }
     if (!readRequestSettings().enabled) console.log(chalk.dim("  requests are off: turn them on with `agentx requests settings --enabled on`"))
-    if (items.length === 0) { console.log(chalk.dim("  no open requests")); return }
+    if (items.length === 0) { console.log(chalk.dim(opts.qa ? `  no requests with QA ${opts.qa}` : "  no open requests")); return }
     for (const r of items) printRequest(r)
+    if (opts.qa) { console.log(chalk.dim(`\n  ${items.length} with QA ${opts.qa}.`)); return }
     console.log(chalk.dim(`\n  ${items.length} open. Close one: agentx requests done <id> --evidence <link> · agentx requests drop <id>`))
   })
 
@@ -182,6 +193,8 @@ requests
     printRequest(r)
     console.log(chalk.dim(`    Last activity ${when(r.updatedAt)}${r.closedAt ? ` · closed ${when(r.closedAt)}` : ""}`))
     for (const l of s.links(id)) console.log(chalk.dim(`    ${l.kind} ${l.ref} (${when(l.at)})`))
+    const verdicts = s.verdicts(id)
+    if (verdicts.length > 1) for (const v of verdicts) console.log(chalk.dim(`    qa ${describeQa(v)}`))
     const plans = planStore()
     const plan = plans?.get(id)
     if (!plans || !plan) return
