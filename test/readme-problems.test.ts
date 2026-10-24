@@ -19,10 +19,11 @@ describe("README problems and fit", () => {
   })
 
   it("links every problem row to a guide in the repo", () => {
-    const rows = section("Problems we solve").split("\n").filter((l) => l.startsWith("| ") && !l.startsWith("| Your problem"))
+    const rows = section("Problems we solve").split("\n").filter((l) => l.startsWith("|")).slice(2)
     expect(rows.length).toBeGreaterThanOrEqual(5)
     for (const row of rows) {
-      const links = [...row.matchAll(/\]\((docs\/[^)#]+)\)/g)].map((m) => m[1])
+      const lastCell = row.split("|").slice(-2, -1)[0] ?? ""
+      const links = [...lastCell.matchAll(/\]\((docs\/[^)#]+)\)/g)].map((m) => m[1])
       expect(links.length, row).toBeGreaterThan(0)
       for (const link of links) expect(existsSync(new URL(link, root)), link).toBe(true)
     }

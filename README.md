@@ -25,12 +25,12 @@ AgentX is a harness that runs a team of AI agents on a machine you control. A ha
 
 | Your problem | What AgentX does | See how |
 |---|---|---|
-| Customers write on WhatsApp after hours and wait until morning. | An agent answers in the same chat within a minute. | [Answer customers on WhatsApp](docs/jobs/answer-whatsapp.md) |
-| Clients keep asking where their request stands. | Each client gets a page of their own with what they asked for and where it stands. | [Give a client a page](docs/jobs/clients.md) |
+| Customers write on WhatsApp after hours and wait until morning. | An agent answers in the same chat within a minute, on a separate number you own. | [Answer customers on WhatsApp](docs/jobs/answer-whatsapp.md) |
+| Clients keep asking where their request stands. | Each client gets a page of their own with what they asked for and where it stands (needs open requests turned on). | [Give a client a page](docs/jobs/clients.md) |
 | The daily report depends on someone remembering it. | A schedule asks an agent for it at a set time, every day. | [Send a daily report](docs/jobs/daily-report.md) |
-| A job with several steps stalls when someone forgets one. | A follow-up workflow runs the steps in order, nudges the slow one, and asks you before a message goes to a person. | [Let a workflow follow a request](docs/jobs/follow-up-workflows.md) |
+| A job with several steps stalls when someone forgets one. | A follow-up workflow runs the steps in order, nudges the slow one, and asks you before a message goes to a person (needs the workflow engine turned on). | [Let a workflow follow a request](docs/jobs/follow-up-workflows.md) |
 | Things you asked for get lost between agents and restarts. | Open requests keeps each one on a list until it is closed (off until you turn it on). | [Keep track of what you asked for](docs/jobs/open-requests.md) |
-| Small code fixes wait days for a developer. | Mention an agent on a GitLab issue and it answers in the thread and can work on the fix; on GitHub, a second agent can review the pull request before merge. | [Watch GitLab work](docs/jobs/watch-gitlab.md), [review gate](docs/jobs/review-gate.md) |
+| Small code fixes wait days for a developer. | Mention an agent on a GitLab issue and it answers in the thread; on GitHub, a second agent can review the pull request before merge (off until you turn it on). | [Watch GitLab work](docs/jobs/watch-gitlab.md), [review gate](docs/jobs/review-gate.md) |
 | You cannot tell what the AI did, or what still needs you. | Monitor shows the work that needs a person and the work agents can handle. | [Monitor](docs/dashboard/monitor.md) |
 
 ## Is AgentX right for you?
@@ -47,7 +47,7 @@ AgentX is a harness that runs a team of AI agents on a machine you control. A ha
 - you need Slack or Discord as a live channel ([channels](docs/reference/channels.md));
 - you need roles and permissions for many users (RBAC is not built yet);
 - you want a hosted service with nothing to install: there is none;
-- you need a hard dollar cap per agent: today AgentX caps the number of runs, not the money ([#1162](https://github.com/anis-marrouchi/agentx/issues/1162));
+- you need a hard dollar cap per agent: today AgentX can cap fresh Claude Code sessions (off by default), not money ([#1162](https://github.com/anis-marrouchi/agentx/issues/1162));
 - you run Windows only (untested; WSL may work);
 - you need a stable release: AgentX is still experimental.
 
