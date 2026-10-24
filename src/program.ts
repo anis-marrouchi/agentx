@@ -59,6 +59,7 @@ import { chat } from "@/commands/chat"
 import { memory as memoryCmd } from "@/commands/memory"
 import { serve } from "@/commands/serve"
 import { demo } from "@/commands/demo"
+import { onboard } from "@/commands/onboard"
 import { exec as execCmd } from "@/commands/exec"
 import { whatsapp } from "@/commands/whatsapp"
 import { plugin as pluginCmd } from "@/commands/plugin"
@@ -99,6 +100,7 @@ export async function buildProgram(): Promise<Command> {
   // Getting set up, running the daemon, and the handful of things an operator
   // reaches for while the fleet is live.
   for (const cmd of [
+    onboard,                     // one command to a running agent
     setup, init, connect, desktop,        // get running
     appCmd,                      // the phone app
     daemon, doctor,              // operate

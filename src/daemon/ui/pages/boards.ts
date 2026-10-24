@@ -16,6 +16,7 @@
 // stays in board-dashboard.ts where the routing happens.
 
 import { renderShell, type TopbarPeer } from ".."
+import { REQUEST_HOME_JS } from "./request"
 
 export interface BoardsPageOpts {
   peers?: TopbarPeer[]
@@ -116,6 +117,7 @@ export function renderBoardsPage(opts: BoardsPageOpts = {}): string {
           <div id="m-updated"></div>
         </div>
         <a id="m-link" class="ext-link" href="#" target="_blank" rel="noopener">Open in GitLab ↗</a>
+        <span id="m-home" class="ext-link"></span>
       </aside>
     </div>
     <footer class="modal-f">
@@ -138,7 +140,7 @@ export function renderBoardsPage(opts: BoardsPageOpts = {}): string {
     noMain: true,
     body,
     css: BOARDS_PAGE_CSS,
-    scripts: `<script>${BOARDS_PAGE_SCRIPT}</script>`,
+    scripts: `<script>${REQUEST_HOME_JS}</script><script>${BOARDS_PAGE_SCRIPT}</script>`,
     headExtras: `<script>
       // The boards page has its own connection dot + wants body height:100%
       // for the full-viewport kanban layout. Inject the dot into the topbar
@@ -1182,6 +1184,10 @@ function paintModal(d) {
   document.getElementById('m-updated').textContent = d.updatedAt ? fmtDate(d.updatedAt) : '—';
   const link = document.getElementById('m-link');
   if (d.url) { link.href = d.url; link.style.display = ''; } else { link.style.display = 'none'; }
+  // An issue a request lives in links to that request: the task's one home (#1170).
+  const home = document.getElementById('m-home');
+  home.replaceChildren();
+  if (d.url) { home.dataset.homeIssue = d.url; axFillRequestHomes(home.parentElement); } else { delete home.dataset.homeIssue; }
 }
 
 function renderChipPicker(elId, selected, options, opts) {

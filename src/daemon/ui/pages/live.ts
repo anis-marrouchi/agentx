@@ -412,6 +412,7 @@ function collectRunning(snapshot) {
           agentName: a.name || a.id,
           nodeUrl: (node && node.url) || '',
           taskId: t.id,
+          traceId: t.traceId || '',
           channel: t.channel || '',
           preview: t.messagePreview || '',
           startedAt: t.startedAt,
@@ -625,7 +626,7 @@ function renderAgent(a, node) {
   const taskHtml = (lesson ? lessonHtml(lesson, nodeUrl) : '') + (a.runningTasks || []).map(t => {
     const elapsed = fmtElapsed(Date.now() - new Date(t.startedAt).getTime());
     const dataAttrs = t.id
-      ? ' data-task-id="' + escapeHtml(t.id) + '" data-agent-id="' + escapeHtml(a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-channel="' + escapeHtml(t.channel || '') + '" data-agent-name="' + escapeHtml(a.name || a.id) + '"'
+      ? ' data-task-id="' + escapeHtml(t.id) + '" data-agent-id="' + escapeHtml(a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-channel="' + escapeHtml(t.channel || '') + '" data-agent-name="' + escapeHtml(a.name || a.id) + '"' + (t.traceId ? ' data-trace-id="' + escapeHtml(t.traceId) + '"' : '')
       : '';
     const actions = t.id
       ? '<div class="ax-agent__task-actions">' +
@@ -826,7 +827,9 @@ function taskPageUrl(d) {
     + (d.channel ? '&channel=' + encodeURIComponent(d.channel) : '')
     + (d.agentName ? '&name=' + encodeURIComponent(d.agentName) : '')
     + (ask ? '&ask=' + encodeURIComponent(ask) : '')
-    + (d.startedAt ? '&at=' + encodeURIComponent(d.startedAt) : '');
+    + (d.startedAt ? '&at=' + encodeURIComponent(d.startedAt) : '')
+    // The run's trace id finds its request, the task's one home (#1170).
+    + (d.traceId ? '&trace=' + encodeURIComponent(d.traceId) : '');
 }
 
 // Click delegation on the agent grid — opens the modal for any task card,
@@ -881,6 +884,7 @@ document.getElementById('grid').addEventListener('click', (e) => {
         nodeUrl,
         channel: card && card.dataset.channel,
         agentName: (card && (card.dataset.agentName || card.dataset.agentId)) || '',
+        traceId: card && card.dataset.traceId,
       });
     }
     return;
@@ -896,6 +900,7 @@ document.getElementById('grid').addEventListener('click', (e) => {
       agentName: taskEl.dataset.agentName || taskEl.dataset.agentId,
       preview: taskEl.getAttribute('title') || '',
       startedAt: taskEl.dataset.startedAt,
+      traceId: taskEl.dataset.traceId,
     });
     return;
   }

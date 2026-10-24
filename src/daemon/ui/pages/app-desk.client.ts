@@ -66,7 +66,9 @@ export const APP_DESK_SCRIPT = `
       (c.outcome ? '<p><strong>' + esc(c.outcome) + '</strong>' + (c.evidence ? ' · ' + esc(c.evidence) : '') + '</p>' : '') +
       (c.recommend ? '<p class="fx-muted">Suggested: ' + esc(c.recommend) + '</p>' : '') +
       (c.facts ? '<details data-key="' + esc(key) + '"' + (openKeys[key] ? ' open' : '') + '><summary>What is known</summary><p class="fx-muted">' + esc(c.facts) + '</p></details>' : '') +
-      '<p class="fx-muted">' + [c.agent, c.nodeName, when(c)].filter(Boolean).map(esc).join(' · ') + '</p>' +
+      '<p class="fx-muted">' + [c.agent, c.nodeName, when(c)].filter(Boolean).map(esc).join(' · ') +
+      // The task's one home (#1170): the request page on the dashboard.
+      (/^request:/.test(c.key) ? ' · <a href="/requests/' + encodeURIComponent(c.key.slice(8)) + '?peer=' + encodeURIComponent(c.node) + '">Task home</a>' : '') + '</p>' +
       answers(c, k) + '</article>';
   }
   function render(data) {

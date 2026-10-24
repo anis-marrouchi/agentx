@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs"
 import { planStoreFor, requestStoreFor, type InboxContext } from "@/approvals/inbox"
 import { requestCard } from "@/requests/card-view"
+import type { RequestRecord, RequestStore } from "@/requests/store"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { CHECK_KINDS, type CheckKind } from "@/requests/checkers"
 import { STALL_GROUPS, type StallGroup } from "@/requests/loops"
@@ -17,6 +18,9 @@ import { findConfigPath } from "./config-mutator"
 //   POST /api/admin/approvals/requests/reply     { id, text }: the agent that has it gets the reply and goes on
 //   POST /api/admin/approvals/requests/handoff   { id, agentId, note? }: that agent has it from now on
 //   POST /api/admin/approvals/requests/settings  the settings form, plans included (#788)
+//   GET  /api/admin/approvals/requests/home?id=|run=|issue=   one request, open or closed, as a card with its
+//                                                links: what the task's home page (/requests/:id) shows, and how
+//                                                Live, Activity, Monitor and Boards find a run's or issue's request
 // An owner surface: it can drop a request, which agents cannot.
 
 export const REQUESTS_PANEL_PREFIX = "/api/admin/approvals/requests"
@@ -31,6 +35,19 @@ function agentsOf(configPath?: string): Array<{ id: string; name: string }> {
   } catch {
     return []
   }
+}
+
+/** The one page a task lives on, whichever view it was seen in (#1170). */
+export function requestHomePath(id: string): string {
+  return `/requests/${encodeURIComponent(id)}`
+}
+
+/** The request asked for by id, or found from a run's trace id or an
+ *  issue it lives in. A candidate is not a request yet. */
+export function findHome(store: Pick<RequestStore, "get" | "byLink">, q: Record<string, unknown>): RequestRecord | null {
+  const s = (k: string) => (typeof q[k] === "string" ? (q[k] as string).trim() : "")
+  const r = s("id") ? store.get(s("id")) : s("run") ? store.byLink("run", s("run")) : s("issue") ? store.byLink("issue", s("issue")) : null
+  return r && r.state !== "candidate" ? r : null
 }
 
 const list = (v: unknown): string[] | undefined =>
@@ -65,6 +82,16 @@ async function route(
     const stalled = Object.fromEntries(STALL_GROUPS.map((g) => [g, 0])) as Record<StallGroup, number>
     for (const c of items) if (c.stall) stalled[c.stall.group]++
     return { status: 200, body: { items, agents, settings, stalled } }
+  }
+
+  if (method === "GET" && path === `${REQUESTS_PANEL_PREFIX}/home`) {
+    const store = requestStoreFor(ctx)
+    const r = store ? findHome(store, body) : null
+    if (!store || !r) return { status: 404, body: { error: "no request for that" } }
+    const settings = readRequestSettings(ctx.configPath)
+    const ids = new Set(agentsOf(ctx.configPath).map((a) => a.id))
+    const look = { staleAfterHours: settings.staleAfterHours, now: ctx.now ?? Date.now(), isAgent: (id: string) => ids.has(id) }
+    return { status: 200, body: { item: requestCard(r, store, planStoreFor(ctx), look), links: store.links(r.id), url: requestHomePath(r.id) } }
   }
 
   const act = path === `${REQUESTS_PANEL_PREFIX}/reply` ? "reply" : path === `${REQUESTS_PANEL_PREFIX}/handoff` ? "handoff" : null

@@ -162,6 +162,8 @@ function headers(json){
   if (window.AX_LOCAL_TOKEN) h['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
   return h;
 }
+// A request's one home (#1170), from an inbox or Desk key "request:<id>".
+function homeOf(key){ return /^request:/.test(key || '') ? '/requests/' + encodeURIComponent(key.slice(8)) : ''; }
 function say(text, kind){ var m = $('apv-msg'); m.textContent = text || ''; m.className = 'apv__msg' + (kind ? ' is-' + kind : ''); }
 function rel(iso){
   var ms = Date.parse(iso) - Date.now();
@@ -244,6 +246,8 @@ function item(i){
   if (i.source) more.push('<p>Source: ' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">' + esc(i.source) + '</a>' : esc(i.source)) + '</p>');
   if (i.more) more.push('<p>Full record: <code>' + esc(i.more) + '</code></p>');
   more.push('<p>Yes: ' + esc(i.yes) + '. No: ' + esc(i.no) + '.</p>');
+  var home = homeOf(i.key);
+  if (home) more.push('<p><a href="' + esc(home) + '">Open the task home</a></p>');
   return '<li class="apv__item" data-key="' + esc(i.key) + '">'
     + '<div class="apv__meta"><span class="apv__kind">' + esc(LABEL[i.kind] || i.kind) + '</span><span>from ' + esc(i.raised_by) + (i.node ? ' on ' + esc(i.node) : '') + '</span>'
     + (i.created_at ? '<span>' + esc(rel(i.created_at)) + '</span>' : '')
@@ -270,7 +274,8 @@ function asked(c){
     + (c.askedAt ? '<span>' + esc(rel(c.askedAt)) + '</span>' : '') + '</div>'
     + '<h2 class="apv__title">' + esc(c.title) + '</h2>'
     + (c.ask ? '<p class="apv__ask">' + esc(c.ask) + '</p>' : (c.need ? '<p class="apv__ask">' + esc(c.need) + '</p>' : ''))
-    + '<div class="apv__acts"><a class="ax-btn ax-btn--ghost" href="#req-section">Answer it in Open requests</a></div></li>';
+    + '<div class="apv__acts"><a class="ax-btn ax-btn--ghost" href="' + esc(homeOf(c.key) ? '#req-' + encodeURIComponent(c.key.slice(8)) : '#req-section') + '">Answer it in Open requests</a>'
+    + (homeOf(c.key) ? '<a class="ax-btn ax-btn--ghost" href="' + esc(homeOf(c.key)) + '">Task home</a>' : '') + '</div></li>';
 }
 
 function choices(i){

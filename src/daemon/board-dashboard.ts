@@ -42,6 +42,7 @@ import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { renderProceduresPage } from "./ui/pages/procedures"
 import { renderProcessesPage } from "./ui/pages/processes"
 import { renderTaskPage } from "./ui/pages/task"
+import { renderRequestPage } from "./ui/pages/request"
 import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
@@ -505,8 +506,29 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       archived: url.searchParams.get("archived") === "1",
       ask: url.searchParams.get("ask") || undefined,
       askAt: url.searchParams.get("at") || undefined,
+      traceId: url.searchParams.get("trace") || undefined,
+      requestPeer: nodeUrl.replace(/\/+$/, "") !== ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") ? nodeUrl : undefined,
+      localToken: ctx.token,
       nodeUrl,
       peers: buildTopbarPeers(ctx.config),
+    }))
+    return
+  }
+  // /requests/:id — the one home of a task (#1170). Live, Activity, Monitor,
+  // the Desk, Approvals and Boards each show a slice of it and link here.
+  const requestPage = method === "GET" && path.match(/^\/requests\/([^/]+)$/)
+  if (requestPage) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderRequestPage({
+      requestId: decodeURIComponent(requestPage[1]),
+      // The Desk names every card's node, this one included: this node is
+      // read locally, not through the peer proxy.
+      peer: (() => {
+        const p = (url.searchParams.get("peer") || "").replace(/\/+$/, "")
+        return p && p !== "primary" && p !== ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") ? p : undefined
+      })(),
+      peers: buildTopbarPeers(ctx.config),
+      localToken: ctx.token,
     }))
     return
   }
@@ -636,7 +658,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         }
       }
       // Anything else in fleet mode → answer locally.
-    } else if (peerId && peerId !== "primary") {
+    } else if (peerId && peerId !== "primary" && peerId.replace(/\/+$/, "") !== ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")) {
+      // (This node's own URL, as the Desk and Activity name every node, is local.)
       const peer = findPeer(peerId, ctx.config)
       if (!peer) { sendJson(res, 404, { error: `unknown peer: ${peerId}` }); return }
       // Strip ?peer= so the destination doesn't re-proxy.

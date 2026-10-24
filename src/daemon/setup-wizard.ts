@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig, writeAgentxConfig } from "./config-mutate"
 import { renderSetupPage } from "./ui/pages/setup"
 import { loadDaemonConfig } from "./config"
+import { ONBOARD_ENV } from "@/commands/onboard-logic"
 
 /** Shape of the pre-render state snapshot — exported so the page file can
  *  type its props without re-importing this whole module. */
@@ -74,6 +75,8 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
   summary: string
   nextSteps: string[]
   backupPath?: string
+  /** Set under `agentx onboard`, which starts the daemon itself. */
+  onboard?: boolean
 } {
   // --- validate ---
   if (!payload.nodeName?.trim()) throw new Error("Team name is required.")
@@ -160,8 +163,13 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
   if (payload.agent.tier === "opencode") {
     nextSteps.push("Run  opencode --version  to confirm OpenCode is installed and authenticated")
   }
-  nextSteps.push("Start the daemon:  agentx daemon start")
-  nextSteps.push("Open the dashboard:  http://127.0.0.1:4202")
+  if (process.env[ONBOARD_ENV]) {
+    // `agentx onboard` watches for this file and starts the daemon itself.
+    nextSteps.push("The daemon is starting. The terminal running onboard says when your agent is answering.")
+  } else {
+    nextSteps.push("Start the daemon:  agentx daemon start")
+    nextSteps.push("Open the dashboard:  http://127.0.0.1:4202")
+  }
 
   return {
     summary: state.configExists
@@ -169,6 +177,7 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
       : `Initialized your team with first agent "${payload.agent.id}".`,
     nextSteps,
     backupPath,
+    ...(process.env[ONBOARD_ENV] ? { onboard: true } : {}),
   }
 }
 
@@ -315,6 +324,24 @@ export async function handleStartDaemonPost(_req: IncomingMessage, res: ServerRe
   if (await probe(url)) {
     res.writeHead(200)
     res.end(JSON.stringify({ ok: true, url, alreadyRunning: true }))
+    return
+  }
+
+  // Under `agentx onboard` the daemon is onboard's child: it starts as soon
+  // as the wizard saves. Spawning a second, detached one here would outlive
+  // onboard's Ctrl-C, so only wait for the one onboard starts.
+  if (process.env[ONBOARD_ENV]) {
+    const until = Date.now() + 60_000
+    while (Date.now() < until) {
+      if (await probe(url)) {
+        res.writeHead(200)
+        res.end(JSON.stringify({ ok: true, url, alreadyRunning: false, onboard: true }))
+        return
+      }
+      await new Promise((ok) => setTimeout(ok, 400))
+    }
+    res.writeHead(504)
+    res.end(JSON.stringify({ ok: false, error: "The daemon did not answer within 60s. The terminal running onboard shows why.", manualUrl: url }))
     return
   }
 

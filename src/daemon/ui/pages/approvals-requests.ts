@@ -136,10 +136,10 @@ function item(r){
   var why = !r.why ? '' : r.state === 'waiting_owner' ? '<p class="apv__rec"><b>Question:</b> ' + esc(r.why) + '</p>'
     : '<p class="apv__exp is-soon">' + esc(r.why) + '</p>';
   var opts = AGENTS.map(function(a){ return '<option value="' + esc(a.id) + '"' + (a.id === r.agentId ? ' selected' : '') + '>' + esc(a.name) + (a.id === r.agentId ? ' (has it)' : '') + '</option>'; }).join('');
-  return '<li class="apv__item" data-id="' + esc(r.id) + '">' +
+  return '<li class="apv__item" id="req-' + encodeURIComponent(r.id) + '" data-id="' + esc(r.id) + '">' +
     '<div class="apv__meta"><span class="apv__state is-' + esc(r.state) + '">' + esc(STATE[r.state] || r.state) + '</span>' +
     '<span class="apv__with">With <b>' + esc(agentName(r.agentId)) + '</b></span>' +
-    '<span>' + esc(when(r.createdAt)) + '</span><span>' + esc(r.channel) + '</span><code>' + esc(r.id) + '</code></div>' +
+    '<span>' + esc(when(r.createdAt)) + '</span><span>' + esc(r.channel) + '</span><a href="/requests/' + encodeURIComponent(r.id) + '" title="The task home: everything on this request in one place"><code>' + esc(r.id) + '</code></a></div>' +
     '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' +
     (r.needed && r.state !== 'waiting_owner' ? '<p class="apv__rec apv__need" dir="auto"><b>Needed from you:</b> ' + esc(r.needed) + '</p>' : '') +
     why + loop(r) + plan(r.plan) +

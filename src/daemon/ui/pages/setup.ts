@@ -266,11 +266,18 @@ document.getElementById('wizard').addEventListener('submit', async (e) => {
       const ss = document.getElementById('startDaemonStatus');
       sb.disabled = true; sb.textContent = 'Starting…'; ss.textContent = '';
       try {
-        const r = await fetch('/api/setup/start-daemon', { method: 'POST' });
-        const d = await r.json();
+        // Under onboard the dashboard restarts once the daemon is up, so a
+        // dropped connection there means "try again in a moment".
+        let d;
+        for (let i = 0; ; i++) {
+          try { d = await (await fetch('/api/setup/start-daemon', { method: 'POST' })).json(); break; }
+          catch (e) { if (!data.onboard || i >= 10) throw e; await new Promise((ok) => setTimeout(ok, 1000)); }
+        }
         if (d.ok) {
           sb.textContent = d.alreadyRunning ? 'Already running' : 'Daemon up';
-          ss.innerHTML = 'Open <a href="' + d.url + '" target="_blank" rel="noopener">' + d.url + '</a>';
+          ss.innerHTML = d.onboard
+            ? 'Your agent is answering. <a href="/live">Open the dashboard</a>'
+            : 'Open <a href="' + d.url + '" target="_blank" rel="noopener">' + d.url + '</a>';
         } else {
           sb.disabled = false; sb.textContent = 'Try again';
           ss.textContent = d.error + (d.manualUrl ? '  Manual: ' + d.manualUrl : '');
@@ -280,6 +287,7 @@ document.getElementById('wizard').addEventListener('submit', async (e) => {
         ss.textContent = e.message;
       }
     });
+    if (data.onboard) document.getElementById('startDaemonBtn').click();
   } catch (err) {
     msg.className = 'ax-msg is-err'; msg.textContent = err.message;
     btn.disabled = false; btn.textContent = 'Save and continue';

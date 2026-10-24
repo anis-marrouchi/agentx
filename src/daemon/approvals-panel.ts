@@ -89,7 +89,7 @@ export async function handleApprovalsPanelApi(
 
   try {
     if (path.startsWith(REQUESTS_PANEL_PREFIX)) {
-      const r = await handleRequestsPanel(method, path, method === "POST" ? await readJson(req) : {}, ctx)
+      const r = await handleRequestsPanel(method, path, method === "POST" ? await readJson(req) : Object.fromEntries(url.searchParams), ctx)
       sendJson(res, r.status, r.body)
       return true
     }

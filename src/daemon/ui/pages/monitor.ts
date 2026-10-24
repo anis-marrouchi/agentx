@@ -1,5 +1,6 @@
 import { rankByDecay, decayOf } from "../../monitor-capacity"
 import { renderShell, type TopbarPeer } from ".."
+import { REQUEST_HOME_JS } from "./request"
 import { injectFns } from "../inject"
 
 /** Feather-style 24x24 stroked glyphs, sized at the call site. */
@@ -133,7 +134,7 @@ ${secLabel(ICON.file, "Session briefings", "brief-count")}
 </section>
 </div>`,
     css: MONITOR_CSS,
-    scripts: `<script>${injectFns({ decayOf, rankByDecay })}const ICON = ${JSON.stringify(ICON)};${MONITOR_SCRIPT}</script>`,
+    scripts: `<script>${REQUEST_HOME_JS}</script><script>${injectFns({ decayOf, rankByDecay })}const ICON = ${JSON.stringify(ICON)};${MONITOR_SCRIPT}</script>`,
   })
 }
 
@@ -704,6 +705,8 @@ let html='<article class="bf-brief">'+head+'<p class="bf-brief__sum">'+esc(v?v.s
 let links=v?v.links.filter(l=>/^https?:\/\//i.test(l.url)||/^\/(?!\/)/.test(l.url))
   .map(l=>lnk(l.url.startsWith('/')?n.url+l.url:l.url,'ext',l.label)).join(''):'';
 if(v)links+=v.relatedTaskIds.map(id=>lnk(taskHref(n.url,id,ownerOf(n,id),true),'route','Related '+String(id).slice(-6))).join('');
+// The request this run belongs to: the task's one home (#1170).
+if(r.source==='trace')links+='<span data-home-run="'+esc(r.id)+'" data-home-node="'+esc(n.url)+'" data-home-class="bf-lnk"></span>';
 
 if(links)html+='<div class="bf-links">'+links+'</div>';
 if(r.source==='trace')html+=tracePanel(n.url,r.id);
@@ -720,15 +723,18 @@ return html+'</article>';});
 $('brief-count').textContent=entries.length?String(entries.length):'';
 $('reviews').innerHTML=(entries.slice(0,4).join('')+(entries.length>4?'<details><summary class="bf-defer">'+ic('chevr',14)+'<span class="bf-defer__t">'+(entries.length-4)+' earlier</span></summary><div class="bf-col" style="margin-top:10px">'+entries.slice(4).join('')+'</div></details>':''))
  ||'<div class="bf-empty">'+ic('file',22)+'<h4>Nothing here</h4><p>'+(filter.kind!=='all'||filter.agent||filter.node||$('search').value?'No briefing matches the current filter.':'Runs that finish from now on are reviewed and land here.')+'</p></div>';
+axFillRequestHomes($('reviews'));
 }
 function registrations(){const n=nodes.find(n=>n.url===$('node').value);$('registered').innerHTML=(n?.data?.registrations||[]).map(r=>'<option value="'+esc(r.id)+'">'+esc(r.label)+' · '+esc(r.runtime)+'</option>').join('');}
 function renderRunning(){
 const list=nodes.filter(n=>n.ok).flatMap(n=>(n.data.running||[]).map(t=>'<div class="bf-run">'
  +idBlock(t.agentId,n.name,n.url,t.sessionId||'','','')
  +'<p class="bf-run__msg">'+esc(t.messagePreview||'Running task')+'</p>'
+ +'<span data-home-run="'+esc(t.taskId)+'" data-home-node="'+esc(n.url)+'" data-home-class="bf-lnk"></span>'
  +tracePanel(n.url,t.taskId)+'</div>'));
 $('run-count').textContent=list.length?String(list.length):'';
 $('running').innerHTML=list.join('')||'<div class="bf-empty">'+ic('pulse',22)+'<h4>Nothing running</h4><p>No active AgentX runs reported.</p></div>';
+axFillRequestHomes($('running'));
 }
 async function refresh(){
 if(busy)return;busy=true;$('refresh').disabled=true;$('refresh').setAttribute('aria-busy','true');

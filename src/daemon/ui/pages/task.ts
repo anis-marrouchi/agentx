@@ -1,4 +1,5 @@
 import { renderShell, esc, type TopbarPeer } from ".."
+import { REQUEST_HOME_JS } from "./request"
 
 // --- Task page — watch one agent work ---
 //
@@ -40,6 +41,12 @@ export interface TaskPageOpts {
    *  replays what was asked, so Live passes it through the URL. */
   ask?: string
   askAt?: string
+  /** The run's trace id, the one its request links (#1170). A finished
+   *  run's task id is already that id. */
+  traceId?: string
+  /** The node the request lives on, when it is not this dashboard's. */
+  requestPeer?: string
+  localToken?: string
   peers?: TopbarPeer[]
   currentPeerId?: string
 }
@@ -67,6 +74,7 @@ export function renderTaskPage(opts: TaskPageOpts): string {
       ${opts.channel ? `<span class="ax-badge ax-badge--mono ax-badge--ghost">${esc(opts.channel)}</span>` : ""}
       <span class="ax-badge ax-badge--mono" id="task-status">connecting…</span>
       <span class="ax-mono ax-muted" id="task-elapsed"></span>
+      <a class="ax-btn ax-btn--ghost" id="task-home" hidden>Task home</a>
     </div>
   </header>
 
@@ -100,7 +108,13 @@ export function renderTaskPage(opts: TaskPageOpts): string {
     currentPeerId: opts.currentPeerId,
     body,
     css: TASK_PAGE_CSS,
-    scripts: `<script>${TASK_PAGE_JS}</script>`,
+    scripts: (opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : "")
+      + `<script>${TASK_PAGE_JS}</script><script>${REQUEST_HOME_JS}
+axRequestHome(${JSON.stringify({ run: opts.traceId || opts.taskId, peer: opts.requestPeer || "" }).replace(/</g, "\\u003c")}, function (h) {
+  var a = document.getElementById('task-home');
+  a.href = h.url; a.title = h.summary; a.hidden = false;
+});
+</script>`,
   })
 }
 

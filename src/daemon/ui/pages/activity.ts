@@ -15,6 +15,7 @@
 // view is first opened. /admin/activity-graph redirects to ?view=map.
 
 import { renderShell, type TopbarPeer } from ".."
+import { REQUEST_HOME_JS } from "./request"
 import { injectFns } from "../inject"
 import { buildTimeline, computeBands, packTracks } from "../../activity-timeline"
 import { assetUrl } from "../asset-url"
@@ -105,7 +106,7 @@ export function renderActivityPage(opts: { peers?: TopbarPeer[]; view?: string |
 
 </div>`,
     css: ACTIVITY_CSS,
-    scripts: `<script>${injectFns({ computeBands, packTracks, buildTimeline })}` +
+    scripts: `<script>${REQUEST_HOME_JS}</script><script>${injectFns({ computeBands, packTracks, buildTimeline })}` +
       `const ICON = ${JSON.stringify(ICON)};const SUB = ${JSON.stringify(SUB)};${ACTIVITY_SCRIPT}</script>`,
   })
 }
@@ -272,7 +273,12 @@ $('detail').innerHTML='<div class="ac-det"><div class="ac-det__h">'
  +(found.length?found.map(m=>'<div class="ac-find"><i class="ac-d ac-d--'+m.kind+'" style="margin-top:4px"></i>'
    +'<span><b>'+esc(KIND[m.kind]||m.kind)+'.</b> '+esc(m.text)+'</span></div>').join('')
    :'<div class="ac-find" style="color:var(--ax-text-2)">No review findings for this run.</div>')
+ +'<p class="ac-home" id="ac-home"></p>'
  +'</div>';
+// The run's request is the task's one home (#1170).
+const want=r.id;
+axRequestHome({run:r.id,peer:r.nodeUrl},h=>{if(selected!==want||!$('ac-home'))return;
+ $('ac-home').innerHTML='<a href="'+esc(h.url)+'">Task home: '+esc(h.summary)+'</a>';});
 }
 
 async function load(){
@@ -286,7 +292,7 @@ try{
    const a=await fetch('/api/monitor/activity?node='+encodeURIComponent(n.url)+'&hours='+hours);
    if(!a.ok)continue;
    const d=await a.json();
-   for(const run of d.runs||[])runs.push({...run,node:d.node||n.name});
+   for(const run of d.runs||[])runs.push({...run,node:d.node||n.name,nodeUrl:n.url});
    for(const m of d.marks||[])marks.push(m);
   }catch{}
  }
