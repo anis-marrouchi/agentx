@@ -75,6 +75,16 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
     </div>
   </section>
 
+  <section class="ax-cost__card ax-cost__budgets" id="cost-budgets-card" hidden>
+    <div class="ax-cost__card-head">
+      <div>
+        <div class="ax-cost__card-title">Monthly budgets</div>
+        <div class="ax-cost__card-sub">This month's spend against each agent's limit (UTC month). New tasks are held at 100%.</div>
+      </div>
+    </div>
+    <div class="ax-cost__agents" id="cost-budgets"></div>
+  </section>
+
   <section class="ax-cost__row2">
     <div class="ax-cost__card">
       <div class="ax-cost__card-head">
@@ -254,6 +264,13 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
     .ax-cost__chips-row{display:inline-flex;gap:4px;flex-wrap:wrap}
     .ax-cost__agent-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 7px 2px 5px;background:var(--ax-surface-2);border:1px solid var(--ax-border);border-radius:999px;font-size:10.5px;color:var(--ax-text-2)}
     .ax-cost__agent-chip i{width:6px;height:6px;border-radius:50%;display:inline-block}
+    .ax-cost__budgets{margin-bottom:16px}
+    .ax-cost__budget{display:grid;grid-template-columns:minmax(0,1fr) minmax(80px,2fr) auto auto;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--ax-border)}
+    .ax-cost__budget-cost{font-family:var(--ax-mono);font-size:12px;color:var(--ax-text-2);text-align:right;white-space:nowrap}
+    .ax-cost__budget-state{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--ax-border);white-space:nowrap;color:var(--ax-accent)}
+    .ax-cost__budget-state--notice{color:var(--ax-warn)}
+    .ax-cost__budget-state--limit{color:var(--ax-err)}
+    @media (max-width:680px){.ax-cost__budget{grid-template-columns:1fr auto}.ax-cost__budget .ax-cost__agent-bar{grid-column:1 / -1;order:3}}
     .ax-cost__empty{padding:32px 18px;text-align:center;color:var(--ax-muted);font-size:12px;font-style:italic}
   `
 
@@ -325,6 +342,7 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
       renderHero();
       renderMix();
       renderAgents();
+      renderBudgets();
       renderCacheGauge();
       renderTable();
       var li = document.getElementById('cost-last');
@@ -528,6 +546,26 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
           + '<div class="ax-cost__agent-tasks">'+(a.tasks||0).toLocaleString()+'</div>'
           + '<div class="ax-cost__agent-bar"><div class="ax-cost__agent-bar-fill" style="width:'+barPct+'%;background:'+c+'"></div></div>'
           + '<div class="ax-cost__agent-cost">'+fmtCost(a.cost)+'<span class="sub">'+fmtTok(a.tokens||0)+' tok</span></div>'
+        + '</div>';
+      }).join('');
+    }
+
+    /* Spend against each agent's monthly budget (#1167). Hidden when no
+       agent has one. Always this month, whatever range is picked. */
+    function renderBudgets(){
+      var rows = state.data.budgets || [];
+      var card = document.getElementById('cost-budgets-card');
+      card.hidden = !rows.length;
+      if (!rows.length) return;
+      var labels = { ok: 'On track', notice: 'Past 80%', limit: 'At limit \u00B7 new tasks held' };
+      var colors = { ok: 'var(--ax-accent)', notice: 'var(--ax-warn)', limit: 'var(--ax-err)' };
+      document.getElementById('cost-budgets').innerHTML = rows.map(function(b){
+        var pct = Math.min(100, Math.round(b.ratio * 100));
+        return '<div class="ax-cost__budget">'
+          + '<div class="ax-cost__agent-name">'+esc(b.agent_id)+'</div>'
+          + '<div class="ax-cost__agent-bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="'+esc(b.agent_id)+' budget used"><div class="ax-cost__agent-bar-fill" style="width:'+pct+'%;background:'+colors[b.status]+'"></div></div>'
+          + '<div class="ax-cost__budget-cost">'+fmtCost(b.spentUsd)+' of '+fmtCost(b.monthlyUsd)+'</div>'
+          + '<span class="ax-cost__budget-state ax-cost__budget-state--'+b.status+'">'+labels[b.status]+'</span>'
         + '</div>';
       }).join('');
     }

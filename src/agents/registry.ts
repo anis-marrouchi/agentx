@@ -50,6 +50,7 @@ import { isRestricted } from "@/guard/autonomy"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
+import { checkAgentBudget, monthlyLimit } from "./budget"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
@@ -3064,6 +3065,26 @@ export class AgentRegistry {
         if (warning) this.log(`[${task.agentId}] ${warning}`)
         return null
       }
+      // Monthly dollar budget (#1167), every tier: past the limit a new
+      // task is held with the reason, and the owner gets a Desk card. Read
+      // from the live config so a raised limit applies on save.
+      const budget = checkAgentBudget(task.agentId, monthlyLimit(this.config.agents?.[task.agentId]), {
+        settings: this.config.approvals,
+        log: (m) => this.log(m),
+      })
+      if (budget.hold) {
+        this.log(`[${task.agentId}] task held — monthly budget`)
+        if (!onDelta) {
+          output.buffer = `[error] ${budget.message}`
+          for (const sub of output.subscribers) {
+            try { sub(output.buffer) } catch { /* */ }
+          }
+        }
+        state.errors++
+        finalResponse = { content: "", error: budget.message, duration: 0 }
+        return finalResponse
+      }
+
       const cloudRoute = this.planCloudSession(state.def, task)
       if (cloudRoute.route === "local") {
         const gated = runDispatchGates()

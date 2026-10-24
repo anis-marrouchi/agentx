@@ -17,6 +17,7 @@ import { loadDaemonConfig } from "./config"
 import { mutateAgentxConfig } from "./config-mutate"
 import { setWikiAbsorb } from "@/wiki/absorb-agents"
 import { getConventions } from "@/agents/conventions"
+import { monthlyLimit } from "@/agents/budget"
 import type { TopbarPeer } from "./topbar"
 import { renderAgentPage } from "./ui/pages/agent"
 
@@ -147,6 +148,8 @@ function getAgentState(agentId: string) {
     // render current values without a second round-trip.
     intents: Array.isArray((def as any).intents) ? (def as any).intents : [],
     maxDelegationDepth: (def as any).maxDelegationDepth ?? 5,
+    // Monthly dollar budget (#1167); null when the agent has none.
+    monthlyBudgetUsd: monthlyLimit(def) ?? null,
     contextReferences: !!(def as any).contextReferences,
     contextStrategy: (def as any).contextStrategy || "",
     // MCP servers — { name → { command, args, env? } }. Synced to
@@ -248,13 +251,29 @@ function patchAgentCapability(agentId: string, body: any) {
     if (!Number.isFinite(n) || n < 1 || n > 240) throw new Error("maxExecutionMinutes must be 1..240")
     fields.maxExecutionMinutes = n
   }
-  if (Object.keys(fields).length === 0) throw new Error("nothing to update")
+  // Monthly dollar budget (#1167): a number sets it, empty or 0 clears it.
+  let budget: number | null | undefined
+  if (body?.monthlyBudgetUsd !== undefined) {
+    const raw = body.monthlyBudgetUsd
+    const n = raw === null || raw === "" ? 0 : Number(raw)
+    if (!Number.isFinite(n) || n < 0) throw new Error("monthlyBudgetUsd must be a dollar amount of 0 or more")
+    budget = n > 0 ? n : null
+  }
+  if (Object.keys(fields).length === 0 && budget === undefined) throw new Error("nothing to update")
   const { summary } = mutateAgentxConfig((cfg) => {
     if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
     const next = { ...cfg.agents[agentId] }
     for (const [k, v] of Object.entries(fields)) {
       if (v === undefined) delete next[k]
       else next[k] = v
+    }
+    if (budget !== undefined) {
+      const rest = { ...(next.budget ?? {}) }
+      if (budget === null) delete rest.monthlyUsd
+      else rest.monthlyUsd = budget
+      if (Object.keys(rest).length) next.budget = rest
+      else delete next.budget
+      fields.monthlyBudgetUsd = budget
     }
     cfg.agents[agentId] = next
     return `agent "${agentId}" capability updated (${Object.keys(fields).join(", ")})`

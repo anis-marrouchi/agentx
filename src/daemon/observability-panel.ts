@@ -1,57 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { resolve } from "path"
-import { existsSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
 import { logSlowQueries } from "@/storage/slow-queries"
 import { renderObservabilityPage } from "./ui/pages/observability"
 import type { TopbarPeer } from "./topbar"
-
-// Anthropic public per-million-token rates. Same numbers
-// src/observability/tracker.ts uses; duplicated here so this module stays
-// independent of the in-process token tracker.
-//
-// "external" is a pricing-attribution stub for models we don't bill against
-// the Anthropic spend — codex-cli routes through OpenAI, sdk agents may
-// route through OpenAI / Bedrock / Vertex. Showing them at $0 here is the
-// honest answer: this dashboard tracks Anthropic spend; cross-provider
-// rollups belong on a separate surface that knows the OpenAI keys / bill.
-const RATE_PER_M: Record<string, { input: number; output: number; cacheRead: number; cacheCreate: number }> = {
-  opus:     { input: 15,  output: 75,   cacheRead: 1.5,  cacheCreate: 18.75 },
-  sonnet:   { input: 3,   output: 15,   cacheRead: 0.3,  cacheCreate: 3.75 },
-  haiku:    { input: 0.25, output: 1.25, cacheRead: 0.025, cacheCreate: 0.3125 },
-  external: { input: 0,   output: 0,    cacheRead: 0,    cacheCreate: 0 },
-}
-function modelFamily(model: string): "opus" | "sonnet" | "haiku" | "external" {
-  const m = (model || "").toLowerCase()
-  if (m.includes("opus")) return "opus"
-  if (m.includes("haiku")) return "haiku"
-  if (m.includes("sonnet") || m.includes("claude")) return "sonnet"
-  // Anything else — gpt-*, codex, gemini, llama, … — routed to the external
-  // bucket so it doesn't masquerade as Sonnet spend on the dashboard.
-  return "external"
-}
-function rowCost(row: {
-  model: string;
-  input_tokens: number; output_tokens: number;
-  cache_read_tokens: number; cache_create_tokens: number;
-  tier2_input_tokens?: number; tier2_output_tokens?: number;
-  tier2_cache_read_tokens?: number; tier2_cache_create_tokens?: number;
-}): number {
-  const r = RATE_PER_M[modelFamily(row.model)]
-  // Tier-2 columns ALSO live in input_tokens etc. (they're a subset, not a
-  // disjoint count). The tier-2 multiplier (1.5×) is the additional charge.
-  const base =
-    (row.input_tokens / 1_000_000) * r.input +
-    (row.output_tokens / 1_000_000) * r.output +
-    (row.cache_read_tokens / 1_000_000) * r.cacheRead +
-    (row.cache_create_tokens / 1_000_000) * r.cacheCreate
-  const tier2Surcharge =
-    ((row.tier2_input_tokens ?? 0) / 1_000_000) * r.input * 0.5 +
-    ((row.tier2_output_tokens ?? 0) / 1_000_000) * r.output * 0.5 +
-    ((row.tier2_cache_read_tokens ?? 0) / 1_000_000) * r.cacheRead * 0.5 +
-    ((row.tier2_cache_create_tokens ?? 0) / 1_000_000) * r.cacheCreate * 0.5
-  return base + tier2Surcharge
-}
+import { RATE_PER_M, modelFamily, rowCost } from "@/storage/usage-cost"
+import { budgetRows, monthlyLimit } from "@/agents/budget"
 
 // --- /admin/observability — surface the SQLite tables that have no UI ---
 //
@@ -173,7 +128,7 @@ export async function handleObservabilityApi(req: IncomingMessage, res: ServerRe
     if (slug === "cost") {
       const url = new URL(req.url || "/", "http://_")
       const range = parseRange(url.searchParams.get("range"))
-      sendJson(res, 200, buildCost(opened.db, range))
+      sendJson(res, 200, { ...buildCost(opened.db, range), budgets: buildBudgets(opened.db) })
       return true
     }
     if (slug === "cost.csv") {
@@ -499,6 +454,22 @@ function buildCost(db: Database.Database, range: number) {
     days,
     perAgent,
   }
+}
+
+/** Spend this month against each agent's monthly budget (#1167). Limits
+ *  come from agentx.json on disk: this page may run in its own process
+ *  (`agentx board`), away from the daemon's config. */
+function buildBudgets(db: Database.Database) {
+  const limits: Record<string, number> = {}
+  try {
+    const path = resolve(process.cwd(), "agentx.json")
+    const cfg = existsSync(path) ? JSON.parse(readFileSync(path, "utf-8")) : {}
+    for (const [id, def] of Object.entries<any>(cfg?.agents ?? {})) {
+      const limit = monthlyLimit(def)
+      if (limit) limits[id] = limit
+    }
+  } catch { return [] }
+  return budgetRows(db, limits)
 }
 
 /** CSV export for `/api/admin/observability/cost.csv` — same column order as

@@ -84,7 +84,18 @@ export interface MergePolicyOrigin {
   sha: string
 }
 
-export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin
+/** An agent's monthly dollar budget (agents/budget.ts, #1167): the 80%
+ *  notice or the hold at 100%. The budget check reads the answer before
+ *  the agent's next task; no agent is sent a result turn. */
+export interface BudgetOrigin {
+  kind: "budget"
+  agentId: string
+  /** "YYYY-MM", UTC. */
+  month: string
+  level: "notice" | "hold"
+}
+
+export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | BudgetOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

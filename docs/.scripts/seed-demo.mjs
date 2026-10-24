@@ -65,6 +65,9 @@ cfg.boards = [{
 }]
 // Open requests on, for the tracked plan seeded below (#788).
 cfg.requests = { enabled: true }
+// A $5 monthly budget (#1167). The usage seeded below puts cx past 80%,
+// so its first task raises the Desk notice and the Cost page shows it.
+cfg.agents.cx.budget = { monthlyUsd: 5 }
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
 
 // Two places with reminders for the /places shot (place reminders, #676).
@@ -118,6 +121,15 @@ for (const [id, title] of [["demo-report", "Draft the demo shop report"], ["demo
   execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "workflow", "add", file, "--no-reload"], { cwd: root, stdio: "pipe" })
 }
 await post("/reload")
+// Fictional spend for the budget shots: 290,000 Sonnet output tokens on the
+// first of this month is $4.35 of cx's $5. The scripted demo itself costs $0.
+{
+  const usage = new Database(resolve(root, ".agentx/db.sqlite"))
+  usage.prepare(`INSERT INTO usage_daily (agent_id, model, day, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, tasks)
+    VALUES ('cx', 'claude-sonnet-docs-fixture', ?, 0, 290000, 0, 0, 3)
+    ON CONFLICT(agent_id, model, day) DO UPDATE SET output_tokens = 290000`).run(new Date().toISOString().slice(0, 8) + "01")
+  usage.close()
+}
 for (const [channel, chatId] of [["gitlab", "demo/shop:issue:47"], ["telegram", "demo-office"]]) {
   const result = await post("/task", { agent: "cx", message: "Prepare the demo shop report.", context: { channel, chatId, sender: "Demo operator" } })
   if (result.error) throw new Error(result.error)
@@ -206,4 +218,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, a webhook, a board, an action, two places, and two real scripted task runs.")
+console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, a budget notice, two clients, six fictional reviews, an open request with a plan, a webhook, a board, an action, two places, and two real scripted task runs.")

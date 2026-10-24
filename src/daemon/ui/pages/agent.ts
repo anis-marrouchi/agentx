@@ -511,6 +511,11 @@ const AGENT_PAGE_BODY = `
             <input id="cap-mxm" type="number" min="1" max="240" />
             <span class="ax-hint">Wall-clock cap on a single Claude Code invocation. Default 20m. Bump for devops/coder agents that do long investigations.</span>
           </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Monthly budget, US dollars <span class="ax-hint">(blank = no limit; applies on save)</span></span>
+            <input id="cap-budget" type="number" min="0" step="0.01" inputmode="decimal" placeholder="no limit" />
+            <span class="ax-hint">The most this agent may spend in a calendar month (UTC), as the Cost page counts it. At 80% you get one card on the Desk; at 100% its new tasks are held until next month, a higher limit, or you allow one more run. Work already running finishes.</span>
+          </label>
           <div class="ax-form-actions" style="margin-top:14px">
             <button class="ax-btn ax-btn--primary" id="cap-save">Save capability</button>
             <span id="cap-msg" class="ax-hint" style="margin-left:10px"></span>
@@ -965,6 +970,7 @@ async function loadAgent(){
       $('cap-cref').value = a.contextReferences ? 'true' : 'false';
       $('cap-cstrat').value = a.contextStrategy || '';
       $('cap-mxm').value = a.maxExecutionMinutes ?? 20;
+      $('cap-budget').value = a.monthlyBudgetUsd != null ? a.monthlyBudgetUsd : '';
     }
     // MCP servers list
     const mcpListEl = document.getElementById('mcp-list');
@@ -1046,6 +1052,7 @@ async function loadAgent(){
       maxDelegationDepth: parseInt(document.getElementById('cap-mdd').value, 10) || 5,
       contextReferences: document.getElementById('cap-cref').value === 'true',
       maxExecutionMinutes: parseInt(document.getElementById('cap-mxm').value, 10) || 20,
+      monthlyBudgetUsd: document.getElementById('cap-budget').value.trim(),
     };
     const cstrat = document.getElementById('cap-cstrat').value;
     if (cstrat) body.contextStrategy = cstrat;

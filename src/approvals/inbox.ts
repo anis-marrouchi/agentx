@@ -12,6 +12,7 @@ import { RequestStore, hasRequestTables } from "@/requests/store"
 import { PlanStore, hasPlanTables } from "@/requests/plan-store"
 import { readRequestSettings } from "@/requests/settings"
 import { cardWords } from "@/requests/card-view"
+import { budgetCardWords } from "@/agents/budget"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -110,13 +111,15 @@ function cardItems(ctx: InboxContext): InboxItem[] {
 }
 
 function cardItem(c: DecisionCard): InboxItem {
+  // A budget card (#1167) changes what the agent may run, not a message to it.
+  const words = c.origin?.kind === "budget" ? budgetCardWords(c.origin) : null
   return {
     key: `card:${c.id}`,
     kind: "card",
     title: c.title,
     ask: c.ask,
-    yes: `tell ${c.raised_by} yes`,
-    no: `tell ${c.raised_by} no`,
+    yes: words?.yes ?? `tell ${c.raised_by} yes`,
+    no: words?.no ?? `tell ${c.raised_by} no`,
     recommend: c.recommend,
     if_silent: c.if_silent,
     expires: c.expires,

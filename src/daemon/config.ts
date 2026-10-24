@@ -328,6 +328,15 @@ const agentConfigSchema = z.object({
     }).default({}),
   }).optional(),
   permissionMode: z.string().default("default"),
+  /** Monthly dollar budget (#1167, src/agents/budget.ts). `monthlyUsd` is
+   *  the most this agent may spend in a calendar month (UTC), counted as
+   *  the Cost page counts it. At 80% the owner gets one Desk card; at 100%
+   *  new tasks are held until next month, a higher limit, or the owner
+   *  allowing one more run. Running work always finishes. Unset or 0: no
+   *  cap. Applies on save. */
+  budget: z.object({
+    monthlyUsd: z.number().min(0).optional(),
+  }).optional(),
   /** How this agent's `claude` CLI is billed (claude-code tier). Default
    *  "subscription": the shared OAuth login, ANTHROPIC_API_KEY stripped.
    *  "api": bill ANTHROPIC_API_KEY instead and drop the OAuth token, so
