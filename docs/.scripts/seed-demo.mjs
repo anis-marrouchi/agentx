@@ -182,6 +182,40 @@ db.transaction(() => {
   step.run(2, "Deploy and check it is live", "deploy", "the shop shows version 2.4.1", "active", 0, "none", null, null, null, null, ago(2), ago(2))
   step.run(3, "Tell the shop", "message", "sent to telegram chat demo-shop", "pending", 1, "approved", "The checkout fix is live. Thank you for your patience.", "telegram", "demo-shop", null, null, ago(94))
 })()
+
+// The Wall (#1180): a few more fictional requests, so the home page shows a
+// hand-off with its thread, a question for the owner and a closed task.
+db.transaction(() => {
+  const ids = ["req-docs-wall-handoff", "req-docs-wall-question", "req-docs-wall-done"]
+  for (const id of ids) db.prepare("DELETE FROM requests WHERE id = ?").run(id)
+  db.prepare("DELETE FROM task_traces WHERE task_id LIKE 'docs-wall-%'").run()
+  const req = db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, state_changed_at,
+    headline, need, headline_by, question, closed_at, evidence, home_kind, home_link, estimate_minutes)
+    VALUES (?, ?, ?, ?, 'Demo operator', 'cx', ?, ?, ?, ?, ?, ?, 'agent', ?, ?, ?, ?, ?, ?)`)
+  req.run(ids[0], "waiting_other", "gitlab", "demo/shop:issue:47", "Update the demo shop FAQ with the new delivery times, and ask @reviewer to check it.",
+    ago(70), ago(6), ago(30), "Update the demo shop FAQ with the new delivery times", "Nothing, just so you know.", null, null, null,
+    "issue", "https://example.com/demo/shop/issues/47", 30)
+  req.run(ids[1], "waiting_owner", "telegram", "demo-office", "Send the October newsletter to the demo office list.",
+    ago(180), ago(50), ago(50), "Send the October newsletter to the demo office", "Answer: which day should it go out?", "Which day should it go out: Monday or Tuesday?", null, null,
+    null, null, 15)
+  req.run(ids[2], "done", "dashboard", "demo", "Check the demo office FAQ links.",
+    ago(300), ago(20), ago(20), "Check the demo office FAQ links", "Nothing, just so you know.", null, ago(20), "https://example.com/demo/office/pull/12",
+    null, null, 20)
+  const trace = db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, chat_id, status, started_at, finished_at, duration_ms, message_preview, final_response, error)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const link = db.prepare("INSERT OR REPLACE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)")
+  trace.run("docs-wall-1", "cx", "gitlab", "demo/shop:issue:47", "ok", ago(69), ago(60), 9 * 60000, "Update the FAQ", "Updated the FAQ in MR !48 (commit 4f2a9c1b). Asked @reviewer to check the wording.", null)
+  trace.run("docs-wall-2", "reviewer", "a2a", "a2a:cx:reviewer:dlg-docs-1", "ok", ago(35), ago(31), 4 * 60000, "Check the FAQ wording", "Two wording fixes suggested on MR !48.", null)
+  trace.run("docs-wall-3", "cx", "telegram", "demo-office", "error", ago(170), ago(169), 60000, "Send the newsletter", null, "mail provider answered 503")
+  trace.run("docs-wall-4", "cx", "telegram", "demo-office", "ok", ago(51), ago(50), 70000, "Send the newsletter", "The draft is ready. Which day should it go out?", null)
+  trace.run("docs-wall-5", "cx", "dashboard", "demo", "ok", ago(40), ago(21), 19 * 60000, "Check the links", "All 14 links work; fixed two in https://example.com/demo/office/pull/12.", null)
+  link.run(ids[0], "run", "docs-wall-1", ago(69))
+  link.run(ids[0], "issue", "https://example.com/demo/shop/issues/47", ago(68))
+  link.run(ids[0], "delegation", "dlg-docs-1", ago(36))
+  link.run(ids[1], "run", "docs-wall-3", ago(170))
+  link.run(ids[1], "run", "docs-wall-4", ago(51))
+  link.run(ids[2], "run", "docs-wall-5", ago(40))
+})()
 db.close()
 
 // One real scheduled run, for the schedule drawer's Runs today: switch the
@@ -206,4 +240,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, a webhook, a board, an action, two places, and two real scripted task runs.")
+console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts, a webhook, a board, an action, two places, and two real scripted task runs.")

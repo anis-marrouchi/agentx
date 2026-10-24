@@ -149,6 +149,21 @@ export function timeFlag(r: RequestRecord, runs: WallRun[], runMs: number, now: 
   return null
 }
 
+/** The agent an unfinished hand-off of this request went to, read from
+ *  the A2A chat of its runs. Null: none open, or no run recorded yet. */
+function openHandoffTo(db: Database.Database | null, requestId: string): string | null {
+  if (!db) return null
+  return safe(() => {
+    const open = db.prepare("SELECT ref FROM request_links WHERE request_id = ? AND kind = 'delegation' AND ended IS NULL ORDER BY at DESC").all(requestId) as Array<{ ref: string }>
+    for (const l of open) {
+      const row = db.prepare("SELECT chat_id FROM task_traces WHERE chat_id LIKE ? ORDER BY started_at DESC LIMIT 1").get(`a2a:%:${l.ref}%`) as { chat_id: string } | undefined
+      const route = row ? a2aRoute(row.chat_id) : null
+      if (route) return route.to
+    }
+    return null
+  }, null)
+}
+
 export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
   const runs = runsOf(deps.db, r.id)
   const runMs = runs.reduce((n, x) => n + (x.durationMs ?? 0), 0)
@@ -158,7 +173,8 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
   const lastMoveAt = r.stateChangedAt ?? r.updatedAt
   let blocked: WallPost["blocked"] = null
   if (waiting || stall) {
-    const on = waitsOn(r, { isAgent: deps.isAgent, activeStepAgent: activeStepAgentOf(deps.plans) })
+    const handedTo = r.state === "waiting_other" ? openHandoffTo(deps.db, r.id) : null
+    const on = handedTo ? { who: handedTo } : waitsOn(r, { isAgent: deps.isAgent, activeStepAgent: activeStepAgentOf(deps.plans) })
     const why = r.state === "waiting_owner" ? (r.question ?? "waiting on the owner")
       : r.state === "needs_attention" ? (r.attentionReason ?? "needs attention")
       : stall ?? "waiting on another agent"

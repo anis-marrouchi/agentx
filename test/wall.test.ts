@@ -116,6 +116,15 @@ describe("posts", () => {
     expect(r1.blocked).toBeNull()
   })
 
+  it("names the agent a hand-off is waiting on", () => {
+    store.progress("r1", T0 + 3500, "waiting_other")
+    try {
+      expect(wallPosts(deps(), 7).find((p) => p.id === "r1")!.blocked?.who).toBe("pm")
+    } finally {
+      store.progress("r1", T0 + 3600)
+    }
+  })
+
   it("marks a post waiting on the owner as blocked, with who and since when", () => {
     const r2 = wallPosts(deps(), 7).find((p) => p.id === "r2")!
     expect(r2.blocked).toEqual({ who: "owner", why: "Which day?", since: T0 + 7000 })

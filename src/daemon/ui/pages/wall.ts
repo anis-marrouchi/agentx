@@ -46,7 +46,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on owner</option>
       <option value="in_progress">In progress</option><option value="closed">Closed</option><option value="">All</option>
     </select></label>
-    <label>No move for <select id="f-idle"><option value="0">any time</option><option value="1">1+ day</option><option value="3">3+ days</option><option value="7">7+ days</option></select></label>
+    <label>No move for <select id="f-idle"><option value="">any time</option><option value="1">1+ day</option><option value="3">3+ days</option><option value="7">7+ days</option></select></label>
     <label>Project <select id="f-project"><option value="">All</option></select></label>
     <label>Node <select id="f-node"><option value="">All</option></select></label>
     <label>Group <select id="f-group"><option value="">All</option></select></label>

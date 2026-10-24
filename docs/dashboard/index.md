@@ -19,12 +19,15 @@ If nothing loads, start the dashboard yourself:
    ```
 2. Keep that terminal open, and open the address again.
 
-![The top bar and the Live tab](/screenshots/live.png)
+![The top bar and the Wall](/screenshots/wall/wall.png)
 
-The top bar has eight tabs:
+The dashboard opens on the [Wall](./wall.md): every task as a post, with its thread, and what each machine is running now.
+
+The top bar has nine tabs:
 
 | Tab | What to look for |
 |---|---|
+| [Wall](./wall.md) | Every task as a post, its thread, and what runs now |
 | [Live](./live.md) | Agents currently running |
 | [Operations](./operations.md) | Work across connected machines |
 | [Monitor](./monitor.md) | What needs a person and what agents can handle |
