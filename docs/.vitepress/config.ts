@@ -10,6 +10,7 @@ const groups = [
     { text: "Before you start", link: "/requirements" },
     { text: "Install", link: "/install" },
     { text: "Your first agent", link: "/first-agent" },
+    { text: "Start from a ready-made team", link: "/jobs/ready-made-teams" },
     { text: "Connect Telegram", link: "/connect-telegram" },
   ] },
   { text: "Dashboard", collapsed: true, items: [

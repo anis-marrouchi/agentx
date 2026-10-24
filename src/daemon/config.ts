@@ -236,6 +236,10 @@ const agentConfigSchema = z.object({
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
   mentions: z.array(z.string()).default([]),
+  /** The team this agent was installed with (`agentx team add`, #1164).
+   *  `agentx team list` groups agents by it and `agentx team export <name>`
+   *  packs the agents that carry it. No effect on how the agent runs. */
+  team: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).optional(),
   /** Phase 5 — typed capabilities (drop-condition fallback). Free-form
    *  list of intent strings this agent is allowed to handle. When set,
    *  the org-chart `canHandle(agentId, project, intent)` check rejects

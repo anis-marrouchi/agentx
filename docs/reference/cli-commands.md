@@ -429,6 +429,55 @@ Preview a natural-language parse without writing anything.
 
 No flags.
 
+## team
+
+`agentx team`: Ready-made teams — list, add one in one step, export and import. See [Start from a ready-made team](../jobs/ready-made-teams.md).
+
+### `agentx team list`
+
+List the teams you can add, and the teams installed here.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Path to agentx.json. |
+
+### `agentx team add <name>`
+
+Add a team: its agents, skills and schedules. `<name>` is a team from `team list` or a package file.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--tier <tier>` | — | Runtime for every agent of the team (default: the package's, else claude-code). |
+| `--timezone <tz>` | — | Time zone for schedules that do not set one (default: this machine's). |
+| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. |
+| `--dry-run` | — | Show what would be added, write nothing. |
+| `-c, --config <path>` | — | Path to agentx.json. |
+
+### `agentx team import <file>`
+
+Add a team from a package file made by `team export`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--tier <tier>` | — | Runtime for every agent of the team (default: the package's, else claude-code). |
+| `--timezone <tz>` | — | Time zone for schedules that do not set one (default: this machine's). |
+| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. |
+| `--dry-run` | — | Show what would be added, write nothing. |
+| `-c, --config <path>` | — | Path to agentx.json. |
+
+### `agentx team export <name>`
+
+Write a team to one file you can share: agents, prompts, skills, schedules, channel kinds. No secrets.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-o, --output <file>` | — | File to write; - prints it (default: &lt;name&gt;.team.json). |
+| `--agents <ids...>` | — | Agents to export (default: the agents installed with this team). |
+| `--title <text>` | — | Title shown in `team list`. |
+| `--result <text>` | — | One line: the result this team delivers. |
+| `--description <text>` | — | A few lines on how the team works. |
+| `-c, --config <path>` | — | Path to agentx.json. |
+
 ## approvals
 
 `agentx approvals`: One inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, requests that are not finished).
