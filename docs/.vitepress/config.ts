@@ -141,7 +141,7 @@ const groups = [
 
 export default defineConfig({
   title: "AgentX",
-  description: "Put an AI teammate on the tools your team already uses.",
+  description: "AI teammates that get the work done in the tools your team already uses.",
   cleanUrls: true,
   lastUpdated: true,
   head: [
