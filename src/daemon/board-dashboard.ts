@@ -648,7 +648,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
 
   if (method === "GET" && path.startsWith("/api/admin/observability/")) {
-    if (await handleObservabilityApi(req, res, path)) return
+    if (await handleObservabilityApi(req, res, path, ctx.config)) return
   }
   // /api/admin/logs/stream — SSE tail of the daemon's stdout. Mirrors
   // `agentx daemon logs -f`. On systemd-managed nodes this calls

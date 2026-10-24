@@ -228,6 +228,17 @@ export const eventSubscriptionSchema = z.object({
   maxPerHour: z.number().int().min(1).max(60).default(4),
 })
 
+/** Monthly money budget (#1162): most this scope may spend in one
+ *  calendar month (UTC). Spend is the recorded cost of each run. At
+ *  warnRatio × monthlyUsd the owner gets one notice; at the cap new runs
+ *  are refused until the month ends or the cap is raised. Applies on save. */
+const monthlyBudgetSchema = z.object({
+  /** USD per calendar month. 0 or unset = no cap. */
+  monthlyUsd: z.number().min(0).max(1_000_000).optional(),
+  /** Share of the cap at which the owner is warned (default 0.8). */
+  warnRatio: z.number().gt(0).max(1).default(0.8),
+})
+
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
@@ -368,6 +379,8 @@ const agentConfigSchema = z.object({
    *  without a schema bump. Empty/unset means no enforcement
    *  (default — backward compatible). */
   toolUseRequired: z.array(z.string()).default([]),
+  /** Monthly money budget for this agent (#1162). See monthlyBudgetSchema. */
+  budget: monthlyBudgetSchema.optional(),
   /** Per-agent override for the channel-level `autoReplyLegacy` on
    *  gitlab/github. When set, it wins over `channels.<name>.autoReplyLegacy`
    *  for this agent's replies: `true` makes the daemon auto-post the agent's
@@ -1724,6 +1737,9 @@ export const daemonConfigSchema = z.object({
   }),
   providers: z.record(z.string(), providerConfigSchema).default({}),
   agents: z.record(z.string(), agentConfigSchema).default({}),
+  /** Monthly money budget for the whole fleet (#1162). Reaching it pauses
+   *  every agent until the month ends or the cap is raised. */
+  budget: monthlyBudgetSchema.optional(),
   /** Wiki-wide settings (#824). */
   wiki: z.object({
     /** The daily per-agent contribution and the merge that applies it.

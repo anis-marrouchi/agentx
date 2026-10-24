@@ -14,6 +14,7 @@ import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { setDispatchBudget } from "@/agents/claude-code-quota"
+import { budgetConfigFrom, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets } from "@/agents/agent-budget"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { isRestricted } from "@/guard/autonomy"
@@ -64,7 +65,7 @@ import { DEFAULT_REACH_SETTINGS } from "@/notify/reach"
 import { ChannelDownError } from "@/channels/router"
 import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
-import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
+import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { SignalService } from "@/agents/signals/service"
 import { StoppedTaskStore } from "@/agents/signals/store"
@@ -738,6 +739,8 @@ export class AgentXDaemon {
     } catch (e: any) {
       this.log(`  SQLite: skipped (${e.message})`)
     }
+
+    this.startBudgets()
 
     // Persistent-process registry (improvement plan #5, persistent flavor).
     // Only spin up when at least one agent opts in via persistentProcess:
@@ -1875,6 +1878,11 @@ export class AgentXDaemon {
       })
       applied.push("dispatch-budget")
     }
+    // Monthly money budgets (#1162): raising a cap resumes a paused agent.
+    if (JSON.stringify(budgetConfigFrom(this.config)) !== JSON.stringify(budgetConfigFrom(next))) {
+      setAgentBudgets(budgetConfigFrom(next))
+      applied.push("budgets")
+    }
 
     // 1. Crons — safe to hot-swap (stop + reinit)
     if (JSON.stringify(this.config.crons) !== JSON.stringify(next.crons)) {
@@ -2844,6 +2852,27 @@ export class AgentXDaemon {
     this.reachTimer = setInterval(() => { void reach.tick() }, 60_000)
     this.reachTimer.unref?.()
     return reach
+  }
+
+  /** Monthly money budgets (#1162). The month's spend so far comes from the
+   *  traces, so a restart neither forgets it nor repeats a notice; each run's
+   *  cost is added as it completes, and a line it crosses tells the owner
+   *  once. The registry refuses runs past a cap (preflightBudgetGate). */
+  private startBudgets(): void {
+    if (this.db) {
+      try {
+        seedMonthSpend(spendByAgentSince(this.db, monthStart()))
+      } catch (e: any) {
+        this.log(`  Budgets: couldn't read this month's spend (${e?.message ?? e}); counting from now`)
+      }
+    }
+    getAgentEventBus().on("task:completed", (p: AgentXEvents["task:completed"]) => {
+      for (const n of recordAgentSpend(p.agentId, p.costUsd)) {
+        this.log(`[budget] ${n.title}: ${n.message}`)
+        void this.notifyOwner(n.title, n.message, "budget", n.kind === "cap" ? 5 : 4, { key: `budget:${n.kind}:${n.scope}:${n.month}:${n.capUsd}` })
+          .catch((e) => this.log(`[budget] couldn't tell the owner (${e?.message ?? e})`))
+      }
+    })
   }
 
   /** Tell the owner through the notify path: a push to the default

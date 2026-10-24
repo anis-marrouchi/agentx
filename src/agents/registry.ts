@@ -53,6 +53,7 @@ import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
+import { budgetConfigFrom, preflightBudgetGate, setAgentBudgets } from "./agent-budget"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { describeProfile, fullClaudeArgs, isolatedClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
@@ -747,6 +748,8 @@ export class AgentRegistry {
       maxPerHour: config.session.maxClaudeCodeDispatchesPerHour,
       maxPer5h: config.session.maxClaudeCodeDispatchesPer5h,
     })
+    // Monthly money budgets (#1162). The daemon re-applies them on save.
+    setAgentBudgets(budgetConfigFrom(config))
 
     if (config.graph?.enabled) {
       this.graphStore = new GraphStore({
@@ -3064,6 +3067,24 @@ export class AgentRegistry {
         if (warning) this.log(`[${task.agentId}] ${warning}`)
         return null
       }
+      // Monthly money budget (#1162): an agent past its cap, or a fleet past
+      // the fleet cap, starts no new run, on any tier and warm or cold, until
+      // the cap is raised or the month turns.
+      const overBudget = preflightBudgetGate(task.agentId)
+      if (overBudget) {
+        traceStep("budget-gate")
+        this.log(`[${task.agentId}] run refused — ${overBudget.reason}`)
+        if (!onDelta) {
+          output.buffer = `[error] ${overBudget.message}`
+          for (const sub of output.subscribers) {
+            try { sub(output.buffer) } catch { /* */ }
+          }
+        }
+        state.errors++
+        finalResponse = { content: "", error: overBudget.message, errorKind: "usage_cap", duration: 0 }
+        return finalResponse
+      }
+
       const cloudRoute = this.planCloudSession(state.def, task)
       if (cloudRoute.route === "local") {
         const gated = runDispatchGates()
@@ -3184,6 +3205,12 @@ export class AgentRegistry {
       // threshold that TokenTracker.record() applies — extracted as a
       // helper so the two sites can never drift.
       const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
+      // What the run cost: the runtime's own figure when it reports one
+      // (Claude Code's total_cost_usd), else the tokens at the billed
+      // model's rate. Summed per agent per month for the budget (#1162).
+      const costUsd = response.costUsd ?? (split
+        ? this.tokenTracker.cost({ tasks: 1, totalDuration: 0, errors: 0, ...split }, response.billedModel || task.model || state.def.model || undefined)
+        : undefined)
       completedEmitted = true
       getEventBus().emit("task:completed", {
         taskId: traceTaskId,
@@ -3207,6 +3234,7 @@ export class AgentRegistry {
         resumeSessionId: resumeSessionId || undefined,
         jevArm: requestGate.arm,
         numTurns: response.numTurns,
+        costUsd: costUsd !== undefined && Number.isFinite(costUsd) && costUsd > 0 ? costUsd : undefined,
         injectedContext,
         finalResponse: response.content || undefined,
         // Per-task model attribution: prefer what the runtime actually
