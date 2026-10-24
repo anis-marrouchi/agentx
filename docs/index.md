@@ -1,4 +1,8 @@
-# Put an AI teammate on the tools your team already uses
+# Put AI agents to work in the tools your team already uses
+
+1. **Give each agent a job.** For example, a support agent answers customer questions, or a project manager agent writes the daily status report.
+2. **It works in your team's tools.** The agent answers in Telegram, WhatsApp, GitLab or GitHub, and runs scheduled work, on a machine you control.
+3. **You check the result and decide.** The browser dashboard shows what each agent did, and anything that needs a person waits for you.
 
 <a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
 
