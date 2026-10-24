@@ -27,6 +27,25 @@ A post shows:
 
 **Waits on** (in amber) says who the task is waiting for, since when, and why. **Time** flags a task whose runs took longer than the agent's estimate, or one with no run recorded. **Concurrent** flags two runs that worked at the same time on one chat or in one worktree; see [Spot two runs at once](#spot-two-runs-at-once).
 
+### GitLab time logged against the estimate
+
+When a task's home is a GitLab issue or merge request, the post also shows **GitLab time**: the time people logged on that issue or merge request in GitLab, against its estimate there (for example `1 h 30 min logged of 2 h`). GitLab calls this *time tracking*: the time you add with `/spend` and `/estimate` in a comment.
+
+![Three posts with GitLab time: one over its estimate, one with no time logged, one unknown](/screenshots/wall/gitlab-time.png)
+
+*Fictional data; your projects and agents will differ.*
+
+**GitLab time** (in amber) flags a mismatch:
+
+- **no time logged on active work**: an agent is working on it, but nobody logged time,
+- **closed with no time logged**: the task is done and no time was logged,
+- **over estimate**: more time was logged than the estimate,
+- **time logged, no move for N d**: time was logged, but the task has not moved for longer than the stale limit.
+
+The Wall only reads this from GitLab. It never logs time or changes the estimate. Tasks whose home is on GitHub or elsewhere show no GitLab time. When GitLab cannot be read, the post says **GitLab time unknown**, followed by the reason. In the list, point at **unknown** to see the reason.
+
+The machine that keeps the task reads its GitLab time with its own GitLab connection: the `channels.gitlab` channel or `requests.checkers.gitlab`. A machine with neither shows no GitLab time.
+
 ## Open a post's thread
 
 1. On a post, select **Thread**.
@@ -44,7 +63,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 ## Use the list to sort through many tasks
 
 1. Select **List** above the posts.
-2. Each task is one row: status, title, owner, project, machine, **days since its last move**, what it waits on, run time against the estimate, and runs.
+2. Each task is one row: status, title, owner, project, machine, **days since its last move**, what it waits on, run time against the estimate (with GitLab time under it), and runs.
 3. Select a column heading to sort by it. Select it again to reverse the order.
 4. Select a title to open that post and its thread.
 
@@ -52,14 +71,14 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 The filters work for both the feed and the list:
 
-- **Owner**, **Status** (Open, **Blocked**, Waiting on owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only**, **Concurrent only**, and a search box.
+- **Owner**, **Status** (Open, **Blocked**, Waiting on owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
 
 The filters are part of the page's address. Copy the address to share the same view.
 
 ### Keep your own daily view
 
-1. Set the filters you check every day, for example your name as owner and **Blocked**.
+1. Set the filters you check every day, for example your name as owner and **Blocked**, or your name as owner and **Time flags only** to see your time mismatches.
 2. Select **Save as my view**.
 3. Next time, select **My view**.
 
@@ -107,6 +126,7 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 3. Select **Thread** on it. You see the request and at least one **run**.
 4. Open `/live` in the browser. The classic Live page still opens.
 5. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
+6. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 
 ## If something is wrong
 
@@ -115,4 +135,6 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 - **A machine says "posts not shown":** its dashboard is not reachable from this one. Check the machine with `agentx daemon status`, then see [Add a second machine](../jobs/second-machine.md).
 - **"Thread not available":** the task belongs to another machine that stopped answering. Try again when its card says **up**.
 - **Two runs overlapped but no Concurrent line shows:** the flag compares runs on the same chat, or runs by two different agents in the same folder, that started within a day of each other, on machines that answer. A run on a machine marked **unreachable** is left out until it answers again.
+- **A post says "GitLab time unknown":** this machine could not read the issue's time tracking. The reason follows in brackets. "not found" usually means the GitLab token cannot see that project; check `channels.gitlab.token` or `requests.checkers.gitlab.token`. "did not answer in time" clears on the next refresh.
+- **No GitLab time on a GitLab task:** the machine that keeps the task has no GitLab connection, or the home link is on a different GitLab address than the one configured.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.

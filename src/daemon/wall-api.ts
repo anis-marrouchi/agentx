@@ -5,6 +5,7 @@ import { activeStepAgentOf, stalledWhy, waitsOn } from "@/requests/loops"
 import type { PlanStore } from "@/requests/plan-store"
 import { OPEN_STATES, type RequestRecord, type RequestStore } from "@/requests/store"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
+import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
 
 // --- The Wall's data (#1180) ---
 //
@@ -78,6 +79,9 @@ export interface WallPost {
   failedRuns: number
   /** Estimate against measured run time, in words. Null: nothing to flag. */
   timeFlag: string | null
+  /** The forge's own time tracking (#1189): GitLab homes only. Null: the
+   *  home has no time tracking this node can read. */
+  forgeTime: WallForgeTime | null
   lastRun: { taskId: string; agentId: string } | null
   /** Runs of this post that overlapped another run on the same chat or in
    *  the same worktree, with both run ids (#1187). Empty: none. */
@@ -262,6 +266,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     runs: runs.length,
     failedRuns: runs.filter((x) => x.status && FAILED.has(x.status)).length,
     timeFlag: timeFlag(r, runs, runMs, deps.now, deps.staleAfterHours),
+    forgeTime: null,
     lastRun: last ? { taskId: last.taskId, agentId: last.agentId! } : null,
     concurrent: concurrentOf(runs, deps),
   }
@@ -360,6 +365,17 @@ export function wallFailures(db: Database.Database | null, now: number): WallFai
     groups.set(key, { agentId: x.agent_id, status: x.status, signature, count: 1, lastAt: x.started_at, lastTaskId: x.task_id, error: clean(error, 300) })
   }
   return [...groups.values()]
+}
+
+/** A Wall reply with the forge's time set on its posts (#1189). Without a
+ *  source (no GitLab connector), posts keep forgeTime null. */
+export async function withForgeTime(
+  reply: { status: number; body: any }, deps: WallDeps | null, source: WallForgeTimeSource | null,
+): Promise<{ status: number; body: unknown }> {
+  if (!source || !deps || reply.status !== 200) return reply
+  const posts: WallPost[] = Array.isArray(reply.body?.posts) ? reply.body.posts : reply.body?.post ? [reply.body.post] : []
+  if (posts.length) await source.annotate(posts, deps.now, deps.staleAfterHours)
+  return reply
 }
 
 function safe<T>(fn: () => T, fallback: T): T {
