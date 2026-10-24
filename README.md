@@ -15,11 +15,42 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-22.19%E2%80%9326-brightgreen)](package.json)
 
-[Watch it](#watch-it) · [See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
+[Problems we solve](#problems-we-solve) · [Is it right for you?](#is-it-right-for-you) · [Watch it](#watch-it) · [See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
 
 </div>
 
 AgentX is a harness that runs a team of AI agents on a machine you control. A harness is the program around an AI model: it gives the model its channels, tools, schedules and memory, and records what it did. AgentX connects your agents to Telegram, WhatsApp, GitLab, GitHub, schedules and webhooks, on Claude Code, Codex, OpenCode or any model API. Give each agent a clear job. Watch the result in a browser dashboard.
+
+## Problems we solve
+
+| Your problem | What AgentX does | See how |
+|---|---|---|
+| "Customers write to us on WhatsApp at night and wait until morning for an answer." | An agent replies in the same chat within a minute, any time of day. | [Answer customers on WhatsApp](docs/jobs/answer-whatsapp.md) |
+| "My team asks me the same questions every day." | An agent answers one kind of question for you in your team's chat. | [Answer questions from a channel](docs/jobs/answer-questions.md) |
+| "Someone has to remember to write the daily report, and some days nobody does." | A schedule asks an agent for the report at a set time, every day, without anyone asking. | [Send a daily report](docs/jobs/daily-report.md) |
+| "Jobs with several steps stall because nobody remembers the next step." | AgentX runs the steps in order, reminds whoever is slow, and asks you before any message goes to a client. | [Let a workflow follow a request](docs/jobs/follow-up-workflows.md) |
+| "I ask for things all day and lose track of what is still open." | Every request that needs more than one answer stays on a list until someone closes it. | [Keep track of what you asked for](docs/jobs/open-requests.md) |
+| "Clients keep asking me where their request is." | Each client gets a page of their own that shows what they asked for and where it stands. | [Give a client a page of their own](docs/jobs/clients.md) |
+| "I can't tell what the AI did, or whether it got it right." | A dashboard on your own machine shows current work, finished work, and the work that needs a person. | [The dashboard](docs/dashboard/index.md) |
+| "I don't know which of my business data goes to an AI company." | AgentX runs on a machine you control, and one page lists exactly what leaves it and how to keep the rest at home. | [Your data](docs/your-data.md) |
+
+## Is it right for you?
+
+**AgentX is right for you if:**
+
+- You run a small team and want routine messages, reports and follow-ups handled without someone watching every step.
+- Your team already works in Telegram, WhatsApp, GitLab or GitHub.
+- You want the agents to run on a computer you control, not on someone else's service.
+- Someone on your team is comfortable with a terminal (the text window where you type commands) for a 10 to 20 minute install.
+- You are happy to use an early, changing project and to pay your own AI model provider. See [What this costs](docs/help/costs.md).
+
+**AgentX is not for you (yet) if:**
+
+- Nobody on your team can use a terminal. Installing AgentX and setting up its AI model still needs a technical person.
+- Your team works in Slack or Discord. They are not supported as live channels today. See the [channel reference](docs/reference/channels.md).
+- You need to decide who may see or do what, person by person. Role-based access control (RBAC) is planned, not available.
+- You need it on Windows. AgentX runs on macOS and Linux; Windows is untested.
+- You need a stable product with guarantees. AgentX is experimental: see [Current state](#current-state-usable-experimental-not-yet-stable).
 
 ## Watch it
 
