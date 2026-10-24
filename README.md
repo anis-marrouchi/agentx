@@ -6,7 +6,7 @@
 
 # AgentX
 
-**The self-hosted agent harness for small teams.**
+**Your AI team, at work in the tools you already use, on a machine you control.**
 
 <a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
 
@@ -19,7 +19,15 @@
 
 </div>
 
-AgentX is a harness that runs a team of AI agents on a machine you control. A harness is the program around an AI model: it gives the model its channels, tools, schedules and memory, and records what it did. AgentX connects your agents to Telegram, WhatsApp, GitLab, GitHub, schedules and webhooks, on Claude Code, Codex, OpenCode or any model API. Give each agent a clear job. Watch the result in a browser dashboard.
+1. **Give each agent a job.** One answers customers, one follows up on open issues, one sends the morning report.
+2. **It works where your team works.** Your agents answer in Telegram, WhatsApp, GitLab and GitHub, and run on a schedule or when a webhook arrives. They use Claude Code, Codex, OpenCode or any model API.
+3. **You see the result and decide.** The browser dashboard shows what got done, what needs you, and what each agent did to get there.
+
+![AgentX Monitor showing tasks that need your attention in the current dashboard](docs/public/screenshots/monitor-only-you.png)
+
+*The Monitor dashboard in the isolated demo: review tasks that need you, with in-page agent chat. All displayed tasks are fictional.*
+
+Under the hood, AgentX is a harness: the program around an AI model that gives it its channels, tools, schedules and memory, and records what it did. You host it yourself.
 
 ## Watch it
 
@@ -33,20 +41,6 @@ Short videos show AgentX running, one task each. Click the picture to open the *
 - [Phone part 2: Chat with your AI agents from a phone](https://youtu.be/ofX__nC53ZQ)
 - [Desktop part 1: Install the AgentX desktop widget on a Mac](https://youtu.be/XwTJjaTt5WE)
 - [Desktop part 2: The floating widget, the pill and the orb](https://youtu.be/catRqT5LoyY)
-
-## Current state: usable, experimental, not yet stable
-
-AgentX works and can be used today, but it is still an **experimental project, not a stable release**. There is plenty to polish and fix, especially the **Settings experience and configuration flows**. Expect rough edges and changes as people try it in real environments.
-
-Releases ship often; see the [changelog](CHANGELOG.md) for what changed. Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
-
-**Still missing: role-based access control (RBAC) at both mesh and agent levels.** We want to define who can access shared nodes and agents, delegate work, and perform particular actions. This would open up more possibilities for shared teams and multi-user deployments. Existing mesh authentication and tool permissions do not provide this complete role model; RBAC is planned work, not an available feature.
-
-[Try the demo](#see-it-without-an-account), [check the requirements](docs/requirements.md), or [help us test](#help-test-and-improve-agentx).
-
-![AgentX Monitor showing tasks that need your attention in the current dashboard](docs/public/screenshots/monitor-only-you.png)
-
-*The Monitor dashboard in the isolated demo: review tasks that need you, with in-page agent chat. All displayed tasks are fictional.*
 
 ## See it without an account
 
@@ -62,17 +56,27 @@ The demo starts three local AgentX daemons and sends a task between them. Routin
 
 ## What it does
 
-- **Answers where your team works.** Connect a channel and assign its messages to an agent.
-- **Runs scheduled work.** Ask an agent for a daily report or another recurring task.
-- **Shows what happened.** Live shows current work; Activity records completed runs; Monitor shows reviewed work that needs a person and work agents can handle.
-- **Offers several ways to interact.** Use [in-page chat](docs/dashboard/chat.md), the [OpenCode-backed TUI](docs/dashboard/tui.md), or the desktop assistant for voice and computer use.
-- **Grows across machines.** Start with one host, then pair another when a job needs its tools or files.
+- **Your team's messages get answered.** Connect a channel and assign its messages to an agent.
+- **Recurring work gets done without a reminder.** Ask an agent for a daily report or another recurring task.
+- **You know what happened and what needs you.** Live shows current work; Activity records completed runs; Monitor shows reviewed work that needs a person and work agents can handle.
+- **You reach your agents however suits you.** Use [in-page chat](docs/dashboard/chat.md), the [OpenCode-backed TUI](docs/dashboard/tui.md), or the desktop assistant for voice and computer use.
+- **Work runs on the machine that has the tools for it.** Start with one host, then pair another when a job needs its tools or files.
 
 ## Describe an automation, get an automation
 
 The Workflows editor has a chat control. Describe the timing, source, and destination in ordinary language. An authoring agent can propose a workflow and show an **Apply to canvas** action. Read the proposed steps before applying them: this replaces the current graph. Real authoring needs a working model. The demo includes a fixed example for **Build the demo report workflow**. [Walk through it](docs/automations/describe-it.md).
 
 ![The demo workflow assistant proposing a report](docs/public/screenshots/editor-chat-reply.png)
+
+## Current state: usable, experimental, not yet stable
+
+AgentX works and can be used today, but it is still an **experimental project, not a stable release**. There is plenty to polish and fix, especially the **Settings experience and configuration flows**. Expect rough edges and changes as people try it in real environments.
+
+Releases ship often; see the [changelog](CHANGELOG.md) for what changed. Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
+
+**Still missing: role-based access control (RBAC) at both mesh and agent levels.** We want to define who can access shared nodes and agents, delegate work, and perform particular actions. This would open up more possibilities for shared teams and multi-user deployments. Existing mesh authentication and tool permissions do not provide this complete role model; RBAC is planned work, not an available feature.
+
+[Try the demo](#see-it-without-an-account), [check the requirements](docs/requirements.md), or [help us test](#help-test-and-improve-agentx).
 
 ## Install
 

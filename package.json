@@ -1,7 +1,7 @@
 {
   "name": "agentix-cli",
   "version": "0.157.0",
-  "description": "The self-hosted agent harness for small teams. Runs a team of AI agents across Telegram, WhatsApp, GitLab, GitHub, crons, webhooks and mesh tasks, on Claude Code, Codex, OpenCode or any LLM API. Web wizard for operators, CLI for engineers.",
+  "description": "Your AI team, at work in the tools you already use, on a machine you control. Runs a team of AI agents across Telegram, WhatsApp, GitLab, GitHub, crons, webhooks and mesh tasks, on Claude Code, Codex, OpenCode or any LLM API. Web wizard for operators, CLI for engineers.",
   "license": "MIT",
   "author": {
     "name": "anis_marrouchi",
