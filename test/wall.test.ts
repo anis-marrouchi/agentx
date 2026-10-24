@@ -191,6 +191,15 @@ describe("thread", () => {
     expect(events.some((e) => e.ref === "t2-other")).toBe(false)
   })
 
+  it("redacts a hand-off's proof link and keeps the link", () => {
+    store.link("r3", "delegation", "dlg-proof1", T0 + 8600)
+    store.endLink("delegation", "dlg-proof1", "done", "https://gitlab.example.com/acme/web/-/merge_requests/5?token=supersecretvalue123", T0 + 8700)
+    const handoff = wallThread(store.get("r3")!, deps()).find((e) => e.kind === "handoff")!
+    expect(handoff.text).toContain("done: https://gitlab.example.com/acme/web/-/merge_requests/5?")
+    expect(handoff.text).toContain("[redacted]")
+    expect(handoff.text).not.toContain("supersecretvalue123")
+  })
+
   it("ends a closed post with its close and proof", () => {
     const events = wallThread(store.get("r3")!, deps())
     const closed = events.find((e) => e.kind === "closed")!

@@ -251,7 +251,7 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
         `SELECT task_id, agent_id, chat_id, status, started_at, duration_ms, final_response FROM task_traces WHERE ${HANDOFF_CHAT} ORDER BY started_at LIMIT 20`,
       ).all(...handoffArgs(l.ref)) as any[], []) : []
       const route = runs.map((x) => a2aRoute(String(x.chat_id))).find(Boolean) ?? undefined
-      const ended = l.ended ? ` — ${l.ended}${l.proof ? `: ${l.proof}` : ""}` : ""
+      const ended = l.ended ? ` — ${l.ended}${l.proof ? `: ${redactSecrets(l.proof)}` : ""}` : ""
       events.push(event({ at: l.at, kind: "handoff", who: route?.from ?? r.agentId, route, ref: l.ref, status: l.ended, text: `Asked ${route?.to ?? "another agent"} (${l.ref})${ended}` }))
       for (const x of runs) {
         events.push(event({
