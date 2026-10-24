@@ -235,6 +235,31 @@ Each card also says who a promise is owed to, when it is due, and what check clo
 
 A promise past its due time comes back to you once, like a request that needs attention, with the title **Promise not kept** and the group it waits on.
 
+## QA sign-off
+
+Some work should be checked by a second agent before it counts, for example a QA agent that tests a change. A request can carry that check's result, called a **QA verdict**. There are three verdicts:
+
+| Verdict | What it means |
+|---|---|
+| `block` | It must not ship as it is. The note says what is wrong. |
+| `risk` | It can ship, but with a risk the note names. |
+| `pass` | Signed off. |
+
+It works in two parts:
+
+1. The agent doing the work marks the request as needing QA. It passes `needsQa: true` with `accept`, `wait`, `promise` or `describe`, for example `{action:"accept", work:"code", estimateMinutes:30, needsQa:true}`.
+2. The QA agent records its verdict with its own `agentx_request` tool, action `qa`, and the request's id: `{action:"qa", id:"req-…", verdict:"block", note:"The export fails on an empty list."}`. A `block` or `risk` needs a note. A `pass` does not.
+
+Any agent on the computer can give a verdict, on an open request or on one that is already done. The verdict is kept with who gave it and when. Recording it does not tell anyone and does not count as progress on the work.
+
+A request is **awaiting QA** while it is marked as needing QA and has no verdict since it was marked. After a fix for a `block`, the agent marks it again with `needsQa: true`, and the request waits for a new verdict. The earlier verdicts are kept and `agentx requests show <id>` lists them all. `needsQa: false` removes the mark.
+
+Where you see it:
+
+- On the request's card under **Approvals** › **Open requests**: **Awaiting QA sign-off**, or **QA: PASS by …** with the time and the note.
+- In the terminal: `agentx requests show <id>`, and `agentx requests --qa awaiting` for every request still waiting on QA, open or done. `--qa block`, `--qa risk` and `--qa pass` list the requests whose latest verdict is that one.
+- From a script: `GET /requests?qa=awaiting` (see [Read the list from a script](#read-the-list-from-a-script)).
+
 ## Where a request landed
 
 When an agent takes a request on, waits on you, or closes it as done, it can say where the work lives: its **home**. One of:
@@ -263,6 +288,7 @@ Run `agentx requests today`. It lists every request made since 00:00 Tunis time,
 | `closed=1` | Open and closed alike, like `state=all`. |
 | `since=<epoch ms>` | Made since then, open or closed, each with its links. |
 | `closedSince=<epoch ms>` | Closed since then, whenever it was made. |
+| `qa=awaiting` | Marked as needing QA, with no verdict yet. Also `qa=block`, `qa=risk` or `qa=pass`: the latest verdict is that one. Open and closed alike, unless `state` is given. See [QA sign-off](#qa-sign-off). |
 | `links=1` | Each request with its links: runs, delegations, cards and homes. |
 | `limit=<n>` | 1 to 500. Default 100. |
 | `offset=<n>` | Page from the oldest; the reply gives `nextOffset` while there is more. |
@@ -319,6 +345,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its card under **Approvals** › **Open requests** is titled with a few plain words, shows **Needed from you**, and keeps your words under **You said**. `agentx requests show <id>` shows the same `headline`.
 13. **Terminal:** run `agentx requests settings`. The line `Headlines` says `on: written when the agent gave none`, or `off` after `--headlines off`.
 14. **Terminal:** in the same output, the line `Handed work came back` says `closed when quiet, with its link or marked unproven`. A day after an agent hands work on and gets a done answer without closing the request, the daemon log has a `settled` line for it, and `agentx requests show <id>` shows it done, with the link or `unproven: …` as its evidence.
+15. Ask an agent to make a change and mark it as needing QA, then ask a second agent to check it and give its verdict.
+16. **Terminal:** run `agentx requests --qa awaiting` before the verdict. The request is listed with `Awaiting QA`. After the verdict, run `agentx requests show <id>`. It shows `QA: PASS by <agent>, <time>` (or `BLOCK` or `RISK` with the note).
 
 ## If something is wrong
 
@@ -340,4 +368,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A card is still titled with your own words:** the agent did not describe the request and no headline could be written. The daemon log has a line `[requests] <id>: headline not written: …` with the reason. A common cause is that the engine set in `requests.headlines.provider` is not signed in on this computer. Each request is tried once, and not again after a restart; the agent can still describe it. To see the start of your words as the title on purpose, run `agentx requests settings --headlines off`.
 - **`--headlines takes on or off`:** write `on` or `off`, nothing else.
 - **An agent's describe is refused with `headline is only a reference`:** the headline was only an issue number, an id or a link. Say what the request is in words, and put the link in the request's `home` instead.
+- **A QA verdict is refused with `a block verdict needs a note`:** a `block` or `risk` needs a sentence that says what is wrong. Add `note`.
+- **A QA verdict is refused with `qa needs id`:** the QA agent's turn is not the request's own, so it must name the request. `agentx requests` or the agent's `list` shows the ids.
+- **A request stays in `--qa awaiting` after a verdict:** it was marked as needing QA again after that verdict, so a new one is awaited. `agentx requests show <id>` lists every verdict with its time.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.

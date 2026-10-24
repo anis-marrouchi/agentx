@@ -953,6 +953,8 @@ const TOOLS = [
       "An accept of such work without steps is refused (the owner sets which kinds and the limit). " +
       "Report on a step you own with action step (status progress, done with evidence, or blocked with a note). " +
       "When you commit to something for someone (the owner, another agent, an outside person: 'I will send the file by Friday'), record it with promise (owedTo, text, due, closeWhen): it stays open until it is kept. " +
+      "When the work must be signed off by QA before it counts, pass needsQa:true on accept, wait, promise or describe. " +
+      "A QA agent records its verdict with qa: {action:'qa', id, verdict:'block'|'risk'|'pass', note}; block and risk need the note (what is wrong). It works on any agent's request, open or closed, and sends nothing. " +
       "On accept, wait or promise, give headline (what it is, in a few plain words: it titles the owner's card, push and Desk line instead of their own transcript) and need (the one thing you need from them, or 'Nothing, just so you know.'); describe changes them later. " +
       "Example: {action:'done', evidence:'https://example.com/pull/42'}. " +
       "Describe example: {action:'accept', work:'research', estimateMinutes:20, headline:'Compare three hosting offers', need:'Nothing, just so you know.'}. " +
@@ -960,7 +962,9 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "list"], description: "list (default), accept, wait, done, decline, step, promise or describe." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list"], description: "list (default), accept, wait, done, decline, step, promise, describe or qa." },
+        needsQa: { type: "boolean", description: "accept, wait, promise, describe, optional: true marks the request as needing a QA verdict (again, after a fix); false clears the mark." },
+        verdict: { type: "string", enum: ["block", "risk", "pass"], description: "qa: block (must not ship as it is), risk (can ship, with a named risk) or pass (signed off)." },
         headline: { type: "string", description: "accept, wait, promise, describe: what the request is, in a few plain words (at most 80 characters, no bare ids or links). Titles the owner's card, push and Desk line." },
         need: { type: "string", description: "accept, wait, promise, describe: the one thing you need from the owner (at most 160 characters), or 'Nothing, just so you know.'" },
         id: { type: "string", description: "The request id, when it is not the request of this turn. Always pass it for step." },
@@ -986,7 +990,7 @@ const TOOLS = [
         estimateMinutes: { type: "number", description: "accept: how many minutes you expect the work to take. Over the configured limit it needs steps." },
         step: { type: "number", description: "step: the step's number in the plan (1 is the first)." },
         status: { type: "string", enum: ["progress", "done", "blocked"], description: "step: progress (still under way), done (give evidence) or blocked (give note)." },
-        note: { type: "string", description: "step: what is happening, or why it is blocked." },
+        note: { type: "string", description: "step: what is happening, or why it is blocked. qa: why, in a sentence; needed for block and risk." },
         question: { type: "string", description: "wait: what you are asking the owner." },
         evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
         proof: {
