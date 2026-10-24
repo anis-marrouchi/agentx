@@ -77,6 +77,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
 }
 
 const WALL_PAGE_CSS = `
+/* A display rule beats the user agent's [hidden] rule: keep hidden hidden. */
+.ax-wall [hidden] { display: none !important; }
 .ax-wall { display: flex; flex-direction: column; gap: var(--ax-gap); max-width: 1180px; margin: 0 auto; }
 .ax-wall h2 { font-size: var(--ax-fs-sm); text-transform: uppercase; letter-spacing: .06em; color: var(--ax-muted); margin: 0 0 8px; }
 .ax-wall__empty, .ax-wall__count { color: var(--ax-muted); font-size: var(--ax-fs-sm); margin: 0; }
