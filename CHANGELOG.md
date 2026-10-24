@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.158.0](https://github.com/anis-marrouchi/agentx/compare/v0.157.0...v0.158.0) (2026-10-24)
+
+
+### Features
+
+* **dashboard:** Wall becomes the main view ([#1180](https://github.com/anis-marrouchi/agentx/issues/1180)) ([#1181](https://github.com/anis-marrouchi/agentx/issues/1181)) ([c3c9c31](https://github.com/anis-marrouchi/agentx/commit/c3c9c3172274d37814d071edea2fa8c04133b5cd))
+
 ## [0.157.0](https://github.com/anis-marrouchi/agentx/compare/v0.156.0...v0.157.0) (2026-10-23)
 
 
