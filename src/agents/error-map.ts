@@ -16,6 +16,8 @@ export interface FriendlyError {
     | "out_of_credits"
     | "overage_disabled"
     | "usage_cap"
+    /** An agent or the fleet reached its AgentX monthly budget (#1162). */
+    | "budget_cap"
     | "auth"
     | "permission"
     | "rate_limit"

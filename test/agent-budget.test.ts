@@ -147,3 +147,16 @@ describe("trace sum", () => {
     expect(spendByAgentSince(db, Date.now() + 60_000)).toEqual({})
   })
 })
+
+describe("which runs are priced from tokens", () => {
+  it("prices Claude models only", async () => {
+    const { isPricedModel } = await import("../src/daemon/token-tracker")
+    expect(isPricedModel("claude-sonnet-4-6")).toBe(true)
+    expect(isPricedModel("opus")).toBe(true)
+    expect(isPricedModel(undefined, "claude-code")).toBe(true)
+    expect(isPricedModel("gpt-5.5", "codex-cli")).toBe(false)
+    expect(isPricedModel("gemini-2.5-pro", "sdk")).toBe(false)
+    expect(isPricedModel("qwen3:32b", "sdk")).toBe(false)
+    expect(isPricedModel(undefined, "codex-cli")).toBe(false)
+  })
+})

@@ -1881,6 +1881,8 @@ export class AgentXDaemon {
     // Monthly money budgets (#1162): raising a cap resumes a paused agent.
     if (JSON.stringify(budgetConfigFrom(this.config)) !== JSON.stringify(budgetConfigFrom(next))) {
       setAgentBudgets(budgetConfigFrom(next))
+      // A raised cap lets the messages held for a paused agent run now.
+      this.registry.releaseBudgetHolds()
       applied.push("budgets")
     }
 

@@ -199,11 +199,13 @@ Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a ch
 
 ## Set a monthly budget for an agent
 
-A budget is the most an agent may spend in one calendar month. The month follows UTC (world time), so it can turn a few hours before or after midnight where you are. AgentX adds up what each run cost: the price Claude Code reports for the run, or, for other engines, the tokens priced at the model's rate (the same prices as the Cost page).
+A budget is the most an agent may spend in one calendar month. The month follows UTC (world time), so it can turn a few hours before or after midnight where you are. AgentX adds up what each run cost: the price Claude Code reports for the run, or, for a run on another Claude engine, its tokens priced at the model's rate (the same prices as the Cost page). Runs on models that aren't Claude (such as GPT, Gemini or a local model) have no price in AgentX, so they don't count toward a budget.
 
 - When an agent reaches 80% of its budget, you get one notice. It is not repeated that month.
-- When it reaches 100%, the agent is paused: new runs for it are refused, and the error says why and which setting to raise. Other agents keep working.
-- On the first day of the next month, or as soon as you raise the budget, the agent works again.
+- When it reaches 100%, the agent is paused. Other agents keep working.
+  - A message sent to it in a chat (Telegram, WhatsApp, GitHub, GitLab and other channels) waits. The chat gets one reply that says why; further messages in that chat wait without a reply. Up to 200 messages wait per agent.
+  - Work that needs an answer at once, such as a schedule, another agent or the API, is refused, and the error says why and which setting to raise.
+- On the first day of the next month, or as soon as you raise the budget, the agent works again. The messages that waited then run in order, and their answers go to their chats.
 
 On a Claude subscription the figures are what the work would cost with an API key (see [See what your agents spent](#see-what-your-agents-spent)), so a budget then limits how much of the plan an agent may use.
 
@@ -227,7 +229,7 @@ On a Claude subscription the figures are what the work would cost with an API ke
 
 ![The Monthly budgets card on the Cost page, with one agent near its cap and one paused](/screenshots/costs/budgets.png)
 
-To resume a paused agent before the month ends, raise its `monthlyUsd` and save the file.
+To resume a paused agent before the month ends, raise its `monthlyUsd` and save the file. Waiting messages are kept in memory only: if the daemon restarts while the agent is paused, they are lost, and the people who sent them need to send them again.
 
 ## Check it worked
 
@@ -257,5 +259,6 @@ To resume a paused agent before the month ends, raise its `monthlyUsd` and save 
 - **`Monthly budget reached: agent … has spent …`:** the agent used its budget for this month. Raise `agents.<id>.budget.monthlyUsd` in `agentx.json` and save, or wait for the next month.
 - **`Monthly fleet budget reached: …`:** all agents together reached the top-level `budget.monthlyUsd`. Raise it and save, or wait for the next month.
 - **The Monthly budgets card is missing:** no agent has a `budget` with `monthlyUsd` above `0`, or the dashboard can't read `.agentx/db.sqlite` yet. Set a budget, let an agent run once, then reload the page.
-- **An agent's spend stays at `$0` with a budget set:** its engine reports no tokens and no price, for example some models outside Claude. AgentX can't count what it can't see, so the budget never pauses it. Check that provider's billing page.
+- **An agent's spend stays at `$0` with a budget set:** the agent runs on a model that isn't Claude (such as GPT, Gemini or a local model), or its engine reports no tokens. AgentX has no price for those runs, so the budget never pauses the agent. Check that provider's billing page.
+- **A chat got `This message is kept and runs when the agent resumes` and no answer came:** the agent is still over its budget. Raise `agents.<id>.budget.monthlyUsd` and save; the waiting messages run within a minute. If the daemon restarted meanwhile, the message was lost: send it again.
 - **Spending is higher than expected:** check **Settings** › **Schedules** for jobs that run very often, and lower their frequency.
