@@ -385,6 +385,10 @@ export const WALL_PAGE_SCRIPT = String.raw`
     $('f-' + k).addEventListener(k === 'q' ? 'input' : 'change', function () { writeHash(); render(); });
   });
   $('wall-refresh').addEventListener('click', load);
+  $('f-toggle').addEventListener('click', function () {
+    var open = $('f-toggle').parentNode.classList.toggle('is-open');
+    $('f-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
   $('v-save').addEventListener('click', function () {
     writeHash();
     try { localStorage.setItem(SAVED_KEY, location.hash); $('v-save').textContent = 'Saved'; setTimeout(function () { $('v-save').textContent = 'Save as my view'; }, 1500); } catch (e) { /* private mode: nothing kept */ }

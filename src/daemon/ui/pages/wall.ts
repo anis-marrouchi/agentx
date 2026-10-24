@@ -41,6 +41,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <button type="button" role="tab" data-view="list">List</button>
       <button type="button" role="tab" data-view="failures">Failures <span id="wall-fail-n"></span></button>
     </div>
+    <button type="button" id="f-toggle" class="ax-btn ax-btn--ghost ax-wall__ftoggle" aria-expanded="false">Filters</button>
     <label>Owner <select id="f-owner"><option value="">All</option></select></label>
     <label>Status <select id="f-status">
       <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on owner</option>
@@ -134,7 +135,12 @@ const WALL_PAGE_CSS = `
 .wf h3 { margin: 0 0 6px; font-size: var(--ax-fs); }
 .wf ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--ax-fs-sm); }
 .wf .err { color: var(--ax-text-2); font-family: var(--ax-mono); font-size: var(--ax-fs-xs); overflow-wrap: anywhere; }
+.ax-wall__ftoggle { display: none; }
 @media (max-width: 640px) {
+  .ax-wall__nodes > div { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; }
+  .wn { flex: 0 0 78%; scroll-snap-align: start; }
+  .ax-wall__ftoggle { display: inline-flex; }
+  .ax-wall__filters:not(.is-open) > label, .ax-wall__filters:not(.is-open) > input, .ax-wall__filters:not(.is-open) > .ax-wall__saved { display: none; }
   .ax-wall__filters { position: static; }
   .ax-wall__filters label { flex: 1 1 45%; display: flex; flex-direction: column; gap: 2px; }
   .ax-wall__filters select, .ax-wall__filters input[type=search] { max-width: none; width: 100%; }

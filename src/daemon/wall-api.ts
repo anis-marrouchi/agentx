@@ -255,7 +255,7 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
         }, x.final_response ?? ""))
       }
     } else if (["issue", "idea", "approval", "erp"].includes(l.kind)) {
-      events.push(event({ at: l.at, kind: "home", who: null, ref: l.ref, text: `Home: ${l.kind} ${l.ref}` }))
+      events.push(event({ at: l.at, kind: "home", who: null, ref: l.ref, text: `Home: ${l.kind}` }, ""))
     } else {
       events.push(event({ at: l.at, kind: "link", who: null, ref: l.ref, status: l.ended, text: `${l.kind} ${l.ref}${l.ended ? ` — ${l.ended}` : ""}` }))
     }
