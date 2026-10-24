@@ -67,7 +67,7 @@ The view is kept in this browser only. Nothing is stored in AgentX and nobody is
 
 ## Spot two runs at once
 
-A **concurrent** run is two runs going at the same time on the same chat, or in the same **worktree** (the folder on disk an agent works in). It usually means one task was sent to two agents, or one agent started on it twice. The two runs can then answer twice or change the same files.
+A **concurrent** run is two runs going at the same time on the same chat, or two different agents working at the same time in the same **worktree** (the folder on disk an agent works in). It usually means one task was sent to two agents, or one agent started on it twice. The two runs can then answer twice or change the same files. One agent running two tasks on different chats in its own folder is normal and is not flagged.
 
 ![A post flagged Concurrent, with both run ids, in the isolated demo](/screenshots/wall/concurrent.png)
 
@@ -114,5 +114,5 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 - **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **A machine says "posts not shown":** its dashboard is not reachable from this one. Check the machine with `agentx daemon status`, then see [Add a second machine](../jobs/second-machine.md).
 - **"Thread not available":** the task belongs to another machine that stopped answering. Try again when its card says **up**.
-- **Two runs overlapped but no Concurrent line shows:** the flag compares runs on the same chat or in the same agent folder that started within a day of each other, on machines that answer. A run on a machine marked **unreachable** is left out until it answers again.
+- **Two runs overlapped but no Concurrent line shows:** the flag compares runs on the same chat, or runs by two different agents in the same folder, that started within a day of each other, on machines that answer. A run on a machine marked **unreachable** is left out until it answers again.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.

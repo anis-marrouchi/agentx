@@ -38,13 +38,20 @@ describe("findOverlaps", () => {
     expect(findOverlaps([span("a", "coder", "telegram:chat-A", 0, 10), span("b", "pm", "telegram:chat-B", 5, 15)], T0 + 60 * M)).toEqual([])
   })
 
-  it("flags two runs in one worktree on different chats, naming the folder only", () => {
+  it("flags two agents' runs in one worktree on different chats, naming the folder only", () => {
     const out = findOverlaps([
       span("a", "coder", "telegram:chat-A", 0, 10, "/srv/work/web"),
-      span("b", "coder", "telegram:chat-B", 5, null, "/srv/work/web"),
+      span("b", "ops", "telegram:chat-B", 5, null, "/srv/work/web"),
     ], T0 + 60 * M)
     expect(out).toHaveLength(1)
     expect(out[0]).toMatchObject({ on: ["worktree"], chat: null, worktree: "web", runs: ["a", "b"] })
+  })
+
+  it("does not flag one agent running two chats in its own workspace", () => {
+    expect(findOverlaps([
+      span("a", "coder", "telegram:chat-A", 0, 10, "/srv/work/web"),
+      span("b", "coder", "telegram:chat-B", 5, 15, "/srv/work/web"),
+    ], T0 + 60 * M)).toEqual([])
   })
 
   it("treats a run still going as ending now", () => {
@@ -78,6 +85,9 @@ describe("Wall posts", () => {
     process.chdir(mkdtempSync(join(tmpdir(), "agentx-wall-conc-")))
     db = openDb({ quiet: true })!
     store = new RequestStore(db)
+    // A busy day: 250 earlier runs on another chat, all finished before r1
+    // starts. They must not crowd the real overlap out of the read.
+    for (let i = 0; i < 250; i++) trace(`noise-${i}`, "pm", "chat-Z", -600 + i, -599 + i)
     // r1: coder's run, and pm answering the same chat at the same time.
     store.addCandidate({ id: "r1", runId: "t1", channel: "telegram", chatId: "chat-A", agentId: "coder", text: "Fix the login page", now: T0 })
     store.progress("r1", T0)
@@ -153,8 +163,11 @@ describe("Running now", () => {
     expect(out[0]).toMatchObject({ on: ["chat"], runs: expect.arrayContaining(["tr-1", "tr-2"]), to: null })
   })
 
-  it("flags two runs in one worktree, and never sends the full path", async () => {
-    agents = [{ id: "coder", name: "Coder", workspace: "/srv/work/web", runningTasks: [task("1", "chat-A"), task("2", "chat-B")] }]
+  it("flags two agents' runs in one worktree, and never sends the full path", async () => {
+    agents = [
+      { id: "coder", name: "Coder", workspace: "/srv/work/web", runningTasks: [task("1", "chat-A")] },
+      { id: "ops", name: "Ops", workspace: "/srv/work/web", runningTasks: [task("2", "chat-B")] },
+    ]
     const node = await fetchDaemonAgents(url)
     const out = liveOverlaps([node])
     expect(out[0]).toMatchObject({ on: ["worktree"], worktree: "web" })

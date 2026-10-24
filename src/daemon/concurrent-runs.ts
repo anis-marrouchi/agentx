@@ -3,9 +3,10 @@ import { basename, resolve } from "path"
 // --- Concurrent sessions (#1187, #1180 item 21) ---
 //
 // Two runs that were going at the same time on one chat, or in one
-// worktree (the agent's workspace folder), are flagged. That is a task
-// sent to two agents at once, or two runs of one agent racing on the same
-// files. Read-only: the spans come from task traces and /api/live.
+// worktree (an agent's workspace folder) by two different agents, are
+// flagged. That is a task sent to two agents at once, or two agents
+// racing on the same files. Read-only: the spans come from task traces
+// and /api/live.
 //
 // Runs only overlap when one starts before the other ends; a run that
 // starts the moment another ends (back to back) is not flagged.
@@ -63,7 +64,9 @@ export function findOverlaps(spans: RunSpan[], now: number): RunOverlap[] {
       if (a.startedAt >= end(b)) continue
       const on: RunOverlap["on"] = []
       if (a.chat && a.chat === b.chat) on.push("chat")
-      if (a.worktree && a.worktree === b.worktree) on.push("worktree")
+      // One agent running two tasks in its own workspace is normal (on the
+      // Mac it is ~200 pairs a day); two agents sharing a folder race.
+      if (a.worktree && a.worktree === b.worktree && a.agentId !== b.agentId) on.push("worktree")
       if (!on.length) continue
       const stillA = a.endedAt === null, stillB = b.endedAt === null
       out.push({

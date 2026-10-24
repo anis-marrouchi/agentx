@@ -170,17 +170,20 @@ export function concurrentOf(runs: WallRun[], deps: WallDeps): RunOverlap[] {
   const agents = traceAgents.get(deps) ?? safe(() => (db.prepare("SELECT DISTINCT agent_id AS a FROM task_traces").all() as Array<{ a: string }>).map((x) => x.a), [] as string[])
   traceAgents.set(deps, agents)
   if (agents.length === 0) return []
-  // agent_id IN (…) keeps the read on idx_traces_agent_started.
+  // agent_id IN (…) keeps the read on idx_traces_agent_started. Only runs
+  // still going when this one started: a busy node logs 500+ runs a day,
+  // so the oldest rows of the lookback would crowd out the real overlaps.
   const q = safe(() => db.prepare(
     `SELECT task_id AS taskId, agent_id AS agentId, channel, chat_id AS chatId, status, started_at AS startedAt,
             finished_at AS finishedAt, duration_ms AS durationMs
      FROM task_traces WHERE agent_id IN (${agents.map(() => "?").join(",")}) AND started_at >= ? AND started_at < ?
-     ORDER BY started_at LIMIT ${OVERLAP_CANDIDATES}`,
+       AND (status = 'in-flight' OR COALESCE(finished_at, started_at + COALESCE(duration_ms, 0)) > ?)
+     ORDER BY started_at DESC LIMIT ${OVERLAP_CANDIDATES}`,
   ), null)
   if (!q) return []
   const spans = new Map(own.map((s) => [s.runId, s] as const))
   for (const s of own) {
-    const rows = safe(() => q.all(...agents, s.startedAt - OVERLAP_LOOKBACK, s.endedAt ?? deps.now) as any[], [])
+    const rows = safe(() => q.all(...agents, s.startedAt - OVERLAP_LOOKBACK, s.endedAt ?? deps.now, s.startedAt) as any[], [])
     for (const row of rows) {
       const o = spanOf(row, deps)
       if (!o || spans.has(o.runId)) continue
