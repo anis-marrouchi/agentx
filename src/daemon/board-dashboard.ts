@@ -610,6 +610,11 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         return
       }
       if (path === WALL_PREFIX && method === "GET") {
+        // This branch runs before the /api/admin/* token gate below.
+        if (!adminTokenOk(req, ctx)) {
+          sendJson(res, 401, { error: "unauthorized" })
+          return
+        }
         sendJson(res, 200, await buildWallFleet(url.searchParams, ctx))
         return
       }
@@ -755,17 +760,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // Local admin calls: enforce dashboard.token (if configured) BEFORE the
     // dispatcher runs. The legacy ctx.token check further down only catches
     // paths nothing else handled — admin routes were silently bypassing it.
-    if (ctx.token) {
-      const authHeader = req.headers.authorization || ""
-      const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-      if (got !== ctx.token) {
-        const tokStore = new TokenStore()
-        const rec = got ? tokStore.verify(got) : null
-        if (!rec || !recordHasScope(rec, "dashboard:write")) {
-          sendJson(res, 401, { error: "unauthorized" })
-          return
-        }
-      }
+    if (!adminTokenOk(req, ctx)) {
+      sendJson(res, 401, { error: "unauthorized" })
+      return
     }
   }
   if (method === "GET" && path === "/api/admin/config") {
@@ -2986,6 +2983,16 @@ async function handleActivityGraphFleet(
   const url = new URL(req.url || "/", "http://_")
   const hours = parseInt(url.searchParams.get("hours") || "6", 10) || 6
   sendJson(res, 200, await withForgeStatus(await buildFleetActivitySnapshot(hours, ctx.config)))
+}
+
+/** dashboard.token (if configured), or a stored token with dashboard:write. */
+function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
+  if (!ctx.token) return true
+  const authHeader = req.headers.authorization || ""
+  const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+  if (got === ctx.token) return true
+  const rec = got ? new TokenStore().verify(got) : null
+  return !!rec && recordHasScope(rec, "dashboard:write")
 }
 
 function localNodeName(config: DaemonConfig): string {

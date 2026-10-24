@@ -13,7 +13,7 @@ import { PlanStore } from "../src/requests/plan-store"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { recordTraceStart, recordTraceEnd } from "../src/storage/traces"
 import {
-  a2aRoute, handleWallApi, mentionsIn, projectOf, sourceIdsIn, wallFailures, wallPosts, wallThread, type WallDeps,
+  a2aRoute, handleWallApi, mentionsIn, projectOf, sourceIdsIn, wallFailures, wallPost, wallPosts, wallThread, type WallDeps,
 } from "../src/daemon/wall-api"
 import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
 
@@ -35,8 +35,8 @@ function deps(now = Date.now()): WallDeps {
   return { store, plans, db, now, staleAfterHours: 24, isAgent: (id) => ["coder", "pm", "secretary"].includes(id) }
 }
 
-function run(taskId: string, agentId: string, chatId: string, end: { status: "ok" | "error" | "timeout"; text?: string; error?: string }) {
-  recordTraceStart(db, { agentId, channel: chatId.startsWith("a2a:") ? "a2a" : "telegram", chatId, messagePreview: "go" }, taskId)
+function run(taskId: string, agentId: string, chatId: string, end: { status: "ok" | "error" | "timeout"; text?: string; error?: string }, channel?: string) {
+  recordTraceStart(db, { agentId, channel: channel ?? (chatId.startsWith("a2a:") ? "a2a" : "telegram"), chatId, messagePreview: "go" }, taskId)
   recordTraceEnd(db, taskId, { status: end.status, finalResponse: end.text, error: end.error } as any)
 }
 
@@ -66,7 +66,9 @@ beforeAll(async () => {
   store.setHome("r1", { kind: "issue", link: "https://gitlab.example.com/acme/web/-/issues/42" }, T0 + 2000)
   store.link("r1", "delegation", "dlg-abc123", T0 + 3000)
   run("t1", "coder", "chat-A", { status: "ok", text: "Asked @pm to check, commit 1a2b3c4d" })
-  run("t2", "pm", "a2a:coder:pm:dlg-abc123-x", { status: "ok", text: "Checked, looks fine" })
+  run("t2", "pm", "a2a:coder:pm:dlg-abc123", { status: "ok", text: "Checked, looks fine" })
+  // Another dialog whose id starts with r1's: never part of r1's thread.
+  run("t2-other", "secretary", "a2a:coder:secretary:dlg-abc1234", { status: "ok", text: "longer dialog id" })
   plans.create("r1", "coder", [
     { name: "Write the fix", kind: "code", agentId: "coder", doneWhen: "PR open", needsApproval: false },
     { name: "Review", kind: "review", agentId: "pm", doneWhen: "approved", needsApproval: false },
@@ -84,6 +86,9 @@ beforeAll(async () => {
   store.progress("r3", T0 + 8500)
   store.close("r3", "done", "https://gitlab.example.com/acme/api/-/merge_requests/9", T0 + 9000)
   run("t5", "coder", "acme/api:issue:7", { status: "ok", text: "Done" })
+
+  // A GitLab webhook run that ended without a reply (forge channel, as stored live).
+  run("t-hook", "coder", "acme/api:merge_request:11", { status: "ok" }, "gitlab")
 
   // A run in chat-A that is not linked to any request: never in a post.
   run("t-other", "coder", "chat-A", { status: "ok", text: "unrelated chat-A turn" })
@@ -144,6 +149,13 @@ describe("posts", () => {
     expect(thread[0].text).toContain("[redacted]")
     expect(JSON.stringify(thread)).not.toContain("supersecretvalue123")
   })
+
+  it("redacts the proof and keeps a link a link", () => {
+    const r3 = { ...store.get("r3")!, evidence: "https://gitlab.example.com/acme/api/-/merge_requests/9 token=supersecretvalue123" }
+    const post = wallPost(r3, deps())
+    expect(post.evidence).toContain("https://gitlab.example.com/acme/api/-/merge_requests/9")
+    expect(post.evidence).not.toContain("supersecretvalue123")
+  })
 })
 
 describe("thread", () => {
@@ -173,6 +185,12 @@ describe("thread", () => {
     expect(JSON.stringify(events)).not.toContain("unrelated chat-A turn")
   })
 
+  it("matches a hand-off's dialog id whole, not as a prefix", () => {
+    const events = wallThread(store.get("r1")!, deps())
+    expect(events.some((e) => e.ref === "t2")).toBe(true)
+    expect(events.some((e) => e.ref === "t2-other")).toBe(false)
+  })
+
   it("ends a closed post with its close and proof", () => {
     const events = wallThread(store.get("r3")!, deps())
     const closed = events.find((e) => e.kind === "closed")!
@@ -188,6 +206,11 @@ describe("failures", () => {
     expect(pm).toHaveLength(1)
     expect(pm[0].count).toBe(2)
     expect(pm[0].error).toContain("spawn failed")
+  })
+
+  it("lists webhook runs that ended without a reply, under their forge channel", () => {
+    const hook = wallFailures(db, Date.now()).find((x) => x.lastTaskId === "t-hook")!
+    expect(hook).toMatchObject({ agentId: "coder", status: "ok", error: "webhook run ended without a reply" })
   })
 })
 
@@ -244,6 +267,8 @@ describe("routes", () => {
     try {
       expect((await get("/api/admin/wall")).status).toBe(401)
       expect((await get("/api/admin/wall", { Authorization: "Bearer tok-123" })).status).toBe(200)
+      expect((await get("/api/admin/wall?peer=fleet")).status).toBe(401)
+      expect((await get("/api/admin/wall?peer=fleet", { Authorization: "Bearer tok-123" })).status).toBe(200)
     } finally {
       token = undefined
     }

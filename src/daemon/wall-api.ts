@@ -149,6 +149,11 @@ export function timeFlag(r: RequestRecord, runs: WallRun[], runMs: number, now: 
   return null
 }
 
+/** A hand-off's chat is a2a:<from>:<to>:<dialog id>; match the id whole,
+ *  so a longer id that starts with the same text is not taken. */
+const HANDOFF_CHAT = "chat_id LIKE 'a2a:%' AND substr(chat_id, -?) = ?"
+const handoffArgs = (ref: string): [number, string] => [ref.length + 1, `:${ref}`]
+
 /** The agent an unfinished hand-off of this request went to, read from
  *  the A2A chat of its runs. Null: none open, or no run recorded yet. */
 function openHandoffTo(db: Database.Database | null, requestId: string): string | null {
@@ -156,7 +161,7 @@ function openHandoffTo(db: Database.Database | null, requestId: string): string 
   return safe(() => {
     const open = db.prepare("SELECT ref FROM request_links WHERE request_id = ? AND kind = 'delegation' AND ended IS NULL ORDER BY at DESC").all(requestId) as Array<{ ref: string }>
     for (const l of open) {
-      const row = db.prepare("SELECT chat_id FROM task_traces WHERE chat_id LIKE ? ORDER BY started_at DESC LIMIT 1").get(`a2a:%:${l.ref}%`) as { chat_id: string } | undefined
+      const row = db.prepare(`SELECT chat_id FROM task_traces WHERE ${HANDOFF_CHAT} ORDER BY started_at DESC LIMIT 1`).get(...handoffArgs(l.ref)) as { chat_id: string } | undefined
       const route = row ? a2aRoute(row.chat_id) : null
       if (route) return route.to
     }
@@ -196,7 +201,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     updatedAt: r.updatedAt,
     lastMoveAt,
     closedAt: r.closedAt,
-    evidence: r.evidence,
+    evidence: r.evidence ? redactSecrets(r.evidence) : null,
     closeReason: r.closeReason ? clean(r.closeReason, 200) : null,
     blocked,
     estimateMinutes: r.estimateMinutes,
@@ -243,8 +248,8 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
       }, said))
     } else if (l.kind === "delegation") {
       const runs = db ? safe(() => db.prepare(
-        "SELECT task_id, agent_id, chat_id, status, started_at, duration_ms, final_response FROM task_traces WHERE chat_id LIKE ? ORDER BY started_at LIMIT 20",
-      ).all(`a2a:%:${l.ref}%`) as any[], []) : []
+        `SELECT task_id, agent_id, chat_id, status, started_at, duration_ms, final_response FROM task_traces WHERE ${HANDOFF_CHAT} ORDER BY started_at LIMIT 20`,
+      ).all(...handoffArgs(l.ref)) as any[], []) : []
       const route = runs.map((x) => a2aRoute(String(x.chat_id))).find(Boolean) ?? undefined
       const ended = l.ended ? ` — ${l.ended}${l.proof ? `: ${l.proof}` : ""}` : ""
       events.push(event({ at: l.at, kind: "handoff", who: route?.from ?? r.agentId, route, ref: l.ref, status: l.ended, text: `Asked ${route?.to ?? "another agent"} (${l.ref})${ended}` }))
@@ -278,6 +283,9 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
   return events.sort((a, b) => a.at - b.at)
 }
 
+/** Webhook runs are stored under their forge's channel, not "webhook". */
+const WEBHOOK_CHANNELS = "'github', 'gitlab'"
+
 /** Failed agent runs in the last day, one row per agent and error shape,
  *  plus webhook runs that ended without a reply. */
 export function wallFailures(db: Database.Database | null, now: number): WallFailure[] {
@@ -285,7 +293,7 @@ export function wallFailures(db: Database.Database | null, now: number): WallFai
   const rows = safe(() => db.prepare(
     `SELECT task_id, agent_id, status, error, started_at, channel FROM task_traces
      WHERE started_at >= ? AND (status IN ('error', 'timeout')
-       OR (status = 'ok' AND channel LIKE '%webhook%' AND (final_response IS NULL OR final_response = '')))
+       OR (status = 'ok' AND (channel IN (${WEBHOOK_CHANNELS}) OR channel LIKE '%webhook%') AND (final_response IS NULL OR final_response = '')))
      ORDER BY started_at DESC LIMIT ?`,
   ).all(now - DAY, FAILED_LIMIT) as any[], [])
   const groups = new Map<string, WallFailure>()
