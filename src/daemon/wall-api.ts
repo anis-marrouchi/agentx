@@ -249,7 +249,7 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
     const names = new Map(plan.steps(r.id).map((s) => [s.idx, s] as const))
     for (const e of plan.events(r.id)) {
       const step = e.step !== null ? names.get(e.step) : undefined
-      events.push(event({ at: e.at, kind: "plan", who: step?.agentId ?? null, text: clean(`${step ? `Step ${e.step! + 1} ${step.name}: ` : ""}${e.kind} ${e.detail}`) }, e.detail))
+      events.push(event({ at: e.at, kind: "plan", who: step?.agentId ?? null, text: clean(`${step ? `Step ${e.step} ${step.name}: ` : ""}${e.kind} ${e.detail}`) }, e.detail))
     }
   }
   const changed = r.stateChangedAt ?? r.updatedAt

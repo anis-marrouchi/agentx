@@ -276,11 +276,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
 
   if (method === "GET" && path === "/") {
-    // Home is Live, always. It answers the question an operator actually
-    // opens the dashboard for — who is alive and what are they doing.
-    // Boards used to take the root whenever any were configured, which meant
-    // the landing page silently changed identity based on config; now they
-    // live at /boards like every other surface.
+    // Home is the Wall (#1180, owner decision 2026-10-24): every request
+    // as a post with its thread, and what runs on each node now. Live
+    // stays at /live, and every other address is unchanged. Boards used to
+    // take the root whenever any were configured, which meant the landing
+    // page silently changed identity based on config; now they live at
+    // /boards like every other surface.
     //
     // The one exception is a machine with no agents yet, where there is
     // nothing live to show and the wizard is the only useful destination.
@@ -291,7 +292,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       return
     }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
     return
   }
   if (method === "GET" && path === "/boards") {
@@ -301,7 +302,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/wall") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
     return
   }
   if (method === "GET" && path === "/live") {
