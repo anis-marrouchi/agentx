@@ -69,6 +69,11 @@ describe("parseGoal", () => {
     expect(parseGoal({ title: "x".repeat(121) })).toMatch(/longer/)
     expect(parseGoal(42)).toMatch(/goal must be/)
     expect(goalIdOf("Café opening, Q3")).toBe("cafe-opening-q3")
+    // A title with no Latin letters still gives a stable id.
+    const arabic = parseGoal("إطلاق الموقع الجديد") as any
+    expect(arabic.title).toBe("إطلاق الموقع الجديد")
+    expect(arabic.id).toMatch(/^goal-[0-9a-f]{10}$/)
+    expect(goalIdOf("إطلاق الموقع الجديد")).toBe(arabic.id)
   })
 })
 
