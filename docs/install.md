@@ -114,7 +114,7 @@ curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.
 The script checks for Node.js 22.19 or newer, up to 26. If your Node.js is missing or outside that range:
 
 - With nvm (a tool that manages Node.js versions) on your computer, it installs Node 22 through nvm and makes it the default.
-- Without nvm, it downloads the official Node 22 from nodejs.org into `~/.agentx/node`, checks the download against its published checksum, and adds that folder to the PATH in your shell's startup file (`~/.zshrc`, `~/.bashrc`, `~/.bash_profile` on macOS bash, or `~/.profile`). It doesn't need administrator rights. With no Node.js at all, the whole install takes about 40 seconds.
+- Without nvm, it downloads the official Node 22 from nodejs.org into `~/.agentx/node`, checks the download against its published checksum, and adds that folder to the PATH in your shell's startup file (`~/.zshrc`; `~/.bashrc` and `~/.profile` for bash on Linux; `~/.bash_profile` for bash on macOS; otherwise `~/.profile`). It doesn't need administrator rights. With no Node.js at all, the whole install takes about 40 seconds.
 
 Settings for the script, set before `bash` (for example `curl … | AGENTX_SKIP_SETUP=1 bash`):
 
