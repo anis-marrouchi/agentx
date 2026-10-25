@@ -262,6 +262,17 @@ const AWAITING_QA = "qa_requested_at IS NOT NULL AND (qa_at IS NULL OR qa_at < q
 
 /** SET clause for a statement that writes `state`: the change time moves
  *  only when the state is really different. Takes the new state, then now. */
+/** How the quiet check words a request raised for being past its due
+ *  time. Settling reads it back (#1214). */
+export const OVERDUE_REASON = "Past its due time"
+
+/** A request whose handed-on work all came back done (#1138). */
+const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
+  AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
+  AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
+                  AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded')))
+  AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')`
+
 const STATE_CHANGED = "state_changed_at = CASE WHEN state IS ? THEN state_changed_at ELSE ? END"
 
 export class RequestStore {
@@ -482,24 +493,33 @@ export class RequestStore {
     this.db.prepare("UPDATE request_links SET ended = 'superseded' WHERE request_id = ? AND kind = 'delegation' AND ended = 'done'").run(id)
   }
 
-  /** Requests in progress, quiet since `before`, whose handed-on work all
-   *  came back done (#1138): at least one delegation done since the owner
-   *  last sent it back, and none that is still out, waiting, failed or
-   *  from before endings were kept. Superseded ones count for neither. Left
-   *  out: promises, loops with a due time or a checker, a pick-up the
-   *  agent has not been told about yet, and anything with a follow-up
-   *  workflow, which may still be running and reports its own end. */
+  /** Requests whose handed-on work all came back done (#1138): at least
+   *  one delegation done since the owner last sent it back, and none that
+   *  is still out, waiting, failed or from before endings were kept.
+   *  Superseded ones count for neither. In progress and quiet since
+   *  `before`, or raised only for being past its due time with that work
+   *  back since before `before` (#1214). A due time is the agent's own
+   *  (its accept, its estimate, a wait it reported): the owner's due times
+   *  are promises, which are left out. So are loops with a checker, a
+   *  pick-up the agent has not been told about yet, and anything with a
+   *  follow-up workflow, which may still be running and reports its own end. */
   handedBack(before: number): RequestRecord[] {
     return this.db.prepare(
       `SELECT r.* FROM requests r
-        WHERE r.state = 'in_progress' AND r.updated_at < ? AND r.due_at IS NULL AND r.close_when IS NULL
-          AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
-          AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
-          AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
-                          AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded')))
-          AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')
+        WHERE (
+            (r.state = 'in_progress' AND r.updated_at < ?)
+            OR (r.state = 'needs_attention' AND r.attention_reason LIKE '${OVERDUE_REASON}%'
+                AND (SELECT MAX(l.ended_at) FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done') < ?)
+          )
+          AND ${CAME_BACK}
         ORDER BY r.created_at, r.rowid`,
-    ).all(before).map(toRecord)
+    ).all(before, before).map(toRecord)
+  }
+
+  /** The request's handed-on work all came back done, as handedBack reads
+   *  it, however long ago (#1214). */
+  cameBack(id: string): boolean {
+    return !!this.db.prepare(`SELECT 1 FROM requests r WHERE r.id = ? AND ${CAME_BACK}`).get(id)
   }
 
   /** The newest proof link the request's delegations brought back since
@@ -514,13 +534,14 @@ export class RequestStore {
   /** Settled (#1138): the handed work came back done and nobody closed
    *  it. Closed as done with the delegate's link, or, without one, as
    *  "unproven: …". Either way unverified: nothing checked the link. Only
-   *  from in progress: anything that moved since it was read is left. */
+   *  from in progress, or raised for being overdue (#1214): anything that
+   *  moved since it was read is left. */
   settle(id: string, proof: string | null, detail: string, now: number): boolean {
     const evidence = (proof ?? `unproven: ${detail}`).trim().slice(0, REASON_MAX)
     return this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          verify_state = ?, verify_detail = ?
-       WHERE id = ? AND state = 'in_progress'`,
+       WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND attention_reason LIKE '${OVERDUE_REASON}%'))`,
     ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
   }
 
