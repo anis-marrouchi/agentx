@@ -54,6 +54,15 @@ export interface ConnectEmailOpts {
   configPath?: string
 }
 
+/**
+ * A warning when anyone may write to an agent that can run commands. Only
+ * the `sdk` engine (a direct API call) has no shell; every other engine does.
+ */
+export function openInboxWarning(tier: string | undefined, allowFrom: string[]): string | null {
+  if (!allowFrom.includes("*") || tier === "sdk") return null
+  return `Anyone can email an agent that runs commands (engine ${tier || "claude-code"}). Limit who may write with --allow-from.`
+}
+
 function fail(message: string): never {
   console.log(chalk.red(`  ${message}`))
   process.exit(1)
@@ -131,6 +140,8 @@ export async function connectEmail(opts: ConnectEmailOpts = {}): Promise<void> {
   console.log(chalk.green(`  ✓ ${address} is answered by "${agent}"`))
   if (!opts.passwordEnv) console.log(chalk.dim(`    Password stored in .env as ${passwordEnv}`))
   console.log(chalk.dim(`    Who may write: ${input.allowFrom.join(", ")}${input.allowFrom.includes("*") ? " (anyone)" : ""}`))
+  const warning = openInboxWarning(raw.agents[agent]?.tier, input.allowFrom)
+  if (warning) console.log(chalk.yellow(`    ${warning}`))
   console.log(input.send === "auto"
     ? chalk.yellow("    Replies are sent as soon as the agent writes them.")
     : chalk.dim("    Each reply waits in Approvals until you send it: agentx approvals list"))
