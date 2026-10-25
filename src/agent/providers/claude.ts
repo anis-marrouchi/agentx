@@ -24,6 +24,14 @@ const DEFAULT_MAX_TOKENS = 8192
 // 40K-token system prompts so caching always kicks in there.
 const CACHE_MIN_CHARS = 4 * 1024 // ~1k tokens at 4 char/tok
 
+/** The Messages endpoint. ANTHROPIC_BASE_URL (the variable Claude Code and
+ *  the Anthropic SDKs read) points it at a proxy or gateway; the CI
+ *  first-reply check points it at a local stub model (#1286). */
+export function messagesUrl(env: Record<string, string | undefined> = process.env): string {
+  const base = (env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").trim().replace(/\/+$/, "")
+  return `${base.replace(/\/v1$/, "")}/v1/messages`
+}
+
 /**
  * Wrap a system-prompt string in an Anthropic structured-block array
  * with `cache_control: { type: "ephemeral" }`. Returns a plain string
@@ -197,7 +205,7 @@ export class ClaudeProvider implements AgentProvider {
 
     const headers = this.buildHeaders()
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch(messagesUrl(), {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -479,7 +487,7 @@ export class ClaudeProvider implements AgentProvider {
     const headers = this.buildHeaders()
     let res: Response
     try {
-      res = await fetch("https://api.anthropic.com/v1/messages", {
+      res = await fetch(messagesUrl(), {
         method: "POST",
         headers,
         body: JSON.stringify(body),
@@ -631,7 +639,7 @@ export class ClaudeProvider implements AgentProvider {
     // request runs to completion, and a caller's own AbortController — the
     // shape used by src/graph/classifier.ts and src/agents/context-planner.ts
     // — does nothing at all.
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch(messagesUrl(), {
       method: "POST",
       headers,
       body: JSON.stringify(body),

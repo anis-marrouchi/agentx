@@ -264,3 +264,13 @@ describe("agent page chat through the dashboard (#1163)", () => {
     expect(await handleAgentChatApi(fakeReq("GET"), fakeRes(), AGENT_CHAT_PATH, { daemonUrl: "x", readBody: async () => ({}) })).toBe(false)
   })
 })
+
+import { messagesUrl } from "../src/agent/providers/claude"
+
+describe("first reply check (#1286)", () => {
+  it("sends the built-in engine to ANTHROPIC_BASE_URL when it is set, with or without /v1", () => {
+    expect(messagesUrl({})).toBe("https://api.anthropic.com/v1/messages")
+    expect(messagesUrl({ ANTHROPIC_BASE_URL: "http://127.0.0.1:9999" })).toBe("http://127.0.0.1:9999/v1/messages")
+    expect(messagesUrl({ ANTHROPIC_BASE_URL: "https://gw.example.com/anthropic/v1/" })).toBe("https://gw.example.com/anthropic/v1/messages")
+  })
+})

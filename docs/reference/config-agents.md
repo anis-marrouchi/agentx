@@ -24,7 +24,7 @@ API credentials for agents that call a model directly (the `sdk` and `orchestrat
 |---|---|---|---|
 | `apiKey` | string | — | API key for this provider. Use an `${ENV_VAR}` reference rather than the key itself. An `sdk` agent without a key fails with `No API key for provider`. |
 | `defaultModel` | string | — | Accepted by the validator but not read by the current runtime. Set `model` on the agent instead. |
-| `baseUrl` | string | — | Accepted by the validator but not read by the current runtime. |
+| `baseUrl` | string | — | Accepted by the validator but not read by the current runtime. To send the `claude` provider through a proxy or gateway, set the `ANTHROPIC_BASE_URL` environment variable instead (for example in `.env`), the same variable Claude Code reads. |
 | `thinking` | boolean | — | Turns thinking-mode output on or off for `orchestrator` agents on backends that support it. Ignored elsewhere. |
 
 ```json
