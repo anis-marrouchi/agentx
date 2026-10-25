@@ -8,7 +8,7 @@ import { existsSync } from "fs"
 import { resolve } from "path"
 import type { WizardPayload } from "@/daemon/setup-wizard"
 import { shippedTeam } from "@/teams/catalog"
-import { teamMembers } from "@/teams/package"
+import { teamConflicts, teamMembers } from "@/teams/package"
 
 export const FIRST_AGENT_ID = "assistant"
 
@@ -74,14 +74,19 @@ export function isSameInstall(health: any, cfg: { node?: { id?: string } }): boo
 
 /** What `agentx start --team <name>` does (#1293): add a shipped team on the
  *  engine the first agent already uses, so it needs no other login or key;
- *  or nothing when it is already added, so a second run is safe. */
+ *  or nothing when it is already added, so a second run is safe. With
+ *  `workspaceRoot`, an agent, schedule or folder the team would collide with
+ *  is an error here, so start stops before it writes anything (#1319 review). */
 export function startTeamPlan(
-  rawConfig: { node?: { defaultAgent?: string }; agents?: Record<string, any> },
+  rawConfig: { node?: { defaultAgent?: string }; agents?: Record<string, any>; crons?: Record<string, any> },
   name: string,
+  opts?: { workspaceRoot?: string },
 ): { add: { team: string; tier?: string; provider?: string } } | { skip: string } | { error: string } {
   const pkg = shippedTeam(name)
   if (!pkg) return { error: `No team named "${name}".` }
   if (teamMembers(rawConfig, pkg.name).length) return { skip: `Team ${pkg.name} is already added (left as it is)` }
+  const taken = opts?.workspaceRoot ? teamConflicts(rawConfig, pkg, { workspaceRoot: opts.workspaceRoot }) : teamConflicts(rawConfig, pkg)
+  if (taken.length) return { error: `Team ${pkg.name} can't be added: already in this folder: ${taken.join(", ")}. Remove or rename them, or run start without --team.` }
   const first = rawConfig.agents?.[pickAgent(rawConfig) ?? ""]
   return { add: { team: pkg.name, tier: first?.tier, provider: first?.provider } }
 }

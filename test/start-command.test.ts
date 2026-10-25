@@ -92,6 +92,18 @@ describe("agentx start --team (#1293)", () => {
     expect(startTeamPlan(raw, "content")).toEqual({ add: { team: "content", tier: "claude-code", provider: undefined } })
     expect(startTeamPlan(raw, "nope")).toEqual({ error: 'No team named "nope".' })
   })
+
+  it("refuses before anything is written when an agent or folder is already taken (#1319 review)", () => {
+    const workspaceRoot = join(dir, "agents")
+    // A hand-made agent with the team's agent id.
+    const handMade = { agents: { assistant: { tier: "claude-code" }, support: { tier: "claude-code" } } }
+    expect(startTeamPlan(handMade, "support", { workspaceRoot })).toEqual({ error: expect.stringContaining('agent "support"') })
+    // A first run (no agentx.json yet) in a folder that already has agents/support.
+    mkdirSync(join(workspaceRoot, "support"), { recursive: true })
+    const payload = firstAgentPayload("box", true)
+    expect(startTeamPlan({ agents: { [payload.agent.id]: payload.agent } }, "support", { workspaceRoot })).toEqual({ error: expect.stringContaining(join(workspaceRoot, "support")) })
+    expect(existsSync(join(dir, "agentx.json"))).toBe(false)
+  })
 })
 
 describe("agentx start: reuse (#1163)", () => {
