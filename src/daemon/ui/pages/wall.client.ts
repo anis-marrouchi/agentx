@@ -555,6 +555,7 @@ ${WALL_LIVE_SCRIPT}
   function doHtml(p) {
     var others = allAgents().filter(function (a) { return a.id !== p.owner; });
     var draft = S.drafts[p.id] || '';
+    var live = liveTaskOf(p.owner);
     return '<div class="wdo" data-for="' + esc(p.id) + '">' +
       // Any post takes a comment (#1355): on a closed one it opens the post
       // again; an @name in it brings that agent in with a post of its own.
@@ -562,7 +563,7 @@ ${WALL_LIVE_SCRIPT}
       '<textarea id="wdo-text" class="wdo__t" rows="2" maxlength="4000" placeholder="It reaches ' + esc(nameOf(p.owner)) + ' like a message on any channel. Use @name to bring in another agent.">' + esc(draft) + '</textarea>' +
       '<div class="wdo__row">' +
         '<button type="button" class="ax-btn" data-act="comment">Comment</button>' +
-        (liveTaskOf(p.owner) ? '<a class="ax-btn ax-btn--ghost" href="' + esc(taskHref(liveTaskOf(p.owner).t.id, p.owner, { daemonUrl: liveTaskOf(p.owner).n.url }, false)) + '" title="' + esc(nameOf(p.owner)) + ' is working now">● Join live</a>' : '') +
+        (live ? '<a class="ax-btn ax-btn--ghost" href="' + esc(taskHref(live.t.id, p.owner, { daemonUrl: live.n.url }, false)) + '" title="' + esc(nameOf(p.owner)) + ' is working now">● Join live</a>' : '') +
         '<button type="button" class="ax-btn ax-btn--ghost" data-act="call" title="' + esc(nameOf(p.owner)) + ' calls you on AgentX Voice about this post">Call ' + esc(nameOf(p.owner)) + '</button>' +
         (others.length
           ? '<span class="wdo__sp"><select id="wdo-with" aria-label="Talks with">' + others.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') + '</select>' +

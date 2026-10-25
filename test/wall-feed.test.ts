@@ -1121,6 +1121,17 @@ describe("Wall v2 live sessions, comments and calls (#1355)", () => {
     expect(w.el("wdo-note").textContent).toMatch(/Also posted to @reviewer, @far\./)
   })
 
+  it("finds a mention by a display name of several words, in the order written", async () => {
+    const live = { nodes: [LIVE3.nodes[0], { ...LIVE3.nodes[1], agents: [{ id: "ops", name: "Night Shift", runningTasks: [] }] }] }
+    const w = openWall({ live, hash: "#status=open&post=r1" })
+    await w.settle()
+    w.el("wdo-text").value = "Ask @night shift first, then @Reviewer. Not mail@reviewer, @reviewers or @night"
+    w.click({ "data-act": "comment" })
+    await w.settle()
+    const posts = w.calls.filter((c) => c.url === "/api/admin/wall/post")
+    expect(posts.map((c) => JSON.parse(c.init.body).agent)).toEqual(["ops", "reviewer"])
+  })
+
   it("calls an agent and joins its live work from the Agents page", async () => {
     const w = openWall({ live: LIVE3, hash: "#page=agents" })
     await w.settle()
