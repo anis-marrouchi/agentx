@@ -1,15 +1,20 @@
 // --- Monthly money budget per agent (#1162) ---
 //
-// An owner can say "this agent may spend at most $40 a month", and
-// optionally cap the whole fleet. Spend is the recorded cost of each run:
+// An owner can say "this agent may spend at most $40 a month", cap a
+// project (a named group of agents, #1285), and optionally cap the whole
+// fleet. Spend is the recorded cost of each run:
 // Claude Code's own `total_cost_usd` when the runtime reports it, otherwise
 // the token count priced at the model's rate. The month is the calendar
 // month in UTC.
 //
 //   - Under the warn line (warnRatio × cap, default 0.8): nothing happens.
 //   - At the warn line: one owner notice per agent per month.
-//   - At the cap: new runs for that agent are refused with a clear reason
-//     until the cap is raised or the month turns.
+//   - At the cap: new runs for that agent (every agent of the project, or
+//     every agent for the fleet) are refused with a clear reason until the
+//     cap is raised or the month turns.
+//
+// A project's spend is the sum of its agents' spend. An agent may belong to
+// several projects; reaching any one of their caps pauses it.
 //
 // The spend lives in memory, seeded at boot from the month's traces
 // (task_traces.cost_usd), so it survives a restart and matches the trace
@@ -30,16 +35,24 @@ export interface MonthlyBudget {
   warnRatio?: number
 }
 
+export interface ProjectBudget extends MonthlyBudget {
+  /** Agents whose runs count toward this project's cap, resolved from its
+   *  `agents` list and `team`. */
+  agents: string[]
+}
+
 export interface BudgetConfig {
   /** Per-agent budgets, keyed by agent id. */
   agents?: Record<string, MonthlyBudget | undefined>
+  /** Per-project budgets, keyed by project name. Reaching one pauses its agents. */
+  projects?: Record<string, ProjectBudget | undefined>
   /** Cap on the whole fleet's spend. Reaching it pauses every agent. */
   fleet?: MonthlyBudget
 }
 
 export interface BudgetNotice {
   kind: "warn" | "cap"
-  /** "fleet" for the fleet total; otherwise the agent id. */
+  /** "fleet" for the fleet total, "project:<name>" for a project; otherwise the agent id. */
   scope: string
   month: string
   spentUsd: number
@@ -50,7 +63,7 @@ export interface BudgetNotice {
 
 export interface BudgetGateAbort {
   abort: true
-  reason: "agent_budget" | "fleet_budget"
+  reason: "agent_budget" | "project_budget" | "fleet_budget"
   message: string
 }
 
@@ -64,14 +77,27 @@ export interface BudgetRow {
   state: "ok" | "warn" | "paused" | "uncapped"
 }
 
+export interface ProjectBudgetRow {
+  project: string
+  agents: string[]
+  spentUsd: number
+  capUsd: number
+  warnRatio: number
+  ratio: number
+  state: BudgetRow["state"]
+}
+
 export interface BudgetView {
   month: string
   agents: BudgetRow[]
+  /** Projects with a cap, fullest first. */
+  projects: ProjectBudgetRow[]
   fleet: { spentUsd: number; capUsd?: number; warnRatio: number; ratio?: number; state: BudgetRow["state"] }
 }
 
 const DEFAULT_WARN_RATIO = 0.8
 export const FLEET_SCOPE = "fleet"
+const PROJECT_PREFIX = "project:"
 
 let config: BudgetConfig = {}
 let month = ""
@@ -112,6 +138,26 @@ function fleetSpent(): number {
   let total = 0
   for (const v of spend.values()) total += v
   return total
+}
+
+/** Sum of the given agents' spend in `byAgent`. */
+function sumOf(agents: string[], byAgent: (id: string) => number): number {
+  let total = 0
+  for (const id of new Set(agents)) total += byAgent(id)
+  return total
+}
+
+/** The capped projects `agentId` belongs to. */
+function projectsOf(cfg: BudgetConfig, agentId: string): Array<[string, ProjectBudget]> {
+  const out: Array<[string, ProjectBudget]> = []
+  for (const [name, p] of Object.entries(cfg.projects ?? {})) {
+    if (p && capOf(p) && p.agents.includes(agentId)) out.push([name, p])
+  }
+  return out
+}
+
+function projectSpent(p: ProjectBudget): number {
+  return sumOf(p.agents, (id) => spend.get(id) ?? 0)
 }
 
 function usd(n: number): string {
@@ -157,6 +203,14 @@ export function seedMonthSpend(byAgent: Record<string, number>, now: number = Da
       if (c.kind === "cap") told.add(`${id}:warn:${c.cap}`)
     }
   }
+  for (const [name, p] of Object.entries(config.projects ?? {})) {
+    if (!p) continue
+    const scope = PROJECT_PREFIX + name
+    for (const c of crossed(scope, projectSpent(p), p)) {
+      told.add(c.key)
+      if (c.kind === "cap") told.add(`${scope}:warn:${c.cap}`)
+    }
+  }
   const total = fleetSpent()
   for (const c of crossed(FLEET_SCOPE, total, config.fleet)) {
     told.add(c.key)
@@ -169,9 +223,18 @@ export function getAgentSpend(agentId: string, now: number = Date.now()): number
   return spend.get(agentId) ?? 0
 }
 
+/** How a notice names the scope, the setting to raise, and who is paused. */
+function describe(scope: string): { who: string; where: string; paused: string } {
+  if (scope === FLEET_SCOPE) return { who: "The fleet", where: "budget.monthlyUsd", paused: "Every agent" }
+  if (scope.startsWith(PROJECT_PREFIX)) {
+    const name = scope.slice(PROJECT_PREFIX.length)
+    return { who: `Project ${name}`, where: `budget.projects.${name}.monthlyUsd`, paused: "Every agent of the project" }
+  }
+  return { who: `Agent ${scope}`, where: `agents.${scope}.budget.monthlyUsd`, paused: "It" }
+}
+
 function notice(kind: "warn" | "cap", scope: string, spent: number, cap: number, b: MonthlyBudget | undefined): BudgetNotice {
-  const who = scope === FLEET_SCOPE ? "The fleet" : `Agent ${scope}`
-  const where = scope === FLEET_SCOPE ? "budget.monthlyUsd" : `agents.${scope}.budget.monthlyUsd`
+  const { who, where, paused } = describe(scope)
   if (kind === "warn") {
     return {
       kind, scope, month, spentUsd: spent, capUsd: cap,
@@ -187,7 +250,7 @@ function notice(kind: "warn" | "cap", scope: string, spent: number, cap: number,
     title: `${who} reached its monthly budget`,
     message:
       `${who} has spent ${usd(spent)} of its ${usd(cap)} budget for ${month}. ` +
-      `${scope === FLEET_SCOPE ? "Every agent" : "It"} is paused: new runs are refused until the month ends ` +
+      `${paused} is paused: new runs are refused until the month ends ` +
       `or you raise ${where} in agentx.json (applies on save).`,
   }
 }
@@ -212,6 +275,7 @@ export function recordAgentSpend(agentId: string, costUsd: number | undefined, n
     }
   }
   check(agentId, spent, config.agents?.[agentId])
+  for (const [name, p] of projectsOf(config, agentId)) check(PROJECT_PREFIX + name, projectSpent(p), p)
   check(FLEET_SCOPE, fleetSpent(), config.fleet)
   return out
 }
@@ -229,6 +293,18 @@ export function preflightBudgetGate(agentId: string, now: number = Date.now()): 
       message:
         `Monthly budget reached: agent ${agentId} has spent ${usd(spent)} of its ${usd(agentCap)} budget for ${month}. ` +
         `New runs are paused until the month ends. To resume now, raise agents.${agentId}.budget.monthlyUsd in agentx.json (applies on save).`,
+    }
+  }
+  for (const [name, p] of projectsOf(config, agentId)) {
+    const cap = capOf(p)!
+    const projectTotal = projectSpent(p)
+    if (projectTotal < cap) continue
+    return {
+      abort: true,
+      reason: "project_budget",
+      message:
+        `Monthly project budget reached: the agents of project ${name} have spent ${usd(projectTotal)} of its ${usd(cap)} budget for ${month}. ` +
+        `New runs for agent ${agentId} are paused until the month ends. To resume now, raise budget.projects.${name}.monthlyUsd in agentx.json (applies on save).`,
     }
   }
   const fleetCap = capOf(config.fleet)
@@ -270,11 +346,23 @@ export function buildBudgetView(cfg: BudgetConfig, byAgent: Record<string, numbe
       state: stateOf(spentUsd, b),
     }
   }).sort((a, b) => (b.ratio ?? -1) - (a.ratio ?? -1) || b.spentUsd - a.spentUsd || a.agentId.localeCompare(b.agentId))
+  const projects: ProjectBudgetRow[] = []
+  for (const [project, p] of Object.entries(cfg.projects ?? {})) {
+    const capUsd = p ? capOf(p) : undefined
+    if (!p || !capUsd) continue
+    const spentUsd = sumOf(p.agents, (id) => (byAgent[id] > 0 ? byAgent[id] : 0))
+    projects.push({
+      project, agents: [...new Set(p.agents)].sort(), spentUsd, capUsd, warnRatio: warnRatioOf(p),
+      ratio: spentUsd / capUsd, state: stateOf(spentUsd, p),
+    })
+  }
+  projects.sort((a, b) => b.ratio - a.ratio || a.project.localeCompare(b.project))
   const total = Object.values(byAgent).reduce((s, v) => s + (v > 0 ? v : 0), 0)
   const fleetCap = capOf(cfg.fleet)
   return {
     month: forMonth,
     agents,
+    projects,
     fleet: {
       spentUsd: total, capUsd: fleetCap, warnRatio: warnRatioOf(cfg.fleet),
       ...(fleetCap ? { ratio: total / fleetCap } : {}),
@@ -288,11 +376,38 @@ export function getBudgetView(now: number = Date.now()): BudgetView {
   return buildBudgetView(config, Object.fromEntries(spend), month)
 }
 
-/** Budget config as agentx.json holds it: `agents.<id>.budget` and top-level `budget`. */
-export function budgetConfigFrom(cfg: { agents?: Record<string, { budget?: MonthlyBudget }>; budget?: MonthlyBudget }): BudgetConfig {
+/** A project budget as agentx.json holds it, before its members are resolved. */
+export interface ProjectBudgetConfig extends MonthlyBudget {
+  /** Agent ids that belong to the project. */
+  agents?: string[]
+  /** Every agent installed with this team (`agents.<id>.team`) belongs too. */
+  team?: string
+}
+
+/**
+ * Budget config as agentx.json holds it: `agents.<id>.budget`, top-level
+ * `budget`, and `budget.projects.<name>`. A project's members are its
+ * `agents` plus every agent whose `team` matches its `team`.
+ */
+export function budgetConfigFrom(cfg: {
+  agents?: Record<string, { budget?: MonthlyBudget; team?: string }>
+  budget?: MonthlyBudget & { projects?: Record<string, ProjectBudgetConfig> }
+}): BudgetConfig {
   const agents: Record<string, MonthlyBudget> = {}
   for (const [id, def] of Object.entries(cfg.agents ?? {})) {
     if (def?.budget) agents[id] = def.budget
   }
-  return { agents, fleet: cfg.budget }
+  const { projects: rawProjects, ...fleet } = cfg.budget ?? {}
+  const out: BudgetConfig = { agents, fleet: cfg.budget ? fleet : undefined }
+  if (rawProjects && Object.keys(rawProjects).length) {
+    out.projects = {}
+    for (const [name, p] of Object.entries(rawProjects)) {
+      const members = new Set(p.agents ?? [])
+      if (p.team) {
+        for (const [id, def] of Object.entries(cfg.agents ?? {})) if (def?.team === p.team) members.add(id)
+      }
+      out.projects[name] = { monthlyUsd: p.monthlyUsd, warnRatio: p.warnRatio, agents: [...members].sort() }
+    }
+  }
+  return out
 }

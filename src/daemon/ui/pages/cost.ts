@@ -341,13 +341,13 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
       } catch (e) { console.error('cost fetch failed', e); }
     }
 
-    /* Monthly budgets (#1162): spend vs cap per agent, from the month's traces. */
+    /* Monthly budgets (#1162): spend vs cap per agent and per project (#1285), from the month's traces. */
     var BUDGET_LABEL = { ok: 'On track', warn: 'Near cap', paused: 'Paused', uncapped: 'No cap' };
-    function budgetRow(name, b){
+    function budgetRow(name, b, hint){
       var pct = b.capUsd ? Math.min(100, (b.ratio || 0) * 100) : 0;
       var amt = fmtCost(b.spentUsd) + (b.capUsd ? ' / ' + fmtCost(b.capUsd) : '');
       return '<div class="ax-cost__budget ax-cost__budget--' + esc(b.state) + '" role="listitem">'
-        + '<div class="ax-cost__budget-name">' + esc(name) + '</div>'
+        + '<div class="ax-cost__budget-name"' + (hint ? ' title="' + esc(hint) + '"' : '') + '>' + esc(name) + '</div>'
         + '<div class="ax-cost__budget-bar"' + (b.capUsd ? ' role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(pct) + '" aria-label="' + esc(name) + ' budget used"' : '') + '><i style="width:' + pct + '%"></i></div>'
         + '<div class="ax-cost__budget-amt">' + amt + '</div>'
         + '<div class="ax-cost__budget-state">' + esc(BUDGET_LABEL[b.state] || b.state) + '</div>'
@@ -359,10 +359,11 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
         var r = await fetch('/api/admin/observability/budgets', { credentials: 'same-origin' });
         if (!r.ok) return;
         var v = await r.json();
-        var capped = (v.agents || []).some(function(a){ return a.capUsd; }) || (v.fleet && v.fleet.capUsd);
+        var capped = (v.agents || []).some(function(a){ return a.capUsd; }) || (v.projects || []).length || (v.fleet && v.fleet.capUsd);
         if (!capped) { card.hidden = true; return; }
         document.getElementById('cost-budgets-month').textContent = v.month || '—';
-        var rows = (v.agents || []).map(function(a){ return budgetRow(a.agentId, a); });
+        var rows = (v.projects || []).map(function(p){ return budgetRow('Project ' + p.project, p, 'Agents: ' + (p.agents || []).join(', ')); })
+          .concat((v.agents || []).map(function(a){ return budgetRow(a.agentId, a); }));
         if (v.fleet && v.fleet.capUsd) rows.unshift(budgetRow('All agents', v.fleet));
         document.getElementById('cost-budgets').innerHTML = rows.join('');
         card.hidden = false;

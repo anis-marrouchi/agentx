@@ -105,6 +105,65 @@ describe("monthly agent budget", () => {
   })
 })
 
+describe("monthly project budget", () => {
+  beforeEach(() => {
+    setAgentBudgets({ projects: { "acme/site": { monthlyUsd: 10, warnRatio: 0.8, agents: ["coder", "qa"] } } })
+  })
+
+  it("adds the project's agents together and warns once at 80%", () => {
+    expect(recordAgentSpend("coder", 5, OCT)).toEqual([])
+    const n = recordAgentSpend("qa", 3, OCT)
+    expect(n).toHaveLength(1)
+    expect(n[0]).toMatchObject({ kind: "warn", scope: "project:acme/site", capUsd: 10 })
+    expect(n[0].title).toBe("Project acme/site is near its monthly budget")
+    expect(n[0].message).toContain("budget.projects.acme/site.monthlyUsd")
+    expect(recordAgentSpend("qa", 0.5, OCT)).toEqual([])
+  })
+
+  it("pauses every agent of the project at the cap, and only them", () => {
+    recordAgentSpend("coder", 6, OCT)
+    const n = recordAgentSpend("qa", 4, OCT)
+    expect(n.map((x) => [x.kind, x.scope])).toEqual([["cap", "project:acme/site"]])
+    expect(n[0].message).toContain("Every agent of the project is paused")
+    for (const id of ["coder", "qa"]) {
+      const gate = preflightBudgetGate(id, OCT)
+      expect(gate).toMatchObject({ abort: true, reason: "project_budget" })
+      expect(gate!.message).toContain("raise budget.projects.acme/site.monthlyUsd")
+    }
+    expect(preflightBudgetGate("writer", OCT)).toBeNull()
+  })
+
+  it("an outside agent's spend does not count", () => {
+    recordAgentSpend("writer", 50, OCT)
+    expect(preflightBudgetGate("coder", OCT)).toBeNull()
+  })
+
+  it("resumes on a new month or a raised cap", () => {
+    recordAgentSpend("coder", 10, OCT)
+    expect(preflightBudgetGate("qa", OCT)).not.toBeNull()
+    expect(preflightBudgetGate("qa", NOV)).toBeNull()
+    recordAgentSpend("coder", 10, NOV)
+    setAgentBudgets({ projects: { "acme/site": { monthlyUsd: 20, agents: ["coder", "qa"] } } })
+    expect(preflightBudgetGate("qa", NOV)).toBeNull()
+  })
+
+  it("an agent's own cap still applies inside a project", () => {
+    setAgentBudgets({
+      agents: { coder: { monthlyUsd: 2 } },
+      projects: { "acme/site": { monthlyUsd: 10, agents: ["coder", "qa"] } },
+    })
+    recordAgentSpend("coder", 2, OCT)
+    expect(preflightBudgetGate("coder", OCT)).toMatchObject({ reason: "agent_budget" })
+    expect(preflightBudgetGate("qa", OCT)).toBeNull()
+  })
+
+  it("a restart does not repeat a project notice already crossed", () => {
+    seedMonthSpend({ coder: 5, qa: 3.5 }, OCT)
+    expect(recordAgentSpend("qa", 0.5, OCT)).toEqual([])
+    expect(recordAgentSpend("qa", 1, OCT).map((x) => x.kind)).toEqual(["cap"])
+  })
+})
+
 describe("budget view", () => {
   it("shows spend vs cap per agent, fullest first", () => {
     const v = buildBudgetView(
@@ -115,6 +174,25 @@ describe("budget view", () => {
     expect(v.month).toBe("2026-10")
     expect(v.agents.map((a) => [a.agentId, a.state])).toEqual([["scout", "warn"], ["idle", "ok"], ["helper", "uncapped"]])
     expect(v.fleet).toMatchObject({ spentUsd: 37, capUsd: 100, state: "ok" })
+  })
+
+  it("shows each capped project with its members", () => {
+    const v = buildBudgetView(
+      { projects: { site: { monthlyUsd: 10, agents: ["coder", "qa"] }, docs: { monthlyUsd: 100, agents: ["writer"] }, free: { agents: ["x"] } } },
+      { coder: 6, qa: 3, writer: 1 },
+      "2026-10",
+    )
+    expect(v.projects.map((p) => [p.project, p.spentUsd, p.state])).toEqual([["site", 9, "warn"], ["docs", 1, "ok"]])
+    expect(v.projects[0].agents).toEqual(["coder", "qa"])
+  })
+
+  it("resolves a project's members from its list and its team", () => {
+    const cfg = budgetConfigFrom({
+      agents: { coder: { team: "dev" }, qa: { team: "dev" }, writer: {} },
+      budget: { monthlyUsd: 90, projects: { site: { monthlyUsd: 10, agents: ["writer"], team: "dev" } } },
+    })
+    expect(cfg.fleet).toEqual({ monthlyUsd: 90 })
+    expect(cfg.projects).toEqual({ site: { monthlyUsd: 10, warnRatio: undefined, agents: ["coder", "qa", "writer"] } })
   })
 
   it("reads budgets from agentx.json's shape", () => {

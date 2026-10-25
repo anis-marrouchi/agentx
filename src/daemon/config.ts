@@ -240,6 +240,15 @@ const monthlyBudgetSchema = z.object({
   warnRatio: z.number().gt(0).max(1).default(0.8),
 })
 
+/** Monthly money budget for a project (#1285): a named group of agents
+ *  whose spend adds up toward one cap. Members are the listed `agents`
+ *  plus every agent installed with `team`. Reaching the cap pauses every
+ *  member. */
+const projectBudgetSchema = monthlyBudgetSchema.extend({
+  agents: z.array(z.string().min(1)).default([]),
+  team: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).optional(),
+}).refine((p) => p.agents.length > 0 || !!p.team, "list the project's agents, or name a team")
+
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
@@ -1763,8 +1772,14 @@ export const daemonConfigSchema = z.object({
   providers: z.record(z.string(), providerConfigSchema).default({}),
   agents: z.record(z.string(), agentConfigSchema).default({}),
   /** Monthly money budget for the whole fleet (#1162). Reaching it pauses
-   *  every agent until the month ends or the cap is raised. */
-  budget: monthlyBudgetSchema.optional(),
+   *  every agent until the month ends or the cap is raised. `projects`
+   *  caps named groups of agents (#1285). */
+  budget: monthlyBudgetSchema.extend({
+    projects: z.record(
+      z.string().regex(/^[\w.-]+(?:\/[\w.-]+)*$/, "a project name is letters, digits, . _ - and /"),
+      projectBudgetSchema,
+    ).optional(),
+  }).optional(),
   /** Wiki-wide settings (#824). */
   wiki: z.object({
     /** The daily per-agent contribution and the merge that applies it.

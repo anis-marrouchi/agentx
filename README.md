@@ -33,6 +33,7 @@
 | A job with several steps stalls when someone forgets one. | A follow-up workflow runs the steps in order, nudges the slow one, and asks you before a message goes to a person (needs the workflow engine turned on). | [Let a workflow follow a request](docs/jobs/follow-up-workflows.md) |
 | Things you asked for get lost between agents and restarts. | Open requests keeps each one on a list until it is closed (off until you turn it on). | [Keep track of what you asked for](docs/jobs/open-requests.md) |
 | Small code fixes wait days for a developer. | Mention an agent on a GitLab issue and it answers in the thread; on GitHub, a second agent can review the pull request before merge (off until you turn it on). | [Watch GitLab work](docs/jobs/watch-gitlab.md), [review gate](docs/jobs/review-gate.md) |
+| You worry the AI bill will run away. | A monthly dollar budget per agent, per project and for all agents: a notice at 80%, a pause at 100% (Claude models only for now). | [Set a monthly budget](docs/help/costs.md) |
 | You cannot tell what the AI did, or what still needs you. | Monitor shows the work that needs a person and the work agents can handle. | [Monitor](docs/dashboard/monitor.md) |
 
 ## Is AgentX right for you?
@@ -49,7 +50,7 @@
 - you need Slack or Discord as a live channel ([channels](docs/reference/channels.md));
 - you need roles and permissions for many users (RBAC is not built yet);
 - you want a hosted service with nothing to install: there is none;
-- you need a hard dollar cap per agent: today AgentX can cap fresh Claude Code sessions (off by default), not money ([#1162](https://github.com/anis-marrouchi/agentx/issues/1162));
+- you need a dollar cap on GPT, Gemini or local models: budgets count Claude runs only today ([#1290](https://github.com/anis-marrouchi/agentx/issues/1290));
 - you run Windows only (untested; WSL may work);
 - you need a stable release: AgentX is still experimental.
 

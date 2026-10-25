@@ -102,6 +102,24 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 
 A top-level `budget` with the same two keys caps all agents together: `"budget": { "monthlyUsd": 200 }` next to `agents`. Reaching it pauses every agent until the month ends or you raise it.
 
+`budget.projects` caps a named group of agents. Each entry takes:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `monthlyUsd` | number (0–1000000) | unset (no cap) | Most the project's agents may spend together in one calendar month (UTC), in US dollars. At the cap, every agent of the project is paused. Applies on save. |
+| `warnRatio` | number (above 0, up to 1) | `0.8` | Share of `monthlyUsd` at which you get one notice for the month. |
+| `agents` | list of agent ids | `[]` | Agents that belong to the project. |
+| `team` | team name | unset | Every agent whose `team` matches also belongs. A project needs `agents`, `team` or both. |
+
+```json
+"budget": {
+  "monthlyUsd": 200,
+  "projects": { "demo/shop": { "monthlyUsd": 100, "team": "support" } }
+}
+```
+
+See [Set a monthly budget for a project](../help/costs.md#set-a-monthly-budget-for-a-project).
+
 ### Instructions AgentX adds for coding agents
 
 A `claude-code` or `codex-cli` agent gets two short rules in its system prompt, on top of its own `systemPrompt`. There is no setting for them.

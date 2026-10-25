@@ -231,6 +231,34 @@ On a Claude subscription the figures are what the work would cost with an API ke
 
 To resume a paused agent before the month ends, raise its `monthlyUsd` and save the file. Waiting messages are kept in memory only: if the daemon restarts while the agent is paused, they are lost, and the people who sent them need to send them again.
 
+## Set a monthly budget for a project
+
+A project budget caps what a group of agents spends together in one month, for example every agent that works for one client or on one website. The project's spend is the sum of its agents' spend. It works like an agent budget: one notice at 80%, and at 100% every agent of the project is paused, with waiting messages kept the same way. Agents outside the project keep working.
+
+An agent can belong to several projects and also have its own budget. It is paused as soon as any one of them is reached.
+
+1. Open `agentx.json` in a text editor.
+2. At the top level of the file, next to `agents`, add a `budget` with a `projects` list. Give each project a name, the most it may spend each month in US dollars, and its agents:
+
+   ```json
+   "budget": {
+     "projects": {
+       "demo/shop": { "monthlyUsd": 100, "agents": ["helper", "writer"] }
+     }
+   }
+   ```
+
+   The name is yours to choose: letters, digits, `.`, `_`, `-` and `/`. Using the same name as on the **Projects** page keeps things easy to find.
+3. Optional: instead of listing agents one by one, add `"team"` with a team name, for example `"team": "support"`. Every agent installed with that team (see [Ready-made teams](../jobs/ready-made-teams.md)) then belongs to the project. You can use `agents` and `team` together.
+4. Optional: to be warned at another share of the budget, add `"warnRatio"`, for example `"warnRatio": 0.5` for 50%.
+5. Optional: to also cap all agents together, add `"monthlyUsd"` next to `projects`: `"budget": { "monthlyUsd": 200, "projects": { … } }`.
+6. Save the file. The budget applies at once; no restart is needed.
+7. **Browser:** open `/admin/cost`. In the **Monthly budgets** card, each project has a row named **Project** and its name, under **All agents**. Point at the name to see which agents belong to it.
+
+![The Monthly budgets card with the all-agents row, a project near its cap, and one agent](/screenshots/costs/budgets.png)
+
+To resume a paused project before the month ends, raise its `monthlyUsd` and save the file.
+
 ## Check it worked
 
 1. **Browser:** open `/admin/cost`. The page shows a **Last ingest** time and figures for the period you picked.
@@ -239,6 +267,7 @@ To resume a paused agent before the month ends, raise its `monthlyUsd` and save 
 4. **Terminal:** `agentx usage surfaces` prints `Surface usage — last 30 days`. The commands you ran in the folder, such as `usage surfaces` itself, appear in the list.
 5. **Terminal:** `agentx usage plan` prints `Claude plan (as Claude Code last reported it)`, then a line per window once an agent has run a turn.
 6. **Browser:** with a budget set, `/admin/cost` shows the **Monthly budgets** card. To try the pause, give a test agent `"budget": { "monthlyUsd": 0.01 }` and send it two messages: the first runs, the second is refused with `Monthly budget reached`.
+7. **Browser:** with a project budget set, the **Monthly budgets** card has a **Project** row with the project's name. To try the pause, give a test project `"monthlyUsd": 0.01` and send one of its agents two messages: the second is refused with `Monthly project budget reached`.
 
 ## If something is wrong
 
@@ -257,8 +286,11 @@ To resume a paused agent before the month ends, raise its `monthlyUsd` and save 
 - **`agentx usage plan` says `Daemon answered 404`:** the running daemon is older than the command. Restart it with `agentx daemon restart`.
 - **`Local dispatch cap reached: …`:** you set `session.maxClaudeCodeDispatchesPerHour` or `session.maxClaudeCodeDispatchesPer5h` and the fleet reached it. Raise the setting or remove it; the change applies when you save `agentx.json`.
 - **`Monthly budget reached: agent … has spent …`:** the agent used its budget for this month. Raise `agents.<id>.budget.monthlyUsd` in `agentx.json` and save, or wait for the next month.
+- **`Monthly project budget reached: the agents of project … have spent …`:** the project's agents together used its budget for this month. Raise `budget.projects.<name>.monthlyUsd` in `agentx.json` and save, or wait for the next month.
+- **`budget.projects.<name>: list the project's agents, or name a team`** when the daemon starts: the project has neither `agents` nor `team`, so no agent would count toward it. Add one of them.
+- **A project's spend stays at `$0`:** check its `agents` ids against the names under `agents` in `agentx.json`, and its `team` against the agents' `team`. Point at the project's name on the card to see which agents it counts.
 - **`Monthly fleet budget reached: …`:** all agents together reached the top-level `budget.monthlyUsd`. Raise it and save, or wait for the next month.
-- **The Monthly budgets card is missing:** no agent has a `budget` with `monthlyUsd` above `0`, or the dashboard can't read `.agentx/db.sqlite` yet. Set a budget, let an agent run once, then reload the page.
+- **The Monthly budgets card is missing:** no agent or project has a `budget` with `monthlyUsd` above `0`, or the dashboard can't read `.agentx/db.sqlite` yet. Set a budget, let an agent run once, then reload the page.
 - **An agent's spend stays at `$0` with a budget set:** the agent runs on a model that isn't Claude (such as GPT, Gemini or a local model), or its engine reports no tokens. AgentX has no price for those runs, so the budget never pauses the agent. Check that provider's billing page.
 - **A chat got `This message is kept and runs when the agent resumes` and no answer came:** the agent is still over its budget. Raise `agents.<id>.budget.monthlyUsd` and save; the waiting messages run within a minute. If the daemon restarted meanwhile, the message was lost: send it again.
 - **Spending is higher than expected:** check **Settings** › **Schedules** for jobs that run very often, and lower their frequency.

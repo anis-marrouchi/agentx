@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { resolve } from "path"
-import { existsSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
 import { logSlowQueries } from "@/storage/slow-queries"
 import { renderObservabilityPage } from "./ui/pages/observability"
 import type { TopbarPeer } from "./topbar"
 import type { DaemonConfig } from "./config"
-import { budgetConfigFrom, buildBudgetView, monthKey, monthStart } from "@/agents/agent-budget"
+import { budgetConfigFrom, buildBudgetView, monthKey, monthStart, type BudgetConfig } from "@/agents/agent-budget"
 import { spendByAgentSince } from "@/storage/traces"
 
 // Anthropic public per-million-token rates. Same numbers
@@ -107,6 +107,20 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
+/**
+ * The budgets as agentx.json holds them now. The dashboard may run in its
+ * own process with the config it started with, while the daemon applies a
+ * budget change on save; reading the file keeps the card in step with the
+ * gate. Falls back to the config in hand when the file can't be read.
+ */
+function currentBudgetConfig(config?: DaemonConfig): BudgetConfig {
+  try {
+    const file = resolve(process.cwd(), "agentx.json")
+    if (existsSync(file)) return budgetConfigFrom(JSON.parse(readFileSync(file, "utf-8")))
+  } catch { /* half-written or invalid: use the config in hand */ }
+  return config ? budgetConfigFrom(config) : {}
+}
+
 export async function handleObservabilityApi(req: IncomingMessage, res: ServerResponse, path: string, config?: DaemonConfig): Promise<boolean> {
   if (!path.startsWith("/api/admin/observability/")) return false
   const slug = path.replace(/^\/api\/admin\/observability\//, "").split("?")[0]
@@ -180,10 +194,10 @@ export async function handleObservabilityApi(req: IncomingMessage, res: ServerRe
       return true
     }
     // Monthly budgets (#1162): the month's trace sum per agent against the
-    // caps in agentx.json. The same sum the daemon seeds its gate from.
+    // caps in agentx.json, read fresh (#1285). The same sum the daemon seeds its gate from.
     if (slug === "budgets") {
       const now = Date.now()
-      const cfg = config ? budgetConfigFrom(config) : {}
+      const cfg = currentBudgetConfig(config)
       sendJson(res, 200, buildBudgetView(cfg, spendByAgentSince(opened.db, monthStart(now)), monthKey(now)))
       return true
     }

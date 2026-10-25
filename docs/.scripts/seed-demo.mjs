@@ -25,6 +25,10 @@ async function post(path, body = {}) {
 }
 
 cfg.workflows = { enabled: true }
+// Monthly budgets (#1162, #1285): the agent, its project and the fleet.
+// The goal runs seeded below cost $3.52, so the project shows near its cap.
+cfg.agents.cx.budget = { monthlyUsd: 10 }
+cfg.budget = { monthlyUsd: 50, projects: { "demo/shop": { monthlyUsd: 4, agents: ["cx"] } } }
 cfg.business = {
   enabled: false,
   mainChannel: { channel: "telegram", chatId: "demo-shop" },
