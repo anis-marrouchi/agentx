@@ -292,7 +292,7 @@ describe("helpers", () => {
     expect(r).toMatchObject({ code: 0, timedOut: false })
     const pid = Number(readFileSync(pidFile, "utf-8").trim())
     await new Promise((ok) => setTimeout(ok, 100))
-    expect(() => process.kill(pid, 0)).toThrow()
+    expect(alive(pid)).toBe(false)
   })
 
   it("stopLiveGroups stops a running killGroup command and its children", async () => {
@@ -304,7 +304,7 @@ describe("helpers", () => {
     expect(r.timedOut).toBe(false)
     const pid = Number(readFileSync(pidFile, "utf-8").trim())
     await new Promise((ok) => setTimeout(ok, 100))
-    expect(() => process.kill(pid, 0)).toThrow()
+    expect(alive(pid)).toBe(false)
   })
 
   it("reads the CLI result, budget stop included", () => {
