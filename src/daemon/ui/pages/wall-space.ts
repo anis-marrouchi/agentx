@@ -63,6 +63,12 @@ button, input, select { font-family: inherit; }
 .ax-wall__item:hover { background: var(--ax-surface); }
 .ax-wall__item.is-on { font-weight: 700; }
 .ax-wall__item svg { width: 26px; height: 26px; flex: none; }
+.ax-wall__item span { white-space: nowrap; }
+/* Counts next to the nav items (#1316); a badge on the icon when the nav is narrow. */
+.ax-wall__item { position: relative; }
+.ax-wall__n { font-size: var(--ax-fs-xs); font-weight: 700; min-width: 20px; padding: 0 6px; line-height: 20px; text-align: center; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
+.ax-wall__n:empty { display: none; }
+.ax-wall__item.is-on .ax-wall__n { background: var(--ax-accent); color: var(--ax-accent-ink, #fff); }
 .ax-wall__navfoot { margin-top: auto; padding: 12px; font-size: var(--ax-fs-xs); color: var(--ax-muted); border: 1px solid var(--ax-border); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
 .ax-wall__navfoot .ax-btn { align-self: flex-start; font-size: var(--ax-fs-xs); padding: 3px 12px; }
 .ax-wall__main { grid-column: 2; grid-row: 1 / span 4; min-width: 0; min-height: 100vh; border-left: 1px solid var(--ax-border); border-right: 1px solid var(--ax-border); }
@@ -80,6 +86,8 @@ button, input, select { font-family: inherit; }
   .ax-wall, .ax-wall.is-wide { grid-template-columns: 72px minmax(0, 600px); }
   .ax-wall__nav { padding: 12px 8px; align-items: center; }
   .ax-wall__logo small, .ax-wall__item span, .ax-wall__navfoot { display: none; }
+  .ax-wall__n { position: absolute; top: 4px; right: 0; min-width: 18px; line-height: 18px; padding: 0 4px; font-size: 11px; }
+  .ax-wall__n.is-zero { display: none; }
   .ax-wall__logo { padding: 8px 0 16px; }
   .ax-wall__aside { display: contents; }
   .ax-wall__aside > * { grid-column: 2; margin: 12px 16px 0; }
@@ -106,7 +114,7 @@ button, input, select { font-family: inherit; }
 }
 `
 
-/** Theme toggle and the nav's scroll-to buttons. Display only. */
+/** Theme toggle. Display only; the nav opens pages (#1316, wall.client.ts). */
 export const WALL_SPACE_SCRIPT = `
 (function () {
   var t = document.getElementById('wall-theme');
@@ -114,12 +122,6 @@ export const WALL_SPACE_SCRIPT = `
     var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     try { localStorage.setItem('${WALL_THEME_KEY}', next); } catch (e) {}
-  });
-  document.querySelectorAll('[data-scroll]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var el = document.getElementById(b.getAttribute('data-scroll'));
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
   });
 })();
 `

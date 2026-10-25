@@ -2,6 +2,9 @@
 //
 // The Wall is the main dashboard view: each request is a post, and the
 // runs, hand-offs and plan steps recorded against it are its thread.
+// Selecting a post opens it on its own, with its thread, as on X; the nav's
+// Running now and Agents open pages of their own, each with a count (#1316).
+//
 // Read-only over records the daemon already keeps (requests, plan events,
 // task traces, the live fleet snapshot). Nothing here writes or notifies.
 //
@@ -53,10 +56,10 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const body = `<div class="ax-wall">
   <nav class="ax-wall__nav" aria-label="Wall">
     <a class="ax-wall__logo" href="/wall">AX<small>wall</small></a>
-    <a class="ax-wall__item is-on" href="#status=open&amp;view=feed" title="Wall">${NAV_ICON.wall}<span>Wall</span></a>
-    <a class="ax-wall__item" href="#status=waiting_owner&amp;view=feed" title="Needs you">${NAV_ICON.needs}<span>Needs you</span></a>
-    <button class="ax-wall__item" type="button" data-scroll="wall-nodes-h" title="Running now">${NAV_ICON.live}<span>Running now</span></button>
-    <button class="ax-wall__item" type="button" data-scroll="wall-agents-h" title="Agents">${NAV_ICON.agents}<span>Agents</span></button>
+    <a class="ax-wall__item is-on" data-nav="wall" href="#status=open&amp;view=feed" title="Wall">${NAV_ICON.wall}<span>Wall</span><b class="ax-wall__n" id="nav-n-wall"></b></a>
+    <a class="ax-wall__item" data-nav="needs" href="#status=waiting_owner&amp;view=feed" title="Needs you">${NAV_ICON.needs}<span>Needs you</span><b class="ax-wall__n" id="nav-n-needs"></b></a>
+    <a class="ax-wall__item" data-nav="running" href="#page=running" title="Running now">${NAV_ICON.live}<span>Running now</span><b class="ax-wall__n" id="nav-n-running"></b></a>
+    <a class="ax-wall__item" data-nav="agents" href="#page=agents" title="Agents">${NAV_ICON.agents}<span>Agents</span><b class="ax-wall__n" id="nav-n-agents"></b></a>
     <a class="ax-wall__item" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
     <div class="ax-wall__navfoot">
       <span>Read-only. The Wall shows the work; it sends nothing.</span>
@@ -65,9 +68,9 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   </nav>
   <div class="ax-wall__main">
     <header class="ax-wall__head">
-      <div class="ax-wall__titlebar"><h1>Wall</h1></div>
+      <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1></div>
       <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
-      <div class="ax-wall__views" role="tablist">
+      <div class="ax-wall__views" id="wall-views" role="tablist">
         <button type="button" role="tab" data-view="feed" class="is-on">Feed</button>
         <button type="button" role="tab" data-view="list">List</button>
         <button type="button" role="tab" data-view="projects">Projects</button>
@@ -76,7 +79,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
         <button type="button" role="tab" data-view="reviews">Reviews <span id="wall-rev-n"></span></button>
       </div>
     </header>
-    <section class="ax-wall__filters" aria-label="Filters">
+    <section class="ax-wall__filters" id="wall-filters" aria-label="Filters">
       <button type="button" id="f-toggle" class="ax-btn ax-btn--ghost ax-wall__ftoggle" aria-expanded="false">Filters</button>
       <label>Owner <select id="f-owner"><option value="">All</option></select></label>
       <label>Counted for <select id="f-load"><option value="">All</option></select></label>
@@ -105,6 +108,9 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-failures" class="ax-wall__failures" aria-label="Failures" hidden></section>
     <section id="wall-jobs" class="ax-wall__failures" aria-label="Recurring jobs" hidden></section>
     <section id="wall-reviews" class="ax-wall__reviews" aria-label="Review queue" hidden></section>
+    <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
+    <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
+    <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
   </div>
   <aside class="ax-wall__aside">
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
@@ -187,7 +193,34 @@ const WALL_PAGE_CSS = `
 .wp__via b { color: var(--ax-text-2); font-weight: 500; }
 .wp__title { font-size: var(--ax-fs); font-weight: 700; line-height: 1.35; margin: 2px 0 0; overflow-wrap: anywhere; }
 /* Result first (#1242): the answer is the post, the request opens under it. */
-.wp__result { font-size: var(--ax-fs); line-height: 1.4; margin: 2px 0 0; overflow-wrap: anywhere; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+.wp__result { font-size: var(--ax-fs); line-height: 1.4; margin: 2px 0 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+/* A post in the feed opens on its own when selected (#1316). */
+.wp[data-post] { cursor: pointer; }
+.wp[data-post]:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: -2px; }
+.wp__link { color: inherit; text-decoration: none; }
+.wp__link:hover { text-decoration: underline; }
+.wp--open { padding-top: 16px; }
+.wp--open:hover { background: none; }
+.wp--open .wp__result { display: block; font-size: 17px; line-height: 1.5; overflow: visible; }
+.wp__th { font-size: var(--ax-fs); font-weight: 800; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--ax-border); }
+.ax-wall__back { font: inherit; font-size: 20px; line-height: 1; background: none; border: 0; border-radius: var(--ax-radius-pill); color: var(--ax-text); padding: 6px 10px; margin: 0 8px 0 -10px; cursor: pointer; }
+.ax-wall__back:hover { background: var(--ax-surface); }
+.ax-wall__titlebar { display: flex; align-items: center; }
+
+/* Markdown in results, thread lines and summaries (#1316). */
+.ax-md p { margin: 0 0 6px; white-space: pre-line; }
+.ax-md > :last-child { margin-bottom: 0; }
+.ax-md h1, .ax-md h2, .ax-md h3, .ax-md h4 { font-size: 1em; font-weight: 800; margin: 8px 0 4px; }
+.ax-md ul, .ax-md ol { margin: 0 0 6px; padding-left: 22px; }
+.ax-md li.task { list-style: none; margin-left: -18px; }
+.ax-md code { font-family: var(--ax-mono); font-size: 0.9em; background: var(--ax-surface-2); border-radius: var(--ax-radius-sm); padding: 0 4px; }
+.ax-md pre { background: var(--ax-surface-2); border-radius: var(--ax-radius); padding: 8px 10px; overflow-x: auto; margin: 0 0 6px; }
+.ax-md pre code { background: none; padding: 0; white-space: pre; }
+.ax-md blockquote { margin: 0 0 6px; padding-left: 10px; border-left: 3px solid var(--ax-border-2); color: var(--ax-muted); }
+.ax-md table { border-collapse: collapse; font-size: var(--ax-fs-sm); margin: 0 0 6px; display: block; overflow-x: auto; }
+.ax-md th, .ax-md td { border: 1px solid var(--ax-border-2); padding: 3px 8px; text-align: left; }
+.ax-md hr { border: 0; border-top: 1px solid var(--ax-border); margin: 8px 0; }
+.ax-md a { color: var(--ax-accent); }
 .wp__from { color: var(--ax-muted); font-size: var(--ax-fs-xs); margin-top: 2px; }
 .wp__from a { color: inherit; }
 .wp__ask { margin-top: 6px; border-left: 2px solid var(--ax-border); padding-left: 8px; font-size: var(--ax-fs-sm); }
@@ -238,7 +271,7 @@ const WALL_PAGE_CSS = `
 .wt .wr { flex: 1; min-width: 0; }
 .wt .who { font-weight: 700; }
 .wt time, .wt .k { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
-.wt .txt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ax-text-2); margin-top: 2px; }
+.wt .txt { overflow-wrap: anywhere; color: var(--ax-text-2); margin-top: 2px; }
 .wt .is-err .txt { color: var(--ax-red-ink, var(--ax-err)); }
 .wt .ids { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .wt .ids a, .wt .ids span, .wt .men { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); background: var(--ax-surface-2); border-radius: var(--ax-radius-sm); padding: 0 4px; color: var(--ax-text-2); text-decoration: none; }
@@ -279,6 +312,14 @@ const WALL_PAGE_CSS = `
 .wa__n b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wa__n small { display: block; color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wa-more { font: inherit; font-size: var(--ax-fs-sm); background: none; border: 0; padding: 6px 0 0; color: var(--ax-accent); cursor: pointer; }
+
+/* Running now and Agents as pages (#1316) */
+.ax-wall__running { padding: 4px 16px 16px; }
+.wag { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
+.wag__b { flex: 1; min-width: 0; }
+.wag .wpf__stats .is-err, .wag .wpf__stats .is-err b { color: var(--ax-red-ink, var(--ax-err)); }
+.wag .wpf__links .wa-more { padding: 0; }
+.wag__note { padding: 10px 16px 0; }
 
 /* List and failures */
 .ax-wall__list { overflow-x: auto; }

@@ -237,7 +237,7 @@ db.transaction(() => {
   trace.run("docs-wall-2", "reviewer", "a2a", "a2a:cx:reviewer:dlg-docs-1", "ok", ago(35), ago(31), 4 * 60000, "Check the FAQ wording", "Two wording fixes suggested on MR !48.", null)
   trace.run("docs-wall-3", "cx", "telegram", "demo-office", "error", ago(170), ago(169), 60000, "Send the newsletter", null, "mail provider answered 503")
   trace.run("docs-wall-4", "cx", "telegram", "demo-office", "ok", ago(51), ago(50), 70000, "Send the newsletter", "The draft is ready. Which day should it go out?", null)
-  trace.run("docs-wall-5", "cx", "dashboard", "demo", "ok", ago(40), ago(21), 19 * 60000, "Check the links", "All 14 links work; fixed two in https://example.com/demo/office/pull/12.", null)
+  trace.run("docs-wall-5", "cx", "dashboard", "demo", "ok", ago(40), ago(21), 19 * 60000, "Check the links", "All **14 links** work. Fixed two in [pull request 12](https://example.com/demo/office/pull/12):\n\n- `/delivery` pointed to the old page\n- `/returns` had a typo", null)
   // #1187: the newsletter ask also reached the reviewer, on the same chat at the same time.
   trace.run("docs-wall-6", "reviewer", "telegram", "demo-office", "ok", ago(51) + 20000, ago(50) + 20000, 60000, "Send the newsletter", "I can send it today.", null)
   link.run(ids[0], "run", "docs-wall-1", ago(69))
