@@ -28,7 +28,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown> } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown } = {}) {
   const page = renderWallPage()
   const script = WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -60,7 +60,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
-    const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? LIVE
+    const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {}) : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
   }
@@ -137,7 +137,7 @@ describe("Wall as a social feed (#1207)", () => {
     await w.settle()
     const feed = w.el("wall-feed").innerHTML
     const r1 = feed.split('id="post-r1"')[1].split('id="post-r2"')[0]
-    expect(r1.indexOf('<p class="wp__result">Refund &lt;sent&gt;: order 47</p>')).toBeGreaterThan(-1)
+    expect(r1.indexOf('<div class="wp__result ax-md"><p>Refund &lt;sent&gt;: order 47</p></div>')).toBeGreaterThan(-1)
     expect(r1.indexOf("wp__result")).toBeLessThan(r1.indexOf('<details class="wp__ask"><summary><span class="k">Request</span> Post r1</summary>'))
     expect(r1).toContain('href="/tasks/t-r1?agent=cx">run t-r1</a>')
     expect(r1).not.toContain('<p class="wp__title">')
@@ -153,6 +153,107 @@ describe("Wall as a social feed (#1207)", () => {
     w.click({ "data-agent": "cx" })
     expect(w.calls.length).toBeGreaterThan(0)
     for (const c of w.calls) expect(c.init?.method ?? "GET").toBe("GET")
+  })
+})
+
+// #1316: a post opens on its own with its thread, results render their
+// Markdown, and every nav item opens a page and carries its count.
+describe("Wall v2 pages (#1316)", () => {
+  it("opens a selected post on its own, with its thread, and goes back to the feed", async () => {
+    const w = openWall()
+    await w.settle()
+    w.click({ "data-post": "r1" })
+    await w.settle()
+    expect(w.loc.hash).toContain("post=r1")
+    expect(w.el("wall-post").hidden).toBe(false)
+    expect(w.el("wall-feed").hidden).toBe(true)
+    expect(w.el("wall-filters").hidden).toBe(true)
+    expect(w.el("wall-back").hidden).toBe(false)
+    expect(w.el("wall-title").textContent).toBe("Post")
+    const page = w.el("wall-post").innerHTML
+    expect(page).toContain('<article class="wp wp--open" id="open-r1">')
+    expect(page).toContain('<h2 class="wp__th">Thread</h2>')
+    expect(page).not.toContain("data-thread=")
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/wall/thread?id=r1")
+    w.click({ "data-back": "" })
+    expect(w.loc.hash).not.toContain("post=")
+    expect(w.el("wall-post").hidden).toBe(true)
+    expect(w.el("wall-feed").hidden).toBe(false)
+    expect(w.el("wall-title").textContent).toBe("Wall")
+  })
+
+  it("opens a post from a shared link, and from the list", async () => {
+    const w = openWall({ hash: "#status=open&post=r2" })
+    await w.settle()
+    expect(w.el("wall-post").innerHTML).toContain('id="open-r2"')
+    const l = openWall({ hash: "#status=open&view=list" })
+    await l.settle()
+    l.click({ "data-open": "r1" })
+    expect(l.loc.hash).toContain("view=list")
+    expect(l.loc.hash).toContain("post=r1")
+    expect(l.el("wall-post").innerHTML).toContain('id="open-r1"')
+  })
+
+  it("makes each feed post selectable, its time a link to it", async () => {
+    const w = openWall()
+    await w.settle()
+    const feed = w.el("wall-feed").innerHTML
+    expect(feed).toContain('<article class="wp" id="post-r1" data-post="r1" tabindex="0">')
+    expect(feed).toMatch(/<a class="wp__link" href="#status=open&amp;post=r1" data-open="r1"[^>]*><time /)
+  })
+
+  it("renders a result's Markdown, with links to web addresses only", async () => {
+    const text = "**Done**: see [the issue](https://example.com/demo/1) and [this](javascript:alert(1))\n\n- one\n- two\n\n<b>raw</b>"
+    const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress", { result: { text, at: NOW, from: "reply" } })] } })
+    await w.settle()
+    const res = /<div class="wp__result ax-md">(.*?)<\/div>/s.exec(w.el("wall-feed").innerHTML)![1]
+    expect(res).toContain("<strong>Done</strong>")
+    expect(res).toContain('<a href="https://example.com/demo/1" target="_blank" rel="noopener noreferrer">the issue</a>')
+    expect(res).not.toContain("javascript:")
+    expect(res).toContain("<ul><li>one</li>")
+    expect(res).toContain("&lt;b&gt;raw&lt;/b&gt;")
+  })
+
+  it("shows a count next to each nav item", async () => {
+    const w = openWall()
+    await w.settle()
+    expect(w.el("nav-n-wall").textContent).toBe("2")
+    expect(w.el("nav-n-needs").textContent).toBe("1")
+    expect(w.el("nav-n-running").textContent).toBe("1")
+    expect(w.el("nav-n-agents").textContent).toBe("2")
+  })
+
+  it("opens Running now and Agents as pages of their own", async () => {
+    const page = renderWallPage()
+    expect(page).toContain('data-nav="running" href="#page=running"')
+    expect(page).toContain('data-nav="agents" href="#page=agents"')
+    expect(page).not.toContain("data-scroll")
+    const r = openWall({ hash: "#page=running" })
+    await r.settle()
+    expect(r.el("wall-running").hidden).toBe(false)
+    expect(r.el("wall-running").innerHTML).toContain("<b>node-a</b>")
+    expect(r.el("wall-feed").hidden).toBe(true)
+    expect(r.el("wall-title").textContent).toBe("Running now")
+    const a = openWall({ hash: "#page=agents" })
+    await a.settle()
+    expect(a.el("wall-agents-page").hidden).toBe(false)
+    expect(a.el("wall-title").textContent).toBe("Agents")
+    const list = a.el("wall-agents-page").innerHTML
+    expect(list.indexOf("@cx")).toBeLessThan(list.indexOf("@reviewer"))
+    expect(list).toContain('<span class="chip state">running 1</span>')
+    expect(list).toContain("on node-a")
+    expect(list).toContain('href="/admin/agents/reviewer"')
+    a.click({ "data-agent": "reviewer" })
+    expect(a.el("wall-agents-page").hidden).toBe(true)
+    expect(a.el("f-owner").value).toBe("reviewer")
+    expect(a.loc.hash).not.toContain("page=")
+  })
+
+  it("names a node that does not answer on the Agents page", async () => {
+    const w = openWall({ hash: "#page=agents", live: { nodes: [...LIVE.nodes, { name: "node-b", reachable: false, agents: [] }] } })
+    await w.settle()
+    expect(w.el("wall-agents-page").innerHTML).toContain("node-b does not answer: agents only there are missing.")
+    expect(w.el("wall-agents-page").innerHTML).toContain("@cx")
   })
 })
 

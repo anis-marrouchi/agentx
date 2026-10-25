@@ -15,7 +15,16 @@
 // Between them, capacity per owner (#1191, wall-capacity.client.ts).
 //
 // The Reviews view (#1182) lives in wall-reviews.client.ts.
+//
+// Pages (#1316): selecting a post opens it on its own, with its thread, as
+// on X (#post=<id> in the hash, so a post is a link and Back returns to the
+// feed). The nav's Running now and Agents open pages of their own
+// (#page=running, #page=agents), and each nav item carries its count.
+// Results and thread lines render their Markdown through the shared
+// renderer; links in them go to web, mail or same-site addresses only.
 
+import { markdownToHtml } from "@/utils/markdown-html"
+import { injectFns } from "../inject"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 
@@ -27,8 +36,12 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var SAVED_KEY = 'ax.wall.myView';
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
-  var S = { data: null, live: null, wf: null, view: 'feed', sort: { key: 'idle', dir: -1 }, threads: {} };
+  /** The pages the nav opens besides the Wall itself (#1316). */
+  var PAGES = ['running', 'agents'];
+  // threads: loaded threads by post id; shown: the ones open under their post in the feed.
+  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {} };
   var $ = function (id) { return document.getElementById(id); };
+  ${injectFns({ markdownToHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 
@@ -137,6 +150,12 @@ ${WALL_CAPACITY_SCRIPT}
     if (done) q += '&archived=1';
     return '/tasks/' + encodeURIComponent(taskId) + q;
   }
+  /** Markdown from an agent, escaped first; links only to web, mail or this site. */
+  function md(text) {
+    var html;
+    try { html = markdownToHtml(String(text == null ? '' : text)); } catch (e) { return '<p>' + esc(text) + '</p>'; }
+    return html.replace(/href="([^"]*)"/g, function (m, u) { return /^(https?:|mailto:|\/|#)/i.test(u) ? m : 'href="#"'; });
+  }
   function linkOrText(ref) {
     return /^https?:\/\//.test(ref) ? '<a href="' + esc(ref) + '" target="_blank" rel="noopener">' + esc(ref) + '</a>' : esc(ref);
   }
@@ -148,25 +167,54 @@ ${WALL_CAPACITY_SCRIPT}
     FILTERS.forEach(function (k) { f[k] = q.get(k) || ''; });
     if (!q.has('status')) f.status = 'open';
     S.view = q.get('view') || S.view;
+    S.page = PAGES.indexOf(q.get('page')) >= 0 ? q.get('page') : 'wall';
+    S.post = q.get('post') || '';
     return f;
   }
-  function writeHash() {
+  /** The hash for the current filters and view, on this page or post. */
+  function hashOf(post) {
     var q = new URLSearchParams();
     FILTERS.forEach(function (k) {
       var el = $('f-' + k), v = el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value;
       if (v || k === 'status') q.set(k, v);
     });
     if (S.view !== 'feed') q.set('view', S.view);
-    history.replaceState(null, '', '#' + q.toString());
+    if (S.page !== 'wall') q.set('page', S.page);
+    if (post) q.set('post', post);
+    return '#' + q.toString();
   }
+  function writeHash() { history.replaceState(null, '', hashOf(S.post)); }
   function applyHash() {
+    var was = S.post;
     var f = readHash();
     FILTERS.forEach(function (k) {
       var el = $('f-' + k);
       if (el.type === 'checkbox') el.checked = f[k] === '1';
       else el.value = f[k];
     });
+    var back = null;
+    if (S.post && S.post !== was) {
+      // Opened from the feed in this tab: Back returns there, where it was.
+      if (S.booted && !was) { S.pushed = true; S.backY = window.scrollY || 0; }
+      loadThread(S.post);
+    } else if (!S.post && was) {
+      S.pushed = false;
+      back = S.backY;
+    }
+    S.booted = true;
     setView(S.view, true);
+    if (S.post && S.post !== was && window.scrollTo) window.scrollTo(0, 0);
+    if (back != null && window.scrollTo) window.scrollTo(0, back);
+  }
+  /** Open one post on its own, with its thread (#1316). */
+  function openPost(id) {
+    location.hash = hashOf(id);
+    applyHash();
+  }
+  function closePost() {
+    if (S.pushed && history.back) { history.back(); return; }
+    history.replaceState(null, '', hashOf(''));
+    applyHash();
   }
   function current() {
     var f = {};
@@ -261,26 +309,28 @@ ${WALL_CAPACITY_SCRIPT}
   // --- Feed ---
   // A post leads with its result (#1242); the request it answers opens
   // from under it with one tap. No result recorded: the request alone.
-  function leadHtml(p, via) {
+  function leadHtml(p, via, full) {
     var r = p.result;
     if (!r) return '<div class="wp__via">' + via + '</div>' +
       '<p class="wp__title">' + esc(p.headline) + ' <span class="chip chip--ghost">No result yet</span></p>';
     var from = r.from === 'reply'
       ? 'Answered ' + shortTime(r.at) + (r.taskId && r.agentId ? ' · <a href="' + esc(taskHref(r.taskId, r.agentId, p.node, !isOpen(p))) + '">run ' + esc(r.taskId) + '</a>' : '')
       : 'Closed with ' + shortTime(r.at);
-    return '<p class="wp__result">' + esc(r.text) + '</p>' +
+    return '<div class="wp__result ax-md">' + md(r.text) + '</div>' +
       '<div class="wp__from">' + from + '</div>' +
-      '<details class="wp__ask"><summary><span class="k">Request</span> ' + esc(p.headline) + '</summary>' +
+      '<details class="wp__ask"' + (full ? ' open' : '') + '><summary><span class="k">Request</span> ' + esc(p.headline) + '</summary>' +
         '<div class="wp__via">' + via + ' · <span title="Request id">' + esc(p.id) + '</span> · ' + when(p.createdAt) + '</div>' +
       '</details>';
   }
-  function postHtml(p) {
+  /** A post. In the feed it opens on its own when selected; full, it is that page. */
+  function postHtml(p, full) {
     var multi = S.data && S.data.nodes && S.data.nodes.length > 1;
     var conc = p.concurrent || [];
-    var cls = 'wp' + (p.blocked ? ' is-blocked' : '') + (p.failedRuns ? ' is-failed' : '') + (conc.length ? ' is-concurrent' : '');
+    var cls = 'wp' + (full ? ' wp--open' : '') + (p.blocked ? ' is-blocked' : '') + (p.failedRuns ? ' is-failed' : '') + (conc.length ? ' is-concurrent' : '');
     // Author line: name, @handle, time, as on a social feed; the status as a chip.
     var by = '<button type="button" class="name" data-agent="' + esc(p.owner) + '">' + esc(nameOf(p.owner)) + '</button>' +
-      '<span class="h">@' + esc(p.owner) + '</span><span aria-hidden="true">·</span>' + shortTime(p.lastMoveAt) +
+      '<span class="h">@' + esc(p.owner) + '</span><span aria-hidden="true">·</span>' +
+      (full ? shortTime(p.lastMoveAt) : '<a class="wp__link" href="' + esc(hashOf(p.id)) + '" data-open="' + esc(p.id) + '" title="Open this post and its thread">' + shortTime(p.lastMoveAt) + '</a>') +
       (multi ? '<span aria-hidden="true">·</span><span>' + esc(p.node.name) + '</span>' : '') + stateBadge(p.state);
     var via = [
       p.askedBy ? 'Asked by <b>' + esc(p.askedBy) + '</b>' : '',
@@ -296,8 +346,9 @@ ${WALL_CAPACITY_SCRIPT}
       p.forgeTime ? 'GitLab time <b' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>' + esc(forgeTimeText(p.forgeTime, true)) + '</b>' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
     // Action row: thread, runs, minutes, then the links out.
+    var shown = full || S.shown[p.id];
     var acts = [
-      '<button type="button" data-thread="' + esc(p.id) + '" aria-expanded="' + (S.threads[p.id] ? 'true' : 'false') + '">' + ICON.reply + (S.threads[p.id] ? 'Hide thread' : 'Thread') + '</button>',
+      full ? '' : '<button type="button" data-thread="' + esc(p.id) + '" aria-expanded="' + (shown ? 'true' : 'false') + '">' + ICON.reply + (shown ? 'Hide thread' : 'Thread') + '</button>',
       '<span title="Runs that worked on it"' + (p.failedRuns ? ' class="is-err"' : '') + '>' + ICON.runs + p.runs + (p.runs === 1 ? ' run' : ' runs') + (p.failedRuns ? ', ' + p.failedRuns + ' failed' : '') + '</span>',
       p.runMs ? '<span title="Minutes the runs took">' + ICON.time + mins(p.runMs) + ' min</span>' : '',
     ];
@@ -314,9 +365,10 @@ ${WALL_CAPACITY_SCRIPT}
       acts.push('<a href="' + esc(taskHref(p.lastRun.taskId, p.lastRun.agentId, p.node, !isOpen(p))) + '">' + ICON.trace + 'Task record and trace</a>');
       acts.push('<a href="/agents/' + encodeURIComponent(p.lastRun.agentId) + '/history">Agent history</a>');
     }
-    return '<article class="' + cls + '" id="post-' + esc(p.id) + '">' + avatar(p.owner) + '<div class="wp__b">' +
+    var open = full ? '' : ' data-post="' + esc(p.id) + '" tabindex="0"';
+    return '<article class="' + cls + '" id="' + (full ? 'open-' : 'post-') + esc(p.id) + '"' + open + '>' + avatar(p.owner) + '<div class="wp__b">' +
       '<div class="wp__by">' + by + '</div>' +
-      leadHtml(p, via) +
+      leadHtml(p, via, full) +
       (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
       (forgeClosedOpen(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '') + ', but this post is still open. Do not pick it up.</div>' : '') +
@@ -327,7 +379,8 @@ ${WALL_CAPACITY_SCRIPT}
       (qaText(p) ? '<div class="wp__qa">QA: ' + esc(qaText(p)) + (p.awaitingQa && p.qa ? ' — new verdict asked' : '') + '</div>' : '') +
       '<div class="wp__meta">' + meta + '</div>' +
       '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
-      '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
+      '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (full ? '<h2 class="wp__th">Thread</h2>' : '') +
+        (shown && S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
       '</div></article>';
   }
 
@@ -353,7 +406,7 @@ ${WALL_CAPACITY_SCRIPT}
       (e.status ? ' <span class="k">' + esc(e.status) + '</span>' : '') +
       (e.durationMs ? ' <span class="k">' + Math.round(e.durationMs / 1000) + ' s</span>' : '') +
       (ref ? ' <span class="k">' + ref + '</span>' : '') +
-      (e.text ? '<div class="txt">' + esc(e.text) + '</div>' : '') +
+      (e.text ? '<div class="txt ax-md">' + md(e.text) + '</div>' : '') +
       (ids.length ? '<div class="ids">' + ids.join('') + '</div>' : '');
   }
   /** One reply in the thread: a small avatar of who acted, then the line. */
@@ -366,6 +419,7 @@ ${WALL_CAPACITY_SCRIPT}
   function threadHtml(t, p) {
     if (t.loading) return '<p class="ax-wall__empty">Loading thread…</p>';
     if (t.error) return '<p class="ax-wall__empty">Thread not available: ' + esc(t.error) + '</p>';
+    if (!t.events.length) return '<p class="ax-wall__empty">Nothing recorded on this post yet.</p>';
     var groups = collapse(t.events);
     return '<ol class="wt">' + groups.map(function (g, gi) {
       var more = g.items.length > 1
@@ -410,25 +464,128 @@ ${WALL_CAPACITY_SCRIPT}
       '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(id) + '/history">History</a></div></div>';
   }
   function showAgent(id) {
-    $('f-owner').value = $('f-owner').value === id ? '' : id;
+    // From a post or another page, an agent opens its profile; on the feed it toggles.
+    var away = S.page !== 'wall' || S.post;
+    S.page = 'wall'; S.post = ''; S.pushed = false;
+    $('f-owner').value = !away && $('f-owner').value === id ? '' : id;
     if ($('f-owner').value === id) $('f-status').value = '';
     writeHash();
     render();
     var el = document.querySelector('.ax-wall__main');
     if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' });
   }
-  async function toggleThread(id) {
-    if (S.threads[id]) { delete S.threads[id]; render(); return; }
-    var p = (S.data.posts || []).find(function (x) { return x.id === id; });
-    if (!p) return;
-    S.threads[id] = { loading: true };
+  function findPost(id) {
+    return ((S.data && S.data.posts) || []).find(function (x) { return x.id === id; }) || (S.extra && S.extra.id === id ? S.extra : null);
+  }
+  function toggleThread(id) {
+    if (S.shown[id]) { delete S.shown[id]; render(); return; }
+    S.shown[id] = true;
+    loadThread(id);
+  }
+  /** Read a post's thread again, from the node that owns it. */
+  async function loadThread(id) {
+    var p = findPost(id);
+    if (!p) { render(); return; }
+    var had = S.threads[id];
+    if (had && had.loading) return;
+    S.threads[id] = had && had.events ? had : { loading: true };
     render();
+    var next;
     try {
       var r = await fetch('/api/admin/wall/thread?id=' + encodeURIComponent(id), { headers: headers(p.node && p.node.peer) });
       var body = await r.json();
-      S.threads[id] = r.ok ? { events: body.events || [] } : { error: body.error || ('HTTP ' + r.status) };
-    } catch (e) { S.threads[id] = { error: String(e && e.message || e) }; }
+      next = r.ok ? { events: body.events || [] } : { error: body.error || ('HTTP ' + r.status) };
+    } catch (e) { next = { error: String(e && e.message || e) }; }
+    S.threads[id] = next.error && had && had.events ? had : next;
     render();
+  }
+
+  // --- One post on its own (#1316) ---
+  function postPageHtml() {
+    var p = findPost(S.post);
+    if (p) return postHtml(p, true);
+    if (!S.data) return '<p class="ax-wall__empty">Loading…</p>';
+    return '<p class="ax-wall__empty">This post is not on the Wall: it may be older than seven days, or its node did not answer. <button type="button" class="wa-more" data-back>Back to the feed</button></p>';
+  }
+
+  // --- Agents page (#1316): every agent the nodes report, with its posts ---
+  function allAgents() {
+    var by = {};
+    ((S.live && S.live.nodes) || []).forEach(function (n) {
+      (n.agents || []).forEach(function (a) {
+        var x = by[a.id] || (by[a.id] = { id: a.id, name: a.name || a.id, nodes: [], running: 0, errors: 0, lastActive: 0 });
+        x.nodes.push(n.name);
+        x.running += (a.runningTasks || []).length;
+        x.errors += a.errors || 0;
+        x.tier = x.tier || a.tier; x.model = x.model || a.model;
+        if (a.skillCount != null) x.skills = Math.max(x.skills || 0, a.skillCount);
+        var at = Date.parse(a.lastActive || '') || 0;
+        if (at > x.lastActive) { x.lastActive = at; x.summary = a.lastSummary; }
+      });
+    });
+    agentStats().forEach(function (s) {
+      (by[s.id] || (by[s.id] = { id: s.id, name: nameOf(s.id), nodes: [], running: 0, errors: 0, lastActive: 0 })).stats = s;
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (x, y) {
+      return y.running - x.running || ((y.stats && y.stats.open) || 0) - ((x.stats && x.stats.open) || 0) || (x.name > y.name ? 1 : x.name < y.name ? -1 : 0);
+    });
+  }
+  function agentsPageHtml() {
+    var list = allAgents();
+    var down = ((S.live && S.live.nodes) || []).filter(function (n) { return !n.reachable || n.error; });
+    var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
+    if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
+    return note + list.map(function (a) {
+      var s = a.stats || { open: 0, owner: 0, done: 0, runs: 0, posts: 0 };
+      var meta = [
+        a.nodes.length ? 'on ' + a.nodes.map(esc).join(', ') : 'no node answering',
+        a.tier ? 'tier <b>' + esc(a.tier) + '</b>' : '',
+        a.model ? 'model <b>' + esc(a.model) + '</b>' : '',
+        a.skills != null ? a.skills + (a.skills === 1 ? ' skill' : ' skills') : '',
+        a.lastActive ? 'last active ' + when(a.lastActive) : '',
+      ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
+      return '<article class="wag" id="agent-' + esc(a.id) + '">' + avatar(a.id) + '<div class="wag__b">' +
+        '<div class="wp__by"><button type="button" class="name" data-agent="' + esc(a.id) + '">' + esc(a.name) + '</button><span class="h">@' + esc(a.id) + '</span>' +
+          (a.running ? '<span class="chip state">running ' + a.running + '</span>' : '') + '</div>' +
+        '<div class="wp__meta">' + meta + '</div>' +
+        '<div class="wpf__stats"><span><b>' + s.open + '</b> open</span><span><b>' + s.owner + '</b> waiting on the owner</span>' +
+          '<span><b>' + s.done + '</b> done in 7 days</span><span><b>' + s.runs + '</b> runs</span>' +
+          (a.errors ? '<span class="is-err"><b>' + a.errors + '</b> errors</span>' : '') + '</div>' +
+        (a.summary && a.summary.text ? '<details class="wp__ask"><summary><span class="k">Last summary</span> ' + esc(a.summary.text) + '</summary><div class="ax-md">' + md(a.summary.text) + '</div></details>' : '') +
+        '<div class="wpf__links">' + (s.posts ? '<button type="button" class="wa-more" data-agent="' + esc(a.id) + '">' + s.posts + (s.posts === 1 ? ' post' : ' posts') + '</button>' : '<span class="ax-wall__count">No posts in 7 days</span>') +
+          '<a href="/admin/agents/' + encodeURIComponent(a.id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(a.id) + '/history">History</a></div>' +
+        '</div></article>';
+    }).join('');
+  }
+
+  // --- The nav: which page is on, and its counts (#1316) ---
+  function runningCount() {
+    var n = 0;
+    ((S.live && S.live.nodes) || []).forEach(function (x) { (x.agents || []).forEach(function (a) { n += (a.runningTasks || []).length; }); });
+    return n;
+  }
+  function navHtml(page, f) {
+    var on = page === 'post' ? 'wall' : page === 'wall' ? (f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
+    document.querySelectorAll('[data-nav]').forEach(function (a) {
+      var me = a.getAttribute('data-nav') === on;
+      a.classList.toggle('is-on', me);
+      if (me) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    var posts = S.data && S.data.posts;
+    var counts = {
+      wall: posts ? posts.filter(isOpen).length : null,
+      needs: posts ? posts.filter(waitsOnOwner).length : null,
+      running: S.live ? runningCount() : null,
+      agents: S.live || posts ? allAgents().length : null,
+    };
+    var title = { wall: 'open posts', needs: 'posts waiting on you', running: 'tasks running now', agents: 'agents' };
+    Object.keys(counts).forEach(function (k) {
+      var el = $('nav-n-' + k), n = counts[k];
+      el.textContent = n == null ? '' : String(n);
+      el.classList.toggle('is-zero', !n);
+      el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
+    });
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : on === 'needs' ? 'Needs you' : 'Wall';
   }
 
   // --- List ---
@@ -662,38 +819,54 @@ ${WALL_CAPACITY_SCRIPT}
   function render() {
     // Running now draws from /api/live alone: it does not wait on the feed (#1252).
     $('wall-nodes').innerHTML = nodesHtml();
-    if (!S.data) return;
     var f = current();
+    var page = S.post ? 'post' : S.page, onWall = page === 'wall';
+    navHtml(page, f);
+    $('wall-back').hidden = page !== 'post';
+    $('wall-views').hidden = !onWall;
+    $('wall-filters').hidden = !onWall;
+    $('wall-post').hidden = page !== 'post';
+    $('wall-running').hidden = page !== 'running';
+    // On its own page, Running now leaves the side column.
+    $('wall-nodes').parentNode.hidden = page === 'running';
+    $('wall-agents-page').hidden = page !== 'agents';
+    if (page === 'post') $('wall-post').innerHTML = postPageHtml();
+    if (page === 'running') $('wall-running').innerHTML = nodesHtml();
+    if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
+    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-profile', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
+    if (!S.data) return;
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list');
+    $('wall-agents').innerHTML = agentsHtml();
+    var n = failCount();
+    $('wall-fail-n').textContent = n ? '(' + n + ')' : '';
+    var synced = S.data.syncedAt;
+    $('wall-synced').textContent = stamp(synced);
+    $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
+    $('wall-synced').parentNode.classList.toggle('is-stale', Date.now() - synced > 120000);
+    if (!onWall) { renderReviews(''); return; }
     var side = S.view === 'failures' || S.view === 'projects' || S.view === 'jobs';
     $('wall-profile').hidden = !f.owner || side;
     if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
-    $('wall-agents').innerHTML = agentsHtml();
     $('wall-feed').hidden = S.view !== 'feed';
     $('wall-list').hidden = S.view !== 'list';
     $('wall-failures').hidden = S.view !== 'failures';
     $('wall-projects').hidden = S.view !== 'projects';
     $('wall-jobs').hidden = S.view !== 'jobs';
     $('wall-count').hidden = side;
-    if (S.view === 'feed') $('wall-feed').innerHTML = posts.length ? posts.map(postHtml).join('') : '<p class="ax-wall__empty">No posts match these filters.</p>';
+    if (S.view === 'feed') $('wall-feed').innerHTML = posts.length ? posts.map(function (p) { return postHtml(p); }).join('') : '<p class="ax-wall__empty">No posts match these filters.</p>';
     if (S.view === 'list') $('wall-list').innerHTML = !posts.length ? '<p class="ax-wall__empty">No posts match these filters.</p>'
       : f.status === 'blocked' && f.by ? blocksHtml(posts, f.by) : listHtml(posts);
     if (S.view === 'failures') $('wall-failures').innerHTML = failuresHtml();
     if (S.view === 'projects') $('wall-projects').innerHTML = projectsHtml();
     // Recurring jobs with their value line (#1183): cron-value.ts.
     if (S.view === 'jobs') $('wall-jobs').innerHTML = axCronJobsHtml(S.live && S.live.nodes, esc);
-    var n = failCount();
-    $('wall-fail-n').textContent = n ? '(' + n + ')' : '';
     renderReviews(S.view);
-    var synced = S.data.syncedAt;
-    $('wall-synced').textContent = stamp(synced);
-    $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
-    $('wall-synced').parentNode.classList.toggle('is-stale', Date.now() - synced > 120000);
   }
   function setView(v, quiet) {
     S.view = v;
+    if (!quiet) { S.page = 'wall'; S.post = ''; }
     document.querySelectorAll('[data-view]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-view') === v); b.setAttribute('aria-selected', b.getAttribute('data-view') === v ? 'true' : 'false'); });
     if (!quiet) writeHash();
     render();
@@ -726,9 +899,18 @@ ${WALL_CAPACITY_SCRIPT}
   }
 
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear]');
+    var t = ev.target.closest('[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-back],[data-post]');
     if (!t) return;
-    if (t.hasAttribute('data-agent')) showAgent(t.getAttribute('data-agent'));
+    if (t.hasAttribute('data-post')) {
+      // A tap on the post itself opens it; its links, buttons and the
+      // request summary keep their own job, and selecting text opens nothing.
+      var inner = ev.target.closest('a,button,summary,input,select');
+      if (inner && !inner.hasAttribute('data-post')) return;
+      if (window.getSelection && String(window.getSelection())) return;
+      openPost(t.getAttribute('data-post'));
+    }
+    else if (t.hasAttribute('data-back')) closePost();
+    else if (t.hasAttribute('data-agent')) showAgent(t.getAttribute('data-agent'));
     else if (t.hasAttribute('data-agents-more')) { S.allAgents = !S.allAgents; render(); }
     else if (t.hasAttribute('data-profile-clear')) { $('f-owner').value = ''; writeHash(); render(); }
     else if (t.hasAttribute('data-view')) setView(t.getAttribute('data-view'));
@@ -741,12 +923,16 @@ ${WALL_CAPACITY_SCRIPT}
       S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : -1 };
       render();
     } else if (t.hasAttribute('data-open')) {
+      // A post's time is a link: with a modifier key it opens in a new tab.
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
       ev.preventDefault();
-      var id = t.getAttribute('data-open');
-      setView('feed');
-      if (!S.threads[id]) toggleThread(id);
-      setTimeout(function () { var el = $('post-' + id); if (el) el.scrollIntoView({ block: 'start' }); }, 50);
+      openPost(t.getAttribute('data-open'));
     }
+  });
+  // Keyboard: Enter on a post opens it, Escape goes back to the feed.
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-post')) { ev.preventDefault(); openPost(ev.target.getAttribute('data-post')); }
+    else if (ev.key === 'Escape' && S.post && !(ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName))) closePost();
   });
   FILTERS.forEach(function (k) {
     $('f-' + k).addEventListener(k === 'q' ? 'input' : 'change', function () { writeHash(); render(); });
@@ -775,9 +961,11 @@ ${WALL_CAPACITY_SCRIPT}
     if (!fromTask || !S.data) return;
     fetch('/api/admin/wall/thread?task=' + encodeURIComponent(fromTask), { headers: headers() }).then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
       if (!b || !b.post) return;
-      $('f-status').value = ''; $('f-q').value = b.post.id; writeHash();
       S.threads[b.post.id] = { events: b.events || [] };
-      if (!(S.data.posts || []).some(function (p) { return p.id === b.post.id; })) S.data.posts.push(Object.assign({}, b.post, { node: { name: S.data.node, peer: null, daemonUrl: null } }));
+      // Kept aside too, so a refresh that no longer lists it still shows it.
+      if (!findPost(b.post.id)) S.extra = Object.assign({}, b.post, { node: { name: S.data.node, peer: null, daemonUrl: null } });
+      S.post = b.post.id;
+      writeHash();
       render();
     });
   });

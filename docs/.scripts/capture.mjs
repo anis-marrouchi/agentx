@@ -34,6 +34,10 @@ const shots = [
   { name: "wall/result-first", path: "/wall#status=", wait: "#post-req-docs-wall-done .wp__result", clipTo: "#post-req-docs-wall-done" },
   { name: "wall/result-request", path: "/wall#status=", wait: "#post-req-docs-wall-done .wp__ask", steps: [{ click: "#post-req-docs-wall-done .wp__ask summary" }, { wait: "#post-req-docs-wall-done .wp__ask[open]" }], clipTo: "#post-req-docs-wall-done" },
   { name: "wall/list", path: "/wall#status=&view=list", wait: ".wl" },
+  // #1316: a post on its own with its thread, and the nav's own pages.
+  { name: "wall/post", path: "/wall#status=&post=req-docs-wall-done", wait: "#open-req-docs-wall-done .wt li" },
+  { name: "wall/agents", path: "/wall#page=agents", wait: ".wag" },
+  { name: "wall/running", path: "/wall#page=running", wait: "#wall-running .wn" },
   { name: "wall/concurrent", path: "/wall", wait: "#post-req-docs-wall-question .ax-conc", clipTo: "#post-req-docs-wall-question" },
   // A pending decision card on its post (#1185), under "Waiting on the owner".
   { name: "wall/owner-card", path: "/wall#status=waiting_owner", wait: "#post-req-docs-wall-question .wc", clipTo: "#post-req-docs-wall-question" },
