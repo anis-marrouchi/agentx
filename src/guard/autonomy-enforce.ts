@@ -13,7 +13,9 @@ import type { Verdict } from "./types"
 //       the daemon's loopback /guard/check with ?autonomy=<level>&task=<id>.
 //       It layers on top of the workspace's own guard hook; Claude Code
 //       applies the strictest decision, and hooks fire under
-//       bypassPermissions too. If the daemon cannot be reached the hook
+//       bypassPermissions too. At report, a call the allowlist accepts is
+//       answered "allow" so the agent's own permission mode does not
+//       prompt (and, unattended, deny) it; propose answers nothing. If the daemon cannot be reached the hook
 //       exits 2, which BLOCKS the call: a restricted routine fails closed,
 //       unlike the workspace guard hook which fails open.
 //   --disallowedTools Write,Edit,MultiEdit,NotebookEdit   (report only)
@@ -114,9 +116,26 @@ export function takeAutonomyBlocks(taskId: string | undefined): AutonomyBlock[] 
 // ---------------------------------------------------------------- daemon side
 
 export interface AutonomyCheckResult {
-  /** Body for the hook: "" = allow (defer to the other hooks). */
+  /** Body for the hook: "" = no opinion (defer to the other hooks and the
+   *  agent's own permission settings); otherwise a JSON decision. */
   stdout: string
   blocked: AutonomyBlock | null
+}
+
+/** A report routine runs unattended and cannot answer a permission prompt,
+ *  so a call the report allowlist accepts is allowed outright rather than
+ *  deferred to the agent's permission mode, which would deny it (#1352).
+ *  Other hooks can still deny: Claude Code applies the strictest decision.
+ *  propose is a denylist, not a judgement that a call is safe, so it keeps
+ *  deferring. */
+function allowOutput(level: AutonomyLevel): string {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "allow",
+      permissionDecisionReason: `[agentx-autonomy] read-only call allowed at autonomy "${level}"`,
+    },
+  })
 }
 
 function denyOutput(reason: string): string {
@@ -144,12 +163,15 @@ export function checkAutonomyPayload(
   const filePath = typeof payload.tool_input?.file_path === "string"
     ? payload.tool_input.file_path
     : typeof payload.tool_input?.notebook_path === "string" ? payload.tool_input.notebook_path : undefined
+  const action = typeof payload.tool_input?.action === "string" ? payload.tool_input.action : undefined
   try {
     const parsed = autonomyLevelSchema.safeParse(opts.level)
     const decision = parsed.success
-      ? evaluateAutonomy(parsed.data, { tool, command, filePath })
+      ? evaluateAutonomy(parsed.data, { tool, command, filePath, action })
       : { allowed: false, ruleId: "autonomy.invalid", reason: `unknown autonomy level "${opts.level}"` }
-    if (decision.allowed) return { stdout: "", blocked: null }
+    if (decision.allowed) {
+      return { stdout: parsed.success && parsed.data === "report" ? allowOutput(parsed.data) : "", blocked: null }
+    }
 
     const level = parsed.success ? parsed.data : "report"
     const ruleId = decision.ruleId ?? "autonomy"

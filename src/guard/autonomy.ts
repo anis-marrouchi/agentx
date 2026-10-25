@@ -40,6 +40,8 @@ export interface AutonomyInput {
   tool: string
   command?: string
   filePath?: string
+  /** `tool_input.action` of an MCP tool, when it is a string. */
+  action?: string
 }
 
 export interface AutonomyDecision {
@@ -297,10 +299,21 @@ function reportBash(command: string): AutonomyDecision {
   return ALLOW
 }
 
+/** `agentx_content` actions a report routine may take (#1352). voice,
+ *  calendar and status read; draft only holds a post in the Approvals inbox,
+ *  and nothing publishes without the owner's yes. The tool's default action
+ *  is draft. */
+const AGENTX_CONTENT_REPORT = new Set(["voice", "calendar", "status", "draft"])
+
 function reportTool(input: AutonomyInput): AutonomyDecision {
   if (WRITE_TOOLS.has(input.tool)) return block("report", "write", `${input.tool} modifies files`)
   if (input.tool === "Bash") return reportBash(input.command ?? "")
   if (REPORT_SAFE_TOOLS.has(input.tool)) return ALLOW
+  if (/^mcp__.+__agentx_content$/.test(input.tool)) {
+    const action = (input.action?.trim() || "draft").toLowerCase()
+    if (AGENTX_CONTENT_REPORT.has(action)) return ALLOW
+    return block("report", "outward", `agentx_content action "${action}" is not allowed in a read-only routine`)
+  }
   if (input.tool.startsWith("mcp__")) {
     const words = mcpActionWords(input.tool)
     const mutating = words.find((w) => MUTATING_VERBS.has(w))

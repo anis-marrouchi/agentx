@@ -75,14 +75,37 @@ describe("autonomyUnsupported — tiers that cannot enforce refuse", () => {
 })
 
 describe("checkAutonomyPayload — daemon side of the hook", () => {
-  it("allows a read with an empty body and records nothing", () => {
+  it("allows a report read outright, so the agent's permission mode cannot prompt for it (#1352), and records nothing", () => {
     const r = checkAutonomyPayload(
       { tool_name: "Bash", tool_input: { command: "git status" } },
       { root, agentId: "coder", level: "report", taskId: "T-allow" },
     )
-    expect(r).toEqual({ stdout: "", blocked: null })
+    expect(r.blocked).toBeNull()
+    expect(JSON.parse(r.stdout).hookSpecificOutput).toMatchObject({ hookEventName: "PreToolUse", permissionDecision: "allow" })
     expect(takeAutonomyBlocks("T-allow")).toEqual([])
     expect(listDecisions({ root, taskId: "T-allow" })).toHaveLength(0)
+  })
+
+  it("propose defers an allowed call to the other hooks and the agent's permissions", () => {
+    const r = checkAutonomyPayload(
+      { tool_name: "Bash", tool_input: { command: "git commit -m x" } },
+      { root, agentId: "coder", level: "propose", taskId: "T-propose" },
+    )
+    expect(r).toEqual({ stdout: "", blocked: null })
+  })
+
+  it("passes the MCP tool's action to the rules: agentx_content draft is allowed at report, an unknown action is not", () => {
+    const draft = checkAutonomyPayload(
+      { tool_name: "mcp__agentx__agentx_content", tool_input: { action: "draft", platform: "linkedin", text: "x" } },
+      { root, agentId: "content", level: "report", taskId: "T-draft" },
+    )
+    expect(JSON.parse(draft.stdout).hookSpecificOutput.permissionDecision).toBe("allow")
+    const odd = checkAutonomyPayload(
+      { tool_name: "mcp__agentx__agentx_content", tool_input: { action: "publish" } },
+      { root, agentId: "content", level: "report", taskId: "T-odd" },
+    )
+    expect(JSON.parse(odd.stdout).hookSpecificOutput.permissionDecision).toBe("deny")
+    expect(odd.blocked?.ruleId).toBe("autonomy.report.outward")
   })
 
   it("denies a write, logs it to the guard log under the task, and keeps it for the run result", () => {

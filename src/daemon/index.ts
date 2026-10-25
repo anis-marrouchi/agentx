@@ -5383,8 +5383,10 @@ export class AgentXDaemon {
         const agentId = url.searchParams.get("agent") || undefined
         const envScope = url.searchParams.get("env") || undefined
         const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
-        // Per-task autonomy hook (report/propose routines). Always enforced;
-        // an allow returns "" so the workspace guard hook still has its say.
+        // Per-task autonomy hook (report/propose routines). Always enforced.
+        // A report allow answers "allow" (an unattended run cannot answer a
+        // permission prompt, #1352); the workspace guard hook can still deny,
+        // since Claude Code applies the strictest decision. propose defers.
         if (url.searchParams.has("autonomy")) {
           const { stdout } = checkAutonomyPayload(payload as PreToolUsePayload, {
             root: process.cwd(),
