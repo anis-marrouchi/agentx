@@ -2,6 +2,8 @@
 
 **Result:** Every Monday morning you get a ready-to-send follow-up for each lead that has gone quiet, and nothing is sent until you approve it.
 
+**First result:** the next weekday at 08:30, the daily brief with a source link on every line. The first follow-up drafts arrive on Monday at 09:00.
+
 Each weekday morning you also get a short brief: new leads, quiet leads and what changed on your competitors' pages, with a source link on every line. Every Monday it finds new leads that match the customers you describe, and every fact about them links to the page it came from.
 
 ## Who is in the team

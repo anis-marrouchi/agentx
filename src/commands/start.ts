@@ -1,5 +1,6 @@
 import { Command } from "commander"
 import chalk from "chalk"
+import prompts from "prompts"
 import { spawn } from "child_process"
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "fs"
 import { hostname } from "os"
@@ -11,9 +12,11 @@ import { findBinary } from "@/voice/transcribe"
 import { readDotenv } from "@/utils/dotenv"
 import { cliLoggedIn } from "@/utils/cli-login"
 import { openBrowser } from "@/utils/open-browser"
+import { shippedTeam, shippedTeams } from "@/teams/catalog"
 import { cliCommand } from "./demo-startup"
+import { install as installTeam } from "./team"
 import {
-  chatUrl, daemonBaseUrl, dashboardBaseUrl, existingConfigPath, firstAgentPayload, isSameInstall, pickAgent,
+  chatUrl, daemonBaseUrl, dashboardBaseUrl, existingConfigPath, firstAgentPayload, isSameInstall, pickAgent, startTeamPlan,
 } from "./start-plan"
 
 // --- agentx start: one command to a working agent in the browser (#1163) ---
@@ -31,6 +34,7 @@ export const start = new Command()
   .option("--port <n>", "daemon port for a new install (default 18800; an existing agentx.json keeps its own)")
   .option("--dashboard-port <n>", "dashboard port for a new install (default 4202)")
   .option("--startup-timeout <seconds>", "seconds the daemon and the dashboard each may take to answer", "60")
+  .option("--team <name>", "also add a ready-made team (see `agentx team list`); a first run in a terminal asks")
   .option("--no-open", "don't open the browser")
   .action(async (opts) => {
     const dir = process.cwd()
@@ -44,6 +48,7 @@ export const start = new Command()
 
     // 1. Config: create one with a single agent, or leave the existing one alone.
     let configPath = existingConfigPath(dir)
+    const created = !configPath
     if (configPath) {
       console.log(chalk.dim(`  Using ${configPath} (left as it is)`))
     } else {
@@ -52,6 +57,19 @@ export const start = new Command()
       runWizard(payload, dir, { daemonPort: port(opts.port, "--port"), dashboardPort: port(opts.dashboardPort, "--dashboard-port") })
       configPath = resolve(dir, "agentx.json")
       console.log(chalk.green(`  ✓ Created agentx.json with one agent, ${payload.agent.id} (engine: ${payload.agent.tier})`))
+    }
+
+    // 1b. A ready-made team (#1293): --team, or a choice on a first run in a terminal.
+    const teamName: string | undefined = opts.team ?? (created && process.stdin.isTTY && process.stdout.isTTY ? await chooseTeam() : undefined)
+    let teamAdded = false
+    if (teamName) {
+      const plan = startTeamPlan(JSON.parse(readFileSync(configPath, "utf-8")), teamName)
+      if ("error" in plan) fail(`${plan.error} See \`${cmd} team list\`.`)
+      if ("skip" in plan) console.log(chalk.dim(`  ${plan.skip}`))
+      if ("add" in plan) {
+        await installTeam(shippedTeam(plan.add.team)!, { config: configPath, tier: plan.add.tier, provider: plan.add.provider })
+        teamAdded = true
+      }
     }
 
     let cfg
@@ -70,6 +88,7 @@ export const start = new Command()
     }
     if (running) {
       console.log(chalk.green(`  ✓ Daemon already running at ${daemonUrl}`))
+      if (teamAdded) console.log(chalk.yellow(`  Restart it to start the team's agents: ${cmd} daemon restart`))
     } else {
       const log = join(logDir, "daemon.log")
       spawnDetached(cli, ["daemon", "start", "-c", configPath], dir, log)
@@ -113,6 +132,21 @@ export const start = new Command()
     console.log()
     if (opts.open !== false) openBrowser(url)
   })
+
+/** The first-run question: one assistant, or a ready-made team as well. */
+async function chooseTeam(): Promise<string | undefined> {
+  const { team } = await prompts({
+    type: "select",
+    name: "team",
+    message: "Start with a ready-made team as well?",
+    choices: [
+      { title: "No, one assistant for now", value: "" },
+      ...shippedTeams().map((t) => ({ title: `${t.name}: ${t.title}`, description: t.result, value: t.name })),
+    ],
+    initial: 0,
+  })
+  return team || undefined
+}
 
 function fail(message: string): never {
   console.error(chalk.red(`  ${message}`))

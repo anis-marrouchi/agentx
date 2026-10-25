@@ -9,16 +9,23 @@ Add a team of agents that already does a job, in one command. A **team** is a se
 | Team | What you get |
 |---|---|
 | `client-inbox` | Every client message on WhatsApp gets a polite answer within minutes, and each evening you get the short list of what still needs you. |
+| `support` | Every customer question on Telegram gets an answer from your own documents, with the page it came from, and each evening you get the questions your documents could not answer. |
 | `sales-follow-up` | Every Monday morning you get a ready-to-send follow-up for each lead that has gone quiet, and nothing is sent until you approve it. It also researches new leads, sends a daily brief with a source link on every line, and watches competitor pages. See [Find and follow up sales leads](./sales.md). |
 | `dev-team` | Issues you assign on GitLab come back as merge requests with a second agent's review, and each weekday morning you see what is stuck. |
 | `content` | Every Friday next week's posts are planned in your content calendar, every Monday they are drafted in your voice from your past posts, and nothing is published until you approve it. See [Draft posts in your voice](./content.md). |
 
-Each team has a README next to its package in the source (`src/teams/catalog/<team>/README.md`) that lists its agents and schedules.
+Each team has a README next to its package in the source (`src/teams/catalog/<team>/README.md`) that lists its agents and schedules, and says what its first result is and when it arrives.
 
 You need:
 
 - AgentX installed, with an `agentx.json`. See [Install](../install.md).
 - A terminal in the folder with `agentx.json`.
+
+## Add a team on the first run
+
+When you install AgentX with `agentx start` in a terminal, it asks **Start with a ready-made team as well?** Pick a team with the arrow keys and press Enter, or keep **No, one assistant for now**. The team runs on the same engine as your first agent, so it needs no other login or key. To choose without the question, run `agentx start --team support`, with any team name from the list above.
+
+Then go on with [3. Connect the channel](#_3-connect-the-channel).
 
 ## 1. Pick a team
 
@@ -54,7 +61,7 @@ The agents run on Claude Code unless you choose another runtime with `--tier`, f
    agentx connect whatsapp --agent inbox
    ```
 
-   For the sales follow-up it is `agentx connect telegram --agent sales`, and for the content team `agentx connect telegram --agent content`. For the dev team, run `agentx channel add`, choose GitLab, and route your project to `dev`.
+   For the support desk it is `agentx connect telegram --agent support`, for the sales follow-up `agentx connect telegram --agent sales`, and for the content team `agentx connect telegram --agent content`. For the dev team, run `agentx channel add`, choose GitLab, and route your project to `dev`.
 
 2. Start the daemon, or restart it if it was running:
 
@@ -115,6 +122,15 @@ Each agent's `team` setting is described in [Configuration: agents](../reference
 2. In the terminal, run `agentx schedule list`. The team's schedules are listed with a filled dot, which means they are on.
 3. In the same list, each of the team's schedules has a `notify:` line that ends with `(results and failures)`.
 4. Send a message to the agent on the channel you connected. It answers.
+5. Check the team's first result, at the time its README gives:
+
+   | Team | First result |
+   |---|---|
+   | `client-inbox` | Message the WhatsApp number as a client would. The answer comes within minutes. At 18:00 on the next weekday, the evening summary arrives in your chat. |
+   | `support` | Put one guide in `agents/support/docs/`, then ask the bot a question it answers. The answer ends with `Source: docs/<file>`. At 18:00 on the next weekday, the list of open questions arrives in your chat. |
+   | `sales-follow-up` | At 08:30 on the next weekday, the daily brief arrives in your chat, with a source link on each line. |
+   | `dev-team` | At 08:30 on the next weekday, the morning digest arrives in your chat. Assign an issue to `dev` on GitLab: a merge request with a test comes back. |
+   | `content` | On Friday at 10:00, `agents/content/calendar.md` has next week's posts, and the list arrives in your chat. On Monday at 08:00, the drafts wait in your Approvals inbox. |
 
 ## If something is wrong
 
@@ -130,3 +146,5 @@ Each agent's `team` setting is described in [Configuration: agents](../reference
 | `Not a valid team package` | The file was edited by hand or comes from a newer version. The lines below the message name each wrong key. |
 | `No agents belong to team "<name>"` | Those agents were not added with `team add`. Name them with `--agents`. |
 | The team is added but nobody answers | The channel is not connected yet, or the daemon was not restarted. Do step 3. |
+| `agentx start` printed **Restart it to start the team's agents** | The daemon was already running when the team was added. Run `agentx daemon restart`. |
+| The support agent says someone will reply, for a question your guide covers | The guide is not in `agents/support/docs/`, or is not a `.md` or `.txt` file. Move it there and ask again. |
