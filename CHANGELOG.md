@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.176.0](https://github.com/anis-marrouchi/agentx/compare/v0.175.0...v0.176.0) (2026-10-25)
+
+
+### Features
+
+* **wall:** v2 live: Live page, comments on any post with [@mentions](https://github.com/mentions), call and join ([#1355](https://github.com/anis-marrouchi/agentx/issues/1355)) ([#1373](https://github.com/anis-marrouchi/agentx/issues/1373)) ([51e0ac0](https://github.com/anis-marrouchi/agentx/commit/51e0ac06ed5ef4da11e6ab7adf512e6845a9f0ca))
+
+
+### Bug Fixes
+
+* **wall:** match [@mentions](https://github.com/mentions) of several words; compute the live task once ([#1373](https://github.com/anis-marrouchi/agentx/issues/1373)) ([#1376](https://github.com/anis-marrouchi/agentx/issues/1376)) ([c047aa2](https://github.com/anis-marrouchi/agentx/commit/c047aa2cfeab395571b17e62513c7f8f3b2766cb))
+
 ## [0.175.0](https://github.com/anis-marrouchi/agentx/compare/v0.174.0...v0.175.0) (2026-10-25)
 
 
