@@ -117,7 +117,16 @@ When a stop or a stop-all stops a task that had started builders, AgentX does th
 
 When the task resumes, it is told the same, and starts its builders again from their WIP branches. The stop-all line of the task says, for example, **1 builder(s) stopped, 1 folder(s) saved on a WIP branch**, and the report after the restart names the branch. `agentx signal show <taskId>` lists each builder and each folder.
 
-This is a write into your repositories: a local branch and its commit, on every stop of a task with builders, in each folder those builders changed. The WIP branch stays in the folder; AgentX does not push it. If the folder is in a place the computer empties when it starts (such as `/tmp` on some systems), restart AgentX, not the whole computer, or push the branch first.
+AgentX gives this saving up to 60 seconds for all the folders together, on top of `signals.windDownSeconds`. A folder it had no time left for is listed as **NOT saved**, with its changes still in the folder.
+
+**What this writes in your folders.** This happens on every stop of a task with builders, not only on stop-all. In each folder named in the task's tool calls (a shared checkout too) that holds changes not yet committed, AgentX adds:
+
+- one commit, made by **AgentX**, holding those changes;
+- one local branch pointing at it, `agentx/wip/<taskId>` (or with `-2`, `-3` …).
+
+Nothing else changes: not the checkout, its branch, its staged changes or its files. Nothing is pushed. Delete a WIP branch you no longer need with `git branch -D agentx/wip/<taskId>`.
+
+The WIP branch stays in the folder; AgentX does not push it. If the folder is in a place the computer empties when it starts (such as `/tmp` on some systems), restart AgentX, not the whole computer, or push the branch first.
 
 Some tasks are not stopped:
 
@@ -234,9 +243,12 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 - **Resume says "already resumed" but the task shows stopped:** AgentX stopped in the middle of a resume. Restart AgentX; on start it clears the leftover mark, and you can resume again.
 - **"mesh peer … is not in signals.allowPeers" from your own dashboard:** the dashboard reaches that machine with a token from `mesh.peers`, so it counts as that machine. Add the machine to `signals.allowPeers`, or give the dashboard the shared `MESH_TOKEN` for it.
 - **Stop-all says a machine is "not in signals.allowPeers":** on that machine, add the name of the machine you gave the order from to `signals.allowPeers`, then give the order again.
-- **Stop-all says "no answer in time; its plans may still be saving":** that machine's agents need longer. Run `agentx signal list --peer <machine>` until every task there shows **stopped**, then restart.
+- **Stop-all says "no answer in time; its plans may still be saving":** that machine's agents need longer. Run `agentx signal list --peer <machine>` until every task there shows **stopped**, then restart. The machine still took the order: its part comes in the one report.
+- **A machine's own report says "… refused its part":** the machine you gave the order on no longer knows the order, for example because its `.agentx/signals/orders/` folder was removed. The report that came is complete for that machine; nothing else is needed.
 - **The report says a machine sent "no report":** that machine had not restarted, or could not reach this one, within 10 minutes. Run `agentx signal list --peer <machine>`. Once it restarts, its part arrives as a late message.
 - **You got a report from each machine after `--mesh`:** a machine could not reach the one you gave the order on. Its report says so on the last line. On that machine, run `agentx mesh list` and check the other machine shows as healthy.
 - **A builder's folder says "NOT saved":** AgentX could not commit its changes (the reason follows). Nothing was lost: the changes are still in the folder. Commit them yourself, or let the resumed task do it.
+- **"NOT saved (a branch named agentx/wip is in the way …)":** the folder has a branch called exactly `agentx/wip` (or `agentx`), and git cannot keep that and `agentx/wip/<taskId>` side by side. **Terminal:** in that folder, rename it, for example `git branch -m agentx/wip agentx-wip-old`.
+- **"NOT saved (the stop's time to save builder work ran out)":** the task's builders worked in many folders, or git was slow. Commit the changes in that folder yourself.
 - **A stop-all task is "skipped (already tried …)" in the report:** an earlier restart tried it once. Run `agentx signal resume <taskId>` when you're ready.
 - **Resume does nothing in a chat:** the chat's channel isn't running on this machine any more. Check it in [Settings](/dashboard/settings).
