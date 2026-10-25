@@ -6,6 +6,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 //
 //   agentx signal stop <taskId> [--reason …]            stop one running task
 //   agentx signal stop --agent a --channel c --chat x   …or the agent's only task on a chat
+//   agentx signal stop --all [--mesh] [--no-wait]     stop every task, before a restart (#1271)
 //   agentx signal list [--all]                          stopped tasks and their plans
 //   agentx signal show <id>                             one stopped task, whole plan
 //   agentx signal resume <id> [--reason …]              run it again from its plan
@@ -67,8 +68,19 @@ common(signalCmd
   .option("--agent <id>", "with --channel and --chat: the agent's only task on that chat")
   .option("--channel <channel>", "the task's channel")
   .option("--chat <chatId>", "the task's chat id")
+  .option("--all", "stop every running task on this node; each resumes from its plan after the next restart")
+  .option("--mesh", "with --all: on every healthy mesh node too")
+  .option("--no-wait", "with --all: answer at once, without waiting for the plans")
   .option("-r, --reason <reason>", "why: shown to the agent and on the live page"))
   .action(async (taskId: string | undefined, opts) => {
+    if (opts.all) {
+      if (taskId || opts.agent) {
+        console.log(chalk.red("  --all stops every task: give no task id or --agent"))
+        process.exit(1)
+      }
+      await stopAll(opts)
+      return
+    }
     if (!taskId && !(opts.agent && opts.channel && opts.chat)) {
       console.log(chalk.red("  give a task id, or --agent, --channel and --chat"))
       process.exit(1)
@@ -79,6 +91,38 @@ common(signalCmd
     console.log(chalk.green(`  stopped ${data.agentId} task ${data.id}`) + chalk.dim(" — writing its resume plan"))
     console.log(chalk.dim(`  see it: agentx signal show ${data.id}${opts.peer ? ` --peer ${opts.peer}` : ""}`))
   })
+
+function printStopAllTasks(tasks: any[], indent: string): void {
+  if (!tasks.length) { console.log(chalk.dim(`${indent}no running tasks`)); return }
+  for (const t of tasks) {
+    const plan = t.plan === "agent" ? chalk.green("plan by the agent") : t.plan === "machine" ? chalk.yellow("plan by AgentX") : ""
+    const state = t.state === "refused" ? chalk.red(`not stopped: ${t.error}`) : t.state === "winding-down" ? chalk.cyan("writing its plan") : plan || t.state
+    console.log(`${indent}${chalk.bold(t.agentId)} ${chalk.dim(t.id)} ${state}`)
+  }
+}
+
+async function stopAll(opts: any): Promise<void> {
+  const wait = opts.wait !== false
+  if (wait) console.log(chalk.dim("  stopping every task and waiting for the resume plans…"))
+  const body: Record<string, unknown> = { reason: opts.reason, mesh: Boolean(opts.mesh), wait }
+  // --peer: the order is given to that node, as its own owner would.
+  const data = opts.peer
+    ? await call(opts, "POST", "/api/signals/stop-all", { ...body, mesh: false, node: opts.peer })
+    : await call(opts, "POST", "/api/signals/stop-all", body)
+  console.log(`  ${chalk.bold(data.node)} ${chalk.dim(data.orderId)}`)
+  printStopAllTasks(data.tasks || [], "    ")
+  for (const p of data.peers || []) {
+    console.log(`  ${chalk.bold(p.node)}${p.ok ? "" : ` ${chalk.red(p.error)}`}`)
+    if (p.ok) printStopAllTasks(p.tasks || [], "    ")
+  }
+  if (!wait) {
+    console.log(chalk.dim("  see the plans: agentx signal list"))
+  } else if (data.safeToRestart) {
+    console.log(chalk.green("  safe to restart: every task resumes from its plan when AgentX starts again"))
+  } else {
+    console.log(chalk.yellow("  not every plan is confirmed saved; check the lines above before you restart"))
+  }
+}
 
 common(signalCmd
   .command("list")

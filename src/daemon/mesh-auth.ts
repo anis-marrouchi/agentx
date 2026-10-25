@@ -116,6 +116,8 @@ export function isControlPost(path: string): boolean {
     /^\/workflow-runs\/[^/]+\/cancel$/.test(path) ||
     // Stop and resume signals (#857).
     path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" ||
+    // Stopping every task on this node, ahead of a restart (#1271).
+    path === "/api/signals/stop-all" ||
     // Replaying past PRs through the review gate spends model budget (#990).
     path === "/api/review-gate/replay"
 }

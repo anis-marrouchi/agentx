@@ -3221,6 +3221,9 @@ Stop a running task; the agent writes a resume plan.
 | `--agent <id>` | — | With `--channel` and `--chat`: the agent's only task on that chat. |
 | `--channel <channel>` | — | The task's channel. |
 | `--chat <chatId>` | — | The task's chat id. |
+| `--all` | — | Stop every running task on this machine. Each writes its plan and resumes from it the next time AgentX starts. See [Stop everything before a restart](/jobs/pause-and-resume#stop-everything-before-a-restart). |
+| `--mesh` | — | With `--all`: on every connected mesh machine too. |
+| `--no-wait` | — | With `--all`: answer at once instead of waiting for the plans. |
 | `-r, --reason <reason>` | — | Why: shown to the agent and on the Live page. |
 
 ### `agentx signal list`

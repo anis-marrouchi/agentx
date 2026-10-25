@@ -35,7 +35,7 @@ In AgentX, a stop or resume request is called a **signal**. These are not the wo
 
 ## If AgentX restarts
 
-- A paused task stays paused. A restart never picks it up on its own; only a resume does.
+- A paused task stays paused. A restart never picks it up on its own; only a resume does. The one exception is a task paused by a stop-all order: see [Stop everything before a restart](#stop-everything-before-a-restart).
 - If the restart happens while the agent is still writing its plan, AgentX writes the plan from the run's trace when it starts again, and the task can be resumed as usual.
 - A resumed task that a restart cuts off is picked up again like any other cut-off work. See [restart without losing work](/jobs/restart-safely).
 
@@ -81,6 +81,28 @@ From the terminal, `agentx signal drop <taskId>` does the same.
 Without a task id, name the agent and its chat instead: `agentx signal stop --agent coder --channel telegram --chat 12345`. This works when that agent has exactly one task running on that chat.
 
 For a task on another machine of your mesh (your connected AgentX machines), add `--peer <machine name>` to any of these commands.
+
+## Stop everything before a restart
+
+Before you restart AgentX, for example to install an update, you can pause every task at once. Each agent writes its resume plan, and when AgentX starts again every one of those tasks resumes from its plan by itself. This is a **stop-all order**. Only you (or another machine that `signals.allowPeers` names) can give it; agents cannot.
+
+1. **Terminal:** run `agentx signal stop --all --reason "update"`. Add `--mesh` to stop every task on all your connected machines too.
+2. Wait. The command lists each task, grouped by machine, and says **plan by the agent** or **plan by AgentX** once its plan is saved. It waits at most `signals.windDownSeconds` plus about a minute.
+3. Read the last line. **safe to restart** means every plan is saved. **not every plan is confirmed saved** means a task or machine needs a look first: its line says why.
+4. **Terminal:** restart AgentX on each machine, for example with `agentx daemon restart`.
+5. Wait a few seconds after AgentX starts. Each stopped task resumes from its plan, in the chat it came from.
+6. Read the report AgentX sends to your notification chat (`notifications.destination`): how many tasks resumed, failed or were skipped, with one line per task, grouped by agent. Each machine sends its own report. Without a notification chat, the report is in the AgentX log.
+
+Each task gets one try after the restart, however long the restart took. A task that fails to resume is listed in the report and is not tried again by later restarts. Resume it yourself with `agentx signal resume <taskId>` once the cause is fixed.
+
+Some tasks are not stopped:
+
+- A step of a workflow run that cannot pause where it is. Its line says **not stopped** and why. A restart cuts it off and AgentX picks it up like any other [cut-off work](/jobs/restart-safely).
+- Tasks that start after the order, before you restart. They are cut off by the restart and picked up the same way.
+
+`--no-wait` answers at once without waiting for the plans. Check them with `agentx signal list`.
+
+From another program, send `POST /api/signals/stop-all` with `{ "reason": "…", "mesh": true, "wait": true }`. The answer lists each task, each machine under `peers`, and `safeToRestart`.
 
 ## Let agents pause and resume
 
@@ -145,7 +167,7 @@ The settings live under `signals` in `agentx.json`. Change them with `agentx con
 
 The last setting is a brake against loops between agents. Everything that comes from one request (a chat message, a schedule, a webhook) shares one id, its *root*. A paused and resumed task keeps its root. When signals keep bouncing, for example one agent resumes what another keeps pausing, the seventh signal from agents or other machines in a day is refused. Your own pauses and resumes are never counted or refused.
 
-Each pause and resume is also published as an event of kind `signal` (`signal:stop`, `signal:stopped`, `signal:resume`, `signal:resume-failed`, `signal:dropped`), so an agent can [follow events](/automations/event-subscriptions) about it.
+Each pause and resume is also published as an event of kind `signal` (`signal:stop`, `signal:stopped`, `signal:resume`, `signal:resume-failed`, `signal:dropped`, and `signal:stop-all` for a stop-all order), so an agent can [follow events](/automations/event-subscriptions) about it.
 
 ## Check it worked
 
@@ -154,7 +176,8 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 3. **Terminal:** run `agentx trace list --agent <agent>`. The task's status is `stopped`, not `error`.
 4. **Browser:** select **▶ resume**. The agent's card shows **running**, and the answer reaches the original chat.
 5. **Terminal:** run `curl 'http://127.0.0.1:18800/events/recent?kind=signal'`. You see `signal:stop`, `signal:stopped` and `signal:resume` with the same `rootId`.
-6. For a workflow step: after **▶ resume**, **Terminal:** run `agentx workflow runs <workflow>`. The run is `running` again, then `completed` once its last step is done.
+6. For a stop-all: **Terminal:** run `agentx signal stop --all`, restart AgentX, then run `agentx signal list --all`. Every task of the order shows `resumed`, and your notification chat got one report.
+7. For a workflow step: after **▶ resume**, **Terminal:** run `agentx workflow runs <workflow>`. The run is `running` again, then `completed` once its last step is done.
 
 ## If something is wrong
 
@@ -168,4 +191,7 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 - **The plan says "written by AgentX":** the agent didn't answer in time. Raise `signals.windDownSeconds` if your agents need longer.
 - **Resume says "already resumed" but the task shows stopped:** AgentX stopped in the middle of a resume. Restart AgentX; on start it clears the leftover mark, and you can resume again.
 - **"mesh peer … is not in signals.allowPeers" from your own dashboard:** the dashboard reaches that machine with a token from `mesh.peers`, so it counts as that machine. Add the machine to `signals.allowPeers`, or give the dashboard the shared `MESH_TOKEN` for it.
+- **Stop-all says a machine is "not in signals.allowPeers":** on that machine, add the name of the machine you gave the order from to `signals.allowPeers`, then give the order again.
+- **Stop-all says "no answer in time; its plans may still be saving":** that machine's agents need longer. Run `agentx signal list --peer <machine>` until every task there shows **stopped**, then restart.
+- **A stop-all task is "skipped (already tried …)" in the report:** an earlier restart tried it once. Run `agentx signal resume <taskId>` when you're ready.
 - **Resume does nothing in a chat:** the chat's channel isn't running on this machine any more. Check it in [Settings](/dashboard/settings).

@@ -67,7 +67,7 @@ import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
-import { SignalService } from "@/agents/signals/service"
+import { SignalService, stopAllReport } from "@/agents/signals/service"
 import { StoppedTaskStore } from "@/agents/signals/store"
 import { setSignalService } from "@/agents/signals/instance"
 import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
@@ -1140,6 +1140,9 @@ export class AgentXDaemon {
     if (this.interruptedRuns.length > 0) {
       setTimeout(() => { void this.resumeInterruptedRuns() }, 5_000).unref?.()
     }
+    // Tasks a stop-all order stopped before this restart (#1271): each
+    // resumes from its plan, and the owner gets one report.
+    setTimeout(() => { void this.resumeStopAll() }, 5_000).unref?.()
     this.log("")
 
     // Write PID file
@@ -1606,6 +1609,9 @@ export class AgentXDaemon {
       settings: () => this.config.signals,
       store: new StoppedTaskStore(resolve(process.cwd(), ".agentx/signals/stopped")),
       findRunning: (by) => this.registry.signalTarget(by),
+      // A plan-writing turn is not a task of its own: stopping it would
+      // leave its task without a plan.
+      listRunning: () => this.registry.signalTargets().filter((t) => t.channel !== WIND_DOWN_CHANNEL),
       stopRun: (taskId, reason) => this.registry.stopRunningTask(taskId, reason),
       whenRunEnds: (taskId, ms) => this.registry.whenRunEnds(taskId, ms),
       toolCalls: (traceId) => {
@@ -1666,6 +1672,21 @@ export class AgentXDaemon {
       },
       log: (msg) => this.log(msg),
     })
+  }
+
+  /** Resume every task a stop-all order stopped, then send the owner one
+   *  report (#1271). Never throws. */
+  private async resumeStopAll(): Promise<void> {
+    try {
+      const outcomes = await this.signals.resumeStopAll({ staggerMs: 2_000 })
+      if (!outcomes.length) return
+      const report = stopAllReport(this.config.node.name || this.config.node.id || "local", outcomes)!
+      for (const line of report.split("\n")) this.log(`  [signals] ${line}`)
+      const dest = this.config.notifications?.destination
+      if (dest) await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text: report })
+    } catch (e: any) {
+      this.log(`[signals] stop-all resume failed: ${e?.message ?? e}`)
+    }
   }
 
   /** Resume, report or skip each run the last restart cut off. Never throws. */
@@ -6234,7 +6255,8 @@ export class AgentXDaemon {
           service: this.signals,
           selfNode: this.config.node.name || this.config.node.id || "local",
           sender,
-          forward: async (node, method, target, fwdBody) => {
+          peers: () => (this.mesh?.directory() ?? []).filter((p) => p.healthy).map((p) => p.peer),
+          forward: async (node, method, target, fwdBody, timeoutMs) => {
             const want = node.toLowerCase()
             const peer = this.mesh?.directory().find((p) => p.healthy && (p.peer.toLowerCase() === want || p.node?.toLowerCase() === want))
             if (!peer) return null
@@ -6242,7 +6264,7 @@ export class AgentXDaemon {
               method,
               headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
               ...(fwdBody ? { body: JSON.stringify(fwdBody) } : {}),
-              signal: AbortSignal.timeout(15_000),
+              signal: AbortSignal.timeout(timeoutMs ?? 15_000),
             })
             const data = await r.json().catch(() => ({ error: `peer answered ${r.status}` }))
             return { status: r.status, body: data as Record<string, unknown> }
