@@ -7,6 +7,7 @@ import type { PlanStore } from "@/requests/plan-store"
 import { OPEN_STATES, type RequestRecord, type RequestStore } from "@/requests/store"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
+import { forgeCommentsOf, type WallForgeComment, type WallForgeState, type WallForgeStateSource } from "./wall-forge-state"
 
 // --- The Wall's data (#1180) ---
 //
@@ -44,6 +45,8 @@ export interface WallDeps {
   workspaceOf?: (id: string) => string | null | undefined
   /** Pending decision cards on this node (#1185). Unset: none shown. */
   cards?: (() => DecisionCard[]) | null
+  /** This node's GitLab address, for GitLab homes and comment links (#1184). */
+  gitlabUrl?: string | null
 }
 
 /** A pending owner decision card, as the Wall shows it: no answer here. */
@@ -107,6 +110,12 @@ export interface WallPost {
   /** The forge's own time tracking (#1189): GitLab homes only. Null: the
    *  home has no time tracking this node can read. */
   forgeTime: WallForgeTime | null
+  /** The home's live state on GitHub or GitLab, who closed it and when it
+   *  was checked (#1184). Null: no forge home this node can read. */
+  forgeState: WallForgeState | null
+  /** Comments agents posted on the home through the daemon, newest first,
+   *  each linked by its own id (#1184). */
+  comments: WallForgeComment[]
   lastRun: { taskId: string; agentId: string } | null
   /** Runs of this post that overlapped another run on the same chat or in
    *  the same worktree, with both run ids (#1187). Empty: none. */
@@ -344,6 +353,8 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     failedRuns: runs.filter((x) => x.status && FAILED.has(x.status)).length,
     timeFlag: timeFlag(r, runs, runMs, deps.now, deps.staleAfterHours),
     forgeTime: null,
+    forgeState: null,
+    comments: forgeCommentsOf({ home: r.home, group: { channel: r.channel, chatId: r.chatId }, createdAt: r.createdAt, closedAt: r.closedAt }, deps.db, deps.gitlabUrl, deps.now),
     lastRun: last ? { taskId: last.taskId, agentId: last.agentId! } : null,
     concurrent: concurrentOf(runs, deps),
     ownerCards: ownerCardsOf(r.id, deps),
@@ -445,14 +456,15 @@ export function wallFailures(db: Database.Database | null, now: number): WallFai
   return [...groups.values()]
 }
 
-/** A Wall reply with the forge's time set on its posts (#1189). Without a
- *  source (no GitLab connector), posts keep forgeTime null. */
-export async function withForgeTime(
-  reply: { status: number; body: any }, deps: WallDeps | null, source: WallForgeTimeSource | null,
+/** A Wall reply with what the forge says set on its posts: GitLab time
+ *  (#1189) and home state (#1184). A missing source (no connector) leaves
+ *  its field null. The sources read side by side, each in its own time box. */
+export async function withForge(
+  reply: { status: number; body: any }, deps: WallDeps | null, sources: Array<WallForgeTimeSource | WallForgeStateSource | null>,
 ): Promise<{ status: number; body: unknown }> {
-  if (!source || !deps || reply.status !== 200) return reply
+  if (!deps || reply.status !== 200) return reply
   const posts: WallPost[] = Array.isArray(reply.body?.posts) ? reply.body.posts : reply.body?.post ? [reply.body.post] : []
-  if (posts.length) await source.annotate(posts, deps.now, deps.staleAfterHours)
+  if (posts.length) await Promise.all(sources.map((s) => s?.annotate(posts, deps.now, deps.staleAfterHours)))
   return reply
 }
 

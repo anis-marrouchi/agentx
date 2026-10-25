@@ -77,8 +77,10 @@ import { readInboxState } from "@/approvals/state"
 import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 import { decide, listInbox, planStoreFor, requestStoreFor, type InboxItem } from "@/approvals/inbox"
 import { readRequestSettings } from "@/requests/settings"
-import { handleWallApi, WALL_PREFIX, withForgeTime, type WallDeps } from "./wall-api"
+import { handleWallApi, WALL_PREFIX, withForge, type WallDeps } from "./wall-api"
 import { gitlabTimeReader, wallForgeTime, type WallForgeTimeSource } from "./wall-forge-time"
+import { wallForgeState, type WallForgeStateSource } from "./wall-forge-state"
+import { forgeReader } from "@/requests/checkers/issue"
 import { handlePortfolioRequest } from "./wall-portfolio"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
@@ -793,7 +795,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // The Wall (#1180): read-only posts and threads from this node's records.
   if (method === "GET" && (path === WALL_PREFIX || path.startsWith(`${WALL_PREFIX}/`))) {
     const deps = wallDeps(ctx.config)
-    const reply = await withForgeTime(handleWallApi(path, url.searchParams, deps, localNodeName(ctx.config)), deps, wallTimeSource(ctx.config))
+    const reply = await withForge(handleWallApi(path, url.searchParams, deps, localNodeName(ctx.config)), deps, wallForgeSources(ctx.config))
     sendJson(res, reply.status, reply.body)
     return
   }
@@ -3057,6 +3059,7 @@ function wallDeps(config: DaemonConfig): WallDeps | null {
     isAgent: (id) => Object.prototype.hasOwnProperty.call(agents, id),
     workspaceOf: (id) => agents[id]?.workspace ?? null,
     cards: () => listCards(ictx.root, "pending"),
+    gitlabUrl: forgeConnectorsOf(config).gitlab?.url ?? null,
   }
 }
 
@@ -3073,13 +3076,26 @@ function wallTimeSource(config: DaemonConfig): WallForgeTimeSource | null {
   return wallTime.source
 }
 
+/** The home state of GitHub and GitLab posts (#1184), kept like wallTime.
+ *  Null: this node has neither connector. */
+let wallState: { key: string; source: WallForgeStateSource } | null = null
+function wallStateSource(config: DaemonConfig): WallForgeStateSource | null {
+  const c = forgeConnectorsOf(config)
+  if (!c.github && !c.gitlab) return null
+  const key = JSON.stringify(c)
+  if (wallState?.key !== key) wallState = { key, source: wallForgeState({ github: !!c.github, gitlabUrl: c.gitlab?.url ?? null }, forgeReader(c)) }
+  return wallState.source
+}
+
+const wallForgeSources = (config: DaemonConfig) => [wallTimeSource(config), wallStateSource(config)]
+
 /** The Wall across the mesh: this node's posts, then each configured
  *  peer's, every post tagged with the node it lives on. A peer that does
  *  not answer is listed as unreachable; the others still show (#1180). */
 async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   const days = q.get("days") ?? "7"
   const deps = wallDeps(ctx.config)
-  const local = (await withForgeTime(handleWallApi(WALL_PREFIX, new URLSearchParams({ days }), deps, localNodeName(ctx.config)), deps, wallTimeSource(ctx.config))).body as any
+  const local = (await withForge(handleWallApi(WALL_PREFIX, new URLSearchParams({ days }), deps, localNodeName(ctx.config)), deps, wallForgeSources(ctx.config))).body as any
   const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string; syncedAt?: number }> = [
     { name: local.node, peer: null, ok: true, syncedAt: local.syncedAt },
   ]

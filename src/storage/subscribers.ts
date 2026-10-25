@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { getEventBus, type AgentXEvents } from "@/events/bus"
 import { recordTraceStart, recordTraceEnd, recordTraceStep } from "@/storage/traces"
 import { flushQueuedMessages, insertQueuedMessage } from "@/storage/queued-messages"
+import { insertForgeComment } from "@/storage/forge-comments"
 
 // --- Bus subscribers that persist to SQLite ---
 //
@@ -343,6 +344,16 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     try { flushQueuedMessages(db, p.agentId, p.channel, p.chatId, p.flushedAt) } catch { /* */ }
   }
 
+  // An agent's comment on a forge, by id, so the Wall links to it (#1184).
+  const onForgeComment = (p: AgentXEvents["forge:commented"]) => {
+    try {
+      insertForgeComment(db, {
+        channel: p.channel, chatId: p.chatId, commentId: p.commentId, agentId: p.agentId ?? null,
+        at: Number.isFinite(Date.parse(p.at)) ? Date.parse(p.at) : Date.now(),
+      })
+    } catch { /* */ }
+  }
+
   bus.on("task:started", onStarted)
   bus.on("task:completed", onCompleted)
   bus.on("task:step", onStep)
@@ -351,6 +362,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
   bus.on("message:dropped", onDropped)
   bus.on("task:queued", onQueued)
   bus.on("task:queue-flushed", onQueueFlushed)
+  bus.on("forge:commented", onForgeComment)
 
   return () => {
     bus.off("task:started", onStarted)
@@ -361,5 +373,6 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     bus.off("message:dropped", onDropped)
     bus.off("task:queued", onQueued)
     bus.off("task:queue-flushed", onQueueFlushed)
+    bus.off("forge:commented", onForgeComment)
   }
 }
