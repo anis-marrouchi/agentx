@@ -123,6 +123,26 @@ export const dashboardConfigSchema = z.object({
   daemons: z.array(dashboardDaemonSchema).default([]),
   /** Default agent used for AI-assisted drafting in the create-issue flow. */
   draftAgent: z.string().optional(),
+  /** The Wall's projects (#1190, src/daemon/wall-projects.ts). Requests
+   *  have no project field: this read-only mapping names one from a
+   *  request's home repo, its agent, or that agent's workspace, checked in
+   *  that order; work none claims is "Other". Empty: a post's project is
+   *  its home repo, as before. */
+  wall: z.object({
+    /** Normal rhythm in hours: open work with no move for more than twice
+     *  this is stalled. Unset: requests.staleAfterHours. */
+    rhythmHours: z.number().positive().max(24 * 365).optional(),
+    projects: z.array(z.object({
+      name: z.string().min(1).max(80),
+      /** Home repos, as "group/project". */
+      repos: z.array(z.string().min(1)).default([]),
+      agents: z.array(z.string().min(1)).default([]),
+      /** Workspace folders; an agent working in one, or under it, is in the project. */
+      workspaces: z.array(z.string().min(1)).default([]),
+      /** This project's normal rhythm in hours. Unset: the one above. */
+      rhythmHours: z.number().positive().max(24 * 365).optional(),
+    })).default([]),
+  }).default({}),
 }).default({})
 
 export type BoardConfig = z.infer<typeof boardSchema>

@@ -9,6 +9,7 @@ import { OPEN_STATES, type RequestRecord, type RequestStore } from "@/requests/s
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
 import { forgeCommentsOf, type WallForgeComment, type WallForgeState, type WallForgeStateSource } from "./wall-forge-state"
+import { isStalled, projectOverview, type WallProjects } from "./wall-projects"
 
 // --- The Wall's data (#1180) ---
 //
@@ -27,6 +28,10 @@ import { forgeCommentsOf, type WallForgeComment, type WallForgeState, type WallF
 // A pending decision card (#1185) sits on the post of the request it was
 // raised from, read-only: its recommendation, what applies if the owner
 // stays silent, and when. Answering stays on the Desk and Approvals page.
+//
+// A post's project and its stalled mark come from the project mapping
+// (#1190, ./wall-projects); the list reply carries one overview row per
+// project with its open, in progress, blocked and stalled counts.
 
 export const WALL_PREFIX = "/api/admin/wall"
 const HOUR = 3_600_000
@@ -48,6 +53,8 @@ export interface WallDeps {
   cards?: (() => DecisionCard[]) | null
   /** This node's GitLab address, for GitLab homes and comment links (#1184). */
   gitlabUrl?: string | null
+  /** The project mapping (#1190). Unset: a post's project is its home repo. */
+  projects?: WallProjects | null
 }
 
 /** A pending owner decision card, as the Wall shows it: no answer here. */
@@ -91,7 +98,14 @@ export interface WallPost {
   askedBy: string | null
   /** The chat it came from: the post's group. */
   group: { channel: string; chatId: string }
+  /** From the project mapping, else the home repo (#1190). Null: none. */
   project: string | null
+  /** The home repo, as "group/project", whatever the mapping says. */
+  repo: string | null
+  /** Its project's normal rhythm, in hours (#1190). */
+  rhythmHours: number
+  /** Open, with no move for more than twice the rhythm. */
+  stalled: boolean
   home: { kind: string; link: string } | null
   createdAt: number
   updatedAt: number
@@ -333,6 +347,8 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     blocked = { who: on.who, why: clean(why, 200), since: lastMoveAt }
   }
   const last = [...runs].reverse().find((x) => x.agentId)
+  const repo = projectOf(r)
+  const project = deps.projects ? deps.projects.of(r, repo) : { name: repo, rhythmHours: deps.staleAfterHours }
   return {
     id: r.id,
     state: r.state,
@@ -343,7 +359,10 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     agentId: r.agentId,
     askedBy: r.person ?? r.sender,
     group: { channel: r.channel, chatId: r.chatId },
-    project: projectOf(r),
+    project: project.name,
+    repo,
+    rhythmHours: project.rhythmHours,
+    stalled: isStalled({ state: r.state, lastMoveAt, rhythmHours: project.rhythmHours }, deps.now),
     home: r.home,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
@@ -483,8 +502,9 @@ export function handleWallApi(path: string, q: URLSearchParams, deps: WallDeps |
   const syncedAt = deps?.now ?? Date.now()
   if (path === WALL_PREFIX) {
     const days = Math.max(0, Math.min(WALL_DAYS_MAX, Number(q.get("days") ?? 7) || 0))
-    if (!deps) return { status: 200, body: { node, syncedAt, posts: [], failures: [], staleAfterHours: null } }
-    return { status: 200, body: { node, syncedAt, posts: wallPosts(deps, days), failures: wallFailures(deps.db, deps.now), staleAfterHours: deps.staleAfterHours } }
+    if (!deps) return { status: 200, body: { node, syncedAt, posts: [], failures: [], projects: [], staleAfterHours: null } }
+    const posts = wallPosts(deps, days)
+    return { status: 200, body: { node, syncedAt, posts, failures: wallFailures(deps.db, deps.now), projects: projectOverview(posts, deps.projects?.names), staleAfterHours: deps.staleAfterHours } }
   }
   if (path === `${WALL_PREFIX}/thread`) {
     if (!deps) return { status: 404, body: { error: "no requests on this node" } }

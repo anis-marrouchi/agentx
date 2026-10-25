@@ -185,3 +185,54 @@ describe("QA verdict on the Wall (#1188)", () => {
     expect(w.el("wall-count").textContent).toBe("0 of 3 posts")
   })
 })
+
+// #1190: the Projects view shows the overview rows the reply carries; each
+// count links to the list filtered by that project and status, and the
+// list's project filter knows "Other" and the status filter "Stalled".
+describe("Projects overview on the Wall (#1190)", () => {
+  const PROJ = {
+    ...WALL,
+    posts: [
+      post("p1", "cx", "in_progress", { project: "Web", stalled: true }),
+      post("p2", "cx", "waiting_owner", { project: "Web", stalled: false, blocked: { who: "owner", why: "?", since: NOW } }),
+      post("p3", "reviewer", "in_progress", { project: null, stalled: false }),
+    ],
+    projects: [
+      { project: "Web", open: 2, inProgress: 1, blocked: 1, stalled: 1 },
+      { project: "Docs", open: 0, inProgress: 0, blocked: 0, stalled: 0 },
+      { project: null, open: 1, inProgress: 1, blocked: 0, stalled: 0 },
+    ],
+  }
+
+  it("lists each project with its four counts, Other last, each count a link to the list", async () => {
+    const w = openWall({ data: PROJ, hash: "#status=open&view=projects" })
+    await w.settle()
+    expect(w.el("wall-projects").hidden).toBe(false)
+    expect(w.el("wall-feed").hidden).toBe(true)
+    const html = w.el("wall-projects").innerHTML
+    const rows = html.split("<tr>").slice(2)
+    expect(rows[0]).toContain("<td>Web</td>")
+    expect(rows[0]).toContain('href="#status=stalled&amp;project=Web&amp;view=list">1</a>')
+    expect(rows[0]).toContain('href="#status=open&amp;project=Web&amp;view=list">2</a>')
+    expect(rows[1]).toContain("<td>Docs</td><td class=\"num\">0</td>")
+    expect(rows[2]).toContain("<i>Other</i>")
+    expect(rows[2]).toContain('href="#status=in_progress&amp;project=-&amp;view=list">1</a>')
+  })
+
+  it("filters the list to a project's stalled work, and to Other", async () => {
+    const stalled = openWall({ data: PROJ, hash: "#status=stalled&project=Web&view=list" })
+    await stalled.settle()
+    expect(stalled.el("wall-count").textContent).toBe("1 of 3 posts")
+    expect(stalled.el("wall-list").innerHTML).toContain("p1")
+    const other = openWall({ data: PROJ, hash: "#status=open&project=-&view=list" })
+    await other.settle()
+    expect(other.el("f-project").innerHTML).toContain('<option value="-">Other (no project)</option>')
+    expect(other.el("wall-count").textContent).toBe("1 of 3 posts")
+  })
+
+  it("says so when there is no open work", async () => {
+    const w = openWall({ data: { ...WALL, projects: [] }, hash: "#view=projects" })
+    await w.settle()
+    expect(w.el("wall-projects").innerHTML).toContain("No open work.")
+  })
+})
