@@ -1,0 +1,135 @@
+import { afterEach, describe, expect, it } from "vitest"
+import { createServer, type IncomingMessage, type Server } from "http"
+import type { AddressInfo } from "net"
+import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
+import { daemonConfigSchema } from "../src/daemon/config"
+import { isOffBox, pageToken, sessionValue } from "../src/daemon/dashboard-session"
+
+// #1306: dashboard pages put dashboard.token in window.AX_LOCAL_TOKEN. Only a
+// caller on this machine may get it. The test server listens on loopback, so
+// an off-box caller is a request a proxy forwarded (X-Forwarded-For), which
+// the dashboard treats the same as a non-loopback socket.
+
+const TOKEN = "dash-secret"
+const OFF = { "X-Forwarded-For": "100.64.0.9" }
+const PAGES = ["/wall", "/admin", "/approvals", "/admin/graph", "/people", "/admin/agents/ops", "/admin/health", "/admin/cost", "/admin/ledger"]
+
+let server: Server | undefined
+
+async function start(withToken = true): Promise<string> {
+  const token = withToken ? TOKEN : undefined
+  const config = daemonConfigSchema.parse({
+    node: { id: "node-a", name: "node-a" },
+    dashboard: { daemonUrl: "http://daemon.invalid:18800", ...(token ? { token } : {}) },
+  })
+  const ctx = { boards: [], sources: new Map(), token, config } as unknown as Ctx
+  server = createServer((req, res) => { void handleBoardRequest(req, res, ctx) })
+  await new Promise<void>((r) => server!.listen(0, "127.0.0.1", () => r()))
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+}
+
+afterEach(async () => {
+  if (server) await new Promise<void>((r) => server!.close(() => r()))
+  server = undefined
+})
+
+async function signIn(base: string, token: string, next = "/admin"): Promise<Response> {
+  return fetch(`${base}/login`, {
+    method: "POST", redirect: "manual", headers: { ...OFF, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ token, next }).toString(),
+  })
+}
+
+describe("dashboard pages off-box (#1306)", () => {
+  it("sends an off-box caller with no session to /login, with no token in the reply", async () => {
+    const base = await start()
+    for (const page of [...PAGES, "/"]) {
+      const r = await fetch(base + page, { headers: OFF, redirect: "manual" })
+      const body = await r.text()
+      expect(r.status, page).toBe(302)
+      expect(body).not.toContain(TOKEN)
+      expect(body).not.toContain("AX_LOCAL_TOKEN")
+    }
+    const r = await fetch(base + "/admin", { headers: OFF, redirect: "manual" })
+    expect(r.headers.get("location")).toBe("/login?next=%2Fadmin")
+  })
+
+  it("refuses off-box /api/admin/* without a token or session", async () => {
+    const base = await start()
+    expect((await fetch(`${base}/api/admin/state`, { headers: OFF })).status).toBe(401)
+    expect((await fetch(`${base}/api/admin/people`, { headers: OFF })).status).toBe(401)
+    const wrong = { ...OFF, Cookie: "ax_session=" + sessionValue("not-the-token") }
+    expect((await fetch(`${base}/api/admin/state`, { headers: wrong })).status).toBe(401)
+  })
+
+  it("signs a browser in with the token: an HttpOnly, SameSite=Strict cookie that is not the token", async () => {
+    const base = await start()
+    const bad = await signIn(base, "guess")
+    expect(bad.status).toBe(401)
+    expect(bad.headers.get("set-cookie")).toBeNull()
+
+    const ok = await signIn(base, TOKEN)
+    expect(ok.status).toBe(303)
+    expect(ok.headers.get("location")).toBe("/admin")
+    const set = ok.headers.get("set-cookie") || ""
+    expect(set).toMatch(/^ax_session=[^;]+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=\d+$/)
+    expect(set).not.toContain(TOKEN)
+  })
+
+  it("serves a signed-in off-box browser its pages without the token, and the admin API answers it", async () => {
+    const base = await start()
+    const cookie = ((await signIn(base, TOKEN)).headers.get("set-cookie") || "").split(";")[0]
+    const headers = { ...OFF, Cookie: cookie }
+    for (const page of PAGES) {
+      const r = await fetch(base + page, { headers, redirect: "manual" })
+      const body = await r.text()
+      expect(r.status, page).toBe(200)
+      expect(body, page).not.toContain(TOKEN)
+      expect(body, page).not.toContain("window.AX_LOCAL_TOKEN =")
+    }
+    expect((await fetch(`${base}/api/admin/people`, { headers })).status).toBe(200)
+  })
+
+  it("only sends a sign-in back to a path on this server", async () => {
+    const base = await start()
+    for (const next of ["//evil.example/x", "https://evil.example/", "/\\evil.example"]) {
+      expect((await signIn(base, TOKEN, next)).headers.get("location")).toBe("/")
+    }
+    const page = await (await fetch(`${base}/login?next=%22%3E%3Cscript%3E`, { headers: OFF })).text()
+    expect(page).not.toContain("<script>")
+  })
+
+  it("keeps loopback unchanged: the page carries the token and needs no sign-in", async () => {
+    const base = await start()
+    for (const page of PAGES) {
+      const r = await fetch(base + page, { redirect: "manual" })
+      expect(r.status, page).toBe(200)
+      expect(await r.text(), page).toContain(`window.AX_LOCAL_TOKEN = "${TOKEN}"`)
+    }
+  })
+
+  it("changes nothing when no dashboard.token is set", async () => {
+    const base = await start(false)
+    expect((await fetch(`${base}/admin`, { headers: OFF, redirect: "manual" })).status).toBe(200)
+    expect((await fetch(`${base}/login`, { redirect: "manual" })).headers.get("location")).toBe("/")
+  })
+})
+
+describe("isOffBox / pageToken", () => {
+  const req = (remoteAddress: string, headers: Record<string, string> = {}) =>
+    ({ socket: { remoteAddress }, headers }) as unknown as IncomingMessage
+
+  it("treats a non-loopback socket or a forwarded request as off-box", () => {
+    expect(isOffBox(req("127.0.0.1"))).toBe(false)
+    expect(isOffBox(req("::1"))).toBe(false)
+    expect(isOffBox(req("100.64.0.9"))).toBe(true)
+    expect(isOffBox(req("127.0.0.1", { "x-forwarded-for": "100.64.0.9" }))).toBe(true)
+    expect(isOffBox(req("127.0.0.1", { forwarded: "for=100.64.0.9" }))).toBe(true)
+  })
+
+  it("gives the token to loopback callers only", () => {
+    expect(pageToken(req("127.0.0.1"), TOKEN)).toBe(TOKEN)
+    expect(pageToken(req("100.64.0.9"), TOKEN)).toBeUndefined()
+    expect(pageToken(req("127.0.0.1"), undefined)).toBeUndefined()
+  })
+})

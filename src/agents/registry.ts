@@ -18,7 +18,7 @@ import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
-import { TokenTracker, isPricedModel, splitTaskUsageByTier } from "@/daemon/token-tracker"
+import { TokenTracker, splitTaskUsageByTier } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
 import { injectedContextOf } from "./injected-context"
 import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
@@ -27,6 +27,7 @@ import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
+import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
@@ -42,6 +43,12 @@ import { getEventBus, type AgentXEvents } from "@/events/bus"
  *  workflow matching (cache hits only) and before the wiki entry stamp. */
 const INTENT_WAIT_BEFORE_MATCH_MS = 250
 const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
+/** Channels that never have an outbound adapter: a queued reply on them
+ *  stays on its task, so skipping the post is expected and not logged. */
+const NO_ADAPTER_CHANNELS: ReadonlySet<string> = new Set([
+  "requests", "a2a", "api", "cron", "workflow", "test", "mesh", "subagent", "mcp",
+  "events", "reminder", "heartbeat", "system", "internal", "business", "selftest", "compaction",
+])
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
 import { currentRoot } from "@/events/envelope"
@@ -53,8 +60,9 @@ import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
-import { budgetConfigFrom, preflightBudgetGate, setAgentBudgets } from "./agent-budget"
-import { BudgetHolds } from "./budget-holds"
+import { budgetConfigFrom, budgetProjectOf, preflightBudgetGate, setAgentBudgets, setBudgetProjectResolver } from "./agent-budget"
+import { budgetProjectResolver } from "./budget-projects"
+import { BudgetHolds, MAX_HELD_PER_AGENT } from "./budget-holds"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { describeProfile, fullClaudeArgs, isolatedClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
@@ -637,6 +645,8 @@ export class AgentRegistry {
   }
   /** See setRunNote. */
   private runNote?: (started: AgentXEvents["task:started"]) => string | undefined
+  /** See setTraceToolCalls. */
+  private traceToolCalls?: (traceId: string) => Array<{ action: string | null; inputSummary: string | null }>
   /** Workflow auto-runner — invoked when workflow matching is in `mode: "auto"`
    *  and a candidate workflow's confidence ≥ autoRunThreshold. Wired by the
    *  daemon after the workflow dispatcher is constructed. Returns the runId of
@@ -665,7 +675,7 @@ export class AgentRegistry {
    */
   private voiceClaims = new Set<string>()
   /** Chat messages waiting for an agent paused by its monthly budget (#1162). */
-  private budgetHolds = new BudgetHolds()
+  private budgetHolds: BudgetHolds
   private budgetReleaseTimer: ReturnType<typeof setInterval> | null = null
   /** Intent Knowledge Graph classifier. Null when graph.enabled=false. */
   private classifier?: Classifier
@@ -752,8 +762,15 @@ export class AgentRegistry {
       maxPerHour: config.session.maxClaudeCodeDispatchesPerHour,
       maxPer5h: config.session.maxClaudeCodeDispatchesPer5h,
     })
-    // Monthly money budgets (#1162). The daemon re-applies them on save.
+    // Monthly money budgets (#1162, #1290). The daemon re-applies them on save.
     setAgentBudgets(budgetConfigFrom(config))
+    setBudgetProjectResolver(budgetProjectResolver(config))
+    // Held work is on disk, so a restart keeps it; release what may run.
+    this.budgetHolds = new BudgetHolds(MAX_HELD_PER_AGENT, resolve(process.cwd(), ".agentx/budget-holds.json"), (m) => this.log(m))
+    if (this.budgetHolds.size) {
+      this.log(`[budget] ${this.budgetHolds.size} held message(s) kept from before the restart`)
+      this.armBudgetRelease()
+    }
 
     if (config.graph?.enabled) {
       this.graphStore = new GraphStore({
@@ -811,6 +828,12 @@ export class AgentRegistry {
    *  attach; unset, no note is added. */
   setRunNote(note: ((started: AgentXEvents["task:started"]) => string | undefined) | undefined): void {
     this.runNote = note
+  }
+
+  /** Wire the trace lookup a time-limit continuation lists the stopped
+   *  run's tool calls from (#1257). Unset, the note lists none. */
+  setTraceToolCalls(lookup: AgentRegistry["traceToolCalls"]): void {
+    this.traceToolCalls = lookup
   }
 
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
@@ -1285,6 +1308,46 @@ export class AgentRegistry {
         errorKind: "interrupted",
       }
     }
+    // Stopped at the agent's time limit (#1257): continue it in the same
+    // chat, under a cap, so its session carries the work on; otherwise say
+    // why it stopped there. The continuation answers the same caller.
+    const limit = planTimeLimit({
+      error: response.error,
+      errorKind: response.errorKind,
+      viaMesh: response.viaMesh,
+      channel: task.context?.channel,
+      chatId: task.context?.chatId,
+      workflowRunId: task.workflowRunId,
+      continuation: task.timeLimitContinuation ?? 0,
+      timeoutMinutes: task.timeoutMinutes,
+      elapsedMs: Date.now() - (task.timeLimitStartedAt ?? startedAt),
+      callerGone: task.callerSignal?.aborted ?? false,
+      settings: this.config.resume?.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS,
+    })
+    if (limit.action === "continue") {
+      const settings = this.config.resume?.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS
+      const stoppedTrace = task.taskId
+      let toolCalls: Array<{ action: string | null; inputSummary: string | null }> = []
+      try { toolCalls = stoppedTrace && this.traceToolCalls ? this.traceToolCalls(stoppedTrace) : [] } catch { /* the note lists none */ }
+      const note = buildTimeLimitNote(limit.minutes, toolCalls, limit.continuation >= settings.maxContinuations)
+      this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${stoppedTrace ?? "-"}: stopped at its ${limit.minutes}m time limit; continuing (${limit.continuation}/${settings.maxContinuations})`)
+      const request = task.timeLimitRequest ?? task.message
+      return this.execute({
+        ...task,
+        message: `${note}\n${request}`,
+        timeLimitRequest: request,
+        timeLimitContinuation: limit.continuation,
+        timeLimitStartedAt: task.timeLimitStartedAt ?? startedAt,
+        ...(limit.timeoutMinutes ? { timeoutMinutes: limit.timeoutMinutes } : {}),
+        resumedFrom: stoppedTrace ?? task.resumedFrom,
+        runningTaskId: undefined,
+        freshSession: false,
+      }, onDelta, onThinking, onEvent)
+    }
+    if (limit.action === "report") {
+      this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${task.taskId ?? "-"}: stopped at its ${limit.minutes}m time limit; not continued — ${limit.reason}`)
+      response = { ...response, error: reportedTimeLimitError(response.error!, limit.reason) }
+    }
     if (task.intentRef) {
       try {
         // A queued answer is an accepted message, not a failure (#282).
@@ -1413,9 +1476,9 @@ export class AgentRegistry {
     // await the answer (API, crons, other agents) get the refusal from the
     // gate inside the run instead.
     if (!restricted) {
-      const overBudget = preflightBudgetGate(task.agentId)
       const ctxChannel = task.context?.channel
       const ctxChat = task.context?.chatId
+      const overBudget = preflightBudgetGate(task.agentId, undefined, budgetProjectOf(task.agentId, ctxChat))
       if (overBudget && ctxChannel && ctxChat && getMessageRouter()?.getChannel(ctxChannel)) {
         const held = this.budgetHolds.hold(task.agentId, {
           text: task.message,
@@ -3085,6 +3148,7 @@ export class AgentRegistry {
           const preflightResponse: AgentResponse = {
             content: "",
             error: abort.message,
+            errorKind: "dispatch_hold",
             duration: 0,
           }
           if (!onDelta) {
@@ -3103,10 +3167,11 @@ export class AgentRegistry {
         if (warning) this.log(`[${task.agentId}] ${warning}`)
         return null
       }
-      // Monthly money budget (#1162): an agent past its cap, or a fleet past
-      // the fleet cap, starts no new run, on any tier and warm or cold, until
-      // the cap is raised or the month turns.
-      const overBudget = preflightBudgetGate(task.agentId)
+      // Monthly money budget (#1162): an agent past its cap, a run whose
+      // project is past its cap (#1290), or a fleet past the fleet cap,
+      // starts no new run, on any tier and warm or cold, until the cap is
+      // raised or the month turns.
+      const overBudget = preflightBudgetGate(task.agentId, undefined, budgetProjectOf(task.agentId, task.context?.chatId))
       if (overBudget) {
         traceStep("budget-gate")
         this.log(`[${task.agentId}] run refused — ${overBudget.reason}`)
@@ -3243,11 +3308,12 @@ export class AgentRegistry {
       const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
       // What the run cost: the runtime's own figure when it reports one
       // (Claude Code's total_cost_usd), else the tokens at the billed
-      // model's rate, for Claude models only: other models have no price
-      // here and record no cost. Summed per agent per month (#1162).
+      // model's list price: Claude, or another provider's API model in the
+      // price table (#1290). A model with no price (local) records no cost.
+      // Summed per agent, project and month (#1162).
       const pricedModel = response.billedModel || task.model || state.def.model || undefined
-      const costUsd = response.costUsd ?? (split && isPricedModel(pricedModel, state.def.tier)
-        ? this.tokenTracker.cost({ tasks: 1, totalDuration: 0, errors: 0, ...split }, pricedModel)
+      const costUsd = response.costUsd ?? (response.usage
+        ? this.tokenTracker.runCost(response.usage, pricedModel, state.def.tier)
         : undefined)
       completedEmitted = true
       getEventBus().emit("task:completed", {
@@ -3722,8 +3788,9 @@ export class AgentRegistry {
   releaseBudgetHolds(): number {
     let released = 0
     for (const agentId of this.budgetHolds.agents()) {
-      if (preflightBudgetGate(agentId)) continue
-      const held = this.budgetHolds.take(agentId)
+      // Per message: a project cap holds only that project's chats.
+      const held = this.budgetHolds.take(agentId, (h) => !preflightBudgetGate(agentId, undefined, budgetProjectOf(agentId, h.chatId)))
+      if (!held.length) continue
       released += held.length
       this.log(`[${agentId}] budget allows runs again — releasing ${held.length} held message(s)`)
       for (const h of held) {
@@ -3763,9 +3830,6 @@ export class AgentRegistry {
     const channel = ctx?.channel
     const chatId = ctx?.chatId
     if (!channel || !chatId) return
-    // No adapter to post on: the reply stays on the task and its session.
-    // `requests` pick-ups land here, their reply read by the tracker (#1263).
-    if (!router.getChannel(channel)) return
     // Operator-cancelled / queued-marker — nothing to deliver
     if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted" || resp.errorKind === "stopped") return
     if (isQueued(resp.error)) return
@@ -3773,10 +3837,25 @@ export class AgentRegistry {
       ? `Error: ${resp.error}`
       : (resp.content || "").trim()
     if (!text) return
+    // No adapter to post on: the reply stays on the task and its session.
+    // `requests` pick-ups land here, their reply read by the tracker (#1259).
+    // A real channel whose adapter failed to start still leaves a log line.
+    if (!router.getChannel(channel)) {
+      if (!NO_ADAPTER_CHANNELS.has(channel.split("@")[0])) {
+        this.log(`[${agentId}] queued response not posted: no adapter for channel "${channel}"`)
+      }
+      return
+    }
     // Resolve account binding for shared-channel adapters (Telegram is
     // multi-account); sendOutbound auto-fills accountId from agentId.
     router.sendOutbound({ channel, chatId, text, agentId } as any)
       .catch((e: any) => this.log(`[${agentId}] queued response post failed: ${e?.message ?? e}`))
+  }
+
+  /** The root a running task works under, when it has one (#1284: an
+   *  event the turn emits carries it, so the loop guard holds). */
+  runningTaskRoot(taskId: string): string | undefined {
+    return this.taskAborts.get(taskId)?.rootId
   }
 
   /** The agent running `taskId` right now, or null once it has finished.

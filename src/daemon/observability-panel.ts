@@ -7,7 +7,8 @@ import { renderObservabilityPage } from "./ui/pages/observability"
 import type { TopbarPeer } from "./topbar"
 import type { DaemonConfig } from "./config"
 import { budgetConfigFrom, buildBudgetView, monthKey, monthStart } from "@/agents/agent-budget"
-import { spendByAgentSince } from "@/storage/traces"
+import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
+import { spendByAgentSince, spendByChatSince, unpricedRunsByAgentSince } from "@/storage/traces"
 
 // Anthropic public per-million-token rates. Same numbers
 // src/observability/tracker.ts uses; duplicated here so this module stays
@@ -181,10 +182,17 @@ export async function handleObservabilityApi(req: IncomingMessage, res: ServerRe
     }
     // Monthly budgets (#1162): the month's trace sum per agent against the
     // caps in agentx.json. The same sum the daemon seeds its gate from.
+    // Projects (#1290) are the Wall's, mapped the way the daemon maps runs;
+    // `agentIds` lets the card set a cap on an agent with no spend yet.
     if (slug === "budgets") {
       const now = Date.now()
+      const since = monthStart(now)
       const cfg = config ? budgetConfigFrom(config) : {}
-      sendJson(res, 200, buildBudgetView(cfg, spendByAgentSince(opened.db, monthStart(now)), monthKey(now)))
+      const byProject = config ? spendByProject(spendByChatSince(opened.db, since), budgetProjectResolver(config)) : {}
+      sendJson(res, 200, {
+        ...buildBudgetView(cfg, spendByAgentSince(opened.db, since), monthKey(now), byProject, unpricedRunsByAgentSince(opened.db, since)),
+        agentIds: Object.keys(config?.agents ?? {}).sort(),
+      })
       return true
     }
     if (slug === "cost.csv") {

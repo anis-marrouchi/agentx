@@ -209,6 +209,13 @@ export class RequestTracker {
         this.live.set(key, { requestId: pickup.id, runId: p.taskId! })
         return
       }
+      // A plan step handed to another agent: its cost counts toward the
+      // request's goal, but its end does not move the request (the plan
+      // sweep follows the step).
+      if (pickup) {
+        this.store.link(pickup.id, "step_run", p.taskId!, now)
+        return
+      }
       if (!p.humanRoot || !(isOwnerTurn(this.settings(), p.channel, p.sender, p.operator === true) || this.isListedOwner(p))) return
       // The owner writing again answers a question caught in the last reply.
       this.catcher?.ownerTurnStarted(p.agentId, p.channel, p.chatId, p.taskId!)

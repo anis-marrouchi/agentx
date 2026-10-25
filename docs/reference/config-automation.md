@@ -449,6 +449,9 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.crashLoop` | object | `{}` | Stops picking up work when the daemon keeps restarting. |
 | `resume.crashLoop.restarts` | number (1 or more) | `3` | This many restarts… |
 | `resume.crashLoop.windowMinutes` | number | `10` | …within this many minutes pauses picking up work. |
+| `resume.timeLimit` | object | `{}` | Work stopped at its agent's time limit (`maxExecutionMinutes`). See [work that runs past its time limit](/jobs/restart-safely#work-that-runs-past-its-time-limit). |
+| `resume.timeLimit.enabled` | boolean | `true` | Picks the work up again in the same conversation, with a note that it hit its time limit. Scheduled jobs and workflow steps never are. |
+| `resume.timeLimit.maxContinuations` | number (0–3) | `1` | How many times one request is picked up again after its time limit. |
 
 ## `quality`
 

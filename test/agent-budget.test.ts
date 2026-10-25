@@ -15,7 +15,7 @@ import {
   setAgentBudgets,
 } from "../src/agents/agent-budget"
 import { openDb, closeDb } from "../src/storage/sqlite"
-import { recordTraceStart, recordTraceEnd, spendByAgentSince } from "../src/storage/traces"
+import { recordTraceStart, recordTraceEnd, spendByAgentSince, spendByChatSince, unpricedRunsByAgentSince } from "../src/storage/traces"
 
 const OCT = Date.UTC(2026, 9, 10, 12)
 const NOV = Date.UTC(2026, 10, 1, 0, 0, 1)
@@ -119,7 +119,25 @@ describe("budget view", () => {
 
   it("reads budgets from agentx.json's shape", () => {
     expect(budgetConfigFrom({ agents: { scout: { budget: { monthlyUsd: 40 } }, other: {} }, budget: { monthlyUsd: 90 } }))
-      .toEqual({ agents: { scout: { monthlyUsd: 40 } }, fleet: { monthlyUsd: 90 } })
+      .toEqual({ agents: { scout: { monthlyUsd: 40 } }, projects: {}, fleet: { monthlyUsd: 90 } })
+  })
+
+  it("lists every Wall project, with its budget when it has one", () => {
+    const cfg = budgetConfigFrom({ dashboard: { wall: { projects: [{ name: "Shop", budget: { monthlyUsd: 20 } }, { name: "Docs" }, { name: "Shop" }] } } })
+    expect(cfg.projects).toEqual({ Shop: { monthlyUsd: 20 }, Docs: undefined })
+  })
+
+  it("shows projects and runs with no price", () => {
+    const v = buildBudgetView(
+      { agents: { scout: { monthlyUsd: 40 } }, projects: { Shop: { monthlyUsd: 20 }, Docs: undefined } },
+      { scout: 10 },
+      "2026-10",
+      { Shop: 19 },
+      { local: 3 },
+    )
+    expect(v.projects.map((p) => [p.name, p.state, p.spentUsd])).toEqual([["Shop", "warn", 19], ["Docs", "uncapped", 0]])
+    expect(v.agents.find((a) => a.agentId === "local")).toMatchObject({ spentUsd: 0, unpricedRuns: 3, state: "uncapped" })
+    expect(v.fleet.unpricedRuns).toBe(3)
   })
 
   it("names the UTC month", () => {
@@ -146,17 +164,97 @@ describe("trace sum", () => {
     expect(spendByAgentSince(db, monthStart())).toEqual({ scout: 0.75, helper: 1 })
     expect(spendByAgentSince(db, Date.now() + 60_000)).toEqual({})
   })
+
+  it("sums per chat for projects and counts runs with no price", () => {
+    const db = openDb({ path: path.join(tmp, "db.sqlite") })!
+    const run = (agentId: string, chatId: string, costUsd?: number, inputTokens = 100) => {
+      const id = recordTraceStart(db, { agentId, channel: "github", chatId })
+      recordTraceEnd(db, id, { status: "ok", costUsd, inputTokens, outputTokens: inputTokens ? 10 : 0 })
+    }
+    run("dev", "acme/shop:issue:1", 0.5)
+    run("dev", "acme/shop:issue:1", 0.25)
+    run("local", "c", undefined)
+    run("local", "c", undefined)
+    run("local", "c", undefined, 0) // no tokens: a failed start, not an unpriced run
+    expect(spendByChatSince(db, monthStart())).toEqual([{ agentId: "dev", chatId: "acme/shop:issue:1", usd: 0.75 }])
+    expect(unpricedRunsByAgentSince(db, monthStart())).toEqual({ local: 2 })
+  })
 })
 
 describe("which runs are priced from tokens", () => {
-  it("prices Claude models only", async () => {
+  it("prices Claude and listed API models, not local ones", async () => {
     const { isPricedModel } = await import("../src/daemon/token-tracker")
     expect(isPricedModel("claude-sonnet-4-6")).toBe(true)
     expect(isPricedModel("opus")).toBe(true)
     expect(isPricedModel(undefined, "claude-code")).toBe(true)
+    expect(isPricedModel("gpt-5-codex", "codex-cli")).toBe(true)
+    expect(isPricedModel("gemini-2.5-pro", "sdk")).toBe(true)
+    // Not in the table: no guess from a near name.
     expect(isPricedModel("gpt-5.5", "codex-cli")).toBe(false)
-    expect(isPricedModel("gemini-2.5-pro", "sdk")).toBe(false)
     expect(isPricedModel("qwen3:32b", "sdk")).toBe(false)
     expect(isPricedModel(undefined, "codex-cli")).toBe(false)
+  })
+
+  it("maps an API model id to its list price, longest name first", async () => {
+    const { apiModelFamily } = await import("../src/daemon/token-tracker")
+    expect(apiModelFamily("gpt-5-mini-2025-08-07")).toBe("gpt-5-mini")
+    expect(apiModelFamily("openai/gpt-4.1")).toBe("gpt-4.1")
+    expect(apiModelFamily("gemini-2.5-flash-lite")).toBe("gemini-2.5-flash-lite")
+    expect(apiModelFamily("gemini-2.5-flash")).toBe("gemini-2.5-flash")
+    expect(apiModelFamily("gpt-5.5")).toBeNull()
+    expect(apiModelFamily("claude-sonnet-4-6")).toBeNull()
+  })
+
+  it("costs an API run at its flat list price and a local run at nothing", async () => {
+    const { TokenTracker } = await import("../src/daemon/token-tracker")
+    const t = new TokenTracker(path.join(mkdtempSync(path.join(tmpdir(), "agentx-price-")), "usage"))
+    const usage = { inputTokens: 1_000_000, outputTokens: 100_000, cacheReadTokens: 1_000_000, cacheCreateTokens: 0 }
+    // gpt-5: $1.25 in + $1.00 out + $0.125 cached
+    expect(t.runCost(usage, "gpt-5", "codex-cli")).toBeCloseTo(2.375, 6)
+    // No long-prompt surcharge for an API model, even past 200K input.
+    expect(t.runCost({ ...usage, outputTokens: 0, cacheReadTokens: 0 }, "gemini-2.5-flash", "sdk")).toBeCloseTo(0.3, 6)
+    expect(t.runCost(usage, "llama3.1:8b", "sdk")).toBeUndefined()
+    expect(t.runCost({ inputTokens: 1000, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 }, "claude-sonnet-4-6", "claude-code")).toBeCloseTo(0.003, 6)
+  })
+})
+
+describe("project budgets", () => {
+  it("warn at 80%, pause the project's runs at 100%, and leave other work alone", () => {
+    setAgentBudgets({ projects: { Shop: { monthlyUsd: 10 } } })
+    expect(recordAgentSpend("dev", 8, OCT, "Shop").map((n) => [n.kind, n.scope])).toEqual([["warn", "project:Shop"]])
+    expect(preflightBudgetGate("dev", OCT, "Shop")).toBeNull()
+    const capped = recordAgentSpend("dev", 2, OCT, "Shop")
+    expect(capped.map((n) => n.kind)).toEqual(["cap"])
+    expect(capped[0].message).toContain("Project Shop")
+    const gate = preflightBudgetGate("dev", OCT, "Shop")
+    expect(gate).toMatchObject({ reason: "project_budget" })
+    expect(gate!.message).toContain("/admin/cost")
+    // The same agent on another project, or none, still runs.
+    expect(preflightBudgetGate("dev", OCT, "Docs")).toBeNull()
+    expect(preflightBudgetGate("dev", OCT)).toBeNull()
+  })
+
+  it("seeds project spend at boot without repeating the notice", () => {
+    setAgentBudgets({ projects: { Shop: { monthlyUsd: 10 } } })
+    seedMonthSpend({ dev: 9 }, OCT, { Shop: 9 })
+    expect(recordAgentSpend("dev", 0.5, OCT, "Shop")).toEqual([])
+    expect(recordAgentSpend("dev", 0.5, OCT, "Shop").map((n) => n.kind)).toEqual(["cap"])
+  })
+
+  it("maps a run to its project the way the Wall does: repo, then agent", async () => {
+    const { budgetProjectResolver, spendByProject } = await import("../src/agents/budget-projects")
+    const resolve = budgetProjectResolver({
+      agents: { dev: { workspace: "/tmp/x" }, desk: { workspace: "/tmp/y" } },
+      dashboard: { wall: { projects: [{ name: "Shop", repos: ["acme/shop"] }, { name: "Support", agents: ["desk"] }] } },
+    })
+    expect(resolve("dev", "acme/shop:issue:12")).toBe("Shop")
+    expect(resolve("desk", "acme/shop:pull:3")).toBe("Shop")
+    expect(resolve("desk", "telegram-123")).toBe("Support")
+    expect(resolve("dev", "telegram-123")).toBeNull()
+    expect(spendByProject([
+      { agentId: "dev", chatId: "acme/shop:issue:12", usd: 2 },
+      { agentId: "desk", chatId: "c", usd: 1 },
+      { agentId: "dev", chatId: null, usd: 5 },
+    ], resolve)).toEqual({ Shop: 2, Support: 1 })
   })
 })

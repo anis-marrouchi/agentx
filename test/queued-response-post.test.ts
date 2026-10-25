@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest"
 import { tmpdir } from "os"
 
 // A queued turn's reply goes back to its chat only when the channel has an
-// adapter: a `requests` pick-up has none, and posting failed (#1263).
+// adapter: a `requests` pick-up has none, and posting failed (#1259).
 
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -33,6 +33,14 @@ describe("posting a queued turn's reply", () => {
     const { r, sendOutbound, logs } = setup()
     r.postQueuedResponseToChannel("ops", { channel: "requests", chatId: "req-1" }, { content: "done" })
     expect(sendOutbound).not.toHaveBeenCalled()
-    expect(logs.some((l) => l.includes("queued response post failed"))).toBe(false)
+    expect(logs.some((l) => l.includes("queued response post failed") || l.includes("no adapter"))).toBe(false)
   })
+
+  it("logs once when a real channel has no adapter", () => {
+    const { r, sendOutbound, logs } = setup()
+    r.postQueuedResponseToChannel("ops", { channel: "whatsapp", chatId: "c1" }, { content: "done" })
+    expect(sendOutbound).not.toHaveBeenCalled()
+    expect(logs.filter((l) => l.includes('no adapter for channel "whatsapp"'))).toHaveLength(1)
+  })
+
 })

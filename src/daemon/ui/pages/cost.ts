@@ -46,6 +46,13 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
       </div>
     </div>
     <div id="cost-budgets" role="list"></div>
+    <p class="ax-cost__budget-note" id="cost-budgets-unpriced" hidden></p>
+    <form class="ax-cost__budget-form" id="cost-budget-form">
+      <label>Budget for <select id="cost-budget-scope" aria-label="Budget for"></select></label>
+      <label>Dollars a month <input id="cost-budget-usd" type="number" min="0" max="1000000" step="1" placeholder="No cap" aria-label="Dollars a month"></label>
+      <button type="submit" class="ax-btn">Save</button>
+      <span class="ax-cost__budget-msg" id="cost-budget-msg" role="status"></span>
+    </form>
   </section>
 
   <section class="ax-cost__hero">
@@ -278,6 +285,13 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
     .ax-cost__budget--warn .ax-cost__budget-state{color:var(--ax-warn)}
     .ax-cost__budget--paused .ax-cost__budget-state{color:var(--ax-err)}
     @media (max-width:680px){.ax-cost__budget{grid-template-columns:minmax(0,1fr) auto auto;row-gap:6px}.ax-cost__budget-bar{grid-column:1/-1;grid-row:2}.ax-cost__budget-state{min-width:0}}
+    .ax-cost__budget-empty{padding:9px 18px;border-top:1px solid var(--ax-border);font-size:12px;color:var(--ax-muted)}
+    .ax-cost__budget-note{margin:0;padding:9px 18px;border-top:1px solid var(--ax-border);font-size:11.5px;color:var(--ax-text-2)}
+    .ax-cost__budget-form{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:10px 18px 14px;border-top:1px solid var(--ax-border);font-size:12px;color:var(--ax-text-2)}
+    .ax-cost__budget-form label{display:inline-flex;align-items:center;gap:6px}
+    .ax-cost__budget-form select,.ax-cost__budget-form input{font:inherit;padding:4px 6px;border:1px solid var(--ax-border);border-radius:6px;background:var(--ax-surface);color:var(--ax-text)}
+    .ax-cost__budget-form input{width:110px}
+    .ax-cost__budget-msg{font-size:11.5px;color:var(--ax-muted)}
     .ax-cost__empty{padding:32px 18px;text-align:center;color:var(--ax-muted);font-size:12px;font-style:italic}
   `
 
@@ -361,11 +375,15 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
       } catch (e) { console.error('cost fetch failed', e); }
     }
 
-    /* Monthly budgets (#1162): spend vs cap per agent, from the month's traces. */
+    /* Monthly budgets (#1162, #1290): spend vs cap for the fleet, each
+       project and each agent, from the month's traces. The form below sets
+       or raises a cap in agentx.json. */
     var BUDGET_LABEL = { ok: 'On track', warn: 'Near cap', paused: 'Paused', uncapped: 'No cap' };
+    var budgetCaps = {};
     function budgetRow(name, b){
       var pct = b.capUsd ? Math.min(100, (b.ratio || 0) * 100) : 0;
-      var amt = fmtCost(b.spentUsd) + (b.capUsd ? ' / ' + fmtCost(b.capUsd) : '');
+      var amt = fmtCost(b.spentUsd) + (b.capUsd ? ' / ' + fmtCost(b.capUsd) : '')
+        + (b.unpricedRuns ? ' · ' + b.unpricedRuns + ' not priced' : '');
       return '<div class="ax-cost__budget ax-cost__budget--' + esc(b.state) + '" role="listitem">'
         + '<div class="ax-cost__budget-name">' + esc(name) + '</div>'
         + '<div class="ax-cost__budget-bar"' + (b.capUsd ? ' role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(pct) + '" aria-label="' + esc(name) + ' budget used"' : '') + '><i style="width:' + pct + '%"></i></div>'
@@ -379,15 +397,54 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
         var r = await fetch('/api/admin/observability/budgets', { credentials: 'same-origin', headers: authHeaders() });
         if (!r.ok) return;
         var v = await r.json();
-        var capped = (v.agents || []).some(function(a){ return a.capUsd; }) || (v.fleet && v.fleet.capUsd);
-        if (!capped) { card.hidden = true; return; }
         document.getElementById('cost-budgets-month').textContent = v.month || '—';
-        var rows = (v.agents || []).map(function(a){ return budgetRow(a.agentId, a); });
-        if (v.fleet && v.fleet.capUsd) rows.unshift(budgetRow('All agents', v.fleet));
-        document.getElementById('cost-budgets').innerHTML = rows.join('');
+        var rows = [];
+        if (v.fleet && v.fleet.capUsd) rows.push(budgetRow('All agents', v.fleet));
+        (v.projects || []).forEach(function(p){ if (p.capUsd || p.spentUsd) rows.push(budgetRow('Project ' + p.name, p)); });
+        (v.agents || []).forEach(function(a){ rows.push(budgetRow(a.agentId, a)); });
+        document.getElementById('cost-budgets').innerHTML = rows.length ? rows.join('')
+          : '<div class="ax-cost__budget-empty">No spend and no budget yet this month.</div>';
+        var unpriced = v.fleet && v.fleet.unpricedRuns;
+        var note = document.getElementById('cost-budgets-unpriced');
+        note.textContent = unpriced ? unpriced + (unpriced === 1 ? ' run' : ' runs') + ' this month used a model with no price (such as a local model). Budgets do not count them, so a cap does not stop them.' : '';
+        note.hidden = !unpriced;
+        /* The form's choices: the fleet, every project, every agent. */
+        budgetCaps = { fleet: v.fleet && v.fleet.capUsd };
+        var opts = ['<option value="fleet">All agents (fleet)</option>'];
+        (v.projects || []).forEach(function(p){ budgetCaps['project:' + p.name] = p.capUsd; opts.push('<option value="project:' + esc(p.name) + '">Project ' + esc(p.name) + '</option>'); });
+        var ids = (v.agentIds || []).slice();
+        (v.agents || []).forEach(function(a){ budgetCaps['agent:' + a.agentId] = a.capUsd; if (ids.indexOf(a.agentId) < 0) ids.push(a.agentId); });
+        ids.forEach(function(id){ opts.push('<option value="agent:' + esc(id) + '">Agent ' + esc(id) + '</option>'); });
+        var sel = document.getElementById('cost-budget-scope');
+        var keep = sel.value;
+        sel.innerHTML = opts.join('');
+        if (keep && budgetCaps.hasOwnProperty(keep)) sel.value = keep;
+        fillBudgetUsd();
         card.hidden = false;
       } catch (e) { console.error('budget fetch failed', e); }
     }
+    function fillBudgetUsd(){
+      var cap = budgetCaps[document.getElementById('cost-budget-scope').value];
+      document.getElementById('cost-budget-usd').value = cap ? String(cap) : '';
+    }
+    document.getElementById('cost-budget-scope').addEventListener('change', fillBudgetUsd);
+    document.getElementById('cost-budget-form').addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      var msg = document.getElementById('cost-budget-msg');
+      var key = document.getElementById('cost-budget-scope').value;
+      var raw = document.getElementById('cost-budget-usd').value.trim();
+      var cut = key.indexOf(':');
+      var body = { scope: cut < 0 ? key : key.slice(0, cut), monthlyUsd: raw === '' ? null : Number(raw) };
+      if (cut >= 0) body.id = key.slice(cut + 1);
+      msg.textContent = 'Saving…';
+      try {
+        var r = await fetch('/api/admin/budgets', { method: 'POST', credentials: 'same-origin', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()), body: JSON.stringify(body) });
+        var out = await r.json().catch(function(){ return {}; });
+        if (!r.ok) { msg.textContent = out.error || ('Not saved (HTTP ' + r.status + ')'); return; }
+        msg.textContent = body.monthlyUsd ? 'Saved. Applies now; paused work resumes if the new cap allows it.' : 'Saved: no cap.';
+        loadBudgets();
+      } catch (e) { msg.textContent = 'Not saved: ' + (e && e.message || e); }
+    });
     loadBudgets();
 
     function render(){

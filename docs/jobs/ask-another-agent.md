@@ -74,7 +74,7 @@ When no person started the conversation (another agent, a schedule, a workflow) 
 { "accepted": true, "mode": "callback", "taskId": "dlg-…", "agent": "helper", "note": "Sent to helper (task dlg-…). …" }
 ```
 
-A send to an agent on this machine may run as long as that agent's own `maxExecutionMinutes`, plus up to 25 minutes waiting for a free slot. The 30-minute `mesh.delegation.timeoutMinutes` does not cut it off. A send to an agent on another machine still uses `mesh.delegation.timeoutMinutes`.
+A send to an agent on this machine may run as long as that agent's own `maxExecutionMinutes`, once more for each time a run that passes it is picked up again (`resume.timeLimit`, once by default: see [work that runs past its time limit](/jobs/restart-safely#work-that-runs-past-its-time-limit)), plus up to 25 minutes waiting for a free slot. The 30-minute `mesh.delegation.timeoutMinutes` does not cut it off. A send to an agent on another machine still uses `mesh.delegation.timeoutMinutes`.
 
 If the other agent writes back to the sender with `agentx_send_agent` while it works, that message goes into the sender's chat for that work too. It does not open a new chat. When the other agent's run ends, the sender is still told how it ended, because what it wrote may only have been a progress note.
 
