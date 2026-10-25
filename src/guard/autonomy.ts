@@ -318,6 +318,13 @@ function reportTool(input: AutonomyInput): AutonomyDecision {
     const words = mcpActionWords(input.tool)
     const mutating = words.find((w) => MUTATING_VERBS.has(w))
     if (mutating) return block("report", "outward", `tool "${input.tool}" can change state (${mutating})`)
+    // A read-named tool can still pick a write through its `action` argument
+    // (`status` with action "set"). Report answers "allow" with no prompt, so
+    // the action must not name a state change either.
+    const actionMutating = input.action ? toolWords(input.action).find((w) => MUTATING_VERBS.has(w)) : undefined
+    if (actionMutating) {
+      return block("report", "outward", `tool "${input.tool}" action "${input.action}" can change state (${actionMutating})`)
+    }
     if (words.some((w) => READ_VERBS.has(w))) return ALLOW
     return block("report", "outward", `tool "${input.tool}" is not recognisably read-only`)
   }
