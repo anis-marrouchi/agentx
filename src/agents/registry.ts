@@ -55,6 +55,7 @@ import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { budgetConfigFrom, budgetProjectOf, preflightBudgetGate, setAgentBudgets, setBudgetProjectResolver } from "./agent-budget"
+import { holdMessage } from "./holds"
 import { budgetProjectResolver } from "./budget-projects"
 import { BudgetHolds, MAX_HELD_PER_AGENT } from "./budget-holds"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
@@ -1530,6 +1531,15 @@ export class AgentRegistry {
     const { channel: qChannel, chatId: qChatId } = warmProcessChat(task.context)
     // Held from a voice wait ending until the chat is marked running.
     let voiceClaim: string | undefined
+
+    // An agent the owner paused, or one another agent created that waits
+    // for the owner's yes (#1169), takes nothing: refused before it is
+    // queued, planned or given a slot, for every caller.
+    const held = holdMessage(process.cwd(), task.agentId)
+    if (held) {
+      this.log(`[${task.agentId}] refused — on hold`)
+      return { content: "", error: held, errorKind: "agent_held" }
+    }
 
     // Monthly budget (#1162): a chat message to a paused agent waits for
     // the agent to resume instead of failing. The chat is told why once
