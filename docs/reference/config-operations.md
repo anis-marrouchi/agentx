@@ -303,6 +303,7 @@ Gates that check agent pull requests before they merge. Each one is off by defau
 | `quality.reviewGate.ciWaitMinutes` | number | `5` | How long to wait for other checks before reviewing. |
 | `quality.reviewGate.maxDiffKb` | number | `256` | A longer diff is cut, and the reviewer is told. |
 | `quality.reviewGate.forges` | string[] | `["github"]` | Where the gate reviews: `"github"` pull requests, `"gitlab"` merge requests, or both. See [On GitLab merge requests](/jobs/review-gate#on-gitlab-merge-requests). |
+| `quality.reviewGate.tests` | object | `{}` | Per `"owner/repo"`: `checkout` (local clone), `command` (shell) and `timeoutMinutes` (`15`). Runs the tests on agent pull requests before the review and posts `agentx/tests`. See [Run the project's tests before the review](/jobs/review-gate#run-the-project-s-tests-before-the-review). |
 | `quality.mergePolicy.enabled` | boolean | `false` | Posts the `agentx/merge-policy` status on every pull request: core paths need a person's approval. See [Let agents merge only edge changes](/jobs/merge-policy). |
 | `quality.mergePolicy.mode` | `"advisory"` or `"required"` | `"advisory"` | Advisory marks an unapproved core change "[advisory]" and passes it. Required leaves it pending until a person approves. |
 | `quality.mergePolicy.corePaths` | string[] | `[]` | Core files, as patterns. Empty: nothing is core. |

@@ -90,6 +90,45 @@ The same gate reviews GitLab merge requests. Its verdict is the commit status `a
 
 A merge request counts as an agent's when it was opened or pushed by an account AgentX posts with, or its description carries an agent's signature. It links its issue with the same words as on GitHub: `Closes #12`.
 
+## Run the project's tests before the review
+
+The reviewer cannot run anything: it reads the result of the other checks. When the repository has no CI of its own, the gate can run the tests itself. It checks out the pull request's latest commit in a temporary folder, runs your test command there, and posts the result on the pull request as the status `agentx/tests` before the review starts. On a failure it also comments the end of the output. The reviewer is given the result with the other checks.
+
+- **Only agent pull requests opened by an account AgentX posts with** run the tests. A pull request whose description only carries an agent's signature is reviewed, but its code is not run: anyone can write a signature.
+- The command runs on the computer that runs the daemon, with only `PATH`, `HOME`, the locale and `CI=true` set. None of the daemon's tokens or keys reach it.
+- The temporary folder is a git worktree of your clone. It is removed when the run ends; the clone itself is not switched or changed.
+- A run longer than `timeoutMinutes` is stopped and counts as a failure.
+
+1. **Terminal:** keep a clone of the repository on the computer that runs the daemon. Its `origin` must be the pull request's repository.
+2. **Terminal:** in `agentx.json`, add `tests` to `quality.reviewGate`, one entry per repository:
+
+   ```json
+   "quality": {
+     "reviewGate": {
+       "enabled": true,
+       "reviewer": { "agent": "reviewer" },
+       "tests": {
+         "example-org/example-repo": {
+           "checkout": "/home/you/repos/example-repo",
+           "command": "npm ci && npm test",
+           "timeoutMinutes": 15
+         }
+       }
+     }
+   }
+   ```
+
+3. **Terminal:** restart the daemon with `agentx daemon restart --when-idle`.
+
+### Check it worked
+
+1. **Browser:** wait for the next agent pull request, or push to one.
+2. **Browser:** its checks list shows `agentx/tests` as pending, then as passed ("passed in 42 s") or failed ("exit code 1 after 42 s"), before `agentx/review` gets its verdict.
+3. **Browser:** on a failure, the pull request has a comment starting "agentx/tests: failed" with the command and the end of its output.
+4. **Terminal:** `agentx daemon logs` has a line such as `[review-gate] example-org/example-repo#9@1a2b3c4: tests passed: passed in 42 s`.
+
+If the status says "could not fetch pull/9/head", the clone's `origin` is not the pull request's repository, or the daemon cannot reach it. Check `git -C <checkout> remote get-url origin`.
+
 ## From advisory to required
 
 In **advisory** mode the status is shown, with "[advisory]" at the start of its description, but nothing stops a merge. Run it like this for at least three working days and read the results with `agentx review-gate list`.
@@ -116,6 +155,7 @@ Under `quality.reviewGate`:
 | `ciWaitMinutes` | number (minutes) | `5` | How long to wait for the other checks to finish before reviewing, so the reviewer sees their result. |
 | `maxDiffKb` | number (kilobytes) | `256` | A longer diff is cut to this size, and the reviewer is told it is incomplete. |
 | `forges` | list of `"github"`, `"gitlab"` | `["github"]` | Where the gate reviews: GitHub pull requests, GitLab merge requests, or both. |
+| `tests` | map of `"owner/repo"` to `{ checkout, command, timeoutMinutes }` | `{}` | [Runs the project's tests](#run-the-project-s-tests-before-the-review) on the pull request before the review and posts `agentx/tests`. `checkout` is a local clone, `command` a shell command, `timeoutMinutes` defaults to `15`. Empty: no tests are run. |
 
 ## See what reviews cost
 

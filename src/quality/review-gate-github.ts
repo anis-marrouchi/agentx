@@ -102,10 +102,10 @@ export function createReviewGateGitHub(
       return out
     },
 
-    async setStatus(repo, sha, state, description) {
+    async setStatus(repo, sha, state, description, context = REVIEW_STATUS_CONTEXT) {
       await call(repo, `/repos/${repo}/statuses/${sha}`, {
         method: "POST",
-        body: JSON.stringify({ state, description, context: REVIEW_STATUS_CONTEXT }),
+        body: JSON.stringify({ state, description, context }),
       })
     },
 

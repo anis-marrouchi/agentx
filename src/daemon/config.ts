@@ -1397,6 +1397,20 @@ export const reviewGateConfigSchema = z.object({
   /** Where the gate reviews: GitHub pull requests, GitLab merge requests
    *  (#1292), or both. GitLab needs the GitLab channel and its token. */
   forges: z.array(z.enum(["github", "gitlab"])).min(1).default(["github"]),
+  /** The project's own tests, run before the review (#1285), keyed by
+   *  "owner/repo". The PR head is checked out in a throwaway worktree of
+   *  `checkout`, `command` runs there, and pass/fail lands on the PR as
+   *  the status `agentx/tests` and is handed to the reviewer. Only PRs
+   *  opened by an account AgentX posts with are run: a signature in the
+   *  description is not enough, since anyone can write one. */
+  tests: z.record(z.string().min(1), z.object({
+    /** A local clone of the repository whose `origin` is the PR's repo. */
+    checkout: z.string().min(1),
+    /** Shell command run in the worktree, e.g. "npm ci && npm test". */
+    command: z.string().min(1),
+    /** A longer run is stopped and counts as a failure. */
+    timeoutMinutes: z.number().positive().max(120).default(15),
+  })).default({}),
 }).default({})
 
 const trackerRouteSchema = z.object({
