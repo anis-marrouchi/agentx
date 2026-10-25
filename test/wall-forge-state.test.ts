@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { forgeMismatch } from "../src/daemon/wall-forge-mismatch"
 import { commentUrl, forgeChatOf, forgeCommentsOf, forgeHomeOf, wallForgeState } from "../src/daemon/wall-forge-state"
 import { withForge, type WallPost } from "../src/daemon/wall-api"
 import { forgeReader, type ForgeReader } from "../src/requests/checkers/issue"
@@ -68,7 +69,8 @@ describe("forge state on posts", () => {
     const posts = [post(), post({ id: "r2", home: { kind: "issue", link: `${GL}/acme/api/-/issues/3` } }), post({ id: "r3", home: null })]
     await wallForgeState(both, read, { clock: () => NOW }).annotate(posts)
     expect(posts[0].forgeState).toEqual({
-      provider: "github", ref: "acme/web#42", state: "closed", closedBy: "a-person", closedAt: Date.parse("2026-10-24T10:00:00Z"), checkedAt: NOW, unknown: null,
+      provider: "github", ref: "acme/web#42", state: "closed", closedBy: "a-person", closedAt: Date.parse("2026-10-24T10:00:00Z"),
+      milestone: null, assignees: [], mismatch: "forge-closed", checkedAt: NOW, unknown: null,
     })
     expect(posts[1].forgeState).toMatchObject({ provider: "gitlab", ref: "acme/api#3", state: "open", closedBy: null, unknown: null })
     expect(posts[2].forgeState).toBeNull()
@@ -105,6 +107,37 @@ describe("forge state on posts", () => {
   })
 })
 
+describe("live milestone, assignees and mismatch (#1195)", () => {
+  it("shows the milestone and assignees with the check time", async () => {
+    const posts = [post()]
+    await wallForgeState(both, async () => ({ state: "open" as const, url: "", milestone: "v2", assignees: ["a-person", "b-person"] }), { clock: () => NOW }).annotate(posts)
+    expect(posts[0].forgeState).toMatchObject({ state: "open", milestone: "v2", assignees: ["a-person", "b-person"], mismatch: null, checkedAt: NOW })
+  })
+
+  it("marks a post open here and closed there, and the other way round", async () => {
+    const read = (state: "open" | "closed" | "merged"): ForgeReader => async () => ({ state, url: "" })
+    const open = [post()]
+    await wallForgeState(both, read("merged"), { clock: () => NOW }).annotate(open)
+    expect(open[0].forgeState?.mismatch).toBe("forge-closed")
+    const closed = [post({ state: "done", closedAt: NOW - H })]
+    await wallForgeState(both, read("open"), { clock: () => NOW }).annotate(closed)
+    expect(closed[0].forgeState?.mismatch).toBe("forge-open")
+    const agree = [post({ state: "dropped", closedAt: NOW - H })]
+    await wallForgeState(both, read("closed"), { clock: () => NOW }).annotate(agree)
+    expect(agree[0].forgeState?.mismatch).toBeNull()
+  })
+
+  it("never marks a mismatch when the forge state is unknown", async () => {
+    const posts = [post({ state: "done" })]
+    await wallForgeState(both, async () => ({ error: "HTTP 500" }), { clock: () => NOW }).annotate(posts)
+    expect(posts[0].forgeState).toMatchObject({ state: null, milestone: null, assignees: [], mismatch: null })
+    expect(forgeMismatch("waiting_owner", null)).toBeNull()
+    expect(forgeMismatch("candidate", "closed")).toBeNull()
+    expect(forgeMismatch("needs_attention", "closed")).toBe("forge-closed")
+    expect(forgeMismatch("declined", "open")).toBe("forge-open")
+  })
+})
+
 describe("the forge reader says who closed it", () => {
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
   it("GitHub: closed_by on an issue, merged_by on a merged pull request", async () => {
@@ -124,6 +157,16 @@ describe("the forge reader says who closed it", () => {
     expect(await mr("gitlab", { project: "acme/api", number: 9, mr: true }, { notes: false })).toMatchObject({ state: "merged", closedBy: "a-person" })
     const open = forgeReader({ gitlab: { url: GL } }, (async () => json({ state: "opened", closed_by: { username: "old" } })) as any)
     expect(await open("gitlab", { project: "acme/api", number: 3, mr: false }, { notes: false })).toMatchObject({ state: "open", closedBy: null, closedAt: null })
+  })
+
+  it("reads the milestone and assignees on both forges (#1195)", async () => {
+    const gh = forgeReader({ github: { apiUrl: "https://api.github.com" } }, (async () =>
+      json({ state: "open", milestone: { title: "v2" }, assignees: [{ login: "a-person" }, { login: "b-person" }] })) as any)
+    expect(await gh("github", { project: "acme/web", number: 1, mr: false }, { notes: false })).toMatchObject({ milestone: "v2", assignees: ["a-person", "b-person"] })
+    const gl = forgeReader({ gitlab: { url: GL } }, (async () => json({ state: "opened", milestone: { title: "Sprint 4" }, assignees: [{ username: "c-person" }] })) as any)
+    expect(await gl("gitlab", { project: "acme/api", number: 3, mr: false }, { notes: false })).toMatchObject({ milestone: "Sprint 4", assignees: ["c-person"] })
+    const none = forgeReader({ gitlab: { url: GL } }, (async () => json({ state: "opened", milestone: null, assignee: { username: "solo" } })) as any)
+    expect(await none("gitlab", { project: "acme/api", number: 4, mr: false }, { notes: false })).toMatchObject({ milestone: null, assignees: ["solo"] })
   })
 })
 
@@ -169,5 +212,7 @@ describe("the page", () => {
     expect(WALL_PAGE_SCRIPT).toContain("state unknown")
     expect(WALL_PAGE_SCRIPT).toContain("but this post is still open. Do not pick it up.")
     expect(WALL_PAGE_SCRIPT).toContain("(p.comments || []).slice(0, 3)")
+    expect(WALL_PAGE_SCRIPT).toContain("says open, but this post is ")
+    expect(WALL_PAGE_SCRIPT).toContain(" · milestone <b>")
   })
 })
