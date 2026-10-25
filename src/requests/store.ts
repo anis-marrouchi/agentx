@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { ensureColumns, PERSON_COLUMNS } from "@/storage/sqlite"
 import { readCloseWhen, type CloseWhen } from "./checkers"
 import type { Proof } from "./promise"
+import type { QaFilter, QaRecord, QaVerdict } from "./qa"
 
 // --- Open requests: what a person asked for that is not finished (#356) ---
 //
@@ -127,6 +128,11 @@ export interface RequestRecord {
   proof: Proof | null
   /** The wiki fact its close wrote (`agentx wiki facts show <id>`). */
   factId: string | null
+  // --- QA sign-off (#1188). Null on requests from before it. ---
+  /** When it was last marked as needing QA. Null: not marked. */
+  qaRequestedAt: number | null
+  /** The latest verdict, with who gave it and when. */
+  qa: QaRecord | null
 }
 
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
@@ -188,6 +194,15 @@ export function ensureRequestTables(db: Database.Database): void {
       FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_request_links_request ON request_links(request_id);
+    CREATE TABLE IF NOT EXISTS request_verdicts (
+      request_id TEXT NOT NULL,
+      verdict TEXT NOT NULL,
+      by_agent TEXT NOT NULL,
+      at INTEGER NOT NULL,
+      note TEXT,
+      FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_request_verdicts_request ON request_verdicts(request_id, at);
   `)
   ensureColumns(db, "requests", PERSON_COLUMNS)
   ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
@@ -201,7 +216,8 @@ export function ensureRequestTables(db: Database.Database): void {
     ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"],
     ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"],
     ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"], ["headline_tried_at", "INTEGER"],
-    ["owed_by", "TEXT"], ["proof", "TEXT"], ["fact_id", "TEXT"]]) {
+    ["owed_by", "TEXT"], ["proof", "TEXT"], ["fact_id", "TEXT"],
+    ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -234,10 +250,15 @@ function toRecord(r: any): RequestRecord {
     headline: r.headline ?? null, need: r.need ?? null, headlineBy: r.headline_by === "agent" || r.headline_by === "model" ? r.headline_by : null,
     headlineTriedAt: r.headline_tried_at ?? null,
     owedBy: r.owed_by ?? null, proof: readProof(r.proof), factId: r.fact_id ?? null,
+    qaRequestedAt: r.qa_requested_at ?? null,
+    qa: r.qa_verdict && r.qa_by && typeof r.qa_at === "number" ? { verdict: r.qa_verdict, by: r.qa_by, at: r.qa_at, note: r.qa_note ?? null } : null,
   }
 }
 
 const placeholders = (n: number) => Array(n).fill("?").join(",")
+
+/** WHERE clause of a request waiting on QA (qa.ts awaitingQa). */
+const AWAITING_QA = "qa_requested_at IS NOT NULL AND (qa_at IS NULL OR qa_at < qa_requested_at)"
 
 /** SET clause for a statement that writes `state`: the change time moves
  *  only when the state is really different. Takes the new state, then now. */
@@ -385,6 +406,27 @@ export class RequestStore {
   /** The wiki fact a promise's close wrote. */
   setFact(id: string, factId: string): void {
     this.db.prepare("UPDATE requests SET fact_id = ? WHERE id = ?").run(factId, id)
+  }
+
+  /** Marks it as needing QA (#1188), or no longer (false). Marking it
+   *  again after a verdict asks for a new one. Not a touch. */
+  setNeedsQa(id: string, needed: boolean, now: number): void {
+    this.db.prepare("UPDATE requests SET qa_requested_at = ? WHERE id = ?").run(needed ? now : null, id)
+  }
+
+  /** A QA verdict (#1188): kept as the request's latest, and in its
+   *  history. Open or closed alike: QA often comes after the done. Not a
+   *  touch: a verdict is not progress on the work. */
+  recordVerdict(id: string, v: { verdict: QaVerdict; by: string; note: string | null }, now: number): void {
+    this.db.transaction(() => {
+      this.db.prepare("INSERT INTO request_verdicts (request_id, verdict, by_agent, at, note) VALUES (?, ?, ?, ?, ?)").run(id, v.verdict, v.by, now, v.note)
+      this.db.prepare("UPDATE requests SET qa_verdict = ?, qa_by = ?, qa_at = ?, qa_note = ? WHERE id = ?").run(v.verdict, v.by, now, v.note, id)
+    })()
+  }
+
+  /** Every verdict given on it, oldest first. */
+  verdicts(id: string): QaRecord[] {
+    return this.db.prepare("SELECT verdict, by_agent AS by, at, note FROM request_verdicts WHERE request_id = ? ORDER BY at, rowid").all(id) as QaRecord[]
   }
 
   /** Open loops with a checker whose last run is older than `before`
@@ -616,14 +658,18 @@ export class RequestStore {
     if ((HOME_LINK_KINDS as readonly string[]).includes(home.kind)) this.link(id, home.kind as HomeLinkKind, home.link.slice(0, HOME_LINK_MAX), now)
   }
 
-  /** Requests by state and age, for GET /requests (#394). Oldest first;
+  /** Requests by state and age, for GET /requests (#394), and by QA
+   *  (#1188). Oldest first;
    *  `newest` keeps the newest `limit` instead of the oldest. `total`
    *  counts every match, so a caller can page with `offset`. */
-  query(q: { states: readonly RequestState[]; since?: number; closedSince?: number; limit: number; offset?: number; newest?: boolean }): { items: RequestRecord[]; total: number } {
+  query(q: { states: readonly RequestState[]; since?: number; closedSince?: number; qa?: QaFilter; limit: number; offset?: number; newest?: boolean }): { items: RequestRecord[]; total: number } {
     const where = [`state IN (${placeholders(q.states.length)})`]
     const args: unknown[] = [...q.states]
     if (q.since !== undefined) { where.push("created_at >= ?"); args.push(q.since) }
     if (q.closedSince !== undefined) { where.push("closed_at >= ?"); args.push(q.closedSince) }
+    // QA (#1188): awaiting sign-off, or the latest verdict is this one.
+    if (q.qa === "awaiting") where.push(AWAITING_QA)
+    else if (q.qa) { where.push("qa_verdict = ?"); args.push(q.qa) }
     const sql = where.join(" AND ")
     const total = (this.db.prepare(`SELECT COUNT(*) AS n FROM requests WHERE ${sql}`).get(...args) as { n: number }).n
     const order = q.newest ? "DESC" : "ASC"

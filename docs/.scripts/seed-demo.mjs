@@ -181,7 +181,67 @@ db.transaction(() => {
   step.run(1, "Build the fix", "task", "pull request merged", "done", 0, "none", null, null, null, "https://example.com/demo/shop/pull/48", ago(94), ago(40))
   step.run(2, "Deploy and check it is live", "deploy", "the shop shows version 2.4.1", "active", 0, "none", null, null, null, null, ago(2), ago(2))
   step.run(3, "Tell the shop", "message", "sent to telegram chat demo-shop", "pending", 1, "approved", "The checkout fix is live. Thank you for your patience.", "telegram", "demo-shop", null, null, ago(94))
+  // QA sign-off (#1188): one request awaiting a verdict, one with a block.
+  db.prepare("DELETE FROM requests WHERE id IN ('req-docs-qa-wait', 'req-docs-qa-block')").run()
+  const qa = db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, headline, need, headline_by,
+    work, qa_requested_at, qa_verdict, qa_by, qa_at, qa_note) VALUES (?, 'in_progress', 'dashboard', 'demo', 'Demo operator', 'cx', ?, ?, ?, ?, ?, 'agent', 'code', ?, ?, ?, ?, ?)`)
+  qa.run("req-docs-qa-wait", "add a search box to the demo shop", ago(60), ago(10), "Add a search box to the demo shop", "Nothing, just so you know.",
+    ago(10), null, null, null, null)
+  qa.run("req-docs-qa-block", "let customers export their orders as a spreadsheet", ago(80), ago(30), "Export orders as a spreadsheet", "Nothing, just so you know.",
+    ago(40), "block", "qa-check", ago(20), "The export fails when a customer has no orders.")
+  db.prepare("INSERT INTO request_verdicts (request_id, verdict, by_agent, at, note) VALUES ('req-docs-qa-block', 'block', 'qa-check', ?, ?)")
+    .run(ago(20), "The export fails when a customer has no orders.")
 })()
+
+// The Wall (#1180): a few more fictional requests, so the home page shows a
+// hand-off with its thread, a question for the owner (with a concurrent run
+// on its chat, #1187) and a closed task.
+db.transaction(() => {
+  const ids = ["req-docs-wall-handoff", "req-docs-wall-question", "req-docs-wall-done"]
+  for (const id of ids) db.prepare("DELETE FROM requests WHERE id = ?").run(id)
+  db.prepare("DELETE FROM task_traces WHERE task_id LIKE 'docs-wall-%'").run()
+  const req = db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, state_changed_at,
+    headline, need, headline_by, question, closed_at, evidence, home_kind, home_link, estimate_minutes)
+    VALUES (?, ?, ?, ?, 'Demo operator', 'cx', ?, ?, ?, ?, ?, ?, 'agent', ?, ?, ?, ?, ?, ?)`)
+  req.run(ids[0], "waiting_other", "gitlab", "demo/shop:issue:47", "Update the demo shop FAQ with the new delivery times, and ask @reviewer to check it.",
+    ago(70), ago(6), ago(30), "Update the demo shop FAQ with the new delivery times", "Nothing, just so you know.", null, null, null,
+    "issue", "https://example.com/demo/shop/issues/47", 30)
+  req.run(ids[1], "waiting_owner", "telegram", "demo-office", "Send the October newsletter to the demo office list.",
+    ago(180), ago(50), ago(50), "Send the October newsletter to the demo office", "Answer: which day should it go out?", "Which day should it go out: Monday or Tuesday?", null, null,
+    null, null, 15)
+  req.run(ids[2], "done", "dashboard", "demo", "Check the demo office FAQ links.",
+    ago(300), ago(20), ago(20), "Check the demo office FAQ links", "Nothing, just so you know.", null, ago(20), "https://example.com/demo/office/pull/12",
+    null, null, 20)
+  const trace = db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, chat_id, status, started_at, finished_at, duration_ms, message_preview, final_response, error)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const link = db.prepare("INSERT OR REPLACE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)")
+  trace.run("docs-wall-1", "cx", "gitlab", "demo/shop:issue:47", "ok", ago(69), ago(60), 9 * 60000, "Update the FAQ", "Updated the FAQ in MR !48 (commit 4f2a9c1b). Asked @reviewer to check the wording.", null)
+  trace.run("docs-wall-2", "reviewer", "a2a", "a2a:cx:reviewer:dlg-docs-1", "ok", ago(35), ago(31), 4 * 60000, "Check the FAQ wording", "Two wording fixes suggested on MR !48.", null)
+  trace.run("docs-wall-3", "cx", "telegram", "demo-office", "error", ago(170), ago(169), 60000, "Send the newsletter", null, "mail provider answered 503")
+  trace.run("docs-wall-4", "cx", "telegram", "demo-office", "ok", ago(51), ago(50), 70000, "Send the newsletter", "The draft is ready. Which day should it go out?", null)
+  trace.run("docs-wall-5", "cx", "dashboard", "demo", "ok", ago(40), ago(21), 19 * 60000, "Check the links", "All 14 links work; fixed two in https://example.com/demo/office/pull/12.", null)
+  // #1187: the newsletter ask also reached the reviewer, on the same chat at the same time.
+  trace.run("docs-wall-6", "reviewer", "telegram", "demo-office", "ok", ago(51) + 20000, ago(50) + 20000, 60000, "Send the newsletter", "I can send it today.", null)
+  link.run(ids[0], "run", "docs-wall-1", ago(69))
+  link.run(ids[0], "issue", "https://example.com/demo/shop/issues/47", ago(68))
+  link.run(ids[0], "delegation", "dlg-docs-1", ago(36))
+  link.run(ids[1], "run", "docs-wall-3", ago(170))
+  link.run(ids[1], "run", "docs-wall-4", ago(51))
+  link.run(ids[2], "run", "docs-wall-5", ago(40))
+  // The newsletter question as a pending decision card on its post (#1185).
+  link.run(ids[1], "card", "docs-wall-newsletter-day", ago(50))
+})()
+{
+  const iso = (ms) => new Date(ms).toISOString()
+  mkdirSync(resolve(root, ".agentx/approvals"), { recursive: true })
+  writeFileSync(resolve(root, ".agentx/approvals/docs-wall-newsletter-day.json"), JSON.stringify({
+    id: "docs-wall-newsletter-day", title: "Newsletter day for the demo office",
+    ask: "Send the October newsletter to the demo office list on Monday?",
+    recommend: "Yes: Monday mornings get the most opens on this list",
+    if_silent: "pause", expires: iso(Date.now() + 18 * 3_600_000), raised_by: "cx",
+    created_at: iso(Date.now() - 50 * 60_000), status: "pending",
+  }, null, 2) + "\n")
+}
 db.close()
 
 // One real scheduled run, for the schedule drawer's Runs today: switch the
@@ -206,4 +266,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, a webhook, a board, an action, two places, and two real scripted task runs.")
+console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts (one with a decision card), a webhook, a board, an action, two places, and two real scripted task runs.")

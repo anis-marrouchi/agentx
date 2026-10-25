@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "agentx",
-  "description": "AgentX, the self-hosted agent harness for small teams: its tool server and skills for your coding agent.",
+  "description": "AgentX, AI agents that answer your clients, send your reports and fix your code: its tool server and skills for your coding agent.",
   "owner": {
     "name": "AgentX contributors",
     "url": "https://github.com/anis-marrouchi/agentx"

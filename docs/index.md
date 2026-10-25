@@ -1,6 +1,10 @@
-# Put an AI teammate on the tools your team already uses
+# AI agents that answer your clients, send your reports and fix your code, on a machine you own
 
 <a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
+
+1. **Give each agent a job.** Answer clients, send the daily report, or work on an issue.
+2. **It works in your team's tools.** WhatsApp, Telegram, GitLab, GitHub and schedules, on a machine you own.
+3. **You check the result and decide.** The browser dashboard shows what was done and what still needs you.
 
 New here? [Before you start](requirements.md) lists what you need, how to install it, and how to check it works.
 

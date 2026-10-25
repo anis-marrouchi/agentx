@@ -67,6 +67,7 @@ export function renderTaskPage(opts: TaskPageOpts): string {
       ${opts.channel ? `<span class="ax-badge ax-badge--mono ax-badge--ghost">${esc(opts.channel)}</span>` : ""}
       <span class="ax-badge ax-badge--mono" id="task-status">connecting…</span>
       <span class="ax-mono ax-muted" id="task-elapsed"></span>
+      <a class="ax-badge ax-badge--ghost" href="/wall?task=${encodeURIComponent(opts.taskId)}" title="This task's thread on the Wall">Wall thread</a>
     </div>
   </header>
 

@@ -33,6 +33,7 @@ import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
+import { renderWallPage } from "./ui/pages/wall"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
@@ -74,7 +75,12 @@ import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX, liveRunRefs, type DeskRequest
 import { listCards, type DecisionCard } from "@/approvals/cards"
 import { readInboxState } from "@/approvals/state"
 import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
-import { decide, listInbox, requestStoreFor, type InboxItem } from "@/approvals/inbox"
+import { decide, listInbox, planStoreFor, requestStoreFor, type InboxItem } from "@/approvals/inbox"
+import { readRequestSettings } from "@/requests/settings"
+import { handleWallApi, WALL_PREFIX, withForgeTime, type WallDeps } from "./wall-api"
+import { gitlabTimeReader, wallForgeTime, type WallForgeTimeSource } from "./wall-forge-time"
+import { forgeConnectorsOf } from "@/requests/drift/live"
+import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
@@ -182,6 +188,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
 const DASHBOARD_PAGES = new Set([
   "/",
   "/live",
+  "/wall",
   "/mesh",
   "/monitor",
   "/activity",
@@ -272,11 +279,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
 
   if (method === "GET" && path === "/") {
-    // Home is Live, always. It answers the question an operator actually
-    // opens the dashboard for — who is alive and what are they doing.
-    // Boards used to take the root whenever any were configured, which meant
-    // the landing page silently changed identity based on config; now they
-    // live at /boards like every other surface.
+    // Home is the Wall (#1180, owner decision 2026-10-24): every request
+    // as a post with its thread, and what runs on each node now. Live
+    // stays at /live, and every other address is unchanged. Boards used to
+    // take the root whenever any were configured, which meant the landing
+    // page silently changed identity based on config; now they live at
+    // /boards like every other surface.
     //
     // The one exception is a machine with no agents yet, where there is
     // nothing live to show and the wizard is the only useful destination.
@@ -287,12 +295,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       return
     }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
     return
   }
   if (method === "GET" && path === "/boards") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderBoardsPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/wall") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
     return
   }
   if (method === "GET" && path === "/live") {
@@ -594,9 +607,23 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // per-node header: that view is mesh-wide by definition.
     const peerId = url.searchParams.get("peer") === "fleet" ? "fleet"
       : String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
+    // This block runs before the /api/admin/* token gate below, and both the
+    // fleet fan-out and the per-peer proxy call peers with their own tokens,
+    // so check dashboard.token here first (#1201). GET /api/agents is the
+    // one route open on this node without the token (the board's agent
+    // list asks for it without one), so the proxy leaves it open too.
+    const openLocally = method === "GET" && path === "/api/agents"
+    if (peerId && peerId !== "primary" && !openLocally && !adminTokenOk(req, ctx)) {
+      sendJson(res, 401, { error: "unauthorized" })
+      return
+    }
     if (peerId === "fleet") {
       if (path === "/api/admin/activity-graph") {
         await handleActivityGraphFleet(req, res, ctx)
+        return
+      }
+      if (path === WALL_PREFIX && method === "GET") {
+        sendJson(res, 200, await buildWallFleet(url.searchParams, ctx))
         return
       }
       if (path === "/api/admin/activity-graph/stream") {
@@ -741,17 +768,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // Local admin calls: enforce dashboard.token (if configured) BEFORE the
     // dispatcher runs. The legacy ctx.token check further down only catches
     // paths nothing else handled — admin routes were silently bypassing it.
-    if (ctx.token) {
-      const authHeader = req.headers.authorization || ""
-      const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-      if (got !== ctx.token) {
-        const tokStore = new TokenStore()
-        const rec = got ? tokStore.verify(got) : null
-        if (!rec || !recordHasScope(rec, "dashboard:write")) {
-          sendJson(res, 401, { error: "unauthorized" })
-          return
-        }
-      }
+    if (!adminTokenOk(req, ctx)) {
+      sendJson(res, 401, { error: "unauthorized" })
+      return
     }
   }
   if (method === "GET" && path === "/api/admin/config") {
@@ -762,6 +781,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // (src/voice/voice-health.ts); after the token gate above.
   if (method === "GET" && path === "/api/admin/voice-health") {
     sendJson(res, 200, readVoiceHealth() ?? { checkedAt: null, missing: [] })
+    return
+  }
+  // The Wall (#1180): read-only posts and threads from this node's records.
+  if (method === "GET" && (path === WALL_PREFIX || path.startsWith(`${WALL_PREFIX}/`))) {
+    const deps = wallDeps(ctx.config)
+    const reply = await withForgeTime(handleWallApi(path, url.searchParams, deps, localNodeName(ctx.config)), deps, wallTimeSource(ctx.config))
+    sendJson(res, reply.status, reply.body)
     return
   }
   if (path.startsWith("/api/admin/approvals")) {
@@ -1741,6 +1767,9 @@ interface NodeLive {
     waiting?: boolean
   }>
   uptimeSec?: number
+  /** The build the node runs (GET /health; undefined on older nodes). */
+  version?: string
+  commit?: string
   /** Tasks a restart would cut off (GET /health; undefined on older nodes). */
   inflight?: number
   /** A "restart when idle" request the node is holding (GET /health). */
@@ -1846,6 +1875,32 @@ interface NodeLive {
 interface LiveSnapshot {
   ts: string
   nodes: NodeLive[]
+  /** Runs going now on one chat or in one worktree at the same time (#1187). */
+  concurrent?: RunOverlap[]
+}
+
+/** Each live node's agent → worktree key, kept off the snapshot so a
+ *  workspace path never leaves the dashboard host. */
+const nodeWorktrees = new WeakMap<NodeLive, Map<string, string | null>>()
+
+/** Runs going now that share a chat (across the mesh) or a worktree (on
+ *  one node). Unreachable and stale nodes are left out: their runs are
+ *  not known to be going. */
+export function liveOverlaps(nodes: NodeLive[], now: number = Date.now()): RunOverlap[] {
+  const spans: RunSpan[] = []
+  for (const n of nodes) {
+    if (!n.reachable || n.error || n.stale) continue
+    const trees = nodeWorktrees.get(n)
+    for (const a of n.agents) {
+      const tree = trees?.get(a.id)
+      for (const t of a.runningTasks ?? []) {
+        const startedAt = Date.parse(t.startedAt)
+        if (!Number.isFinite(startedAt)) continue
+        spans.push({ runId: t.traceId || t.id, agentId: a.id, chat: chatKey(t.channel, t.chatId), worktree: tree ? `${n.url}|${tree}` : null, startedAt, endedAt: null })
+      }
+    }
+  }
+  return findOverlaps(spans, now)
 }
 
 /** How long an optional snapshot endpoint may take before it's skipped. */
@@ -1910,9 +1965,12 @@ export async function fetchDaemonAgents(
       hourlyTasks: Array.isArray(a.hourlyTasks) ? a.hourlyTasks : undefined,
       runningTasks: Array.isArray(a.runningTasks) ? a.runningTasks : [],
     }))
+    nodeWorktrees.set(base, new Map(agents.map((a) => [String(a.id), worktreeKey(typeof a.workspace === "string" ? a.workspace : null)] as const)))
     if (healthRes && healthRes.ok) {
       const h: any = await healthRes.json().catch(() => ({}))
       base.uptimeSec = h.uptime
+      if (typeof h.version === "string") base.version = h.version
+      if (typeof h.commit === "string") base.commit = h.commit
       if (typeof h.inflight?.total === "number") base.inflight = h.inflight.total
       if (h.restart && typeof h.restart.state === "string") base.restart = h.restart
       base.name = h.node?.name || h.node?.id || url
@@ -2086,7 +2144,7 @@ function buildLiveSnapshot(
       const node = await fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS), day)
       return day ? node : withLastGood(d.url, node)
     }))
-    return { ts: new Date().toISOString(), nodes }
+    return { ts: new Date().toISOString(), nodes, concurrent: liveOverlaps(nodes) }
   })().finally(() => inflightSnapshots.delete(key))
   inflightSnapshots.set(key, build)
   return build
@@ -2961,6 +3019,89 @@ async function handleActivityGraphFleet(
   const url = new URL(req.url || "/", "http://_")
   const hours = parseInt(url.searchParams.get("hours") || "6", 10) || 6
   sendJson(res, 200, await withForgeStatus(await buildFleetActivitySnapshot(hours, ctx.config)))
+}
+
+/** dashboard.token (if configured), or a stored token with dashboard:write. */
+function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
+  if (!ctx.token) return true
+  const authHeader = req.headers.authorization || ""
+  const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+  if (got === ctx.token) return true
+  const rec = got ? new TokenStore().verify(got) : null
+  return !!rec && recordHasScope(rec, "dashboard:write")
+}
+
+function localNodeName(config: DaemonConfig): string {
+  return config.node?.name || config.node?.id || "local"
+}
+
+/** What the Wall reads on this node; null when it keeps no requests. */
+function wallDeps(config: DaemonConfig): WallDeps | null {
+  const ictx = { root: process.cwd() }
+  const store = requestStoreFor(ictx)
+  if (!store) return null
+  const agents = config.agents ?? {}
+  return {
+    store,
+    plans: planStoreFor(ictx),
+    db: dashboardDb(),
+    now: Date.now(),
+    staleAfterHours: readRequestSettings().staleAfterHours,
+    isAgent: (id) => Object.prototype.hasOwnProperty.call(agents, id),
+    workspaceOf: (id) => agents[id]?.workspace ?? null,
+    cards: () => listCards(ictx.root, "pending"),
+  }
+}
+
+/** GitLab time tracking for the Wall (#1189), kept across reads so its
+ *  cache holds; rebuilt when the GitLab connector changes. Null: this node
+ *  has no GitLab connector, so no post gets forge time. */
+let wallTime: { key: string; source: WallForgeTimeSource } | null = null
+function wallTimeSource(config: DaemonConfig): WallForgeTimeSource | null {
+  if (!config.channels?.gitlab && !config.requests?.checkers?.gitlab) return null
+  const gitlab = forgeConnectorsOf(config).gitlab
+  if (!gitlab) return null
+  const key = `${gitlab.url}\n${gitlab.token ?? ""}`
+  if (wallTime?.key !== key) wallTime = { key, source: wallForgeTime(gitlab.url, gitlabTimeReader(gitlab)) }
+  return wallTime.source
+}
+
+/** The Wall across the mesh: this node's posts, then each configured
+ *  peer's, every post tagged with the node it lives on. A peer that does
+ *  not answer is listed as unreachable; the others still show (#1180). */
+async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
+  const days = q.get("days") ?? "7"
+  const deps = wallDeps(ctx.config)
+  const local = (await withForgeTime(handleWallApi(WALL_PREFIX, new URLSearchParams({ days }), deps, localNodeName(ctx.config)), deps, wallTimeSource(ctx.config))).body as any
+  const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string; syncedAt?: number }> = [
+    { name: local.node, peer: null, ok: true, syncedAt: local.syncedAt },
+  ]
+  const tag = (items: any[], name: string, peer: string | null, daemonUrl: string | null) =>
+    items.map((x) => ({ ...x, node: { name, peer, daemonUrl } }))
+  const posts = tag(local.posts, local.node, null, null)
+  const failures = tag(local.failures, local.node, null, null)
+  const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
+  await Promise.all(peers.map(async (d) => {
+    const id = d.url.replace(/\/+$/, "")
+    const name = d.name || id
+    const peer = findPeer(id, ctx.config)
+    if (!peer) { nodes.push({ name, peer: id, ok: false, error: "no dashboard address" }); return }
+    try {
+      const r = await fetch(`${peer.url}${WALL_PREFIX}?days=${encodeURIComponent(days)}`, {
+        headers: { Accept: "application/json", "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!r.ok) { nodes.push({ name, peer: id, ok: false, error: `answered ${r.status}` }); return }
+      const body = await r.json() as any
+      nodes.push({ name: body.node || name, peer: id, ok: true, syncedAt: body.syncedAt })
+      posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], body.node || name, id, id))
+      failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], body.node || name, id, id))
+    } catch (e: any) {
+      nodes.push({ name, peer: id, ok: false, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) })
+    }
+  }))
+  posts.sort((a, b) => b.updatedAt - a.updatedAt)
+  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, staleAfterHours: local.staleAfterHours }
 }
 
 async function buildFleetActivitySnapshot(hours: number, config: DaemonConfig): Promise<FleetSnapshot> {

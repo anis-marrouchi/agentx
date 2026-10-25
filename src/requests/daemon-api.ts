@@ -7,6 +7,7 @@ import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredF
 import { reportStep, type StepStatus } from "./plan-sweep"
 import { parseDescription } from "./headline"
 import { DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
+import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -21,7 +22,10 @@ import { DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proof
 //                         report on one step of a plan), or promise (an
 //                         open loop the agent owes someone, #1039), or
 //                         describe (its headline and need, #1126; accept,
-//                         wait and promise take them too). The
+//                         wait and promise take them too), or qa (a QA
+//                         verdict on any agent's request, open or closed,
+//                         #1188; accept, wait, promise and describe take
+//                         needsQa to ask for one). The
 //                         call must prove it comes from a running turn of
 //                         that agent (CallerProof).
 // A done on a loop with a `closeWhen` runs its checker first (#1039):
@@ -101,7 +105,7 @@ export interface ApiReply {
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
 export const MAX_OPEN_PROMISES = 200
 const OWED_TO_RE = /^[\w.@:+-]{1,200}$/
-const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe"]
+const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa"]
 
 /** The optional `due` and `closeWhen` of promise, accept and wait. */
 function parseLoop(input: Record<string, unknown>, deps: RequestsApiDeps, now: number): { dueAt?: number; closeWhen?: CloseWhen } | string {
@@ -141,9 +145,12 @@ export const LIST_MAX = 500
 
 /** GET /requests filters (#394), all optional:
  *    state=a,b      request states, or "open", "closed", "all" (default
- *                   open; with since, all)
+ *                   open; with since or qa, all)
  *    closed=1       open and closed alike (state=all)
  *    since=<ms>     made since then;  closedSince=<ms>  closed since then
+ *    qa=<filter>    awaiting (marked as needing QA, no verdict since),
+ *                   or block, risk, pass (the latest verdict, #1188);
+ *                   open and closed alike unless state says otherwise
  *    links=1        each item with its links (always on with since)
  *    limit=<n>      1 to 500, default 100
  *    offset=<n>     page from the oldest; the reply gives nextOffset.
@@ -160,7 +167,8 @@ function parseListQuery(p: URLSearchParams): Parameters<RequestStore["query"]>[0
   if (typeof since === "string") return since
   const closedSince = ms("closedSince")
   if (typeof closedSince === "string") return closedSince
-  const wanted = p.get("state") ?? (p.get("closed") === "1" || since !== undefined || closedSince !== undefined ? "all" : "open")
+  // QA often comes after the done: a qa list is open and closed alike.
+  const wanted = p.get("state") ?? (p.get("closed") === "1" || since !== undefined || closedSince !== undefined || p.get("qa") != null ? "all" : "open")
   const groups: Record<string, readonly RequestState[]> = {
     open: OPEN_STATES, closed: CLOSED_STATES, all: [...OPEN_STATES, ...CLOSED_STATES],
     ...Object.fromEntries([...OPEN_STATES, ...CLOSED_STATES].map((s) => [s, [s]])),
@@ -171,6 +179,8 @@ function parseListQuery(p: URLSearchParams): Parameters<RequestStore["query"]>[0
     groups[s].forEach((x) => states.add(x))
   }
   if (!states.size) return "state is empty"
+  const qa = p.get("qa") ?? undefined
+  if (qa !== undefined && !(QA_FILTERS as readonly string[]).includes(qa)) return `qa must be one of ${QA_FILTERS.join(", ")}`
   const whole = (name: string, min: number, max: number): number | undefined | string => {
     const v = p.get(name)
     if (v == null) return undefined
@@ -182,7 +192,7 @@ function parseListQuery(p: URLSearchParams): Parameters<RequestStore["query"]>[0
   const offset = whole("offset", 0, Number.MAX_SAFE_INTEGER)
   if (typeof offset === "string") return offset
   return {
-    states: [...states], since, closedSince, limit: limit ?? LIST_LIMIT, offset,
+    states: [...states], since, closedSince, qa: qa as QaFilter | undefined, limit: limit ?? LIST_LIMIT, offset,
     newest: offset === undefined && since !== undefined, links: since !== undefined || p.get("links") === "1",
   }
 }
@@ -219,7 +229,7 @@ export function handleRequestsApi(
     const plan = deps.plans?.get(request.id)
     return {
       status: 200,
-      body: { request, links: store.links(request.id), ...(plan ? { plan, steps: deps.plans!.steps(request.id), events: deps.plans!.events(request.id) } : {}) },
+      body: { request, links: store.links(request.id), verdicts: store.verdicts(request.id), ...(plan ? { plan, steps: deps.plans!.steps(request.id), events: deps.plans!.events(request.id) } : {}) },
     }
   }
 
@@ -228,13 +238,16 @@ export function handleRequestsApi(
     const action = str(input.action).toLowerCase()
     if (action === "drop") return { status: 403, body: { error: OWNER_ONLY } }
     if (!POST_ACTIONS.includes(action)) {
-      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step, promise or describe` } }
+      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step, promise, describe or qa` } }
     }
+    // Ask for QA sign-off (#1188): a flag beside what the action does.
+    const needsQa = ["accept", "wait", "promise", "describe"].includes(action) ? parseNeedsQa(input.needsQa) : undefined
+    if (typeof needsQa === "string") return { status: 400, body: { error: needsQa } }
     // What it is, for the owner's eyes (#1126): describe sets only these;
     // accept, wait and promise take them alongside.
     const described = ["accept", "wait", "promise", "describe"].includes(action) ? parseDescription(input) : {}
     if (typeof described === "string") return { status: 400, body: { error: described } }
-    if (action === "describe" && !described.headline && !described.need) {
+    if (action === "describe" && !described.headline && !described.need && needsQa === undefined) {
       return { status: 400, body: { error: "describe needs headline (what it is, in a few plain words) or need (what you need from the owner), or both" } }
     }
     if (!deps.enabled) return { status: 409, body: { error: "Requests are turned off on this node (requests.enabled)." } }
@@ -264,12 +277,14 @@ export function handleRequestsApi(
       }
       const { id } = openPromise(store, { channel: turn.channel, chatId: turn.chatId, agentId, text, owedTo, ...loop, home: home ?? null, now })
       store.setHeadline(id, described, "agent")
+      if (needsQa !== undefined) store.setNeedsQa(id, needsQa, now)
       return { status: 200, body: { request: store.get(id) } }
     }
 
     // Without an id it is the request of the turn that is speaking, never
     // an older one in the same chat that someone else's turn could reach.
     const id = str(input.id)
+    if (action === "qa" && !id) return { status: 400, body: { error: "qa needs id: the request you checked (list shows them)" } }
     let request: RequestRecord | null = null
     if (id) request = store.get(id)
     else {
@@ -279,10 +294,23 @@ export function handleRequestsApi(
     if (!request) {
       return { status: 404, body: { error: id ? `no request "${id}"` : "This turn has no recorded request. Pass the id of the request you mean (list shows them); only the owner's own messages are recorded." } }
     }
+    const now = deps.now ?? Date.now()
+
+    // A QA verdict (#1188) is about the work, whoever did it, and often
+    // comes after the done: any agent of this node may give one, on an
+    // open or a closed request. It needs the id: a QA agent's own turn is
+    // not the request's.
+    if (action === "qa") {
+      if (request.state === "candidate") return { status: 404, body: { error: `no request "${id}"` } }
+      const v = parseVerdict(input.verdict, input.note ?? input.reason)
+      if (typeof v === "string") return { status: 400, body: { error: v } }
+      store.recordVerdict(request.id, { ...v, by: agentId }, now)
+      return { status: 200, body: { request: store.get(request.id) } }
+    }
+
     if (["done", "declined", "dropped"].includes(request.state)) {
       return { status: 409, body: { error: `request "${request.id}" is already closed (${request.state})` } }
     }
-    const now = deps.now ?? Date.now()
 
     // A step report comes from the agent that owns the step, which is
     // often not the agent the request was asked of.
@@ -311,6 +339,7 @@ export function handleRequestsApi(
     // Neither is a touch.
     if (action === "describe") {
       store.setHeadline(request.id, described, "agent")
+      if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)
       return { status: 200, body: { request: store.get(request.id) } }
     }
     if (described.headline) store.setHeadline(request.id, { headline: described.headline }, "agent")
@@ -406,6 +435,7 @@ export function handleRequestsApi(
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
       deps.plans.create(request.id, agentId, parsed.steps, now)
+      if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)
       deps.onPlanChange?.()
       return { status: 200, body: { request: store.get(request.id), plan: deps.plans.get(request.id), steps: deps.plans.steps(request.id) } }
     }
@@ -422,6 +452,7 @@ export function handleRequestsApi(
       else store.close(request.id, "declined", str(input.reason), now)
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
+      if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)
     } catch (e: any) {
       return { status: 400, body: { error: e?.message ?? String(e) } }
     }

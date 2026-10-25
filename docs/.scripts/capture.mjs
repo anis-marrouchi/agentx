@@ -27,6 +27,14 @@ const askSteps = [
   { wait: ".ax-chat__applybtn" },
 ]
 const shots = [
+  // The Wall (#1180): the home page, a post's thread, the list, and a phone.
+  { name: "wall/wall", path: "/wall", wait: ".wp" },
+  { name: "wall/thread", path: "/wall", wait: ".wp", steps: [{ click: "#post-req-docs-wall-handoff [data-thread]" }, { wait: "#post-req-docs-wall-handoff .wt li" }], clipTo: "#post-req-docs-wall-handoff" },
+  { name: "wall/list", path: "/wall#status=&view=list", wait: ".wl" },
+  { name: "wall/concurrent", path: "/wall", wait: "#post-req-docs-wall-question .ax-conc", clipTo: "#post-req-docs-wall-question" },
+  // A pending decision card on its post (#1185), under "Waiting on the owner".
+  { name: "wall/owner-card", path: "/wall#status=waiting_owner", wait: "#post-req-docs-wall-question .wc", clipTo: "#post-req-docs-wall-question" },
+  { name: "wall/phone", path: "/wall", wait: ".wp", phone: true },
   { name: "live", path: "/live", wait: ".ax-agent__name" },
   { name: "operations", path: "/mesh", wait: "body" },
   { name: "operations/routines", path: "/mesh", wait: "body", steps: [{ clickText: "Operations" }, { wait: "#mx-routines .mx-flags" }, { scroll: "#mx-routines-title" }] },
@@ -40,6 +48,7 @@ const shots = [
   { name: "approvals/details", path: "/approvals", wait: ".apv__item", steps: [{ click: ".apv__detail summary" }] },
   { name: "approvals/choices", path: "/approvals", wait: ".apv__choices", steps: [{ scroll: ".apv__item:has(.apv__choices)" }] },
   { name: "approvals/plan", path: "/approvals", wait: ".apv__plan", steps: [{ scroll: ".apv__item:has(.apv__plan)" }] },
+  { name: "approvals/qa", path: "/approvals", wait: ".apv__item[data-id='req-docs-qa-block']", steps: [{ scroll: ".apv__item[data-id='req-docs-qa-block']" }] },
   { name: "approvals/request-headline", path: "/approvals", wait: ".apv__plan", steps: [{ click: ".apv__item:has(.apv__plan) .apv__detail summary" }, { scroll: ".apv__item:has(.apv__plan)" }] },
   // One Desk (#1138 step C): the one count, and the three settings.
   { name: "approvals/one-count", path: "/approvals", wait: ".apv__item", steps: [{ waitText: ["#apv-count", "waiting for you"] }] },
@@ -157,6 +166,10 @@ try {
   const selected = requested ? shots.filter(s => requested.includes(s.name)) : shots
   if (!selected.length) throw new Error("No matching DOCS_SHOTS")
   for (const shot of selected) {
+    // A phone-sized page for the shots that say so; the desktop size after.
+    await cdp("Emulation.setDeviceMetricsOverride", shot.phone
+      ? { width: 390, height: 844, deviceScaleFactor: 3, mobile: true }
+      : { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
     await cdp("Page.navigate", { url: target + shot.path })
     await sleep(500)
     await wait(shot.wait)

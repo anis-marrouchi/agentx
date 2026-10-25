@@ -15,6 +15,7 @@ const groups = [
   ] },
   { text: "Dashboard", collapsed: true, items: [
     { text: "Dashboard", link: "/dashboard/" },
+    { text: "Wall", link: "/dashboard/wall" },
     { text: "Monitor", link: "/dashboard/monitor" },
     { text: "Approvals", link: "/dashboard/approvals" },
     { text: "People", link: "/dashboard/people" },
@@ -142,13 +143,13 @@ const groups = [
 
 export default defineConfig({
   title: "AgentX",
-  description: "Put an AI teammate on the tools your team already uses.",
+  description: "AI agents that answer your clients, send your reports and fix your code, on a machine you own.",
   cleanUrls: true,
   lastUpdated: true,
   head: [
     ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
-    ["meta", { property: "og:title", content: "AgentX — an AI teammate for your team" }],
-    ["meta", { property: "og:description", content: "Set up agents, connect your tools, and see what needs you." }],
+    ["meta", { property: "og:title", content: "AgentX — AI agents that get your work done" }],
+    ["meta", { property: "og:description", content: "AI agents that answer your clients, send your reports and fix your code, on a machine you own." }],
     ["meta", { property: "og:image", content: "/agentx-symbol.png" }],
   ],
   themeConfig: {

@@ -2,6 +2,28 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.159.0](https://github.com/anis-marrouchi/agentx/compare/v0.158.0...v0.159.0) (2026-10-25)
+
+
+### Features
+
+* **dashboard:** pending owner approval cards on Wall posts, read-only ([#1185](https://github.com/anis-marrouchi/agentx/issues/1185)) ([#1196](https://github.com/anis-marrouchi/agentx/issues/1196)) ([65597a1](https://github.com/anis-marrouchi/agentx/commit/65597a1f7fba8394e151627c454682428d18c183))
+* **dashboard:** Wall shows GitLab time logged vs estimate ([#1189](https://github.com/anis-marrouchi/agentx/issues/1189)) ([#1197](https://github.com/anis-marrouchi/agentx/issues/1197)) ([feefc64](https://github.com/anis-marrouchi/agentx/commit/feefc64ea2635d025bb9fa2f6bfecae9d5536582))
+* **requests:** QA verdict per request and an awaiting-QA filter ([#1188](https://github.com/anis-marrouchi/agentx/issues/1188)) ([#1198](https://github.com/anis-marrouchi/agentx/issues/1198)) ([8cff268](https://github.com/anis-marrouchi/agentx/commit/8cff268f0e7652c4eaad3352c15a72ea293c49b3))
+* **wall:** flag concurrent sessions on one chat or worktree ([#1187](https://github.com/anis-marrouchi/agentx/issues/1187)) ([#1199](https://github.com/anis-marrouchi/agentx/issues/1199)) ([2b2ef00](https://github.com/anis-marrouchi/agentx/commit/2b2ef00f846d5c81d696f64180ca0228ee057de9))
+
+
+### Bug Fixes
+
+* **dashboard:** token-gate the fleet and per-peer admin proxy ([#1201](https://github.com/anis-marrouchi/agentx/issues/1201)) ([#1203](https://github.com/anis-marrouchi/agentx/issues/1203)) ([b0c2455](https://github.com/anis-marrouchi/agentx/commit/b0c2455b91bfcfc42dbf2c6f106868bbd6af31c4))
+
+## [0.158.0](https://github.com/anis-marrouchi/agentx/compare/v0.157.0...v0.158.0) (2026-10-24)
+
+
+### Features
+
+* **dashboard:** Wall becomes the main view ([#1180](https://github.com/anis-marrouchi/agentx/issues/1180)) ([#1181](https://github.com/anis-marrouchi/agentx/issues/1181)) ([c3c9c31](https://github.com/anis-marrouchi/agentx/commit/c3c9c3172274d37814d071edea2fa8c04133b5cd))
+
 ## [0.157.0](https://github.com/anis-marrouchi/agentx/compare/v0.156.0...v0.157.0) (2026-10-23)
 
 
