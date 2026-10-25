@@ -4034,6 +4034,7 @@ No flags.
 | `--reuse` | — | Resume an existing .agentx-demo instead of starting fresh (implies --keep). |
 | `--bind <host>` | `127.0.0.1` | Dashboard bind address. |
 | `--startup-timeout <seconds>` | — | Seconds each startup step may take. Unset: `AGENTX_DEMO_STARTUP_TIMEOUT`, then [`demo.startupTimeoutSeconds`](./config-operations.md#demo), else 60 (longer when the machine is busy, up to 300). |
+| `--dashboard-token <token>` | — | Set this demo's `dashboard.token`. It switches on the dashboard's `/api/*` token gate, so pages need the token. `pnpm docs:demo` sets one so the screenshots can open the portfolio. |
 
 ## exec (advanced)
 

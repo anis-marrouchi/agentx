@@ -122,7 +122,7 @@ function buildSpecs(root: string, basePort: number, cmd: string, filesKept: bool
   ]
 }
 
-function writeNode(spec: NodeSpec, all: NodeSpec[], meshToken: string): void {
+function writeNode(spec: NodeSpec, all: NodeSpec[], meshToken: string, dashboardToken?: string): void {
   const ws = join(spec.dir, "workspaces", spec.agentId)
   mkdirSync(ws, { recursive: true })
   writeFileSync(join(ws, "CLAUDE.md"), `# ${spec.agentName}\n\n${spec.persona}\n`)
@@ -137,7 +137,9 @@ function writeNode(spec: NodeSpec, all: NodeSpec[], meshToken: string): void {
     // The dashboard block is read by the `agentx board serve` child the
     // demo starts for node A — it discovers the other nodes through the
     // daemon's /mesh directory, so one dashboard shows the whole mesh.
-    dashboard: { enabled: true, port: spec.port + 10, bind: "127.0.0.1", daemonUrl: `http://127.0.0.1:${spec.port}` },
+    // A token only when asked for (the docs screenshots): it switches on the
+    // dashboard's /api/* gate, and the portfolio opens only behind it (#1227).
+    dashboard: { enabled: true, port: spec.port + 10, bind: "127.0.0.1", daemonUrl: `http://127.0.0.1:${spec.port}`, ...(dashboardToken ? { token: dashboardToken } : {}) },
     providers: { demo: { apiKey: "demo-mode" } },
     agents: {
       [spec.agentId]: {
@@ -198,6 +200,7 @@ export const demo = new Command()
   .option("--reuse", "resume an existing .agentx-demo instead of starting fresh (implies --keep)")
   .option("--bind <host>", "dashboard bind address", "127.0.0.1")
   .option("--startup-timeout <seconds>", "seconds each startup step may take (default: 60, longer when the machine is loaded)")
+  .option("--dashboard-token <token>", "set this demo's dashboard.token (the docs screenshots use it to open the portfolio)")
   .action(async (opts) => {
     const basePort = parseInt(opts.basePort, 10)
     const root = resolve(process.cwd(), ".agentx-demo")
@@ -245,7 +248,7 @@ export const demo = new Command()
       // Empty rather than remove: in the demo container the directory is a
       // volume mount point, which cannot be deleted.
       if (existsSync(root)) for (const f of readdirSync(root)) rmSync(join(root, f), { recursive: true, force: true })
-      for (const spec of specs) writeNode(spec, specs, meshToken)
+      for (const spec of specs) writeNode(spec, specs, meshToken, opts.dashboardToken)
       writeFileSync(tokenFile, meshToken + "\n", { mode: 0o600 })
     }
 
