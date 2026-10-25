@@ -660,6 +660,8 @@ ${WALL_CAPACITY_SCRIPT}
 
   // --- Render ---
   function render() {
+    // Running now draws from /api/live alone: it does not wait on the feed (#1252).
+    $('wall-nodes').innerHTML = nodesHtml();
     if (!S.data) return;
     var f = current();
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
@@ -685,7 +687,6 @@ ${WALL_CAPACITY_SCRIPT}
     var n = failCount();
     $('wall-fail-n').textContent = n ? '(' + n + ')' : '';
     renderReviews(S.view);
-    $('wall-nodes').innerHTML = nodesHtml();
     var synced = S.data.syncedAt;
     $('wall-synced').textContent = stamp(synced);
     $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
@@ -704,6 +705,11 @@ ${WALL_CAPACITY_SCRIPT}
     return r.json();
   }
   async function load() {
+    // The quick reads go out first and draw as each answers; the feed is
+    // the slow one and keeps its own "Loading…" (#1252).
+    getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
+    refreshReviews();
+    getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
     try {
       S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
       var posts = S.data.posts || [];
@@ -717,9 +723,6 @@ ${WALL_CAPACITY_SCRIPT}
     } catch (e) {
       $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the Wall: ' + esc(e.message) + '. The classic pages above still work.</p>';
     }
-    getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
-    refreshReviews();
-    getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
   }
 
   document.addEventListener('click', function (ev) {

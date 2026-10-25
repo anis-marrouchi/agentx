@@ -618,6 +618,22 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_emit",
+    description:
+      "Publish a named event on this node, for example `render:ready` or `build:done`, so agents subscribed to it move on without being asked. " +
+      "An agent whose subscription lists the name with delivery `wake` starts a turn that sees the event; others can read it with agentx_events. " +
+      "Use it when you finish something another agent or a later step is waiting for. Your own event never wakes you.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        name: { type: "string", description: "The event name: 1-64 letters, digits or : . _ -, for example `render:ready`." },
+        summary: { type: "string", description: "One short line on what happened, for example `batch 3 done`." },
+        ref: { type: "string", description: "Optional pointer to the details: an issue, a file path, a run id." },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "agentx_signal",
     description:
       "Stop a running agent task cleanly, or resume one that was stopped (#857). " +
@@ -945,6 +961,7 @@ const TOOLS = [
       "Use accept when the work goes on after this turn; wait when the next step is the owner's answer (give the question); " +
       "done when it is finished (give a link to the evidence: PR, issue, message, deploy); decline when you will not do it (give the reason). " +
       "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
+      "When the request serves a larger goal (a launch, a client project, a quarter's target), name it on accept with goal {id, title}; goals lists every goal with its open and done requests, how far along it is and what it cost. " +
       "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
       "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
       "The daemon hands each step to its agent in order, nudges a step that goes quiet, sends an owner-approved message itself, and tells the owner at the end or when a step is blocked. " +
@@ -962,7 +979,13 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list"], description: "list (default), accept, wait, done, decline, step, promise, describe or qa." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa or goals." },
+        goal: {
+          type: "object",
+          description: "accept, optional: the goal this request serves, {id, title}: id a short name (letters, digits, dashes), title a few plain words. A title alone gives the id. Reuse the id of a goal goals lists.",
+          properties: { id: { type: "string" }, title: { type: "string" } },
+          required: ["title"],
+        },
         needsQa: { type: "boolean", description: "accept, wait, promise, describe, optional: true marks the request as needing a QA verdict (again, after a fix); false clears the mark." },
         verdict: { type: "string", enum: ["block", "risk", "pass"], description: "qa: block (must not ship as it is), risk (can ship, with a named risk) or pass (signed off)." },
         headline: { type: "string", description: "accept, wait, promise, describe: what the request is, in a few plain words (at most 80 characters, no bare ids or links). Titles the owner's card, push and Desk line." },
@@ -1737,6 +1760,27 @@ async function handleToolCall(
       }
       const { formatEventLine } = await import("@/events/subscriptions")
       return { content: [{ type: "text", text: renderEventsAnswer(agentId, data, formatEventLine) }] }
+    }
+
+    case "agentx_emit": {
+      const name = typeof args.name === "string" ? args.name.trim() : ""
+      if (!name) return { content: [{ type: "text", text: "Error: name is required." }] }
+      const res = await daemonFetch(`${daemonUrl()}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({
+          name,
+          ...(typeof args.summary === "string" ? { summary: args.summary } : {}),
+          ...(typeof args.ref === "string" ? { ref: args.ref } : {}),
+          senderAgentId: process.env.AGENTX_AGENT_ID,
+          ...(process.env.AGENTX_AGENT_ID ? { by: process.env.AGENTX_AGENT_ID } : {}),
+          ...callerFields(),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      }).catch((e: any) => ({ ok: false, status: 0, json: async () => ({ error: e?.message ?? String(e) }) }) as any)
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || `HTTP ${res.status}`}` }] }
+      return { content: [{ type: "text", text: `Emitted ${data.event?.type ?? name} on ${data.event?.node ?? "this node"} (event ${data.event?.id ?? "?"}).` }] }
     }
 
     case "agentx_waiting": {

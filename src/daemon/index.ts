@@ -14,7 +14,8 @@ import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { setDispatchBudget } from "@/agents/claude-code-quota"
-import { budgetConfigFrom, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets } from "@/agents/agent-budget"
+import { budgetConfigFrom, budgetProjectOf, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets, setBudgetProjectResolver } from "@/agents/agent-budget"
+import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { isRestricted } from "@/guard/autonomy"
@@ -66,13 +67,14 @@ import { ChannelDownError } from "@/channels/router"
 import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { findLeftWork } from "@/agents/resume/work-left"
-import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
+import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, spendByChatSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { SignalService } from "@/agents/signals/service"
 import { StoppedTaskStore } from "@/agents/signals/store"
 import { setSignalService } from "@/agents/signals/instance"
 import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
 import { traceToolCalls } from "@/storage/traces"
+import { timeLimitContinuations } from "@/agents/resume/time-limit"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
@@ -228,12 +230,13 @@ import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { recentFeed, streamEnvelopes } from "@/events/feed-http"
 import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
+import { publishNamedEvent } from "@/events/emit"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
-import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
+import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -504,14 +507,18 @@ export class AgentXDaemon {
 
     // Wake-on-event subscriptions (src/events/wake.ts). Reads the agents on
     // every event so a reload applies; the woken turn runs under the
-    // event's root so what it causes cannot wake it again.
+    // event's root so what it causes cannot wake it again. A wake the
+    // dispatch cap holds is handed back as held and retried (#1284).
     this.stopEventWaker = new EventWaker({
       agents: () => this.config.agents,
-      dispatch: (agentId, e) => withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
-        message: wakeMessage(e),
-        agentId,
-        context: { channel: "events", chatId: `events:${agentId}` },
-      })),
+      dispatch: async (agentId, e, sub) => {
+        const response = await withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
+          message: wakeMessage(e, sub.prompt),
+          agentId,
+          context: { channel: "events", chatId: `events:${agentId}` },
+        }))
+        return response.errorKind === "dispatch_hold" ? { held: response.error || "dispatch held" } : response
+      },
       log: (msg) => this.log(msg),
       // Peer events (mesh feed) wake only subscriptions naming their node.
       isLocal: (e) => getAgentEventBus().isLocal(e),
@@ -685,6 +692,9 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
         }
+        // A run continued after its time limit lists the tool calls the
+        // stopped run made (#1257).
+        this.registry.setTraceToolCalls((traceId) => traceToolCalls(db, traceId))
         // Task watchers (#1030). Attached whatever the setting says, like
         // requests: the checkpoint reads `watchers.enabled` on every event.
         try {
@@ -1883,8 +1893,14 @@ export class AgentXDaemon {
       applied.push("dispatch-budget")
     }
     // Monthly money budgets (#1162): raising a cap resumes a paused agent.
-    if (JSON.stringify(budgetConfigFrom(this.config)) !== JSON.stringify(budgetConfigFrom(next))) {
+    // A changed project list re-maps the month's spend to projects (#1290).
+    const projectsChanged = JSON.stringify(next.dashboard?.wall?.projects ?? []) !== JSON.stringify(this.config.dashboard?.wall?.projects ?? [])
+    if (projectsChanged || JSON.stringify(budgetConfigFrom(this.config)) !== JSON.stringify(budgetConfigFrom(next))) {
       setAgentBudgets(budgetConfigFrom(next))
+      if (projectsChanged) {
+        setBudgetProjectResolver(budgetProjectResolver(next))
+        this.seedBudgets()
+      }
       // A raised cap lets the messages held for a paused agent run now.
       this.registry.releaseBudgetHolds()
       applied.push("budgets")
@@ -2865,20 +2881,25 @@ export class AgentXDaemon {
    *  cost is added as it completes, and a line it crosses tells the owner
    *  once. The registry refuses runs past a cap (preflightBudgetGate). */
   private startBudgets(): void {
-    if (this.db) {
-      try {
-        seedMonthSpend(spendByAgentSince(this.db, monthStart()))
-      } catch (e: any) {
-        this.log(`  Budgets: couldn't read this month's spend (${e?.message ?? e}); counting from now`)
-      }
-    }
+    this.seedBudgets()
     getAgentEventBus().on("task:completed", (p: AgentXEvents["task:completed"]) => {
-      for (const n of recordAgentSpend(p.agentId, p.costUsd)) {
+      for (const n of recordAgentSpend(p.agentId, p.costUsd, undefined, budgetProjectOf(p.agentId, p.chatId))) {
         this.log(`[budget] ${n.title}: ${n.message}`)
         void this.notifyOwner(n.title, n.message, "budget", n.kind === "cap" ? 5 : 4, { key: `budget:${n.kind}:${n.scope}:${n.month}:${n.capUsd}` })
           .catch((e) => this.log(`[budget] couldn't tell the owner (${e?.message ?? e})`))
       }
     })
+  }
+
+  /** The month's spend per agent and per project (#1290), from the traces. */
+  private seedBudgets(): void {
+    if (!this.db) return
+    try {
+      const since = monthStart()
+      seedMonthSpend(spendByAgentSince(this.db, since), undefined, spendByProject(spendByChatSince(this.db, since), budgetProjectOf))
+    } catch (e: any) {
+      this.log(`  Budgets: couldn't read this month's spend (${e?.message ?? e}); counting from now`)
+    }
   }
 
   /** Tell the owner through the notify path: a push to the default
@@ -3930,6 +3951,157 @@ export class AgentXDaemon {
   }
 
   /**
+   * POST /send/agent, and POST /send on an a2a chat (#1251).
+   *
+   * Explicit A2A send: route to another agent via mesh (or local
+   * dispatch when the target lives on this daemon). This is the
+   * deterministic path for "agent A asks agent B to do X" — no
+   * contact-directory fallback, no name fuzzy-matching. Caller
+   * must pass an exact agentId.
+   *
+   * retro:01M4DJTC01FK0BVCMFKT5K4SRQ (#847) — answers 202
+   * {accepted, taskId, status: "queued"} as soon as the work is
+   * handed off, local or mesh; the target's turn runs in the
+   * background. A repeat of the same message from the same sender
+   * within the dedupe window gets the first task id back. Only
+   * `"async": false` still waits for the answer.
+   */
+  private async sendToAgent(req: IncomingMessage, res: ServerResponse, body: Record<string, unknown>): Promise<void> {
+    if (!body.agentId || !body.text) {
+      this.json(res, 400, { error: "Required: agentId, text" })
+      return
+    }
+    const targetAgent = String(body.agentId)
+    const text = String(body.text)
+    const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+    // The task's type picks the evidence its watcher's done needs
+    // (#1049); it travels in the callee's context on every path.
+    const taskType = taskTypeOf(body)
+    const wait = body.async === false
+    const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
+    const seen = wait ? null : this.sendAgentDedupe.get(dedupeKey)
+    if (seen) {
+      this.log(`[send/agent] duplicate of ${String(seen.taskId)} from ${senderAgentId || "?"} → ${targetAgent}; not sent again`)
+      this.json(res, 202, duplicateBody(seen))
+      return
+    }
+    // #1100 — a callee writing to the agent that asked it, from that
+    // delegation's chat, is answering it: the message goes into the
+    // asker's conversation for that work, not into a new chat.
+    const from = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+    if (!wait && this.config.mesh.delegation.callbackSends) {
+      const rec = from ? this.delegations.replyTarget({ agentId: from.agentId, chatId: String(from.context.chatId ?? "") }, targetAgent) : null
+      if (rec) {
+        this.delegations.relayReply(rec, text)
+        const answer = replyBody(rec.id, targetAgent)
+        this.sendAgentDedupe.put(dedupeKey, answer)
+        this.json(res, 202, answer)
+        return
+      }
+    }
+    // #277 — same gate as /task: refuse a cycle, or call back when a
+    // person started it. #1100 — or when an agent sent it.
+    const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType ? { calleeContext: { taskType } } : {}) }, { send: true })
+    if (!("track" in gate)) {
+      const a = gateAnswer(gate)
+      if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)
+      this.json(res, a.status, a.body)
+      return
+    }
+    // Local agent? Dispatch directly through the registry.
+    // The hop count goes on through a plain send too, local or to a
+    // peer, so two agents past the cap are not called back again (#1100).
+    const sendDepth = from ? callbackDepthOf(from.context) + 1 : 0
+    const localDef = this.registry.getAgent(targetAgent)
+    if (localDef) {
+      const track = gate.track
+      // Only a caller that waits holds the callee in syncWaits: a
+      // queued send leaves the caller free, so it can't form a cycle.
+      const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
+        const context = {
+          channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}),
+          ...(sendDepth ? { sendDepth } : {}),
+          // What the work is about (#1100): a second run on it is told.
+          ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
+        }
+        // A remote target records on its own node's /task; a local one
+        // has no other hop that would put this delegation in the ledger.
+        const intentRef = this.recordInboundDispatch(
+          targetAgent,
+          { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}`, ...(track.root ? { initiator: track.root } : {}) },
+          text,
+          senderAgentId,
+        )
+        return this.registry.execute({
+          agentId: targetAgent,
+          message: text,
+          context,
+          intentRef,
+          onStart: waits ? track.onStart : onStart,
+        }).finally(() => { if (waits) track.end() })
+      }
+      if (wait) {
+        try {
+          const response = await runLocal(true)
+          this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
+        } catch (e: any) {
+          this.json(res, 500, { error: e.message })
+        }
+        return
+      }
+      const queued = queueSend({
+        agent: targetAgent,
+        log: (m) => this.log(m),
+        run: async (taskId) => {
+          // A busy agent queues the message; it gets a run (and a
+          // trace) only when it starts. This line joins the two ids.
+          const r = await runLocal(false, (runId) => this.log(`[send/agent] ${taskId} → ${targetAgent} started as run ${runId}`))
+          return { ok: !r.error, ...(r.error ? { detail: r.error.slice(0, 200) } : {}) }
+        },
+      })
+      this.sendAgentDedupe.put(dedupeKey, queued)
+      this.json(res, 202, queued)
+      return
+    }
+    // Remote agent? Find the mesh peer that advertises this agent.
+    if (!this.mesh) {
+      this.json(res, 400, { error: `Unknown agent "${targetAgent}" — mesh disabled, no remote lookup possible` })
+      return
+    }
+    const mesh = this.mesh
+    const directory = mesh.directory()
+    const peer = directory.find((p) => p.healthy && p.skills.some((s) => s.id === targetAgent))
+    if (!peer) {
+      const known = [
+        ...Object.keys(this.config.agents),
+        ...directory.flatMap((p) => p.skills.map((s) => s.id)),
+      ]
+      this.json(res, 404, { error: `Unknown agent "${targetAgent}"`, known })
+      return
+    }
+    if (wait) {
+      try {
+        const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
+        this.json(res, 200, { ok: true, messageId, peer: peer.peer })
+      } catch (e: any) {
+        this.json(res, 500, { error: e.message, peer: peer.peer })
+      }
+      return
+    }
+    const queued = queueSend({
+      agent: targetAgent,
+      peer: peer.peer,
+      log: (m) => this.log(m),
+      run: async () => {
+        await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
+        return { ok: true }
+      },
+    })
+    this.sendAgentDedupe.put(dedupeKey, queued)
+    this.json(res, 202, queued)
+  }
+
+  /**
    * #277 — the gate every agent-to-agent request on this node goes through.
    *
    *   refused   a cycle that could never finish: an agent asking itself, or
@@ -4016,7 +4188,7 @@ export class AgentXDaemon {
       message: target.message,
       calleeContext: target.calleeContext,
       extras,
-      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes) }) } : {}),
+      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes, timeLimitContinuations(this.config.resume.timeLimit)) }) } : {}),
       // One session per piece of work (#1100): the body's home, or the one
       // a /task context carries.
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
@@ -5238,6 +5410,21 @@ export class AgentXDaemon {
           events,
           next: events.length ? events[events.length - 1].id : since,
         })
+        return
+      }
+
+      // A named event from an agent or a script (#1284): `agentx events
+      // emit`, the agentx_emit MCP tool. Control POST: gated by
+      // isControlPost above. From inside a running turn it carries that
+      // agent and that turn's root, so the wake loop guard holds.
+      if (req.method === "POST" && path === "/events") {
+        const body = await readBody(req)
+        const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+        const caller = turn ? { agentId: turn.agentId, rootId: turn.taskId ? this.registry.runningTaskRoot(turn.taskId) : undefined } : null
+        const result = publishNamedEvent(getAgentEventBus(), body, new Set(Object.keys(this.config.agents || {})), caller)
+        if (!result.ok) { this.json(res, 400, { error: result.error }); return }
+        this.log(`[events] emitted ${result.event.type}${result.event.agentId ? ` by ${result.event.agentId}` : ""}: ${result.event.summary}`)
+        this.json(res, 200, { ok: true, event: result.event })
         return
       }
 
@@ -7040,151 +7227,7 @@ export class AgentXDaemon {
         }
 
         case "POST /send/agent": {
-          // Explicit A2A send: route to another agent via mesh (or local
-          // dispatch when the target lives on this daemon). This is the
-          // deterministic path for "agent A asks agent B to do X" — no
-          // contact-directory fallback, no name fuzzy-matching. Caller
-          // must pass an exact agentId.
-          //
-          // retro:01M4DJTC01FK0BVCMFKT5K4SRQ (#847) — answers 202
-          // {accepted, taskId, status: "queued"} as soon as the work is
-          // handed off, local or mesh; the target's turn runs in the
-          // background. A repeat of the same message from the same sender
-          // within the dedupe window gets the first task id back. Only
-          // `"async": false` still waits for the answer.
-          const body = await readBody(req)
-          if (!body.agentId || !body.text) {
-            this.json(res, 400, { error: "Required: agentId, text" })
-            break
-          }
-          const targetAgent = String(body.agentId)
-          const text = String(body.text)
-          const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
-          // The task's type picks the evidence its watcher's done needs
-          // (#1049); it travels in the callee's context on every path.
-          const taskType = taskTypeOf(body)
-          const wait = body.async === false
-          const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
-          const seen = wait ? null : this.sendAgentDedupe.get(dedupeKey)
-          if (seen) {
-            this.log(`[send/agent] duplicate of ${String(seen.taskId)} from ${senderAgentId || "?"} → ${targetAgent}; not sent again`)
-            this.json(res, 202, duplicateBody(seen))
-            break
-          }
-          // #1100 — a callee writing to the agent that asked it, from that
-          // delegation's chat, is answering it: the message goes into the
-          // asker's conversation for that work, not into a new chat.
-          const from = resolveCallerTurn(callerHintFrom(req, body), this.registry)
-          if (!wait && this.config.mesh.delegation.callbackSends) {
-            const rec = from ? this.delegations.replyTarget({ agentId: from.agentId, chatId: String(from.context.chatId ?? "") }, targetAgent) : null
-            if (rec) {
-              this.delegations.relayReply(rec, text)
-              const answer = replyBody(rec.id, targetAgent)
-              this.sendAgentDedupe.put(dedupeKey, answer)
-              this.json(res, 202, answer)
-              break
-            }
-          }
-          // #277 — same gate as /task: refuse a cycle, or call back when a
-          // person started it. #1100 — or when an agent sent it.
-          const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType ? { calleeContext: { taskType } } : {}) }, { send: true })
-          if (!("track" in gate)) {
-            const a = gateAnswer(gate)
-            if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)
-            this.json(res, a.status, a.body)
-            break
-          }
-          // Local agent? Dispatch directly through the registry.
-          // The hop count goes on through a plain send too, local or to a
-          // peer, so two agents past the cap are not called back again (#1100).
-          const sendDepth = from ? callbackDepthOf(from.context) + 1 : 0
-          const localDef = this.registry.getAgent(targetAgent)
-          if (localDef) {
-            const track = gate.track
-            // Only a caller that waits holds the callee in syncWaits: a
-            // queued send leaves the caller free, so it can't form a cycle.
-            const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
-              const context = {
-                channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}),
-                ...(sendDepth ? { sendDepth } : {}),
-                // What the work is about (#1100): a second run on it is told.
-                ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
-              }
-              // A remote target records on its own node's /task; a local one
-              // has no other hop that would put this delegation in the ledger.
-              const intentRef = this.recordInboundDispatch(
-                targetAgent,
-                { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}`, ...(track.root ? { initiator: track.root } : {}) },
-                text,
-                senderAgentId,
-              )
-              return this.registry.execute({
-                agentId: targetAgent,
-                message: text,
-                context,
-                intentRef,
-                onStart: waits ? track.onStart : onStart,
-              }).finally(() => { if (waits) track.end() })
-            }
-            if (wait) {
-              try {
-                const response = await runLocal(true)
-                this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
-              } catch (e: any) {
-                this.json(res, 500, { error: e.message })
-              }
-              break
-            }
-            const queued = queueSend({
-              agent: targetAgent,
-              log: (m) => this.log(m),
-              run: async (taskId) => {
-                // A busy agent queues the message; it gets a run (and a
-                // trace) only when it starts. This line joins the two ids.
-                const r = await runLocal(false, (runId) => this.log(`[send/agent] ${taskId} → ${targetAgent} started as run ${runId}`))
-                return { ok: !r.error, ...(r.error ? { detail: r.error.slice(0, 200) } : {}) }
-              },
-            })
-            this.sendAgentDedupe.put(dedupeKey, queued)
-            this.json(res, 202, queued)
-            break
-          }
-          // Remote agent? Find the mesh peer that advertises this agent.
-          if (!this.mesh) {
-            this.json(res, 400, { error: `Unknown agent "${targetAgent}" — mesh disabled, no remote lookup possible` })
-            break
-          }
-          const mesh = this.mesh
-          const directory = mesh.directory()
-          const peer = directory.find((p) => p.healthy && p.skills.some((s) => s.id === targetAgent))
-          if (!peer) {
-            const known = [
-              ...Object.keys(this.config.agents),
-              ...directory.flatMap((p) => p.skills.map((s) => s.id)),
-            ]
-            this.json(res, 404, { error: `Unknown agent "${targetAgent}"`, known })
-            break
-          }
-          if (wait) {
-            try {
-              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
-              this.json(res, 200, { ok: true, messageId, peer: peer.peer })
-            } catch (e: any) {
-              this.json(res, 500, { error: e.message, peer: peer.peer })
-            }
-            break
-          }
-          const queued = queueSend({
-            agent: targetAgent,
-            peer: peer.peer,
-            log: (m) => this.log(m),
-            run: async () => {
-              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
-              return { ok: true }
-            },
-          })
-          this.sendAgentDedupe.put(dedupeKey, queued)
-          this.json(res, 202, queued)
+          await this.sendToAgent(req, res, await readBody(req))
           break
         }
 
@@ -7267,6 +7310,14 @@ export class AgentXDaemon {
           if (!body.channel || !body.chatId || !body.text) {
             this.json(res, 400, { error: "Required: channel, chatId, text" })
             return
+          }
+          // #1251 — a2a has no outbound adapter: a message to an a2a chat
+          // goes to the other agent in it, the way /send/agent sends it.
+          if (body.channel === "a2a") {
+            const a2a = a2aSendBody(body)
+            if ("body" in a2a) await this.sendToAgent(req, res, a2a.body)
+            else this.json(res, 400, { error: a2a.error })
+            break
           }
           try {
             // To the owner's own addresses, the told-the-owner gate decides

@@ -28,7 +28,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown> } = {}) {
   const page = renderWallPage()
   const script = WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -59,6 +59,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown } 
   const calls: Array<{ url: string; init: any }> = []
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
+    if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? LIVE
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {}) : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
@@ -157,6 +158,31 @@ describe("Wall as a social feed (#1207)", () => {
 
 // #1188: the QA verdict line and the "Awaiting QA only" filter, run through
 // the page's real match() rather than read from the source.
+describe("Running now does not wait on the feed (#1252)", () => {
+  it("draws each node's running tasks while the feed is still loading, then the feed", async () => {
+    let answer: (v: unknown) => void = () => {}
+    const feed = new Promise((r) => { answer = r })
+    const w = openWall({ feed })
+    await w.settle()
+    expect(w.calls.map((c) => c.url)).toContain("/api/live")
+    const nodes = w.el("wall-nodes").innerHTML
+    expect(nodes).toContain("<b>node-a</b>")
+    expect(nodes).toContain("<b>Customer Desk</b>")
+    expect(w.el("wall-feed").innerHTML).toBe("")
+    answer({ ok: true, status: 200, json: async () => WALL })
+    await w.settle()
+    expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
+    expect(w.el("wall-nodes").innerHTML).toContain("<b>Customer Desk</b>")
+  })
+
+  it("still draws Running now when the feed fails", async () => {
+    const w = openWall({ feed: Promise.resolve({ ok: false, status: 504, json: async () => ({}) }) })
+    await w.settle()
+    expect(w.el("wall-feed").innerHTML).toContain("Could not load the Wall")
+    expect(w.el("wall-nodes").innerHTML).toContain("<b>Customer Desk</b>")
+  })
+})
+
 describe("QA verdict on the Wall (#1188)", () => {
   const QA = {
     ...WALL,

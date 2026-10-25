@@ -145,9 +145,10 @@ describe(".env helper (#1163)", () => {
 
   it("appends to an existing file and refuses bad names or multi-line values", () => {
     const p = join(dir, ".env")
-    writeFileSync(p, "A=1")
+    writeFileSync(p, "A=1", { mode: 0o644 })
     expect(addDotenvKey(p, "B", "2")).toBe(true)
     expect(readFileSync(p, "utf-8")).toBe("A=1\nB=2\n")
+    expect(statSync(p).mode & 0o777).toBe(0o600)
     expect(() => addDotenvKey(p, "bad-name", "x")).toThrow()
     expect(() => addDotenvKey(p, "C", "x\ny")).toThrow()
   })

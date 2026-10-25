@@ -17,6 +17,9 @@ import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor,
 // machine: a broad subscription must not turn every peer's activity into
 // turns here. Pull and digest still see them.
 // Every skipped wake is logged with its reason.
+// A wake is a cold dispatch, so the dispatch cap can hold it (#1284). A
+// held wake is not dropped: it is queued and retried with a growing delay
+// until the window frees up, and each hold is logged with its reason.
 
 export type WakeOutcome =
   | { agentId: string; eventId: string; woke: true }
@@ -25,8 +28,9 @@ export type WakeOutcome =
 export interface WakeDeps {
   /** Current agent definitions (read on every event, so reloads apply). */
   agents: () => Record<string, { subscriptions?: SubscriptionInput[] }>
-  /** Start the turn. Called asynchronously, off the publish path. */
-  dispatch: (agentId: string, e: EventEnvelope) => Promise<unknown> | void
+  /** Start the turn. Called asynchronously, off the publish path. Resolve
+   *  to `{ held: <reason> }` when the dispatch cap held it: it is retried. */
+  dispatch: (agentId: string, e: EventEnvelope, sub: SubscriptionInput) => Promise<WakeDispatch | unknown> | void
   log: (msg: string) => void
   /** True for events this node published itself (bus.isLocal). Without
    *  it every event counts as local. */
@@ -34,7 +38,17 @@ export interface WakeDeps {
   now?: () => number
 }
 
+/** What dispatch resolves to when the wake was held, not run. */
+export interface WakeDispatch { held: string }
+
 const HOUR_MS = 60 * 60 * 1000
+/** Held wakes: first retry after this, doubling up to RETRY_MAX_MS. */
+export const RETRY_BASE_MS = 5 * 60 * 1000
+export const RETRY_MAX_MS = 30 * 60 * 1000
+/** Retries before a held wake is given up (about 7 hours). */
+export const RETRY_ATTEMPTS = 16
+/** Held wakes waiting at once, across agents; more are dropped and logged. */
+export const RETRY_QUEUE_CAP = 100
 /** How long a root stays remembered for dedup and the loop guard. */
 const ROOT_TTL_MS = 24 * HOUR_MS
 /** Roots remembered per agent, oldest dropped first. */
@@ -46,6 +60,8 @@ export class EventWaker {
    *  events carried; `woken` holds roots it was woken for. */
   private own = new Map<string, Map<string, number>>()
   private woken = new Map<string, Map<string, number>>()
+  /** Held wakes waiting for their retry, by agent and event id. */
+  private held = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly now: () => number
 
   constructor(private deps: WakeDeps) {
@@ -78,29 +94,68 @@ export class EventWaker {
         .filter(({ s }) => s.delivery === "wake" && matchesSubscription(s, e, agentId) &&
           (local || (s.nodes?.includes(e.node) ?? false)))
       if (hits.length === 0) continue
-      const outcome = this.decide(agentId, e, hits, t)
+      const { outcome, sub } = this.decide(agentId, e, hits, t)
       out.push(outcome)
       if (!outcome.woke) {
         this.deps.log(`[events] wake skipped for ${agentId}: ${outcome.reason} — ${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`)
         continue
       }
       this.deps.log(`[events] waking ${agentId} — ${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`)
-      setImmediate(() => {
-        try {
-          Promise.resolve(this.deps.dispatch(agentId, e)).catch((err: any) =>
-            this.deps.log(`[events] wake of ${agentId} failed: ${err?.message ?? err}`))
-        } catch (err: any) {
-          this.deps.log(`[events] wake of ${agentId} failed: ${err?.message ?? err}`)
-        }
-      })
+      setImmediate(() => this.run(agentId, e, sub!, 0))
     }
     return out
   }
 
-  private decide(agentId: string, e: EventEnvelope, hits: Array<{ s: SubscriptionInput; index: number }>, t: number): WakeOutcome {
+  /** Held wakes still waiting for a retry. */
+  pendingRetries(): number {
+    return this.held.size
+  }
+
+  /** Cancel every queued retry (daemon shutdown). */
+  stop(): void {
+    for (const timer of this.held.values()) clearTimeout(timer)
+    this.held.clear()
+  }
+
+  private run(agentId: string, e: EventEnvelope, sub: SubscriptionInput, attempt: number): void {
+    const failed = (err: any) => this.deps.log(`[events] wake of ${agentId} failed: ${err?.message ?? err}`)
+    try {
+      Promise.resolve(this.deps.dispatch(agentId, e, sub)).then((result) => {
+        const held = heldReason(result)
+        if (held) this.retry(agentId, e, sub, attempt, held)
+      }, failed)
+    } catch (err: any) {
+      failed(err)
+    }
+  }
+
+  private retry(agentId: string, e: EventEnvelope, sub: SubscriptionInput, attempt: number, reason: string): void {
+    const key = `${agentId}#${e.id}`
+    const line = `${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`
+    if (attempt >= RETRY_ATTEMPTS) {
+      this.deps.log(`[events] wake of ${agentId} dropped after ${attempt} retries, still held: ${reason} — ${line}`)
+      return
+    }
+    if (!this.held.has(key) && this.held.size >= RETRY_QUEUE_CAP) {
+      this.deps.log(`[events] wake of ${agentId} dropped, ${RETRY_QUEUE_CAP} held wakes already queued: ${reason} — ${line}`)
+      return
+    }
+    const delay = Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
+    this.deps.log(`[events] wake of ${agentId} held: ${reason} — retry ${attempt + 1}/${RETRY_ATTEMPTS} in ${Math.round(delay / 60_000)} min — ${line}`)
+    const timer = setTimeout(() => {
+      this.held.delete(key)
+      this.run(agentId, e, sub, attempt + 1)
+    }, delay)
+    timer.unref?.()
+    this.held.set(key, timer)
+  }
+
+  private decide(
+    agentId: string, e: EventEnvelope, hits: Array<{ s: SubscriptionInput; index: number }>, t: number,
+  ): { outcome: WakeOutcome; sub?: SubscriptionInput } {
     const base = { agentId, eventId: e.id }
-    if (seen(this.own, agentId, e.rootId, t)) return { ...base, woke: false, reason: "own-root" }
-    if (seen(this.woken, agentId, e.rootId, t)) return { ...base, woke: false, reason: "duplicate-root" }
+    if (seen(this.own, agentId, e.rootId, t)) return { outcome: { ...base, woke: false, reason: "own-root" } }
+    if (seen(this.woken, agentId, e.rootId, t)) return { outcome: { ...base, woke: false, reason: "duplicate-root" } }
     // The first matching subscription with room in its own hourly bucket
     // takes the wake; when every bucket is full the wake is skipped.
     for (const { s, index } of hits) {
@@ -110,14 +165,16 @@ export class EventWaker {
       recent.push(t)
       this.wakes.set(key, recent)
       remember(this.woken, agentId, e.rootId, t)
-      return { ...base, woke: true }
+      return { outcome: { ...base, woke: true }, sub: s }
     }
-    return { ...base, woke: false, reason: "rate-limit" }
+    return { outcome: { ...base, woke: false, reason: "rate-limit" } }
   }
 
-  /** Subscribe to a bus; returns the unsubscribe function. */
+  /** Subscribe to a bus; returns the function that unsubscribes and
+   *  cancels queued retries. */
   attach(bus: { subscribe(fn: (e: EventEnvelope) => void): () => void }): () => void {
-    return bus.subscribe((e) => { this.handle(e) })
+    const off = bus.subscribe((e) => { this.handle(e) })
+    return () => { off(); this.stop() }
   }
 }
 
@@ -134,11 +191,22 @@ function seen(store: Map<string, Map<string, number>>, agentId: string, rootId: 
   return at !== undefined && t - at < ROOT_TTL_MS
 }
 
-/** The message a woken turn receives: what happened, and where to read more. */
-export function wakeMessage(e: EventEnvelope): string {
-  return [
+function heldReason(result: unknown): string | undefined {
+  if (!result || typeof result !== "object") return undefined
+  const held = (result as Partial<WakeDispatch>).held
+  return typeof held === "string" && held ? held : undefined
+}
+
+/** The message a woken turn receives: what happened, who emitted it, where
+ *  to read more, and the subscription's own instruction when it has one. */
+export function wakeMessage(e: EventEnvelope, prompt?: string): string {
+  const lines = [
     "[Event] A subscription of yours matched:",
     formatEventLine(e),
-    `Event id ${e.id}, root ${e.rootId}. Call agentx_events for the surrounding events. Act on it if it needs you; otherwise reply briefly that no action is needed.`,
-  ].join("\n")
+    `Event: ${e.type} (kind ${e.kind}), emitted by ${e.agentId ? `${e.agentId} on ${e.node}` : e.node}${e.ref ? `, ref ${e.ref}` : ""}.`,
+    `Event id ${e.id}, root ${e.rootId}. Call agentx_events for the surrounding events.`,
+  ]
+  if (prompt?.trim()) lines.push(`When this event arrives: ${prompt.trim()}`)
+  else lines.push("Act on it if it needs you; otherwise reply briefly that no action is needed.")
+  return lines.join("\n")
 }

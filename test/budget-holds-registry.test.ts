@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
@@ -75,6 +75,39 @@ describe("chat messages to an agent over its monthly budget", () => {
     expect(r.heldForBudget("ops")).toBe(0)
   })
 
+  it("survive a daemon restart and run once the cap is raised (#1290)", async () => {
+    const before = registry()
+    await before.execute({ message: "one", agentId: "ops", context: { channel: "telegram", chatId: "c1" } })
+    await before.execute({ message: "two", agentId: "ops", context: { channel: "telegram", chatId: "c2" } })
+    expect(before.heldForBudget("ops")).toBe(2)
+
+    // A new registry in the same folder is what a restart builds.
+    const after = registry()
+    expect(after.heldForBudget("ops")).toBe(2)
+    setAgentBudgets({ agents: { ops: { monthlyUsd: 10 } } })
+    expect(after.releaseBudgetHolds()).toBe(2)
+
+    const again = registry()
+    expect(again.heldForBudget("ops")).toBe(0)
+  })
+
+  it("held for a paused project release only that project's chats", async () => {
+    const config = daemonConfigSchema.parse({
+      node: { id: "test", name: "test" },
+      agents: { dev: { name: "Dev", tier: "claude-code", workspace: dir } },
+      dashboard: { wall: { projects: [{ name: "Shop", repos: ["acme/shop"], budget: { monthlyUsd: 1 } }] } },
+    })
+    setMessageRouter({ getChannel: (name: string) => (name === "github" || name === "telegram" ? {} : undefined), sendOutbound: async () => {} } as any)
+    const r = new AgentRegistry(config, () => {})
+    recordAgentSpend("dev", 2, undefined, "Shop")
+    const res = await r.execute({ message: "fix it", agentId: "dev", context: { channel: "github", chatId: "acme/shop:issue:7" } })
+    expect(res.errorKind).toBe("budget_cap")
+    expect(res.error).toContain("project Shop")
+    expect(r.heldForBudget("dev")).toBe(1)
+    setAgentBudgets({ projects: { Shop: { monthlyUsd: 5 } } })
+    expect(r.releaseBudgetHolds()).toBe(1)
+  })
+
   it("are not held when the channel has no adapter to reply on", async () => {
     const r = registry()
     hang.on = false
@@ -93,5 +126,25 @@ describe("BudgetHolds", () => {
     expect(h.hold("a", m("2"))).toBe("full")
     expect(h.take("a")).toHaveLength(2)
     expect(h.hold("a", m("1"))).toBe("held-first")
+  })
+
+  it("keeps what waits in its file and reads it back (#1290)", () => {
+    const file = join(dir, ".agentx", "budget-holds.json")
+    const m = (chatId: string) => ({ text: "x " + chatId, channel: "telegram", chatId, context: { channel: "telegram", chatId }, heldAt: 1 })
+    const h = new BudgetHolds(10, file)
+    h.hold("a", m("1"))
+    h.hold("a", m("2"))
+    const back = new BudgetHolds(10, file)
+    expect(back.count("a")).toBe(2)
+    expect(back.take("a", (x) => x.chatId === "2").map((x) => x.text)).toEqual(["x 2"])
+    expect(new BudgetHolds(10, file).count("a")).toBe(1)
+  })
+
+  it("starts empty from an unreadable file", () => {
+    const file = join(dir, "holds.json")
+    writeFileSync(file, "{not json")
+    const logs: string[] = []
+    expect(new BudgetHolds(10, file, (l) => logs.push(l)).size).toBe(0)
+    expect(logs[0]).toContain("couldn't read held messages")
   })
 })

@@ -1,6 +1,7 @@
 import type { RequestRecord } from "./store"
 import { CHOICE_LIMITS } from "@/approvals/choices"
 import { STEP_TEXT_MAX, type NewStep, type PlanStep } from "./plan-store"
+import { goalLine } from "./goals"
 
 // --- What a plan is made of, and what each party is told (#788) ---
 //
@@ -182,6 +183,7 @@ export function dispatchText(r: RequestRecord, steps: PlanStep[], s: PlanStep): 
     "What the owner asked:",
     clip(r.text, 800),
     "",
+    ...goalLine(r.goal),
     `Done when: ${s.doneWhen}`,
     ...(s.checkUrl ? [`The daemon also checks ${s.checkUrl}${s.checkContains ? ` for "${s.checkContains}"` : ""} and marks the step done when it answers.`] : []),
     "",

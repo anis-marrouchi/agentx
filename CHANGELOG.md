@@ -2,6 +2,41 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.167.0](https://github.com/anis-marrouchi/agentx/compare/v0.166.0...v0.167.0) (2026-10-25)
+
+
+### Features
+
+* **events:** named events from agents and scripts that wake listeners ([#1284](https://github.com/anis-marrouchi/agentx/issues/1284)) ([#1303](https://github.com/anis-marrouchi/agentx/issues/1303)) ([fb6760c](https://github.com/anis-marrouchi/agentx/commit/fb6760c3db01bfd4dbce6f9e5700c6ea78e088df))
+
+## [0.166.0](https://github.com/anis-marrouchi/agentx/compare/v0.165.1...v0.166.0) (2026-10-25)
+
+
+### Features
+
+* **budgets:** per-project caps, API list prices, held work kept, set from dashboard ([#1290](https://github.com/anis-marrouchi/agentx/issues/1290)) ([#1301](https://github.com/anis-marrouchi/agentx/issues/1301)) ([9972904](https://github.com/anis-marrouchi/agentx/commit/9972904a73dbbdf28adf1a5a24f075d80f635308))
+* **requests:** optional goal with progress and cost ([#1168](https://github.com/anis-marrouchi/agentx/issues/1168)) ([#1277](https://github.com/anis-marrouchi/agentx/issues/1277)) ([900e514](https://github.com/anis-marrouchi/agentx/commit/900e51433f360262ca826ac60f5d56af2a08e5ee))
+
+
+### Bug Fixes
+
+* **daemon:** a2a /send refuses a stranger sender, passes async/home/context/taskType ([#1254](https://github.com/anis-marrouchi/agentx/issues/1254) follow-up) ([#1276](https://github.com/anis-marrouchi/agentx/issues/1276)) ([478a73a](https://github.com/anis-marrouchi/agentx/commit/478a73ad852bf675f4ec33b262ab561a6c1dd42a))
+* **registry:** skip posting queued replies on channels with no adapter ([#1264](https://github.com/anis-marrouchi/agentx/issues/1264)) ([d0ca23a](https://github.com/anis-marrouchi/agentx/commit/d0ca23a417fee29320557449fedfb35e1570c22c)), closes [#1263](https://github.com/anis-marrouchi/agentx/issues/1263)
+* **wall:** fleet timings keep one entry per peer address ([#1255](https://github.com/anis-marrouchi/agentx/issues/1255) follow-up) ([#1275](https://github.com/anis-marrouchi/agentx/issues/1275)) ([b4e4ff3](https://github.com/anis-marrouchi/agentx/commit/b4e4ff311bc45e58ae70fcfec499a6fe5fd376c6))
+
+## [0.165.1](https://github.com/anis-marrouchi/agentx/compare/v0.165.0...v0.165.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **daemon:** deliver POST /send on an a2a chat to the other agent ([#1251](https://github.com/anis-marrouchi/agentx/issues/1251)) ([#1254](https://github.com/anis-marrouchi/agentx/issues/1254)) ([81dce5a](https://github.com/anis-marrouchi/agentx/commit/81dce5ab14a994e01135a4a4a780aae5ebb1a630))
+* **install:** tighten an existing .env to 600 before adding a key ([#1247](https://github.com/anis-marrouchi/agentx/issues/1247)) ([#1250](https://github.com/anis-marrouchi/agentx/issues/1250)) ([373a544](https://github.com/anis-marrouchi/agentx/commit/373a544b3843cad621916c4a2fba8f4e4480c71c))
+
+
+### Performance Improvements
+
+* **wall:** Running now no longer waits on the feed; bulk reads for the Wall list ([#1252](https://github.com/anis-marrouchi/agentx/issues/1252)) ([#1255](https://github.com/anis-marrouchi/agentx/issues/1255)) ([31f0e32](https://github.com/anis-marrouchi/agentx/commit/31f0e3267c550b1932efc4f6afdacb763dbefadc))
+
 ## [0.165.0](https://github.com/anis-marrouchi/agentx/compare/v0.164.0...v0.165.0) (2026-10-25)
 
 

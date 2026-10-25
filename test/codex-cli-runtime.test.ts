@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
 import { executeTask, type AgentTask } from "../src/agents/runtime"
+import { TokenTracker } from "../src/daemon/token-tracker"
 import type { AgentDef } from "../src/daemon/config"
 
 function baseAgent(workspace: string, overrides: Partial<AgentDef> = {}): AgentDef {
@@ -173,5 +174,26 @@ process.exit(0);
     expect(r.billedModel).toBe("gpt-5.2")
     expect(r.codexSessionId).toBe("codex-thread-stream")
     expect(r.usage).toEqual({ inputTokens: 31, outputTokens: 7, cacheReadTokens: 3, cacheCreateTokens: 2 })
+  })
+
+  it("does not count codex exec cached input twice (#1301)", async () => {
+    // OpenAI's input_tokens already includes cached_input_tokens.
+    writeFileSync(join(tmp, "codex"), `#!/usr/bin/env node
+const fs = require("fs");
+const args = process.argv.slice(2);
+const outIdx = args.indexOf("--output-last-message");
+console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 24763, cached_input_tokens: 24448, output_tokens: 122 } }));
+if (outIdx >= 0) fs.writeFileSync(args[outIdx + 1], "done");
+process.exit(0);
+`)
+    chmodSync(join(tmp, "codex"), 0o755)
+    process.env.PATH = `${tmp}:${oldPath || ""}`
+
+    const r = await executeTask(baseAgent(tmp, { model: "gpt-5" }), baseTask(), {})
+
+    expect(r.error).toBeUndefined()
+    expect(r.usage).toEqual({ inputTokens: 315, outputTokens: 122, cacheReadTokens: 24448, cacheCreateTokens: 0 })
+    const cost = new TokenTracker(join(tmp, "usage")).runCost(r.usage!, "gpt-5", "codex-cli")
+    expect(cost).toBeCloseTo(0.0047, 4)
   })
 })

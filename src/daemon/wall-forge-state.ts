@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3"
 import type { ForgeReader, ParsedRef } from "@/requests/checkers/issue"
 import type { IssueState } from "@/requests/checkers"
-import { forgeCommentsOn } from "@/storage/forge-comments"
+import { forgeCommentsOn, forgeCommentsOnChats } from "@/storage/forge-comments"
 import type { WallPost } from "./wall-api"
 import { forgeCache, isForgeError, type ForgeCacheOptions } from "./wall-forge-cache"
 import { forgeMismatch, type ForgeMismatch } from "./wall-forge-mismatch"
@@ -23,6 +23,8 @@ import { gitlabRefOf } from "./wall-forge-time"
 // id the forge gave them (storage/forge-comments.ts).
 
 const HOUR = 3_600_000
+/** The newest comments a post shows. */
+const FORGE_COMMENTS_SHOWN = 5
 
 export interface ForgeHome {
   provider: "github" | "gitlab"
@@ -101,10 +103,46 @@ export function forgeCommentsOf(
   if (!db || !home) return []
   const to = post.closedAt ? post.closedAt + HOUR : now
   let rows: ReturnType<typeof forgeCommentsOn>
-  try { rows = forgeCommentsOn(db, home.provider, forgeChatOf(home), post.createdAt, to) } catch { return [] }
+  try { rows = forgeCommentsOn(db, home.provider, forgeChatOf(home), post.createdAt, to, FORGE_COMMENTS_SHOWN) } catch { return [] }
   return rows.flatMap((c) => {
     const url = commentUrl(home, c.commentId, gitlabUrl)
     return url ? [{ agentId: c.agentId, at: c.at, url }] : []
+  })
+}
+
+/** forgeCommentsOf for many posts (#1252): one read per forge channel for
+ *  all their chats, each post then keeping its own window, newest five. */
+export function forgeCommentsOfAll(
+  posts: Array<Pick<WallPost, "home" | "group" | "createdAt" | "closedAt">>, db: Database.Database | null, gitlabUrl: string | null | undefined, now: number,
+): WallForgeComment[][] {
+  const homes = posts.map((post) => (db ? forgeHomeOf(post, gitlabUrl) : null))
+  if (!db) return posts.map(() => [])
+  const byChat = new Map<string, ReturnType<typeof forgeCommentsOn>>()
+  const read = new Set<string>()
+  for (const provider of ["github", "gitlab"] as const) {
+    const chats = [...new Set(homes.flatMap((h) => (h?.provider === provider ? [forgeChatOf(h)] : [])))]
+    for (let i = 0; i < chats.length; i += 500) {
+      const part = chats.slice(i, i + 500)
+      let rows: ReturnType<typeof forgeCommentsOn>
+      try { rows = forgeCommentsOnChats(db, provider, part) } catch { continue }
+      for (const c of part) read.add(`${provider}\n${c}`)
+      for (const r of rows) {
+        const key = `${provider}\n${r.chatId}`
+        const list = byChat.get(key)
+        if (list) list.push(r)
+        else byChat.set(key, [r])
+      }
+    }
+  }
+  return posts.map((post, i) => {
+    const home = homes[i]
+    const key = home ? `${home.provider}\n${forgeChatOf(home)}` : ""
+    if (!home || !read.has(key)) return []
+    const to = post.closedAt ? post.closedAt + HOUR : now
+    return (byChat.get(key) ?? []).filter((c) => c.at >= post.createdAt && c.at <= to).slice(0, FORGE_COMMENTS_SHOWN).flatMap((c) => {
+      const url = commentUrl(home, c.commentId, gitlabUrl)
+      return url ? [{ agentId: c.agentId, at: c.at, url }] : []
+    })
   })
 }
 
