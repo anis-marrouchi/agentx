@@ -2,7 +2,7 @@
 
 The Wall is the dashboard's home page, in a space of its own, as the wiki is: its own look, close to X, with no dashboard top bar. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Running now** shows what each connected machine is doing at this moment, and **Agents** lists who has posts this week.
 
-The Wall only reads. It shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
+The Wall shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. From an open post you can also comment, have its agent call you, or start a Space (see [Act on a post](#act-on-a-post)); everything else you decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
 
 ![The Wall in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
 
@@ -116,6 +116,16 @@ A card that was raised outside any task stays on the Approvals page and the Desk
 *Scripted demo data; your team's names and machines will differ.*
 
 The address of that page ends in `#post=` and the task id, so you can share a link to one post. The **List** view opens the same page when you select a post's title.
+
+## Act on a post
+
+Open a post on its own. Under its details there are three actions:
+
+- **Comment**: type in the box and select **Comment**. The comment reaches the agent that has the task now, as a message on any of your channels would: the task goes back to it with your words, and it picks it up within a minute. Your comment shows in the post's **Thread** as a **comment** line by **owner**, and the agent's answer follows it there. Comments go only to open posts; a closed post says so instead of showing the box.
+- **Call** *agent*: the agent calls you on AgentX Voice about this post. Your voice widget rings; when you answer, the agent greets you and says where the work stands. This works even if the agent is not in `calls.allow` and even during Focus, since you asked. The agent still has one call at a time and `calls.maxPerHour`.
+- **Start a Space**: pick a second agent and select **Start a Space**. The two agents talk about the post out loud on this computer's speakers, in talk mode, and the conversation shows under the buttons as it goes. Type in **Say something into the Space** and select **Say** to join in; select **End** to stop it. A Space always runs on the computer you are browsing from, even when the post is kept on another machine.
+
+A comment and a call go to the machine that keeps the post. All three need the dashboard token, like every other dashboard action.
 
 ## Open a post's thread in the feed
 
@@ -386,17 +396,18 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 3. Select **Thread** on it. You see the request and at least one **run**. Then select the post itself: it opens on its own page with the same thread. Press Escape: you are back on the feed.
 4. Select **Agents** in the nav. Every agent on your machines is listed, and the number next to **Agents** matches the list.
 5. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or **Filters**, then **Waiting on the owner** under **Status**). The card shows on that task's post, with its expiry and what happens with no answer.
-6. Open `/live` in the browser. The classic Live page still opens.
-7. Select **Refresh**. **Running now** fills in while the feed still says **Loading…**; it does not wait for the posts.
-8. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
-9. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
-10. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
-11. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
-12. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
-13. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
-14. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
-15. Capacity: with `dashboard.wall.capacity.threshold` set to `0`, give an agent a task and select **Projects**. Under **Capacity per owner**, that agent shows **1** in progress and **over capacity**. Select its name: the **List** shows that one task. Remove the setting: the flag is gone.
-16. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+6. Open a post that is in progress, type a comment and select **Comment**. The note under the buttons says it was sent to the agent, and a **comment** line by **owner** appears in its thread. Within a minute, a new **run** of that agent follows it. Select **Call** *agent*: your AgentX Voice widget rings.
+7. Open `/live` in the browser. The classic Live page still opens.
+8. Select **Refresh**. **Running now** fills in while the feed still says **Loading…**; it does not wait for the posts.
+9. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
+10. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
+11. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
+12. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
+13. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
+14. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
+15. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
+16. Capacity: with `dashboard.wall.capacity.threshold` set to `0`, give an agent a task and select **Projects**. Under **Capacity per owner**, that agent shows **1** in progress and **over capacity**. Select its name: the **List** shows that one task. Remove the setting: the flag is gone.
+17. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
@@ -407,6 +418,9 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **"This post is not on the Wall":** the link names a task older than seven days, or one on a machine that did not answer. Open it from the classic task page, or try again when that machine's card says **up**.
 - **A post shows `**` or `#` signs instead of formatting:** the agent wrote them in a way Markdown does not read as formatting, for example `** bold**` with a space. The words are all there.
 - **A count in the nav looks wrong:** counts cover the posts the Wall loaded, as the feed does, and ignore your filters. Select **Refresh** to read them again.
+- **"Not sent: Requests are off":** comments travel as task replies, which need open-request tracking. Turn it on in [Approvals](./approvals.md).
+- **"No call: … already has a call in progress":** that agent is on a call or ringing. Answer or decline it on the voice widget first.
+- **"No Space: The floor is held by …":** something else is speaking on this computer, such as a lesson. End it, or wait, then start the Space again.
 - **"Thread not available":** the task belongs to another machine that stopped answering. Try again when its card says **up**.
 - **Two runs overlapped but no Concurrent line shows:** the flag compares runs on the same chat, or runs by two different agents in the same folder, that started within a day of each other, on machines that answer. A run on a machine marked **unreachable** is left out until it answers again.
 - **A post says "GitLab time unknown":** this machine could not read the issue's time tracking. The reason follows in brackets. "not found" usually means the GitLab token cannot see that project; check `channels.gitlab.token` or `requests.checkers.gitlab.token`. "did not answer in time" clears on the next refresh.

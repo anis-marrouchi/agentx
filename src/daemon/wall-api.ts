@@ -179,7 +179,7 @@ export interface WallPost {
 
 export interface WallEvent {
   at: number
-  kind: "asked" | "run" | "handoff" | "home" | "link" | "plan" | "waiting" | "attention" | "closed"
+  kind: "asked" | "run" | "handoff" | "home" | "link" | "comment" | "plan" | "waiting" | "attention" | "closed"
   who: string | null
   text: string
   status?: string | null
@@ -662,6 +662,9 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
           route: a2aRoute(String(x.chat_id)) ?? undefined, text: clean(x.final_response),
         }, x.final_response ?? ""))
       }
+    } else if (l.kind === "comment") {
+      // The owner's comment from the Wall (#1316): its words are the proof.
+      events.push(event({ at: l.at, kind: "comment", who: "owner", ref: l.ref, text: clean(redactSecrets(l.proof ?? "")) }, l.proof ?? ""))
     } else if (["issue", "idea", "approval", "erp"].includes(l.kind)) {
       events.push(event({ at: l.at, kind: "home", who: null, ref: l.ref, text: `Home: ${l.kind}` }, ""))
     } else {

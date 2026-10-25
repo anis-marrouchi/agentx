@@ -279,6 +279,19 @@ const WALL_PAGE_CSS = `
 .wt .more { font: inherit; font-size: var(--ax-fs-xs); background: none; border: 0; color: var(--ax-accent); cursor: pointer; padding: 0; }
 .wt .wt { margin-top: 4px; }
 
+/* What the owner does from an open post (#1316): comment, call, Space. */
+.wdo { margin: 12px 0 0; padding: 12px 0 0; border-top: 1px solid var(--ax-border); display: flex; flex-direction: column; gap: 8px; }
+.wdo__l { font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.wdo__t { width: 100%; font: inherit; color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 8px 10px; resize: vertical; }
+.wdo__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wdo__row .wdo__t { flex: 1; min-width: 160px; width: auto; }
+.wdo__sp { display: inline-flex; gap: 6px; align-items: center; }
+.wdo__sp select { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 5px 10px; }
+.wdo__n { margin: 0; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
+.wdo__n:empty { display: none; }
+.wsp { border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-lg); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.wsp__t { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--ax-fs-sm); max-height: 260px; overflow-y: auto; }
+
 /* Agent profile: shown above the feed when the owner filter names one agent. */
 .ax-wall__profile { border-bottom: 1px solid var(--ax-border); }
 .wpf__banner { height: 96px; background: linear-gradient(120deg, hsl(var(--av-h) 55% 46%), hsl(calc(var(--av-h) + 40) 60% 60%)); }
