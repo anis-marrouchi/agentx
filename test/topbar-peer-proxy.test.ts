@@ -91,7 +91,7 @@ describe("topbar peer proxy", () => {
     expect((await a.fetch("/api/workflows")).status).toBe(200)
     expect(a.sent[0].headers.get("Authorization")).toBe("Bearer dash-tok")
     const b = page({ peer: peerUrl, axToken: "dash-tok" })
-    expect((await b.fetch("/api/agents", { headers: { Authorization: "Bearer wrong" } })).status).toBe(401)
+    expect((await b.fetch("/api/workflows", { headers: { Authorization: "Bearer wrong" } })).status).toBe(401)
     expect(b.sent[0].headers.get("Authorization")).toBe("Bearer wrong")
   })
 
@@ -105,8 +105,10 @@ describe("topbar peer proxy", () => {
     expect(other.sent[0].headers.get("Authorization")).toBeNull()
   })
 
+  // GET /api/agents stays open through the proxy (#1203), so the gate is
+  // checked on /api/workflows.
   it("still answers 401 to a proxied call without any token", async () => {
     const p = page({ peer: peerUrl })
-    expect((await p.fetch("/api/agents")).status).toBe(401)
+    expect((await p.fetch("/api/workflows")).status).toBe(401)
   })
 })
