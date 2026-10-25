@@ -1,5 +1,5 @@
 import { execFileSync, spawn as nodeSpawn, type ChildProcess } from "child_process"
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs"
 import { dirname } from "path"
 
 // --- Claude cloud sessions (#622) ---
@@ -16,6 +16,8 @@ import { dirname } from "path"
 // locally as before. A launch that fails falls back to a local run and logs
 // the reason. While a cloud session is open for an issue, no local run
 // starts for that issue: follow-up comments are forwarded to the session.
+// A forward that fails because the session is gone (#1367) closes it and
+// runs the task locally.
 //
 // `claude --cloud` needs a TTY (it prints the new session's id and URL, then
 // exits), so it is spawned through a small python `pty.spawn` wrapper.
@@ -157,16 +159,28 @@ const KEEP_MS = 7 * DAY_MS
 
 /** Sessions this node launched, in a small JSON file (default
  *  .agentx/cloud-sessions.json). Survives a daemon restart, so an open
- *  session still blocks a local run after one. */
+ *  session still blocks a local run after one. Re-read when the file changes
+ *  on disk, so `agentx cloud-sessions close` takes effect without a restart. */
 export class CloudSessionStore {
   private sessions: OpenCloudSession[] = []
-  private loaded = false
+  /** mtime and size of the file when last read or written; "" when missing. */
+  private stamp: string | undefined
 
   constructor(private readonly file: string) {}
 
+  private fileStamp(): string {
+    try {
+      const st = statSync(this.file)
+      return `${st.mtimeMs}:${st.size}`
+    } catch {
+      return ""
+    }
+  }
+
   private load(): void {
-    if (this.loaded) return
-    this.loaded = true
+    const stamp = this.fileStamp()
+    if (stamp === this.stamp) return
+    this.stamp = stamp
     try {
       const raw = JSON.parse(readFileSync(this.file, "utf8"))
       const list = Array.isArray(raw?.sessions) ? raw.sessions : []
@@ -184,6 +198,7 @@ export class CloudSessionStore {
       const tmp = `${this.file}.${process.pid}.tmp`
       writeFileSync(tmp, JSON.stringify({ sessions: this.sessions }, null, 2))
       renameSync(tmp, this.file)
+      this.stamp = this.fileStamp()
     } catch { /* best effort: the daemon keeps the in-memory copy */ }
   }
 
@@ -366,6 +381,14 @@ export function cloudSessionReply(session: { sessionId: string; url: string }, k
   ].join("\n")
 }
 
+/** True when a failed forward says the session no longer exists: deleted,
+ *  expired, or started by another Claude account than the one signed in now.
+ *  Matches "Session not found", a 404 and "not_found_error", never a bare
+ *  "not found" (a missing `claude` command is not a gone session). */
+export function cloudSessionGone(reason: string): boolean {
+  return /\bsession\b[^\n]{0,40}\b(?:not found|does not exist|doesn't exist|no longer exists)|no such session|not_found_error|\b404\b/i.test(reason)
+}
+
 export function cloudFollowUpReply(session: { sessionId: string; url: string }): string {
   return `Forwarded to the open Claude cloud session \`${session.sessionId}\` (${session.url}).`
 }
@@ -383,7 +406,7 @@ export interface CloudDispatchDeps {
   agentId: string
   message: string
   settings: CloudSessionsAgentSettings
-  store: Pick<CloudSessionStore, "record" | "touch">
+  store: Pick<CloudSessionStore, "record" | "touch" | "close">
   launch: (opts: { cwd: string; prompt: string; sessionId?: string }) => Promise<CloudLaunchResult>
   log: (line: string) => void
   /** Recorded on the task trace (task:step "cloud_session"). */
@@ -393,9 +416,10 @@ export interface CloudDispatchDeps {
 }
 
 /** Runs the task in the cloud when the route says so. Returns null when the
- *  task must run locally: the route said so, or the launch failed (logged and
- *  traced with the reason). A follow-up that cannot be forwarded is an error
- *  response, never a local run: the session stays the one working on the issue. */
+ *  task must run locally: the route said so, the launch failed, or the open
+ *  session is gone (closed in the store); each is logged and traced with the
+ *  reason. Any other failed forward is an error response, never a local run:
+ *  the session stays the one working on the issue. */
 export async function dispatchCloudSession(deps: CloudDispatchDeps): Promise<CloudDispatchResult | null> {
   const { route } = deps
   const now = deps.now ?? Date.now
@@ -411,6 +435,12 @@ export async function dispatchCloudSession(deps: CloudDispatchDeps): Promise<Clo
       deps.log(`[${deps.agentId}] forwarded to open cloud session ${s.sessionId} for ${s.repo}#${s.number}`)
       deps.trace({ action: "follow-up", status: "ok", summary: JSON.stringify({ sessionId: s.sessionId, url: s.url }) })
       return { content: cloudFollowUpReply(s), cloudSession: { id: s.sessionId, url: s.url, followUp: true } }
+    }
+    if (cloudSessionGone(result.reason)) {
+      deps.store.close(s.repo, s.number)
+      deps.log(`[${deps.agentId}] cloud session ${s.sessionId} for ${s.repo}#${s.number} is gone, closed it, running locally: ${result.reason}`)
+      deps.trace({ action: "fallback", status: "error", summary: `session ${s.sessionId} is gone, closed it: ${result.reason}` })
+      return null
     }
     deps.log(`[${deps.agentId}] forwarding to cloud session ${s.sessionId} failed: ${result.reason}`)
     deps.trace({ action: "follow-up", status: "error", summary: result.reason })

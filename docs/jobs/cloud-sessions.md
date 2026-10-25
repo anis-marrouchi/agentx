@@ -14,6 +14,7 @@ The setting is off until you turn it on, for one agent and for the GitHub channe
 - Only when the agent's engine is `claude-code`, and when **this computer holds a clone** of that repository whose `origin` points at `github.com`. A repository that lives elsewhere, or that this computer has no clone of, runs locally.
 - The result is a **pull request**, not a reply. AgentX posts one comment on the issue with the session's id and its link, and keeps both on the task's trace.
 - While a session is open for an issue (24 hours by default), **no second run starts** for that issue. A new comment on the issue is forwarded to the session instead.
+- When a forward fails because the session **no longer exists** ("Session not found"), AgentX forgets the session and runs the comment on your computer. This happens, for example, after you sign `claude` in with another account: sessions started by the old account can no longer be reached.
 - When the launch fails, the task **runs on your computer** as before, and the reason is in the daemon log and on the trace.
 - The cloud session reads the repository's own `CLAUDE.md`. It does not get the agent's system prompt, tool servers or local files.
 
@@ -90,9 +91,11 @@ Under `channels.github`:
 
 To forget an open session before its time is up:
 
-1. **Terminal:** run `agentx daemon stop`.
-2. **Terminal:** open `.agentx/cloud-sessions.json` and remove the session's entry.
-3. **Terminal:** run `agentx daemon start --detach`.
+1. **Terminal:** go to the folder you run `agentx` from.
+2. **Terminal:** run `agentx cloud-sessions list` to see the open sessions, one line per issue, written `owner/repo#number`.
+3. **Terminal:** run `agentx cloud-sessions close example-org/example-repo#42` with the issue from that list. You can name several issues in one command.
+
+The daemon picks up the change at once; no restart is needed. The next comment on that issue starts a new task as usual.
 
 ## Spec tests from a second agent
 
@@ -111,5 +114,6 @@ For issues in folders you pick, a second agent can write tests from the issue te
 - **The trace says "no checkout of owner/repo on this node".** The project file's `runbook` path (or the agent's `workspace`) must be a clone whose `origin` is that repository on github.com. **Terminal:** run `git -C /home/you/repos/example-repo remote get-url origin` and compare.
 - **The trace says "did not print a session within 120s" or "exited with code 1".** **Terminal:** go to the clone and run `claude --cloud "Say hello"` by hand. Sign in if it asks, and answer any question it asks once; AgentX cannot answer for you. A slow network needs a higher `launchTimeoutSeconds`.
 - **The trace says "python3 is not installed".** That computer needs Python 3; AgentX uses it to give `claude --cloud` a terminal.
+- **Every comment on an issue fails with "Claude cloud session … is still open for this issue".** Forwarding to the session failed for a reason other than the session being gone, for example a network error or a sign-in problem; the error says which. **Terminal:** run `claude -p "hello" --cloud <session-id>` by hand from the clone to see the full message. To give up on the session, run `agentx cloud-sessions close owner/repo#number`.
 - **A second run started for the same issue.** The first session's `openHours` had passed, or `.agentx/cloud-sessions.json` was removed. Raise `openHours` if sessions take longer.
 - **Too many sessions started.** `maxPerDay` caps them. Tasks past the limit run on your computer and the trace says "daily cap reached".
