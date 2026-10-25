@@ -11,6 +11,7 @@ import { mailServers } from "../src/channels/email/smtp"
 import { emailAccountSchema } from "../src/daemon/config"
 import { decide, listInbox } from "../src/approvals/inbox"
 import { emailAccountBlock, passwordEnvFor, presetFor } from "../src/channels/email/settings"
+import { openInboxWarning } from "../src/connect/email"
 import { shippedTeam } from "../src/teams/catalog"
 import { applyTeam, buildTeamPackage } from "../src/teams/package"
 
@@ -230,5 +231,17 @@ describe("Settings › Channels › Email", () => {
     expect((await call("POST", "/api/admin/channels/email", { id: "x", agent: "nobody", address: "a@b.test", imapHost: "h" })).status).not.toBe(200)
     await call("DELETE", "/api/admin/channels/email", { id: "shop" })
     expect(JSON.parse(readFileSync(join(root, "agentx.json"), "utf-8")).channels.email.accounts).toEqual({})
+  })
+})
+
+describe("connect email: open inbox warning", () => {
+  it("warns when anyone may write to an agent with a shell", () => {
+    expect(openInboxWarning(undefined, ["*"])).toContain("claude-code")
+    expect(openInboxWarning("codex-cli", ["*"])).toContain("--allow-from")
+    expect(openInboxWarning("orchestrator", ["a@b.test", "*"])).not.toBeNull()
+  })
+  it("stays quiet for a closed list or the sdk engine", () => {
+    expect(openInboxWarning("claude-code", ["a@b.test", "@shop.test"])).toBeNull()
+    expect(openInboxWarning("sdk", ["*"])).toBeNull()
   })
 })

@@ -1,7 +1,5 @@
 import chalk from "chalk"
 import prompts from "prompts"
-import nodemailer from "nodemailer"
-import { ImapFlow } from "imapflow"
 import { existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
@@ -18,6 +16,8 @@ import { emailAccountBlock, GMAIL_APP_PASSWORDS_URL, passwordEnvFor, presetFor, 
 /** Log in to IMAP and SMTP once. Returns what failed, or null. */
 export async function checkLogin(i: EmailAccountInput, password: string): Promise<string | null> {
   const user = i.user || i.address
+  // Loaded here, not at the top: program.ts imports this file on every CLI start.
+  const [{ ImapFlow }, { default: nodemailer }] = await Promise.all([import("imapflow"), import("nodemailer")])
   const imap = new ImapFlow({ host: i.imapHost, port: i.imapPort, secure: i.imapPort === 993, auth: { user, pass: password }, logger: false })
   try {
     await imap.connect()
@@ -52,6 +52,15 @@ export interface ConnectEmailOpts {
   auto?: boolean
   skipCheck?: boolean
   configPath?: string
+}
+
+/**
+ * A warning when anyone may write to an agent that can run commands. Only
+ * the `sdk` engine (a direct API call) has no shell; every other engine does.
+ */
+export function openInboxWarning(tier: string | undefined, allowFrom: string[]): string | null {
+  if (!allowFrom.includes("*") || tier === "sdk") return null
+  return `Anyone can email an agent that runs commands (engine ${tier || "claude-code"}). Limit who may write with --allow-from.`
 }
 
 function fail(message: string): never {
@@ -131,6 +140,8 @@ export async function connectEmail(opts: ConnectEmailOpts = {}): Promise<void> {
   console.log(chalk.green(`  ✓ ${address} is answered by "${agent}"`))
   if (!opts.passwordEnv) console.log(chalk.dim(`    Password stored in .env as ${passwordEnv}`))
   console.log(chalk.dim(`    Who may write: ${input.allowFrom.join(", ")}${input.allowFrom.includes("*") ? " (anyone)" : ""}`))
+  const warning = openInboxWarning(raw.agents[agent]?.tier, input.allowFrom)
+  if (warning) console.log(chalk.yellow(`    ${warning}`))
   console.log(input.send === "auto"
     ? chalk.yellow("    Replies are sent as soon as the agent writes them.")
     : chalk.dim("    Each reply waits in Approvals until you send it: agentx approvals list"))

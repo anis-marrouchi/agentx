@@ -18,7 +18,7 @@ A channel receives a message from another tool and routes it to an agent, then c
 
 **WhatsApp also ignores everyone until you allow them.** With `channels.whatsapp.allowFrom` unset or empty, the agent answers no one. List each phone number (with or without `+`) or chat ID the agent may answer. Once the list has an entry, your own "message yourself" chat on the paired phone is answered too. `"*"` answers every chat on the account; use it only on a dedicated number. A dropped message shows in `agentx daemon logs` as `not in allowlist`. Read [Before you pair WhatsApp](#before-you-pair-whatsapp) first; for a customer-facing number, follow [Answer customers on WhatsApp](../jobs/answer-whatsapp.md).
 
-**Email also ignores everyone until you allow them.** With an account's `allowFrom` unset or empty, every mail is ignored. `agentx connect email` sets `["*"]`, so anyone may write, and each reply still waits for your yes. Entries can be addresses or `@domain`. A dropped mail shows in `agentx daemon logs` as `not in allowFrom, dropped`.
+**Email also ignores everyone until you allow them.** With an account's `allowFrom` unset or empty, every mail is ignored. `agentx connect email` sets `["*"]`, so anyone may write, and each reply still waits for your yes. If the agent's engine can run commands (every engine except `sdk`), connect prints a warning; pass `--allow-from` to name who may write. Entries can be addresses or `@domain`. A dropped mail shows in `agentx daemon logs` as `not in allowFrom, dropped`.
 
 **Slack and Discord are not supported as live channel adapters in this build.** Do not paste their tokens into a stale prompt or example. A connection record alone does not make an adapter run.
 
