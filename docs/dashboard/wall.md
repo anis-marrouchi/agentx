@@ -14,10 +14,9 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
 2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, and agents. The page you are on is in bold.
 3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
 4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
-5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator.
+5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
    ![The Wall on a phone in dark mode, with the bottom bar and the round + button](/screenshots/wall/phone-dark.png)
- A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
 ![Mockup take B (left, post text blurred) next to the Wall as built](/screenshots/wall/compare-desktop.png)
 
