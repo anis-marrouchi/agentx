@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.178.0](https://github.com/anis-marrouchi/agentx/compare/v0.177.0...v0.178.0) (2026-10-25)
+
+
+### Features
+
+* **wall:** Live = running sessions and jobs; Task page with steer box ([#1381](https://github.com/anis-marrouchi/agentx/issues/1381)) ([#1385](https://github.com/anis-marrouchi/agentx/issues/1385)) ([bb0f005](https://github.com/anis-marrouchi/agentx/commit/bb0f005593da1a902224bc591e9cdbae0ba152d3))
+
 ## [0.177.0](https://github.com/anis-marrouchi/agentx/compare/v0.176.0...v0.177.0) (2026-10-25)
 
 
