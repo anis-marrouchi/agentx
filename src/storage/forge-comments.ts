@@ -37,6 +37,15 @@ export function insertForgeComment(db: Database.Database, c: ForgeCommentRow): v
   ).run(c.channel, c.chatId, c.commentId.slice(0, 64), c.agentId?.slice(0, 120) ?? null, c.at)
 }
 
+/** Every comment on these chats of one channel, newest first. */
+export function forgeCommentsOnChats(db: Database.Database, channel: string, chatIds: string[]): ForgeCommentRow[] {
+  if (chatIds.length === 0) return []
+  return db.prepare(
+    `SELECT channel, chat_id AS chatId, comment_id AS commentId, agent_id AS agentId, at FROM forge_comments
+     WHERE channel = ? AND chat_id IN (${chatIds.map(() => "?").join(",")}) ORDER BY at DESC`,
+  ).all(channel, ...chatIds) as ForgeCommentRow[]
+}
+
 /** The newest comments on one forge chat in [from, to], newest first. */
 export function forgeCommentsOn(db: Database.Database, channel: string, chatId: string, from: number, to: number, limit = 5): ForgeCommentRow[] {
   return db.prepare(
