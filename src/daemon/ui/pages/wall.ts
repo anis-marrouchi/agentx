@@ -9,11 +9,16 @@
 // avatar, name and @handle, with an action row under it; tapping an agent
 // shows its profile over its own posts.
 //
+// It is its own space (#1242), as the wiki is: its own document and look
+// (wall-space.ts), no dashboard top bar. The dashboard links here, and the
+// Wall links back to the dashboard and every classic page.
+//
 // The HTML is a skeleton; WALL_PAGE_SCRIPT paints it from
 // /api/admin/wall?peer=fleet, /api/live and /api/workflows/runs.
 
-import { renderShell, type TopbarPeer } from ".."
+import type { TopbarPeer } from ".."
 import { WALL_PAGE_SCRIPT } from "./wall.client"
+import { renderWallDocument } from "./wall-space"
 import { CRON_JOBS_SCRIPT, CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 
@@ -29,27 +34,39 @@ export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
   ["People", "/people"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
+/** Where the Wall's "Dashboard" link goes: the first classic page. */
+export const WALL_DASHBOARD_HREF = "/live"
+
+const NAV_ICON = {
+  wall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>',
+  needs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>',
+  live: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>',
+  agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>',
+  dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
+}
+
 export function renderWallPage(opts: WallPageOpts = {}): string {
   const token = opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : ""
   const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")
-  // A feed column with a side column, read like a social feed (#1207):
-  // posts in the middle; Running now, Agents and the classic pages beside.
+  // Take B's three columns (#1242): a nav on the left, the feed in the
+  // middle, Running now, Agents and the dashboard links on the right.
   const body = `<div class="ax-wall">
-  <section class="ax-wall__box ax-wall__side" aria-label="Classic pages">
-    <nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav>
-    <span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" class="ax-btn ax-btn--ghost" type="button">Refresh</button></span>
-  </section>
-  <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
-    <h2 id="wall-nodes-h">Running now</h2>
-    <div id="wall-nodes"><p class="ax-wall__empty">Loading…</p></div>
-  </section>
-  <section class="ax-wall__box ax-wall__agents" aria-labelledby="wall-agents-h">
-    <h2 id="wall-agents-h">Agents</h2>
-    <div id="wall-agents"><p class="ax-wall__empty">Loading…</p></div>
-  </section>
+  <nav class="ax-wall__nav" aria-label="Wall">
+    <a class="ax-wall__logo" href="/wall">AX<small>wall</small></a>
+    <a class="ax-wall__item is-on" href="#status=open&amp;view=feed" title="Wall">${NAV_ICON.wall}<span>Wall</span></a>
+    <a class="ax-wall__item" href="#status=waiting_owner&amp;view=feed" title="Needs you">${NAV_ICON.needs}<span>Needs you</span></a>
+    <button class="ax-wall__item" type="button" data-scroll="wall-nodes-h" title="Running now">${NAV_ICON.live}<span>Running now</span></button>
+    <button class="ax-wall__item" type="button" data-scroll="wall-agents-h" title="Agents">${NAV_ICON.agents}<span>Agents</span></button>
+    <a class="ax-wall__item" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
+    <div class="ax-wall__navfoot">
+      <span>Read-only. The Wall shows the work; it sends nothing.</span>
+      <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button">Light / dark</button>
+    </div>
+  </nav>
   <div class="ax-wall__main">
     <header class="ax-wall__head">
-      <div class="ax-wall__titlebar"><h1>Wall</h1><p id="wall-count" class="ax-wall__count"></p></div>
+      <div class="ax-wall__titlebar"><h1>Wall</h1></div>
+      <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
       <div class="ax-wall__views" role="tablist">
         <button type="button" role="tab" data-view="feed" class="is-on">Feed</button>
         <button type="button" role="tab" data-view="list">List</button>
@@ -88,14 +105,25 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-jobs" class="ax-wall__failures" aria-label="Recurring jobs" hidden></section>
     <section id="wall-reviews" class="ax-wall__reviews" aria-label="Review queue" hidden></section>
   </div>
+  <aside class="ax-wall__aside">
+    <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
+      <h2 id="wall-nodes-h">Running now</h2>
+      <div id="wall-nodes"><p class="ax-wall__empty">Loading…</p></div>
+    </section>
+    <section class="ax-wall__box ax-wall__agents" aria-labelledby="wall-agents-h">
+      <h2 id="wall-agents-h">Agents</h2>
+      <div id="wall-agents"><p class="ax-wall__empty">Loading…</p></div>
+    </section>
+    <section class="ax-wall__box ax-wall__about" aria-labelledby="wall-about-h">
+      <h2 id="wall-about-h">Dashboard</h2>
+      <nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav>
+      <p>The Wall is something you open, not something that pings you. Nothing here sends a message or a push.</p>
+    </section>
+  </aside>
 </div>`
 
-  return renderShell({
+  return renderWallDocument({
     title: "AgentX · Wall",
-    activeTab: "wall",
-    subtitle: "Wall",
-    peers: opts.peers,
-    currentPeerId: opts.currentPeerId,
     body,
     css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${CRON_JOBS_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
@@ -105,37 +133,36 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
 const WALL_PAGE_CSS = `
 /* A display rule beats the user agent's [hidden] rule: keep hidden hidden. */
 .ax-wall [hidden] { display: none !important; }
-/* Feed column plus side column (#1207). The main column spans every side row;
-   the last row takes the slack so the side boxes stay packed at the top. */
-.ax-wall { display: grid; grid-template-columns: minmax(0, 620px) 330px; grid-template-rows: auto auto auto 1fr; column-gap: 24px;
-  justify-content: center; align-items: start; max-width: 1180px; margin: 0 auto; }
-.ax-wall.is-wide { grid-template-columns: minmax(0, 1fr) 300px; }
-.ax-wall__main { grid-column: 1; grid-row: 1 / span 4; min-width: 0; border-left: 1px solid var(--ax-border); border-right: 1px solid var(--ax-border); min-height: 70vh; }
-.ax-wall__side { grid-column: 2; grid-row: 3; }
-.ax-wall__nodes { grid-column: 2; grid-row: 1; }
-.ax-wall__agents { grid-column: 2; grid-row: 2; }
-.ax-wall__box { background: var(--ax-surface); border-radius: var(--ax-radius-lg); padding: 12px 16px; margin-bottom: 16px; min-width: 0; }
-.ax-wall__box h2 { font-size: 19px; font-weight: 800; margin: 0 0 8px; color: var(--ax-text); }
+/* The three-column layout lives in wall-space.ts (#1242). */
 .ax-wall__empty, .ax-wall__count { color: var(--ax-muted); font-size: var(--ax-fs-sm); margin: 0; }
 .ax-wall__feed .ax-wall__empty, .ax-wall__list > .ax-wall__empty { padding: 32px 16px; text-align: center; }
 
-/* Sticky header: title, post count, and the views as underlined tabs. */
-.ax-wall__head { position: sticky; top: 0; z-index: 3; background: color-mix(in srgb, var(--ax-bg) 86%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--ax-border); }
-.ax-wall__titlebar { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px 2px; }
+/* Sticky header: title, post count and sync, then the views as underlined tabs. */
+.ax-wall__head { position: sticky; top: 0; z-index: 3; background: color-mix(in srgb, var(--ax-bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--ax-border); }
+.ax-wall__titlebar { padding: 14px 16px 2px; }
 .ax-wall__titlebar h1 { font-size: 20px; font-weight: 800; margin: 0; }
-.ax-wall__views { display: flex; }
-.ax-wall__views button { flex: 1; font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ax-muted); padding: 12px 0 9px; cursor: pointer; }
+.ax-wall__sub { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; margin: 0; padding: 0 16px 6px; color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.ax-wall__sub .ax-wall__count { font-size: var(--ax-fs-xs); }
+.ax-wall__sync { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+.ax-wall__sync.is-stale time { color: var(--ax-warn); }
+.ax-wall__sync button { font: inherit; background: none; border: 0; padding: 0; color: var(--ax-accent); cursor: pointer; }
+.ax-wall__views { display: flex; overflow-x: auto; scrollbar-width: none; }
+.ax-wall__views button { flex: 1 0 auto; font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ax-muted); padding: 14px 12px 11px; cursor: pointer; white-space: nowrap; }
 .ax-wall__views button:hover { background: var(--ax-surface); }
 .ax-wall__views button.is-on { color: var(--ax-text); border-bottom-color: var(--ax-accent); }
 
-/* Filters: one row of small pills under the tabs. */
-.ax-wall__filters { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--ax-fs-xs); color: var(--ax-muted); padding: 10px 16px; border-bottom: 1px solid var(--ax-border); }
+/* Filters: a search line; the rest open under "Filters", as on X. */
+.ax-wall__filters { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; font-size: var(--ax-fs-xs); color: var(--ax-muted); padding: 10px 16px; border-bottom: 1px solid var(--ax-border); }
 .ax-wall__filters label { display: inline-flex; gap: 4px; align-items: center; }
-.ax-wall__filters select, .ax-wall__filters input[type=search] { font: inherit; background: var(--ax-surface); color: var(--ax-text); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); padding: 3px 8px; max-width: 160px; }
-.ax-wall__filters input[type=search] { flex: 1 1 140px; max-width: none; }
+.ax-wall__filters select, .ax-wall__filters input[type=search] { font: inherit; background: var(--ax-surface); color: var(--ax-text); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); padding: 4px 10px; max-width: 160px; }
+.ax-wall__filters input[type=search] { flex: 1 1 140px; max-width: none; padding: 8px 14px; font-size: var(--ax-fs-sm); }
+.ax-wall__filters input[type=search]:focus { outline: none; border-color: var(--ax-accent); background: var(--ax-bg); }
 .ax-wall__saved { display: flex; gap: 6px; }
-.ax-wall__saved .ax-btn { font-size: var(--ax-fs-xs); }
-.ax-wall__ftoggle { display: none; }
+.ax-wall__saved .ax-btn { font-size: var(--ax-fs-xs); padding: 3px 12px; }
+.ax-wall__ftoggle { order: 2; padding: 6px 14px; }
+.ax-wall__filters input[type=search] { order: 1; }
+.ax-wall__filters > label, .ax-wall__filters > .ax-wall__saved { order: 3; }
+.ax-wall__filters:not(.is-open) > label, .ax-wall__filters:not(.is-open) > .ax-wall__saved { display: none; }
 
 /* Avatars: initials on a colour taken from the agent id. */
 .av { --av-h: 210; width: 40px; height: 40px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
@@ -157,7 +184,7 @@ const WALL_PAGE_CSS = `
 .wp__by .state { margin-left: auto; }
 .wp__via { color: var(--ax-muted); font-size: var(--ax-fs-xs); margin-top: 1px; overflow-wrap: anywhere; }
 .wp__via b { color: var(--ax-text-2); font-weight: 500; }
-.wp__title { font-size: var(--ax-fs); line-height: 1.4; margin: 4px 0 0; overflow-wrap: anywhere; }
+.wp__title { font-size: var(--ax-fs); font-weight: 700; line-height: 1.35; margin: 2px 0 0; overflow-wrap: anywhere; }
 .chip { display: inline-block; font-size: var(--ax-fs-xs); line-height: 1.5; border-radius: var(--ax-radius-pill); padding: 0 9px; background: var(--ax-blue-t, var(--ax-surface-2)); color: var(--ax-accent); white-space: nowrap; }
 .chip--done { background: color-mix(in srgb, var(--ax-green) 15%, transparent); color: var(--ax-green); }
 .chip--warn { background: var(--ax-amber-t, color-mix(in srgb, var(--ax-amber) 18%, transparent)); color: var(--ax-amber-ink, var(--ax-warn)); }
@@ -223,12 +250,7 @@ const WALL_PAGE_CSS = `
 .wpf__links { display: flex; gap: 14px; margin-top: 8px; font-size: var(--ax-fs-sm); }
 .wpf__links a { color: var(--ax-accent); text-decoration: none; }
 
-/* Side column boxes */
-.ax-wall__classic { display: flex; flex-wrap: wrap; gap: 6px; }
-.ax-wall__classic a { font-size: var(--ax-fs-xs); padding: 3px 10px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); color: var(--ax-text-2); text-decoration: none; background: var(--ax-bg); }
-.ax-wall__classic a:hover { color: var(--ax-text); border-color: var(--ax-border-2); }
-.ax-wall__sync { font-size: var(--ax-fs-xs); color: var(--ax-muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 10px; }
-.ax-wall__sync.is-stale time { color: var(--ax-warn); }
+/* Side column boxes (the dashboard links are styled in wall-space.ts) */
 .ax-wall__nodes > div { display: flex; flex-direction: column; }
 .wn { padding: 8px 0; font-size: var(--ax-fs-sm); border-top: 1px solid var(--ax-border); }
 .wn:first-child { border-top: 0; }
@@ -262,21 +284,11 @@ const WALL_PAGE_CSS = `
 .wf ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--ax-fs-sm); }
 .wf .err { color: var(--ax-text-2); font-family: var(--ax-mono); font-size: var(--ax-fs-xs); overflow-wrap: anywhere; }
 
-/* One column below desktop width: classic pages and Running now first,
-   then the feed, then the agents. */
-@media (max-width: 1000px) {
-  .ax-wall, .ax-wall.is-wide { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
-  .ax-wall__side, .ax-wall__nodes, .ax-wall__agents, .ax-wall__main { grid-column: 1; grid-row: auto; }
-  .ax-wall__side { order: 1; } .ax-wall__nodes { order: 2; } .ax-wall__main { order: 3; } .ax-wall__agents { order: 4; margin-top: 16px; }
-  .ax-wall__main { border-left: 0; border-right: 0; }
-}
+/* Narrow widths: the column order is set in wall-space.ts. */
 @media (max-width: 640px) {
-  .ax-wall__box { margin-bottom: 10px; padding: 10px 12px; }
   .ax-wall__nodes > div { flex-direction: row; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; }
   .wn { flex: 0 0 78%; scroll-snap-align: start; border-top: 0; border-left: 1px solid var(--ax-border); padding: 0 0 0 10px; }
   .wn:first-child { border-left: 0; padding-left: 0; }
-  .ax-wall__ftoggle { display: inline-flex; }
-  .ax-wall__filters:not(.is-open) > label, .ax-wall__filters:not(.is-open) > input, .ax-wall__filters:not(.is-open) > .ax-wall__saved { display: none; }
   .ax-wall__filters label { flex: 1 1 45%; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
   .ax-wall__filters select, .ax-wall__filters input[type=search] { max-width: none; width: 100%; }
   .ax-wall__head { position: static; }

@@ -1,6 +1,6 @@
 # Wall — every task as a post
 
-The Wall is the dashboard's home page. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Running now** shows what each connected machine is doing at this moment, and **Agents** lists who has posts this week.
+The Wall is the dashboard's home page, in a space of its own, as the wiki is: its own look, close to X, with no dashboard top bar. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Running now** shows what each connected machine is doing at this moment, and **Agents** lists who has posts this week.
 
 The Wall only reads. It shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
 
@@ -10,9 +10,13 @@ The Wall only reads. It shows the records AgentX already keeps: tasks, plans and
 
 ## Open the Wall
 
-1. **Browser:** open the dashboard. The Wall is the first page you see. It is also the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The links in the box under **Agents** go to the classic pages: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
-3. **Phone:** the page is one column. The classic pages and **Running now** come first, then the feed, then **Agents**.
+1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
+2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Agents** and **Dashboard**, which opens the classic pages at **Live**.
+3. The **Dashboard** box on the right links every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
+5. **Phone:** the feed comes first, and the nav is a bar at the bottom: Wall, Needs you, Running now, Agents and Dashboard. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
+
+![Mockup take B (left, post text blurred) next to the Wall as built](/screenshots/wall/compare-desktop.png)
 
 ## Read a post
 
@@ -131,7 +135,7 @@ The profile is the **Owner** filter, so its address can be shared like any other
 
 ## Filter
 
-The filters work for both the feed and the list:
+The search box is always under the tabs; select **Filters** beside it to show the rest. The filters work for both the feed and the list:
 
 - **Owner**, **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Group blocked by** (project or agent), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
@@ -287,7 +291,7 @@ Each connected machine has a card:
 
 When a machine does not answer, its card turns red and the Wall still shows everything else. A machine whose posts could not be read says **posts not shown**.
 
-**Last synced**, under the classic page links, says when the Wall last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
+**Last synced**, under the Wall's title, says when the Wall last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
 
 ## Give someone the portfolio view
 

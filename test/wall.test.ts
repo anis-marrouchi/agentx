@@ -16,7 +16,7 @@ import { recordTraceStart, recordTraceEnd } from "../src/storage/traces"
 import {
   a2aRoute, handleWallApi, mentionsIn, projectOf, SILENCE_WORDS, sourceIdsIn, wallFailures, wallPost, wallPosts, wallThread, type WallDeps,
 } from "../src/daemon/wall-api"
-import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
+import { renderWallPage, WALL_CLASSIC_LINKS, WALL_DASHBOARD_HREF } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 
 // The Wall (#1180): every request as a post, its runs, hand-offs and plan
@@ -364,6 +364,24 @@ describe("routes", () => {
   it("keeps every classic page one tap away", () => {
     const html = renderWallPage()
     for (const [, href] of WALL_CLASSIC_LINKS) expect(html).toContain(`href="${href}"`)
+  })
+
+  it("is its own space: no dashboard top bar or styles, a link back to the dashboard (#1242)", () => {
+    const html = renderWallPage()
+    expect(html).not.toContain("ax-topbar")
+    expect(html).not.toContain("fonts.googleapis.com")
+    expect(html).not.toContain("ax-as-dock")
+    expect(html).toContain('class="ax-wall__nav"')
+    expect(html).toContain(`href="${WALL_DASHBOARD_HREF}"`)
+    expect(html).toContain("ax-wall-theme")
+    // The ids the Wall's script paints into are all still there.
+    for (const id of ["wall-feed", "wall-nodes", "wall-agents", "wall-synced", "wall-refresh", "wall-count", "f-toggle", "f-q"]) {
+      expect(html).toContain(`id="${id}"`)
+    }
+  })
+
+  it("the dashboard keeps its Wall link (#1242)", async () => {
+    expect((await get("/live")).body).toContain('href="/wall"')
   })
 
   it("answers the Wall API, the thread from a run id, and the fleet view", async () => {
