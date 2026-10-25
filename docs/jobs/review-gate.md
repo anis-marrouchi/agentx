@@ -96,7 +96,7 @@ The reviewer cannot run anything: it reads the result of the other checks. When 
 
 - **Only agent pull requests opened by an account AgentX posts with** run the tests. A pull request whose description only carries an agent's signature is reviewed, but its code is not run: anyone can write a signature.
 - The command runs on the computer that runs the daemon, with only `PATH`, the locale and `CI=true` set. No token or key from the daemon's environment reaches it, and `HOME` is an empty temporary folder, so credentials saved in the daemon user's home (`~/.npmrc`, `~/.config/gh`) are not found there. It still runs as that user: files outside `HOME` that the user can read stay readable. If your tests need a package cache or a registry login, set it up in the command.
-- When the run is stopped, the command and every process it started are stopped together. When the command ends by itself, anything it left running in the background is stopped too.
+- When the run is stopped, the command and every process it started are stopped together. When the command ends by itself, anything it left running in the background is stopped too. When the daemon stops or restarts during a run, the command is stopped with it. Only a daemon that is killed outright (for example with `kill -9`, or by the system when memory runs out) can leave the command running until it ends on its own.
 - The temporary folder is a git worktree of your clone. It is removed when the run ends; the clone itself is not switched or changed.
 - A run longer than `timeoutMinutes` is stopped and counts as a failure.
 
