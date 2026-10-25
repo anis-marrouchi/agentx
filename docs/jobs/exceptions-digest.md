@@ -8,7 +8,7 @@ It lists three kinds of problem found on this machine:
 |---|---|
 | **Schedules** | A schedule whose latest run failed or ran out of time, and a schedule that was due but did not run (for example because AgentX was stopped). A schedule that failed and then ran fine is not listed. |
 | **Stuck requests** | An open request that needs attention, is past its due time, or has had no activity for a day (the `requests.staleAfterHours` setting). Needs [open requests](./open-requests.md) switched on. |
-| **Paused agents** | An agent that has used its monthly budget, so new runs are refused until the month ends. |
+| **Paused agents** | An agent, a project, or the whole fleet that has used its monthly budget, so new runs are refused until the month ends. A project shows as `project <name>`. |
 
 Each digest covers what happened since the previous one, so a failed or missed run shows up in the next digest. It is off until you switch it on.
 

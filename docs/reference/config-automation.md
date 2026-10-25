@@ -54,7 +54,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 
 ## `exceptionsDigest`
 
-One message a day that lists only what is wrong on this machine: schedules whose latest run failed or that did not run when due, stuck open requests, and agents paused by their budget. When nothing is wrong, nothing is sent. Off by default. Guide: [Get a daily list of what is wrong](/jobs/exceptions-digest).
+One message a day that lists only what is wrong on this machine: schedules whose latest run failed or that did not run when due, stuck open requests, and agents or projects paused by their budget. When nothing is wrong, nothing is sent. Off by default. Guide: [Get a daily list of what is wrong](/jobs/exceptions-digest).
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
