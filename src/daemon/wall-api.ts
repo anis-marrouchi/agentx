@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3"
 import { redactSecrets } from "@/agents/memory-trust"
+import type { DecisionCard, IfSilent } from "@/approvals/cards"
 import { cardWords, summarize } from "@/requests/card-view"
 import { activeStepAgentOf, stalledWhy, waitsOn } from "@/requests/loops"
 import type { PlanStore } from "@/requests/plan-store"
@@ -20,6 +21,10 @@ import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
 //   GET /api/admin/wall?days=7            posts (open + closed in the last days) and failed runs
 //   GET /api/admin/wall/thread?id=<req>   one post and its timeline
 //   GET /api/admin/wall/thread?task=<id>  the same, found from a run (classic task page link)
+//
+// A pending decision card (#1185) sits on the post of the request it was
+// raised from, read-only: its recommendation, what applies if the owner
+// stays silent, and when. Answering stays on the Desk and Approvals page.
 
 export const WALL_PREFIX = "/api/admin/wall"
 const HOUR = 3_600_000
@@ -37,6 +42,23 @@ export interface WallDeps {
   isAgent: (id: string) => boolean
   /** The workspace folder an agent runs in: its worktree (#1187). */
   workspaceOf?: (id: string) => string | null | undefined
+  /** Pending decision cards on this node (#1185). Unset: none shown. */
+  cards?: (() => DecisionCard[]) | null
+}
+
+/** A pending owner decision card, as the Wall shows it: no answer here. */
+export interface WallOwnerCard {
+  id: string
+  title: string
+  ask: string
+  recommend: string
+  ifSilent: IfSilent
+  /** What happens if the owner does not answer, in words. */
+  silence: string
+  expiresAt: number
+  raisedBy: string
+  createdAt: number
+  source: string | null
 }
 
 export interface WallRun {
@@ -86,6 +108,8 @@ export interface WallPost {
   /** Runs of this post that overlapped another run on the same chat or in
    *  the same worktree, with both run ids (#1187). Empty: none. */
   concurrent: RunOverlap[]
+  /** Pending owner decision cards raised from this request (#1185). */
+  ownerCards: WallOwnerCard[]
 }
 
 export interface WallEvent {
@@ -226,6 +250,55 @@ function openHandoffTo(db: Database.Database | null, requestId: string): string 
   }, null)
 }
 
+/** In plain words, what a card's `if_silent` does when it expires. A card
+ *  never approves itself (#741). */
+export const SILENCE_WORDS: Record<IfSilent, string> = {
+  discard: "the agent drops it",
+  keep: "things stay as they are; nothing is approved",
+  pause: "the agent pauses this piece of work",
+}
+
+const cardsByRequest = new WeakMap<WallDeps, Map<string, WallOwnerCard[]>>()
+
+/** The request a card was raised from: its "card" link, or the plan whose
+ *  step it asks about. Null: not tied to a request on this node. */
+function requestOfCard(c: DecisionCard, deps: WallDeps): string | null {
+  const linked = safe(() => deps.store.byLink("card", c.id)?.id ?? null, null)
+  if (linked) return linked
+  return c.origin?.kind === "plan-step" ? c.origin.requestId : null
+}
+
+/** Pending cards keyed by the request they belong to, read once per call. */
+export function ownerCardsOf(requestId: string, deps: WallDeps): WallOwnerCard[] {
+  let map = cardsByRequest.get(deps)
+  if (!map) {
+    map = new Map()
+    const cards = deps.cards ? safe(deps.cards, []) : []
+    for (const c of cards) {
+      if (c.status !== "pending") continue
+      const id = requestOfCard(c, deps)
+      if (!id) continue
+      const list = map.get(id) ?? []
+      list.push({
+        id: c.id,
+        title: clean(c.title, 120),
+        ask: clean(c.ask, 300),
+        recommend: clean(c.recommend, 300),
+        ifSilent: c.if_silent,
+        silence: SILENCE_WORDS[c.if_silent] ?? c.if_silent,
+        expiresAt: Date.parse(c.expires),
+        raisedBy: c.raised_by,
+        createdAt: Date.parse(c.created_at),
+        source: c.source ? redactSecrets(c.source) : null,
+      })
+      map.set(id, list)
+    }
+    for (const list of map.values()) list.sort((a, b) => a.expiresAt - b.expiresAt)
+    cardsByRequest.set(deps, map)
+  }
+  return map.get(requestId) ?? []
+}
+
 export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
   const runs = runsOf(deps.db, r.id)
   const runMs = runs.reduce((n, x) => n + (x.durationMs ?? 0), 0)
@@ -269,6 +342,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     forgeTime: null,
     lastRun: last ? { taskId: last.taskId, agentId: last.agentId! } : null,
     concurrent: concurrentOf(runs, deps),
+    ownerCards: ownerCardsOf(r.id, deps),
   }
 }
 

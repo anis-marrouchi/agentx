@@ -44,7 +44,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <button type="button" id="f-toggle" class="ax-btn ax-btn--ghost ax-wall__ftoggle" aria-expanded="false">Filters</button>
     <label>Owner <select id="f-owner"><option value="">All</option></select></label>
     <label>Status <select id="f-status">
-      <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on owner</option>
+      <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option>
       <option value="in_progress">In progress</option><option value="closed">Closed</option><option value="">All</option>
     </select></label>
     <label>No move for <select id="f-idle"><option value="">any time</option><option value="1">1+ day</option><option value="3">3+ days</option><option value="7">7+ days</option></select></label>
@@ -121,6 +121,17 @@ const WALL_PAGE_CSS = `
 .wp.is-concurrent { border-left: 3px solid var(--ax-amber); }
 .ax-conc { display: block; margin-top: 4px; font-size: var(--ax-fs-xs); color: var(--ax-amber-ink, var(--ax-warn)); overflow-wrap: anywhere; }
 .ax-conc a { color: inherit; font-family: var(--ax-mono); }
+.wc { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--ax-border); border-left: 3px solid var(--ax-amber); border-radius: var(--ax-radius-sm); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
+.wc.is-soon { border-left-color: var(--ax-red); }
+.wc__head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.wc__head b { overflow-wrap: anywhere; }
+.wc__ask { margin: 4px 0 0; color: var(--ax-text-2); overflow-wrap: anywhere; }
+.wc__facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 6px 0 0; }
+.wc__facts dt { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.wc__facts dd { margin: 0; overflow-wrap: anywhere; }
+.wc__facts .k { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.wc__foot { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.wc__foot a { color: var(--ax-accent); }
 .wt { list-style: none; margin: 10px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--ax-border); display: flex; flex-direction: column; gap: 8px; }
 .wt li { font-size: var(--ax-fs-sm); }
 .wt .who { font-weight: 600; }
@@ -155,5 +166,7 @@ const WALL_PAGE_CSS = `
   .wl tr { display: block; border-bottom: 1px solid var(--ax-border); padding: 6px 0; }
   .wl td { display: inline-block; border: 0; padding: 2px 6px 2px 0; }
   .wl td:first-child { display: block; }
+  .wc__facts { grid-template-columns: 1fr; }
+  .wc__facts dd { margin-bottom: 4px; }
 }
 `

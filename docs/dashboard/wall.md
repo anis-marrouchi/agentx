@@ -46,6 +46,34 @@ The Wall only reads this from GitLab. It never logs time or changes the estimate
 
 The machine that keeps the task reads its GitLab time with its own GitLab connection: the `channels.gitlab` channel or `requests.checkers.gitlab`. A machine with neither shows no GitLab time.
 
+## See what waits on you
+
+When an agent asks you a yes/no question (a **decision card**) while working on a task, the card shows on that task's post. You see the question where the work is, so nobody asks you the same thing twice.
+
+![A post with a pending decision card: the recommendation, what happens with no answer, and when it expires](/screenshots/wall/owner-card.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+A card on the Wall shows:
+
+- the question and the agent's **recommendation**,
+- **If no answer**: what happens when the card expires without your answer. The agent drops it (`discard`), leaves things as they are (`keep`), or pauses that piece of work (`pause`). A card never says yes by itself,
+- **Expires**: how long is left, and the exact time. A card that expires within a day has a red edge,
+- who raised it and when, and its source link when it has one.
+
+The Wall has no buttons on a card. To answer:
+
+1. **Browser:** on the card, select **Approvals**.
+2. Answer the card there, or on the phone app's Desk. See [Approvals](./approvals.md).
+3. Back on the Wall, select **Refresh**. The card is gone from the post.
+
+To see everything that waits on you:
+
+1. Under **Status**, choose **Waiting on the owner**.
+2. The feed and the list show every task that asked you a question or has a pending card. In the list, **Waits on** says **owner** and when the card expires.
+
+A card that was raised outside any task stays on the Approvals page and the Desk only.
+
 ## Open a post's thread
 
 1. On a post, select **Thread**.
@@ -71,7 +99,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 The filters work for both the feed and the list:
 
-- **Owner**, **Status** (Open, **Blocked**, Waiting on owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, and a search box.
+- **Owner**, **Status** (Open, **Blocked**, Waiting on the owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
 
 The filters are part of the page's address. Copy the address to share the same view.
@@ -124,9 +152,10 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 1. **Browser:** open the dashboard. The Wall opens, with **Running now** at the top.
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**.
-4. Open `/live` in the browser. The classic Live page still opens.
-5. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
-6. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
+4. When an agent raises a decision card while working on a task, choose **Waiting on the owner** under **Status**. The card shows on that task's post, with its expiry and what happens with no answer.
+5. Open `/live` in the browser. The classic Live page still opens.
+6. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
+7. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 
 ## If something is wrong
 
@@ -137,4 +166,5 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 - **Two runs overlapped but no Concurrent line shows:** the flag compares runs on the same chat, or runs by two different agents in the same folder, that started within a day of each other, on machines that answer. A run on a machine marked **unreachable** is left out until it answers again.
 - **A post says "GitLab time unknown":** this machine could not read the issue's time tracking. The reason follows in brackets. "not found" usually means the GitLab token cannot see that project; check `channels.gitlab.token` or `requests.checkers.gitlab.token`. "did not answer in time" clears on the next refresh.
 - **No GitLab time on a GitLab task:** the machine that keeps the task has no GitLab connection, or the home link is on a different GitLab address than the one configured.
+- **A card is on the Approvals page but not on the Wall:** it was raised outside a task, or it was already answered or expired. Only pending cards that belong to a task show on a post.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.

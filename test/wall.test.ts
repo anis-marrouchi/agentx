@@ -11,9 +11,10 @@ import { redactSecrets } from "../src/agents/memory-trust"
 import { RequestStore } from "../src/requests/store"
 import { PlanStore } from "../src/requests/plan-store"
 import { openDb, closeDb } from "../src/storage/sqlite"
+import { listCards, saveCard, type DecisionCard } from "../src/approvals/cards"
 import { recordTraceStart, recordTraceEnd } from "../src/storage/traces"
 import {
-  a2aRoute, handleWallApi, mentionsIn, projectOf, sourceIdsIn, wallFailures, wallPost, wallPosts, wallThread, type WallDeps,
+  a2aRoute, handleWallApi, mentionsIn, projectOf, SILENCE_WORDS, sourceIdsIn, wallFailures, wallPost, wallPosts, wallThread, type WallDeps,
 } from "../src/daemon/wall-api"
 import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
 
@@ -32,7 +33,10 @@ const H = 3_600_000
 const T0 = Date.now() - 10 * H
 
 function deps(now = Date.now()): WallDeps {
-  return { store, plans, db, now, staleAfterHours: 24, isAgent: (id) => ["coder", "pm", "secretary"].includes(id) }
+  return {
+    store, plans, db, now, staleAfterHours: 24, isAgent: (id) => ["coder", "pm", "secretary"].includes(id),
+    cards: () => listCards(process.cwd(), "pending"),
+  }
 }
 
 function run(taskId: string, agentId: string, chatId: string, end: { status: "ok" | "error" | "timeout"; text?: string; error?: string }, channel?: string) {
@@ -205,6 +209,71 @@ describe("thread", () => {
     const closed = events.find((e) => e.kind === "closed")!
     expect(closed).toMatchObject({ at: T0 + 9000, status: "done" })
     expect(closed.ids[0]).toContain("merge_requests/9")
+  })
+})
+
+function card(id: string, extra: Partial<DecisionCard> = {}): DecisionCard {
+  return {
+    id, title: `Card ${id}`, ask: "Ship on Friday?", recommend: "Yes: the tests are green", if_silent: "keep",
+    expires: new Date(Date.now() + 5 * H).toISOString(), raised_by: "pm", created_at: new Date(T0 + 7000).toISOString(),
+    status: "pending", ...extra,
+  }
+}
+
+describe("owner decision cards (#1185)", () => {
+  beforeAll(() => {
+    // c-r2: raised from r2's turn. c-plan: asks about a step of r1's plan.
+    // c-free: tied to no request. c-done: already answered.
+    saveCard(process.cwd(), card("c-r2", { source: "https://gitlab.example.com/acme/web/-/merge_requests/3?token=supersecretvalue123" }))
+    store.link("r2", "card", "c-r2", T0 + 7000)
+    saveCard(process.cwd(), card("c-plan", { if_silent: "pause", origin: { kind: "plan-step", requestId: "r1", step: 1 } }))
+    saveCard(process.cwd(), card("c-free"))
+    saveCard(process.cwd(), card("c-done", { status: "decided", verdict: "yes" }))
+    store.link("r3", "card", "c-done", T0 + 8000)
+  })
+
+  it("puts a pending card on the post of the request it belongs to, with expiry and silence outcome", () => {
+    const posts = wallPosts(deps(), 7)
+    const r2 = posts.find((p) => p.id === "r2")!
+    expect(r2.ownerCards).toHaveLength(1)
+    expect(r2.ownerCards[0]).toMatchObject({
+      id: "c-r2", recommend: "Yes: the tests are green", ifSilent: "keep", silence: SILENCE_WORDS.keep, raisedBy: "pm",
+    })
+    expect(r2.ownerCards[0].expiresAt).toBeGreaterThan(Date.now())
+    expect(r2.ownerCards[0].source).not.toContain("supersecretvalue123")
+    const r1 = posts.find((p) => p.id === "r1")!
+    expect(r1.ownerCards.map((c) => c.id)).toEqual(["c-plan"])
+    expect(r1.ownerCards[0].silence).toBe(SILENCE_WORDS.pause)
+  })
+
+  it("shows no answered card, and no card tied to no request", () => {
+    const all = wallPosts(deps(), 7).flatMap((p) => p.ownerCards.map((c) => c.id))
+    expect(all).not.toContain("c-done")
+    expect(all).not.toContain("c-free")
+  })
+
+  it("only reads: the card files are unchanged", () => {
+    const before = JSON.stringify(listCards(process.cwd()))
+    wallPosts(deps(), 7)
+    expect(JSON.stringify(listCards(process.cwd()))).toBe(before)
+  })
+
+  it("never says a card approves itself", () => {
+    expect(SILENCE_WORDS.discard).not.toContain("approve")
+    expect(SILENCE_WORDS.pause).not.toContain("approve")
+    expect(SILENCE_WORDS.keep).toContain("nothing is approved")
+  })
+
+  it("comes with the post from the dashboard API", async () => {
+    const list = JSON.parse((await get("/api/admin/wall")).body)
+    expect(list.posts.find((p: any) => p.id === "r2").ownerCards[0].id).toBe("c-r2")
+  })
+
+  it("offers a waiting-on-the-owner filter and no answer buttons", () => {
+    const html = renderWallPage()
+    expect(html).toContain('<option value="waiting_owner">Waiting on the owner</option>')
+    expect(html).toContain("Answer it on the Desk")
+    expect(html).not.toMatch(/data-decide|data-verdict/)
   })
 })
 

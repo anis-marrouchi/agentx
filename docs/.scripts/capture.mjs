@@ -32,6 +32,8 @@ const shots = [
   { name: "wall/thread", path: "/wall", wait: ".wp", steps: [{ click: "#post-req-docs-wall-handoff [data-thread]" }, { wait: "#post-req-docs-wall-handoff .wt li" }], clipTo: "#post-req-docs-wall-handoff" },
   { name: "wall/list", path: "/wall#status=&view=list", wait: ".wl" },
   { name: "wall/concurrent", path: "/wall", wait: "#post-req-docs-wall-question .ax-conc", clipTo: "#post-req-docs-wall-question" },
+  // A pending decision card on its post (#1185), under "Waiting on the owner".
+  { name: "wall/owner-card", path: "/wall#status=waiting_owner", wait: "#post-req-docs-wall-question .wc", clipTo: "#post-req-docs-wall-question" },
   { name: "wall/phone", path: "/wall", wait: ".wp", phone: true },
   { name: "live", path: "/live", wait: ".ax-agent__name" },
   { name: "operations", path: "/mesh", wait: "body" },
