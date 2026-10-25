@@ -11,6 +11,17 @@ How to read it:
 
 Your installed version may differ. `agentx <command> --help` always shows the flags of the version you have.
 
+## start
+
+`agentx start`: One command to a working agent: config, daemon, dashboard, and the chat in your browser. Creates `agentx.json` with one agent when the folder has none (an existing one is left as it is), starts the daemon and the dashboard in the background unless they already answer, and opens the agent's chat. Logs go to `.agentx/daemon.log` and `.agentx/board.log`. Safe to run again.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--port <n>` | `18800` | Daemon port for a new install; an existing agentx.json keeps its own. |
+| `--dashboard-port <n>` | `4202` | Dashboard port for a new install. |
+| `--startup-timeout <seconds>` | `60` | Seconds the daemon and the dashboard each may take to answer. |
+| `--no-open` | — | Don't open the browser. |
+
 ## setup
 
 `agentx setup`: Open the web setup wizard to create or extend your AgentX install.

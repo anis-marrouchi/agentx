@@ -26,7 +26,7 @@ try {
   assert.equal(pkg.bin.agentx.replace(/^\.\//, ''), 'dist/cli.js')
   const executable = join(temp, 'node_modules', '.bin', 'agentx')
   assert.ok(run(executable, ['--version']).includes(pkg.version))
-  for (const args of [['--help'], ['daemon', '--help'], ['desktop', '--help'], ['tui', '--help']]) {
+  for (const args of [['--help'], ['start', '--help'], ['daemon', '--help'], ['desktop', '--help'], ['tui', '--help']]) {
     assert.ok(run(executable, args).includes('Usage:'))
   }
   // Native bindings can fail even when npm's best-effort postinstall exits 0.
