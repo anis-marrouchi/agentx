@@ -54,6 +54,12 @@ export interface WallProjects {
   names: string[]
 }
 
+/** The repo of a forge chat ("group/project:issue:12"), or null. */
+export function repoOfChat(chatId: string | null | undefined): string | null {
+  const m = chatId?.match(/^([^:\s]+\/[^:\s]+):(?:issue|merge_request|pull)(?::|$)/)
+  return m ? m[1] : null
+}
+
 const folder = (p: string): string | null => worktreeKey(p.startsWith("~/") ? homedir() + p.slice(1) : p)
 
 /** The mapping, built once per Wall read. An empty config maps nothing. */

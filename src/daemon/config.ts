@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
+import { monthlyBudgetSchema } from "@/agents/budget-schema"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
@@ -229,16 +230,6 @@ export const eventSubscriptionSchema = z.object({
   maxPerHour: z.number().int().min(1).max(60).default(4),
 })
 
-/** Monthly money budget (#1162): most this scope may spend in one
- *  calendar month (UTC). Spend is the recorded cost of each run. At
- *  warnRatio × monthlyUsd the owner gets one notice; at the cap new runs
- *  are refused until the month ends or the cap is raised. Applies on save. */
-const monthlyBudgetSchema = z.object({
-  /** USD per calendar month. 0 or unset = no cap. */
-  monthlyUsd: z.number().min(0).max(1_000_000).optional(),
-  /** Share of the cap at which the owner is warned (default 0.8). */
-  warnRatio: z.number().gt(0).max(1).default(0.8),
-})
 
 const agentConfigSchema = z.object({
   name: z.string(),

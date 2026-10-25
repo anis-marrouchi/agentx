@@ -50,6 +50,7 @@ import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
 import { readRequiredSettings, updateRequiredSettings, type RequiredSettingsPatch } from "@/daemon/workflow-required-settings"
+import { budgetPatchProblem, updateBudget, type BudgetPatch } from "@/daemon/budget-settings"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import { appReachDeps, type AppReachDeps } from "./app-reach"
@@ -794,6 +795,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       sendJson(res, 401, { error: "unauthorized" })
       return
     }
+  }
+  // Set or raise a monthly budget from the Cost page (#1290), after the
+  // token gate above. { scope: agent|project|fleet, id?, monthlyUsd, warnRatio? }
+  if (method === "POST" && path === "/api/admin/budgets") {
+    const body = await readJson(req).catch(() => ({})) as Record<string, unknown>
+    const problem = budgetPatchProblem(body)
+    if (problem) { sendJson(res, 400, { error: problem }); return }
+    const r = await updateBudget(body as unknown as BudgetPatch)
+    if (!r.success) { sendJson(res, 400, { error: r.error }); return }
+    sendJson(res, 200, { ok: true, reloaded: !!r.reloaded })
+    return
   }
   // The agent page's chat (#1163), after the token gate above.
   if (await handleAgentChatApi(req, res, path, {
