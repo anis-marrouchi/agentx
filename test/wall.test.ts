@@ -284,7 +284,10 @@ describe("routes", () => {
       expect((await get("/api/admin/activity-graph", { "X-Agentx-Peer": "fleet" })).status).toBe(401)
       expect((await get("/api/admin/activity-graph/stream?peer=fleet")).status).toBe(401)
       expect((await get("/api/admin/activity-graph", { "X-Agentx-Peer": "fleet", Authorization: "Bearer wrong" })).status).toBe(401)
-      expect((await get("/api/agents", { "X-Agentx-Peer": "http://peer.example:4200" })).status).toBe(401)
+      expect((await get("/api/workflows", { "X-Agentx-Peer": "http://peer.example:4200" })).status).toBe(401)
+      expect((await get("/api/admin/activity-graph", { "X-Agentx-Peer": "http://peer.example:4200" })).status).toBe(401)
+      // GET /api/agents needs no token on this node, so its proxy needs none.
+      expect((await get("/api/agents", { "X-Agentx-Peer": "http://peer.example:4200" })).status).not.toBe(401)
       expect((await get("/api/admin/activity-graph?peer=fleet", { Authorization: "Bearer tok-123" })).status).toBe(200)
     } finally {
       token = undefined

@@ -607,8 +607,11 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       : String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
     // This block runs before the /api/admin/* token gate below, and both the
     // fleet fan-out and the per-peer proxy call peers with their own tokens,
-    // so check dashboard.token here first (#1201).
-    if (peerId && peerId !== "primary" && !adminTokenOk(req, ctx)) {
+    // so check dashboard.token here first (#1201). GET /api/agents is the
+    // one route open on this node without the token (the board's agent
+    // list asks for it without one), so the proxy leaves it open too.
+    const openLocally = method === "GET" && path === "/api/agents"
+    if (peerId && peerId !== "primary" && !openLocally && !adminTokenOk(req, ctx)) {
       sendJson(res, 401, { error: "unauthorized" })
       return
     }
