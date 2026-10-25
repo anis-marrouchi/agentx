@@ -53,6 +53,8 @@ With a dashboard token (`dashboard.token` in `agentx.json`), a browser that is n
 1. **Browser:** open the dashboard's address. It shows **Sign in to this dashboard**.
 2. Paste the dashboard token and select **Sign in**. You land on the page you asked for.
 
+![The sign-in page](/screenshots/dashboard/sign-in.png)
+
 The browser keeps a sign-in cookie for 30 days. The cookie is not the token, and pages opened this way never contain the token. To sign every browser out, change `dashboard.token` and restart the dashboard. On the AgentX machine itself nothing changes: there is no sign-in there.
 
 ## If something is wrong
