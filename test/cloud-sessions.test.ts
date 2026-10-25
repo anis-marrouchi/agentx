@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { EventEmitter } from "events"
-import { mkdtempSync, readFileSync, rmSync } from "fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { execFileSync, spawn as realSpawn } from "child_process"
@@ -9,6 +9,7 @@ import {
   CloudSessionStore,
   PTY_WRAPPER,
   buildCloudPrompt,
+  cloudSessionGone,
   cloudClaudeArgs,
   decideCloudRoute,
   dispatchCloudSession,
@@ -23,6 +24,7 @@ import {
   type SpawnFn,
 } from "../src/agents/cloud-sessions"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { parseIssueRef } from "../src/commands/cloud-sessions"
 
 // #622 — an agent can run a GitHub coding task as a Claude cloud session.
 // Off by default; GitHub-repo tasks only; a failed launch runs locally.
@@ -298,6 +300,24 @@ describe("CloudSessionStore", () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it("re-reads the file when another process changes it, so a close needs no restart (#1367)", () => {
+    const own = mkdtempSync(join(tmpdir(), "agentx-cloud-"))
+    const f = join(own, "cloud-sessions.json")
+    const daemon = new CloudSessionStore(f)
+    daemon.record(base)
+    daemon.record({ ...base, number: 43, sessionId: "session_01B" })
+    const t = base.startedAt + 60_000
+    expect(daemon.open("example-org/example-repo", 42, 24, t)).toBeDefined()
+    // `agentx cloud-sessions close` runs in its own process, with its own store.
+    expect(new CloudSessionStore(f).close("example-org/example-repo", 42)).toBe(true)
+    expect(daemon.open("example-org/example-repo", 42, 24, t)).toBeUndefined()
+    expect(daemon.open("example-org/example-repo", 43, 24, t)?.sessionId).toBe("session_01B")
+    // A hand edit counts too.
+    writeFileSync(f, JSON.stringify({ sessions: [] }))
+    expect(daemon.all()).toEqual([])
+    rmSync(own, { recursive: true, force: true })
+  })
+
   it("starts empty on a missing or broken file", () => {
     const broken = mkdtempSync(join(tmpdir(), "agentx-cloud-"))
     expect(new CloudSessionStore(join(broken, "missing.json")).all()).toEqual([])
@@ -310,7 +330,7 @@ describe("dispatchCloudSession", () => {
   function deps(route: CloudRoute, launch: (opts: { cwd: string; prompt: string; sessionId?: string }) => Promise<CloudLaunchResult>) {
     const log: string[] = []
     const trace: any[] = []
-    const store = { record: vi.fn(), touch: vi.fn() }
+    const store = { record: vi.fn(), touch: vi.fn(), close: vi.fn(() => true) }
     return {
       deps: { route, agentId: "coder", message: "Fix the login redirect", settings: { ...CLOUD_SESSIONS_DEFAULTS, enabled: true }, store, launch, log: (l: string) => log.push(l), trace: (s: any) => trace.push(s), traceId: "01TRACE", now: () => 1_700_000_000_000 },
       log, trace, store,
@@ -368,6 +388,47 @@ describe("dispatchCloudSession", () => {
     expect(result!.error).toContain("session_01OPEN")
     expect(result!.error).toContain("No local run starts while the session is open")
     expect(d.trace).toEqual([{ action: "follow-up", status: "error", summary: "claude -p --cloud exited with code 1" }])
+    expect(d.store.close).not.toHaveBeenCalled()
+  })
+
+  it("closes a session that is gone and runs the task locally, logging why (#1367)", async () => {
+    const session: OpenCloudSession = { repo: "example-org/example-repo", number: 42, kind: "issue", sessionId: "session_01GONE", url: "https://claude.ai/code/session_01GONE", agentId: "coder", startedAt: 1 }
+    const reason = "claude -p --cloud exited with code 1: Error: Session not found"
+    const d = deps({ route: "follow-up", session }, async () => ({ ok: false as const, reason, output: "" }))
+    expect(await dispatchCloudSession(d.deps)).toBeNull()
+    expect(d.store.close).toHaveBeenCalledWith("example-org/example-repo", 42)
+    expect(d.log.join("\n")).toContain("session_01GONE")
+    expect(d.log.join("\n")).toContain("running locally")
+    expect(d.trace).toEqual([{ action: "fallback", status: "error", summary: expect.stringContaining("Session not found") }])
+  })
+})
+
+describe("cloudSessionGone", () => {
+  it("knows a missing session from other failures", () => {
+    for (const reason of [
+      "claude -p --cloud exited with code 1: Session not found",
+      "Error: session session_01A not found",
+      "API Error: 404 {\"type\":\"error\",\"error\":{\"type\":\"not_found_error\"}}",
+      "No such session: session_01A",
+      "The session does not exist or you do not have access to it",
+    ]) expect(cloudSessionGone(reason), reason).toBe(true)
+    for (const reason of [
+      "claude -p --cloud exited with code 127: sh: claude: command not found",
+      "claude -p --cloud exited with code 1: Not logged in",
+      "claude --cloud did not print a session within 120s",
+      "python3 is not installed (needed to give claude --cloud a terminal)",
+      "rate limited, retry after 4040 ms",
+    ]) expect(cloudSessionGone(reason), reason).toBe(false)
+  })
+})
+
+describe("agentx cloud-sessions: parseIssueRef", () => {
+  it("reads owner/repo#n and the GitHub chat id, nothing else", () => {
+    expect(parseIssueRef("example-org/example-repo#42")).toEqual({ repo: "example-org/example-repo", number: 42 })
+    expect(parseIssueRef("example-org/example-repo:pull:7")).toEqual({ repo: "example-org/example-repo", number: 7 })
+    for (const bad of ["example-repo#42", "example-org/example-repo", "example-org/example-repo#0", "example-org/example-repo#x", "a/b/c#1"]) {
+      expect(parseIssueRef(bad), bad).toBeUndefined()
+    }
   })
 })
 

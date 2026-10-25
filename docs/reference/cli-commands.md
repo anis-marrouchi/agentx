@@ -3228,6 +3228,24 @@ Review past pull requests at their latest commit without posting anything on Git
 |---|---|---|
 | `--gitlab` | — | `<repo>` is a GitLab project (`group/project`, subgroups allowed) and the numbers are merge requests. |
 
+## cloud-sessions (advanced)
+
+`agentx cloud-sessions`: The Claude cloud sessions this computer started, which keep a GitHub issue from running locally while they are open. **Advanced.** Reads and writes `.agentx/cloud-sessions.json` in the current folder; the running daemon picks up a change without a restart. See [Send coding tasks to Claude cloud sessions](../jobs/cloud-sessions.md#while-a-session-is-open).
+
+### `agentx cloud-sessions list`
+
+The sessions still open for their issue, newest first: the issue, the session id, the agent and when it started.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--all` | — | Also list sessions whose open time (`openHours`) is over. |
+| `--file <path>` | `.agentx/cloud-sessions.json` | Session file. |
+| `-c, --config <path>` | `agentx.json` | Daemon config file, read for each agent's `openHours`. |
+
+### `agentx cloud-sessions close <refs...>`
+
+Forget the session for each issue, written `owner/repo#number`, so the next comment on it runs normally. Takes the same `--file` and `--config` flags.
+
 ## retro (advanced)
 
 `agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).
