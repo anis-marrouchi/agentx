@@ -503,16 +503,14 @@ describe("the minute check", () => {
       expect(store.get("req-t1")?.state).toBe("needs_attention")
     })
 
-    it("never settles a promise, a loop with a check or a due time, or a request in a plan", async () => {
+    it("never settles a promise, a loop with a check, or a request in a plan", async () => {
       handed()
       db.prepare("UPDATE requests SET promise = 1 WHERE id = 'req-t1'").run()
       clock += 25 * HOUR
       expect((await sweep()).result.settled).toBe(0)
       db.prepare("UPDATE requests SET promise = 0, state = 'in_progress', attention_reason = NULL, close_when = ? WHERE id = 'req-t1'").run(JSON.stringify({ kind: "url", url: "https://example.test/" }))
       expect((await sweep()).result.settled).toBe(0)
-      db.prepare("UPDATE requests SET close_when = NULL, state = 'in_progress', due_at = ? WHERE id = 'req-t1'").run(clock + HOUR)
-      expect((await sweep()).result.settled).toBe(0)
-      db.prepare("UPDATE requests SET due_at = NULL, state = 'in_progress' WHERE id = 'req-t1'").run()
+      db.prepare("UPDATE requests SET close_when = NULL, state = 'in_progress' WHERE id = 'req-t1'").run()
       expect((await sweep({ inPlan: (id) => id === "req-t1" })).result.settled).toBe(0)
       // Each check above raised it as quiet; put it back as it was.
       db.prepare("UPDATE requests SET state = 'in_progress', updated_at = 0 WHERE id = 'req-t1'").run()
@@ -555,6 +553,60 @@ describe("the minute check", () => {
       clock += 1000
       tracker.delegationDone(dlg("dlg-0"), "done", "second: https://example.test/b")
       expect(store.handBackProof("req-t1")?.proof).toBe("https://example.test/b")
+    })
+
+    describe("with a due time of the agent's own (#1214)", () => {
+      const due = (at: number) => db.prepare("UPDATE requests SET due_at = ? WHERE id = 'req-t1'").run(at)
+
+      it("settles once quiet, with the due time still ahead", async () => {
+        handed()
+        due(clock + 48 * HOUR)
+        clock += 25 * HOUR
+        expect((await sweep()).result).toMatchObject({ settled: 1, quiet: 0, notified: 0 })
+        expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/deploys/7" })
+      })
+
+      it("is not raised as overdue once its work came back, and settles once quiet", async () => {
+        handed()
+        due(clock + HOUR)
+        clock += 2 * HOUR
+        const { result, told } = await sweep()
+        expect(result).toMatchObject({ settled: 0, quiet: 0, notified: 0 })
+        expect(told).toEqual([])
+        expect(store.get("req-t1")?.state).toBe("in_progress")
+        clock += 23 * HOUR
+        expect((await sweep()).result).toMatchObject({ settled: 1, quiet: 0, notified: 0 })
+      })
+
+      it("settles one already raised for being overdue once its work has been back that long", async () => {
+        handed()
+        due(clock + HOUR)
+        clock += 2 * HOUR
+        store.needsAttention("req-t1", "Past its due time (yesterday)", clock)
+        clock += 22 * HOUR
+        expect((await sweep()).result.settled).toBe(0)
+        clock += 2 * HOUR
+        expect((await sweep()).result.settled).toBe(1)
+        expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/deploys/7" })
+      })
+
+      it("is still raised as overdue while work is out", async () => {
+        start("t1")
+        tracker.delegationStarted(dlg("dlg-1"))
+        end("t1")
+        due(clock + HOUR)
+        clock += 2 * HOUR
+        expect((await sweep()).result).toMatchObject({ settled: 0, quiet: 1 })
+        expect(store.get("req-t1")?.attentionReason).toMatch(/^Past its due time/)
+      })
+
+      it("is still raised as overdue with settleHandedBack false", async () => {
+        settings.settleHandedBack = false
+        handed()
+        due(clock + HOUR)
+        clock += 2 * HOUR
+        expect((await sweep()).result).toMatchObject({ settled: 0, quiet: 1 })
+      })
     })
 
     it("leaves a request that already needs attention alone", async () => {

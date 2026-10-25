@@ -1,5 +1,5 @@
 import { isQueued } from "@/agents/queued"
-import type { RequestRecord, RequestStore } from "./store"
+import { OVERDUE_REASON, type RequestRecord, type RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
@@ -14,11 +14,15 @@ import { cardWords } from "./card-view"
 //      whose handed work all came back done, closes as done with the link
 //      its delegate gave, or marked unproven without one. The owner is not
 //      told: the work came back, and its record leaves their list.
+//      A due time does not keep it open: the agent set it, from its own
+//      estimate or wait (#1214). One already raised for being overdue
+//      settles the same way once its work has been back that long.
 //      `settleHandedBack: false` raises it as quiet instead, as before.
 //   2. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
 //      reported an end. A loop with a due time needs attention once it is
-//      past it instead. A request waiting on the owner is left alone; its
+//      past it instead, unless its handed work all came back done: that
+//      one waits to settle. A request waiting on the owner is left alone; its
 //      question is what reminds them.
 //   3. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
@@ -209,8 +213,11 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         : `No activity for ${hours} h`
       if (store.needsAttention(r.id, reason, now)) result.quiet++
     }
+    const settling = settings.settleHandedBack !== false
     for (const r of store.overdue(now, now - hours * HOUR)) {
-      if (store.needsAttention(r.id, `Past its due time (${when(r.dueAt!)})`, now)) result.quiet++
+      // Back done, and settled once quiet: no "Not finished" before that (#1214).
+      if (settling && r.state === "in_progress" && !deps.inPlan?.(r.id) && store.cameBack(r.id)) continue
+      if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) result.quiet++
     }
   } catch (e: any) {
     log(`[requests] quiet check failed: ${e?.message ?? e}`)

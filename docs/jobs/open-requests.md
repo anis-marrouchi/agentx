@@ -101,8 +101,10 @@ Agents often forget to close a request after the work they handed on comes back.
 - With no link in the answer, the proof reads `unproven: …`. Look at it in the done list if you want to be sure.
 - Once you send a request back (a reply, a hand-off, **Pick it up again**), the work that came back before no longer counts. Only work handed on and done after that can close it. If none comes back, the request returns to you as before.
 - You are not told. It simply leaves your list.
-- It does **not** apply to promises, to requests with a check or a due time, to tracked plans, to requests with a follow-up workflow, or when any handed-on work failed or is still out. Those still come back to you as before.
-- A request that already needs attention is left as it is.
+- A due time does not stop it. The agent sets that time itself, for example from its own estimate of how long the work takes. Once the work came back done, the request is not sent to you as "Past its due time"; it waits to be closed this way.
+- A request already sent to you as "Past its due time" is closed the same way, once its handed-on work has been back for `staleAfterHours`.
+- It does **not** apply to promises, to requests with a check, to tracked plans, to requests with a follow-up workflow, or when any handed-on work failed or is still out. Those still come back to you as before.
+- Any other request that already needs attention is left as it is.
 
 To keep the old behaviour, run `agentx requests settings --settle off`.
 
