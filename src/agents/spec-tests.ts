@@ -604,7 +604,9 @@ export function stopLiveGroups(): void {
  *  the limit, SIGKILL after `killGraceMs`, and a result after one more
  *  grace period even if a grandchild still holds the output open. With
  *  `killGroup` the process leads its own group and the signals go to the
- *  whole group, so a shell's children stop with it. */
+ *  whole group, so a shell's children stop with it; once the process exits,
+ *  whatever it left running in the group (a dev server, a watcher) is
+ *  killed too. */
 export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; input?: string; timeoutMs?: number; killGraceMs?: number; killGroup?: boolean }): Promise<SpawnResult> {
   return new Promise((done) => {
     let stdout = ""
@@ -654,14 +656,15 @@ export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: strin
     child.stderr?.on("data", (d) => { stderr += d })
     child.stdin?.on("error", () => { /* the process exited before reading its input */ })
     child.on("error", (e) => { if (child.pid) liveGroups.delete(child.pid); settle(-1, e.message) })
-    child.on("close", (code) => {
-      // A background child the command left behind would outlive the run.
+    // On exit, not close: a background child the command left behind would
+    // outlive the run, and one holding stdout open would also hold off close.
+    child.on("exit", () => {
       if (opts.killGroup && child.pid) {
         liveGroups.delete(child.pid)
-        try { process.kill(-child.pid, "SIGKILL") } catch { /* group already gone */ }
+        try { process.kill(-child.pid, "SIGKILL") } catch { /* ESRCH: nothing left in the group */ }
       }
-      settle(code ?? -1)
     })
+    child.on("close", (code) => settle(code ?? -1))
     if (opts.input !== undefined) child.stdin?.end(opts.input)
   })
 }

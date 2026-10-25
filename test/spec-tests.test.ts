@@ -204,6 +204,14 @@ describe("records", () => {
   })
 })
 
+/** False once the process is gone or a zombie: in a container whose init
+ *  does not reap orphans, a killed child stays a zombie and `kill(pid, 0)`
+ *  still succeeds. */
+function alive(pid: number): boolean {
+  try { process.kill(pid, 0) } catch { return false }
+  try { return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, "utf-8")) } catch { return true }
+}
+
 describe("helpers", () => {
   it("tells test files apart", () => {
     expect(isTestFile("test/webhooks.test.ts")).toBe(true)
@@ -255,7 +263,27 @@ describe("helpers", () => {
     expect(r.timedOut).toBe(true)
     const pid = Number(readFileSync(pidFile, "utf-8").trim())
     await new Promise((ok) => setTimeout(ok, 100))
-    expect(() => process.kill(pid, 0)).toThrow()
+    expect(alive(pid)).toBe(false)
+  })
+
+  it("with killGroup, a normal exit also stops what the shell left running", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-killgroup-"))
+    try {
+      // One child lets go of the output, the other keeps it open: both must stop.
+      const started = Date.now()
+      const r = await spawnWithTimeout("sh", ["-c", `sleep 30 >/dev/null 2>&1 & echo $! > ${dir}/a; sleep 30 & echo $! > ${dir}/b; echo done`], { cwd: tmpdir(), timeoutMs: 10_000, killGroup: true })
+      expect(r.timedOut).toBe(false)
+      expect(r.code).toBe(0)
+      expect(r.stdout.trim()).toBe("done")
+      expect(Date.now() - started).toBeLessThan(5_000)
+      await new Promise((ok) => setTimeout(ok, 100))
+      for (const f of ["a", "b"]) {
+        const pid = Number(readFileSync(join(dir, f), "utf-8").trim())
+        expect(alive(pid)).toBe(false)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it("with killGroup, a normal exit also stops children left in the background", async () => {
