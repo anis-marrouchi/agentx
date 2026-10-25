@@ -66,6 +66,20 @@ export interface IssueInfo {
   title: string
   body: string
   isPullRequest: boolean
+  /** Set for a Linear or Jira issue ("ENG-12"), which has no repo#n. */
+  key?: string
+}
+
+/** How an issue is named in the prompt, the status and the ledger. */
+export function issueRef(i: Pick<IssueInfo, "repo" | "number" | "key">): string {
+  return i.key ?? `${i.repo}#${i.number}`
+}
+
+/** Linear and Jira issues a PR may link by key (#1292). */
+export interface ReviewGateTrackers {
+  /** Key prefixes the trackers answer for: Linear team keys, Jira project keys. */
+  prefixes(): string[]
+  getIssue(key: string): Promise<IssueInfo | null>
 }
 
 export interface CiCheck {
@@ -119,6 +133,11 @@ export interface ReviewGateDeps {
   /** True when the login is an account AgentX posts with (an agent PR). */
   isAgentLogin: (login: string) => boolean
   ledger: ReviewLedger
+  /** Which forge this gate reviews on. Records of a GitLab gate say so,
+   *  and each gate counts only its own reviews toward the daily limit. */
+  forge?: "github" | "gitlab"
+  /** Linear and Jira, for PRs that link an issue by key. */
+  trackers?: ReviewGateTrackers
   log?: (msg: string) => void
   now?: () => number
   sleep?: (ms: number) => Promise<void>
@@ -166,6 +185,34 @@ export function linkedIssues(body: string, repo: string): Array<{ repo: string; 
     }
   }
   return out
+}
+
+/** Tracker issues a PR body links with a closing word, as GitHub and
+ *  Linear read them: "Fixes ENG-12", "Refs PROJ-4, PROJ-5". Only keys
+ *  whose prefix is a configured Linear team or Jira project count. */
+export function linkedIssueKeys(body: string, prefixes: string[]): string[] {
+  const allowed = new Set(prefixes.map((p) => p.toUpperCase()))
+  if (!allowed.size) return []
+  const out: string[] = []
+  const text = (body || "").replace(/<!--[\s\S]*?-->/g, "")
+  const re = new RegExp(`\\b${CLOSING}\\s*:?\\s+([A-Za-z][A-Za-z0-9_]*-\\d+(?:\\s*(?:,|and)\\s*[A-Za-z][A-Za-z0-9_]*-\\d+)*)`, "gi")
+  for (const m of text.matchAll(re)) {
+    for (const ref of m[1].matchAll(/([A-Za-z][A-Za-z0-9_]*)-(\d+)/g)) {
+      const key = `${ref[1].toUpperCase()}-${ref[2]}`
+      if (allowed.has(ref[1].toUpperCase()) && !out.includes(key)) out.push(key)
+    }
+  }
+  return out
+}
+
+/** Jira's wiki markup in the shape acceptanceCriteria() reads: `h3.`
+ *  headings become `###`, `*` and `#` list items become `-` and `1.`. */
+export function fromJiraMarkup(body: string): string {
+  // Lists first: a heading made below starts with "#" too.
+  return (body || "")
+    .replace(/^[ \t]*#+[ \t]+/gm, "1. ")
+    .replace(/^[ \t]*\*+[ \t]+/gm, "- ")
+    .replace(/^[ \t]*h([1-6])\.[ \t]+/gm, (_m, n) => `${"#".repeat(Number(n))} `)
 }
 
 /** The acceptance criteria of an issue: the list items under a heading
@@ -230,7 +277,7 @@ export interface PromptInput {
  *  the diff is the author's, the issue may be anyone's. */
 export function buildReviewPrompt(input: PromptInput): string {
   const issueText = input.issues
-    .map((i) => `### ${i.repo}#${i.number}: ${i.title}\n\n${(i.body || "").trim()}`)
+    .map((i) => `### ${issueRef(i)}: ${i.title}\n\n${(i.body || "").trim()}`)
     .join("\n\n")
   const criteria = input.criteria.map((c, n) => `${n + 1}. ${c}`).join("\n")
   const ci = input.checks.length
@@ -405,7 +452,7 @@ export class ReviewGate {
     let runs = this.reviewerRuns.get(key)
     if (!runs) {
       runs = (this.deps.ledger.read?.({ from: new Date(since) }) ?? [])
-        .filter((r) => r.repo === repo && r.pr === number && (r.reviewerRan || r.minutes !== undefined))
+        .filter((r) => r.repo === repo && r.pr === number && (r.forge ?? "github") === (this.deps.forge ?? "github") && (r.reviewerRan || r.minutes !== undefined))
         .map((r) => Date.parse(r.at))
       this.reviewerRuns.set(key, runs)
     }
@@ -432,6 +479,7 @@ export class ReviewGate {
       state: "error",
       reason: "",
       reviewer,
+      ...(this.deps.forge === "gitlab" ? { forge: "gitlab" as const } : {}),
       ...(opts.replay ? { replay: true } : {}),
     }
     const prefix = cfg.mode === "advisory" ? "[advisory] " : ""
@@ -502,12 +550,16 @@ export class ReviewGate {
       }
 
       const links = linkedIssues(pr.body, repo)
-      const issues = (await Promise.all(links.map((l) => gh.getIssue(l.repo, l.number))))
-        .filter((i): i is IssueInfo => !!i && !i.isPullRequest)
-      if (!issues.length) return await finish("failure", `${NO_LINK}: add \"Closes #N\" to the PR description`)
+      const trackers = this.deps.trackers
+      const keys = trackers ? linkedIssueKeys(pr.body, trackers.prefixes()) : []
+      const issues = (await Promise.all([
+        ...links.map((l) => gh.getIssue(l.repo, l.number)),
+        ...keys.map((k) => trackers!.getIssue(k)),
+      ])).filter((i): i is IssueInfo => !!i && !i.isPullRequest)
+      if (!issues.length) return await finish("failure", `${NO_LINK}: add \"Closes #N\"${trackers?.prefixes().length ? " or \"Fixes KEY-N\"" : ""} to the PR description`)
       const criteria = issues.flatMap((i) => acceptanceCriteria(i.body))
-      if (!criteria.length) return await finish("failure", `${NO_LINK}: ${issues.map((i) => `#${i.number}`).join(", ")} has no acceptance criteria`)
-      record.issues = issues.map((i) => `${i.repo}#${i.number}`)
+      if (!criteria.length) return await finish("failure", `${NO_LINK}: ${issues.map((i) => i.key ?? `#${i.number}`).join(", ")} has no acceptance criteria`)
+      record.issues = issues.map(issueRef)
 
       const model = cfg.reviewer.model ?? this.deps.agentModel(reviewer)
       const authorModel = authorAgent ? this.deps.agentModel(authorAgent) : undefined

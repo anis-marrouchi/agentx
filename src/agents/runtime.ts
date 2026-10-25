@@ -100,6 +100,9 @@ export interface AgentTask {
    *  here (instead of in the user-message body) keeps it inside Claude's
    *  cached system prompt across session resumes. */
   systemPromptAppend?: string
+  /** Folder the agent runs in, in place of its workspace: the issue's own
+   *  worktree (#1292). The workspace still supplies its `.env`. */
+  cwd?: string
   /** Per-invocation override for the context assembly strategy. When unset,
    *  the registry falls back to config.session.contextStrategy. Set this
    *  from benchmark harnesses that want to A/B the same request under
@@ -867,7 +870,7 @@ export async function executeClaudeCode(
       const childEnv = claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing)
       let killed = false
       const proc = execFile("claude", args, {
-        cwd: agent.workspace,
+        cwd: task.cwd ?? agent.workspace,
         timeout: timeoutMs,
         maxBuffer: 10 * 1024 * 1024,
         env: { ...childEnv, HOME: childEnv.HOME || "/home/" + (childEnv.USER || "user") },
@@ -1027,7 +1030,7 @@ export async function executeClaudeCodeStreaming(
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const spawnEnv = claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing)
     const proc = execa("claude", args, {
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       timeout: streamTimeoutMs,
       reject: false,
       env: spawnEnv,
@@ -1298,7 +1301,7 @@ export async function executeCodexCli(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const result = await execa("codex", args, {
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       timeout: timeoutMs,
       reject: false,
       env: buildRuntimeEnv(agent, task),
@@ -1379,7 +1382,7 @@ export async function executeCodexCliStreaming(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const proc = execa("codex", args, {
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       timeout: timeoutMs,
       reject: false,
       env: buildRuntimeEnv(agent, task),
@@ -1533,7 +1536,7 @@ export async function executeOpenCodeCli(
       try {
         server = await openCodeProcessPool.acquire({
           key: JSON.stringify([task.agentId, task.context?.channel, task.context?.chatId]),
-          cwd: agent.workspace, env, model: task.model || agent.model,
+          cwd: task.cwd ?? agent.workspace, env, model: task.model || agent.model,
           permission: agent.permissionMode, fresh: task.freshSession, signal: abortSignal,
         })
         args.splice(1, 0, "--server", server.url)
@@ -1547,7 +1550,7 @@ export async function executeOpenCodeCli(
     }
     if (abortSignal?.aborted) throw new Error("task cancelled by operator")
     const proc = execa("opencode", args, {
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       timeout: timeoutMs,
       reject: false,
       env,
@@ -1664,7 +1667,7 @@ export async function executeSdk(
       prompt,
       options: {
         model: task.model || agent.model,
-        cwd: agent.workspace,
+        cwd: task.cwd ?? agent.workspace,
         permissionMode: "bypassPermissions" as any,
       },
     })
@@ -1783,7 +1786,7 @@ export async function executeOrchestrator(
 
     const baseOpts = {
       task: fullTask,
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       provider: providerName as any,
       model: task.model || agent.model,
       apiKey,
@@ -2306,7 +2309,7 @@ export async function executeTask(
         try {
           const result = await codexProcessPool.run({
             key: JSON.stringify([task.agentId, task.context?.channel, task.context?.chatId]),
-            cwd: agent.workspace, env: buildRuntimeEnv(agent, task),
+            cwd: task.cwd ?? agent.workspace, env: buildRuntimeEnv(agent, task),
             args: buildCodexAgentxMcpArgs(), model: task.model || agent.model,
             bypass: agent.permissionMode === "bypassPermissions",
             prompt: buildCodexPrompt(buildPrompt(agent, task, historyContext), task.systemPromptAppend),

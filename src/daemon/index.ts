@@ -243,6 +243,9 @@ import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
 import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
 import { createMergePolicyGitHub, createReviewGateGitHub } from "@/quality/review-gate-github"
+import { createReviewGateGitLab } from "@/quality/review-gate-gitlab"
+import { TrackerDispatcher, reviewGateTrackers, type TrackerName } from "@/trackers"
+import { TRACKER_WEBHOOK_PATHS, handleTrackerWebhook, trackerClients } from "@/trackers/http"
 import { approvalCardInput, cardVerdict, MergePolicy } from "@/quality/merge-policy"
 import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
 import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
@@ -294,6 +297,11 @@ export class AgentXDaemon {
   /** Pre-merge review gate (#990). Built with the GitHub channel; does
    *  nothing while quality.reviewGate.enabled is false. */
   private reviewGate?: ReviewGate
+  /** The same gate on GitLab merge requests (#1292), when
+   *  quality.reviewGate.forges lists "gitlab". */
+  private gitlabReviewGate?: ReviewGate
+  /** Linear and Jira issues handed to agents (#1292). */
+  private trackerDispatcher?: TrackerDispatcher
   /** Core vs edge paths (#1047); does nothing while
    *  quality.mergePolicy.enabled is false. */
   private mergePolicy?: MergePolicy
@@ -1378,15 +1386,30 @@ export class AgentXDaemon {
   /** The review gate (#990): the reviewer runs as its own agent in a fresh
    *  session keyed by the reviewed commit, so it never resumes the
    *  author's conversation or an earlier review. */
-  private buildReviewGate(github: GitHubAdapter): ReviewGate {
+  private buildReviewGate(forge: GitHubAdapter | GitLabAdapter): ReviewGate {
+    const isGitLab = forge instanceof GitLabAdapter
+    const name = isGitLab ? "gitlab" : "github"
+    // Linear and Jira issues a PR links by key (#1292), read from the
+    // current config on every review so a reload applies.
+    const trackers = {
+      prefixes: () => reviewGateTrackers(trackerClients(this.config.trackers))?.prefixes() ?? [],
+      getIssue: async (key: string) => (await reviewGateTrackers(trackerClients(this.config.trackers))?.getIssue(key)) ?? null,
+    }
     return new ReviewGate({
-      config: () => this.config.quality.reviewGate,
-      github: createReviewGateGitHub((repo) => github.getTokenForRepo(repo)),
-      repoAgent: (repo) => github.agentFor(repo),
+      config: () => {
+        const cfg = this.config.quality.reviewGate
+        return { ...cfg, enabled: cfg.enabled && cfg.forges.includes(name) }
+      },
+      github: forge instanceof GitLabAdapter
+        ? createReviewGateGitLab(forge.apiAccess().host, () => forge.apiAccess().token)
+        : createReviewGateGitHub((repo) => forge.getTokenForRepo(repo)),
+      repoAgent: (repo) => forge.agentFor(repo),
       agentModel: (agentId) => this.registry.getAgent(agentId)?.model,
-      isAgentLogin: (login) => github.isAgentLogin(login),
+      isAgentLogin: (login) => forge.isAgentLogin(login),
       ledger: this.reviewLedger,
-      log: (m) => this.log(`[review-gate] ${m}`),
+      forge: name,
+      trackers,
+      log: (m) => this.log(`[review-gate${isGitLab ? ":gitlab" : ""}] ${m}`),
       runReviewer: async (req) => {
         const started = Date.now()
         const res = await this.registry.execute({
@@ -1414,6 +1437,27 @@ export class AgentXDaemon {
         }
       },
     })
+  }
+
+  /** Runs labelled Linear and Jira issues on their route's agent (#1292).
+   *  The chat id names the issue, so a worktree-enabled agent works in the
+   *  issue's own worktree of the route's checkout. */
+  private trackers(): TrackerDispatcher {
+    if (!this.trackerDispatcher) {
+      this.trackerDispatcher = new TrackerDispatcher({
+        log: (m) => this.log(m),
+        run: async (t) => {
+          const channel = t.chatId.split(":")[0]
+          const res = await withNewRoot(() => this.registry.execute({
+            message: t.message,
+            agentId: t.agentId,
+            context: { channel, chatId: t.chatId, sender: channel, runbookPath: t.runbookPath },
+          }))
+          return { content: res.content, error: res.error }
+        },
+      })
+    }
+    return this.trackerDispatcher
   }
 
   /** Deliver a notice to the owner through the channel router: the
@@ -3241,6 +3285,8 @@ export class AgentXDaemon {
         })
       }
       gitlab.setProjectRules(this.projectRules)
+      this.gitlabReviewGate = this.buildReviewGate(gitlab)
+      gitlab.onMergeRequestEvent((event) => { void this.gitlabReviewGate?.onPullRequest(event) })
       this.router.addChannel(gitlab)
       this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)
     }
@@ -6021,6 +6067,17 @@ export class AgentXDaemon {
           this.json(res, 500, { error: "hook failed", message: String(e?.message || e) }); return
         }
       }
+      // Linear and Jira issue webhooks (#1292): signed, outside mesh auth.
+      // Before the generic route, which would read the name as an agent id.
+      const trackerName: TrackerName | undefined = req.method === "POST" ? TRACKER_WEBHOOK_PATHS[path] : undefined
+      if (trackerName) {
+        await handleTrackerWebhook(trackerName, req, res, {
+          config: () => this.config.trackers,
+          dispatcher: this.trackers(),
+          log: (m) => this.log(m),
+        })
+        return
+      }
       // wacli's signed message feed for watched WhatsApp chats. Before the
       // generic route, which would read "wacli" as an agent id.
       if (req.method === "POST" && path === WACLI_WEBHOOK_PATH) {
@@ -6340,10 +6397,10 @@ export class AgentXDaemon {
         }
         if (req.method === "POST" && path === "/api/review-gate/replay") {
           const parsed = parseReplayBody((await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>)
-          const gate = this.reviewGate
+          const gate = "error" in parsed ? undefined : parsed.forge === "gitlab" ? this.gitlabReviewGate : this.reviewGate
           if ("error" in parsed || !gate) {
             res.writeHead(400, { "Content-Type": "application/json" })
-            res.end(JSON.stringify({ error: "error" in parsed ? parsed.error : "the GitHub channel is off on this node" }))
+            res.end(JSON.stringify({ error: "error" in parsed ? parsed.error : `the ${parsed.forge === "gitlab" ? "GitLab" : "GitHub"} channel is off on this node` }))
             return
           }
           res.writeHead(200, { "Content-Type": "application/x-ndjson" })

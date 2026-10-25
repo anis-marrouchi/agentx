@@ -369,6 +369,21 @@ const agentConfigSchema = z.object({
      *  the launch is given up and the task runs locally. */
     launchTimeoutSeconds: z.number().int().min(10).max(600).default(120),
   }).default({}),
+  /** Run each local task for an issue (GitHub, GitLab, Linear, Jira) in a
+   *  git worktree of its own, on the branch `agentx/issue-<n>` (#1292).
+   *  Off by default. The checkout is the project rule's `runbook` path or
+   *  the agent's workspace; for a forge issue its origin must be the
+   *  issue's repository. Pull and merge request tasks keep running in the
+   *  checkout. See src/agents/task-worktrees.ts. */
+  worktrees: z.object({
+    enabled: z.boolean().default(false),
+    /** Folder for the worktrees. Unset: `.agentx-worktrees/<checkout
+     *  name>` beside the checkout. */
+    root: z.string().min(1).optional(),
+    /** A worktree no task used for this many days, with no uncommitted
+     *  change, is removed. Its branch is kept. */
+    maxAgeDays: z.number().min(1).max(365).default(14),
+  }).default({}),
   /** Improvement plan #3 — tool-use-required preset. When set,
    *  AgentX inspects the stream-json events from each task and
    *  fails the response with `tool_required_not_called: <name>`
@@ -1334,6 +1349,42 @@ export const reviewGateConfigSchema = z.object({
   /** Diffs longer than this many kilobytes are cut, and the reviewer is
    *  told the diff is incomplete. */
   maxDiffKb: z.number().int().positive().max(2048).default(256),
+  /** Where the gate reviews: GitHub pull requests, GitLab merge requests
+   *  (#1292), or both. GitLab needs the GitLab channel and its token. */
+  forges: z.array(z.enum(["github", "gitlab"])).min(1).default(["github"]),
+}).default({})
+
+const trackerRouteSchema = z.object({
+  /** The agent that gets the labelled issues. Must run on this node. */
+  agent: z.string().min(1),
+  /** A local clone of the repository the work lands in. With the agent's
+   *  `worktrees` on, each issue gets a worktree of it. */
+  checkout: z.string().min(1).optional(),
+})
+
+/** Linear and Jira as issue sources (src/trackers, #1292). Secrets are
+ *  read from the environment variables named here. */
+export const trackersConfigSchema = z.object({
+  linear: z.object({
+    enabled: z.boolean().default(false),
+    apiKeyEnv: z.string().min(1).default("LINEAR_API_KEY"),
+    webhookSecretEnv: z.string().min(1).default("LINEAR_WEBHOOK_SECRET"),
+    /** Adding this label to an issue hands it to its team's agent. */
+    label: z.string().min(1).default("agentx"),
+    routes: z.array(trackerRouteSchema.extend({ team: z.string().min(1) })).default([]),
+  }).default({}),
+  jira: z.object({
+    enabled: z.boolean().default(false),
+    /** "https://example.atlassian.net", or your Jira Server address. */
+    baseUrl: z.string().url().optional(),
+    /** Jira Cloud: the account's email. Leave the variable unset for Jira
+     *  Server, whose personal access token is sent on its own. */
+    emailEnv: z.string().min(1).default("JIRA_EMAIL"),
+    tokenEnv: z.string().min(1).default("JIRA_API_TOKEN"),
+    webhookSecretEnv: z.string().min(1).default("JIRA_WEBHOOK_SECRET"),
+    label: z.string().min(1).default("agentx"),
+    routes: z.array(trackerRouteSchema.extend({ project: z.string().min(1) })).default([]),
+  }).default({}),
 }).default({})
 /** Merge policy (#1047): pull requests that change a core path wait for a
  *  person's approval; edge-only ones merge on green CI. Both path lists
@@ -1868,6 +1919,8 @@ export const daemonConfigSchema = z.object({
   calls: callsSchema,
   /** Watched WhatsApp chats triaged by an agent (src/whatsapp-triage). */
   whatsappTriage: whatsappTriageSchema,
+  /** Linear and Jira issues as work for agents and as review criteria (#1292). */
+  trackers: trackersConfigSchema,
   approvals: approvalsConfigSchema,
   /** Quality gates for agent-written changes (#987). Each is off by default. */
   quality: z.object({
