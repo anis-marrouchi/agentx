@@ -12,6 +12,10 @@
 // each count links to the list with that project and status in the hash.
 // Under it, weekly throughput (#1192): closures per week per project and
 // per owner over four weeks, read once when the tab first opens.
+//
+// The Reviews view (#1182) lives in wall-reviews.client.ts.
+
+import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -23,6 +27,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var OTHER = '-';
   var S = { data: null, live: null, wf: null, view: 'feed', sort: { key: 'idle', dir: -1 }, threads: {} };
   var $ = function (id) { return document.getElementById(id); };
+${WALL_REVIEWS_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -619,6 +624,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (S.view === 'jobs') $('wall-jobs').innerHTML = axCronJobsHtml(S.live && S.live.nodes, esc);
     var n = failCount();
     $('wall-fail-n').textContent = n ? '(' + n + ')' : '';
+    renderReviews(S.view);
     $('wall-nodes').innerHTML = nodesHtml();
     var synced = S.data.syncedAt;
     $('wall-synced').textContent = stamp(synced);
@@ -651,6 +657,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the Wall: ' + esc(e.message) + '. The classic pages above still work.</p>';
     }
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
+    refreshReviews();
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
   }
 

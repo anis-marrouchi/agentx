@@ -15,6 +15,7 @@
 import { renderShell, type TopbarPeer } from ".."
 import { WALL_PAGE_SCRIPT } from "./wall.client"
 import { CRON_JOBS_SCRIPT, CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
+import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -55,6 +56,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
         <button type="button" role="tab" data-view="projects">Projects</button>
         <button type="button" role="tab" data-view="failures">Failures <span id="wall-fail-n"></span></button>
         <button type="button" role="tab" data-view="jobs">Jobs</button>
+        <button type="button" role="tab" data-view="reviews">Reviews <span id="wall-rev-n"></span></button>
       </div>
     </header>
     <section class="ax-wall__filters" aria-label="Filters">
@@ -83,6 +85,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-projects" class="ax-wall__list" aria-label="Projects" hidden></section>
     <section id="wall-failures" class="ax-wall__failures" aria-label="Failures" hidden></section>
     <section id="wall-jobs" class="ax-wall__failures" aria-label="Recurring jobs" hidden></section>
+    <section id="wall-reviews" class="ax-wall__reviews" aria-label="Review queue" hidden></section>
   </div>
 </div>`
 
@@ -93,7 +96,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${CRON_JOBS_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

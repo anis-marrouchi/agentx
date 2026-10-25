@@ -66,6 +66,9 @@ cfg.boards = [{
 }]
 // Open requests on, for the tracked plan seeded below (#788).
 cfg.requests = { enabled: true }
+// The intent graph's files, for the Wall's review queue (#1182). The graph
+// stays off, so nothing classifies; the queue only reads these files.
+cfg.graph = { enabled: false, baseDir: ".agentx/graph" }
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
 
 // Two places with reminders for the /places shot (place reminders, #676).
@@ -257,6 +260,27 @@ db.close()
     scopes: ["wall:portfolio"], createdAt: new Date().toISOString(),
   })
   writeFileSync(file, JSON.stringify(tokens, null, 2) + "\n")
+}
+
+// The Wall's review queue (#1182): one pending classification, one the
+// review agent approved (adding one node) and one it rejected. Fictional.
+{
+  const dir = resolve(root, ".agentx/graph")
+  mkdirSync(dir, { recursive: true })
+  const at = (min) => new Date(Date.now() - min * 60000).toISOString()
+  writeFileSync(resolve(dir, "nodes.json"), JSON.stringify({ version: 1, nodes: [
+    { id: "work", level: "category", parentId: null, axes: { name: "Work" }, createdAt: at(2880) },
+    { id: "work.invoice", level: "verb", parentId: "work", axes: { name: "Invoice", kind: "task" }, createdAt: at(178), createdBy: "reviewer" },
+  ] }, null, 2) + "\n")
+  const base = { agentId: "cx", channel: "telegram", leaf: {}, source: "llm" }
+  const rows = [
+    { ...base, ts: at(180), msgHash: "docs-review-invoice", path: ["work", "work.invoice"], proposedAxes: { "work.invoice": { name: "Invoice", kind: "task" } }, confidence: 0.62, status: "pending", preview: "Send the October invoice to the demo shop" },
+    { ...base, ts: at(178), msgHash: "docs-review-invoice", path: ["work", "work.invoice"], proposedAxes: { "work.invoice": { name: "Invoice", kind: "task" } }, confidence: 0.62, status: "approved", preview: "Send the October invoice to the demo shop · reviewer=reviewer · The wiki has an invoicing page for the demo shop." },
+    { ...base, ts: at(120), msgHash: "docs-review-lunch", path: ["work", "work.lunch"], proposedAxes: { "work.lunch": { name: "Lunch" } }, confidence: 0.3, status: "pending", preview: "What is for lunch today?" },
+    { ...base, ts: at(118), msgHash: "docs-review-lunch", path: ["work", "work.lunch"], proposedAxes: { "work.lunch": { name: "Lunch" } }, confidence: 0.3, status: "rejected", preview: "What is for lunch today? · reviewer=reviewer · Small talk, not a work request." },
+    { ...base, ts: at(30), msgHash: "docs-review-refund", path: ["work", "work.refund"], proposedAxes: { "work.refund": { name: "Refund", kind: "task" } }, confidence: 0.41, status: "pending", preview: "Refund order 12 for the demo office" },
+  ]
+  writeFileSync(resolve(dir, "classifications.jsonl"), rows.map((r) => JSON.stringify(r)).join("\n") + "\n")
 }
 
 // One real scheduled run, for the schedule drawer's Runs today: switch the

@@ -257,6 +257,23 @@ Settings › Schedules shows the same line under each job.
 
 ![The Jobs tab: four jobs on two machines, two with a value line and two marked no value line](/screenshots/wall/jobs.png)
 
+## Review classifications
+
+When the intent graph (`graph.enabled` in `agentx.json`) is not sure where a message belongs, it sends the classification to review. The **Reviews** view lists those classifications. It only reads the graph's own files; deciding stays on the classic graph page and with `agentx graph review`.
+
+1. Select **Reviews**. The number next to it counts the classifications still waiting.
+2. **Pending** lists each waiting classification: its path, the axes it proposes, its confidence and the message it came from.
+3. **Decided** lists the approved and rejected ones, newest first, with who decided, when, and the reason they gave.
+4. On an approved classification, the box under it shows the change to the taxonomy: `+` for a node the approval added, a blank for a node that was already there, `?` for a node that is no longer there.
+5. Select **Wiki results for this path** to search the wiki for the path's names.
+6. Select **Thread** to see the classification's own history, oldest first. It belongs to the classification, not to a chat.
+
+![An approved classification with the reviewer, the reason and the node it added to the taxonomy, in the isolated demo](/screenshots/wall/reviews.png)
+
+*Scripted demo data; your team's names will differ.*
+
+A skipped classification stays pending: a skip is not recorded. The wiki searches a reviewer ran are not recorded either, so the link searches the path's names instead. Classifications the graph approved by itself never went to review; the count line says how many.
+
 ## Running now
 
 Each connected machine has a card:
@@ -307,7 +324,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 8. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
 9. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
 10. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
-11. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+11. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
+12. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
@@ -328,4 +346,6 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
 - **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.
 - **The portfolio shows "Untitled request" a lot:** those tasks have no headline yet and no issue or merge request as their home. The text of the task is never used as a title there.
+- **Reviews says the intent graph is off:** `graph.enabled` is false in `agentx.json`, so nothing is classified here. Classifications made before it was switched off still show.
+- **A decision shows "No reason recorded" or "the graph page (no reviewer recorded)":** it was decided on the classic graph page, which keeps neither. Decisions made with `agentx graph review` or the review tool keep both.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.
