@@ -26,6 +26,7 @@ import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
+import { WALL_TASK_CSS } from "./wall-task.client"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -138,6 +139,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
+    <section id="wall-task" aria-label="One live session or job" hidden></section>
   </div>
   <aside class="ax-wall__aside">
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
@@ -159,7 +161,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_TASK_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

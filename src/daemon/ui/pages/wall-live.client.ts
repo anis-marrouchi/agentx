@@ -2,15 +2,20 @@
 //
 // Spliced into WALL_PAGE_SCRIPT's closure, so it uses that script's S, $,
 // esc(), when(), until(), stamp(), avatar(), nameOf(), allAgents(),
-// taskHref(), act(), note(), paintSpace() and pollSpace().
+// act(), note(), paintSpace(), pollSpace(), getJson() and render(), and
+// wall-task.client.ts's taskPageHash() and dur().
 //
 // The Live page (#page=live) lists every live session on every machine,
 // as Spaces do on X: the live ones on top (a Space, a lesson on a
-// machine's screen, an agent at work), each with Join; then what comes up
-// next (the next scheduled jobs); then a form to start a Space. Joining a
-// Space on this computer opens it here, with its transcript and a box to
-// say something into it. A Space on another machine plays there, so it is
-// named with its machine. Joining an agent at work opens its live task.
+// machine's screen), then the sessions and jobs running now, the same
+// runs the classic /live page shows (#1381); then what comes up next (the
+// next scheduled jobs); then a form to start a Space. Joining a Space on
+// this computer opens it here, with its transcript and a box to say
+// something into it. A Space on another machine plays there, so it is
+// named with its machine. A session or job card shows its agent, what it
+// works on, how long it has run and what it did last, and opens its Task
+// page (wall-task.client.ts). While Live or a Task page is open, the
+// snapshot is read every five seconds and the run times tick each second.
 //
 // Also here: who an @mention in a comment names, and the call and join
 // buttons of an agent's page and profile.
@@ -26,21 +31,37 @@ export const WALL_LIVE_SCRIPT = String.raw`
       if (n.lesson) out.push({ kind: 'lesson', node: n, here: here, agents: n.lesson.agentId ? [n.lesson.agentId] : [], title: n.lesson.goal || 'A lesson', at: Date.parse(n.lesson.startedAt) || 0 });
       (n.agents || []).forEach(function (a) {
         (a.runningTasks || []).forEach(function (t) {
-          out.push({ kind: 'work', node: n, here: here, agents: [a.id], title: t.messagePreview || 'Working', at: Date.parse(t.startedAt) || 0, task: t, agent: a });
+          // A scheduled job runs in the chat cron:<job id> (crons/scheduler.ts).
+          var job = t.channel === 'cron' ? String(t.chatId || '').replace(/^cron:/, '') || 'scheduled job' : '';
+          out.push({ kind: job ? 'job' : 'work', node: n, here: here, agents: [a.id], title: job || askOf(t.messagePreview) || 'Working', at: Date.parse(t.startedAt) || 0, task: t, agent: a });
         });
       });
     });
-    var rank = { space: 0, lesson: 1, work: 2 };
+    var rank = { space: 0, lesson: 1, work: 2, job: 3 };
     return out.sort(function (x, y) { return rank[x.kind] - rank[y.kind] || y.at - x.at; });
   }
+  /** A session or job running now: the whole card opens its Task page. */
+  function runCardHtml(s) {
+    var t = s.task, a = s.agent;
+    var href = taskPageHash(t.id, a.id, s.node.url, { channel: t.channel, trace: t.traceId });
+    var wf = t.workflow && (t.workflow.title || t.workflow.workflowId);
+    var did = t.lastActivity || (wf ? 'Workflow ' + wf + (t.workflow.step ? ', step ' + t.workflow.step : '') : '') || (t.step ? 'Step: ' + t.step : '') || 'Starting…';
+    return '<a class="wls is-' + s.kind + '" href="' + esc(href) + '" data-run="' + esc(t.id) + '">' +
+      '<div class="wls__h"><span class="ax-badge ax-badge--live">● ' + (s.kind === 'job' ? 'Job' : 'Session') + '</span>' +
+        '<span class="wls__k">' + esc(s.node.name) + (t.channel && s.kind !== 'job' ? ' · ' + esc(t.channel) : '') + '</span>' +
+        (s.at ? '<span class="wls__el" title="Running since ' + esc(stamp(s.at)) + '"><b data-since="' + s.at + '">' + esc(dur(Date.now() - s.at)) + '</b></span>' : '') + '</div>' +
+      '<p class="wls__t">' + esc(s.title) + '</p>' +
+      '<p class="wls__did"><span class="k">Latest</span> ' + esc(did) + '</p>' +
+      '<div class="wls__f"><span class="wls__who">' + avatar(a.id, 'sm') + '<span>' + esc(nameOf(a.id)) + '</span></span><span class="wls__go">Open →</span></div></a>';
+  }
   function sessionHtml(s) {
+    if (s.kind === 'work' || s.kind === 'job') return runCardHtml(s);
     var who = s.agents.map(function (id) { return avatar(id, 'sm'); }).join('');
     var names = s.agents.map(function (id) { return esc(nameOf(id)); }).join(' and ');
     var label = s.kind === 'space' ? 'Space' : s.kind === 'lesson' ? 'Lesson' : 'Working';
     var join = s.kind === 'space'
       ? (s.here ? '<button type="button" class="ax-btn" data-join-space>Join</button>' : '<span class="wls__k">Plays on ' + esc(s.node.name) + '</span>')
-      : s.kind === 'lesson' ? '<span class="wls__k">On ' + esc(s.node.name) + '\'s screen</span>'
-      : '<a class="ax-btn ax-btn--ghost" href="' + esc(taskHref(s.task.id, s.agent.id, { daemonUrl: s.node.url }, false)) + '">Join</a>';
+      : '<span class="wls__k">On ' + esc(s.node.name) + '\'s screen</span>';
     return '<article class="wls is-' + s.kind + '"><div class="wls__h"><span class="ax-badge ax-badge--live">● ' + label + '</span><span class="wls__k">' + esc(s.node.name) +
       (s.at ? ' · since ' + esc(stamp(s.at).slice(11, 16)) : '') + '</span></div>' +
       '<p class="wls__t">' + esc(s.title) + '</p>' +
@@ -56,10 +77,13 @@ export const WALL_LIVE_SCRIPT = String.raw`
   function livePageHtml() {
     if (!S.live) return '<p class="ax-wall__empty">Loading…</p>';
     var live = liveSessions(), next = comingUp();
+    // A machine that does not answer: its runs are missing, not stopped.
+    var down = ((S.live && S.live.nodes) || []).filter(function (n) { return !n.reachable || n.error; });
     var agents = allAgents().filter(function (a) { return a.nodes.length; });
     var opts = function (pick) { return agents.map(function (a, i) { return '<option value="' + esc(a.id) + '"' + (i === pick ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join(''); };
     return '<div class="wlv">' +
       '<h3>Live now <small>' + live.length + '</small></h3>' +
+      (down.length ? '<p class="ax-wall__count wlv__down" role="note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: what runs there is missing until it does.</p>' : '') +
       (live.length ? live.map(sessionHtml).join('') : '<p class="ax-wall__empty">Nothing is live. Start a Space below, or open a post and start one about it.</p>') +
       '<div id="live-space">' + spaceHtml() + '</div>' +
       '<h3>Coming up</h3>' + (next.length ? '<ul class="wlv__next">' + next.map(function (x) {
@@ -138,10 +162,12 @@ export const WALL_LIVE_SCRIPT = String.raw`
     });
     return hit;
   }
+  /** Join live opens the run's Task page on the Wall (#1381). */
+  function liveTaskHash(w, id) { return taskPageHash(w.t.id, id, w.n.url, { channel: w.t.channel, trace: w.t.traceId }); }
   function agentActsHtml(id) {
     var w = liveTaskOf(id);
     return '<button type="button" class="ax-btn ax-btn--ghost" data-call-agent="' + esc(id) + '" title="' + esc(nameOf(id)) + ' calls you on AgentX Voice">Call</button>' +
-      (w ? '<a class="ax-btn" href="' + esc(taskHref(w.t.id, id, { daemonUrl: w.n.url }, false)) + '">● Join live</a>' : '');
+      (w ? '<a class="ax-btn" href="' + esc(liveTaskHash(w, id)) + '">● Join live</a>' : '');
   }
   async function callAgent(id) {
     var nodes = (S.live && S.live.nodes) || [];
@@ -150,6 +176,11 @@ export const WALL_LIVE_SCRIPT = String.raw`
     S.callNote = r.ok ? nameOf(id) + ' is calling you on AgentX Voice.' + (r.body && r.body.busy ? ' You look busy: it waits for you.' : '') : 'No call: ' + r.error;
     render();
   }
+  // Live and a Task page follow the runs closely: the snapshot every 5 s.
+  setInterval(function () {
+    if (document.hidden || (S.page !== 'live' && S.page !== 'task')) return;
+    getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { /* the next tick tries again */ });
+  }, 5000);
   document.addEventListener('click', function (ev) {
     var t = ev.target.closest('[data-join-space],[data-live-start],[data-call-agent]');
     if (!t) return;
@@ -169,7 +200,19 @@ export const WALL_LIVE_CSS = `
 .wls__h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .wls__k { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wls__t { margin: 6px 0 8px; font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
-.wls.is-work .wls__t { font-weight: 500; font-size: var(--ax-fs); }
+.wls.is-work .wls__t, .wls.is-job .wls__t { font-weight: 500; font-size: var(--ax-fs); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* A session or job card is a link to its Task page (#1381). */
+a.wls { display: block; color: inherit; text-decoration: none; }
+a.wls:hover { border-color: var(--ax-border-2); background: var(--ax-surface); }
+a.wls:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.wls.is-job { border-style: dashed; }
+.wls.is-job .wls__t { font-family: var(--ax-mono); font-size: var(--ax-fs-sm); }
+a.wls .wls__h .wls__k { margin-right: auto; margin-left: 8px; }
+.wls__el b { font-variant-numeric: tabular-nums; font-size: var(--ax-fs-sm); }
+.wls__did { margin: 0 0 8px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wls__did .k { color: var(--ax-muted); margin-right: 4px; }
+.wls__go { color: var(--ax-accent); font-size: var(--ax-fs-xs); font-weight: 700; }
+.wlv__down { margin: 0 0 10px; color: var(--ax-red-ink, var(--ax-err)); }
 .wls__f { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .wls__who { display: inline-flex; align-items: center; gap: 4px; font-size: var(--ax-fs-sm); min-width: 0; }
 .wls__who > span { margin-left: 4px; color: var(--ax-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

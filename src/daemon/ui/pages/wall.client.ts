@@ -27,6 +27,10 @@
 // that reaches the agent on the post (sent to the node that keeps it), a
 // voice call from that agent, and a Space: two agents talk about the post
 // out loud on this computer, with the owner's words going into it.
+//
+// The Task page (#1381, wall-task.client.ts, #page=task) is one live
+// session or job: its conversation as it streams, and a box to steer it
+// (a message as the next turn, or Stop). Live cards and Join live open it.
 
 import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
@@ -34,6 +38,7 @@ import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
+import { WALL_TASK_SCRIPT } from "./wall-task.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -44,7 +49,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator', 'live'];
+  var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null };
   var $ = function (id) { return document.getElementById(id); };
@@ -53,6 +58,7 @@ ${WALL_REVIEWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
+${WALL_TASK_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -183,6 +189,8 @@ ${WALL_LIVE_SCRIPT}
     S.view = q.get('view') || S.view;
     S.page = PAGES.indexOf(q.get('page')) >= 0 ? q.get('page') : 'wall';
     S.post = q.get('post') || '';
+    // The Task page names its run in the hash (#1381).
+    S.task = S.page === 'task' ? readTaskHash(q) : null;
     return f;
   }
   /** The hash for the current filters and view, on this page or post. */
@@ -194,13 +202,14 @@ ${WALL_LIVE_SCRIPT}
     });
     if (S.view !== 'feed') q.set('view', S.view);
     if (S.page !== 'wall') q.set('page', S.page);
+    if (S.page === 'task') writeTaskHash(q);
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
   function writeHash() { history.replaceState(null, '', hashOf(S.post)); S.applied = location.hash; }
   function applyHash() {
     S.applied = location.hash;
-    var was = S.post;
+    var was = S.post, wasPage = S.page;
     var f = readHash();
     FILTERS.forEach(function (k) {
       var el = $('f-' + k);
@@ -208,6 +217,8 @@ ${WALL_LIVE_SCRIPT}
       else el.value = f[k];
     });
     var back = null;
+    // A Task page opened from another page of this tab: Back returns there.
+    if (S.page === 'task' && !S.post && S.booted && wasPage !== 'task') S.taskPushed = true;
     if (S.post && S.post !== was) {
       // Opened from the feed in this tab: Back returns there, where it was.
       if (S.booted && !was) { S.pushed = true; S.backY = window.scrollY || 0; }
@@ -227,6 +238,12 @@ ${WALL_LIVE_SCRIPT}
     applyHash();
   }
   function closePost() {
+    if (S.page === 'task' && !S.post) {
+      if (S.taskPushed && history.back) { S.taskPushed = false; history.back(); return; }
+      history.replaceState(null, '', '#page=live');
+      applyHash();
+      return;
+    }
     if (S.pushed && history.back) { history.back(); return; }
     history.replaceState(null, '', hashOf(''));
     applyHash();
@@ -625,7 +642,7 @@ ${WALL_LIVE_SCRIPT}
       '<textarea id="wdo-text" class="wdo__t" rows="2" maxlength="4000" placeholder="It reaches ' + esc(nameOf(p.owner)) + ' like a message on any channel. Use @name to bring in another agent.">' + esc(draft) + '</textarea>' +
       '<div class="wdo__row">' +
         '<button type="button" class="ax-btn" data-act="comment">Comment</button>' +
-        (live ? '<a class="ax-btn ax-btn--ghost" href="' + esc(taskHref(live.t.id, p.owner, { daemonUrl: live.n.url }, false)) + '" title="' + esc(nameOf(p.owner)) + ' is working now">● Join live</a>' : '') +
+        (live ? '<a class="ax-btn ax-btn--ghost" href="' + esc(liveTaskHash(live, p.owner)) + '" title="' + esc(nameOf(p.owner)) + ' is working now">● Join live</a>' : '') +
         '<button type="button" class="ax-btn ax-btn--ghost" data-act="call" title="' + esc(nameOf(p.owner)) + ' calls you on AgentX Voice about this post">Call ' + esc(nameOf(p.owner)) + '</button>' +
         (others.length
           ? '<span class="wdo__sp"><select id="wdo-with" aria-label="Talks with">' + others.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') + '</select>' +
@@ -818,7 +835,7 @@ ${WALL_LIVE_SCRIPT}
   }
   function navHtml(page, f) {
     var side = ['projects', 'jobs', 'reviews', 'failures'].indexOf(S.view) >= 0;
-    var on = page === 'post' ? 'wall' : page === 'wall' ? (side ? S.view : f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
+    var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'wall' ? (side ? S.view : f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       var me = a.getAttribute('data-nav') === on;
       a.classList.toggle('is-on', me);
@@ -842,7 +859,7 @@ ${WALL_LIVE_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -999,7 +1016,7 @@ ${WALL_LIVE_SCRIPT}
     if (!live.length) return '<p class="ax-wall__empty">Loading…</p>';
     return live.map(function (n) {
       var down = !n.reachable || n.error, running = [];
-      (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + (t.messagePreview || '').slice(0, 60)); }); });
+      (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + askOf(t.messagePreview).slice(0, 60)); }); });
       var what = down ? 'does not answer' : running.length ? running[0] + (running.length > 1 ? ' · +' + (running.length - 1) + ' more' : '') : 'nothing running';
       return '<div class="wh' + (down ? ' is-down' : '') + '"><b>' + esc(n.name) + '</b><span title="' + esc(running.join('\n')) + '">' + esc(what) + '</span></div>';
     }).join('') + '<a class="wa-more" href="#page=running">See all running</a>';
@@ -1051,7 +1068,7 @@ ${WALL_LIVE_SCRIPT}
     var page = S.post ? 'post' : S.page, onWall = page === 'wall';
     var posts_ = onWall && (S.view === 'feed' || S.view === 'list');
     navHtml(page, f);
-    $('wall-back').hidden = page !== 'post';
+    $('wall-back').hidden = page !== 'post' && page !== 'task';
     // Status tabs, search and the Feed / List switch belong to the posts (#1355).
     $('wall-views').hidden = !posts_;
     $('wall-switch').hidden = !posts_;
@@ -1069,6 +1086,11 @@ ${WALL_LIVE_SCRIPT}
     $('wall-agents-page').hidden = page !== 'agents';
     $('wall-creator').hidden = page !== 'creator';
     $('wall-live').hidden = page !== 'live';
+    // The Task page draws itself once per run and then only its parts, so
+    // a refresh never wipes what is typed in the steer box (#1381).
+    $('wall-task').hidden = page !== 'task';
+    document.querySelector('.ax-wall').classList.toggle('is-task', page === 'task');
+    if (page === 'task') paintTask(); else closeTask();
     // Live repaints with the snapshot, but not over a field in use.
     if (page === 'live') {
       var busy = document.activeElement && document.activeElement.id && /^(lv-|wdo-say)/.test(document.activeElement.id);
@@ -1187,7 +1209,7 @@ ${WALL_LIVE_SCRIPT}
   // Keyboard: Enter on a post opens it, Escape goes back to the feed.
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter' && ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-post')) { ev.preventDefault(); openPost(ev.target.getAttribute('data-post')); }
-    else if (ev.key === 'Escape' && S.post && !(ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName))) closePost();
+    else if (ev.key === 'Escape' && (S.post || S.page === 'task') && !(ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName))) closePost();
   });
   FILTERS.forEach(function (k) {
     $('f-' + k).addEventListener(k === 'q' ? 'input' : 'change', function () { writeHash(); render(); });
@@ -1214,6 +1236,14 @@ ${WALL_LIVE_SCRIPT}
   // openPost applies its own hash; skip the hashchange that follows it.
   window.addEventListener('hashchange', function () { if (location.hash !== S.applied) applyHash(); });
 
+  // Live and the Task page draw from the snapshot alone: they open at once,
+  // without waiting on the feed, which applies the rest of the hash (#1381).
+  (function () {
+    var q = new URLSearchParams(location.hash.slice(1));
+    if (q.get('page') !== 'live' && q.get('page') !== 'task') return;
+    S.page = q.get('page');
+    S.task = S.page === 'task' ? readTaskHash(q) : null;
+  })();
   // A link from the classic task page: /wall?task=<id> opens that post's thread.
   var fromTask = new URLSearchParams(location.search).get('task');
   load().then(function () {

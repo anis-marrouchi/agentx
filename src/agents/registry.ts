@@ -99,6 +99,7 @@ const STEP_BUDGET_MS: Record<string, number> = {
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
 import { prepareOutbox } from "@/utils/app-outbox"
+import { lastActivityOf } from "./last-activity"
 
 /** Channels that never have an outbound adapter: a queued reply on them
  *  stays on its task, so skipping the post is expected and not logged. */
@@ -3656,7 +3657,7 @@ export class AgentRegistry {
     total: number
     errors: number
     lastActive?: Date
-    runningTasks: RunningTask[]
+    runningTasks: Array<RunningTask & { lastActivity?: string }>
     lastSummary?: { text: string; at: string; ok: boolean }
     hourlyTasks?: number[]
   }> {
@@ -3672,7 +3673,12 @@ export class AgentRegistry {
         total: s.totalTasks,
         errors: s.errors,
         lastActive: s.lastActive,
-        runningTasks: this.withWorkflowSteps(s.runningTasks),
+        // The Wall's Live cards show what each run did last (#1381): one
+        // bounded line from its output buffer, never the transcript.
+        runningTasks: this.withWorkflowSteps(s.runningTasks).map((t) => {
+          const lastActivity = lastActivityOf(this.taskOutputs.get(t.id)?.buffer)
+          return lastActivity ? { ...t, lastActivity } : t
+        }),
         lastSummary: summary ? { text: summary.text, at: summary.at.toISOString(), ok: summary.ok } : undefined,
         hourlyTasks: this.getHourlySparkline(s.id, 24),
       }

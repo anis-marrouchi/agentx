@@ -1919,6 +1919,10 @@ interface NodeLive {
       chatId?: string
       sender?: string
       startedAt: string
+      /** The step the run is in (classify, agent, …). */
+      step?: string
+      /** The run's last output event in one bounded line (#1381). */
+      lastActivity?: string
     }>
   }>
   /** Today's per-agent usage rollup pulled from /health. */
