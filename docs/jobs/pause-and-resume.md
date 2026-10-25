@@ -126,6 +126,8 @@ AgentX gives this saving up to 60 seconds for all the folders together, on top o
 
 Nothing else changes: not the checkout, its branch, its staged changes or its files. Nothing is pushed. Delete a WIP branch you no longer need with `git branch -D agentx/wip/<taskId>`.
 
+To turn this off, run `agentx config set signals.saveBuilderWork false`. A stop then writes nothing in those folders: each folder with changes is listed as **not saved**, with its changes still in the folder, and the stop does not wait the 60 seconds for the saving. [What AgentX writes in your folders](/your-data#what-agentx-writes-in-your-folders) lists every write of this kind.
+
 The WIP branch stays in the folder; AgentX does not push it. If the folder is in a place the computer empties when it starts (such as `/tmp` on some systems), restart AgentX, not the whole computer, or push the branch first.
 
 Some tasks are not stopped:
@@ -214,6 +216,7 @@ The settings live under `signals` in `agentx.json`. Change them with `agentx con
 | `signals.allowAgents` | `[]` | Agents that may pause or resume any task. `"*"` allows every agent. |
 | `signals.allowPeers` | `[]` | Mesh machines whose signals are accepted. |
 | `signals.maxPerRoot` | `6` | Most signals one request may carry in a day. |
+| `signals.saveBuilderWork` | `true` | Saves the work a stopped task's background builders left on a local `agentx/wip/<taskId>` branch. `false`: nothing is written, the folders are listed as not saved. |
 
 The last setting is a brake against loops between agents. Everything that comes from one request (a chat message, a schedule, a webhook) shares one id, its *root*. A paused and resumed task keeps its root. When signals keep bouncing, for example one agent resumes what another keeps pausing, the seventh signal from agents or other machines in a day is refused. Your own pauses and resumes are never counted or refused.
 

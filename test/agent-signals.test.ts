@@ -335,7 +335,7 @@ describe("HTTP surface", () => {
 describe("config", () => {
   it("has defaults: on, owner and dispatcher only", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(cfg.signals).toEqual({ enabled: true, windDownSeconds: 120, allowAgents: [], allowPeers: [], maxPerRoot: 6 })
+    expect(cfg.signals).toEqual({ enabled: true, windDownSeconds: 120, allowAgents: [], allowPeers: [], maxPerRoot: 6, saveBuilderWork: true })
     expect(cfg.signals).toEqual(DEFAULT_SIGNAL_SETTINGS)
   })
 })

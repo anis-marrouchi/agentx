@@ -2127,6 +2127,10 @@ export const daemonConfigSchema = z.object({
     allowPeers: z.array(z.string().min(1)).default([]),
     /** Loop brake: most signals one root id may carry in a day. */
     maxPerRoot: z.number().int().min(1).max(100).default(6),
+    /** Save the uncommitted work of a stopped task's background builders
+     *  as a local agentx/wip/<taskId> branch in each git folder they
+     *  changed. Off: nothing is written, the folders are listed as not saved. */
+    saveBuilderWork: z.boolean().default(true),
   }).default({}),
   /** Open requests (src/requests, #356): what a person asked an agent for
    *  is recorded and followed until it is done, declined or dropped. Off

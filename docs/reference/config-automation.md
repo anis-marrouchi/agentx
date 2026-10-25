@@ -504,6 +504,7 @@ Pausing a running task with a resume plan, and resuming it later. You may always
 | `signals.allowAgents` | list of strings | `[]` | Agents that may pause or resume any task on this machine. `"*"` allows every agent. An agent never pauses its own task. |
 | `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts, including a stop-all order (`agentx signal stop --all --mesh`). A machine using its own token from `mesh.peers` is that machine, with or without naming itself. The list does not hold for the shared `MESH_TOKEN`: such a machine is believed about its name, and counts as the owner when it names none. Use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
 | `signals.maxPerRoot` | number (1–100) | `6` | Loop brake: most signals from agents and other machines one request (one root id) may carry in a day. The owner's are never counted. |
+| `signals.saveBuilderWork` | boolean | `true` | When a stop stops a task with background builders, save the changes they left uncommitted as one commit on a local `agentx/wip/<taskId>` branch in each git folder, without touching the checkout or pushing. `false`: nothing is written in those folders, each one with changes is listed as not saved, and the stop does not add the 60 seconds for saving. |
 
 ## `reminders`
 

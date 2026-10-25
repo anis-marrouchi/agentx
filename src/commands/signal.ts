@@ -15,7 +15,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 // `--peer <name>` sends the signal to a mesh node, which accepts it only
 // when its signals.allowPeers names this node. Settings: `agentx config
 // set signals.<key> <value>` (windDownSeconds, allowAgents, allowPeers,
-// maxPerRoot, enabled).
+// maxPerRoot, saveBuilderWork, enabled).
 
 export const signalCmd = new Command()
   .name("signal")

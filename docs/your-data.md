@@ -67,6 +67,17 @@ On a Mac with the desktop assistant, you can do the same from its window instead
 
 Speech to text on your computer needs Whisper installed. See [What the computer needs for voice](dashboard/mobile-chat.md#what-the-computer-needs-for-voice) for the steps. The Mac desktop assistant can use Parakeet instead, which is built in: see [Speech to text on this Mac](dashboard/voice.md#speech-to-text-on-this-mac).
 
+## What AgentX writes in your folders
+
+AgentX keeps its own files in its own folder. It writes in your folders only in these places:
+
+| Where | What | When | Turn it off |
+|---|---|---|---|
+| Each Claude Code or Codex agent's workspace | `AGENTS.md`, if missing. | When the daemon starts and when you add an agent. | Write your own `AGENTS.md`: AgentX never overwrites one. |
+| Each Claude Code agent's workspace | `CLAUDE.md` and the files in `.claude/rules/`. A file AgentX wrote is marked as its own and kept up to date; a file without the mark is yours and left alone. | Same. | Remove AgentX's mark from the file. |
+| Each Claude Code agent's workspace | `.claude/settings.json`, if missing; afterwards only the keys AgentX needs are added (its hooks, and the [ObservationPack](/reference/config-agents) hook when `session.observationPack` is on). | Same. | `session.observationPack.enabled: false` for the ObservationPack hook. |
+| Each git folder a stopped task's background builders changed, a shared checkout too | One commit, made by **AgentX**, holding the changes not committed, and a local branch `agentx/wip/<taskId>` pointing at it. The checkout, its branch, its index and its files are not changed. Nothing is pushed. | On every stop of a task that had started builders. See [Background builders](/jobs/pause-and-resume#background-builders). | `signals.saveBuilderWork: false` |
+
 ## Check it worked
 
 1. **Terminal:** `grep -n "stt" agentx.json` shows `"stt": "local"` if you chose to keep your voice at home.
