@@ -298,8 +298,8 @@ describe("called-back sends (#1100)", () => {
   })
 
   it("wait as long as the callee may run, plus its slot wait", () => {
-    expect(sendTimeoutMs(90)).toBe(120 * 60_000)
-    expect(sendTimeoutMs(undefined)).toBe(50 * 60_000)
+    expect(sendTimeoutMs(90)).toBe(210 * 60_000)
+    expect(sendTimeoutMs(undefined)).toBe(70 * 60_000)
   })
 
   it("tell a callee its message reached the asker", () => {

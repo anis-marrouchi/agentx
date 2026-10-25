@@ -98,6 +98,10 @@ Here the limit is 3 hours, because 10800 seconds is longer than the 2-hour minim
 
 The daemon log has one line per preparation step, for example `[helper] step classify task=<id> chat=<channel>:<chat> at=<time>`. The `executing task`, `busy, message queued`, `flushing` and `completed` lines carry the same run id and time, so you can follow one run through the log.
 
+**Every run: the agent's own limit.** Each agent's `maxExecutionMinutes` (default 20) limits how long its agent process may work on one run. When the limit passes, the process is stopped. Long work is often almost done by then, so AgentX gives the run one more turn of the same length. That turn continues the same session (the agent's saved conversation, with everything it did so far). The agent is told it was stopped, and is asked to check what is already done and then finish. If that turn answers, its answer is the run's answer, and whoever asked (a person or another agent) gets it as usual. A run gets one extra turn at most.
+
+If the extra turn is stopped too, or the run left no session to continue, the run fails. Its error then says where the work is: the session id, the agent's work folder (`Work dir`) and the last step it started. The chat keeps that session, so the next message in it (for example "continue") picks the work up.
+
 **Stopping a run.** When you cancel a run, or its time limit passes, the run ends and its slot is freed, even if the step it was on never answers. The agents list (`/agents`) shows the step each running task is on, for example `classify` or `agent`, so you can see where a run is waiting.
 
 ### Try a cancel
@@ -109,6 +113,7 @@ The daemon log has one line per preparation step, for example `[helper] step cla
 ### When a run is cut short
 
 - **A run ended with "timed out after …s".** Its limit was too short for the work. Raise `timeoutMinutes` (or the job's `timeout`) and run it again.
+- **A run ended with "Claude Code timed out after …m" and "One extra turn to finish it was cut too."** The work needs more than twice the agent's limit. Send "continue" in the same chat to go on from where it stopped, or raise the agent's `maxExecutionMinutes`. The daemon log line `run cut at its …m time limit; continuing session …` shows when the extra turn started.
 - **A run ended with `timed out before spawn after …s in step "<name>"`.** A preparation step never finished. The step name tells you which one; search the daemon log for the run's `task=<id>` to see the steps it went through. If the step is slow but working, raise the agent's `preSpawnTimeoutSec`.
 - **A cancelled run is still listed.** Check the daemon log for a line ending in `aborted in step "<name>"`. If it is missing, the cancel did not reach this daemon: check that you cancelled on the machine running the agent.
 

@@ -61,6 +61,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { workflowHintText } from "@/workflows/follow-up"
+import { continueTask, cutRecord, cutSession, describeStep } from "@/agents/timeout-continue"
 import { continuedRun, endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, requiredFor, shouldWrap, startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText } from "@/workflows/required"
 import type { RunStore as WorkflowRunStore } from "@/workflows/run-store"
 import { randomUUID } from "crypto"
@@ -2969,8 +2970,11 @@ export class AgentRegistry {
     // whether every tool it used changed nothing (the plain-question test).
     let wrapStarted = false
     let wrapReadOnly = true
+    // The last tool step started, for a run cut at its time limit (#1261).
+    let lastStep: string | undefined
     onEvent = (event: any) => {
       turnWatch.observe(event)
+      for (const use of toolUsesOf(event)) lastStep = describeStep(use.name, use.input)
       if (wrapRunId && wrapReadOnly) {
         for (const use of toolUsesOf(event)) if (!isReadOnlyToolUse(use.name, use.input)) wrapReadOnly = false
       }
@@ -3191,7 +3195,31 @@ export class AgentRegistry {
           const gated = runDispatchGates()
           if (gated) return gated
         }
-        return executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
+        const first = await executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
+        // Cut at its time limit (#1261): one more turn on the same session
+        // to finish, unless the run was stopped on purpose meanwhile.
+        const cutFrom = cutSession(first)
+        if (first.errorKind !== "timeout") return first
+        const minutes = state.def.maxExecutionMinutes ?? 20
+        const stoppedMeanwhile = abortController.signal.aborted || this.interruptedRuns.has(runningTask.id) || this.stoppedRuns.has(runningTask.id)
+        if (!cutFrom || stoppedMeanwhile) {
+          if (!stoppedMeanwhile) this.log(`[${task.agentId}] run cut at its ${minutes}m time limit with no session to continue`)
+          return { ...first, error: `${first.error} ${cutRecord({ sessionId: cutFrom, workspace: state.def.workspace, lastStep, continued: false })}` }
+        }
+        this.log(`[${task.agentId}] run cut at its ${minutes}m time limit; continuing session ${cutFrom} for one more turn`)
+        traceStep("timeout-continue")
+        const cutStep = lastStep
+        const next = await executeTask(state.def, continueTask(taskWithSystemPrompt, minutes, cutStep), this.providers, wrappedOnDeltaWithThinkingClose, undefined, cutFrom, onEvent, abortController.signal, wrappedOnThinking)
+        if (!next.error) {
+          this.log(`[${task.agentId}] continued run answered`)
+          return next
+        }
+        if (next.errorKind !== "timeout") return next
+        return {
+          ...next,
+          claudeSessionId: next.claudeSessionId || first.claudeSessionId,
+          error: `${next.error} ${cutRecord({ sessionId: cutSession(next) || cutFrom, workspace: state.def.workspace, lastStep, continued: true })}`,
+        }
       }, CANCEL_GRACE_MS)
 
       // Improvement plan #3 — fail with a typed error when the agent
@@ -3297,6 +3325,13 @@ export class AgentRegistry {
       if (response.error) {
         state.errors++
         this.log(`[${task.agentId}] error: ${response.error}`)
+        // A run cut at its time limit keeps its session, so the next
+        // message in this chat continues the work (#1261).
+        if (response.errorKind === "timeout") {
+          if (response.claudeSessionId) this.sessions.setClaudeSessionId(task.agentId, channel, chatId, response.claudeSessionId)
+          if (response.codexSessionId) this.sessions.setCodexSessionId(task.agentId, channel, chatId, response.codexSessionId)
+          if (response.opencodeSessionId) this.sessions.setOpenCodeSessionId(task.agentId, channel, chatId, response.opencodeSessionId)
+        }
       } else {
         // Record agent response in session
         this.sessions.addAgentMessage(task.agentId, channel, chatId, response.content)

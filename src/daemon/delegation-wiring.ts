@@ -282,11 +282,12 @@ export function acceptedBody(taskId: string, callee: string, peer?: string, send
 }
 
 /** How long a called-back send to a local agent may take (#1100): the
- *  callee's own time limit, plus the wait for a free slot (a2a runs wait
- *  up to 25 min) and a margin. The plain delegation timeout would cut a
- *  long build off half way. */
+ *  callee's own time limit twice (a run cut at it gets one more turn to
+ *  finish, #1261), plus the wait for a free slot (a2a runs wait up to
+ *  25 min) and a margin. The plain delegation timeout would cut a long
+ *  build off half way. */
 export function sendTimeoutMs(maxExecutionMinutes: number | undefined): number {
-  return ((maxExecutionMinutes ?? 20) + 25 + 5) * 60_000
+  return (2 * (maxExecutionMinutes ?? 20) + 25 + 5) * 60_000
 }
 
 /** Point a callee's new chat at the agent session of its earlier chats on

@@ -923,7 +923,14 @@ export async function executeClaudeCode(
         }
       }
       if (exitCode === 143) {
-        errMsg = `Claude Code timed out after ${Math.round(timeoutMs / 60_000)}m (SIGTERM). Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+        // The JSON envelope never came, so the only session known is the
+        // one this run resumed: keep it, so the cut run can go on (#1261).
+        return {
+          content: "",
+          ...buildErrorEnvelope(`Claude Code timed out after ${Math.round(timeoutMs / 60_000)}m (SIGTERM). Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`),
+          duration: Date.now() - start,
+          claudeSessionId: resumeSessionId,
+        }
       } else if (exitCode === "ENOENT" || /ENOENT|spawn claude/i.test(stderr || "")) {
         errMsg = claudeMissingMessage()
       } else {
@@ -1015,6 +1022,9 @@ export async function executeClaudeCodeStreaming(
   let streamBilledModel: string | undefined
   let streamUsage: TokenUsage | undefined
   let streamSessionId: string | undefined
+  /** The session this turn's own events name. A turn cut at its time limit
+   *  has no `result` event, and this is the session to continue (#1261). */
+  let turnSessionId: string | undefined
   /** Last assistant event's per-call context size — see AgentResponse.contextTokens. */
   let streamContextTokens: number | undefined
   let streamNumTurns: number | undefined
@@ -1119,6 +1129,10 @@ export async function executeClaudeCodeStreaming(
 
             background.observe(event)
 
+            if ((event.type === "assistant" || event.type === "user") && typeof event.session_id === "string") {
+              turnSessionId = event.session_id
+            }
+
             // "result" event contains final text (or an API error, when is_error).
             if (event.type === "result" && event.result) {
               if (event.is_error && typeof event.result === "string") {
@@ -1218,6 +1232,19 @@ export async function executeClaudeCodeStreaming(
       fullText = typeof result.stdout === "string" ? result.stdout : ""
     }
 
+    // Cut at the time limit: whatever text came before is not the answer,
+    // even when some of it streamed. Keep the session so the run can go on.
+    if ((result as { timedOut?: boolean }).timedOut) {
+      return {
+        content: "",
+        ...buildErrorEnvelope(`Claude Code timed out after ${Math.round(streamTimeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`),
+        duration: Date.now() - start,
+        contextTokens: streamContextTokens,
+        billedModel: streamBilledModel,
+        claudeSessionId: streamSessionId || turnSessionId || resumeSessionId,
+      }
+    }
+
     if (result.exitCode !== 0 && !fullText) {
       const stderr = typeof result.stderr === "string" ? result.stderr : ""
       // execa sets exitCode=undefined when the child is killed by signal —
@@ -1226,9 +1253,7 @@ export async function executeClaudeCodeStreaming(
       // non-streaming path's exit-143 handling.
       const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; failed?: boolean; code?: string; shortMessage?: string }
       let errMsg: string
-      if (r.timedOut) {
-        errMsg = `Claude Code timed out after ${Math.round(streamTimeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
-      } else if (r.signal) {
+      if (r.signal) {
         errMsg = stderr.trim() || `Claude Code killed by signal ${r.signal}`
       } else if (r.code === "ENOENT" || /ENOENT|spawn claude/i.test((r.shortMessage || "") + " " + stderr)) {
         // execa surfaces "binary not on PATH" as { failed: true, code: 'ENOENT',
@@ -2072,6 +2097,8 @@ async function executeClaudeCodePersistent(
   let numTurns: number | undefined
   let billedModel: string | undefined
   let sessionId: string | undefined
+  /** The session this turn's own events name (see executeClaudeCodeStreaming). */
+  let turnSessionId: string | undefined
   // Text already forwarded to onDelta. Each assistant event carries one
   // message; a snapshot that extends the current message yields only its
   // suffix, and a new message after tool use starts a new paragraph.
@@ -2113,6 +2140,10 @@ async function executeClaudeCodePersistent(
       // formatter, etc. all keep working without changes.
       if (onEvent) {
         try { onEvent(evt.raw) } catch { /* observability best-effort */ }
+      }
+
+      if ((evt.type === "assistant" || evt.type === "user") && typeof (evt.raw as any).session_id === "string") {
+        turnSessionId = (evt.raw as any).session_id
       }
 
       if (evt.type === "assistant") {
@@ -2189,6 +2220,8 @@ async function executeClaudeCodePersistent(
       const env = buildErrorEnvelope(`Claude Code timed out after ${Math.round(e.budgetMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || task.agentId}" if tasks need longer.`)
       finalError = env.error
       finalErrorKind = env.errorKind
+      // The handle is gone; the session it wrote to is where the work is.
+      sessionId = sessionId || turnSessionId || resumeSessionId
     } else {
       const env = buildErrorEnvelope(`persistent claude process error: ${e?.message || String(e)}`)
       finalError = env.error
