@@ -77,6 +77,9 @@ export interface WallPost {
   id: string
   state: string
   headline: string
+  /** The headline was set by an agent or the model, not cut from the
+   *  request's text: only then is it a title (#1194). */
+  titled: boolean
   need: string
   /** The named owner: the agent it was handed to, or the one it was asked of. */
   owner: string
@@ -320,6 +323,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     id: r.id,
     state: r.state,
     headline: redactSecrets(words.headline),
+    titled: !!r.headline,
     need: redactSecrets(words.need),
     owner: r.askedAgent ?? r.agentId,
     agentId: r.agentId,

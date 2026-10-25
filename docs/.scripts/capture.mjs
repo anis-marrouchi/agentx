@@ -35,6 +35,9 @@ const shots = [
   // A pending decision card on its post (#1185), under "Waiting on the owner".
   { name: "wall/owner-card", path: "/wall#status=waiting_owner", wait: "#post-req-docs-wall-question .wc", clipTo: "#post-req-docs-wall-question" },
   { name: "wall/phone", path: "/wall", wait: ".wp", phone: true },
+  // The portfolio (#1194), opened with the demo-only key seed-demo.mjs made.
+  { name: "wall/portfolio", path: "/portfolio", wait: "#key-form", steps: [{ type: "#key", text: "agx_live_" + "demo".repeat(16) }, { click: "#key-form button" }, { wait: "#projects table" }], full: true },
+  { name: "wall/portfolio-phone", path: "/portfolio", wait: "#projects table", phone: true },
   { name: "live", path: "/live", wait: ".ax-agent__name" },
   { name: "operations", path: "/mesh", wait: "body" },
   { name: "operations/routines", path: "/mesh", wait: "body", steps: [{ clickText: "Operations" }, { wait: "#mx-routines .mx-flags" }, { scroll: "#mx-routines-title" }] },

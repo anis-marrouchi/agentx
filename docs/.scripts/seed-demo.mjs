@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import Database from "better-sqlite3"
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
@@ -243,6 +244,20 @@ db.transaction(() => {
   }, null, 2) + "\n")
 }
 db.close()
+
+// The portfolio (#1194) opens only with a key. This one exists only in the
+// throwaway demo folder, for the screenshots; capture.mjs types the same.
+{
+  const demoKey = "agx_live_" + "demo".repeat(16)
+  const file = resolve(root, ".agentx/tokens.json")
+  const tokens = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).filter(t => t.id !== "tok_demo1194") : []
+  tokens.push({
+    id: "tok_demo1194", name: "Demo director", prefix: demoKey.slice(0, 13),
+    hash: "sha256:" + createHash("sha256").update(demoKey).digest("hex"),
+    scopes: ["wall:portfolio"], createdAt: new Date().toISOString(),
+  })
+  writeFileSync(file, JSON.stringify(tokens, null, 2) + "\n")
+}
 
 // One real scheduled run, for the schedule drawer's Runs today: switch the
 // morning report to every minute, wait for its first run, then put it back.

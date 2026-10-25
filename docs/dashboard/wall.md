@@ -147,6 +147,32 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 
 **Last synced** at the top says when the Wall last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
 
+## Give someone the portfolio view
+
+The **portfolio** is a read-only summary across every group and machine, for people you name, for example a director or an operations lead. It shows counts and titles only:
+
+- **Projects:** per project, how many tasks are open, in progress, blocked and stalled (no move for more than twice the stale time of tasks), and how many finished in the last 7 days. Work with no project is under **Other**.
+- **Owners:** per agent, the open tasks it carries and how many it finished.
+- **Blocked:** each blocked task's title, project and owner, whether it waits on you or on others, and for how long.
+
+A task's title is the headline its agent set. A task without one shows its issue or merge request (`acme/web #42`), or **Untitled request**. The portfolio never shows what someone wrote in a chat, a thread, a question, a proof or which chat a task came from.
+
+Each person needs their own key. Only you make keys; nobody has one until you do.
+
+Set the dashboard token (`dashboard.token` in `agentx.json`) before you make any key. Without it the dashboard lets everyone into the Wall, so the portfolio refuses every key until a token is set.
+
+1. **Terminal**, on the machine that serves the dashboard, in the folder that holds `agentx.json`:
+
+   ```bash
+   agentx token create --name "Sara (director)" --scope wall:portfolio
+   ```
+
+   It prints the key once. Send it to that person privately.
+2. The person opens `/portfolio` on your dashboard address, types the key and selects **Open the portfolio**. Their browser keeps the key; **Forget the key** removes it.
+3. To end someone's access: `agentx token list`, then `agentx token revoke <id>`.
+
+With a dashboard token set, a portfolio key opens `/portfolio` and nothing else: not the Wall's posts, not the classic pages, not the API. Your dashboard key also opens the portfolio.
+
 ## Check it worked
 
 1. **Browser:** open the dashboard. The Wall opens, with **Running now** at the top.
@@ -156,6 +182,7 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 5. Open `/live` in the browser. The classic Live page still opens.
 6. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 7. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
+8. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
@@ -167,4 +194,7 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 - **A post says "GitLab time unknown":** this machine could not read the issue's time tracking. The reason follows in brackets. "not found" usually means the GitLab token cannot see that project; check `channels.gitlab.token` or `requests.checkers.gitlab.token`. "did not answer in time" clears on the next refresh.
 - **No GitLab time on a GitLab task:** the machine that keeps the task has no GitLab connection, or the home link is on a different GitLab address than the one configured.
 - **A card is on the Approvals page but not on the Wall:** it was raised outside a task, or it was already answered or expired. Only pending cards that belong to a task show on a post.
+- **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
+- **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.
+- **The portfolio shows "Untitled request" a lot:** those tasks have no headline yet and no issue or merge request as their home. The text of the task is never used as a title there.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.
