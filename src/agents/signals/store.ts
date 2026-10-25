@@ -36,6 +36,11 @@ export interface StoppedTask {
   plan?: ResumePlan
   resumedAt?: string
   resumedBy?: string
+  /** Stopped by a stop-all order (#1271): the next boot resumes it from its
+   *  plan on its own. `attemptedAt` is set before that one attempt, so a
+   *  failed or cut-off attempt is reported and never tried again by a boot.
+   *  `reported`: a boot's report listed it; later reports leave it out. */
+  stopAll?: { orderId: string; attemptedAt?: string; error?: string; reported?: boolean }
 }
 
 /** Records kept this long after they were resumed. Stopped ones stay until
@@ -154,6 +159,7 @@ export function summarizeStopped(r: StoppedTask): Record<string, unknown> {
     plan: r.plan ? { author: r.plan.author, text: r.plan.text.slice(0, 1200), note: r.plan.note } : undefined,
     resumable: r.state === "stopped" && (!!r.origin || !!r.workflow),
     ...(r.workflow ? { workflow: r.workflow } : {}),
+    ...(r.stopAll ? { stopAll: r.stopAll } : {}),
     resumedAt: r.resumedAt,
     resumedBy: r.resumedBy,
   }

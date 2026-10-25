@@ -4058,8 +4058,17 @@ export class AgentRegistry {
       const ids = [...this.taskAborts].filter(([, e]) => e.agentId === by.agentId && e.channel === by.channel && e.chatId === by.chatId).map(([k]) => k)
       id = ids.length === 1 ? ids[0] : undefined
     }
-    const e = id ? this.taskAborts.get(id) : undefined
-    if (!id || !e) return null
+    return id ? this.signalTargetOf(id) : null
+  }
+
+  /** Every running task, as a stop-all signal addresses them (#1271). */
+  signalTargets(): Array<NonNullable<ReturnType<AgentRegistry["signalTarget"]>>> {
+    return [...this.taskAborts].filter(([, e]) => !e.controller.signal.aborted).map(([id]) => this.signalTargetOf(id)).filter((t): t is NonNullable<typeof t> => t !== null)
+  }
+
+  private signalTargetOf(id: string): ReturnType<AgentRegistry["signalTarget"]> {
+    const e = this.taskAborts.get(id)
+    if (!e) return null
     return {
       taskId: id, traceId: e.traceId, agentId: e.agentId, channel: e.channel, chatId: e.chatId,
       sender: e.sender, rootId: e.rootId, originalMessage: e.originalMessage, origin: e.origin ?? null,

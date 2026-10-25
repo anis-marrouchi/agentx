@@ -103,6 +103,19 @@ describe("a stop signal in the registry", () => {
     await run
   })
 
+  it("lists every running task for a stop-all, and none once they end (#1271)", async () => {
+    const r = registry()
+    let onStart!: (id: string) => void
+    const started = new Promise<string>((res) => { onStart = res })
+    const run = r.execute({ message: "long job", agentId: "coder", context: { channel: "a2a", chatId: "lead" }, onStart })
+    const id = await started
+    expect(r.signalTargets().map((t) => t.taskId)).toEqual([id])
+    r.stopRunningTask(id, "stop-all")
+    // Stopped but not yet let go of its slot: not listed again.
+    expect(r.signalTargets()).toEqual([])
+    await run
+  })
+
   it("whenRunEnds resolves at once for a run that is not going", async () => {
     await expect(registry().whenRunEnds("nope", 60_000)).resolves.toBeUndefined()
   })
