@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.161.0](https://github.com/anis-marrouchi/agentx/compare/v0.160.0...v0.161.0) (2026-10-25)
+
+
+### Features
+
+* **storage:** prune forge_comments in the 90-day SQLite sweep ([#1219](https://github.com/anis-marrouchi/agentx/issues/1219)) ([#1221](https://github.com/anis-marrouchi/agentx/issues/1221)) ([c0558cc](https://github.com/anis-marrouchi/agentx/commit/c0558ccffe91e5a64d1a9906dabf357d4f66b359))
+
+
+### Bug Fixes
+
+* **teams:** fill only team schedules on connect, never write skills through symlinks ([#1216](https://github.com/anis-marrouchi/agentx/issues/1216)) ([#1223](https://github.com/anis-marrouchi/agentx/issues/1223)) ([f4c33ee](https://github.com/anis-marrouchi/agentx/commit/f4c33eec4d6c71e903ce34fb17c5f1787dccfd55))
+
 ## [0.160.0](https://github.com/anis-marrouchi/agentx/compare/v0.159.0...v0.160.0) (2026-10-25)
 
 
