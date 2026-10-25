@@ -2,6 +2,26 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.160.0](https://github.com/anis-marrouchi/agentx/compare/v0.159.0...v0.160.0) (2026-10-25)
+
+
+### Features
+
+* **agents:** monthly money budget per agent with warn and pause ([#1177](https://github.com/anis-marrouchi/agentx/issues/1177)) ([1daacf8](https://github.com/anis-marrouchi/agentx/commit/1daacf86b226b0c9de6e54389cfb07bc1738f796))
+* **quality:** agentx quality weekly --backfill posts the missed weeks ([#994](https://github.com/anis-marrouchi/agentx/issues/994)) ([#1213](https://github.com/anis-marrouchi/agentx/issues/1213)) ([fe35b67](https://github.com/anis-marrouchi/agentx/commit/fe35b67661f8d7b192340aaca750382abc937c34))
+* **teams:** ready-made teams installed in one step, with DevOps fixes ([#1164](https://github.com/anis-marrouchi/agentx/issues/1164), supersedes [#1178](https://github.com/anis-marrouchi/agentx/issues/1178)) ([#1216](https://github.com/anis-marrouchi/agentx/issues/1216)) ([946daa2](https://github.com/anis-marrouchi/agentx/commit/946daa245a9b54e45ed116ae577d943c6c323139))
+* **wall:** forge home state, closer and exact comment links ([#1184](https://github.com/anis-marrouchi/agentx/issues/1184)) ([#1219](https://github.com/anis-marrouchi/agentx/issues/1219)) ([fc9c1f0](https://github.com/anis-marrouchi/agentx/commit/fc9c1f08f18defa02cd425d2134f9589b794cd29))
+* **wall:** read like a social feed, with agent profiles ([#1207](https://github.com/anis-marrouchi/agentx/issues/1207)) ([#1211](https://github.com/anis-marrouchi/agentx/issues/1211)) ([fa199e3](https://github.com/anis-marrouchi/agentx/commit/fa199e379d26abba137bd727f88c56151e25c600))
+* **wall:** read-only portfolio summary for per-person keys ([#1194](https://github.com/anis-marrouchi/agentx/issues/1194)) ([#1208](https://github.com/anis-marrouchi/agentx/issues/1208)) ([ff8a0eb](https://github.com/anis-marrouchi/agentx/commit/ff8a0eb400dde75bdf6557bf06bd55a3a21ffb1a))
+* **wall:** show QA verdict on posts and an awaiting-QA filter ([#1188](https://github.com/anis-marrouchi/agentx/issues/1188)) ([#1215](https://github.com/anis-marrouchi/agentx/issues/1215)) ([4dcf3f8](https://github.com/anis-marrouchi/agentx/commit/4dcf3f85a936050b7ba2d930b01362212d464783))
+
+
+### Bug Fixes
+
+* **dashboard:** send the dashboard token on peer-proxied topbar fetches ([#1203](https://github.com/anis-marrouchi/agentx/issues/1203)) ([#1206](https://github.com/anis-marrouchi/agentx/issues/1206)) ([d279e36](https://github.com/anis-marrouchi/agentx/commit/d279e36e7206baa7e75fc9966abcbe7bd09f56cb))
+* **monitor:** index the two scans that froze the daemon ([#1212](https://github.com/anis-marrouchi/agentx/issues/1212)) ([1ac44b8](https://github.com/anis-marrouchi/agentx/commit/1ac44b8027b8e1cf037c30061ab9a3aa15149961))
+* **requests:** settle handed-back work that has a due time ([#1214](https://github.com/anis-marrouchi/agentx/issues/1214)) ([#1218](https://github.com/anis-marrouchi/agentx/issues/1218)) ([31bc0bf](https://github.com/anis-marrouchi/agentx/commit/31bc0bf19fdbd28560a19829ece5c7edd5d2d4ed))
+
 ## [0.159.0](https://github.com/anis-marrouchi/agentx/compare/v0.158.0...v0.159.0) (2026-10-25)
 
 
