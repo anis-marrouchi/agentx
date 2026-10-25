@@ -374,7 +374,7 @@ A machine that does not answer keeps its jobs from its last answer, marked **as 
 
 Settings › Schedules shows the same line under each job.
 
-![The Jobs page: four jobs on two machines, two with a value line and two marked no value line](/screenshots/wall/jobs.png)
+![The Jobs page: today's totals, then one machine's four jobs, each off, with no value line and marked look stale, in the isolated demo](/screenshots/wall/jobs.png)
 
 ## Review classifications
 
