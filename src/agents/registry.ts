@@ -3780,14 +3780,14 @@ export class AgentRegistry {
       .catch((e: any) => this.log(`[${agentId}] queued response post failed: ${e?.message ?? e}`))
   }
 
-  /** The agent running `taskId` right now, or null once it has finished.
-   *  Lets an HTTP caller that names its task prove which agent it is. */
   /** The root a running task works under, when it has one (#1284: an
    *  event the turn emits carries it, so the loop guard holds). */
   runningTaskRoot(taskId: string): string | undefined {
     return this.taskAborts.get(taskId)?.rootId
   }
 
+  /** The agent running `taskId` right now, or null once it has finished.
+   *  Lets an HTTP caller that names its task prove which agent it is. */
   runningTaskOwner(taskId: string): { agentId: string; channel: string; chatId?: string } | null {
     for (const s of this.agents.values()) {
       const t = s.runningTasks.find((r) => r.id === taskId)
