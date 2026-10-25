@@ -590,8 +590,10 @@ export interface SpawnResult extends ExecResult { timedOut: boolean }
 
 /** Runs a process with a time limit that always ends the wait: SIGTERM at
  *  the limit, SIGKILL after `killGraceMs`, and a result after one more
- *  grace period even if a grandchild still holds the output open. */
-export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; input?: string; timeoutMs?: number; killGraceMs?: number }): Promise<SpawnResult> {
+ *  grace period even if a grandchild still holds the output open. With
+ *  `killGroup` the process leads its own group and the signals go to the
+ *  whole group, so a shell's children stop with it. */
+export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; input?: string; timeoutMs?: number; killGraceMs?: number; killGroup?: boolean }): Promise<SpawnResult> {
   return new Promise((done) => {
     let stdout = ""
     let stderr = ""
@@ -606,18 +608,24 @@ export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: strin
     }
     let child: ReturnType<typeof nodeSpawn>
     try {
-      child = nodeSpawn(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "pipe"] })
+      child = nodeSpawn(cmd, args, { cwd: opts.cwd, env: opts.env, detached: opts.killGroup, stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "pipe"] })
     } catch (e: any) {
       settle(-1, e?.message || String(e))
       return
     }
     const grace = opts.killGraceMs ?? KILL_GRACE_MS
+    const kill = (signal: NodeJS.Signals) => {
+      if (opts.killGroup && child.pid) {
+        try { process.kill(-child.pid, signal); return } catch { /* group gone: fall back to the child */ }
+      }
+      child.kill(signal)
+    }
     if (opts.timeoutMs) {
       timers.push(setTimeout(() => {
         timedOut = true
-        child.kill("SIGTERM")
+        kill("SIGTERM")
         timers.push(setTimeout(() => {
-          child.kill("SIGKILL")
+          kill("SIGKILL")
           timers.push(setTimeout(() => {
             child.stdout?.destroy()
             child.stderr?.destroy()
