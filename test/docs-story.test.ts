@@ -38,8 +38,21 @@ describe("result-first story", () => {
     const state = readme.indexOf("\n### Release status")
     expect(state).toBeGreaterThan(readme.indexOf("\n## The jobs AgentX does\n"))
     expect(state).toBeGreaterThan(readme.indexOf("\n## See it without an account\n"))
-    const arState = arabic.indexOf("\n## الوضع الحالي")
-    expect(arState).toBeGreaterThan(arabic.indexOf("\n## جرّبه دون حساب\n"))
-    expect(arState).toBeGreaterThan(arabic.indexOf("\n## ماذا يفعل\n"))
+  })
+
+  it("gives the Arabic README the business-outcomes layout (#1334)", () => {
+    const order = [
+      "\n## ماذا تحصل عليه\n",
+      "\n## المهامّ التي يقوم بها AgentX\n",
+      "\n## أسئلتك وإجاباتها\n",
+      "\n## جرّبه دون حساب\n",
+      "\n## كيف يعمل\n",
+      "\n### حالة الإصدار\n",
+    ].map((heading) => arabic.indexOf(heading))
+    expect(order.every((at) => at > 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    for (const job of ["المبيعات", "المحتوى", "العملاء والدعم", "العمليات", "المال", "التطوير"]) {
+      expect(arabic).toContain(`\n### ${job}\n`)
+    }
   })
 })
