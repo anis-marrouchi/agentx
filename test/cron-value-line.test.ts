@@ -9,7 +9,7 @@ import { CronScheduler } from "../src/crons/scheduler"
 import { CRON_VALUE_MAX, cronValueOf } from "../src/crons/value-line"
 import { fetchDaemonAgents } from "../src/daemon/board-dashboard"
 import { handleAdminApi } from "../src/daemon/admin-panel"
-import { CRON_JOBS_SCRIPT, CRON_VALUE_SCRIPT, NO_VALUE_LINE } from "../src/daemon/ui/cron-value"
+import { CRON_VALUE_SCRIPT, NO_VALUE_LINE } from "../src/daemon/ui/cron-value"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { renderAdminPage } from "../src/daemon/ui/pages/admin"
 
@@ -128,18 +128,7 @@ describe("the value line on the page", () => {
     expect(html({ why: "a" }, esc)).toContain(NO_VALUE_LINE)
   })
 
-  it("lists every node's jobs on the Wall, with and without a value line", () => {
-    const jobs = new Function(CRON_VALUE_SCRIPT + CRON_JOBS_SCRIPT + "\nreturn axCronJobsHtml;")() as (n: unknown, e: typeof esc) => string
-    const out = jobs([{ name: "studio", crons: [{ id: "queue", schedule: "0 9 * * 1", agent: "ops", enabled: true, value }, { id: "plain", schedule: "0 * * * *", agent: "ops", enabled: false }] }], esc)
-    expect(out).toContain("queue</b> on studio")
-    expect(out).toContain(value.metric)
-    expect(out).toContain("plain</b> on studio")
-    expect(out.match(new RegExp(NO_VALUE_LINE, "g"))).toHaveLength(1)
-    expect(jobs([{ name: "studio", crons: [] }], esc)).toContain("No recurring jobs.")
-    expect(jobs(undefined, esc)).toContain("Loading")
-  })
-
-  it("is on the Wall's Recurring jobs view and on Settings › Schedules", () => {
+  it("is on the Wall's Jobs page and on Settings › Schedules", () => {
     const wall = renderWallPage()
     expect(wall).toContain('data-nav="jobs"')
     expect(wall).toContain('id="wall-jobs"')

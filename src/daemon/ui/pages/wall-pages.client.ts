@@ -30,6 +30,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
   ];
   var MORE_COLS = [['node', 'Node'], ['runs', 'Runs'], ['group', 'Group']];
   var QUICK = [['open', 'Open'], ['blocked', 'Blocked'], ['stalled', 'Stalled'], ['waiting_owner', 'Waits on me']];
+  function concurrentText(p) { return p.concurrent.map(function (o) { return o.runs.join(' + '); }).join(', '); }
   function overEstimate(p) { return !!p.estimateMinutes && mins(p.runMs) > p.estimateMinutes; }
   function listBarHtml(f) {
     return '<div class="wlb">' + QUICK.map(function (q) {
@@ -41,16 +42,23 @@ export const WALL_PAGES_SCRIPT = String.raw`
     '</div>';
   }
   function listCell(p, k) {
-    if (k === 'state') return '<td>' + stateBadge(p.state) + (qaText(p, true) ? '<br><small>' + esc(p.awaitingQa ? 'Awaiting QA' : qaText(p, true)) + '</small>' : '') +
-      (p.forgeState ? '<br><small>' + esc(forgeName(p.forgeState)) + ' ' + esc(p.forgeState.unknown ? 'unknown' : p.forgeState.state) + '</small>' : '') + '</td>';
+    if (k === 'state') return '<td>' + stateBadge(p.state) +
+      (p.forgeState ? '<br><small' + (p.forgeState.unknown ? ' title="' + esc(p.forgeState.unknown) + '">' + esc(forgeName(p.forgeState)) + ' unknown' : '>' + esc(forgeName(p.forgeState)) + ' ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '')) + '</small>' +
+        (forgeClosedOpen(p) ? ' <small title="Closed on the forge, still open here">⚠</small>' : '') +
+        (forgeOpenClosed(p) ? ' <small title="Open on the forge, closed here">⚠</small>' : '') : '') +
+      (qaText(p, true) ? '<br><small' + (p.qa ? ' title="' + esc(qaText(p)) + '"' : '') + '>' + esc(p.awaitingQa ? 'Awaiting QA' : qaText(p, true)) + '</small>' : '') + '</td>';
     if (k === 'post') return '<td><a href="#" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a></td>';
     if (k === 'owner') return '<td>' + esc(p.owner) + '</td>';
     if (k === 'project') return '<td>' + esc(p.project || '—') + '</td>';
     if (k === 'idle') return '<td class="num' + (isOpen(p) && idleDays(p) >= OLD_WAIT_DAYS ? ' is-amber' : '') + '">' + idleDays(p) + '</td>';
     if (k === 'blocked') return '<td' + (p.blocked && Date.now() - p.blocked.since >= OLD_WAIT_DAYS * DAY ? ' class="is-amber"' : '') + '>' +
-      (p.blocked ? esc(p.blocked.who) + ' <small>(' + ago(p.blocked.since) + ')</small>' : cardsOf(p).length ? 'owner' : '—') + '</td>';
-    if (k === 'time') return '<td' + (overEstimate(p) ? ' class="is-amber"' : '') + '>' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + ' min' +
-      (p.forgeTime ? '<br><small>GitLab ' + esc(forgeTimeText(p.forgeTime)) + '</small>' : '') + '</td>';
+      (p.blocked ? esc(p.blocked.who) + ' <small>(' + ago(p.blocked.since) + ')</small>' : cardsOf(p).length ? 'owner' : '—') +
+      (cardsOf(p).length ? ' <small>card expires ' + until(cardsOf(p)[0].expiresAt) + '</small>' : '') + '</td>';
+    if (k === 'time') return '<td' + (overEstimate(p) ? ' class="is-amber"' : '') + '>' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + ' min' + (p.timeFlag ? ' <small title="' + esc(p.timeFlag) + '">⚠</small>' : '') +
+      (p.forgeTime ? '<br><small' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>GitLab ' + esc(forgeTimeText(p.forgeTime)) + '</small>' +
+        (forgeFlags(p).length ? ' <small title="' + esc(forgeFlags(p).join('; ')) + '">⚠</small>' : '') : '') +
+      // Runs is behind Columns: all, so the concurrent warning rides here too.
+      (p.concurrent && p.concurrent.length ? ' <small title="Concurrent runs: ' + esc(concurrentText(p)) + '">⚠ concurrent</small>' : '') + '</td>';
     if (k === 'node') return '<td>' + esc(p.node.name) + '</td>';
     if (k === 'runs') return '<td class="num">' + p.runs + (p.failedRuns ? ' <small>(' + p.failedRuns + ' failed)</small>' : '') + '</td>';
     return '<td>' + esc(groupKey(p)) + '</td>';
@@ -198,7 +206,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
       '<label class="wcr__f">Estimate, minutes <input id="cr-estimate" type="number" min="1" max="10000" value="' + esc(c.estimate) + '"></label></div>' +
       '<h3>3. What happens</h3><ol class="wcr__what"><li>' + esc(who) + ' gets it as a message, as a mention in a chat would, within a minute.</li>' +
         '<li>A post by ' + esc(who) + ' opens on the Wall, in progress.</li><li>Its thread fills in as it works; its answer becomes the post\'s result.</li></ol>' +
-      '<div class="wdo__row"><button type="button" class="ax-btn" data-creator-post' + (c.agent ? '' : ' disabled') + '>Post to ' + esc(c.agent ? nameOf(c.agent) : '…') + '</button>' +
+      '<div class="wdo__row"><button type="button" class="ax-btn" data-creator-post' + (c.agent && !c.posting ? '' : ' disabled') + '>Post to ' + esc(c.agent ? nameOf(c.agent) : '…') + '</button>' +
         '<span class="wdo__n" id="cr-note" role="status">' + esc(c.note) + '</span></div>' +
     '</div>';
   }
@@ -213,24 +221,31 @@ export const WALL_PAGES_SCRIPT = String.raw`
     ['text', 'done', 'project', 'estimate'].forEach(function (k) { var el = $('cr-' + k); if (el) c[k] = el.value || ''; });
   }
   async function creatorPost() {
-    creatorRead();
     var c = S.creator;
+    // One post per click: a second click while it is in flight sends nothing.
+    if (!c || c.posting) return;
+    creatorRead();
     var a = allAgents().find(function (x) { return x.id === c.agent; });
     if (!a) { c.note = 'Pick an agent first.'; render(); return; }
     if (!c.text.trim()) { c.note = 'Write the request first.'; render(); return; }
     var nodes = (S.live && S.live.nodes) || [];
     var home = nodes.findIndex(function (n) { return (n.agents || []).some(function (x) { return x.id === a.id; }); });
-    c.note = 'Posting…'; render();
+    c.note = 'Posting…'; c.posting = true; render();
     var r = await act('POST', '/api/admin/wall/post', { agent: a.id, text: creatorText(c) }, home > 0 ? nodes[home].url : null);
+    c.posting = false;
     if (!r.ok) { c.note = 'Not posted: ' + r.error; render(); return; }
-    S.creator = { agent: c.agent, text: '', done: '', project: '', estimate: '', note: r.body.message || 'Posted.' };
+    // fresh: the next render draws the empty form instead of reading back
+    // the fields still in the page, which hold what was just sent.
+    S.creator = { agent: c.agent, text: '', done: '', project: '', estimate: '', note: r.body.message || 'Posted.', fresh: true };
     render();
     load();
   }
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-creator-agent],[data-creator-post],[data-quick],[data-more-nav]');
+    var t = ev.target.closest('[data-creator-agent],[data-creator-post],[data-quick],[data-more-nav],[data-nav]');
     if (!t) return;
-    if (t.hasAttribute('data-creator-agent')) { creatorRead(); S.creator.agent = t.getAttribute('data-creator-agent'); S.creator.note = ''; render(); }
+    // On the phone, picking a page from More closes More.
+    if (t.hasAttribute('data-nav')) { var open = document.querySelector('.ax-wall__nav.is-more'); if (open) open.classList.remove('is-more'); return; }
+    if (t.hasAttribute('data-creator-agent')) { if (S.creator.posting) return; creatorRead(); S.creator.agent = t.getAttribute('data-creator-agent'); S.creator.note = ''; render(); }
     else if (t.hasAttribute('data-creator-post')) creatorPost();
     else if (t.hasAttribute('data-more-nav')) { var nav = document.querySelector('.ax-wall__nav'); if (nav) nav.classList.toggle('is-more'); }
     else {

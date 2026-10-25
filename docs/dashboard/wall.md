@@ -202,7 +202,7 @@ When a machine does not answer, the page names it at the top: agents that run on
 ## Use the list to sort through many tasks
 
 1. Select **List** in the **Feed / List** switch beside the title.
-2. Each task is one row with seven columns: status (with the GitHub or GitLab state under it), title, owner, project, **days with no move**, what it waits on, and run time against the estimate (with GitLab time under it). Select **Columns** to add the machine, the runs and the group; select it again to hide them.
+2. Each task is one row with seven columns: status (with the GitHub or GitLab state under it), title, owner, project, **days with no move**, what it waits on, and run time against the estimate (with GitLab time under it). A **⚠** marks what needs a look: the forge state disagrees with the Wall, the run time or GitLab time is off, or two runs overlap (**⚠ concurrent**). Point at a **⚠** to read why. Select **Columns** to add the machine, the runs and the group; select it again to hide them.
 3. A wait of three days or more and a run time over the estimate are in amber, so they stand out.
 4. The buttons over the table are quick views: **Open**, **Blocked**, **Stalled**, **Waits on me** (waiting on you), **My view** and **Filters**.
 5. **Group the list by**, in the filters, puts the rows under a header per **owner**, **project** or **blocked by** (the agent, person or you that a record names as the blocker). Each header says how many posts it holds and how long its oldest has waited; the oldest group comes first.
@@ -302,7 +302,7 @@ A **concurrent** run is two runs going at the same time on the same chat, or two
 1. **Browser:** on the Wall, look for an amber line that starts with **⚠ Concurrent**. It sits on the post, and on the task under **Running now** while both runs are still going.
 2. Read the line. It names both run ids and their agents, what they shared (**on chat** or **in worktree**, which shows the folder's name only) and when both were running.
 3. Select a run id to open that run's task record.
-4. To see only these posts, tick **Concurrent only** in the filters. In the **List**, the **Runs** column shows **⚠ concurrent**.
+4. To see only these posts, tick **Concurrent only** in the filters. In the **List**, the **Time / estimate** column shows **⚠ concurrent**.
 
 Two runs where one starts as the other ends are not flagged. Neither are runs on different chats in different folders. The Wall only shows the flag; it does not stop either run.
 

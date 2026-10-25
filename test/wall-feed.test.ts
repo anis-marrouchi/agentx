@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown> } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -42,9 +42,20 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       const on: Record<string, (ev: unknown) => void> = {}
+      let html = ""
       els.set(id, {
         on,
-        id, hidden: /\shidden[\s>]/.test(tag[0]), innerHTML: "", textContent: "", value: id === "f-status" ? "open" : "", checked: false,
+        // As in a browser, drawing new markup replaces the fields in it, so
+        // a field the script drew holds the value the new markup gives it.
+        get innerHTML() { return html },
+        set innerHTML(v: string) {
+          html = v
+          for (const m of v.matchAll(/<(textarea|input)\b[^>]*\bid="([^"]+)"[^>]*>([^<]*)/g)) {
+            if (!els.has(m[2])) continue
+            els.get(m[2]).value = m[1] === "textarea" ? m[3] : (/\bvalue="([^"]*)"/.exec(m[0])?.[1] ?? "")
+          }
+        },
+        id, hidden: /\shidden[\s>]/.test(tag[0]), textContent: "", value: id === "f-status" ? "open" : "", checked: false,
         type: /type="checkbox"/.test(tag[0]) ? "checkbox" : /type="search"/.test(tag[0]) ? "search" : "select",
         classList: classes(), parentNode: { classList: classes() },
         addEventListener: (t: string, f: (ev: unknown) => void) => { on[t] = f }, setAttribute: (k: string, v: string) => { attrs[k] = v },
@@ -66,6 +77,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
+    if (opts.post && url === "/api/admin/wall/post") return opts.post
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {}) : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
@@ -815,6 +827,57 @@ describe("Wall v2 pages (#1355)", () => {
     expect(posted).toEqual([{ agent: "reviewer", text: "Check the release notes\nDone when: a merged PR\nProject: shop\nEstimate: 30 min" }])
     html = w.el("wall-creator").innerHTML
     expect(html).toContain("Post to Reviewer")
+  })
+
+  it("keeps the List's warnings in its cells: forge, card, time and concurrent", async () => {
+    const data = { ...WALL, posts: [
+      post("w1", "cx", "in_progress", {
+        forgeState: { provider: "gitlab", state: "closed", closedBy: "a-person", mismatch: "forge-closed" },
+        timeFlag: "Ran past its estimate", estimateMinutes: 10, runMs: 30 * 60e3,
+        forgeTime: { loggedMinutes: 5, estimateMinutes: 60, flags: ["Logged less than it ran"] },
+        concurrent: [{ on: ["chat"], runs: ["t1", "t2"] }],
+      }),
+      post("w2", "cx", "waiting_owner", { forgeState: { provider: "github", unknown: "token expired" },
+        ownerCards: [{ title: "Ship it?", ask: "Ship it?", expiresAt: NOW + 3600e3, raisedBy: "cx", createdAt: NOW }] }),
+      post("w3", "reviewer", "done", { forgeState: { provider: "github", state: "open", mismatch: "forge-open" } }),
+    ] }
+    const w = openWall({ data, hash: "#status=&view=list" })
+    await w.settle()
+    const rows = w.el("wall-list").innerHTML.split("<tr>").slice(2)
+    const row = (id: string) => rows.find((r: string) => r.includes(`data-open="${id}"`)) ?? ""
+    expect(row("w1")).toContain("GitLab closed by a-person")
+    expect(row("w1")).toContain('title="Closed on the forge, still open here">⚠')
+    expect(row("w1")).toContain('title="Ran past its estimate">⚠')
+    expect(row("w1")).toContain('title="Logged less than it ran">⚠')
+    expect(row("w1")).toContain('title="Concurrent runs: t1 + t2">⚠ concurrent')
+    expect(row("w2")).toContain('title="token expired">GitHub unknown')
+    expect(row("w2")).toContain("card expires")
+    expect(row("w3")).toContain('title="Open on the forge, closed here">⚠')
+  })
+
+  it("empties the Creator after a post, so a second click sends nothing", async () => {
+    let answer: (v: unknown) => void = () => {}
+    const pending = new Promise((r) => { answer = r })
+    const w = openWall({ data: PAGES, live: JOBS_LIVE, hash: "#page=creator", post: pending })
+    await w.settle()
+    w.click({ "data-creator-agent": "reviewer" })
+    w.el("cr-text").value = "Check the release notes"
+    w.el("cr-done").value = "a merged PR"
+    w.click({ "data-creator-post": "" })
+    // In flight: the button is off and a second click sends nothing.
+    expect(w.el("wall-creator").innerHTML).toContain("data-creator-post disabled")
+    w.click({ "data-creator-post": "" })
+    answer({ ok: true, status: 200, json: async () => ({ message: "Posted." }) })
+    await w.settle()
+    const posts = () => w.calls.filter((c) => c.url === "/api/admin/wall/post")
+    expect(posts()).toHaveLength(1)
+    expect(w.el("cr-text").value).toBe("")
+    expect(w.el("cr-done").value).toBe("")
+    expect(w.el("wall-creator").innerHTML).toContain('<textarea id="cr-text" rows="4" maxlength="3500" placeholder="What should be done? Markdown works."></textarea>')
+    w.click({ "data-creator-post": "" })
+    await w.settle()
+    expect(posts()).toHaveLength(1)
+    expect(w.el("cr-note").textContent + w.el("wall-creator").innerHTML).toContain("Write the request first.")
   })
 
   it("shows Projects as cards with the worst state and closed per week", async () => {

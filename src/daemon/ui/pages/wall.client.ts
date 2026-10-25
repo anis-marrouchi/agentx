@@ -993,7 +993,8 @@ ${WALL_PAGES_SCRIPT}
     // The Creator keeps what is typed: a refresh does not repaint a field in use.
     if (page === 'creator') {
       var typing = document.activeElement && document.activeElement.id && /^cr-/.test(document.activeElement.id);
-      if (!typing) { creatorRead(); $('wall-creator').innerHTML = creatorHtml(); }
+      if (S.creator && S.creator.fresh) { S.creator.fresh = false; $('wall-creator').innerHTML = creatorHtml(); }
+      else if (!typing) { creatorRead(); $('wall-creator').innerHTML = creatorHtml(); }
     }
     if (page === 'post') $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
