@@ -2,6 +2,23 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.162.0](https://github.com/anis-marrouchi/agentx/compare/v0.161.0...v0.162.0) (2026-10-25)
+
+
+### Features
+
+* **wall:** cross-project overview with stalled counts ([#1190](https://github.com/anis-marrouchi/agentx/issues/1190)) ([#1233](https://github.com/anis-marrouchi/agentx/issues/1233)) ([b6a1032](https://github.com/anis-marrouchi/agentx/commit/b6a103219e19681a21bfbd12a1112b7bc01cf983))
+* **wall:** group reported issues by dedupe signature ([#1186](https://github.com/anis-marrouchi/agentx/issues/1186)) ([#1234](https://github.com/anis-marrouchi/agentx/issues/1234)) ([d6905c4](https://github.com/anis-marrouchi/agentx/commit/d6905c44aa73ff173d40560d07e54835e2dfef83))
+* **wall:** live forge milestone, assignees and status mismatch ([#1195](https://github.com/anis-marrouchi/agentx/issues/1195)) ([#1230](https://github.com/anis-marrouchi/agentx/issues/1230)) ([242b793](https://github.com/anis-marrouchi/agentx/commit/242b7938dde52286d2b87b9fe732eefc61686cf3))
+* **wall:** review queue with decisions and taxonomy diffs ([#1182](https://github.com/anis-marrouchi/agentx/issues/1182)) ([#1237](https://github.com/anis-marrouchi/agentx/issues/1237)) ([62b284a](https://github.com/anis-marrouchi/agentx/commit/62b284ae6e5bff7384439a051b8c47cf8ff6f589))
+* **wall:** value line on recurring jobs ([#1183](https://github.com/anis-marrouchi/agentx/issues/1183)) ([#1235](https://github.com/anis-marrouchi/agentx/issues/1235)) ([c2d9eb8](https://github.com/anis-marrouchi/agentx/commit/c2d9eb8184a931bc6cc5aed68e7c547178296aa4))
+* **wall:** weekly throughput per project and owner ([#1192](https://github.com/anis-marrouchi/agentx/issues/1192)) ([#1236](https://github.com/anis-marrouchi/agentx/issues/1236)) ([136b333](https://github.com/anis-marrouchi/agentx/commit/136b333c8c781054ba2b94cd423b1c5d80c3ee4b))
+
+
+### Bug Fixes
+
+* **docs:** give the docs demo a dashboard token so the portfolio shots capture ([#1227](https://github.com/anis-marrouchi/agentx/issues/1227)) ([#1228](https://github.com/anis-marrouchi/agentx/issues/1228)) ([d6d11b0](https://github.com/anis-marrouchi/agentx/commit/d6d11b02a92ec5d79ed77630c2451df115fcb587))
+
 ## [0.161.0](https://github.com/anis-marrouchi/agentx/compare/v0.160.0...v0.161.0) (2026-10-25)
 
 
