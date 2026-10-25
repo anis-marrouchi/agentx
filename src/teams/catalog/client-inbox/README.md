@@ -2,6 +2,8 @@
 
 **Result:** Every client message on WhatsApp gets a polite answer within minutes, and each evening you get the short list of what still needs you.
 
+**First result:** the first client message after you connect WhatsApp is answered within minutes. The first evening summary arrives at 18:00 on the next weekday.
+
 ## Who is in the team
 
 | Agent | What it does |

@@ -152,6 +152,8 @@ export interface InstallOptions {
   workspaceRoot: string
   /** Runtime for every agent of the team. Unset: the package's, else claude-code. */
   tier?: typeof TIERS[number]
+  /** providers.<name> for every agent of the team (sdk/orchestrator). Unset: the engine's default. */
+  provider?: string
   /** Time zone for schedules that do not name one. Unset: this machine's. */
   timezone?: string
   /** Accept workspace folders that already exist (never another agent's).
@@ -230,6 +232,7 @@ export function applyTeam(config: any, pkg: TeamPackage, opts: InstallOptions): 
     }
     // A model id belongs to one runtime: keep it only on that runtime.
     if (a.model && tier === (a.tier ?? "claude-code")) def.model = a.model
+    if (opts.provider) def.provider = opts.provider
     if (a.intents.length) def.intents = a.intents
     if (a.maxConcurrent !== undefined) def.maxConcurrent = a.maxConcurrent
     if (a.maxExecutionMinutes !== undefined) def.maxExecutionMinutes = a.maxExecutionMinutes

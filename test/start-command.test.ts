@@ -4,8 +4,10 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { EventEmitter } from "events"
 import {
-  chatUrl, daemonBaseUrl, dashboardBaseUrl, existingConfigPath, firstAgentPayload, isSameInstall, pickAgent, FIRST_AGENT_ID,
+  chatUrl, daemonBaseUrl, dashboardBaseUrl, existingConfigPath, firstAgentPayload, isSameInstall, pickAgent, startTeamPlan, FIRST_AGENT_ID,
 } from "../src/commands/start-plan"
+import { shippedTeam } from "../src/teams/catalog"
+import { applyTeam } from "../src/teams/package"
 import { runWizard } from "../src/daemon/setup-wizard"
 import { loadDaemonConfig } from "../src/daemon/config"
 import { envRef, modelReadiness } from "../src/daemon/model-ready"
@@ -63,6 +65,32 @@ describe("agentx start: first config (#1163)", () => {
     mkdirSync(p)
     writeFileSync(join(p, "config.json"), "{}")
     expect(existingConfigPath(dir)).toBe(join(p, "config.json"))
+  })
+})
+
+describe("agentx start --team (#1293)", () => {
+  it("adds the team on the first agent's engine, then leaves it alone on the next run", () => {
+    runWizard(firstAgentPayload("box", false), dir)
+    const path = join(dir, "agentx.json")
+    const raw = JSON.parse(readFileSync(path, "utf-8"))
+    const plan = startTeamPlan(raw, "support")
+    // The built-in engine on the Anthropic API: the team needs no other key.
+    expect(plan).toEqual({ add: { team: "support", tier: "orchestrator", provider: "claude" } })
+    if (!("add" in plan)) throw new Error("expected a team to add")
+    applyTeam(raw, shippedTeam(plan.add.team)!, { workspaceRoot: join(dir, "agents"), tier: plan.add.tier as any, provider: plan.add.provider, timezone: "UTC" })
+    writeFileSync(path, JSON.stringify(raw, null, 2))
+    const cfg = loadDaemonConfig(path)
+    expect(cfg.agents.support).toMatchObject({ tier: "orchestrator", provider: "claude", team: "support" })
+    expect(pickAgent(cfg)).toBe(FIRST_AGENT_ID)
+
+    expect(startTeamPlan(raw, "support")).toEqual({ skip: expect.stringContaining("already added") })
+  })
+
+  it("uses Claude Code with no provider when the first agent does, and refuses an unknown team", () => {
+    runWizard(firstAgentPayload("box", true), dir)
+    const raw = JSON.parse(readFileSync(join(dir, "agentx.json"), "utf-8"))
+    expect(startTeamPlan(raw, "content")).toEqual({ add: { team: "content", tier: "claude-code", provider: undefined } })
+    expect(startTeamPlan(raw, "nope")).toEqual({ error: 'No team named "nope".' })
   })
 })
 

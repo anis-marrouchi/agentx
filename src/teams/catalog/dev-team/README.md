@@ -2,6 +2,8 @@
 
 **Result:** Issues you assign on GitLab come back as merge requests with a second agent's review, and each weekday morning you see what is stuck.
 
+**First result:** the next weekday at 08:30, the morning digest of what is stuck. The first merge request comes back once you assign an issue to `dev`.
+
 ## Who is in the team
 
 | Agent | What it does |

@@ -478,6 +478,29 @@ export async function deliverToChat(
   )
 }
 
+/** Send a schedule's answer to the chat its `notify` names; nothing when it names none. */
+export async function deliverCronResult(
+  w: Pick<DelegationWiring, "config" | "registry" | "router" | "replies">,
+  dest: { channel: string; chatId: string; accountId?: string } | undefined,
+  run: { jobId: string; agent: string; text: string; runId: string },
+): Promise<void> {
+  if (!dest) return
+  await deliverToChat(w, {
+    channel: dest.channel,
+    chatId: dest.chatId,
+    accountId: dest.accountId,
+    agentId: run.agent,
+    text: run.text,
+    record: true,
+    // One message per run: the phone files it once, the router drops a
+    // repeat. No "/" so it stays one segment of the reply URL.
+    taskId: `cron:${run.runId.replace(/\//g, ":")}`,
+    idempotencyKey: run.runId,
+    outcome: "done",
+    summary: `Cron "${run.jobId}" result`,
+  })
+}
+
 /** Longest text a push carries; a phone shows a few lines of it anyway. */
 export const PUSH_PREVIEW_MAX = 500
 

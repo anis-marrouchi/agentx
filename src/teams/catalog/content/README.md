@@ -2,6 +2,8 @@
 
 **Result:** Every Friday next week's posts are planned in your content calendar, every Monday they are drafted in your voice from your past posts, and nothing is published until you approve it.
 
+**First result:** on Friday at 10:00, next week's planned posts in `calendar.md`. The first drafts wait in your Approvals inbox on Monday at 08:00.
+
 ## Who is in the team
 
 | Agent | What it does |

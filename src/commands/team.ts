@@ -58,9 +58,10 @@ function resolvePackage(nameOrFile: string): TeamPackage {
   fail(`No team named "${nameOrFile}". Run: agentx team list`)
 }
 
-interface AddOpts { tier?: string; timezone?: string; workspaces?: string; force?: boolean; dryRun?: boolean; config?: string }
+interface AddOpts { tier?: string; provider?: string; timezone?: string; workspaces?: string; force?: boolean; dryRun?: boolean; config?: string }
 
-async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
+/** Add `pkg` to the config and write its workspaces; `agentx start --team` uses it too. */
+export async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
   if (opts.tier && !TIERS.includes(opts.tier)) fail(`--tier must be one of: ${TIERS.join(", ")}`)
   const { path, config } = readConfig(opts.config)
   const workspaceRoot = resolve(dirname(path), opts.workspaces ?? "agents")
@@ -69,7 +70,7 @@ async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
 
   let plan: InstallPlan | undefined
   const result = await applyConfigMutation((cfg) => {
-    plan = applyTeam(cfg, pkg, { workspaceRoot, tier: opts.tier as any, timezone: opts.timezone, force: opts.force })
+    plan = applyTeam(cfg, pkg, { workspaceRoot, tier: opts.tier as any, provider: opts.provider, timezone: opts.timezone, force: opts.force })
   }, { configPath: path, dryRun: !!opts.dryRun })
   if (!result.success || !plan) fail(`Config save failed: ${result.error}`)
 

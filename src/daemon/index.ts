@@ -242,7 +242,7 @@ import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
-import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -1922,24 +1922,8 @@ export class AgentXDaemon {
         }
       }
     })
-    cron.setDeliverCallback(async (jobId, agent, text, runId) => {
-      const dest = config.crons[jobId]?.notify
-      if (!dest) return
-      await deliverToChat(wiring, {
-        channel: dest.channel,
-        chatId: dest.chatId,
-        accountId: dest.accountId,
-        agentId: agent,
-        text,
-        record: true,
-        // One message per run: the phone files it once, the router drops a
-        // repeat. No "/" so it stays one segment of the reply URL.
-        taskId: `cron:${runId.replace(/\//g, ":")}`,
-        idempotencyKey: runId,
-        outcome: "done",
-        summary: `Cron "${jobId}" result`,
-      })
-    })
+    cron.setDeliverCallback((jobId, agent, text, runId) =>
+      deliverCronResult(wiring, config.crons[jobId]?.notify, { jobId, agent, text, runId }))
   }
 
   /**

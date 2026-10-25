@@ -7,6 +7,8 @@
 import { existsSync } from "fs"
 import { resolve } from "path"
 import type { WizardPayload } from "@/daemon/setup-wizard"
+import { shippedTeam } from "@/teams/catalog"
+import { teamMembers } from "@/teams/package"
 
 export const FIRST_AGENT_ID = "assistant"
 
@@ -68,4 +70,18 @@ export function chatUrl(cfg: { dashboard?: { bind?: string; port?: number } }, a
 export function isSameInstall(health: any, cfg: { node?: { id?: string } }): boolean {
   const theirs = health?.node?.id
   return !theirs || !cfg.node?.id || theirs === cfg.node.id
+}
+
+/** What `agentx start --team <name>` does (#1293): add a shipped team on the
+ *  engine the first agent already uses, so it needs no other login or key;
+ *  or nothing when it is already added, so a second run is safe. */
+export function startTeamPlan(
+  rawConfig: { node?: { defaultAgent?: string }; agents?: Record<string, any> },
+  name: string,
+): { add: { team: string; tier?: string; provider?: string } } | { skip: string } | { error: string } {
+  const pkg = shippedTeam(name)
+  if (!pkg) return { error: `No team named "${name}".` }
+  if (teamMembers(rawConfig, pkg.name).length) return { skip: `Team ${pkg.name} is already added (left as it is)` }
+  const first = rawConfig.agents?.[pickAgent(rawConfig) ?? ""]
+  return { add: { team: pkg.name, tier: first?.tier, provider: first?.provider } }
 }
