@@ -189,7 +189,7 @@ ${WALL_CAPACITY_SCRIPT}
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
-  function writeHash() { history.replaceState(null, '', hashOf(S.post)); }
+  function writeHash() { history.replaceState(null, '', hashOf(S.post)); S.applied = location.hash; }
   function applyHash() {
     S.applied = location.hash;
     var was = S.post;

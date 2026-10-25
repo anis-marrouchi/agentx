@@ -219,6 +219,20 @@ describe("Wall v2 pages (#1316)", () => {
     expect(w.el("wall-post").innerHTML).toBe("kept")
   })
 
+  it("applies a hash typed back after a filter change rewrote it", async () => {
+    const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress")] } })
+    await w.settle()
+    w.click({ "data-post": "r1" })
+    await w.settle()
+    const opened = w.loc.hash
+    w.el("f-q").value = "x"
+    w.click({ "data-profile-clear": "" })
+    expect(w.loc.hash).not.toBe(opened)
+    w.loc.hash = opened
+    w.hashchange()
+    expect(w.el("f-q").value).toBe("")
+  })
+
   it("renders a result's Markdown, with links to web addresses only", async () => {
     const text = "**Done**: see [the issue](https://example.com/demo/1) and [this](javascript:alert(1)), [here](/tasks/1), [there](//evil.example/x), [back](/\\evil.example/y)\n\n- one\n- two\n\n<b>raw</b>"
     const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress", { result: { text, at: NOW, from: "reply" } })] } })
