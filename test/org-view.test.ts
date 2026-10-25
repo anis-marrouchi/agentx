@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { Readable } from "stream"
@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { businessConfigSchema } from "../src/business/config"
-import { holdAgent, holdIfAgentCreated, holdMessage, readHolds, releaseAgent } from "../src/agents/holds"
+import { holdAgent, holdIfAgentCreated, holdMessage, holdsRoot, readHolds, releaseAgent } from "../src/agents/holds"
 import { buildOrgView, firstLine } from "../src/business/org-view"
 import { decide, listInbox } from "../src/approvals/inbox"
 import { handleAdminApi } from "../src/daemon/admin-panel"
@@ -112,6 +112,22 @@ describe("holds", () => {
     const out = await r.execute({ message: "hi", agentId: "dev" })
     expect(out).toMatchObject({ errorKind: "agent_held" })
     expect(out.error).toContain("waits for the owner's approval")
+  })
+
+  it("with the config at .agentx/config.json, the daemon still sees a hold made by agent or team add", async () => {
+    mkdirSync(join(dir, ".agentx"))
+    writeFileSync(join(dir, ".agentx", "config.json"), "{}")
+    process.chdir(dir)
+    holdIfAgentCreated(holdsRoot(), ["dev"], { AGENTX_AGENT_ID: "ceo" })
+    expect(existsSync(join(dir, ".agentx", ".agentx"))).toBe(false)
+    const r = new AgentRegistry(daemonConfigSchema.parse({ node: { id: "n", name: "n" }, agents: { dev: { name: "Dev", workspace: dir } } }), () => {})
+    expect(await r.execute({ message: "hi", agentId: "dev" })).toMatchObject({ errorKind: "agent_held" })
+    // Both commands hold through the same root, not the config file's folder.
+    for (const file of ["src/commands/manage.ts", "src/commands/team.ts"]) {
+      const src = readFileSync(join(prevCwd, file), "utf-8")
+      expect(src).toContain("holdIfAgentCreated(holdsRoot(),")
+      expect(src).not.toMatch(/holdIfAgentCreated\((?!holdsRoot\(\))/)
+    }
   })
 })
 

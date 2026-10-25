@@ -55,7 +55,7 @@ import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { budgetConfigFrom, budgetProjectOf, preflightBudgetGate, setAgentBudgets, setBudgetProjectResolver } from "./agent-budget"
-import { holdMessage } from "./holds"
+import { holdMessage, holdsRoot } from "./holds"
 import { budgetProjectResolver } from "./budget-projects"
 import { BudgetHolds, MAX_HELD_PER_AGENT } from "./budget-holds"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
@@ -1535,7 +1535,7 @@ export class AgentRegistry {
     // An agent the owner paused, or one another agent created that waits
     // for the owner's yes (#1169), takes nothing: refused before it is
     // queued, planned or given a slot, for every caller.
-    const held = holdMessage(process.cwd(), task.agentId)
+    const held = holdMessage(holdsRoot(), task.agentId)
     if (held) {
       this.log(`[${task.agentId}] refused — on hold`)
       return { content: "", error: held, errorKind: "agent_held" }

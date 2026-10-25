@@ -15,7 +15,7 @@ import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
 import { emailAccountBlock, passwordEnvFor } from "@/channels/email/settings"
-import { holdAgent, readHolds, releaseAgent } from "@/agents/holds"
+import { holdAgent, holdsRoot, readHolds, releaseAgent } from "@/agents/holds"
 import { buildOrgView } from "@/business/org-view"
 import type { TopbarPeer } from "./topbar"
 import { renderAdminPage } from "./ui/pages/admin"
@@ -220,7 +220,7 @@ async function getOrg() {
   const cfg = readConfigRaw()
   if (!cfg) return { exists: false }
   const live = await proxyDaemonJson("/agents").catch(() => null)
-  return { exists: true, ...buildOrgView(cfg, readHolds(process.cwd()), Array.isArray(live) ? live : null) }
+  return { exists: true, ...buildOrgView(cfg, readHolds(holdsRoot()), Array.isArray(live) ? live : null) }
 }
 
 /** Pause or resume one agent from the Org view. An agent that waits for
@@ -229,13 +229,13 @@ function setOrgHold(body: any) {
   const id = String(body?.agent || "").trim()
   const cfg = readConfigRaw()
   if (!cfg?.agents?.[id]) throw new Error(`Unknown agent "${id}".`)
-  const hold = readHolds(process.cwd())[id]
+  const hold = readHolds(holdsRoot())[id]
   if (hold?.kind === "approval") throw new Error(`"${id}" waits for your approval in Approvals.`)
   if (body?.paused) {
-    holdAgent(process.cwd(), id, "paused", "the owner")
+    holdAgent(holdsRoot(), id, "paused", "the owner")
     return { summary: `${id} paused: it starts no run until you resume it` }
   }
-  releaseAgent(process.cwd(), id, "paused")
+  releaseAgent(holdsRoot(), id, "paused")
   return { summary: `${id} resumed` }
 }
 
