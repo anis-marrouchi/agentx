@@ -37,15 +37,6 @@ Only add addresses you control. Anything on the list can send your agents instru
 
 <!-- No screenshot: the fix is a line in a file and a restart; the only screen is the dashboard page you already have open. -->
 
-## Check it worked
-
-1. **Browser:** reload the dashboard through your proxy's address.
-2. Save a setting. It saves without an error.
-3. **Terminal:** a page on any other address is still refused. The request below pretends to come from another website, and the answer should be `403`:
-   ```sh
-   curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Origin: https://example.net" http://127.0.0.1:4202/api/draft
-   ```
-
 ## Sign in from another device
 
 With a dashboard token (`dashboard.token` in `agentx.json`), a browser that is not on the AgentX machine signs in before it sees the Wall, Settings, Approvals, People or an agent's page. A request through a reverse proxy counts as another device, even when the proxy runs on the AgentX machine.
@@ -56,6 +47,16 @@ With a dashboard token (`dashboard.token` in `agentx.json`), a browser that is n
 ![The sign-in page](/screenshots/dashboard/sign-in.png)
 
 The browser keeps a sign-in cookie for 30 days. The cookie is not the token, and pages opened this way never contain the token. To sign every browser out, change `dashboard.token` and restart the dashboard. On the AgentX machine itself nothing changes: there is no sign-in there.
+
+## Check it worked
+
+1. **Browser:** reload the dashboard through your proxy's address.
+2. Save a setting. It saves without an error.
+3. **Terminal:** a page on any other address is still refused. The request below pretends to come from another website, and the answer should be `403`:
+   ```sh
+   curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Origin: https://example.net" http://127.0.0.1:4202/api/draft
+   ```
+4. **Browser:** with a dashboard token set, open the proxy's address in a private window. It asks you to sign in, and the page source holds no `AX_LOCAL_TOKEN`.
 
 ## If something is wrong
 
