@@ -299,7 +299,7 @@ describe("the dashboard's open requests", () => {
     const r = await handleRequestsPanel("GET", P, {}, panelCtx())
     expect(r.status).toBe(200)
     expect((r.body as any).items.map((i: any) => i.id)).toEqual(["req-t1", "req-t2"])
-    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false }, catchPromises: { enabled: false, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
+    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, sprints: { enabled: true, idleMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false }, catchPromises: { enabled: false, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
   })
 
   it("closes as done with evidence, and drops with a default reason", async () => {
@@ -325,6 +325,7 @@ describe("the dashboard's open requests", () => {
     expect((ok.body as any).settings).toEqual({
       enabled: true, channels: [], from: ["telegram:42", "github:me"], staleAfterHours: 48, settleHandedBack: true, retentionDays: 30,
       plans: { enabled: false, stallMinutes: 20, maxNudges: 2, approveKinds: ["message", "deploy"], disabledAgents: ["helper"], requireForWork: ["code", "migration"], requireOverMinutes: 0 },
+      sprints: { enabled: true, idleMinutes: 30 },
       checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} },
       headlines: { enabled: false, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 },
       statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false }, catchPromises: { enabled: false, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 },

@@ -1021,6 +1021,44 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_sprint",
+    description:
+      "Hand AgentX a sprint: several lanes worked side by side, each with one agent and an ordered list of items (issues). " +
+      "AgentX gives each lane its first item now and the next one each time the lane's turn ends, so the lanes go on after your session ends. " +
+      "Use it instead of keeping the queue in a plan comment or in your own memory. " +
+      "A lane whose turn fails, or that sits idle with items left, is told to the owner. Held items are passed over until released. " +
+      "start: title, ref (the plan's link), lanes. list: active and recent sprints. show: one sprint (id). " +
+      "block: stop a lane with a note (the lane's agent or the lead). retry, skip, hold, release: the lead moves a lane on (id, lane, optional item). cancel: the lead stops the sprint. " +
+      "Start example: {action:'start', title:'Sprint 12', ref:'https://example.com/issues/10#plan', lanes:[{name:'A', agent:'coder', items:['#11', {ref:'#12', brief:'Open a draft PR only.'}]}, {name:'B', agent:'reviewer', items:['#13', {ref:'#14', held:'waits on the design call'}]}]}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["start", "list", "show", "block", "retry", "skip", "hold", "release", "cancel"], description: "list (default), show, start, block, retry, skip, hold, release or cancel." },
+        id: { type: "string", description: "The sprint's id (spr-…), for every action but start and list." },
+        title: { type: "string", description: "start: the sprint in a few words." },
+        ref: { type: "string", description: "start, optional: where the plan lives (an issue or comment link)." },
+        idleMinutes: { type: "number", description: "start, optional: minutes a lane may sit idle with items left before the owner is told (default: the node's setting)." },
+        lanes: {
+          type: "array",
+          description: "start: the lanes. Each: name (A, B, review…), agent (an agent on this node), items (in order: an issue ref or link, or {ref, title?, brief?, held?}).",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              agent: { type: "string" },
+              items: { type: "array", items: {} },
+            },
+            required: ["agent", "items"],
+          },
+        },
+        lane: { type: "string", description: "block, retry, skip, hold, release: the lane's name." },
+        item: { type: "number", description: "retry, skip, hold, release, optional: the item's number in its lane (1 is the first). Default: the lane's current item." },
+        note: { type: "string", description: "block: why the lane cannot go on. Others, optional: why." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
     name: "agentx_workflow",
     description:
       "Run a request that has several steps as a workflow, so AgentX follows it to the end instead of you chasing each step. " +
@@ -1848,6 +1886,12 @@ async function handleToolCall(
     case "agentx_request": {
       const { runRequestTool } = await import("@/requests/tool")
       const text = await runRequestTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_sprint": {
+      const { runSprintTool } = await import("@/requests/sprint-tool")
+      const text = await runSprintTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 

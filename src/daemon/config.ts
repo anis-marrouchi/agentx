@@ -1494,6 +1494,15 @@ export const requestsConfigSchema = z.object({
      *  0: no estimate needs one. */
     requireOverMinutes: z.number().min(0).max(7 * 24 * 60).default(30),
   }).default({}),
+  /** Sprint lanes (src/requests/sprints.ts, #1241): a lead agent hands the
+   *  daemon lanes of items (agentx_sprint), and the daemon gives each lane
+   *  its next item when the lane's turn ends. Needs `enabled` above. */
+  sprints: z.object({
+    enabled: z.boolean().default(true),
+    /** A lane idle with items left for this long is told to the owner. A
+     *  sprint can set its own. */
+    idleMinutes: z.number().positive().max(7 * 24 * 60).default(30),
+  }).default({}),
   /** Checkers that close an open loop on evidence (src/requests/checkers,
    *  #1039). A loop with a `closeWhen` closes when its check is met; an
    *  agent's done on it is refused while the check says not met. */
@@ -2433,8 +2442,8 @@ export const daemonConfigSchema = z.object({
        *  them while ToolSearch is available, so a list saves only their
        *  names (about 300 tokens) unless tool search is off. A tool left
        *  off cannot be found even through ToolSearch. `agentx_approval`,
-       *  `agentx_request`, `agentx_events`, `agentx_attach_next` and
-       *  `agentx_workflow` are always kept, and so are `agentx_agents`, `agentx_recent` and
+       *  `agentx_request`, `agentx_events`, `agentx_attach_next`,
+       *  `agentx_workflow`, `agentx_waiting` and `agentx_sprint` are always kept, and so are `agentx_agents`, `agentx_recent` and
        *  `agentx_wiki_query` while `contextOnDemand` is on. A name that is
        *  not an agentx tool is rejected, so a typo cannot silently drop a
        *  reply tool. Only an agentx server started as a command (stdio)

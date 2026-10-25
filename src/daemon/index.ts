@@ -97,6 +97,8 @@ import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
+import { DEFAULT_SPRINT_SETTINGS, itemEnded, laneChatId, laneContext, parseLaneChat, runSprintSweep, SPRINT_CHANNEL, type ItemEnd } from "@/requests/sprints"
+import { handleSprintsApi } from "@/requests/sprint-api"
 import { attachPromiseFacts, closeWatcherLoop, promiseSettingsOf, raiseWatcherLoop, watcherNotice } from "@/requests/promise"
 import { FactLedger } from "@/wiki/facts/ledger"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
@@ -663,6 +665,8 @@ export class AgentXDaemon {
           })
           // "I'll do X" in an owner-facing reply becomes a promise (#1138 E).
           this.requests.tracker.setCatcher(this.promiseCatcher(db, this.requests))
+          // A sprint lane's turn that ended after a restart (#1241).
+          this.attachSprintEnds(this.requests)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
         }
@@ -2530,6 +2534,87 @@ export class AgentXDaemon {
     this.plansKick.unref?.()
   }
 
+  private sprintsSweeping = false
+  private sprintsKick?: ReturnType<typeof setTimeout>
+  /** Lane turns this daemon started and still awaits: their end comes
+   *  back through execute(), not the event bus. */
+  private sprintRuns = new Set<string>()
+
+  /** A sprint was made or a lane moved: follow it in a second rather than
+   *  at the next minute's check. */
+  private kickSprints(): void {
+    if (this.sprintsKick || !this.requests) return
+    this.sprintsKick = setTimeout(() => {
+      this.sprintsKick = undefined
+      if (this.requests && !this.shuttingDown) void this.sweepSprints(this.requests).catch((e: any) => this.log(`[sprints] check failed: ${e?.message ?? e}`))
+    }, 1_000)
+    this.sprintsKick.unref?.()
+  }
+
+  /** A lane's turn ended: the item is settled and the lane gets its next
+   *  one right away. */
+  private sprintItemEnded(requests: AttachedRequests, ref: { sprintId: string; lane: string; idx: number }, end: ItemEnd): void {
+    try {
+      const outcome = itemEnded(requests.sprints, ref, end, Date.now())
+      if (outcome === "blocked") this.log(`[sprints] ${ref.sprintId} lane ${ref.lane}: item ${ref.idx} failed, lane blocked: ${end.error ?? "stopped"}`)
+      if (outcome) this.kickSprints()
+    } catch (e: any) {
+      this.log(`[sprints] ${ref.sprintId} lane ${ref.lane}: couldn't record the end of item ${ref.idx}: ${e?.message ?? e}`)
+    }
+  }
+
+  /** A lane's turn this daemon did not start ended: one an earlier daemon
+   *  started and this boot resumed. Its running item is settled. */
+  private attachSprintEnds(requests: AttachedRequests): void {
+    getAgentEventBus().on("task:completed", (p: AgentXEvents["task:completed"]) => {
+      if (p.channel !== SPRINT_CHANNEL) return
+      const lane = parseLaneChat(p.chatId)
+      if (!lane || this.sprintRuns.has(p.chatId)) return
+      const running = requests.sprints.items(lane.sprintId, lane.lane).find((i) => i.state === "running")
+      if (!running || requests.sprints.lane(lane.sprintId, lane.lane)?.agentId !== p.agentId) return
+      this.sprintItemEnded(requests, { ...lane, idx: running.idx }, p)
+    })
+  }
+
+  /** Sprint lanes move on: each lane with nothing running gets its next
+   *  item, a blocked or idle lane is told to the owner, a finished sprint
+   *  gets one summary (src/requests/sprints.ts, #1241). One check at a time. */
+  private async sweepSprints(requests: AttachedRequests): Promise<void> {
+    if (this.sprintsSweeping || !this.config.requests.enabled) return
+    this.sprintsSweeping = true
+    try {
+      await runSprintSweep({
+        store: requests.sprints,
+        settings: this.config.requests.sprints ?? DEFAULT_SPRINT_SETTINGS,
+        // Fire and forget: the lane's turn runs in its own chat, and its
+        // end, whatever it is, settles the item.
+        dispatch: async (agentId, text, ref) => {
+          const chat = laneChatId(ref.sprintId, ref.lane)
+          this.sprintRuns.add(chat)
+          void this.registry.execute({ agentId, message: text, context: laneContext(ref.sprintId, ref.lane) })
+            .then((res) => {
+              // No free slot in time: the item goes back to the queue. Any
+              // other error (a budget hold too) blocks the lane.
+              if (res?.error && /slot wait timed out/.test(res.error)) {
+                requests.sprints.updateItem(ref.sprintId, ref.lane, ref.idx, { state: "pending", dispatchedAt: null })
+                requests.sprints.event(ref.sprintId, ref.lane, ref.idx, "requeued", res.error, Date.now())
+                return
+              }
+              this.sprintItemEnded(requests, ref, { error: res?.error, errorKind: res?.errorKind })
+            })
+            .catch((e: any) => this.sprintItemEnded(requests, ref, { error: e?.message ?? String(e) }))
+            .finally(() => this.sprintRuns.delete(chat))
+        },
+        isBusy: (agentId, sprintId, lane) => this.registry.isChatBusy(agentId, SPRINT_CHANNEL, laneChatId(sprintId, lane)),
+        hasAgent: (id) => !!this.registry.getAgent(id),
+        notify: (title, message, s, key) => this.tellOwner({ title, message, from: s.createdBy, kind: "notice", key }).then(() => undefined),
+        log: this.log,
+      })
+    } finally {
+      this.sprintsSweeping = false
+    }
+  }
+
   /** Tracked plans move on: steps handed over, quiet ones nudged,
    *  approved messages sent, the owner told at the end or on a block
    *  (src/requests/plan-sweep.ts, #788). One check at a time. */
@@ -2690,6 +2775,7 @@ export class AgentXDaemon {
    *  they block is told by this same check, in the plan's words. */
   private async sweepRequests(requests: AttachedRequests): Promise<void> {
     await this.sweepPlans(requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
+    await this.sweepSprints(requests).catch((e: any) => this.log(`[sprints] check failed: ${e?.message ?? e}`))
     const headlines = this.headlineWriter(requests)
     await runRequestsSweep({
       store: requests.store,
@@ -4983,6 +5069,21 @@ export class AgentXDaemon {
           checkers: this.config.requests.checkers,
           promiseSettings: promiseSettingsOf(this.config.requests),
           check: loopChecker(() => this.requestCheckContext(requests)),
+        }, this.callerProof(req))
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // Sprint lanes, agent side (#1241): agentx_sprint posts here.
+      if (path === "/sprints" || path.startsWith("/sprints/")) {
+        if (!this.requests) { this.json(res, 503, { error: "sprints need the database" }); return }
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleSprintsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, {
+          store: this.requests.sprints,
+          settings: this.config.requests.enabled ? (this.config.requests.sprints ?? DEFAULT_SPRINT_SETTINGS) : { ...DEFAULT_SPRINT_SETTINGS, enabled: false },
+          hasAgent: (id) => !!this.registry.getAgent(id),
+          runningTurn: (id, p) => this.provenTurn(id, p),
+          onChange: () => this.kickSprints(),
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return

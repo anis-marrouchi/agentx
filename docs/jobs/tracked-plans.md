@@ -19,6 +19,8 @@ A plan is part of [open requests](./open-requests.md), so open requests must be 
 
 Plans are on as soon as open requests are on. Agents make a plan only for work of two or more steps. One-step work stays an ordinary request.
 
+A plan follows one chain of steps. To work through a list of issues with several agents at once, the lead runs them as a sprint instead: see [Run a sprint in lanes](./sprint-lanes.md).
+
 ## Plan before starting
 
 Some work should not start without a plan. By default, that is:

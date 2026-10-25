@@ -31,6 +31,7 @@ export const AGENTX_TOOL_NAMES: readonly string[] = [
   "agentx_approval",
   "agentx_note",
   "agentx_request",
+  "agentx_sprint",
   "agentx_workflow",
   "agentx_debug",
   "agentx_wiki_query",
