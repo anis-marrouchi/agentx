@@ -12,6 +12,7 @@ The npm package is `agentix-cli`; the executable is `agentx`. Run `agentx <comma
 | Pair a channel | `agentx connect telegram`, `agentx connect whatsapp` |
 | Pair machines | `agentx connect mesh invite`, `agentx connect mesh join <link>` |
 | Schedule work | `agentx schedule "daily at 9am" --agent <id> --do "<task>"` |
+| Add a ready-made team | `agentx team add <name>` ([ready-made teams](../jobs/ready-made-teams.md)) |
 | Attach an editor session | `agentx attach <agent>` |
 | Open terminal UI | `agentx tui` |
 | Inspect usage | `agentx usage today`, `agentx usage plan`, `agentx usage report`, `agentx usage surfaces` ([understand costs](../help/costs.md)) |

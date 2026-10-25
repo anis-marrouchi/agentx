@@ -3,6 +3,7 @@ import prompts from "prompts"
 import { applyConfigMutation, setAtPath, getAtPath } from "@/daemon/config-mutator"
 import { setDotEnv } from "@/utils/dotenv-mutator"
 import { openBrowser } from "@/utils/open-browser"
+import { fillPendingDelivery } from "@/teams/package"
 
 // --- agentx connect telegram ---
 //
@@ -203,12 +204,12 @@ export async function connectTelegram(opts: ConnectTelegramOpts = {}): Promise<v
     return
   }
 
+  const destination = { channel: "telegram", chatId: String(first.chatId), accountId: account }
+  let delivering: string[] = []
   const destResult = await applyConfigMutation((cfg) => {
-    setAtPath(cfg, "notifications.destination", {
-      channel: "telegram",
-      chatId: String(first.chatId),
-      accountId: account,
-    })
+    setAtPath(cfg, "notifications.destination", destination)
+    // Schedules a team installed before there was a chat to report to.
+    delivering = fillPendingDelivery(cfg, destination)
   }, { configPath: opts.configPath })
 
   if (!destResult.success) {
@@ -219,5 +220,6 @@ export async function connectTelegram(opts: ConnectTelegramOpts = {}): Promise<v
   console.log(chalk.green(`  ✓ Default --notify target set`))
   console.log(chalk.dim(`    Chat: ${first.chatTitle || first.chatId} (from ${first.from})`))
   console.log(chalk.dim(`    From now on, --notify me resolves to this chat.`))
+  if (delivering.length) console.log(chalk.dim(`    Schedules that now report here: ${delivering.join(", ")}`))
   if (destResult.reloaded) console.log(chalk.dim("    Daemon hot-reloaded."))
 }

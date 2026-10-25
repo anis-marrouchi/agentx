@@ -46,6 +46,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `model` | string | — | Model id passed to the engine. Unset uses the engine's default. |
 | `systemPrompt` | string | — | Extra instructions added to every run of this agent. |
 | `mentions` | list of string | `[]` | Names that route a message to this agent, such as `@helper`. Spoken questions match them too, without the `@`, so this is also where spoken aliases go: add a spelling speech to text often writes for the agent's name. See [Spoken aliases](../guides/agentx-voice.md#spoken-aliases). |
+| `team` | string | — | The ready-made team this agent was added with, such as `client-inbox`. Set by `agentx team add` and `agentx team import`; `agentx team list` and `agentx team export <name>` use it. Lowercase letters, numbers and hyphens. Does not change how the agent runs. See [Start from a ready-made team](../jobs/ready-made-teams.md). |
 | `intents` | list of string | `[]` | Intents this agent may handle, such as `issue.opened`. Empty allows any intent. |
 | `maxDelegationDepth` | number (0–50) | `5` | Refuses a hand-off to this agent when that many other agents already worked on the same item in a chain. `0` turns the check off. |
 | `mcp` | map of object | — | MCP tool servers for this agent, by name. Written to the workspace's `.mcp.json` when the daemon starts; your own edits to that file are kept. See the table below. |
