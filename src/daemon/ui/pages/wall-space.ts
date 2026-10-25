@@ -64,6 +64,9 @@ button, input, select { font-family: inherit; }
 .ax-wall__item.is-on { font-weight: 700; }
 .ax-wall__item svg { width: 26px; height: 26px; flex: none; }
 .ax-wall__item span { white-space: nowrap; }
+/* New post opens the Creator (#1355); More is the phone bar's fifth button. */
+.ax-wall__morebtn { display: none; }
+.ax-wall__newpost { justify-content: center; margin: 12px 0 0; padding: 12px; font-size: 17px; width: 100%; }
 /* Counts next to the nav items (#1316); a badge on the icon when the nav is narrow. */
 .ax-wall__item { position: relative; }
 .ax-wall__n { font-size: var(--ax-fs-xs); font-weight: 700; min-width: 20px; padding: 0 6px; line-height: 20px; text-align: center; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
@@ -86,6 +89,8 @@ button, input, select { font-family: inherit; }
   .ax-wall, .ax-wall.is-wide { grid-template-columns: 72px minmax(0, 600px); }
   .ax-wall__nav { padding: 12px 8px; align-items: center; }
   .ax-wall__logo small, .ax-wall__item span, .ax-wall__navfoot { display: none; }
+  .ax-wall__newpost { width: 48px; height: 48px; padding: 0; font-size: 0; }
+  .ax-wall__newpost::before { content: "+"; font-size: 26px; font-weight: 400; }
   .ax-wall__n { position: absolute; top: 4px; right: 0; min-width: 18px; line-height: 18px; padding: 0 4px; font-size: 11px; }
   .ax-wall__n.is-zero { display: none; }
   .ax-wall__logo { padding: 8px 0 16px; }
@@ -101,10 +106,20 @@ button, input, select { font-family: inherit; }
   body { padding-bottom: 60px; }
   .ax-wall, .ax-wall.is-wide { grid-template-columns: minmax(0, 1fr); }
   .ax-wall__nav { position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: 56px; z-index: 10; flex-direction: row; justify-content: space-around; padding: 0 4px;
-    background: color-mix(in srgb, var(--ax-bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--ax-border); overflow-x: auto; overflow-y: visible; scrollbar-width: none; }
-  /* Nine items (#1355): the bar scrolls sideways rather than squeeze them. */
-  .ax-wall__nav { justify-content: flex-start; }
-  .ax-wall__item { flex: none; }
+    background: color-mix(in srgb, var(--ax-bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--ax-border); overflow: visible; }
+  /* Wall, Needs you, Running now, Projects and More (#1355); More opens
+     the rest above the bar. New post is a round + over the feed. */
+  .ax-wall__morebtn { display: flex; }
+  .ax-wall__nav > [data-nav="jobs"], .ax-wall__nav > [data-nav="reviews"], .ax-wall__nav > [data-nav="failures"],
+  .ax-wall__nav > [data-nav="agents"], .ax-wall__nav > [data-nav="dashboard"] { display: none; }
+  .ax-wall__nav.is-more > [data-nav="jobs"], .ax-wall__nav.is-more > [data-nav="reviews"], .ax-wall__nav.is-more > [data-nav="failures"],
+  .ax-wall__nav.is-more > [data-nav="agents"], .ax-wall__nav.is-more > [data-nav="dashboard"] {
+    display: flex; position: fixed; right: 8px; width: 200px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 10px 14px; }
+  .ax-wall__nav.is-more > * > span { display: inline; font-size: var(--ax-fs); }
+  .ax-wall__nav.is-more > [data-nav="jobs"] { bottom: 276px; } .ax-wall__nav.is-more > [data-nav="reviews"] { bottom: 222px; }
+  .ax-wall__nav.is-more > [data-nav="failures"] { bottom: 168px; } .ax-wall__nav.is-more > [data-nav="agents"] { bottom: 114px; }
+  .ax-wall__nav.is-more > [data-nav="dashboard"] { bottom: 60px; }
+  .ax-wall__newpost { position: fixed; right: 16px; bottom: 72px; width: 56px; height: 56px; margin: 0; border-radius: 50%; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }
   .ax-wall__logo { display: none; }
   .ax-wall__item { padding: 10px; }
   .ax-wall__aside > *, .ax-wall__main { grid-column: 1; }
