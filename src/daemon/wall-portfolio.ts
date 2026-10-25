@@ -148,6 +148,10 @@ export async function handlePortfolioRequest(
   }
   // The key comes in the Authorization header only: never in the address,
   // where it would land in proxy logs and browser history.
+  // A dashboard with no token lets every request into the Wall itself, so a
+  // portfolio key there would open far more than the portfolio. Refuse every
+  // key until the owner sets dashboard.token.
+  if (!ctx.dashboardToken) return json(res, 503, { error: "set dashboard.token first", hint: "the owner must set a dashboard token before any key opens the portfolio" })
   const auth = String(req.headers.authorization || "")
   const sent = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null
   const viewer = portfolioViewer(sent, ctx.dashboardToken, ctx.tokens ?? new TokenStore())

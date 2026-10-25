@@ -23,7 +23,9 @@ let db: Database.Database
 let store: RequestStore
 let server: Server
 let base: string
-let token: string | undefined
+// The dashboard has a token: without one the portfolio refuses every key.
+const OWNER = "tok-owner"
+let token: string | undefined = OWNER
 const keys: Record<string, string> = {}
 const H = 3_600_000
 const D = 24 * H
@@ -97,9 +99,18 @@ describe("who may look", () => {
     for (const k of [keys.member, keys.app, keys.read]) expect((await get("/api/portfolio", bearer(k))).status).toBe(401)
   })
 
-  it("has no loopback or no-token exemption: with no dashboard token set, still a key or nothing", async () => {
-    expect(token).toBeUndefined()
-    expect((await get("/api/portfolio")).status).toBe(401)
+  it("refuses every key while no dashboard token is set, since the Wall itself is then open", async () => {
+    token = undefined
+    try {
+      for (const k of [null, keys.director, keys.write, keys.member, "agx_live_" + "0".repeat(64)]) {
+        const r = await get("/api/portfolio", k ? bearer(k) : {})
+        expect(r.status).toBe(503)
+        expect(JSON.parse(r.body).error).toBe("set dashboard.token first")
+        expect(r.body).not.toContain("Login page fix")
+      }
+    } finally {
+      token = OWNER
+    }
   })
 
   it("takes the key from the header only, never from the address", async () => {
@@ -107,25 +118,15 @@ describe("who may look", () => {
   })
 
   it("opens for the owner's dashboard key", async () => {
-    token = "tok-owner"
-    try {
-      const r = await get("/api/portfolio", bearer("tok-owner"))
-      expect(r.status).toBe(200)
-      expect(JSON.parse(r.body).viewer).toBeNull()
-      expect((await get("/api/portfolio", bearer(keys.write))).status).toBe(200)
-    } finally {
-      token = undefined
-    }
+    const r = await get("/api/portfolio", bearer(OWNER))
+    expect(r.status).toBe(200)
+    expect(JSON.parse(r.body).viewer).toBeNull()
+    expect((await get("/api/portfolio", bearer(keys.write))).status).toBe(200)
   })
 
   it("opens nothing else: the Wall's posts and threads refuse a portfolio key", async () => {
-    token = "tok-owner"
-    try {
-      for (const p of ["/api/admin/wall", "/api/admin/wall?peer=fleet", "/api/admin/wall/thread?id=p2", "/api/admin/config"]) {
-        expect((await get(p, bearer(keys.director))).status).toBe(401)
-      }
-    } finally {
-      token = undefined
+    for (const p of ["/api/admin/wall", "/api/admin/wall?peer=fleet", "/api/admin/wall/thread?id=p2", "/api/admin/config"]) {
+      expect((await get(p, bearer(keys.director))).status).toBe(401)
     }
   })
 

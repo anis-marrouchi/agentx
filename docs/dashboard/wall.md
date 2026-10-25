@@ -159,6 +159,8 @@ A task's title is the headline its agent set. A task without one shows its issue
 
 Each person needs their own key. Only you make keys; nobody has one until you do.
 
+Set the dashboard token (`dashboard.token` in `agentx.json`) before you make any key. Without it the dashboard lets everyone into the Wall, so the portfolio refuses every key until a token is set.
+
 1. **Terminal**, on the machine that serves the dashboard, in the folder that holds `agentx.json`:
 
    ```bash
@@ -169,7 +171,7 @@ Each person needs their own key. Only you make keys; nobody has one until you do
 2. The person opens `/portfolio` on your dashboard address, types the key and selects **Open the portfolio**. Their browser keeps the key; **Forget the key** removes it.
 3. To end someone's access: `agentx token list`, then `agentx token revoke <id>`.
 
-A portfolio key opens `/portfolio` and nothing else: not the Wall's posts, not the classic pages, not the API. Your dashboard key also opens the portfolio.
+With a dashboard token set, a portfolio key opens `/portfolio` and nothing else: not the Wall's posts, not the classic pages, not the API. Your dashboard key also opens the portfolio.
 
 ## Check it worked
 
@@ -193,5 +195,6 @@ A portfolio key opens `/portfolio` and nothing else: not the Wall's posts, not t
 - **No GitLab time on a GitLab task:** the machine that keeps the task has no GitLab connection, or the home link is on a different GitLab address than the one configured.
 - **A card is on the Approvals page but not on the Wall:** it was raised outside a task, or it was already answered or expired. Only pending cards that belong to a task show on a post.
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
+- **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.
 - **The portfolio shows "Untitled request" a lot:** those tasks have no headline yet and no issue or merge request as their home. The text of the task is never used as a title there.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.

@@ -87,6 +87,7 @@ const PORTFOLIO_SCRIPT = `
     fetch("/api/portfolio?days=7", { headers: { Authorization: "Bearer " + k, Accept: "application/json" }, cache: "no-store" })
       .then(function (r) {
         if (r.status === 401) { store(""); locked("That key does not open the portfolio."); return null; }
+        if (r.status === 503) { locked("The portfolio is not switched on yet. Ask the owner to set the dashboard token."); return null; }
         if (!r.ok) throw new Error("answered " + r.status);
         return r.json();
       })
