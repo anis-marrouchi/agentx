@@ -87,6 +87,7 @@ import { handlePortfolioRequest } from "./wall-portfolio"
 import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
+import { claimBlocker } from "./wall-blocks"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
@@ -3159,7 +3160,7 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
       if (!r.ok) { nodes.push({ name, peer: id, ok: false, error: `answered ${r.status}` }); return }
       const body = await r.json() as any
       nodes.push({ name: body.node || name, peer: id, ok: true, syncedAt: body.syncedAt })
-      posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], body.node || name, id, id).map((p) => claimPost(p, projects, now)))
+      posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], body.node || name, id, id).map((p) => claimBlocker(claimPost(p, projects, now), projects)))
       failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], body.node || name, id, id))
       if (body.reported && Array.isArray(body.reported.groups)) reported.push(...tag([body.reported], body.node || name, id, id))
     } catch (e: any) {

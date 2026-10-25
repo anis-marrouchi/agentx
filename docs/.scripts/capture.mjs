@@ -43,6 +43,8 @@ const shots = [
   { name: "wall/portfolio-phone", path: "/portfolio", wait: "#projects table", phone: true },
   // An agent's profile over its own posts (#1207).
   { name: "wall/profile", path: "/wall#owner=cx&status=", wait: ".wpf" },
+  // Blocked tasks grouped by the agent that blocks them (#1193).
+  { name: "wall/blocked", path: "/wall#status=blocked&by=agent&view=list", wait: ".wl" },
   // The review queue: pending and decided classifications (#1182).
   { name: "wall/reviews", path: "/wall#status=&view=reviews", wait: ".wr__diff", clipTo: "#review-docs-review-invoice" },
   { name: "live", path: "/live", wait: ".ax-agent__name" },
