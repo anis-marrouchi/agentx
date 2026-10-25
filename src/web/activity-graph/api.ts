@@ -74,8 +74,28 @@ export interface FleetDispatchDetail {
 // asks for the fleet-merged snapshot rather than the local node's.
 const FLEET = "peer=fleet"
 
+// dashboard.token, when the page carries it (a browser on this machine).
+// Off-box browsers have none here; their session cookie does the job.
+function localToken(): string {
+  return (globalThis as { AX_LOCAL_TOKEN?: string }).AX_LOCAL_TOKEN || ""
+}
+function authHeaders(): Record<string, string> {
+  const t = localToken()
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
+/** EventSource can't send a header, so trade the token for a one-minute
+ *  stream ticket and put it in the URL. Empty without a page token. */
+async function streamTicketParam(): Promise<string> {
+  if (!localToken()) return ""
+  const r = await fetch("/api/admin/stream-ticket", { method: "POST", credentials: "same-origin", headers: authHeaders() })
+  if (!r.ok) throw new Error(`stream-ticket ${r.status}`)
+  const { ticket } = await r.json() as { ticket?: string }
+  return ticket ? `&st=${encodeURIComponent(ticket)}` : ""
+}
+
 export async function fetchDispatchDetail(id: string): Promise<FleetDispatchDetail> {
-  const r = await fetch(`/api/admin/activity-graph/dispatch/${encodeURIComponent(id)}?${FLEET}`, { credentials: "same-origin" })
+  const r = await fetch(`/api/admin/activity-graph/dispatch/${encodeURIComponent(id)}?${FLEET}`, { credentials: "same-origin", headers: authHeaders() })
   if (!r.ok) throw new Error(`detail fetch ${r.status}`)
   return await r.json() as FleetDispatchDetail
 }
@@ -96,20 +116,38 @@ export interface FleetSnapshot {
 }
 
 export async function fetchSnapshot(windowH: number): Promise<FleetSnapshot> {
-  const r = await fetch(`/api/admin/activity-graph?hours=${encodeURIComponent(windowH)}&${FLEET}`, { credentials: "same-origin" })
+  const r = await fetch(`/api/admin/activity-graph?hours=${encodeURIComponent(windowH)}&${FLEET}`, { credentials: "same-origin", headers: authHeaders() })
   if (!r.ok) throw new Error(`activity-graph fetch ${r.status}`)
   return await r.json() as FleetSnapshot
 }
 
 export function subscribeSnapshot(windowH: number, onSnapshot: (s: FleetSnapshot) => void, onError?: () => void): () => void {
-  const url = `/api/admin/activity-graph/stream?hours=${encodeURIComponent(windowH)}&${FLEET}`
-  const es = new EventSource(url, { withCredentials: true })
-  es.addEventListener("snapshot", (ev) => {
-    try { onSnapshot(JSON.parse((ev as MessageEvent).data) as FleetSnapshot) }
-    catch (e) { console.error("[activity-graph] snapshot parse failed", e) }
-  })
-  es.addEventListener("error", () => { onError?.() })
-  return () => { try { es.close() } catch (_) { /* ignore */ } }
+  let es: EventSource | null = null
+  let retry: ReturnType<typeof setTimeout> | null = null
+  let closed = false
+  const open = async () => {
+    let st = ""
+    try { st = await streamTicketParam() }
+    catch (_) { onError?.(); retry = setTimeout(open, 5000); return }
+    if (closed) return
+    es = new EventSource(`/api/admin/activity-graph/stream?hours=${encodeURIComponent(windowH)}&${FLEET}${st}`, { withCredentials: true })
+    es.addEventListener("snapshot", (ev) => {
+      try { onSnapshot(JSON.parse((ev as MessageEvent).data) as FleetSnapshot) }
+      catch (e) { console.error("[activity-graph] snapshot parse failed", e) }
+    })
+    es.addEventListener("error", () => {
+      onError?.()
+      // A network drop reconnects by itself; an HTTP error (an expired
+      // ticket on reconnect) closes the stream, so open it with a new one.
+      if (es && es.readyState === EventSource.CLOSED && !closed) { es = null; retry = setTimeout(open, 3000) }
+    })
+  }
+  void open()
+  return () => {
+    closed = true
+    if (retry) clearTimeout(retry)
+    try { es?.close() } catch (_) { /* ignore */ }
+  }
 }
 
 // Format helpers (ported from prototype/data.js)

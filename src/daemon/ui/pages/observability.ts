@@ -344,7 +344,7 @@ const OBS_PAGE_SCRIPT = `
 
   async function load(tab){
     if (tab === 'logs') return ensureLogsStream();
-    if (logsState.es) closeLogsStream();
+    closeLogsStream();
     if (tab === 'doctor') return loadDoctor();
     var agent = document.getElementById('obs-agent').value || '';
     var limit = document.getElementById('obs-limit').value || 50;
@@ -367,7 +367,7 @@ const OBS_PAGE_SCRIPT = `
   }
 
   // ----- Logs tab: SSE-driven live tail -----
-  var logsState = { es: null, paused: false, buffer: [], maxLines: 2000 };
+  var logsState = { es: null, wanted: false, paused: false, buffer: [], maxLines: 2000 };
   function classifyLine(s){
     var l = s.toLowerCase();
     if (l.indexOf('error') >= 0 || l.indexOf('fail') >= 0) return 'err';
@@ -389,22 +389,51 @@ const OBS_PAGE_SCRIPT = `
       body.scrollTop = body.scrollHeight;
     }
   }
+  function retryLogsStream(ms){
+    setTimeout(function(){ if (logsState.wanted) ensureLogsStream(); }, ms);
+  }
   function ensureLogsStream(){
+    logsState.wanted = !logsState.paused;
     if (logsState.es || logsState.paused) {
       document.getElementById('obs-logs-status').textContent = logsState.paused ? 'paused' : 'live';
       return;
     }
     document.getElementById('obs-logs-status').textContent = 'connecting…';
-    var es = new EventSource('/api/admin/logs/stream', { withCredentials: true });
-    logsState.es = es;
-    es.addEventListener('line', function(ev){ renderLogsLine(ev.data); });
-    es.addEventListener('open', function(){ document.getElementById('obs-logs-status').textContent = 'live'; });
-    es.addEventListener('error', function(){
+    logsState.es = 'opening';
+    streamTicket().then(function(st){
+      if (logsState.es !== 'opening') return;
+      var es = new EventSource('/api/admin/logs/stream' + st, { withCredentials: true });
+      logsState.es = es;
+      es.addEventListener('line', function(ev){ renderLogsLine(ev.data); });
+      es.addEventListener('open', function(){ document.getElementById('obs-logs-status').textContent = 'live'; });
+      es.addEventListener('error', function(){
+        document.getElementById('obs-logs-status').textContent = 'disconnected (retrying)';
+        // A network drop reconnects by itself; an HTTP error (an expired
+        // ticket on reconnect) closes the stream, so open it with a new one.
+        if (logsState.es === es && es.readyState === EventSource.CLOSED) {
+          logsState.es = null;
+          retryLogsStream(3000);
+        }
+      });
+    }).catch(function(){
+      if (logsState.es === 'opening') logsState.es = null;
       document.getElementById('obs-logs-status').textContent = 'disconnected (retrying)';
+      retryLogsStream(5000);
     });
   }
+  // EventSource can't send a header: trade the page token for a one-minute
+  // ticket the stream URL carries. Off-box browsers use their session cookie.
+  async function streamTicket(){
+    if (!window.AX_LOCAL_TOKEN) return '';
+    var r = await fetch('/api/admin/stream-ticket', { method: 'POST', credentials: 'same-origin', headers: authHeaders() });
+    if (!r.ok) throw new Error('stream-ticket ' + r.status);
+    var d = await r.json();
+    return d.ticket ? '?st=' + encodeURIComponent(d.ticket) : '';
+  }
   function closeLogsStream(){
-    if (logsState.es) { try { logsState.es.close(); } catch (e) {} logsState.es = null; }
+    logsState.wanted = false;
+    if (logsState.es && logsState.es !== 'opening') { try { logsState.es.close(); } catch (e) {} }
+    logsState.es = null;
   }
   function authHeaders(){ return window.AX_LOCAL_TOKEN ? { Authorization: 'Bearer ' + window.AX_LOCAL_TOKEN } : {}; }
 

@@ -52,7 +52,7 @@ const SUB: Record<ActivityView, string> = {
   map: "The fleet as a transit map: projects are lines, agents are stations, work in flight is a train. Live.",
 }
 
-export function renderActivityPage(opts: { peers?: TopbarPeer[]; view?: string | null } = {}): string {
+export function renderActivityPage(opts: { peers?: TopbarPeer[]; view?: string | null; localToken?: string } = {}): string {
   const view: ActivityView = opts.view === "map" ? "map" : "timeline"
   const isMap = view === "map"
   return renderShell({
@@ -105,7 +105,10 @@ export function renderActivityPage(opts: { peers?: TopbarPeer[]; view?: string |
 
 </div>`,
     css: ACTIVITY_CSS,
-    scripts: `<script>${injectFns({ computeBands, packTracks, buildTimeline })}` +
+    // The Map's reads and stream need dashboard.token; only a caller on this
+    // machine gets it here (pageToken), off-box browsers use their session.
+    scripts: (opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : "") +
+      `<script>${injectFns({ computeBands, packTracks, buildTimeline })}` +
       `const ICON = ${JSON.stringify(ICON)};const SUB = ${JSON.stringify(SUB)};${ACTIVITY_SCRIPT}</script>`,
   })
 }

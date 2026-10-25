@@ -7,16 +7,11 @@ import type { AddressInfo } from "net"
 import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { closeDb } from "../src/storage/sqlite"
+import { hasStreamTicket, streamTicket, STREAM_TICKET_TTL_S } from "../src/daemon/dashboard-session"
 
 // #1302: every /api/admin/* route needs dashboard.token unless listed here.
-// These stay open for now: the browser reads them through EventSource or the
-// /activity map, which cannot send the token yet.
-const OPEN = new Set([
-  "/api/admin/logs/stream",
-  "/api/admin/activity-graph",
-  "/api/admin/activity-graph/stream",
-  "/api/admin/activity-graph/dispatch/x",
-])
+// The streams (logs, activity map) closed the list with stream tickets.
+const OPEN = new Set<string>([])
 
 // Route literals the dashboard router matches, read from its source so a new
 // route lands in this test without anyone adding it by hand.
@@ -36,9 +31,9 @@ const home = process.cwd()
 let server: Server
 let base = ""
 
-function get(path: string, headers: Record<string, string> = {}): Promise<number> {
+function get(path: string, headers: Record<string, string> = {}, method = "GET"): Promise<number> {
   return new Promise((resolve, reject) => {
-    const r = request(base + path, { method: "GET", headers }, (res) => {
+    const r = request(base + path, { method, headers }, (res) => {
       res.resume()
       resolve(res.statusCode ?? 0)
       res.destroy()
@@ -96,8 +91,55 @@ describe("admin token gate (#1302)", () => {
     const page = (path: string) => new Promise<string>((resolve, reject) => {
       request(base + path, (res) => { let b = ""; res.on("data", (c) => (b += c)); res.on("end", () => resolve(b)) }).on("error", reject).end()
     })
-    for (const path of ["/admin/health", "/admin/cost", "/admin/ledger"]) {
+    for (const path of ["/admin/health", "/admin/cost", "/admin/ledger", "/activity?view=map"]) {
       expect(await page(path), path).toContain('window.AX_LOCAL_TOKEN = "tok-123"')
     }
+  })
+})
+
+describe("stream tickets", () => {
+  const mint = (headers: Record<string, string>) => new Promise<{ status: number; ticket: string }>((resolve, reject) => {
+    request(base + "/api/admin/stream-ticket", { method: "POST", headers }, (res) => {
+      let b = ""
+      res.on("data", (c) => (b += c))
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, ticket: res.statusCode === 200 ? JSON.parse(b).ticket : "" }))
+    }).on("error", reject).end()
+  })
+
+  it("mints a ticket only for the token", async () => {
+    expect((await mint({})).status).toBe(401)
+    expect((await mint({ Authorization: "Bearer wrong" })).status).toBe(401)
+    const { status, ticket } = await mint({ Authorization: "Bearer tok-123" })
+    expect(status).toBe(200)
+    expect(ticket).toMatch(/^\d+\.[\w-]+$/)
+    expect(ticket).not.toContain("tok-123")
+  })
+
+  it("does not follow the peer selector", async () => {
+    expect((await mint({ Authorization: "Bearer tok-123", "X-Agentx-Peer": "http://peer.invalid:4202" })).status).toBe(200)
+  })
+
+  it("opens the streams, and only the streams", async () => {
+    const { ticket } = await mint({ Authorization: "Bearer tok-123" })
+    const st = `st=${encodeURIComponent(ticket)}`
+    expect(await get(`/api/admin/activity-graph/stream?hours=1&${st}`)).toBe(200)
+    expect(await get(`/api/admin/activity-graph/stream?hours=1&peer=fleet&${st}`)).toBe(200)
+    for (const path of ["/api/admin/activity-graph", "/api/admin/observability/budgets", "/api/admin/doctor"]) {
+      expect(await get(`${path}?${st}`), path).toBe(401)
+    }
+    expect(await get(`/api/admin/activity-graph/stream?hours=1&${st}`, {}, "POST")).toBe(401)
+  })
+
+  it("rejects a forged, foreign or expired ticket", async () => {
+    const at = (t: string) => ({ url: `/api/admin/logs/stream?st=${encodeURIComponent(t)}` }) as never
+    const now = Date.now()
+    const good = streamTicket("tok-123", now)
+    expect(hasStreamTicket(at(good), "tok-123", now)).toBe(true)
+    expect(hasStreamTicket(at(good), "tok-123", now + (STREAM_TICKET_TTL_S + 1) * 1000)).toBe(false)
+    expect(hasStreamTicket(at(streamTicket("other", now)), "tok-123", now)).toBe(false)
+    expect(hasStreamTicket(at(`${Number(good.split(".")[0]) + 3600}.${good.split(".")[1]}`), "tok-123", now)).toBe(false)
+    expect(hasStreamTicket(at("garbage"), "tok-123", now)).toBe(false)
+    expect(hasStreamTicket(at(good), undefined, now)).toBe(false)
+    expect(await get(`/api/admin/logs/stream?st=${encodeURIComponent(streamTicket("other"))}`)).toBe(401)
   })
 })
