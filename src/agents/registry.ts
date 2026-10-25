@@ -43,12 +43,6 @@ import { getEventBus, type AgentXEvents } from "@/events/bus"
  *  workflow matching (cache hits only) and before the wiki entry stamp. */
 const INTENT_WAIT_BEFORE_MATCH_MS = 250
 const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
-/** Channels that never have an outbound adapter: a queued reply on them
- *  stays on its task, so skipping the post is expected and not logged. */
-const NO_ADAPTER_CHANNELS: ReadonlySet<string> = new Set([
-  "requests", "a2a", "api", "cron", "workflow", "test", "mesh", "subagent", "mcp",
-  "events", "reminder", "heartbeat", "system", "internal", "business", "selftest", "compaction",
-])
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
 import { currentRoot } from "@/events/envelope"
@@ -103,6 +97,13 @@ const STEP_BUDGET_MS: Record<string, number> = {
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
 import { prepareOutbox } from "@/utils/app-outbox"
+
+/** Channels that never have an outbound adapter: a queued reply on them
+ *  stays on its task, so skipping the post is expected and not logged. */
+const NO_ADAPTER_CHANNELS: ReadonlySet<string> = new Set([
+  "requests", "a2a", "api", "cron", "workflow", "test", "mesh", "subagent", "mcp",
+  "events", "reminder", "heartbeat", "system", "internal", "business", "selftest", "compaction",
+])
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
