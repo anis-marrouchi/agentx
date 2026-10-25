@@ -265,6 +265,36 @@ Where you see it:
 - In the terminal: `agentx requests show <id>`, and `agentx requests --qa awaiting` for every request still waiting on QA, open or done. `--qa block`, `--qa risk` and `--qa pass` list the requests whose latest verdict is that one.
 - From a script: `GET /requests?qa=awaiting` (see [Read the list from a script](#read-the-list-from-a-script)).
 
+## Group requests under a goal
+
+A **goal** is the larger aim a request serves, such as "Relaunch the shop" or "Monthly newsletter". Naming one lets you see, for each goal, how far along it is and what it cost so far. Goals are optional: a request without one works as before.
+
+An agent names the goal when it takes the request on. It passes `goal` with `accept`: an `id` (a short name made of letters, digits and dashes) and a `title` in a few plain words. For example: `{action:"accept", work:"code", estimateMinutes:30, goal:{id:"shop-relaunch", title:"Relaunch the shop"}}`. A title alone also works; the id is made from it (`"Relaunch the shop"` becomes `relaunch-the-shop`). Requests that give the same id share the goal. Only `accept` takes a goal; a later `accept` with another goal moves the request to it.
+
+A plan made with `accept` and `steps` has the goal of its request. Each step's agent, and an agent you hand the request to, is told the goal's title when it is given the work, so it knows why the task exists.
+
+To see your goals in the dashboard:
+
+1. **Browser:** open **Approvals** and scroll to **Open requests**.
+2. **Browser:** find **Goals** above the request cards. Each line shows the goal's title, a bar, how many of its requests are done, how many are open, and what they cost.
+3. **Browser:** click a goal to list its requests, with the state and cost of each.
+
+![The Goals list above the open request cards: one goal opened, showing its requests with their state and cost](/screenshots/approvals/goals.png)
+
+How the numbers are counted:
+
+| Number | What it counts |
+|---|---|
+| done | Requests of the goal closed as done. |
+| open | Requests of the goal still open. |
+| dropped | Requests declined or dropped. They count neither for nor against how far along it is. |
+| % done | done ÷ (open + done). |
+| cost | The cost of every run of the goal's requests, as the run reported it. Runs on an engine that reports no cost add nothing; the line then says how many runs had no cost. |
+
+A closed request is kept for `retentionDays` (90 days by default). After that it leaves its goal's numbers too.
+
+Agents can read the same list with `{action:"goals"}`. From a script, `GET /requests/goals` on the daemon gives it as JSON.
+
 ## Where a request landed
 
 When an agent takes a request on, waits on you, or closes it as done, it can say where the work lives: its **home**. One of:
@@ -299,6 +329,8 @@ Run `agentx requests today`. It lists every request made since 00:00 Tunis time,
 | `offset=<n>` | Page from the oldest; the reply gives `nextOffset` while there is more. |
 
 Every reply says `total`, the number of requests that match, and `truncated: true` when it shows fewer. Without `offset`, a `since` list past its limit keeps the newest; any other list keeps the oldest.
+
+`GET /requests/goals` lists every goal a request names, most recently active first (at most 50): its `title`, the counts `open`, `done` and `dropped`, `progress` (0 to 1), `costUsd`, `runs`, `unpriced` (runs that reported no cost), and its newest requests (at most 50), each with its own `costUsd`. See [Group requests under a goal](#group-requests-under-a-goal).
 
 ## Requests of several steps
 
@@ -352,6 +384,9 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 14. **Terminal:** in the same output, the line `Handed work came back` says `closed when quiet, with its link or marked unproven`. A day after an agent hands work on and gets a done answer without closing the request, the daemon log has a `settled` line for it, and `agentx requests show <id>` shows it done, with the link or `unproven: …` as its evidence.
 15. Ask an agent to make a change and mark it as needing QA, then ask a second agent to check it and give its verdict.
 16. **Terminal:** run `agentx requests --qa awaiting` before the verdict. The request is listed with `Awaiting QA`. After the verdict, run `agentx requests show <id>`. It shows `QA: PASS by <agent>, <time>` (or `BLOCK` or `RISK` with the note).
+17. Ask an agent for some work and tell it the goal, for example: "this is for the shop relaunch goal".
+18. **Browser:** open **Approvals**. Under **Open requests**, **Goals** lists the goal with `0 of 1 done`. The request's card shows **Goal:** with its title.
+19. **Terminal:** run `curl -s http://127.0.0.1:18800/requests/goals`. The goal is there, with its `open` and `done` counts and its `costUsd`.
 
 ## If something is wrong
 
@@ -362,6 +397,10 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A message you sent on Telegram or GitHub is not recorded:** your id on that channel is not in `from`. Add it with `--from`, as `channel:id`.
 - **A request you only got an answer to is not listed:** that is expected. A request is kept only when work goes on after the answer or goes wrong.
 - **A request came back as `No activity for 24 h`:** nobody closed it. Close it with `done` or `drop`, or ask the agent to carry on.
+- **No Goals list in the dashboard:** no request names a goal yet. It appears once an agent accepts a request with `goal`.
+- **`only accept takes a goal`:** the agent passed `goal` with another action. It gives the goal when it accepts the request.
+- **`goal.id must be letters, digits, dashes, dots or colons`:** the id has spaces or other signs. Give a short id such as `shop-relaunch`, or only the title.
+- **A goal's cost shows `$0.00` with runs without a cost:** the agents run on an engine that does not report what a run cost. The counts and progress are still right.
 - **`home.kind must be one of …`:** the agent gave a home kind that does not exist. Use issue, idea, approval, erp or card. A declined request takes no home.
 - **`a finished request needs --evidence <link>`:** add the link to the proof. From the terminal, and for agents, a request cannot be closed as done without it.
 - **A message from the phone app is not recorded:** the dashboard must run from the install folder, the one that holds `agentx.json`, so it can read `.agentx/operator.key`. Start it there. A message sent through the phone app to an agent on another computer is recorded there when the computer the phone is paired with checks its own key and vouches for you to the other one. That needs three things: both computers run 0.83.1 or later, the other computer lists the first one in `mesh.peers` with the same `token` the first one sends, and the request reaches it from another machine. A token that sits only in `MESH_TOKEN`, two different tokens, or a proxy on the same machine in front of the daemon means it is not recorded.

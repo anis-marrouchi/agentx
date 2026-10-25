@@ -8,16 +8,19 @@ import { reportStep, type StepStatus } from "./plan-sweep"
 import { parseDescription } from "./headline"
 import { DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
+import { parseGoal } from "./goals"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
 // Reachable by agents (the agentx_request tool posts here), gated like
 // /approvals: loopback, or a mesh token.
 //   GET  /requests        open requests, oldest first
+//   GET  /requests/goals  every goal requests name, with progress and cost (#1168)
 //   GET  /requests/:id    one request and what is linked to it
 //   POST /requests        an agent's own statement about its request:
 //                         accept (with `steps`: a tracked plan, #788;
-//                         code work or a long estimate needs one, #1048),
+//                         code work or a long estimate needs one, #1048;
+//                         with `goal`: the goal it serves, #1168),
 //                         wait (on the owner), done, decline, or step (a
 //                         report on one step of a plan), or promise (an
 //                         open loop the agent owes someone, #1039), or
@@ -222,6 +225,11 @@ export function handleRequestsApi(
     }
   }
 
+  if (path === "/requests/goals" && m === "GET") {
+    const goals = store.goals()
+    return { status: 200, body: { enabled: deps.enabled, count: goals.length, goals } }
+  }
+
   const one = path.match(/^\/requests\/([^/]+)$/)
   if (one && m === "GET") {
     const request = store.get(decodeURIComponent(one[1]))
@@ -347,6 +355,11 @@ export function handleRequestsApi(
     const home = parseHome(input.home)
     if (typeof home === "string") return { status: 400, body: { error: home } }
     if (home && action === "decline") return { status: 400, body: { error: "a declined request has no home: give it with accept, wait or done" } }
+    // The goal it serves (#1168). Set with the work declaration below, so
+    // an accept the plan gate refuses still has it when it comes back.
+    if (action !== "accept" && input.goal != null && input.goal !== "") return { status: 400, body: { error: "only accept takes a goal" } }
+    const goal = action === "accept" ? parseGoal(input.goal) : undefined
+    if (typeof goal === "string") return { status: 400, body: { error: goal } }
     const loop = action === "accept" || action === "wait" ? parseLoop(input, deps, now) : {}
     if (typeof loop === "string") return { status: 400, body: { error: loop } }
     // A done's typed proof (#1138 D): a link, a passing test run, an
@@ -395,6 +408,7 @@ export function handleRequestsApi(
     if (typeof declared === "string") return { status: 400, body: { error: declared } }
     if (action === "accept") {
       store.setWork(request.id, declared)
+      if (goal) store.setGoal(request.id, goal)
       const settings = deps.planSettings ?? DEFAULT_PLAN_SETTINGS
       if (input.steps == null && deps.plans && !deps.plans.get(request.id) && planGateOn(settings, agentId)) {
         const kept = store.get(request.id)
