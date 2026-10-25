@@ -86,6 +86,7 @@ import { forgeReader } from "@/requests/checkers/issue"
 import { handlePortfolioRequest } from "./wall-portfolio"
 import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
+import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
@@ -798,6 +799,16 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // (src/voice/voice-health.ts); after the token gate above.
   if (method === "GET" && path === "/api/admin/voice-health") {
     sendJson(res, 200, readVoiceHealth() ?? { checkedAt: null, missing: [] })
+    return
+  }
+  // The Wall's review queue (#1182): read-only over the graph's own files.
+  if (method === "GET" && path === WALL_REVIEWS_PATH) {
+    const graph = ctx.config.graph
+    const reply = handleWallReviews(url.searchParams, {
+      baseDir: graph?.baseDir ? resolve(process.cwd(), graph.baseDir) : null,
+      enabled: !!graph?.enabled,
+    }, localNodeName(ctx.config), Date.now())
+    sendJson(res, reply.status, reply.body)
     return
   }
   // The Wall (#1180): read-only posts and threads from this node's records.
