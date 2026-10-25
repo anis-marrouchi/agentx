@@ -40,7 +40,7 @@ That's a CLI bug. File it. The dashboard is not a license for the CLI to be inco
 
 ## When the dashboard lacks something the CLI does
 
-That's a dashboard backlog item, not a carve-out. Either ship the UI or move the CLI command into the carve-out table with a real reason. "Nobody asked for it yet" is not a reason — agentx is small and experimental; if a capability is worth shipping at all, it's worth being discoverable.
+That's a dashboard backlog item, not a carve-out. Either ship the UI or move the CLI command into the carve-out table with a real reason. "Nobody asked for it yet" is not a reason — agentx is small and still pre-1.0; if a capability is worth shipping at all, it's worth being discoverable.
 
 ## Wave 1 closures
 

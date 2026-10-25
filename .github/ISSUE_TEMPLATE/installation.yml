@@ -5,7 +5,7 @@ labels: [bug, installation, needs-repro]
 body:
   - type: markdown
     attributes:
-      value: "AgentX is experimental. Never include tokens, .env files, private conversations, or unredacted configuration."
+      value: "AgentX is still before version 1.0 (0.x). Never include tokens, .env files, private conversations, or unredacted configuration."
   - type: input
     id: versions
     attributes:

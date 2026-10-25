@@ -1,6 +1,6 @@
 # Contributing
 
-AgentX is usable but experimental, and is not yet stable. Settings and configuration flows especially need testing, fixes, and polish.
+AgentX works and is used every day, but it is still before version 1.0 (its version numbers start with 0): there is still work to do. Settings and configuration flows especially need testing, fixes, and polish.
 
 ## Where help matters most
 
