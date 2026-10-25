@@ -638,7 +638,11 @@ export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: strin
     child.stderr?.on("data", (d) => { stderr += d })
     child.stdin?.on("error", () => { /* the process exited before reading its input */ })
     child.on("error", (e) => settle(-1, e.message))
-    child.on("close", (code) => settle(code ?? -1))
+    child.on("close", (code) => {
+      // A background child the command left behind would outlive the run.
+      if (opts.killGroup && child.pid) try { process.kill(-child.pid, "SIGKILL") } catch { /* group already gone */ }
+      settle(code ?? -1)
+    })
     if (opts.input !== undefined) child.stdin?.end(opts.input)
   })
 }

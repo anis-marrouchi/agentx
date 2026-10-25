@@ -257,6 +257,15 @@ describe("helpers", () => {
     expect(() => process.kill(pid, 0)).toThrow()
   })
 
+  it("with killGroup, a normal exit also stops children left in the background", async () => {
+    const pidFile = join(mkdtempSync(join(tmpdir(), "agentx-killgroup-")), "pid")
+    const r = await spawnWithTimeout("sh", ["-c", `sleep 30 >/dev/null 2>&1 & echo $! > ${pidFile}`], { cwd: tmpdir(), timeoutMs: 10_000, killGroup: true })
+    expect(r).toMatchObject({ code: 0, timedOut: false })
+    const pid = Number(readFileSync(pidFile, "utf-8").trim())
+    await new Promise((ok) => setTimeout(ok, 100))
+    expect(() => process.kill(pid, 0)).toThrow()
+  })
+
   it("reads the CLI result, budget stop included", () => {
     expect(parseSpecAgentOutput(JSON.stringify({ subtype: "success", result: "done", total_cost_usd: 0.3 }), 0)).toEqual({ ok: true, costUsd: 0.3, reply: "done" })
     expect(parseSpecAgentOutput(JSON.stringify({ subtype: "error_max_budget_usd", is_error: true, total_cost_usd: 2.01 }), 1)).toEqual({ ok: false, budgetStopped: true, costUsd: 2.01 })
