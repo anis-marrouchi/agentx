@@ -366,6 +366,13 @@ describe("helpers", () => {
     expect(plan[0]).toHaveProperty("state")
     expect((handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "r2" }), deps(), "n").body as any).plan).toEqual([])
   })
+  it("cuts a plan step's proof to length and redacts it (#1355)", () => {
+    const step = { idx: 1, name: "Ship", agentId: "coder", state: "done", doneWhen: "", note: null, evidence: "token=supersecretvalue123 " + "x".repeat(2000) }
+    const stub = { get: () => ({}), steps: () => [step], events: () => [] } as unknown as PlanStore
+    const plan = (handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "r1" }), { ...deps(), plans: stub }, "n").body as any).plan
+    expect(plan[0].evidence.length).toBeLessThanOrEqual(500)
+    expect(plan[0].evidence).not.toContain("supersecretvalue123")
+  })
   it("answers 404 for an unknown post and an empty wall with no request store", () => {
     expect(handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "nope" }), deps(), "n").status).toBe(404)
     expect((handleWallApi("/api/admin/wall", new URLSearchParams(), null, "n").body as any).posts).toEqual([])

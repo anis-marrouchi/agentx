@@ -710,7 +710,7 @@ export function wallPlan(r: RequestRecord, deps: WallDeps): WallPlanStep[] {
     agentId: s.agentId,
     state: s.state,
     doneWhen: clean(s.doneWhen, 200),
-    evidence: s.evidence ? redactSecrets(s.evidence) : null,
+    evidence: s.evidence ? clean(redactSecrets(s.evidence), 500) : null,
     note: s.note ? clean(s.note, 200) : null,
   }))
 }

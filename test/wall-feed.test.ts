@@ -1178,4 +1178,22 @@ describe("Wall v2 task view (#1355)", () => {
     expect(done).toMatch(/<li class="is-done"><b>Done<\/b><span>\d+s ago<\/span>/)
     expect(d.el("wall-post").innerHTML).toContain("<dt>Closed</dt>")
   })
+
+  it("waits on another agent, names who it waits on once, and stays at Asked before a run", async () => {
+    const other = openWall({ hash: "#post=r4", data: { ...WALL, posts: [post("r4", "cx", "waiting_other")] } })
+    await other.settle()
+    expect(other.el("wall-post").innerHTML).toContain("<b>Waits</b><span>on another agent</span>")
+    const blocked = { who: "reviewer", why: "needs a review", since: NOW - 3 * 3600e3 }
+    const b = openWall({ hash: "#post=r5", data: { ...WALL, posts: [post("r5", "cx", "waiting_other", { blocked })] } })
+    await b.settle()
+    const page = b.el("wall-post").innerHTML
+    expect(page).toContain("<b>Waits</b><span>on reviewer for 3 h</span>")
+    expect(page).toContain('<div class="wp__block">needs a review</div>')
+    expect(page.match(/reviewer<\/b>/g)).toBeNull()
+    const fresh = openWall({ hash: "#post=r6", data: { ...WALL, posts: [post("r6", "cx", "in_progress", { runs: 0, runMs: 0, lastRun: null })] } })
+    await fresh.settle()
+    const prog = /<ol class="wtk__prog"[^>]*>(.*?)<\/ol>/.exec(fresh.el("wall-post").innerHTML)![1]
+    expect(prog).toContain('<li class="is-now" aria-current="step"><b>Asked</b>')
+    expect(prog).toContain('<li class=""><b>Working</b><span>not picked up yet</span>')
+  })
 })
