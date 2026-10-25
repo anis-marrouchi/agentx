@@ -701,6 +701,8 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
   return events.sort((a, b) => a.at - b.at)
 }
 
+const EVIDENCE_MAX = 500
+
 /** The post's plan steps, in order. Empty: it has no plan. */
 export function wallPlan(r: RequestRecord, deps: WallDeps): WallPlanStep[] {
   if (!deps.plans?.get(r.id)) return []
@@ -710,7 +712,8 @@ export function wallPlan(r: RequestRecord, deps: WallDeps): WallPlanStep[] {
     agentId: s.agentId,
     state: s.state,
     doneWhen: clean(s.doneWhen, 200),
-    evidence: s.evidence ? redactSecrets(s.evidence) : null,
+    // Clamped, not `clean`ed: markdown stripping would break a proof URL.
+    evidence: s.evidence ? redactSecrets(s.evidence.trim().slice(0, EVIDENCE_MAX)) : null,
     note: s.note ? clean(s.note, 200) : null,
   }))
 }
