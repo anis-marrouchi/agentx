@@ -82,6 +82,18 @@ Opening the setup page doesn't start the daemon; one of the two options in step 
 
 The npm package is called `agentix-cli`; the command it installs is `agentx`. It needs Node.js 22.19 or newer, up to 26 (Node 20 is too old).
 
+The quickest way is one command. **Terminal**, in the folder AgentX should live in:
+
+```sh
+npx agentix-cli start
+```
+
+It creates `agentx.json` with one agent (Claude Code when the `claude` command is installed, otherwise the built-in engine with an Anthropic API key), starts the daemon and the dashboard in the background, and opens that agent's chat in your browser. If no model is set up yet, the chat asks for an API key, which it saves to `.env` in that folder, or tells you to log in to the CLI. Then the same chat answers. Logs go to `.agentx/daemon.log` and `.agentx/board.log`.
+
+Running it again is safe: an existing `agentx.json` is left as it is, and a daemon or dashboard that already answers is reused. If ports 18800 or 4202 are taken by another AgentX, give a new folder its own: `npx agentix-cli start --port 18810 --dashboard-port 4212`.
+
+To install the `agentx` command globally and use the setup page instead:
+
 1. **Terminal:** install it:
    ```sh
    npm install -g agentix-cli@latest
@@ -93,13 +105,13 @@ The npm package is called `agentix-cli`; the command it installs is `agentx`. It
    ```
 3. **Browser:** fill in the setup page as described in [Your first agent](./first-agent.md), select **Save and continue**, then **Start daemon now**.
 
-You can also do steps 1 and 2 with one command. **Terminal:**
+The installer does step 1 and then runs `agentx start`. **Terminal:**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.sh | bash
 ```
 
-It installs the same npm package and opens the setup page. The script checks for Node.js 22.19 or newer, up to 26. If your Node.js is missing or outside that range, it installs Node 22 for you when nvm (a tool that manages Node.js versions) is on your computer, and makes it the default. Without nvm, it stops and tells you which version to install.
+The script checks for Node.js 22.19 or newer, up to 26. If your Node.js is missing or outside that range, it installs Node 22 for you when nvm (a tool that manages Node.js versions) is on your computer, and makes it the default. Without nvm, it stops and tells you which version to install. Set `AGENTX_SKIP_SETUP=1` to install without starting anything.
 
 Continue with [Your first agent](./first-agent.md).
 

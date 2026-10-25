@@ -7,11 +7,13 @@
 # What it does:
 #   1. Checks for Node.js 22.19 up to 26 (installs via nvm and sets it as the default if missing and nvm is present).
 #   2. Installs agentix-cli globally via npm.
-#   3. Runs `agentx setup` — opens the web wizard in the browser.
+#   3. Runs `agentx start` — creates a config with one agent (if the folder
+#      has none), starts the daemon and the dashboard in the background, and
+#      opens that agent's chat in the browser. Safe to run again.
 #
 # Environment:
 #   AGENTX_VERSION   - optional npm dist-tag or exact version (default: latest)
-#   AGENTX_SKIP_SETUP - set to "1" to install without launching the wizard
+#   AGENTX_SKIP_SETUP - set to "1" to install without starting anything
 set -euo pipefail
 
 AGENTX_VERSION="${AGENTX_VERSION:-latest}"
@@ -74,19 +76,18 @@ if ! npm install -g "agentix-cli@${AGENTX_VERSION}" >/dev/null 2>&1; then
 fi
 ok "agentix-cli installed: $(agentx --version 2>/dev/null || echo 'ready')"
 
-# 3. Launch wizard (unless skipped)
+# 3. Start (unless skipped)
 if [[ "${AGENTX_SKIP_SETUP}" == "1" ]]; then
   echo
   bold "Done."
-  info "Run  agentx setup  when you're ready to configure your first agent."
+  info "Run  agentx start  when you're ready: it starts your first agent and opens its chat."
   echo
   exit 0
 fi
 
 echo
-bold "Launching the setup wizard…"
-info "This opens http://127.0.0.1:4202/setup in your browser."
-info "If nothing opens, visit that URL manually."
+bold "Starting your first agent…"
+info "The config, the daemon and the dashboard go in this folder: $(pwd)"
 echo
 
-exec agentx setup
+exec agentx start

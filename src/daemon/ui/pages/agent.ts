@@ -618,6 +618,18 @@ const AGENT_PAGE_BODY = `
     <span class="ax-td-scenario" onclick="sendScenario(this.textContent)">Show me your skills</span>
   </div>
 
+  <!-- No model yet (#1163): asks for a key or the CLI login, then hides. -->
+  <div class="ax-td-model" id="td-model" hidden>
+    <div class="ax-td-model__t">This agent has no model yet</div>
+    <p class="ax-td-model__hint" id="td-model-hint"></p>
+    <form id="td-model-form" hidden onsubmit="saveModelKey(event)">
+      <input class="inp mono" id="td-model-key" type="password" placeholder="API key" autocomplete="off" />
+      <button class="ax-btn ax-btn--primary" type="submit">Save key</button>
+    </form>
+    <button class="ax-btn" id="td-model-recheck" type="button" onclick="checkModel()">Check again</button>
+    <div class="ax-td-model__err" id="td-model-err"></div>
+  </div>
+
   <div class="ax-td-chat" id="td-chat">
     <div class="ax-td-chat__msg-wrap is-bot">
       <div class="ax-td-chat__bubble is-bot" id="td-greeting">Hey! I'm ready. Send a message to try me out.</div>
@@ -1558,23 +1570,11 @@ async function dispatchTd(text) {
   appendTdTyping();
   const t0 = Date.now();
   try {
-    // Use /chat endpoint so test-drive exercises the same path as example.com.
-    // Falls back to /task reply shape if /chat isn't reachable (no auth configured).
-    let reply, queuedTask;
-    try {
-      const r = await req('POST', '/chat', {
-        agentId: AGENT_ID,
-        user_id: 'admin-ui',
-        conversation_id: __tdConvId,
-        message: text,
-      });
-      reply = r.reply || r.content || '(empty reply)';
-      queuedTask = r.queued_task || null;
-    } catch (_chatErr) {
-      // /chat may reject with 401 if AGENTX_CHAT_SECRET is set — fall back to /task
-      const r = await req('POST', '/task', { agent: AGENT_ID, message: text, context: { channel: 'test-drive', sender: 'admin-ui' } });
-      reply = r.content || '(empty reply)';
-    }
+    // Through the dashboard to the local daemon's /task (#1163): the
+    // dashboard does not serve /chat or /task itself.
+    const r = await req('POST', '/api/admin/agent-chat', { agent: AGENT_ID, message: text });
+    const reply = r.content || '(empty reply)';
+    const queuedTask = null;
     removeTdTyping();
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1) + 's';
     appendTdBubble('bot', reply, new Date().toLocaleTimeString() + ' · ' + elapsed, queuedTask);
@@ -1600,12 +1600,41 @@ $('btn-delete-agent')?.addEventListener('click', () => {
   );
 });
 
+/* ===== Test drive: no model yet (#1163) ===== */
+async function checkModel() {
+  const box = $('td-model');
+  if (!box) return;
+  try {
+    const r = await req('GET', '/api/admin/model-ready?agent=' + encodeURIComponent(AGENT_ID));
+    box.hidden = !!r.ready;
+    if (r.ready) return;
+    $('td-model-hint').textContent = r.hint || '';
+    $('td-model-form').hidden = r.need !== 'key';
+    $('td-model-err').textContent = '';
+  } catch (_e) { box.hidden = true; /* older dashboard or a peer: let the chat speak for itself */ }
+}
+window.checkModel = checkModel;
+window.saveModelKey = async function(e) {
+  e.preventDefault();
+  const inp = $('td-model-key');
+  const key = inp.value.trim();
+  if (!key) return;
+  $('td-model-err').textContent = '';
+  try {
+    const r = await req('POST', '/api/admin/model-key', { agent: AGENT_ID, key });
+    inp.value = '';
+    if (r.ready) { $('td-model').hidden = true; $('td-input-el')?.focus(); }
+    else checkModel();
+  } catch (err) { $('td-model-err').textContent = err.message; }
+};
+
 /* ===== Test-drive side panel: open/close ===== */
 function openTestDrive() {
   const p = $('td-panel');
   if (!p) return;
   p.classList.add('is-open');
   p.setAttribute('aria-hidden', 'false');
+  checkModel();
   setTimeout(() => $('td-input-el')?.focus(), 250);
 }
 function closeTestDrive() {

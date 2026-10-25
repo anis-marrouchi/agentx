@@ -36,6 +36,8 @@ export interface WizardPayload {
     triggerWords: string   // comma/space separated; we normalise on the server
     tier: "claude-code" | "codex-cli" | "opencode" | "sdk" | "orchestrator"
     model?: string
+    /** providers.<name> the engine uses (sdk/orchestrator); unset = engine default. */
+    provider?: string
     personality?: string   // short free text → CLAUDE.md
   }
   telegram?: {
@@ -70,7 +72,14 @@ export function wizardState(baseDir: string = process.cwd()): WizardState {
  * what was written. Throws on validation error — the caller surfaces the
  * message to the user.
  */
-export function runWizard(payload: WizardPayload, baseDir: string = process.cwd()): {
+/** Ports for a fresh install; the defaults are 18800 and 4202. Only
+ *  `agentx start --port/--dashboard-port` sets them (#1163). */
+export interface WizardPorts {
+  daemonPort?: number
+  dashboardPort?: number
+}
+
+export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(), ports: WizardPorts = {}): {
   summary: string
   nextSteps: string[]
   backupPath?: string
@@ -114,7 +123,7 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
 
   let backupPath: string | undefined
   if (!state.configExists) {
-    const cfg = buildFreshConfig(payload, workspaceDir, mentions, telegramTokenRef)
+    const cfg = buildFreshConfig(payload, workspaceDir, mentions, telegramTokenRef, ports)
     writeAgentxConfig(cfg, { configPath })
   } else {
     const result = mutateAgentxConfig((cfg) => {
@@ -185,16 +194,17 @@ function slugify(s: string): string {
   return (s || "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "")
 }
 
-function buildFreshConfig(payload: WizardPayload, workspaceDir: string, mentions: string[], telegramTokenRef?: string) {
+function buildFreshConfig(payload: WizardPayload, workspaceDir: string, mentions: string[], telegramTokenRef?: string, ports: WizardPorts = {}) {
   const id = slugify(payload.nodeName) || "team"
+  const daemonPort = ports.daemonPort ?? 18800
   const cfg: any = {
-    node: { id, name: payload.nodeName, bind: "127.0.0.1:18800", defaultAgent: payload.agent.id },
+    node: { id, name: payload.nodeName, bind: `127.0.0.1:${daemonPort}`, defaultAgent: payload.agent.id },
     providers: { claude: { apiKey: "${ANTHROPIC_API_KEY}" } },
     agents: { [payload.agent.id]: agentBlock(payload, workspaceDir, mentions) },
     channels: {},
     crons: {},
     mesh: { enabled: false, peers: [], discovery: "static", healthCheck: { interval: 60, timeout: 10 } },
-    dashboard: { enabled: true, port: 4202, bind: "127.0.0.1", daemonUrl: "http://localhost:18800" },
+    dashboard: { enabled: true, port: ports.dashboardPort ?? 4202, bind: "127.0.0.1", daemonUrl: `http://localhost:${daemonPort}` },
     boards: [],
   }
   if (payload.telegram && telegramTokenRef) {
@@ -219,6 +229,7 @@ function agentBlock(payload: WizardPayload, workspaceDir: string, mentions: stri
     permissionMode: "default",
   }
   if (payload.agent.model) block.model = payload.agent.model
+  if (payload.agent.provider) block.provider = payload.agent.provider
   if (payload.agent.personality?.trim()) block.systemPrompt = payload.agent.personality.trim().slice(0, 400)
   return block
 }
@@ -254,7 +265,8 @@ function ensureEnvEntries(envPath: string, payload: WizardPayload, telegramToken
       "# (Never commit this file — it contains secrets.)",
       "",
     ]
-    writeFileSync(envPath, [...header, ...lines, ""].join("\n"))
+    // Owner-only: it holds API keys and bot tokens.
+    writeFileSync(envPath, [...header, ...lines, ""].join("\n"), { mode: 0o600 })
     return
   }
   if (lines.length > 0) {

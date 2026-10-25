@@ -93,6 +93,8 @@ import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } fro
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
+import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
+import { handleAgentChatApi } from "./agent-chat-api"
 
 // --- Kanban Board Dashboard ---
 //
@@ -791,6 +793,23 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       sendJson(res, 401, { error: "unauthorized" })
       return
     }
+  }
+  // The agent page's chat (#1163), after the token gate above.
+  if (await handleAgentChatApi(req, res, path, {
+    daemonUrl: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token, readBody: readJson,
+  })) return
+  // The chat's "no model yet" box (#1163), after the token gate above.
+  if (path === MODEL_READY_PATH || path === MODEL_KEY_PATH) {
+    if (await handleModelSetupApi(req, res, path, url.searchParams, {
+      dir: process.cwd(),
+      readBody: readJson,
+      reloadDaemon: async () => {
+        const headers: Record<string, string> = {}
+        if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+        const r = await fetch(ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") + "/reload", { method: "POST", headers, signal: AbortSignal.timeout(10_000) })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      },
+    })) return
   }
   if (method === "GET" && path === "/api/admin/config") {
     await handleAdminConfigGet(req, res)
