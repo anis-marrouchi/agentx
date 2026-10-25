@@ -295,6 +295,7 @@ async function act(li, action){
     var ta = li.querySelector('textarea[data-draft]');
     if (ta && ta.value.trim()) body.text = ta.value;
   }
+  if (action === 'yes' && it && it.text_hash) body.seen = it.text_hash;
   var btns = li.querySelectorAll('button[data-act]');
   btns.forEach(function(b){ b.disabled = true; });
   try {

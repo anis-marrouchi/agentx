@@ -98,7 +98,7 @@ Every Monday the agent drafts the week's posts and Telegram tells you how many a
 
 1. Open the dashboard and go to **Approvals**. Click **Posts** to see only the drafts.
 2. Read the whole post. Open **Details** to see which of your past posts it followed.
-3. Click **Yes** to publish it, or **No** to drop it.
+3. Click **Yes** to publish it, or **No** to drop it. Yes publishes exactly the post you read: if the draft changed after the page loaded, Yes is refused and asks you to reload.
 
 ![The Approvals page with a LinkedIn post waiting, showing the whole post and the past posts it followed](/screenshots/content/approvals-post.png)
 
@@ -139,6 +139,13 @@ When no connector is set, a yes saves the post in `agents/content/ready/`, one t
 ## Connect LinkedIn or X
 
 With a connector, a yes posts straight away. Each one needs a token (a long password the platform gives your app) kept in `.env`, never in `agentx.json`.
+
+Put the token in the `.env` file next to `agentx.json`, and nowhere else:
+
+- Not in `agentx.json`: that file is shown in the dashboard and often shared.
+- Not in the background service's own settings (for example an `Environment=` line in a systemd unit, or a launchd `EnvironmentVariables` entry). AgentX keeps the keys of `.env` away from the agents it runs, but a value set in the service's settings is passed on to every agent, so an agent could read the token and post without you.
+
+Both the dashboard and `agentx approvals approve` read the token from `.env`.
 
 **LinkedIn:**
 
@@ -196,6 +203,7 @@ LinkedIn tokens expire after about two months. When one has expired, a yes saves
 |---|---|
 | The agent says there are no past posts | The folder is empty or in the wrong place. Put the files in `agents/content/voice/`, ending in `.md` or `.txt`, and check with `agentx content voice --agent content`. |
 | `not in voice/: <file>` | The agent named a sample that is not there. Ask it to draft again; it must name files from the folder. |
+| `changed since it was shown: reload and read it again` | The draft file changed after you opened the page. Reload **Approvals**, read the post again, then click **Yes**. |
 | `the post is 312 characters; X takes 280 at most` | Ask for a shorter post, or edit it when you approve with `--text`. |
 | A yes saves the post to paste instead of posting | No connector is set, or its token is missing from `.env`. Do [Connect LinkedIn or X](#connect-linkedin-or-x), then restart the daemon. |
 | `not posted on LinkedIn: LinkedIn said 401` | The token has expired or lacks `w_member_social`. Get a new one, put it in `.env`, restart. The post is saved in `agents/content/ready/` so you can paste it. |
