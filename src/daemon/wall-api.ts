@@ -215,7 +215,8 @@ export interface WallFailure {
   error: string
 }
 
-const clean = (s: string | null | undefined, max = TEXT_MAX): string => (s ? redactSecrets(summarize(s, max)) : "")
+// Redact before cutting: a token cut at `max` may no longer match a pattern.
+const clean = (s: string | null | undefined, max = TEXT_MAX): string => (s ? summarize(redactSecrets(s), max) : "")
 
 export function mentionsIn(text: string): string[] {
   return [...new Set([...text.matchAll(/(?:^|[\s(])@([a-z0-9][a-z0-9_-]{1,63})\b/gi)].map((m) => m[1].toLowerCase()))]
@@ -713,7 +714,7 @@ export function wallPlan(r: RequestRecord, deps: WallDeps): WallPlanStep[] {
     state: s.state,
     doneWhen: clean(s.doneWhen, 200),
     // Clamped, not `clean`ed: markdown stripping would break a proof URL.
-    evidence: s.evidence ? redactSecrets(s.evidence.trim().slice(0, EVIDENCE_MAX)) : null,
+    evidence: s.evidence ? redactSecrets(s.evidence.trim()).slice(0, EVIDENCE_MAX) : null,
     note: s.note ? clean(s.note, 200) : null,
   }))
 }
