@@ -14,6 +14,8 @@ import { renderShell, type TopbarPeer } from ".."
 export interface ObservabilityPageOpts {
   peers?: TopbarPeer[]
   currentPeerId?: string
+  /** dashboard.token, sent with this page's /api/admin/* reads (#1302). */
+  localToken?: string
 }
 
 export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): string {
@@ -141,6 +143,10 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
   </section>
 </div>`
 
+  const tokenScript = opts.localToken
+    ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>`
+    : ""
+
   return renderShell({
     title: "AgentX · Health",
     activeTab: "health",
@@ -149,7 +155,7 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
     currentPeerId: opts.currentPeerId,
     body,
     css: OBS_PAGE_CSS,
-    scripts: `<script>${OBS_PAGE_SCRIPT}</script>`,
+    scripts: tokenScript + `<script>${OBS_PAGE_SCRIPT}</script>`,
   })
 }
 
@@ -352,7 +358,7 @@ const OBS_PAGE_SCRIPT = `
     }
 
     try {
-      var r = await fetch(url, { credentials: 'same-origin' });
+      var r = await fetch(url, { credentials: 'same-origin', headers: authHeaders() });
       var data = await r.json();
       render(tab, data);
     } catch (e) {
@@ -400,12 +406,14 @@ const OBS_PAGE_SCRIPT = `
   function closeLogsStream(){
     if (logsState.es) { try { logsState.es.close(); } catch (e) {} logsState.es = null; }
   }
+  function authHeaders(){ return window.AX_LOCAL_TOKEN ? { Authorization: 'Bearer ' + window.AX_LOCAL_TOKEN } : {}; }
+
   // ----- Doctor tab: preflight checks (mirror of agentx doctor) -----
   async function loadDoctor(){
     var running = document.getElementById('obs-doctor-running').checked;
     document.getElementById('obs-doctor-summary').textContent = 'running…';
     try {
-      var r = await fetch('/api/admin/doctor?running=' + (running ? 'true' : 'false'), { credentials: 'same-origin' });
+      var r = await fetch('/api/admin/doctor?running=' + (running ? 'true' : 'false'), { credentials: 'same-origin', headers: authHeaders() });
       var data = await r.json();
       var s = data.summary || {};
       document.getElementById('obs-doctor-summary').textContent =

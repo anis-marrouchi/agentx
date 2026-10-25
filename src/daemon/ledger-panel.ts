@@ -175,6 +175,8 @@ export async function handleLedgerApi(
 export interface LedgerPageOpts {
   peers?: TopbarPeer[]
   currentPeerId?: string
+  /** dashboard.token, sent with this page's /api/admin/* reads (#1302). */
+  localToken?: string
 }
 
 export function renderLedgerPage(opts: LedgerPageOpts = {}): string {
@@ -311,7 +313,7 @@ export function renderLedgerPage(opts: LedgerPageOpts = {}): string {
       if (since) qs += '&since=' + encodeURIComponent(since);
       if (source) qs += '&source=' + encodeURIComponent(source);
       try {
-        var r = await fetch('/api/admin/ledger/' + current + qs, { credentials: 'same-origin' });
+        var r = await fetch('/api/admin/ledger/' + current + qs, { credentials: 'same-origin', headers: window.AX_LOCAL_TOKEN ? { Authorization: 'Bearer ' + window.AX_LOCAL_TOKEN } : {} });
         var data = await r.json();
         render(current, data);
       } catch (e) {
@@ -389,13 +391,17 @@ export function renderLedgerPage(opts: LedgerPageOpts = {}): string {
   })();
   `
 
+  const tokenScript = opts.localToken
+    ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>`
+    : ""
+
   return renderShell({
     title: "AgentX · Ledger",
     activeTab: "graph",
     subtitle: "Ledger",
     body,
     css,
-    scripts: `<script>${script}</script>`,
+    scripts: tokenScript + `<script>${script}</script>`,
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
   })

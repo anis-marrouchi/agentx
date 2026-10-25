@@ -13,6 +13,8 @@ import { renderShell, type TopbarPeer } from ".."
 export interface CostPageOpts {
   peers?: TopbarPeer[]
   currentPeerId?: string
+  /** dashboard.token, sent with this page's /api/admin/* reads (#1302). */
+  localToken?: string
 }
 
 export function renderCostPage(opts: CostPageOpts = {}): string {
@@ -330,12 +332,30 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
     /* Export CSV */
     document.getElementById('cost-export').addEventListener('click', function(e){
       e.preventDefault();
-      window.location.href = '/api/admin/observability/cost.csv?range=' + encodeURIComponent(state.range);
+      // A fetch, not a navigation, so the request carries the token (#1302).
+      fetch('/api/admin/observability/cost.csv?range=' + encodeURIComponent(state.range), { credentials: 'same-origin', headers: authHeaders() })
+        .then(function(r){
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          var m = /filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '');
+          return r.blob().then(function(b){ return { blob: b, name: m ? m[1] : 'agentx-cost.csv' }; });
+        })
+        .then(function(f){
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(f.blob);
+          a.download = f.name;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+        })
+        .catch(function(err){ console.error('cost export failed', err); });
     });
+
+    function authHeaders(){ return window.AX_LOCAL_TOKEN ? { Authorization: 'Bearer ' + window.AX_LOCAL_TOKEN } : {}; }
 
     async function load(){
       try {
-        var r = await fetch('/api/admin/observability/cost?range=' + encodeURIComponent(state.range), { credentials: 'same-origin' });
+        var r = await fetch('/api/admin/observability/cost?range=' + encodeURIComponent(state.range), { credentials: 'same-origin', headers: authHeaders() });
         state.data = await r.json();
         render();
       } catch (e) { console.error('cost fetch failed', e); }
@@ -356,7 +376,7 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
     async function loadBudgets(){
       var card = document.getElementById('cost-budgets-card');
       try {
-        var r = await fetch('/api/admin/observability/budgets', { credentials: 'same-origin' });
+        var r = await fetch('/api/admin/observability/budgets', { credentials: 'same-origin', headers: authHeaders() });
         if (!r.ok) return;
         var v = await r.json();
         var capped = (v.agents || []).some(function(a){ return a.capUsd; }) || (v.fleet && v.fleet.capUsd);
@@ -646,13 +666,17 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
   })();
   `
 
+  const tokenScript = opts.localToken
+    ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>`
+    : ""
+
   return renderShell({
     title: "AgentX · Cost",
     activeTab: "cost",
     subtitle: "Cost",
     body,
     css,
-    scripts: `<script>${script}</script>`,
+    scripts: tokenScript + `<script>${script}</script>`,
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
   })

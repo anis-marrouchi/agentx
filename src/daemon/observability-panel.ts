@@ -84,9 +84,9 @@ function openReadOnly(): OpenedDb | null {
   }
 }
 
-export function handleObservabilityGet(_req: IncomingMessage, res: ServerResponse, peers: TopbarPeer[] = []): void {
+export function handleObservabilityGet(_req: IncomingMessage, res: ServerResponse, peers: TopbarPeer[] = [], localToken?: string): void {
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-  res.end(renderObservabilityPage({ peers }))
+  res.end(renderObservabilityPage({ peers, localToken }))
 }
 
 interface QueryParams {
