@@ -14,7 +14,8 @@ import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { setDispatchBudget } from "@/agents/claude-code-quota"
-import { budgetConfigFrom, getBudgetView, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets } from "@/agents/agent-budget"
+import { budgetConfigFrom, budgetProjectOf, getBudgetView, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets, setBudgetProjectResolver } from "@/agents/agent-budget"
+import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { isRestricted } from "@/guard/autonomy"
@@ -65,13 +66,14 @@ import { DEFAULT_REACH_SETTINGS } from "@/notify/reach"
 import { ChannelDownError } from "@/channels/router"
 import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
-import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
+import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, spendByChatSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { SignalService } from "@/agents/signals/service"
 import { StoppedTaskStore } from "@/agents/signals/store"
 import { setSignalService } from "@/agents/signals/instance"
 import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
 import { traceToolCalls } from "@/storage/traces"
+import { timeLimitContinuations } from "@/agents/resume/time-limit"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
@@ -228,6 +230,7 @@ import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { recentFeed, streamEnvelopes } from "@/events/feed-http"
 import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
+import { publishNamedEvent } from "@/events/emit"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
@@ -504,14 +507,18 @@ export class AgentXDaemon {
 
     // Wake-on-event subscriptions (src/events/wake.ts). Reads the agents on
     // every event so a reload applies; the woken turn runs under the
-    // event's root so what it causes cannot wake it again.
+    // event's root so what it causes cannot wake it again. A wake the
+    // dispatch cap holds is handed back as held and retried (#1284).
     this.stopEventWaker = new EventWaker({
       agents: () => this.config.agents,
-      dispatch: (agentId, e) => withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
-        message: wakeMessage(e),
-        agentId,
-        context: { channel: "events", chatId: `events:${agentId}` },
-      })),
+      dispatch: async (agentId, e, sub) => {
+        const response = await withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
+          message: wakeMessage(e, sub.prompt),
+          agentId,
+          context: { channel: "events", chatId: `events:${agentId}` },
+        }))
+        return response.errorKind === "dispatch_hold" ? { held: response.error || "dispatch held" } : response
+      },
       log: (msg) => this.log(msg),
       // Peer events (mesh feed) wake only subscriptions naming their node.
       isLocal: (e) => getAgentEventBus().isLocal(e),
@@ -685,6 +692,9 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
         }
+        // A run continued after its time limit lists the tool calls the
+        // stopped run made (#1257).
+        this.registry.setTraceToolCalls((traceId) => traceToolCalls(db, traceId))
         // Task watchers (#1030). Attached whatever the setting says, like
         // requests: the checkpoint reads `watchers.enabled` on every event.
         try {
@@ -1881,8 +1891,14 @@ export class AgentXDaemon {
       applied.push("dispatch-budget")
     }
     // Monthly money budgets (#1162): raising a cap resumes a paused agent.
-    if (JSON.stringify(budgetConfigFrom(this.config)) !== JSON.stringify(budgetConfigFrom(next))) {
+    // A changed project list re-maps the month's spend to projects (#1290).
+    const projectsChanged = JSON.stringify(next.dashboard?.wall?.projects ?? []) !== JSON.stringify(this.config.dashboard?.wall?.projects ?? [])
+    if (projectsChanged || JSON.stringify(budgetConfigFrom(this.config)) !== JSON.stringify(budgetConfigFrom(next))) {
       setAgentBudgets(budgetConfigFrom(next))
+      if (projectsChanged) {
+        setBudgetProjectResolver(budgetProjectResolver(next))
+        this.seedBudgets()
+      }
       // A raised cap lets the messages held for a paused agent run now.
       this.registry.releaseBudgetHolds()
       applied.push("budgets")
@@ -2895,20 +2911,25 @@ export class AgentXDaemon {
    *  cost is added as it completes, and a line it crosses tells the owner
    *  once. The registry refuses runs past a cap (preflightBudgetGate). */
   private startBudgets(): void {
-    if (this.db) {
-      try {
-        seedMonthSpend(spendByAgentSince(this.db, monthStart()))
-      } catch (e: any) {
-        this.log(`  Budgets: couldn't read this month's spend (${e?.message ?? e}); counting from now`)
-      }
-    }
+    this.seedBudgets()
     getAgentEventBus().on("task:completed", (p: AgentXEvents["task:completed"]) => {
-      for (const n of recordAgentSpend(p.agentId, p.costUsd)) {
+      for (const n of recordAgentSpend(p.agentId, p.costUsd, undefined, budgetProjectOf(p.agentId, p.chatId))) {
         this.log(`[budget] ${n.title}: ${n.message}`)
         void this.notifyOwner(n.title, n.message, "budget", n.kind === "cap" ? 5 : 4, { key: `budget:${n.kind}:${n.scope}:${n.month}:${n.capUsd}` })
           .catch((e) => this.log(`[budget] couldn't tell the owner (${e?.message ?? e})`))
       }
     })
+  }
+
+  /** The month's spend per agent and per project (#1290), from the traces. */
+  private seedBudgets(): void {
+    if (!this.db) return
+    try {
+      const since = monthStart()
+      seedMonthSpend(spendByAgentSince(this.db, since), undefined, spendByProject(spendByChatSince(this.db, since), budgetProjectOf))
+    } catch (e: any) {
+      this.log(`  Budgets: couldn't read this month's spend (${e?.message ?? e}); counting from now`)
+    }
   }
 
   /** Tell the owner through the notify path: a push to the default
@@ -4197,7 +4218,7 @@ export class AgentXDaemon {
       message: target.message,
       calleeContext: target.calleeContext,
       extras,
-      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes) }) } : {}),
+      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes, timeLimitContinuations(this.config.resume.timeLimit)) }) } : {}),
       // One session per piece of work (#1100): the body's home, or the one
       // a /task context carries.
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
@@ -5419,6 +5440,21 @@ export class AgentXDaemon {
           events,
           next: events.length ? events[events.length - 1].id : since,
         })
+        return
+      }
+
+      // A named event from an agent or a script (#1284): `agentx events
+      // emit`, the agentx_emit MCP tool. Control POST: gated by
+      // isControlPost above. From inside a running turn it carries that
+      // agent and that turn's root, so the wake loop guard holds.
+      if (req.method === "POST" && path === "/events") {
+        const body = await readBody(req)
+        const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+        const caller = turn ? { agentId: turn.agentId, rootId: turn.taskId ? this.registry.runningTaskRoot(turn.taskId) : undefined } : null
+        const result = publishNamedEvent(getAgentEventBus(), body, new Set(Object.keys(this.config.agents || {})), caller)
+        if (!result.ok) { this.json(res, 400, { error: result.error }); return }
+        this.log(`[events] emitted ${result.event.type}${result.event.agentId ? ` by ${result.event.agentId}` : ""}: ${result.event.summary}`)
+        this.json(res, 200, { ok: true, event: result.event })
         return
       }
 

@@ -101,6 +101,14 @@ describe("a schedule set to report only exceptions", () => {
     expect(runRecords()[0]).toMatchObject({ success: true, quiet: true })
   })
 
+  it("a quiet answer stays quiet on a job that also requires sources (#1288)", async () => {
+    const { deliver, go } = run(job({ report: "exceptions", requireSources: true }), { content: NOTHING_TO_REPORT })
+    await go()
+    expect(deliver).not.toHaveBeenCalled()
+    expect(runRecords()[0]).toMatchObject({ success: true, quiet: true })
+    expect(runRecords()[0].unsourced).toBeUndefined()
+  })
+
   it("without the setting, every answer is sent as before", async () => {
     const { registry, deliver, go } = run(job(), { content: NOTHING_TO_REPORT })
     await go()

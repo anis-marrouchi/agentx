@@ -10,6 +10,7 @@ import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
+import { handleLogin, hasSession, isOffBox, pageToken, redirectToLogin } from "./dashboard-session"
 import { loadOperatorKey } from "@/requests/operator"
 import { currentPeople, handleMemberRequest } from "./member-routes"
 import { MemberStore } from "@/members/store"
@@ -50,6 +51,7 @@ import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
 import { readRequiredSettings, updateRequiredSettings, type RequiredSettingsPatch } from "@/daemon/workflow-required-settings"
+import { budgetPatchProblem, updateBudget, type BudgetPatch } from "@/daemon/budget-settings"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import { appReachDeps, type AppReachDeps } from "./app-reach"
@@ -261,6 +263,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
+  // Sign-in for a browser on another machine (#1306, dashboard-session.ts).
+  if (await handleLogin(req, res, url, method, ctx.token)) return
 
   // Phone app. First, above every proxy and the loopback-trusting gates
   // below: /app and /api/app/* always need a device token (app-routes.ts).
@@ -312,8 +316,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       res.end()
       return
     }
+    if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
+    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   if (method === "GET" && path === "/boards") {
@@ -322,8 +327,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (method === "GET" && path === "/wall") {
+    if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
+    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   if (method === "GET" && path === "/live") {
@@ -578,17 +584,20 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
 
   // Admin panel — ongoing management without editing JSON.
   if (method === "GET" && path === "/admin") {
-    handleAdminGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
+    if (!pageAllowed(req, res, ctx, path)) return
+    handleAdminGet(req, res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
     return
   }
   // /approvals — one inbox for every decision waiting for the operator.
   if (method === "GET" && path === "/approvals") {
-    handleApprovalsPageGet(res, buildTopbarPeers(ctx.config), ctx.token)
+    if (!pageAllowed(req, res, ctx, path)) return
+    handleApprovalsPageGet(res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
     return
   }
   // /admin/graph — Intent Knowledge Graph: pending approvals + taxonomy editor.
   if (method === "GET" && path === "/admin/graph") {
-    handleGraphGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
+    if (!pageAllowed(req, res, ctx, path)) return
+    handleGraphGet(req, res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
     return
   }
   // /admin/health — platform-health view over route_traces + rotations + errors.
@@ -780,7 +789,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // /admin/agents/<id> — dedicated per-agent page with md editor + skill mgr.
   const agentPageMatch = method === "GET" && path.match(/^\/admin\/agents\/([a-z0-9][a-z0-9_-]*)$/)
   if (agentPageMatch) {
-    handleAgentPageGet(req, res, agentPageMatch[1], buildTopbarPeers(ctx.config), ctx.token)
+    if (!pageAllowed(req, res, ctx, path)) return
+    handleAgentPageGet(req, res, agentPageMatch[1], buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
     return
   }
   // (Cross-mesh proxy is now handled at the top of /api/admin/*. The
@@ -794,6 +804,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       sendJson(res, 401, { error: "unauthorized" })
       return
     }
+  }
+  // Set or raise a monthly budget from the Cost page (#1290), after the
+  // token gate above. { scope: agent|project|fleet, id?, monthlyUsd, warnRatio? }
+  if (method === "POST" && path === "/api/admin/budgets") {
+    const body = await readJson(req).catch(() => ({})) as Record<string, unknown>
+    const problem = budgetPatchProblem(body)
+    if (problem) { sendJson(res, 400, { error: problem }); return }
+    const r = await updateBudget(body as unknown as BudgetPatch)
+    if (!r.success) { sendJson(res, 400, { error: r.error }); return }
+    sendJson(res, 200, { ok: true, reloaded: !!r.reloaded })
+    return
   }
   // The agent page's chat (#1163), after the token gate above.
   if (await handleAgentChatApi(req, res, path, {
@@ -846,9 +867,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   // People (#441): the page and its /api/admin/people data, after the token
   // gate above. The people list is read per request, like the member page.
+  if (method === "GET" && path === "/people" && !pageAllowed(req, res, ctx, path)) return
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
-    root: process.cwd(), db: () => dashboardDb(), peers: buildTopbarPeers(ctx.config), localToken: ctx.token,
+    root: process.cwd(), db: () => dashboardDb(), peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token),
   })) return
   if (path.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, path)
@@ -1131,7 +1153,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // carry it (or a scoped token with dashboard:write).
     const authHeader = req.headers.authorization || ""
     const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-    if (got === ctx.token) { /* fall through */ }
+    if (got === ctx.token || hasSession(req, ctx.token)) { /* fall through */ }
     else {
       const tokStore = new TokenStore()
       const rec = got ? tokStore.verify(got) : null
@@ -2113,7 +2135,7 @@ function getOrCreateWikiHandler(_ctx: { config: DaemonConfig; token?: string }):
     // stays hidden when wiki.curator.enabled is off there, so a settings
     // change shows without restarting the dashboard.
     curator: true,
-    curatorToken: () => _ctx.token,
+    curatorToken: (req) => pageToken(req, _ctx.token),
     // No remote-peer browsing in the embedded view — keeps the dashboard
     // independent of mesh state. Operators who want cross-mesh wiki nav
     // can still run `agentx wiki serve --peer <url>`.
@@ -3077,9 +3099,20 @@ function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
   if (!ctx.token) return true
   const authHeader = req.headers.authorization || ""
   const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-  if (got === ctx.token) return true
+  if (got === ctx.token || hasSession(req, ctx.token)) return true
   const rec = got ? new TokenStore().verify(got) : null
   return !!rec && recordHasScope(rec, "dashboard:write")
+}
+
+/** A page that carries AX_LOCAL_TOKEN (#1306). Off-box, a caller that has not
+ *  signed in goes to /login; one that has gets the page without the token
+ *  (pageToken), and its session cookie carries the page's API calls. */
+function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: string): boolean {
+  if (ctx.token && isOffBox(req) && !adminTokenOk(req, ctx)) {
+    redirectToLogin(res, path)
+    return false
+  }
+  return true
 }
 
 function localNodeName(config: DaemonConfig): string {

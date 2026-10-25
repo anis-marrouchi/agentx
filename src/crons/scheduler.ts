@@ -14,6 +14,7 @@ import { withNewRoot } from "@/events/envelope"
 import { withEventPayload, serializePayload, ROUTINE_PAYLOAD_ENV } from "./event-payload"
 import { NoteStore, renderNotesInbox } from "@/wiki/notes"
 import { isQuietRun, withQuietRule } from "./quiet"
+import { withSourceWarning } from "@/sales/sources"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -230,6 +231,7 @@ export class CronScheduler {
         value: def.value,
         deliverResult: def.deliverResult !== false && Boolean(def.notify),
         report: def.report,
+        requireSources: def.requireSources,
         consecutiveErrors: 0,
         totalRuns: 0,
         totalFailures: 0,
@@ -683,9 +685,18 @@ export class CronScheduler {
         this.log(`Job "${jobId}" completed in ${result.duration}ms`)
       }
 
+      // An answer that must cite its sources goes out with the lines that
+      // do not named under it; the run record keeps the answer as written.
+      // A quiet answer (#1289) is not checked: it is sent nowhere.
+      const checked = job.requireSources && response.content && !result.quiet ? withSourceWarning(response.content) : undefined
+      if (checked?.unsourced) {
+        result.unsourced = checked.unsourced
+        this.log(`Job "${jobId}": ${checked.unsourced} answer line(s) without a source`)
+      }
+
       // Log run
       this.logRun(result)
-      await this.deliverResult(job, response.content, startedAt)
+      await this.deliverResult(job, checked?.text ?? response.content, startedAt)
 
       // Post-hook
       if (this.hooks?.has("post:cron-run" as any)) {

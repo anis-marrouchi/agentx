@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
+import { monthlyBudgetSchema } from "@/agents/budget-schema"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
@@ -227,18 +228,11 @@ export const eventSubscriptionSchema = z.object({
   /** wake only: no wake when the agent was already woken this many times
    *  in the past hour. */
   maxPerHour: z.number().int().min(1).max(60).default(4),
+  /** wake only: what to do next when this event arrives. Added to the
+   *  woken turn's message after the event itself (#1284). */
+  prompt: z.string().min(1).max(2000).optional(),
 })
 
-/** Monthly money budget (#1162): most this scope may spend in one
- *  calendar month (UTC). Spend is the recorded cost of each run. At
- *  warnRatio × monthlyUsd the owner gets one notice; at the cap new runs
- *  are refused until the month ends or the cap is raised. Applies on save. */
-const monthlyBudgetSchema = z.object({
-  /** USD per calendar month. 0 or unset = no cap. */
-  monthlyUsd: z.number().min(0).max(1_000_000).optional(),
-  /** Share of the cap at which the owner is warned (default 0.8). */
-  warnRatio: z.number().gt(0).max(1).default(0.8),
-})
 
 const agentConfigSchema = z.object({
   name: z.string(),
@@ -817,6 +811,10 @@ const cronJobSchema = z.object({
    *  such a quiet run sends nothing to `notify` (#1289). Failures are
    *  alerted either way. Unset or `always`: every answer is sent. */
   report: z.enum(["always", "exceptions"]).optional(),
+  /** Check the answer before it is delivered: every line that states a
+   *  fact must carry a source link, or the owner is told which do not
+   *  (#1288). See src/sales/sources.ts. */
+  requireSources: z.boolean().optional(),
   /** Secret that lets an external system fire this job now via
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */
@@ -1987,6 +1985,13 @@ export const daemonConfigSchema = z.object({
     crashLoop: z.object({
       restarts: z.number().int().positive().default(3),
       windowMinutes: z.number().positive().default(10),
+    }).default({}),
+    /** A run stopped at its agent's time limit (maxExecutionMinutes) is
+     *  continued in the same chat, with a note, up to this many times
+     *  (#1257). Scheduled jobs and workflow steps never are. */
+    timeLimit: z.object({
+      enabled: z.boolean().default(true),
+      maxContinuations: z.number().int().min(0).max(3).default(1),
     }).default({}),
   }).default({}),
   /** Stop and resume signals (agents/signals, #857): stop a running task

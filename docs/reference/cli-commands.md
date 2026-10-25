@@ -500,6 +500,53 @@ Write a team to one file you can share: agents, prompts, skills, schedules, chan
 | `--description <text>` | — | A few lines on how the team works. |
 | `-c, --config <path>` | — | Path to agentx.json. |
 
+## sales
+
+`agentx sales`: The sales team's lead list, opt-outs and competitor watch. Run it in the sales agent's folder, or pass `--workspace`. See [Find and follow up sales leads](../jobs/sales.md).
+
+### `agentx sales leads`
+
+New leads (added today or yesterday) and quiet leads from `leads.md`, leaving out everyone in `opt-outs.md`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--workspace <dir>` | this folder | The sales agent's folder. |
+| `--days <n>` | `7` | Days without contact before a lead is quiet. |
+| `--quiet-only` | — | List only the quiet leads. |
+
+### `agentx sales opt-out <name>`
+
+Record that someone asked not to be contacted; they are left out of every list and draft.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--company <company>` | — | Their company (unset: the person at every company). |
+| `--reason <text>` | — | Why, in a few words. |
+| `--workspace <dir>` | this folder | The sales agent's folder. |
+
+### `agentx sales watch`
+
+Check the pages in `competitors.md` and print only what changed since the last check.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--workspace <dir>` | this folder | The sales agent's folder. |
+
+### `agentx sales changes`
+
+Competitor changes recorded by `sales watch`, for the brief.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <duration>` | `24h` | How far back, like `24h` or `3d`. |
+| `--workspace <dir>` | this folder | The sales agent's folder. |
+
+### `agentx sales check <file>`
+
+List the lines of an answer that state a fact without a source link. `-` reads standard input. Exits with 1 when a line has no source.
+
+No flags.
+
 ## approvals
 
 `agentx approvals`: One inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, requests that are not finished).
@@ -3278,6 +3325,16 @@ Forget a stopped task and its resume plan, when it won't be resumed. It can no l
 | `--json` | — | Emit JSON. |
 | `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl from config). |
 | `--token <token>` | — | Bearer token (defaults to dashboard.token from config). |
+
+### `agentx events emit <name>`
+
+Send a named event, such as `render:ready`, that wakes the agents subscribed to it. See [Send your own named events](/automations/event-subscriptions#send-your-own-named-events). Takes `--node`, `--token` and `--json` from `agentx events`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--summary <text>` | the name | One short line on what happened. |
+| `--ref <ref>` | — | Pointer to the details: an issue, a path, a run ID. |
+| `--by <name>` | the running agent | Who sent it: an agent ID, or a person's name. |
 
 ## db (advanced)
 
