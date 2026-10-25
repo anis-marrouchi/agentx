@@ -143,11 +143,12 @@ The rules of the look:
 
 Every pull request runs the **Docs gate** check (`.github/workflows/docs-gate.yml`). It enforces the rules above without any AI: the same input always gives the same result. All paths, patterns and lists live in one file, `scripts/docs-gate.config.json`.
 
-The gate runs three checks:
+The gate runs four checks:
 
 1. **Code changes come with docs.** If the PR changes something users see (CLI commands, the config schema, `agentx.example.json`, dashboard pages, `skills/`, `apps/`, or a new `process.env.` variable) and adds or edits no page under `docs/`, the check fails. Tests, CI files and internal code do not count. PRs titled `refactor:`, `test:` or `ci:` pass.
 2. **Removed things leave the docs.** The gate reads every CLI command, flag and setting before and after the PR. If the PR removes or renames one that a page still mentions, the check fails and names the page and line. This applies even when docs are skipped.
-3. **Changed pages follow the docs rule.** Every page the PR adds or edits must end with **Check it worked** then **If something is wrong**, use numbered lists for steps, point only at images that exist, and contain no tokens, personal home paths or real company hosts.
+3. **Removals are marked as breaking** ([upgrade promise](docs/reference/releases.md#upgrade-promise)). If the PR removes or renames a command, flag or setting, its title needs `!` (for example `feat(daemon)!: drop oldKnob`) and its description a line `BREAKING CHANGE: <what to do when upgrading>`. That line becomes the upgrade note in the changelog. When nothing breaks, for example because the old name still works, a maintainer adds the `not-breaking` label and a line `Not breaking because …`.
+4. **Changed pages follow the docs rule.** Every page the PR adds or edits must end with **Check it worked** then **If something is wrong**, use numbered lists for steps, point only at images that exist, and contain no tokens, personal home paths or real company hosts.
 
 A fourth step lists every command, flag and setting that no page mentions. It only warns for now; it will block once the docs catch up.
 
@@ -373,7 +374,7 @@ Release PRs get the same checks as any other PR, so they still merge. A new job 
 
 ## Releases
 
-Use Conventional Commits (`fix:`, `feat:`, and `!` / `BREAKING CHANGE:` for incompatible changes). Release Please opens a PR on `main` with the next package version and generated `CHANGELOG.md`. Merge that release PR to create the tag and start npm publication in the same workflow. The publish job checks types, tests, docs, build output, and package contents first.
+Use Conventional Commits (`fix:`, `feat:`, and `!` / `BREAKING CHANGE:` for incompatible changes; see the [upgrade promise](docs/reference/releases.md#upgrade-promise)). Release Please opens a PR on `main` with the next package version and generated `CHANGELOG.md`. Merge that release PR to create the tag and start npm publication in the same workflow. The publish job checks types, tests, docs, build output, and package contents first. After it publishes, the **Install matrix** workflow installs the new version with npm, `install.sh` and Docker on Linux and macOS, and records the pass rate the README badge shows on the `install-matrix-status` branch.
 
 Configure npm trusted publishing for package `agentix-cli`, repository `anis-marrouchi/agentx`, workflow `release.yml`, using [npm's setup guide](https://docs.npmjs.com/trusted-publishers/). The workflow uses OIDC and does not require an npm token secret. A failed publication can be retried by dispatching **Release** with the existing `vX.Y.Z` tag. The workflow checks that the tag matches the package version and belongs to `main`.
 

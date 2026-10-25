@@ -129,6 +129,54 @@ export function staleMentions(base, head, pages) {
  * Does this PR change what users see without changing the docs?
  * `files` comes from parseDiff; `pr` is { title, body, labels }.
  */
+/** Commands, flags and settings `base` has and `head` no longer has. Hidden
+ *  commands are internal: removing one breaks no one. */
+export function removedSurface(base, head) {
+  const bin = head.binName
+  const headCmds = new Map(head.commands.map((c) => [c.path, c]))
+  const headKeys = new Set(head.configKeys)
+  const out = []
+  for (const c of base.commands) {
+    if (c.hidden) continue
+    const now = headCmds.get(c.path)
+    if (!now) {
+      out.push(`command "${bin} ${c.path}"`)
+      continue
+    }
+    for (const flag of c.flags) if (!now.flags.includes(flag)) out.push(`flag "${bin} ${c.path} ${flag}"`)
+  }
+  for (const key of base.configKeys) if (!headKeys.has(key)) out.push(`setting "${key}"`)
+  return out
+}
+
+const withoutComments = (body = "") => body.replace(/<!--[\s\S]*?-->/g, "")
+
+/**
+ * The upgrade promise (#1294): removing a command, flag or setting breaks
+ * someone's setup, so the PR says so. Its title carries `!` (release-please
+ * then lists it under BREAKING CHANGES, and after 1.0 bumps the major
+ * version) and its body says what to do, on a `BREAKING CHANGE:` line that
+ * becomes the changelog's upgrade note. A maintainer can wave a false alarm
+ * through with the label and a reason line.
+ */
+export function breakingGate(removed, pr, rule) {
+  if (removed.length === 0) return { errors: [], notes: [] }
+  const body = withoutComments(pr.body)
+  const marked = /^\w+(?:\([^)]*\))?!:/.test(pr.title ?? "") && /^\s*BREAKING[ -]CHANGE: \S/m.test(body)
+  if (marked) return { errors: [], notes: [`Breaking change, marked: removes ${removed.join(", ")}`] }
+  const reason = body.split(/\r?\n/).find((l) => new RegExp(rule.reasonPattern).test(l))
+  if (pr.labels.includes(rule.label) && reason) return { errors: [], notes: [`Removal not breaking ("${rule.label}"): ${reason.trim()}`] }
+  return {
+    errors: [{
+      message:
+        `This PR removes ${removed.join(", ")}. That breaks a setup that uses it (${rule.page}). ` +
+        `Mark the title with "!" (for example "feat(x)!: …") and add a line "BREAKING CHANGE: <what to do when upgrading>" to the PR body. ` +
+        `If nothing breaks (for example the old name still works), a maintainer adds the "${rule.label}" label and a line "Not breaking because …".`,
+    }],
+    notes: [],
+  }
+}
+
 export function checkImpact({ files, pr, config, base, head, pages }) {
   const { surface, exempt, docsDir } = config
   const errors = []
@@ -149,8 +197,14 @@ export function checkImpact({ files, pr, config, base, head, pages }) {
     (f) => f.path.startsWith(`${docsDir}/`) && f.path.endsWith(".md") && f.status !== "deleted" && !f.path.includes("/.vitepress/"),
   )
 
-  if (base && head) errors.push(...staleMentions(base, head, pages))
-  else notes.push("Removal check skipped: the surface of the base or this PR could not be read.")
+  if (base && head) {
+    errors.push(...staleMentions(base, head, pages))
+    if (config.breaking) {
+      const gate = breakingGate(removedSurface(base, head), pr, config.breaking)
+      errors.push(...gate.errors)
+      notes.push(...gate.notes)
+    }
+  } else notes.push("Removal check skipped: the surface of the base or this PR could not be read.")
 
   if (reasons.length === 0) notes.push("No user-facing change found; docs not required.")
   else if (docsTouched) notes.push(`User-facing change with docs updated: ${reasons.join(", ")}`)

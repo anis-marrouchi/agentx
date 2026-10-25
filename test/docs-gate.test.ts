@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import * as lib from "../scripts/docs-gate-lib.mjs"
 
 const config = JSON.parse(readFileSync(new URL("../scripts/docs-gate.config.json", import.meta.url), "utf8"))
-const { applyBaseline, checkImpact, checkPage, coverageGaps, globToRegExp, keyPatterns, parseDiff, rulesForPage, staleMentions, titleType } = lib
+const { applyBaseline, breakingGate, checkImpact, checkPage, coverageGaps, globToRegExp, keyPatterns, parseDiff, removedSurface, rulesForPage, staleMentions, titleType } = lib
 
 const GOOD_ENDING = "\n## Check it worked\n\nOpen the page.\n\n## If something is wrong\n\nRestart it.\n"
 
@@ -148,14 +148,56 @@ describe("checkImpact", () => {
     const base = surface([{ path: "run" }, { path: "gone" }])
     const head = surface([{ path: "run" }])
     const pages = [{ path: "docs/reference/cli.md", text: "# CLI\n\nUse `agentx gone` to stop.\n" }]
-    const { errors } = run(diff([{ path: "src/commands/gone.ts", status: "deleted" }]), { title: "refactor: drop gone" }, base, head, pages)
+    const breaking = { title: "refactor!: drop gone", body: "BREAKING CHANGE: use `agentx run --stop` instead." }
+    const { errors } = run(diff([{ path: "src/commands/gone.ts", status: "deleted" }]), breaking, base, head, pages)
     expect(errors).toEqual([
       { file: "docs/reference/cli.md", line: 3, message: 'Command "agentx gone" was removed but is still mentioned here' },
     ])
   })
 
+  it("fails a removal that is not marked as breaking (#1294)", () => {
+    const base = surface([{ path: "run", flags: ["--fast"] }], ["daemon.port", "daemon.oldKnob"])
+    const head = surface([{ path: "run" }], ["daemon.port"])
+    const { errors } = run(diff([{ path: "docs/x.md", added: ["x"] }]), { title: "feat(run): simpler run" }, base, head, [])
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toContain('removes flag "agentx run --fast", setting "daemon.oldKnob"')
+    expect(errors[0].message).toContain("BREAKING CHANGE:")
+    expect(errors[0].message).toContain("docs/reference/releases.md#upgrade-promise")
+  })
+
   it("notes when the removal check could not run", () => {
     expect(run(diff([])).notes.join(" ")).toContain("Removal check skipped")
+  })
+})
+
+describe("upgrade promise (#1294)", () => {
+  const rule = config.breaking
+  const removed = ['setting "daemon.oldKnob"']
+
+  it("lists removed commands, flags and settings, not hidden commands or additions", () => {
+    const base = { binName: "agentx", commands: [{ path: "run", flags: ["--fast", "--slow"], hidden: false }, { path: "gone", flags: [], hidden: false }, { path: "internal", flags: [], hidden: true }], configKeys: ["a.b", "a.c"] }
+    const head = surface([{ path: "run", flags: ["--slow", "--new"] }], ["a.b", "a.d"])
+    expect(removedSurface(base, head)).toEqual(['flag "agentx run --fast"', 'command "agentx gone"', 'setting "a.c"'])
+    expect(removedSurface(head, head)).toEqual([])
+  })
+
+  it("passes a removal whose title has ! and whose body says what to do", () => {
+    const ok = breakingGate(removed, pr({ title: "feat(daemon)!: drop oldKnob", body: "## Why\n\nBREAKING CHANGE: remove daemon.oldKnob from agentx.json; it did nothing since 0.90." }), rule)
+    expect(ok.errors).toEqual([])
+    expect(ok.notes[0]).toContain("Breaking change, marked")
+  })
+
+  it("wants both the ! and the upgrade note, outside the template's comments", () => {
+    expect(breakingGate(removed, pr({ title: "feat(daemon)!: drop oldKnob" }), rule).errors).toHaveLength(1)
+    expect(breakingGate(removed, pr({ title: "feat(daemon): drop oldKnob", body: "BREAKING CHANGE: remove it" }), rule).errors).toHaveLength(1)
+    expect(breakingGate(removed, pr({ title: "feat!: x", body: "<!-- BREAKING CHANGE: example -->" }), rule).errors).toHaveLength(1)
+  })
+
+  it("lets a maintainer wave a false alarm through with the label and a reason", () => {
+    const body = "Not breaking because the old key is still read as an alias."
+    expect(breakingGate(removed, pr({ labels: ["not-breaking"], body }), rule)).toEqual({ errors: [], notes: [`Removal not breaking ("not-breaking"): ${body}`] })
+    expect(breakingGate(removed, pr({ labels: ["not-breaking"] }), rule).errors).toHaveLength(1)
+    expect(breakingGate([], pr(), rule)).toEqual({ errors: [], notes: [] })
   })
 })
 
