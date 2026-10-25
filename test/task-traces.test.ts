@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import { openDb, closeDb, getSchemaVersion, pruneSqliteTables } from "../src/storage/sqlite"
+import { forgeCommentsOn, insertForgeComment } from "../src/storage/forge-comments"
 import {
   recordTraceStart,
   recordTraceEnd,
@@ -614,5 +615,19 @@ describe("pruneSqliteTables — task_traces cascade", () => {
       .prepare("SELECT COUNT(*) AS c FROM task_trace_steps WHERE task_id = ?")
       .get(oldId) as { c: number }
     expect(orphanSteps.c).toBe(0)
+  })
+})
+
+describe("pruneSqliteTables — forge_comments (#1184)", () => {
+  it("drops comment ids older than the window and keeps recent ones", () => {
+    const db = openTmp()
+    const longAgo = Date.now() - 31 * 24 * 60 * 60 * 1000
+    insertForgeComment(db, { channel: "github", chatId: "o/r:issue:1", commentId: "old", agentId: "a", at: longAgo })
+    insertForgeComment(db, { channel: "github", chatId: "o/r:issue:1", commentId: "new", agentId: "a", at: Date.now() })
+
+    const pruned = pruneSqliteTables(db, 30)
+    expect(pruned.forgeComments).toBe(1)
+    const left = forgeCommentsOn(db, "github", "o/r:issue:1", 0, Date.now() + 1000)
+    expect(left.map((c) => c.commentId)).toEqual(["new"])
   })
 })

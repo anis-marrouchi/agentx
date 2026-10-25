@@ -587,6 +587,7 @@ export interface PruneResult {
   rotations: number
   routeTraces: number
   taskTraces: number
+  forgeComments: number
 }
 
 /**
@@ -619,14 +620,18 @@ export function pruneSqliteTables(
   const taskTraces = (db
     .prepare(`DELETE FROM task_traces WHERE started_at < ?`)
     .run(cutoffMs).changes ?? 0) as number
+  // forge_comments (#1184) also uses ms-epoch INTEGERs on `at`.
+  const forgeComments = (db
+    .prepare(`DELETE FROM forge_comments WHERE at < ?`)
+    .run(cutoffMs).changes ?? 0) as number
 
   // Reclaim the freelist pages so the file shrinks. WAL writes still
   // checkpoint independently.
-  if (taskHistory + rotations + routeTraces + taskTraces > 0) {
+  if (taskHistory + rotations + routeTraces + taskTraces + forgeComments > 0) {
     try { db.pragma("incremental_vacuum") } catch { /* best-effort */ }
   }
 
-  return { taskHistory, rotations, routeTraces, taskTraces }
+  return { taskHistory, rotations, routeTraces, taskTraces, forgeComments }
 }
 
 /** Resume after restart (#103): how to re-enter a run (JSON), its attempt

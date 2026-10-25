@@ -1088,15 +1088,16 @@ export class AgentXDaemon {
       } catch (e: any) { this.log(`  Outbox cleanup for ${id} skipped: ${e?.message ?? e}`) }
     }
 
-    // SQLite-side retention sweep — task_history / rotations / route_traces
+    // SQLite-side retention sweep — task_history / rotations / route_traces /
+    // forge_comments
     // grow unbounded otherwise. 90 days is generous for live debugging while
     // keeping the file small enough to rsync. Same window as task-history files.
     try {
       if (this.db) {
         const r = pruneSqliteTables(this.db, 90)
-        const total = r.taskHistory + r.rotations + r.routeTraces
+        const total = r.taskHistory + r.rotations + r.routeTraces + r.forgeComments
         if (total > 0) {
-          this.log(`  Pruned ${total} old SQLite row(s) (task_history=${r.taskHistory}, rotations=${r.rotations}, route_traces=${r.routeTraces})`)
+          this.log(`  Pruned ${total} old SQLite row(s) (task_history=${r.taskHistory}, rotations=${r.rotations}, route_traces=${r.routeTraces}, forge_comments=${r.forgeComments})`)
         }
       }
     } catch (e: any) {
