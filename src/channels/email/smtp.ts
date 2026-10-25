@@ -1,4 +1,3 @@
-import nodemailer from "nodemailer"
 import { emailAccountSchema, type EmailAccountConfig } from "@/daemon/config"
 import type { EmailDraft, SendEmailDraft } from "./store"
 
@@ -44,6 +43,8 @@ export interface OutgoingMail {
 export async function sendMail(acc: EmailAccountConfig, fromName: string, mail: OutgoingMail, env: NodeJS.ProcessEnv = process.env): Promise<string> {
   const { smtp } = mailServers(acc, env)
   if (!smtp.password) throw new Error(`no SMTP password for ${acc.address}: set it in .env`)
+  // Loaded on first send: the dashboard and the CLI import this file for the inbox.
+  const { default: nodemailer } = await import("nodemailer")
   const transport = nodemailer.createTransport({
     host: smtp.host,
     port: smtp.port,

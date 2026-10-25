@@ -1,5 +1,8 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, readdirSync, rmSync } from "fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { Readable } from "stream"
+import type { IncomingMessage, ServerResponse } from "http"
+import { handleAdminApi } from "../src/daemon/admin-panel"
 import { tmpdir } from "os"
 import { join } from "path"
 import { agentText, parseMail, replyHeaders, senderAllowed, stripQuoted, threadAfter } from "../src/channels/email/mail"
@@ -7,7 +10,7 @@ import { createEmailDraft, decideEmailDraft, emailDir, listEmailDrafts, readEmai
 import { mailServers } from "../src/channels/email/smtp"
 import { emailAccountSchema } from "../src/daemon/config"
 import { decide, listInbox } from "../src/approvals/inbox"
-import { emailAccountBlock, passwordEnvFor, presetFor } from "../src/connect/email"
+import { emailAccountBlock, passwordEnvFor, presetFor } from "../src/channels/email/settings"
 import { shippedTeam } from "../src/teams/catalog"
 import { applyTeam, buildTeamPackage } from "../src/teams/package"
 
@@ -189,5 +192,43 @@ describe("teams", () => {
     const pkg = buildTeamPackage(config, "client-inbox", { result: t.result, title: t.title })
     expect(pkg.channels).toContainEqual({ kind: "email", agent: "inbox" })
     expect(JSON.stringify(pkg)).not.toContain("hello@shop.test")
+  })
+})
+
+describe("Settings › Channels › Email", () => {
+  const prev = process.cwd()
+  afterEach(() => { process.chdir(prev) })
+
+  async function call(method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
+    const req = Object.assign(Readable.from(body === undefined ? [] : [JSON.stringify(body)]), { method }) as unknown as IncomingMessage
+    let status = 200
+    let out = ""
+    const res = { writeHead: (s: number) => { status = s; return res }, end: (b: string) => { out = b } } as unknown as ServerResponse
+    await handleAdminApi(req, res, path)
+    return { status, json: JSON.parse(out) }
+  }
+
+  it("adds a mailbox with only the password's variable name, lists it, and removes it", async () => {
+    writeFileSync(join(root, "agentx.json"), JSON.stringify({ node: { id: "n", name: "n" }, agents: { inbox: { name: "Inbox", workspace: join(root, "inbox") } } }))
+    process.chdir(root)
+    const added = await call("POST", "/api/admin/channels/email", {
+      id: "shop", agent: "inbox", address: "Hello@Shop.test", imapHost: "mail.shop.test", imapPort: "993", smtpHost: "mail.shop.test", smtpPort: "465", allowFrom: "@shop.test, sam@c.test",
+    })
+    expect(added.json.hint).toContain("EMAIL_SHOP_PASSWORD")
+    const cfg = JSON.parse(readFileSync(join(root, "agentx.json"), "utf-8"))
+    expect(cfg.channels.email).toEqual({ enabled: true, accounts: { shop: {
+      agent: "inbox", address: "hello@shop.test",
+      imap: { host: "mail.shop.test", port: 993, secure: true, password: "${EMAIL_SHOP_PASSWORD}" },
+      smtp: { host: "mail.shop.test", port: 465, secure: true },
+      allowFrom: ["@shop.test", "sam@c.test"], send: "approve",
+    } } })
+    expect(emailAccountSchema.safeParse(cfg.channels.email.accounts.shop).success).toBe(true)
+
+    const state = await call("GET", "/api/admin/state")
+    expect(state.json.email.accounts).toEqual([{ id: "shop", agent: "inbox", address: "hello@shop.test", imap: "mail.shop.test:993", smtp: "mail.shop.test:465", passwordRef: "${EMAIL_SHOP_PASSWORD}", allowFrom: ["@shop.test", "sam@c.test"], send: "approve" }])
+
+    expect((await call("POST", "/api/admin/channels/email", { id: "x", agent: "nobody", address: "a@b.test", imapHost: "h" })).status).not.toBe(200)
+    await call("DELETE", "/api/admin/channels/email", { id: "shop" })
+    expect(JSON.parse(readFileSync(join(root, "agentx.json"), "utf-8")).channels.email.accounts).toEqual({})
   })
 })

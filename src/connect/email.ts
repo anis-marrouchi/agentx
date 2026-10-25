@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
 import { setDotEnv } from "@/utils/dotenv-mutator"
+import { emailAccountBlock, GMAIL_APP_PASSWORDS_URL, passwordEnvFor, presetFor, type EmailAccountInput } from "@/channels/email/settings"
 
 // --- agentx connect email (#1287) ---
 //
@@ -13,50 +14,6 @@ import { setDotEnv } from "@/utils/dotenv-mutator"
 // EMAIL_<ACCOUNT>_PASSWORD and agentx.json only references it. The IMAP
 // and SMTP logins are tried before anything is written. Gmail needs an app
 // password (with 2-step verification on), not the account password.
-
-export const GMAIL_APP_PASSWORDS_URL = "https://myaccount.google.com/apppasswords"
-
-interface Preset { imapHost: string; imapPort: number; smtpHost: string; smtpPort: number }
-
-/** Servers of a known provider, by the address's domain. Only Gmail: other
- *  hosts are asked for, since many no longer take a password over IMAP. */
-export function presetFor(address: string): Preset | undefined {
-  const domain = address.split("@")[1]?.toLowerCase() ?? ""
-  if (domain === "gmail.com" || domain === "googlemail.com") return { imapHost: "imap.gmail.com", imapPort: 993, smtpHost: "smtp.gmail.com", smtpPort: 465 }
-  return undefined
-}
-
-export interface EmailAccountInput {
-  agent: string
-  address: string
-  imapHost: string
-  imapPort: number
-  smtpHost: string
-  smtpPort: number
-  user?: string
-  passwordEnv: string
-  allowFrom: string[]
-  send: "approve" | "auto"
-}
-
-/** The channels.email.accounts.<id> block. Port 993/465 use TLS from the
- *  start; any other port (143, 587, local test servers) upgrades with STARTTLS
- *  when the server offers it. */
-export function emailAccountBlock(i: EmailAccountInput): Record<string, unknown> {
-  const login = i.user && i.user !== i.address ? { user: i.user } : {}
-  return {
-    agent: i.agent,
-    address: i.address,
-    imap: { host: i.imapHost, port: i.imapPort, secure: i.imapPort === 993, ...login, password: `\${${i.passwordEnv}}` },
-    smtp: { host: i.smtpHost, port: i.smtpPort, secure: i.smtpPort === 465 },
-    allowFrom: i.allowFrom,
-    send: i.send,
-  }
-}
-
-export function passwordEnvFor(account: string): string {
-  return `EMAIL_${account.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_PASSWORD`
-}
 
 /** Log in to IMAP and SMTP once. Returns what failed, or null. */
 export async function checkLogin(i: EmailAccountInput, password: string): Promise<string | null> {
