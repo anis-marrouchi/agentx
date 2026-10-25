@@ -1,3 +1,5 @@
+import { createHash } from "crypto"
+
 // --- Goals: why a request exists (#1168) ---
 //
 // A goal is an id and a plain title an agent names when it accepts a
@@ -17,9 +19,12 @@ const GOAL_ID_RE = /^[a-z0-9][\w.:-]*$/i
 
 export interface RequestGoal { id: string; title: string }
 
-/** The id a bare title gives: lower case, words joined by dashes. */
+/** The id a bare title gives: lower case, words joined by dashes. A
+ *  title with no Latin letters or digits (Arabic, say) gives "goal-" and
+ *  a short hash of it, so the same title always gives the same id. */
 export function goalIdOf(title: string): string {
-  return title.toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/[\s_]+/g, "-").replace(/-+/g, "-").slice(0, GOAL_ID_MAX).replace(/-$/, "")
+  const slug = title.toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/[\s_]+/g, "-").replace(/-+/g, "-").slice(0, GOAL_ID_MAX).replace(/^-+|-+$/g, "")
+  return slug || `goal-${createHash("sha256").update(title.normalize("NFC")).digest("hex").slice(0, 10)}`
 }
 
 /** The optional `goal` of accept: {id?, title} or a title. Undefined when

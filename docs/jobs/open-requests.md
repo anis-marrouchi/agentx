@@ -269,7 +269,7 @@ Where you see it:
 
 A **goal** is the larger aim a request serves, such as "Relaunch the shop" or "Monthly newsletter". Naming one lets you see, for each goal, how far along it is and what it cost so far. Goals are optional: a request without one works as before.
 
-An agent names the goal when it takes the request on. It passes `goal` with `accept`: an `id` (a short name made of letters, digits and dashes) and a `title` in a few plain words. For example: `{action:"accept", work:"code", estimateMinutes:30, goal:{id:"shop-relaunch", title:"Relaunch the shop"}}`. A title alone also works; the id is made from it (`"Relaunch the shop"` becomes `relaunch-the-shop`). Requests that give the same id share the goal. Only `accept` takes a goal; a later `accept` with another goal moves the request to it.
+An agent names the goal when it takes the request on. It passes `goal` with `accept`: an `id` (a short name made of letters, digits and dashes) and a `title` in a few plain words. For example: `{action:"accept", work:"code", estimateMinutes:30, goal:{id:"shop-relaunch", title:"Relaunch the shop"}}`. A title alone also works; the id is made from it (`"Relaunch the shop"` becomes `relaunch-the-shop`). A title with no Latin letters or digits, such as one in Arabic, gets an id like `goal-3f9a0c12be`; the same title always gets the same id. Requests that give the same id share the goal. Only `accept` takes a goal; a later `accept` with another goal moves the request to it.
 
 A plan made with `accept` and `steps` has the goal of its request. Each step's agent, and an agent you hand the request to, is told the goal's title when it is given the work, so it knows why the task exists.
 
@@ -289,7 +289,7 @@ How the numbers are counted:
 | open | Requests of the goal still open. |
 | dropped | Requests declined or dropped. They count neither for nor against how far along it is. |
 | % done | done ÷ (open + done). |
-| cost | The cost of every run of the goal's requests, as the run reported it. Runs on an engine that reports no cost add nothing; the line then says how many runs had no cost. |
+| cost | The cost of the runs of the request's own agent: your turns, its resumed runs and its pick-ups and plan steps, as each run reported it. Work handed to another agent, and plan steps another agent runs, are not counted yet, so for work shared between agents the cost is a lower bound. Runs on an engine that reports no cost add nothing; the line then says how many runs had no cost. |
 
 A closed request is kept for `retentionDays` (90 days by default). After that it leaves its goal's numbers too.
 
