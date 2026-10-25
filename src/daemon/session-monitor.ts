@@ -182,7 +182,16 @@ export class SessionMonitor {
       review_id TEXT NOT NULL, action_index INTEGER NOT NULL, state TEXT NOT NULL,
       PRIMARY KEY(review_id, action_index));
       CREATE INDEX IF NOT EXISTS session_reviews_queue ON session_reviews(status, updated_at);
-      CREATE INDEX IF NOT EXISTS session_monitor_trace_end ON task_traces(finished_at);`)
+      -- Both scans below run on the daemon's main thread: the backlog scan
+      -- every 5 s, the action list on every GET /monitor. Without these they
+      -- read every full row (prompts and responses inline) of a large
+      -- database, and on a node short of memory that blocked HTTP for 4-10 s.
+      -- The trace index covers every column the backlog scan filters on, so
+      -- it never touches a row; the review index bounds the action list to
+      -- the TTL window instead of every review ever written.
+      CREATE INDEX IF NOT EXISTS session_reviews_updated ON session_reviews(updated_at);
+      CREATE INDEX IF NOT EXISTS session_monitor_trace_scan ON task_traces(finished_at, agent_id, channel, status, chat_id, task_id);
+      DROP INDEX IF EXISTS session_monitor_trace_end;`)
     db.prepare("INSERT OR IGNORE INTO session_monitor_meta VALUES ('started_at', ?)").run(Date.now())
     db.prepare("UPDATE session_reviews SET status='pending' WHERE status='reviewing'").run()
     // Workflow spans are never reviewed, so any row for one is dead history

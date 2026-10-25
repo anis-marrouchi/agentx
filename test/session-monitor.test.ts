@@ -76,6 +76,14 @@ describe("session monitor", () => {
     const review = parseReview(JSON.stringify({ ...result, links: [{ label: "bad", url: "javascript:alert(1)" }, { label: "good", url: "https://example.com/task" }, { label: "relative", url: "/task/1" }] }))
     expect(review.links).toHaveLength(2)
   })
+  it("plans its two hot scans on indexes, never on full rows", () => {
+    const { db } = fixture()
+    const plan = (sql: string) => (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as { detail: string }[]).map(r => r.detail).join("\n")
+    const backlog = plan(`SELECT task_id FROM task_traces WHERE finished_at >= 0 AND agent_id NOT LIKE 'workflow:%' AND NOT (channel = 'cron' AND status = 'ok') AND NOT (channel = 'dashboard' AND chat_id = 'assistant') AND task_id NOT IN (SELECT id FROM session_reviews) ORDER BY finished_at ASC LIMIT 25`)
+    expect(backlog).toContain("COVERING INDEX session_monitor_trace_scan")
+    const actions = plan(`SELECT r.id FROM session_reviews r, json_each(r.result, '$.actions') a WHERE r.updated_at >= 0`)
+    expect(actions).toContain("session_reviews_updated")
+  })
   it("does not backfill history before monitor installation", async () => {
     const { monitor, db, reviewer } = fixture()
     recordTraceStart(db, { agentId: "dev", channel: "cli", chatId: "s" }, "old")
