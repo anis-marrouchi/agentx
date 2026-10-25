@@ -641,7 +641,7 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
     "SELECT kind, ref, at, ended, ended_at AS endedAt, proof FROM request_links WHERE request_id = ? ORDER BY at, rowid",
   ).all(r.id) as Array<{ kind: string; ref: string; at: number; ended: string | null; endedAt: number | null; proof: string | null }>, []) : []
   for (const l of links) {
-    if (l.kind === "run") {
+    if (l.kind === "run" || l.kind === "step_run") {
       const t = db ? safe(() => db.prepare(
         "SELECT agent_id, status, started_at, duration_ms, error, final_response, message_preview FROM task_traces WHERE task_id = ?",
       ).get(l.ref) as any, null) : null

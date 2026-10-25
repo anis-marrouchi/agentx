@@ -289,7 +289,7 @@ How the numbers are counted:
 | open | Requests of the goal still open. |
 | dropped | Requests declined or dropped. They count neither for nor against how far along it is. |
 | % done | done ÷ (open + done). |
-| cost | The cost of the runs of the request's own agent: your turns, its resumed runs and its pick-ups and plan steps, as each run reported it. Work handed to another agent, and plan steps another agent runs, are not counted yet, so for work shared between agents the cost is a lower bound. Runs on an engine that reports no cost add nothing; the line then says how many runs had no cost. |
+| cost | The cost of the runs of the goal's requests: your turns, the agent's resumed runs and pick-ups, and every plan step, including steps another agent runs. Each run counts as it reported its cost. Work an agent hands to another agent outside a plan (a delegation) is not counted yet, so for that kind of work the cost is a lower bound. Runs on an engine that reports no cost add nothing; the line then says how many runs had no cost. |
 
 A closed request is kept for `retentionDays` (90 days by default). After that it leaves its goal's numbers too.
 
