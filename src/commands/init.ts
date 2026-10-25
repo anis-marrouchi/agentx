@@ -15,6 +15,10 @@ export const init = new Command()
     const configPath = resolve(cwd, "agentx.json")
     const envPath = resolve(cwd, ".env")
     const sessionsDir = resolve(cwd, ".agentx/sessions")
+    // Its own folder, as `agentx start` gives it: with the project folder
+    // itself, every agent `team add` puts in agents/ would sit inside the
+    // assistant's workspace, and team add refuses that (#1332).
+    const assistantWorkspace = resolve(cwd, "agents", "assistant")
 
     console.log()
     console.log(chalk.bold("  agentx init"))
@@ -55,7 +59,7 @@ export const init = new Command()
         agents: {
           assistant: {
             name: "Assistant",
-            workspace: cwd,
+            workspace: assistantWorkspace,
             tier: "claude-code",
             model: "claude-sonnet-4-6",
             mentions: ["@assistant", "assistant"],
@@ -105,10 +109,10 @@ export const init = new Command()
     }
 
     // Create workspace .claude dir
-    const claudeDir = resolve(cwd, ".claude")
+    const claudeDir = resolve(assistantWorkspace, ".claude")
     if (!existsSync(claudeDir)) {
       mkdirSync(claudeDir, { recursive: true })
-      console.log(chalk.green(`  ✓ Created .claude/`))
+      console.log(chalk.green(`  ✓ Created agents/assistant/.claude/`))
     }
 
     console.log()
