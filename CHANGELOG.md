@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.169.0](https://github.com/anis-marrouchi/agentx/compare/v0.168.0...v0.169.0) (2026-10-25)
+
+
+### Features
+
+* **schedules:** list paused projects in the exceptions digest ([#1296](https://github.com/anis-marrouchi/agentx/issues/1296)) ([#1313](https://github.com/anis-marrouchi/agentx/issues/1313)) ([5d69e83](https://github.com/anis-marrouchi/agentx/commit/5d69e83349b454cd72c393b663b34fd52928d5c3))
+
+
+### Bug Fixes
+
+* **dashboard:** log and Activity map streams need dashboard.token ([#1305](https://github.com/anis-marrouchi/agentx/issues/1305) follow-up) ([#1315](https://github.com/anis-marrouchi/agentx/issues/1315)) ([6eb29ae](https://github.com/anis-marrouchi/agentx/commit/6eb29ae855a12fc251fe9e6efae92a7d01a241bb))
+* **install:** Linux bash also gets the Node PATH line in ~/.profile ([#1297](https://github.com/anis-marrouchi/agentx/issues/1297) review) ([#1311](https://github.com/anis-marrouchi/agentx/issues/1311)) ([326dcdb](https://github.com/anis-marrouchi/agentx/commit/326dcdb4acb6c6cdb95bfa577a61050ac7b72f67))
+
 ## [0.168.0](https://github.com/anis-marrouchi/agentx/compare/v0.167.0...v0.168.0) (2026-10-25)
 
 
