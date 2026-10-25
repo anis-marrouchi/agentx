@@ -140,12 +140,16 @@ export function requestExceptions(items: RequestRecord[], staleAfterHours: numbe
   return out.sort((a, b) => a.updatedAt - b.updatedAt).map(({ updatedAt: _, ...e }) => e)
 }
 
-/** Agents (and the whole fleet) paused by their monthly budget. */
-export function pausedAgents(view: Pick<BudgetView, "agents" | "fleet">): AgentException[] {
+/** Agents, Wall projects (#1301) and the whole fleet paused by their monthly budget. */
+export function pausedAgents(view: Pick<BudgetView, "agents" | "fleet"> & Partial<Pick<BudgetView, "projects">>): AgentException[] {
   const usd = (n: number) => `$${n.toFixed(2)}`
   const out: AgentException[] = []
   if (view.fleet.state === "paused" && view.fleet.capUsd) {
     out.push({ agentId: "every agent", why: `fleet budget used (${usd(view.fleet.spentUsd)} of ${usd(view.fleet.capUsd)})` })
+  }
+  for (const row of view.projects ?? []) {
+    if (row.state !== "paused" || !row.capUsd) continue
+    out.push({ agentId: `project ${row.name}`, why: `project budget used (${usd(row.spentUsd)} of ${usd(row.capUsd)})` })
   }
   for (const row of view.agents) {
     if (row.state !== "paused" || !row.capUsd) continue
@@ -225,7 +229,7 @@ export interface ExceptionsDigestDeps {
   jobs: () => DigestJob[]
   /** Open requests and their stale time; absent when requests are off. */
   requests?: () => { items: RequestRecord[]; staleAfterHours: number }
-  budget?: () => Pick<BudgetView, "agents" | "fleet">
+  budget?: () => Pick<BudgetView, "agents" | "fleet"> & Partial<Pick<BudgetView, "projects">>
   send: (dest: { channel: string; chatId: string; accountId?: string }, text: string) => Promise<void>
   node?: string
   dashboardUrl?: string

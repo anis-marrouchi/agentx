@@ -232,6 +232,18 @@ describe("stuck requests and paused agents", () => {
     expect(ex).toEqual([{ agentId: "writer", why: "monthly budget used ($50.00 of $50.00)" }])
   })
 
+  it("lists Wall projects paused by budget", () => {
+    const ex = pausedAgents({
+      fleet: { spentUsd: 10, capUsd: 100, warnRatio: 0.8, state: "ok" },
+      agents: [],
+      projects: [
+        { name: "shop", spentUsd: 20, capUsd: 20, warnRatio: 0.8, state: "paused" },
+        { name: "blog", spentUsd: 2, capUsd: 20, warnRatio: 0.8, state: "ok" },
+      ],
+    } as any)
+    expect(ex).toEqual([{ agentId: "project shop", why: "project budget used ($20.00 of $20.00)" }])
+  })
+
   it("has no text when nothing is wrong", () => {
     expect(exceptionsDigestText({ schedules: [], requests: [], agents: [] })).toBeNull()
   })
