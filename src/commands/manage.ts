@@ -7,7 +7,7 @@ import { fileURLToPath } from "url"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import { installedSkills, skillHome } from "@/agents/conventions"
 import { applyConfigMutation } from "@/daemon/config-mutator"
-import { callingAgent, holdAgent, holdIfAgentCreated, readHolds, releaseAgent } from "@/agents/holds"
+import { callingAgent, holdAgent, holdIfAgentCreated, holdsRoot, readHolds, releaseAgent } from "@/agents/holds"
 
 // --- agentx agent/channel/cron/mesh/skill/hook management commands ---
 
@@ -127,7 +127,7 @@ agent
     console.log(chalk.dim(`  Workspace: ${ws}`))
     console.log(chalk.dim(`  Created: ${setup.created.length} files (CLAUDE.md, AGENTS.md, settings, rules)`))
     // Added by an agent from its own shell: it waits for the owner (#1169).
-    const by = holdIfAgentCreated(process.cwd(), [answers.id])
+    const by = holdIfAgentCreated(holdsRoot(), [answers.id])
     if (by) console.log(chalk.yellow(`  Created by agent "${by}": it starts once the owner approves it (agentx approvals approve agent:${answers.id}).`))
     console.log()
   })
@@ -144,7 +144,7 @@ agent
     }
     delete config.agents[id]
     await saveConfig(config)
-    releaseAgent(process.cwd(), id)
+    releaseAgent(holdsRoot(), id)
     console.log(chalk.green(`  Agent "${id}" removed from config (workspace preserved)`))
   })
 
@@ -165,8 +165,8 @@ agent
   .action((id: string) => {
     if (!ownerOnly("pause an agent")) return
     if (!loadConfig().agents?.[id]) { console.log(chalk.red(`  Agent "${id}" not found`)); process.exitCode = 1; return }
-    if (readHolds(process.cwd())[id]?.kind === "approval") { console.log(chalk.yellow(`  "${id}" waits for your approval and does not run yet: agentx approvals list`)); return }
-    holdAgent(process.cwd(), id, "paused", "the owner")
+    if (readHolds(holdsRoot())[id]?.kind === "approval") { console.log(chalk.yellow(`  "${id}" waits for your approval and does not run yet: agentx approvals list`)); return }
+    holdAgent(holdsRoot(), id, "paused", "the owner")
     console.log(chalk.green(`  "${id}" paused. Messages and schedules for it are refused until you run: agentx agent resume ${id}`))
   })
 
@@ -175,9 +175,9 @@ agent
   .description("resume a paused agent")
   .action((id: string) => {
     if (!ownerOnly("resume an agent")) return
-    const hold = readHolds(process.cwd())[id]
+    const hold = readHolds(holdsRoot())[id]
     if (hold?.kind === "approval") { console.log(chalk.yellow(`  "${id}" was created by ${hold.by} and waits for your approval: agentx approvals approve agent:${id}`)); return }
-    console.log(releaseAgent(process.cwd(), id, "paused") ? chalk.green(`  "${id}" resumed`) : chalk.dim(`  "${id}" was not paused`))
+    console.log(releaseAgent(holdsRoot(), id, "paused") ? chalk.green(`  "${id}" resumed`) : chalk.dim(`  "${id}" was not paused`))
   })
 
 // agentx agent capability — set intents / maxDelegationDepth / contextReferences /

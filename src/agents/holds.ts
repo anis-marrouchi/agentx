@@ -20,6 +20,13 @@ export interface AgentHold {
   by: string
 }
 
+/** The folder whose .agentx/agent-holds.json every caller uses: the daemon's
+ *  working directory. Not the config file's folder: with .agentx/config.json
+ *  that would be .agentx/, and the daemon would never see the hold. */
+export function holdsRoot(): string {
+  return process.cwd()
+}
+
 export function holdsPath(root: string): string {
   return resolve(root, ".agentx", "agent-holds.json")
 }
