@@ -24,7 +24,7 @@ The backlog. No vision copy.
 
 ## Decided, waiting
 
-**Engines on another AgentX node** ([#445](https://github.com/anis-marrouchi/agentx/issues/445)) — a teammate without a subscription uses the host's engine. Decided: host-side agent first, every shared agent on `billing: "api"`, a relay through an existing gateway later if at all. Waits on a trusted, readable answer on the provider's terms. Spike result and child issues in [engines-remote-node.md](./engines-remote-node.md).
+**Engines on another AgentX node** ([#445](https://github.com/anis-marrouchi/agentx/issues/445)) — a teammate without a subscription uses the host's engine. Decided: host-side agent first, every shared agent on `billing: "api"`, a relay through an existing gateway later if at all. Spike closed 2026-10-25. The build gets its own issue once there is a trusted, readable answer on the provider's terms. Spike result and build order in [engines-remote-node.md](./engines-remote-node.md).
 
 ## Parking lot
 
