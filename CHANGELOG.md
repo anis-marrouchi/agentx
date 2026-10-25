@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.165.1](https://github.com/anis-marrouchi/agentx/compare/v0.165.0...v0.165.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **daemon:** deliver POST /send on an a2a chat to the other agent ([#1251](https://github.com/anis-marrouchi/agentx/issues/1251)) ([#1254](https://github.com/anis-marrouchi/agentx/issues/1254)) ([81dce5a](https://github.com/anis-marrouchi/agentx/commit/81dce5ab14a994e01135a4a4a780aae5ebb1a630))
+* **install:** tighten an existing .env to 600 before adding a key ([#1247](https://github.com/anis-marrouchi/agentx/issues/1247)) ([#1250](https://github.com/anis-marrouchi/agentx/issues/1250)) ([373a544](https://github.com/anis-marrouchi/agentx/commit/373a544b3843cad621916c4a2fba8f4e4480c71c))
+
+
+### Performance Improvements
+
+* **wall:** Running now no longer waits on the feed; bulk reads for the Wall list ([#1252](https://github.com/anis-marrouchi/agentx/issues/1252)) ([#1255](https://github.com/anis-marrouchi/agentx/issues/1255)) ([31f0e32](https://github.com/anis-marrouchi/agentx/commit/31f0e3267c550b1932efc4f6afdacb763dbefadc))
+
 ## [0.165.0](https://github.com/anis-marrouchi/agentx/compare/v0.164.0...v0.165.0) (2026-10-25)
 
 
