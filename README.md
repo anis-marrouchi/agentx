@@ -19,7 +19,9 @@
 
 </div>
 
-Give each agent a job and AgentX gets it done where your business already works: it answers clients on WhatsApp and Telegram, sends the daily report on schedule, and takes an issue from GitLab or GitHub and works on the fix. You see every result, and what still needs you, in a browser dashboard. Under the hood AgentX is a harness: the program around an AI model that gives it channels, tools, schedules and memory, and records what it did. It runs on Claude Code, Codex, OpenCode or any model API, on a machine you control.
+1. **Give each agent a job.** Answer clients, send the daily report, or work on an issue.
+2. **It works in your team's tools.** WhatsApp, Telegram, GitLab, GitHub and schedules, on a machine you own.
+3. **You check the result and decide.** The browser dashboard shows what was done and what still needs you.
 
 ## Problems we solve
 
@@ -64,20 +66,6 @@ Short videos show AgentX running, one task each. Click the picture to open the *
 - [Desktop part 1: Install the AgentX desktop widget on a Mac](https://youtu.be/XwTJjaTt5WE)
 - [Desktop part 2: The floating widget, the pill and the orb](https://youtu.be/catRqT5LoyY)
 
-## Current state: usable, experimental, not yet stable
-
-AgentX works and can be used today, but it is still an **experimental project, not a stable release**. There is plenty to polish and fix, especially the **Settings experience and configuration flows**. Expect rough edges and changes as people try it in real environments.
-
-Releases ship often; see the [changelog](CHANGELOG.md) for what changed. Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
-
-**Still missing: role-based access control (RBAC) at both mesh and agent levels.** We want to define who can access shared nodes and agents, delegate work, and perform particular actions. This would open up more possibilities for shared teams and multi-user deployments. Existing mesh authentication and tool permissions do not provide this complete role model; RBAC is planned work, not an available feature.
-
-[Try the demo](#see-it-without-an-account), [check the requirements](docs/requirements.md), or [help us test](#help-test-and-improve-agentx).
-
-![AgentX Monitor showing tasks that need your attention in the current dashboard](docs/public/screenshots/monitor-only-you.png)
-
-*The Monitor dashboard in the isolated demo: review tasks that need you, with in-page agent chat. All displayed tasks are fictional.*
-
 ## See it without an account
 
 With Node.js 22.19 or newer, up to 26 (tested on 22, 24, 25 and 26), run:
@@ -92,11 +80,28 @@ The demo starts three local AgentX daemons and sends a task between them. Routin
 
 ## What it does
 
-- **Answers where your team works.** Connect a channel and assign its messages to an agent.
-- **Runs scheduled work.** Ask an agent for a daily report or another recurring task.
-- **Shows what happened.** Live shows current work; Activity records completed runs; Monitor shows reviewed work that needs a person and work agents can handle.
-- **Offers several ways to interact.** Use [in-page chat](docs/dashboard/chat.md), the [OpenCode-backed TUI](docs/dashboard/tui.md), or the desktop assistant for voice and computer use.
-- **Grows across machines.** Start with one host, then pair another when a job needs its tools or files.
+- **Clients get an answer where they already write.** Connect WhatsApp or Telegram and an agent replies in the same chat.
+- **Reports arrive without anyone remembering them.** A schedule asks an agent for the daily report or another recurring job.
+- **Issues move toward a fix.** An agent takes an issue from GitLab or GitHub and works on the fix.
+- **You see what was done and what still needs you.** Live shows current work; Activity records completed runs; Monitor shows reviewed work that needs a person and work agents can handle.
+- **You reach your agents the way that suits you.** Use [in-page chat](docs/dashboard/chat.md), the [OpenCode-backed TUI](docs/dashboard/tui.md), or the desktop assistant for voice and computer use.
+- **Work goes to the machine that has the right tools.** Start with one host, then pair another when a job needs its tools or files.
+
+Under the hood AgentX is a harness: the program around an AI model that gives it channels, tools, schedules and memory, and records what it did. It runs on Claude Code, Codex, OpenCode or any model API, on a machine you control.
+
+![AgentX Monitor showing tasks that need your attention in the current dashboard](docs/public/screenshots/monitor-only-you.png)
+
+*The Monitor dashboard in the isolated demo: review tasks that need you, with in-page agent chat. All displayed tasks are fictional.*
+
+## Current state: usable, experimental, not yet stable
+
+AgentX works and can be used today, but it is still an **experimental project, not a stable release**. There is plenty to polish and fix, especially the **Settings experience and configuration flows**. Expect rough edges and changes as people try it in real environments.
+
+Releases ship often; see the [changelog](CHANGELOG.md) for what changed. Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
+
+**Still missing: role-based access control (RBAC) at both mesh and agent levels.** We want to define who can access shared nodes and agents, delegate work, and perform particular actions. This would open up more possibilities for shared teams and multi-user deployments. Existing mesh authentication and tool permissions do not provide this complete role model; RBAC is planned work, not an available feature.
+
+[Try the demo](#see-it-without-an-account), [check the requirements](docs/requirements.md), or [help us test](#help-test-and-improve-agentx).
 
 ## Describe an automation, get an automation
 
