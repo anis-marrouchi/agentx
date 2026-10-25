@@ -1,4 +1,6 @@
 import { callerAgentOf, type RunOrigin } from "@/agents/resume/origin"
+import { BUILDER_SAVE_MS, builderLines, type BuilderWindDown } from "./builders"
+import { outcomeLines, validOrderId, type StopAllOutcome } from "./orders"
 import { agentPlan, machinePlan, resumeNote, windDownMessage, type ResumePlan, type ToolCallRef } from "./plan"
 import { canSignal, describeSender, SignalBudget, type SignalSender, type SignalSettings } from "./policy"
 import type { StoppedState, StoppedTask, StoppedTaskStore } from "./store"
@@ -19,7 +21,10 @@ import type { StoppedState, StoppedTask, StoppedTaskStore } from "./store"
 //         node. Each one goes through stop(), so each writes its plan; the
 //         records carry the order id, and the next boot's resumeStopAll()
 //         resumes every one of them from its plan, one attempt each, and
-//         answers with one report.
+//         answers with one report. Background builders a stopped task
+//         had started are wound down with it (#1328): their unsaved work
+//         goes on a WIP branch before the agent writes its plan, and the
+//         plan and the resume note name it.
 // Both publish `signal` events, so subscribers and the live page see them.
 // Every step is logged; nothing here throws to the caller except through
 // the returned result.
@@ -52,6 +57,9 @@ export interface SignalServiceDeps {
   whenRunEnds(taskId: string, timeoutMs: number): Promise<void>
   /** Tool calls the run made, from its trace. */
   toolCalls(traceId: string | undefined): ToolCallRef[]
+  /** Save the work of the background builders the run had started
+   *  (builders.ts, #1328). Absent: builders are not wound down. */
+  windDownBuilders?(input: { taskId: string; toolCalls: ToolCallRef[]; reason: string }): Promise<BuilderWindDown | undefined>
   /** Run the wind-down turn and answer with its text. Must stop the turn
    *  itself once `timeoutMs` has passed. */
   windDown(input: { id: string; agentId: string; rootId: string; message: string; timeoutMs: number }): Promise<{ content?: string; error?: string }>
@@ -97,6 +105,9 @@ export interface StopAllEntry {
   state: StoppedState | "refused"
   /** Who wrote its resume plan, once saved. */
   plan?: "agent" | "machine"
+  /** Background builders the stop also stopped, and how many of their
+   *  folders' work was saved on a WIP branch (#1328). */
+  builders?: { count: number; saved: number; notSaved: number }
   error?: string
 }
 
@@ -104,26 +115,14 @@ export type StopAllResult =
   | { ok: true; orderId: string; tasks: StopAllEntry[]; done: Promise<StopAllEntry[]> }
   | { ok: false; status: 403; error: string }
 
-/** What the boot pass did with one stop-all task (#1271). */
-export interface StopAllOutcome {
-  id: string
-  agentId: string
-  decision: "resumed" | "resume-failed" | "skipped"
-  reason: string
-}
+export type { StopAllOutcome } from "./orders"
 
 /** The one message the owner gets after a restart that followed a stop-all
  *  (#1271): every task of the order, by agent. Null when there were none. */
 export function stopAllReport(node: string, outcomes: StopAllOutcome[]): string | null {
   if (!outcomes.length) return null
   const count = (d: StopAllOutcome["decision"]) => outcomes.filter((o) => o.decision === d).length
-  const lines = [`After the stop-all on ${node}: ${count("resumed")} resumed, ${count("resume-failed")} failed, ${count("skipped")} skipped.`]
-  const agents = [...new Set(outcomes.map((o) => o.agentId))].sort()
-  for (const agent of agents) {
-    for (const o of outcomes.filter((x) => x.agentId === agent)) {
-      lines.push(`- ${agent} ${o.id}: ${o.decision === "resume-failed" ? "failed" : o.decision}${o.decision === "resumed" ? "" : ` (${o.reason})`}`)
-    }
-  }
+  const lines = [`After the stop-all on ${node}: ${count("resumed")} resumed, ${count("resume-failed")} failed, ${count("skipped")} skipped.`, ...outcomeLines(outcomes)]
   if (count("resume-failed") || count("skipped")) lines.push("Resume one by hand with: agentx signal resume <id>")
   return lines.join("\n")
 }
@@ -147,9 +146,9 @@ export class SignalService {
   }
 
   /** How long a stop waits for the agent's plan, at most: the run's slot
-   *  release, then the wind-down turn. */
+   *  release, saving its builders' folders, then the wind-down turn. */
   windDownMs(): number {
-    return RUN_END_WAIT_MS + this.deps.settings().windDownSeconds * 1000 + 5_000
+    return RUN_END_WAIT_MS + (this.deps.windDownBuilders ? BUILDER_SAVE_MS : 0) + this.deps.settings().windDownSeconds * 1000 + 5_000
   }
 
   get(id: string): StoppedTask | null {
@@ -218,15 +217,18 @@ export class SignalService {
   /** Stop every running task on this node (#1271). The owner's order, or
    *  a mesh peer's that signals.allowPeers names; never an agent's. A task
    *  stop() refuses (a workflow step that cannot pause) is listed as
-   *  `refused` and keeps running. `done` resolves once every plan is saved. */
-  async stopAll(sender: SignalSender, reason?: string): Promise<StopAllResult> {
+   *  `refused` and keeps running. `done` resolves once every plan is saved.
+   *  A peer's order (`stop --all --mesh` on another node) may carry that
+   *  node's order id, so every node's tasks share it (#1328). */
+  async stopAll(sender: SignalSender, reason?: string, mesh: { orderId?: string } = {}): Promise<StopAllResult> {
     if (sender.kind === "agent") return { ok: false, status: 403, error: "only the owner or a mesh peer may stop every task" }
     const settings = this.deps.settings()
     if (!settings.enabled) return { ok: false, status: 403, error: "signals are turned off on this node (signals.enabled)" }
     if (sender.kind === "peer" && !settings.allowPeers.map((p) => p.toLowerCase()).includes(sender.peer.toLowerCase())) {
       return { ok: false, status: 403, error: `mesh peer "${sender.peer}" is not in signals.allowPeers` }
     }
-    const orderId = `stop-all-${new Date(this.now()).toISOString().replace(/[^0-9]/g, "").slice(0, 14)}`
+    const orderId = (sender.kind === "peer" ? validOrderId(mesh.orderId) : undefined)
+      ?? `stop-all-${new Date(this.now()).toISOString().replace(/[^0-9]/g, "").slice(0, 14)}`
     const why = reason?.trim() ? `stop-all: ${reason.trim()}` : "stop-all"
     const tasks: StopAllEntry[] = []
     const pending: Array<Promise<StopAllEntry>> = []
@@ -239,7 +241,7 @@ export class SignalService {
         continue
       }
       tasks.push({ id: r.record.id, agentId: r.record.agentId, state: r.record.state })
-      if (r.done) pending.push(r.done.then((s) => ({ id: s.id, agentId: s.agentId, state: s.state, plan: s.plan?.author })))
+      if (r.done) pending.push(r.done.then((s) => ({ id: s.id, agentId: s.agentId, state: s.state, plan: s.plan?.author, ...builderCounts(s.builders) })))
     }
     this.deps.log(`[signals] stop-all ${orderId} by ${describeSender(sender)}: ${pending.length} stopped, ${tasks.length - pending.length} refused`)
     this.deps.publish({
@@ -275,14 +277,15 @@ export class SignalService {
       const order = record.stopAll!
       // Each task is in one report only; later boots leave it out.
       if (order.reported) continue
+      const of = { orderId: order.orderId, ...outcomeBuilders(record.builders) }
       if (order.attemptedAt) {
         this.save({ ...record, stopAll: { ...order, reported: true } })
-        outcomes.push({ id: record.id, agentId: record.agentId, decision: "skipped", reason: `already tried at ${order.attemptedAt}${order.error ? `: ${order.error}` : ""}` })
+        outcomes.push({ id: record.id, agentId: record.agentId, decision: "skipped", reason: `already tried at ${order.attemptedAt}${order.error ? `: ${order.error}` : ""}`, ...of })
         continue
       }
       if (!record.origin && !record.workflow) {
         this.save({ ...record, stopAll: { ...order, reported: true } })
-        outcomes.push({ id: record.id, agentId: record.agentId, decision: "skipped", reason: "no record of how to re-enter it" })
+        outcomes.push({ id: record.id, agentId: record.agentId, decision: "skipped", reason: "no record of how to re-enter it", ...of })
         continue
       }
       if (outcomes.some((o) => o.decision !== "skipped") && opts.staggerMs) await new Promise((r) => setTimeout(r, opts.staggerMs))
@@ -297,11 +300,11 @@ export class SignalService {
         r = { ok: false, status: 500, error: String(e?.message ?? e) }
       }
       if (r.ok) {
-        outcomes.push({ id: record.id, agentId: record.agentId, decision: "resumed", reason: `answer goes to ${r.delivery ?? "its origin"}` })
+        outcomes.push({ id: record.id, agentId: record.agentId, decision: "resumed", reason: `answer goes to ${r.delivery ?? "its origin"}`, ...of })
       } else {
         const latest = this.deps.store.get(record.id)
         if (latest?.state === "stopped") this.save({ ...latest, stopAll: { ...order, attemptedAt, error: r.error.slice(0, 300), reported: true } })
-        outcomes.push({ id: record.id, agentId: record.agentId, decision: "resume-failed", reason: r.error })
+        outcomes.push({ id: record.id, agentId: record.agentId, decision: "resume-failed", reason: r.error, ...of })
       }
     }
     return outcomes
@@ -324,7 +327,7 @@ export class SignalService {
     if (!this.deps.store.claim(id)) return { ok: false, status: 409, error: "the task was already resumed" }
     const by = describeSender(sender)
     const plan: ResumePlan = record.plan ?? machinePlan({ toolCalls: this.deps.toolCalls(record.traceId), note: "no plan was saved" })
-    const note = resumeNote({ stoppedAt: record.stoppedAt, stoppedBy: record.stoppedBy, reason: record.reason, plan, resumedBy: by })
+    const note = resumeNote({ stoppedAt: record.stoppedAt, stoppedBy: record.stoppedBy, reason: record.reason, plan, resumedBy: by, builders: builderLines(record.builders, "resume") })
     this.resuming.add(id)
     try {
       // Marked first, so a second resume racing this one is refused.
@@ -394,10 +397,25 @@ export class SignalService {
   /** Wait for the run to end, ask the agent for its plan, save it. */
   private async windDown(record: StoppedTask, timeoutMs: number): Promise<StoppedTask> {
     let plan: ResumePlan
+    let builders: BuilderWindDown | undefined
     try {
       await this.deps.whenRunEnds(record.id, RUN_END_WAIT_MS)
       const calls = this.deps.toolCalls(record.traceId)
-      const message = windDownMessage({ by: record.stoppedBy, reason: record.reason, originalMessage: record.originalMessage, toolCalls: calls })
+      // The run has let go, so its builders are stopped too: save what they
+      // left before the agent writes its plan, so the plan can name it.
+      if (this.deps.windDownBuilders) {
+        builders = await this.deps.windDownBuilders({ taskId: record.id, toolCalls: calls, reason: `${record.stoppedBy} stopped the task` })
+          .catch((e: any) => { this.deps.log(`[signals] ${record.agentId} task ${record.id}: couldn't wind down its builders: ${e?.message ?? e}`); return undefined })
+        if (builders) {
+          const saved = builders.folders.filter((f) => f.wipBranch)
+          this.deps.log(`[signals] ${record.agentId} task ${record.id}: ${builders.helpers.length} builder(s) stopped; ${saved.length} folder(s) saved on a WIP branch${saved.length ? ` (${saved.map((f) => `${f.path} → ${f.wipBranch}`).join(", ")})` : ""}`)
+          for (const f of builders.folders.filter((x) => x.error)) this.deps.log(`[signals] ${record.agentId} task ${record.id}: couldn't save ${f.path}: ${f.error}`)
+          // Kept before the plan: a restart while the agent writes it
+          // still finds where the work is.
+          this.save({ ...record, builders })
+        }
+      }
+      const message = windDownMessage({ by: record.stoppedBy, reason: record.reason, originalMessage: record.originalMessage, toolCalls: calls, builders: builderLines(builders, "wind-down") })
       let timer: ReturnType<typeof setTimeout> | undefined
       const timedOut = new Promise<"timeout">((r) => { timer = setTimeout(() => r("timeout"), timeoutMs + 5_000); timer.unref?.() })
       const answer = await Promise.race([
@@ -417,7 +435,7 @@ export class SignalService {
     } catch (e: any) {
       plan = machinePlan({ toolCalls: [], note: `wind-down failed: ${e?.message ?? e}` })
     }
-    const stopped: StoppedTask = { ...record, state: "stopped", plan }
+    const stopped: StoppedTask = { ...record, ...(builders ? { builders } : {}), state: "stopped", plan }
     this.save(stopped)
     this.deps.publish({
       type: "signal:stopped", agentId: record.agentId, rootId: record.rootId, ref: record.id,
@@ -434,4 +452,16 @@ export class SignalService {
   private save(record: StoppedTask): void {
     try { this.deps.store.save(record) } catch (e: any) { this.deps.log(`[signals] couldn't save ${record.id}: ${e?.message ?? e}`) }
   }
+}
+
+function builderCounts(b: BuilderWindDown | undefined): Pick<StopAllEntry, "builders"> {
+  if (!b) return {}
+  const saved = b.folders.filter((f) => f.wipBranch).length
+  return { builders: { count: b.helpers.length, saved, notSaved: b.folders.filter((f) => f.error).length } }
+}
+
+function outcomeBuilders(b: BuilderWindDown | undefined): Pick<StopAllOutcome, "builders" | "wip"> {
+  if (!b) return {}
+  const wip = b.folders.flatMap((f) => (f.wipBranch ? [f.wipBranch] : []))
+  return { builders: b.helpers.length, ...(wip.length ? { wip } : {}) }
 }

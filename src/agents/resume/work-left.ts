@@ -138,7 +138,7 @@ function asNamed(dir: string, top: string): string {
 
 /** The git folders the run's tool calls named that still hold unsaved
  *  work. Bounded, and never throws: a folder git can't read is left out. */
-export async function findLeftWork(run: InterruptedRun, git: Git = runGit): Promise<LeftWork[]> {
+export async function findLeftWork(run: Pick<InterruptedRun, "toolCalls">, git: Git = runGit): Promise<LeftWork[]> {
   const roots = new Map<string, string>() // real top level -> path as named
   const asked = new Set<string>()
   for (const p of pathsInToolCalls(run)) {

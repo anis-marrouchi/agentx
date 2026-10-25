@@ -91,9 +91,33 @@ Before you restart AgentX, for example to install an update, you can pause every
 3. Read the last line. **safe to restart** means every plan is saved. **not safe to restart** means a task could not be stopped and is still running: wait for it to finish, or accept that the restart cuts it off. **not every plan is confirmed saved** means a task or machine needs a look first: its line says why.
 4. **Terminal:** restart AgentX on each machine, for example with `agentx daemon restart`.
 5. Wait a few seconds after AgentX starts. Each stopped task resumes from its plan, in the chat it came from.
-6. Read the report AgentX sends to your notification chat (`notifications.destination`): how many tasks resumed, failed or were skipped, with one line per task, grouped by agent. Each machine sends its own report. Without a notification chat, the report is in the AgentX log.
+6. Read the report AgentX sends to your notification chat (`notifications.destination`): how many tasks resumed, failed or were skipped, with one line per task, grouped by machine and agent. Without a notification chat, the report is in the AgentX log.
+
+**One report for all your machines.** With `--mesh`, you get one report, sent by the machine you gave the order on. Each other machine sends it what happened to its tasks after its own restart. The report waits up to 10 minutes for every machine:
+
+- A machine that took the order but did not answer in time (**no answer in time**) still reports to the same machine after its restart, like the others.
+- A machine that sent nothing in that time is listed as **no report**. If it restarts later, its part comes as a second, short message: **Late part of the stop-all …**.
+- A machine that had nothing running is listed as **nothing was running**.
+- A machine that cannot reach the one you gave the order on (for about 10 minutes) sends its own report instead, and says so on its last line.
+
+Without `--mesh`, the machine sends its own report, as before.
 
 Each task gets one try after the restart, however long the restart took. A task that fails to resume is listed in one report and is not tried again, or listed again, by later restarts. Resume it yourself with `agentx signal resume <taskId>` once the cause is fixed. A task that was still running when AgentX stopped (for example after `--no-wait` and a quick restart) is resumed once, from its plan, not twice.
+
+### Background builders
+
+A *background builder* is a helper an agent starts to work on its own while the agent goes on (in Claude Code, an `Agent` call with `run_in_background`). A builder runs inside its agent's task, so stopping the task stops the builder too. AgentX finds a task's builders, and the folders they worked in, in the task's trace.
+
+When a stop or a stop-all stops a task that had started builders, AgentX does this before the agent writes its plan:
+
+1. For each folder the builders worked in that holds changes not yet committed, it saves every change (new files included, ignored files not) as one commit on a new branch, `agentx/wip/<taskId>`. If that branch exists already, it adds `-2`, `-3` and so on. It never overwrites a branch. It spends at most 60 seconds on this; a folder it did not get to is listed as **not saved**.
+2. It leaves the folder exactly as it was: same branch, same files, nothing staged or unstaged. The WIP branch is only an extra branch next to it.
+3. It lists commits that were made but not pushed as they are: they are in the folder already.
+4. It tells the agent which builders were stopped and where their work is saved, so the plan says from which branch to start each one again.
+
+When the task resumes, it is told the same, and starts its builders again from their WIP branches. The stop-all line of the task says, for example, **1 builder(s) stopped, 1 folder(s) saved on a WIP branch**, and the report after the restart names the branch. `agentx signal show <taskId>` lists each builder and each folder.
+
+This is a write into your repositories: a local branch and its commit, on every stop of a task with builders, in each folder those builders changed. The WIP branch stays in the folder; AgentX does not push it. If the folder is in a place the computer empties when it starts (such as `/tmp` on some systems), restart AgentX, not the whole computer, or push the branch first.
 
 Some tasks are not stopped:
 
@@ -104,7 +128,22 @@ Some tasks are not stopped:
 
 **Who counts as "you".** AgentX treats any request that reaches it from the same machine (`127.0.0.1`), or that carries the shared mesh token without naming a machine it was sent on from, as coming from you. So a shell command an agent runs on the same machine, or a machine that holds the shared mesh token, can give a stop-all order too, and with `--mesh` it reaches every connected machine. The same is true today for stopping one task. Keep the shared mesh token private, and give each machine its own peer token where you can.
 
-From another program, send `POST /api/signals/stop-all` with `{ "reason": "…", "mesh": true, "wait": true }`. The answer lists each task, each machine under `peers`, and `safeToRestart`.
+From another program, send `POST /api/signals/stop-all` with `{ "reason": "…", "mesh": true, "wait": true }`. The answer lists each task, each machine under `peers`, and `safeToRestart`. A task line holds `builders` (how many builders were stopped, and how many folders were saved) when it had any. After the restart, each other machine sends its part to `POST /api/signals/stop-all/report` on the machine you gave the order on; only a machine that took the order can.
+
+### Run a stop-all drill
+
+A drill checks, at a quiet time, that a stop-all and a restart lose nothing. Use a test pair of machines first, never your live fleet.
+
+1. **Terminal (machine A):** on each of the two machines, run `agentx config set signals.allowPeers <other machine's name>`.
+2. **Browser:** give the agents three tasks that each take a few minutes, across both machines. Ask one agent to start a background builder that edits files in a test clone.
+3. **Terminal (machine A):** while they run, run `agentx signal stop --all --mesh --reason "drill"`.
+4. Check that every task line says **plan by the agent** or **plan by AgentX**, the builder's task says **saved on a WIP branch**, and the last line says **safe to restart**.
+5. **Terminal (machine with the builder):** in the test clone, run `git branch --list 'agentx/wip/*'`. The WIP branch is listed, and `git status` shows the same changes as before.
+6. **Terminal:** run `agentx daemon restart` on both machines.
+7. **Browser:** within a few minutes, your notification chat gets one message, **After the stop-all … on 2 machine(s)**, listing all three tasks as **resumed**, with the builder's branch.
+8. **Browser:** check that each task carries on in its chat, and that the builder's task starts its builder again from the WIP branch.
+
+The code's own drill runs the same steps on two simulated machines: `pnpm vitest run test/stop-all-drill.test.ts`.
 
 ## Let agents pause and resume
 
@@ -178,8 +217,9 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 3. **Terminal:** run `agentx trace list --agent <agent>`. The task's status is `stopped`, not `error`.
 4. **Browser:** select **▶ resume**. The agent's card shows **running**, and the answer reaches the original chat.
 5. **Terminal:** run `curl 'http://127.0.0.1:18800/events/recent?kind=signal'`. You see `signal:stop`, `signal:stopped` and `signal:resume` with the same `rootId`.
-6. For a stop-all: **Terminal:** run `agentx signal stop --all`, restart AgentX, then run `agentx signal list --all`. Every task of the order shows `resumed`, and your notification chat got one report.
-7. For a workflow step: after **▶ resume**, **Terminal:** run `agentx workflow runs <workflow>`. The run is `running` again, then `completed` once its last step is done.
+6. For a stop-all: **Terminal:** run `agentx signal stop --all`, restart AgentX, then run `agentx signal list --all`. Every task of the order shows `resumed`, and your notification chat got one report. With `--mesh`, that one report covers every machine.
+7. For background builders: **Terminal:** run `agentx signal show <taskId>` for a task that had one. Each folder says **saved on agentx/wip/…**, and `git branch --list 'agentx/wip/*'` in that folder lists the branch.
+8. For a workflow step: after **▶ resume**, **Terminal:** run `agentx workflow runs <workflow>`. The run is `running` again, then `completed` once its last step is done.
 
 ## If something is wrong
 
@@ -195,5 +235,8 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 - **"mesh peer … is not in signals.allowPeers" from your own dashboard:** the dashboard reaches that machine with a token from `mesh.peers`, so it counts as that machine. Add the machine to `signals.allowPeers`, or give the dashboard the shared `MESH_TOKEN` for it.
 - **Stop-all says a machine is "not in signals.allowPeers":** on that machine, add the name of the machine you gave the order from to `signals.allowPeers`, then give the order again.
 - **Stop-all says "no answer in time; its plans may still be saving":** that machine's agents need longer. Run `agentx signal list --peer <machine>` until every task there shows **stopped**, then restart.
+- **The report says a machine sent "no report":** that machine had not restarted, or could not reach this one, within 10 minutes. Run `agentx signal list --peer <machine>`. Once it restarts, its part arrives as a late message.
+- **You got a report from each machine after `--mesh`:** a machine could not reach the one you gave the order on. Its report says so on the last line. On that machine, run `agentx mesh list` and check the other machine shows as healthy.
+- **A builder's folder says "NOT saved":** AgentX could not commit its changes (the reason follows). Nothing was lost: the changes are still in the folder. Commit them yourself, or let the resumed task do it.
 - **A stop-all task is "skipped (already tried …)" in the report:** an earlier restart tried it once. Run `agentx signal resume <taskId>` when you're ready.
 - **Resume does nothing in a chat:** the chat's channel isn't running on this machine any more. Check it in [Settings](/dashboard/settings).

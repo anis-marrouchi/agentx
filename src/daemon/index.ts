@@ -70,6 +70,8 @@ import { findLeftWork } from "@/agents/resume/work-left"
 import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, spendByChatSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { SignalService, stopAllReport } from "@/agents/signals/service"
+import { windDownBuilders } from "@/agents/signals/builders"
+import { StopAllOrderStore, StopAllReporter } from "@/agents/signals/orders"
 import { StoppedTaskStore } from "@/agents/signals/store"
 import { setSignalService } from "@/agents/signals/instance"
 import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
@@ -298,6 +300,7 @@ export class AgentXDaemon {
   private stopEventWaker?: () => void
   /** Stop and resume signals (agents/signals, #857). */
   private signals!: SignalService
+  private stopAllReporter!: StopAllReporter
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
@@ -548,6 +551,7 @@ export class AgentXDaemon {
 
     this.signals = this.createSignalService()
     setSignalService(this.signals)
+    this.stopAllReporter = this.createStopAllReporter()
 
     // Initialize service matcher (automated client services)
     if (Object.keys(this.config.services).length > 0) {
@@ -1214,6 +1218,7 @@ export class AgentXDaemon {
     this.shuttingDown = true
     this.delegations.stop()
     this.voiceTalk.close()
+    this.stopAllReporter?.close()
     this.screenBuffer?.stop()
 
     try {
@@ -1682,6 +1687,9 @@ export class AgentXDaemon {
         if (!traceId || !this.db) return []
         try { return traceToolCalls(this.db, traceId) } catch { return [] }
       },
+      // The run's background builders stopped with it: their unsaved work
+      // goes on a WIP branch before the plan is written (#1328).
+      windDownBuilders: (input) => windDownBuilders(input),
       // Its own chat, so the turn neither queues behind the chat it stopped
       // nor posts there; under the task's root, so what it causes cannot
       // wake a subscriber twice.
@@ -1738,16 +1746,53 @@ export class AgentXDaemon {
     })
   }
 
+  /** One report for a stop-all across the mesh (#1328): peers send their
+   *  part here, or here to the node that gave the order. */
+  private createStopAllReporter(): StopAllReporter {
+    const selfNode = this.config.node.name || this.config.node.id || "local"
+    return new StopAllReporter({
+      store: new StopAllOrderStore(resolve(process.cwd(), ".agentx/signals/orders")),
+      selfNode,
+      sendPart: async (coordinator, body) => {
+        const reply = await this.signalsForward(coordinator, "POST", "/api/signals/stop-all/report", { ...body, via: { node: selfNode } })
+        if (!reply) throw new Error(`no healthy mesh peer named "${coordinator}"`)
+        if (reply.status >= 400) throw Object.assign(new Error(String(reply.body.error ?? `HTTP ${reply.status}`)), { status: reply.status })
+      },
+      tellOwner: async (text) => {
+        for (const line of text.split("\n")) this.log(`  [signals] ${line}`)
+        const dest = this.config.notifications?.destination
+        if (dest) await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text })
+      },
+      ownReport: (outcomes) => stopAllReport(selfNode, outcomes),
+      log: (msg) => this.log(msg),
+    })
+  }
+
+  /** Send a signals request on to a mesh peer; null when no healthy peer
+   *  has that name. */
+  private async signalsForward(node: string, method: "GET" | "POST", target: string, body?: Record<string, unknown>, timeoutMs?: number): Promise<{ status: number; body: Record<string, unknown> } | null> {
+    const want = node.toLowerCase()
+    const peer = this.mesh?.directory().find((p) => p.healthy && (p.peer.toLowerCase() === want || p.node?.toLowerCase() === want))
+    if (!peer) return null
+    const r = await fetch(`${peer.peerUrl}${target}`, {
+      method,
+      headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(timeoutMs ?? 15_000),
+    })
+    const data = await r.json().catch(() => ({ error: `peer answered ${r.status}` }))
+    return { status: r.status, body: data as Record<string, unknown> }
+  }
+
   /** Resume every task a stop-all order stopped, then send the owner one
-   *  report (#1271). Never throws. */
+   *  report (#1271): for a mesh order, one for every node (#1328). Never
+   *  throws. */
   private async resumeStopAll(): Promise<void> {
     try {
       const outcomes = await this.signals.resumeStopAll({ staggerMs: 2_000 })
-      if (!outcomes.length) return
-      const report = stopAllReport(this.config.node.name || this.config.node.id || "local", outcomes)!
-      for (const line of report.split("\n")) this.log(`  [signals] ${line}`)
-      const dest = this.config.notifications?.destination
-      if (dest) await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text: report })
+      // Even with nothing resumed here: a mesh order still expects this
+      // node's part, and a coordinator still waits for its peers.
+      await this.stopAllReporter.afterBoot(outcomes)
     } catch (e: any) {
       this.log(`[signals] stop-all resume failed: ${e?.message ?? e}`)
     }
@@ -6688,19 +6733,8 @@ export class AgentXDaemon {
           selfNode: this.config.node.name || this.config.node.id || "local",
           sender,
           peers: () => (this.mesh?.directory() ?? []).filter((p) => p.healthy).map((p) => p.peer),
-          forward: async (node, method, target, fwdBody, timeoutMs) => {
-            const want = node.toLowerCase()
-            const peer = this.mesh?.directory().find((p) => p.healthy && (p.peer.toLowerCase() === want || p.node?.toLowerCase() === want))
-            if (!peer) return null
-            const r = await fetch(`${peer.peerUrl}${target}`, {
-              method,
-              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
-              ...(fwdBody ? { body: JSON.stringify(fwdBody) } : {}),
-              signal: AbortSignal.timeout(timeoutMs ?? 15_000),
-            })
-            const data = await r.json().catch(() => ({ error: `peer answered ${r.status}` }))
-            return { status: r.status, body: data as Record<string, unknown> }
-          },
+          forward: (node, method, target, fwdBody, timeoutMs) => this.signalsForward(node, method, target, fwdBody, timeoutMs),
+          reporter: this.stopAllReporter,
         })
         this.json(res, reply.status, reply.body)
         return

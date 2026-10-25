@@ -1,6 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import type { RunOrigin } from "@/agents/resume/origin"
+import type { BuilderWindDown } from "./builders"
 import type { ResumePlan } from "./plan"
 
 // --- Stopped tasks and their resume plans, one JSON file each (#857) ---
@@ -41,6 +42,9 @@ export interface StoppedTask {
    *  failed or cut-off attempt is reported and never tried again by a boot.
    *  `reported`: a boot's report listed it; later reports leave it out. */
   stopAll?: { orderId: string; attemptedAt?: string; error?: string; reported?: boolean }
+  /** The background builders the stop also stopped, and where their
+   *  unsaved work was saved (#1328). Absent: it started none. */
+  builders?: BuilderWindDown
 }
 
 /** Records kept this long after they were resumed. Stopped ones stay until
@@ -160,6 +164,12 @@ export function summarizeStopped(r: StoppedTask): Record<string, unknown> {
     resumable: r.state === "stopped" && (!!r.origin || !!r.workflow),
     ...(r.workflow ? { workflow: r.workflow } : {}),
     ...(r.stopAll ? { stopAll: r.stopAll } : {}),
+    ...(r.builders ? {
+      builders: {
+        helpers: r.builders.helpers.length,
+        folders: r.builders.folders.slice(0, 10).map((f) => ({ path: f.path, branch: f.branch, wipBranch: f.wipBranch, error: f.error })),
+      },
+    } : {}),
     resumedAt: r.resumedAt,
     resumedBy: r.resumedBy,
   }
