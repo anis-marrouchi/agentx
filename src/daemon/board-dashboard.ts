@@ -834,8 +834,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   // The Wall (#1180): read-only posts and threads from this node's records.
   if (method === "GET" && (path === WALL_PREFIX || path.startsWith(`${WALL_PREFIX}/`))) {
-    const deps = wallDeps(ctx.config)
-    const reply = await withReported(await withForge(handleWallApi(path, url.searchParams, deps, localNodeName(ctx.config)), deps, wallForgeSources(ctx.config)), path, wallReportedSource(ctx.config))
+    const reply = await wallLocal(path, url.searchParams, ctx)
     sendJson(res, reply.status, reply.body)
     return
   }
@@ -3153,8 +3152,41 @@ function wallReportedSource(config: DaemonConfig): WallReportedSource | null {
  *  not answer is listed as unreachable; the others still show (#1180). */
 async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   const days = q.get("days") ?? "7"
+  const withTimings = q.get("timings") === "1"
+  const t0 = performance.now()
+  const ms = () => Math.round(performance.now() - t0)
   const deps = wallDeps(ctx.config)
-  const local = (await withReported(await withForge(handleWallApi(WALL_PREFIX, new URLSearchParams({ days }), deps, localNodeName(ctx.config)), deps, wallForgeSources(ctx.config)), WALL_PREFIX, wallReportedSource(ctx.config))).body as any
+  // Projects (#1190): this node's mapping also claims the peer posts it
+  // names, and every project configured here gets an overview row.
+  const projects = deps?.projects ?? null
+  const now = Date.now()
+  const peerTimings: Record<string, number> = {}
+  // The peers are asked first and build their Walls while this node builds
+  // its own, so the fleet takes about the slowest node's time, not the sum
+  // of all of them (#1252).
+  const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
+  const peerReplies = Promise.all(peers.map(async (d) => {
+    const id = d.url.replace(/\/+$/, "")
+    const name = d.name || id
+    const peer = findPeer(id, ctx.config)
+    if (!peer) return { name, id, error: "no dashboard address" }
+    try {
+      const r = await fetch(`${peer.url}${WALL_PREFIX}?days=${encodeURIComponent(days)}${withTimings ? "&timings=1" : ""}`, {
+        headers: { Accept: "application/json", "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!r.ok) return { name, id, error: `answered ${r.status}` }
+      const body = await r.json() as any
+      peerTimings[body.node || name] = ms()
+      return { name, id, body }
+    } catch (e: any) {
+      return { name, id, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) }
+    }
+  }))
+  // Let the peer requests go out before the local build takes the thread.
+  await new Promise<void>((r) => setImmediate(r))
+  const local = (await wallLocal(WALL_PREFIX, new URLSearchParams({ days, ...(withTimings ? { timings: "1" } : {}) }), ctx, deps)).body as any
+  const localMs = ms()
   const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string; syncedAt?: number }> = [
     { name: local.node, peer: null, ok: true, syncedAt: local.syncedAt },
   ]
@@ -3163,35 +3195,35 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   const posts = tag(local.posts, local.node, null, null)
   const failures = tag(local.failures, local.node, null, null)
   const reported = local.reported ? tag([local.reported], local.node, null, null) : []
-  // Projects (#1190): this node's mapping also claims the peer posts it
-  // names, and every project configured here gets an overview row.
-  const projects = deps?.projects ?? null
-  const now = Date.now()
-  const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
-  await Promise.all(peers.map(async (d) => {
-    const id = d.url.replace(/\/+$/, "")
-    const name = d.name || id
-    const peer = findPeer(id, ctx.config)
-    if (!peer) { nodes.push({ name, peer: id, ok: false, error: "no dashboard address" }); return }
-    try {
-      const r = await fetch(`${peer.url}${WALL_PREFIX}?days=${encodeURIComponent(days)}`, {
-        headers: { Accept: "application/json", "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
-        signal: AbortSignal.timeout(8000),
-      })
-      if (!r.ok) { nodes.push({ name, peer: id, ok: false, error: `answered ${r.status}` }); return }
-      const body = await r.json() as any
-      nodes.push({ name: body.node || name, peer: id, ok: true, syncedAt: body.syncedAt })
-      posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], body.node || name, id, id).map((p) => claimBlocker(claimPost(p, projects, now), projects)))
-      failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], body.node || name, id, id))
-      if (body.reported && Array.isArray(body.reported.groups)) reported.push(...tag([body.reported], body.node || name, id, id))
-    } catch (e: any) {
-      nodes.push({ name, peer: id, ok: false, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) })
-    }
-  }))
+  const peerTimingsOf: Record<string, unknown> = {}
+  for (const { name, id, body, error } of await peerReplies as Array<{ name: string; id: string; body?: any; error?: string }>) {
+    if (!body) { nodes.push({ name, peer: id, ok: false, error }); continue }
+    const node = body.node || name
+    nodes.push({ name: node, peer: id, ok: true, syncedAt: body.syncedAt })
+    posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], node, id, id).map((p) => claimBlocker(claimPost(p, projects, now), projects)))
+    failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], node, id, id))
+    if (body.reported && Array.isArray(body.reported.groups)) reported.push(...tag([body.reported], node, id, id))
+    if (withTimings) peerTimingsOf[node] = { answeredMs: peerTimings[node], ...(body.timings ? { build: body.timings } : {}) }
+  }
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
   return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names),
     // Capacity (#1191): counted here over every node's posts, with this node's threshold.
-    capacity: wallCapacity(posts, deps?.capacityThreshold), staleAfterHours: local.staleAfterHours }
+    capacity: wallCapacity(posts, deps?.capacityThreshold), staleAfterHours: local.staleAfterHours,
+    ...(withTimings ? { timings: { totalMs: ms(), local: { doneMs: localMs, ...local.timings }, peers: peerTimingsOf } } : {}) }
+}
+
+/** This node's Wall reply: the posts, then the forge's word on them, then
+ *  reported failures. With `?timings=1` on the list, the reply says how
+ *  long each part took (#1252): numbers only. */
+async function wallLocal(path: string, q: URLSearchParams, ctx: Ctx, deps = wallDeps(ctx.config)): Promise<{ status: number; body: unknown }> {
+  const reply = handleWallApi(path, q, deps, localNodeName(ctx.config))
+  const t1 = performance.now()
+  const forged = await withForge(reply, deps, wallForgeSources(ctx.config))
+  const t2 = performance.now()
+  const out = await withReported(forged, path, wallReportedSource(ctx.config))
+  const timings = (out.body as any)?.timings
+  if (timings) Object.assign(timings, { forgeMs: Math.round(t2 - t1), reportedMs: Math.round(performance.now() - t2) })
+  return out
 }
 
 /** Weekly throughput across the mesh (#1192): every node's closures,

@@ -60,7 +60,8 @@ export function findOverlaps(spans: RunSpan[], now: number): RunOverlap[] {
     const a = list[i]
     for (let j = i + 1; j < list.length; j++) {
       const b = list[j]
-      if (b.startedAt >= end(a)) continue
+      // Sorted by start: no later run can overlap a either.
+      if (b.startedAt >= end(a)) break
       if (a.startedAt >= end(b)) continue
       const on: RunOverlap["on"] = []
       if (a.chat && a.chat === b.chat) on.push("chat")

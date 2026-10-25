@@ -8,7 +8,7 @@ import type { PlanStore } from "@/requests/plan-store"
 import { OPEN_STATES, type RequestRecord, type RequestStore } from "@/requests/store"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
-import { forgeCommentsOf, type WallForgeComment, type WallForgeState, type WallForgeStateSource } from "./wall-forge-state"
+import { forgeCommentsOf, forgeCommentsOfAll, type WallForgeComment, type WallForgeState, type WallForgeStateSource } from "./wall-forge-state"
 import { isStalled, projectOverview, type WallProjects } from "./wall-projects"
 import { wallClosures, wallThroughput } from "./wall-throughput"
 import { blockerOf, type WallBlocker } from "./wall-blocks"
@@ -226,19 +226,45 @@ export function projectOf(r: Pick<RequestRecord, "home" | "chatId">): string | n
   return chat ? chat[1] : null
 }
 
+const RUN_COLUMNS = `l.ref AS taskId, t.agent_id AS agentId, t.status AS status, t.started_at AS startedAt,
+              t.finished_at AS finishedAt, t.duration_ms AS durationMs, t.error AS error,
+              t.channel AS channel, t.chat_id AS chatId, t.final_response AS reply`
+
 function runsOf(db: Database.Database | null, requestId: string): WallRun[] {
   if (!db) return []
   try {
     return (db.prepare(
-      `SELECT l.ref AS taskId, t.agent_id AS agentId, t.status AS status, t.started_at AS startedAt,
-              t.finished_at AS finishedAt, t.duration_ms AS durationMs, t.error AS error,
-              t.channel AS channel, t.chat_id AS chatId, t.final_response AS reply
+      `SELECT ${RUN_COLUMNS}
        FROM request_links l LEFT JOIN task_traces t ON t.task_id = l.ref
        WHERE l.request_id = ? AND l.kind = 'run' ORDER BY l.at, l.rowid`,
     ).all(requestId) as WallRun[])
   } catch {
     return []
   }
+}
+
+/** Ids per IN (…) list, well under SQLite's bound on parameters. */
+const CHUNK = 500
+function chunks<T>(items: T[]): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += CHUNK) out.push(items.slice(i, i + CHUNK))
+  return out
+}
+
+/** runsOf for many requests in one read per chunk (#1252): the same rows,
+ *  in the same order, keyed by request. A failed read gives no runs. */
+export function runsOfAll(db: Database.Database | null, requestIds: string[]): Map<string, WallRun[]> {
+  const out = new Map<string, WallRun[]>(requestIds.map((id) => [id, []]))
+  if (!db) return out
+  for (const ids of chunks(requestIds)) {
+    const rows = safe(() => db.prepare(
+      `SELECT l.request_id AS requestId, ${RUN_COLUMNS}
+       FROM request_links l LEFT JOIN task_traces t ON t.task_id = l.ref
+       WHERE l.request_id IN (${ids.map(() => "?").join(",")}) AND l.kind = 'run' ORDER BY l.at, l.rowid`,
+    ).all(...ids) as Array<WallRun & { requestId: string }>, [])
+    for (const { requestId, ...run } of rows) out.get(requestId)?.push(run)
+  }
+  return out
 }
 
 const FAILED = new Set(["error", "timeout"])
@@ -268,40 +294,117 @@ const traceAgents = new WeakMap<WallDeps, string[]>()
 function spanOf(t: { taskId: string; agentId: string | null; channel: string | null; chatId: string | null; status: string | null; startedAt: number | null; finishedAt: number | null; durationMs: number | null }, deps: WallDeps): RunSpan | null {
   if (!t.agentId || t.startedAt == null) return null
   const endedAt = t.finishedAt ?? (t.status === "in-flight" ? null : t.startedAt + (t.durationMs ?? 0))
-  return { runId: t.taskId, agentId: t.agentId, chat: chatKey(t.channel, t.chatId), worktree: worktreeKey(deps.workspaceOf?.(t.agentId)), startedAt: t.startedAt, endedAt }
+  return { runId: t.taskId, agentId: t.agentId, chat: chatKey(t.channel, t.chatId), worktree: worktreeOf(t.agentId, deps), startedAt: t.startedAt, endedAt }
 }
 
-/** The post's runs that overlapped another run on one chat or in one
- *  worktree. Only run ids, agents and times leave here: no text. */
-export function concurrentOf(runs: WallRun[], deps: WallDeps): RunOverlap[] {
-  const db = deps.db
-  const own = runs.map((r) => spanOf(r, deps)).filter((s): s is RunSpan => s !== null)
-  if (!db || own.length === 0) return []
+/** An agent's worktree key, worked out once per call: every candidate run
+ *  needs it (#1252). */
+const worktrees = new WeakMap<WallDeps, Map<string, string | null>>()
+function worktreeOf(agentId: string, deps: WallDeps): string | null {
+  let map = worktrees.get(deps)
+  if (!map) worktrees.set(deps, (map = new Map()))
+  if (!map.has(agentId)) map.set(agentId, worktreeKey(deps.workspaceOf?.(agentId)))
+  return map.get(agentId)!
+}
+
+type TraceSpanRow = Parameters<typeof spanOf>[0]
+const TRACE_SPAN_COLUMNS = `task_id AS taskId, agent_id AS agentId, channel, chat_id AS chatId, status, started_at AS startedAt,
+            finished_at AS finishedAt, duration_ms AS durationMs`
+
+function traceAgentsOf(db: Database.Database, deps: WallDeps): string[] {
   const agents = traceAgents.get(deps) ?? safe(() => (db.prepare("SELECT DISTINCT agent_id AS a FROM task_traces").all() as Array<{ a: string }>).map((x) => x.a), [] as string[])
   traceAgents.set(deps, agents)
-  if (agents.length === 0) return []
-  // agent_id IN (…) keeps the read on idx_traces_agent_started. Only runs
-  // still going when this one started: a busy node logs 500+ runs a day,
-  // so the oldest rows of the lookback would crowd out the real overlaps.
-  const q = safe(() => db.prepare(
-    `SELECT task_id AS taskId, agent_id AS agentId, channel, chat_id AS chatId, status, started_at AS startedAt,
-            finished_at AS finishedAt, duration_ms AS durationMs
-     FROM task_traces WHERE agent_id IN (${agents.map(() => "?").join(",")}) AND started_at >= ? AND started_at < ?
-       AND (status = 'in-flight' OR COALESCE(finished_at, started_at + COALESCE(duration_ms, 0)) > ?)
-     ORDER BY started_at DESC LIMIT ${OVERLAP_CANDIDATES}`,
-  ), null)
-  if (!q) return []
+  return agents
+}
+
+/** The overlaps of `own` with the candidate runs read for each of them. */
+function overlapsOf(own: RunSpan[], candidates: (s: RunSpan) => Array<RunSpan | null>, deps: WallDeps): RunOverlap[] {
   const spans = new Map(own.map((s) => [s.runId, s] as const))
   for (const s of own) {
-    const rows = safe(() => q.all(...agents, s.startedAt - OVERLAP_LOOKBACK, s.endedAt ?? deps.now, s.startedAt) as any[], [])
-    for (const row of rows) {
-      const o = spanOf(row, deps)
+    for (const o of candidates(s)) {
       if (!o || spans.has(o.runId)) continue
       if ((s.chat && o.chat === s.chat) || (s.worktree && o.worktree === s.worktree)) spans.set(o.runId, o)
     }
   }
   const mine = new Set(own.map((s) => s.runId))
   return findOverlaps([...spans.values()], deps.now).filter((x) => mine.has(x.runs[0]) || mine.has(x.runs[1]))
+}
+
+const ownSpans = (runs: WallRun[], deps: WallDeps): RunSpan[] => runs.map((r) => spanOf(r, deps)).filter((s): s is RunSpan => s !== null)
+
+/** The post's runs that overlapped another run on one chat or in one
+ *  worktree. Only run ids, agents and times leave here: no text. */
+export function concurrentOf(runs: WallRun[], deps: WallDeps): RunOverlap[] {
+  const db = deps.db
+  const own = ownSpans(runs, deps)
+  if (!db || own.length === 0) return []
+  const agents = traceAgentsOf(db, deps)
+  if (agents.length === 0) return []
+  // agent_id IN (…) keeps the read on idx_traces_agent_started. Only runs
+  // still going when this one started: a busy node logs 500+ runs a day,
+  // so the oldest rows of the lookback would crowd out the real overlaps.
+  const q = safe(() => db.prepare(
+    `SELECT ${TRACE_SPAN_COLUMNS}
+     FROM task_traces WHERE agent_id IN (${agents.map(() => "?").join(",")}) AND started_at >= ? AND started_at < ?
+       AND (status = 'in-flight' OR COALESCE(finished_at, started_at + COALESCE(duration_ms, 0)) > ?)
+     ORDER BY started_at DESC LIMIT ${OVERLAP_CANDIDATES}`,
+  ), null)
+  if (!q) return []
+  return overlapsOf(own, (s) => safe(() => q.all(...agents, s.startedAt - OVERLAP_LOOKBACK, s.endedAt ?? deps.now, s.startedAt) as TraceSpanRow[], []).map((row) => spanOf(row, deps)), deps)
+}
+
+/** concurrentOf for every post at once (#1252). Instead of one read per
+ *  run, the runs' lookback windows are merged and each merged window is
+ *  read once; each run then takes, from those rows, exactly what its own
+ *  read would have returned (same window, same filter, newest first, same
+ *  cap). */
+export function concurrentOfAll(runsByPost: Map<string, WallRun[]>, deps: WallDeps): Map<string, RunOverlap[]> {
+  const out = new Map<string, RunOverlap[]>()
+  const owns = new Map<string, RunSpan[]>()
+  for (const [id, runs] of runsByPost) { out.set(id, []); owns.set(id, ownSpans(runs, deps)) }
+  const db = deps.db
+  const all = [...owns.values()].flat()
+  if (!db || all.length === 0) return out
+  const agents = traceAgentsOf(db, deps)
+  if (agents.length === 0) return out
+  const windowOf = (s: RunSpan): [number, number] => [s.startedAt - OVERLAP_LOOKBACK, s.endedAt ?? deps.now]
+  const merged: Array<[number, number]> = []
+  for (const [lo, hi] of all.map(windowOf).filter(([lo, hi]) => lo < hi).sort((a, b) => a[0] - b[0])) {
+    const last = merged[merged.length - 1]
+    if (last && lo <= last[1]) last[1] = Math.max(last[1], hi)
+    else merged.push([lo, hi])
+  }
+  const q = safe(() => db.prepare(
+    `SELECT ${TRACE_SPAN_COLUMNS}
+     FROM task_traces WHERE agent_id IN (${agents.map(() => "?").join(",")}) AND started_at >= ? AND started_at < ?
+     ORDER BY started_at DESC`,
+  ), null)
+  if (!q) return out
+  // Newest first across all windows: the windows are disjoint, so read
+  // them newest window first.
+  const rows: TraceSpanRow[] = []
+  for (let i = merged.length - 1; i >= 0; i--) {
+    for (const row of safe(() => q.all(...agents, merged[i][0], merged[i][1]) as TraceSpanRow[], [])) rows.push(row)
+  }
+  // Worked out once per row, not once per run that reads it.
+  const starts = rows.map((t) => t.startedAt!)
+  const ends = rows.map((t) => (t.status === "in-flight" ? Infinity : t.finishedAt ?? t.startedAt! + (t.durationMs ?? 0)))
+  const rowSpans: Array<RunSpan | null | undefined> = new Array(rows.length)
+  const candidates = (s: RunSpan): Array<RunSpan | null> => {
+    const [lo, hi] = windowOf(s)
+    // The first row that started before `hi` (rows run newest first).
+    let a = 0, b = rows.length
+    while (a < b) { const m = (a + b) >> 1; if (starts[m] >= hi) a = m + 1; else b = m }
+    const got: Array<RunSpan | null> = []
+    for (let i = a; i < rows.length && starts[i] >= lo && got.length < OVERLAP_CANDIDATES; i++) {
+      if (ends[i] <= s.startedAt) continue
+      if (rowSpans[i] === undefined) rowSpans[i] = spanOf(rows[i], deps)
+      got.push(rowSpans[i]!)
+    }
+    return got
+  }
+  for (const [id, own] of owns) if (own.length) out.set(id, overlapsOf(own, candidates, deps))
+  return out
 }
 
 export function timeFlag(r: RequestRecord, runs: WallRun[], runMs: number, now: number, staleAfterHours: number): string | null {
@@ -330,6 +433,46 @@ function openHandoffTo(db: Database.Database | null, requestId: string): string 
     }
     return null
   }, null)
+}
+
+/** openHandoffTo for many requests (#1252): one read of their open
+ *  delegations, and one pass over the A2A runs for all of them, instead
+ *  of a scan of task_traces per delegation. */
+export function openHandoffsTo(db: Database.Database | null, requestIds: string[]): Map<string, string | null> {
+  const out = new Map<string, string | null>(requestIds.map((id) => [id, null]))
+  if (!db || requestIds.length === 0) return out
+  return safe(() => {
+    const refsOf = new Map<string, string[]>()
+    for (const ids of chunks(requestIds)) {
+      const rows = db.prepare(
+        `SELECT request_id AS requestId, ref FROM request_links WHERE request_id IN (${ids.map(() => "?").join(",")}) AND kind = 'delegation' AND ended IS NULL ORDER BY at DESC`,
+      ).all(...ids) as Array<{ requestId: string; ref: string }>
+      for (const l of rows) {
+        const refs = refsOf.get(l.requestId)
+        if (refs) refs.push(l.ref)
+        else refsOf.set(l.requestId, [l.ref])
+      }
+    }
+    const want = new Set([...refsOf.values()].flat())
+    if (want.size === 0) return out
+    // The latest A2A chat whose id ends in ":<ref>", per ref.
+    const chatOf = new Map<string, string>()
+    for (const row of db.prepare("SELECT chat_id FROM task_traces WHERE chat_id LIKE 'a2a:%' ORDER BY started_at DESC").iterate() as Iterable<{ chat_id: string }>) {
+      for (let p = row.chat_id.indexOf(":"); p >= 0; p = row.chat_id.indexOf(":", p + 1)) {
+        const ref = row.chat_id.slice(p + 1)
+        if (want.has(ref) && !chatOf.has(ref)) chatOf.set(ref, row.chat_id)
+      }
+      if (chatOf.size === want.size) break
+    }
+    for (const [id, refs] of refsOf) {
+      for (const ref of refs) {
+        const chat = chatOf.get(ref)
+        const route = chat ? a2aRoute(chat) : null
+        if (route) { out.set(id, route.to); break }
+      }
+    }
+    return out
+  }, out)
 }
 
 /** In plain words, what a card's `if_silent` does when it expires. A card
@@ -381,8 +524,20 @@ export function ownerCardsOf(requestId: string, deps: WallDeps): WallOwnerCard[]
   return map.get(requestId) ?? []
 }
 
-export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
-  const runs = runsOf(deps.db, r.id)
+/** What a post reads from the database. wallPosts reads it for all posts
+ *  at once (#1252); a single post (a thread) reads its own. */
+export interface WallPostReads {
+  runs: WallRun[]
+  concurrent: RunOverlap[]
+  /** Only read for posts waiting on another agent. */
+  handedTo: string | null
+  comments: WallForgeComment[]
+}
+
+const forgeCommentPost = (r: RequestRecord) => ({ home: r.home, group: { channel: r.channel, chatId: r.chatId }, createdAt: r.createdAt, closedAt: r.closedAt })
+
+export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads): WallPost {
+  const runs = reads ? reads.runs : runsOf(deps.db, r.id)
   const runMs = runs.reduce((n, x) => n + (x.durationMs ?? 0), 0)
   const words = cardWords(r)
   const stall = stalledWhy(r, deps.staleAfterHours, deps.now)
@@ -394,7 +549,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
   let blockedBy: WallBlocker | null = null
   const stepAgent = (OPEN_STATES as readonly string[]).includes(r.state) ? safe(() => activeStepAgentOf(deps.plans)(r.id), null) : null
   if (waiting || stall) {
-    const handedTo = r.state === "waiting_other" ? openHandoffTo(deps.db, r.id) : null
+    const handedTo = r.state !== "waiting_other" ? null : reads ? reads.handedTo : openHandoffTo(deps.db, r.id)
     const look = waitsOn(r, { isAgent: deps.isAgent, activeStepAgent: () => stepAgent })
     const on = handedTo ? { who: handedTo } : look
     const why = r.state === "waiting_owner" ? (r.question ?? "waiting on the owner")
@@ -435,20 +590,37 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     timeFlag: timeFlag(r, runs, runMs, deps.now, deps.staleAfterHours),
     forgeTime: null,
     forgeState: null,
-    comments: forgeCommentsOf({ home: r.home, group: { channel: r.channel, chatId: r.chatId }, createdAt: r.createdAt, closedAt: r.closedAt }, deps.db, deps.gitlabUrl, deps.now),
+    comments: reads ? reads.comments : forgeCommentsOf(forgeCommentPost(r), deps.db, deps.gitlabUrl, deps.now),
     lastRun: last ? { taskId: last.taskId, agentId: last.agentId! } : null,
     result: resultOf(r, runs),
-    concurrent: concurrentOf(runs, deps),
+    concurrent: reads ? reads.concurrent : concurrentOf(runs, deps),
     ownerCards: ownerCardsOf(r.id, deps),
     qa: r.qa ? { ...r.qa, note: r.qa.note ? redactSecrets(r.qa.note) : null } : null,
     awaitingQa: awaitingQa(r),
   }
 }
 
-export function wallPosts(deps: WallDeps, days: number): WallPost[] {
-  const open = deps.store.listOpen()
-  const closed = deps.store.listClosedSince(deps.now - days * DAY, 200)
-  return [...open, ...closed].map((r) => wallPost(r, deps)).sort((a, b) => b.updatedAt - a.updatedAt)
+/** Milliseconds per part of a Wall build, for `?timings=1` (#1252). */
+export type WallTimings = Record<string, number>
+
+/** Runs `fn`, adding the time it took to `timings[part]`. */
+export function timed<T>(timings: WallTimings | undefined, part: string, fn: () => T): T {
+  if (!timings) return fn()
+  const t0 = performance.now()
+  try { return fn() } finally { timings[part] = Math.round(((timings[part] ?? 0) + performance.now() - t0) * 10) / 10 }
+}
+
+export function wallPosts(deps: WallDeps, days: number, timings?: WallTimings): WallPost[] {
+  const requests = timed(timings, "requests", () => [...deps.store.listOpen(), ...deps.store.listClosedSince(deps.now - days * DAY, 200)])
+  // Each read once for every post, not once per post (#1252).
+  const ids = requests.map((r) => r.id)
+  const runs = timed(timings, "runs", () => runsOfAll(deps.db, ids))
+  const concurrent = timed(timings, "concurrent", () => concurrentOfAll(runs, deps))
+  const handedTo = timed(timings, "handoffs", () => openHandoffsTo(deps.db, requests.filter((r) => r.state === "waiting_other").map((r) => r.id)))
+  const comments = timed(timings, "comments", () => forgeCommentsOfAll(requests.map(forgeCommentPost), deps.db, deps.gitlabUrl, deps.now))
+  return timed(timings, "cards", () => requests.map((r, i) => wallPost(r, deps, {
+    runs: runs.get(r.id) ?? [], concurrent: concurrent.get(r.id) ?? [], handedTo: handedTo.get(r.id) ?? null, comments: comments[i],
+  })).sort((a, b) => b.updatedAt - a.updatedAt))
 }
 
 function event(e: Omit<WallEvent, "mentions" | "ids">, raw = e.text): WallEvent {
@@ -565,10 +737,15 @@ export function handleWallApi(path: string, q: URLSearchParams, deps: WallDeps |
   if (path === WALL_PREFIX) {
     const days = Math.max(0, Math.min(WALL_DAYS_MAX, Number(q.get("days") ?? 7) || 0))
     if (!deps) return { status: 200, body: { node, syncedAt, posts: [], failures: [], projects: [], capacity: wallCapacity([]), staleAfterHours: null } }
-    const posts = wallPosts(deps, days)
+    const timings: WallTimings | undefined = q.get("timings") === "1" ? {} : undefined
+    const t0 = performance.now()
+    const posts = wallPosts(deps, days, timings)
+    const failures = timed(timings, "failures", () => wallFailures(deps.db, deps.now))
+    if (timings) timings.totalMs = Math.round((performance.now() - t0) * 10) / 10
     return { status: 200, body: {
-      node, syncedAt, posts, failures: wallFailures(deps.db, deps.now), projects: projectOverview(posts, deps.projects?.names),
+      node, syncedAt, posts, failures, projects: projectOverview(posts, deps.projects?.names),
       capacity: wallCapacity(posts, deps.capacityThreshold), staleAfterHours: deps.staleAfterHours,
+      ...(timings ? { timings } : {}),
     } }
   }
   // Weekly throughput (#1192): this node's closures of the last four

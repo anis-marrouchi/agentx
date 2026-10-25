@@ -410,6 +410,15 @@ describe("routes", () => {
     expect(fleet.posts[0].node).toEqual({ name: "node-a", peer: null, daemonUrl: null })
   })
 
+  it("times each part of the build on request, locally and across the fleet (#1252)", async () => {
+    expect(JSON.parse((await get("/api/admin/wall")).body).timings).toBeUndefined()
+    const local = JSON.parse((await get("/api/admin/wall?timings=1")).body)
+    expect(local.timings).toMatchObject({ runs: expect.any(Number), concurrent: expect.any(Number), comments: expect.any(Number), forgeMs: expect.any(Number) })
+    const fleet = JSON.parse((await get("/api/admin/wall?peer=fleet&timings=1")).body)
+    expect(fleet.timings).toMatchObject({ totalMs: expect.any(Number), local: { doneMs: expect.any(Number), runs: expect.any(Number) }, peers: {} })
+    expect(fleet.posts.map((p: any) => p.id).sort()).toEqual(["r1", "r2", "r3"])
+  })
+
   it("sits behind the dashboard token", async () => {
     token = "tok-123"
     try {
