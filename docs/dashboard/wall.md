@@ -217,6 +217,37 @@ The Wall only shows the verdict. Giving one is done by the QA agent, and nobody 
    - **Cron runs**: failed scheduled jobs on every machine, with their error and a **full log** link.
    - **Workflow runs**: failed workflow runs, with the step that failed and its error.
 
+### Group issues a reporting job opened
+
+A reporting job, such as a cron that watches a server, may open an issue on GitHub or GitLab for each incident and give it a label. When the same incident comes back, there are many open issues for one problem. The Wall can show them on **Failures** as one line per problem, with how many issues are open, when the newest was last updated, and a link to it.
+
+This is off until you set `wall.reportedIssues` in `agentx.json`:
+
+```json
+{
+  "wall": {
+    "reportedIssues": {
+      "label": "probe-reported",
+      "titleSignature": "^\\[([\\w-]+)\\]",
+      "sources": [
+        { "forge": "gitlab", "project": "ops/monitoring" },
+        { "forge": "github", "project": "acme/probe" }
+      ]
+    }
+  }
+}
+```
+
+- `label`: the label the reporting job puts on its issues.
+- `sources`: the projects to look in, up to 10. The Wall makes one read per project for the open issues with that label, the newest 100.
+- `titleSignature` (optional): how to tell that two issues are the same problem. Issues whose title gives the same first capture group share a line. Without it, or when a title does not match, titles that differ only in numbers and ids share a line, the same way failed runs do.
+
+The Wall reads with this machine's own GitHub or GitLab connection, the same one it uses for issue state, and the token never reaches the browser. It never changes an issue. Answers are kept for 5 minutes. When a project cannot be read, the list says **Couldn't read …** with the reason, and the rest of **Failures** still shows.
+
+![Failures with reported issues grouped by problem, and one project that could not be read](/screenshots/wall/reported.png)
+
+*Fictional data; your projects and labels will differ.*
+
 ## See recurring jobs and their value line
 
 1. Select **Jobs**. Every scheduled job on every machine is listed, with its schedule and the agent it runs.
@@ -275,7 +306,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 7. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 8. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
 9. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
-10. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+10. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
+11. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
@@ -290,6 +322,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **No state on a GitHub or GitLab task:** the machine that keeps the task has no connection to that forge, or the home link is on another GitLab address than the one configured.
 - **No "Comment by" link:** the comment was posted before this version, by a person, or outside AgentX. Only comments AgentX posted, with the id the forge returned, are linked.
 - **A task waits on QA but Awaiting QA only does not list it:** check **Status**. With **Open**, a closed task is hidden; choose **All**. If it is still missing, run `agentx requests --qa awaiting` on the machine that keeps it. When it is not listed there, it was never marked with `needsQa: true`, or it already has a verdict since the mark.
+- **"Couldn't read …" under Reported issues:** this machine could not list that project's issues. "not found" usually means the token cannot see the project or the `project` path is wrong; "did not answer in time" clears on the next refresh.
+- **No Reported issues list on Failures:** `wall.reportedIssues` is not set on any machine, or the dashboard was not restarted after you set it.
 - **A card is on the Approvals page but not on the Wall:** it was raised outside a task, or it was already answered or expired. Only pending cards that belong to a task show on a post.
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
 - **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.
