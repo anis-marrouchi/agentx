@@ -114,7 +114,7 @@ import { FactLedger } from "@/wiki/facts/ledger"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
 import { isOwnerTurn, OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
-import { isOperatorTurn, loadOperatorKey, operatorContext, operatorVouch, ownerProven } from "@/requests/operator"
+import { isOperatorTurn, loadOperatorKey, OPERATOR_HEADER, operatorContext, operatorKeyMatches, operatorVouch, ownerProven } from "@/requests/operator"
 import { WikiCurateApi } from "./wiki-curate-api"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
 import { GuestStore } from "@/guests/store"
@@ -4961,7 +4961,8 @@ export class AgentXDaemon {
         const body = req.method === "POST" ? await readBody(req) : {}
         const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
         const proof = { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") }
-        const reply = await handleCalls(this.calls, () => this.config.calls, req.method || "GET", path, url.searchParams, body, proof)
+        const owner = operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER])
+        const reply = await handleCalls(this.calls, () => this.config.calls, req.method || "GET", path, url.searchParams, body, proof, owner)
         this.json(res, reply.status, reply.body)
         return
       }
@@ -5383,8 +5384,10 @@ export class AgentXDaemon {
         const agentId = url.searchParams.get("agent") || undefined
         const envScope = url.searchParams.get("env") || undefined
         const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
-        // Per-task autonomy hook (report/propose routines). Always enforced;
-        // an allow returns "" so the workspace guard hook still has its say.
+        // Per-task autonomy hook (report/propose routines). Always enforced.
+        // A report allow answers "allow" (an unattended run cannot answer a
+        // permission prompt, #1352); the workspace guard hook can still deny,
+        // since Claude Code applies the strictest decision. propose defers.
         if (url.searchParams.has("autonomy")) {
           const { stdout } = checkAutonomyPayload(payload as PreToolUsePayload, {
             root: process.cwd(),

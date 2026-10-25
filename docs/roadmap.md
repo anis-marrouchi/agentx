@@ -11,7 +11,6 @@ The goal is to score 5 out of 5 on every row of the comparison in [#1285](https:
 **Phase 3, due 22 November 2026** ([milestone](https://github.com/anis-marrouchi/agentx/milestone/3)):
 
 - Email as a channel, and a support queue that drafts replies from your documents ([#1287](https://github.com/anis-marrouchi/agentx/issues/1287)).
-- The path to 1.0: an upgrade promise, an install matrix with its pass rate, this roadmap, and then a 1.0 release ([#1294](https://github.com/anis-marrouchi/agentx/issues/1294)).
 
 Also in progress: an org chart in the dashboard, and owner approval before an agent-created agent starts ([#1169](https://github.com/anis-marrouchi/agentx/issues/1169)).
 
@@ -36,7 +35,7 @@ Also in progress: an org chart in the dashboard, and owner approval before an ag
 - Sales: lead research with a source for every fact, a daily brief and a competitor watch ([#1288](https://github.com/anis-marrouchi/agentx/issues/1288)).
 - Content: drafts in your voice, a weekly calendar, and approval before posting ([#1291](https://github.com/anis-marrouchi/agentx/issues/1291)).
 
-**Also done:** a worktree per coding task, a review gate on GitLab, and Linear and Jira ([#1292](https://github.com/anis-marrouchi/agentx/issues/1292)); the Wall view of every project; monthly budgets per agent; and stop-all with resume after a restart.
+**Also done:** an [upgrade promise](reference/releases.md#upgrade-promise), an install matrix with its pass rate, and this roadmap; AgentX stays on 0.x for now, and 1.0 will get its own issue ([#1294](https://github.com/anis-marrouchi/agentx/issues/1294)); a worktree per coding task, a review gate on GitLab, and Linear and Jira ([#1292](https://github.com/anis-marrouchi/agentx/issues/1292)); the Wall view of every project; monthly budgets per agent; and stop-all with resume after a restart.
 
 Every change, release by release, is in [CHANGELOG.md](https://github.com/anis-marrouchi/agentx/blob/main/CHANGELOG.md). What a release may change, and how it is checked, is in [Releases, upgrades and security](./reference/releases.md).
 

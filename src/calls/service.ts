@@ -109,7 +109,12 @@ export interface CallDeps {
 
 /** What the widget sends through /ask when the owner answers, so the
  *  agent speaks first and says why it called. */
-export function openerPrompt(call: Pick<Call, "reason">): string {
+export function openerPrompt(call: Pick<Call, "reason" | "placedBy">): string {
+  if (call.placedBy === "owner") {
+    return "[Call answered] The owner called you to talk about this: " +
+      `"${call.reason}". Speak first: greet them in a few words, say in a sentence or two where that work stands, ` +
+      "then let them answer."
+  }
   return "[Call answered] The owner just picked up the voice call you asked for. " +
     `You called because: "${call.reason}". Speak first: greet them in a few words ` +
     "and say why you called, then let them answer."
@@ -188,6 +193,40 @@ export class CallService {
     return this.waiting.has(call.id) ? { ok: true, call: saved, rang, busy: this.busyInfo(call) } : { ok: true, call: saved, rang: "widget" }
   }
 
+  /** The owner asks an agent to talk (#1316, "Call" on a Wall post): a
+   *  voice call that rings the owner's own widget, so answering opens the
+   *  same hands-free conversation an agent's call does. The daemon checks
+   *  the operator key before this runs; there is no running turn to prove,
+   *  and calls.allow does not apply, since the owner chose to call. The
+   *  agent still has one call at a time, and its calls this hour count
+   *  toward calls.maxPerHour. Focus does not hold it: the owner asked. */
+  async ownerCall(input: { agentId?: unknown; reason?: unknown }): Promise<CallResult & { rang?: Rang; busy?: BusyInfo }> {
+    const agentId = String(input.agentId ?? "").trim()
+    const reason = String(input.reason ?? "").replace(/\s+/g, " ").trim().slice(0, REASON_MAX)
+    if (!agentId || !reason) return { ok: false, status: 400, error: "Required: agentId and reason" }
+    if (this.deps.agentName(agentId) === null) return { ok: false, status: 404, error: `${agentId} does not run on this computer` }
+    await this.sweep()
+    if (this.deps.store.list({ status: LIVE, limit: 200 }).some((c) => c.agentId === agentId)) {
+      return { ok: false, status: 409, error: `${agentId} already has a call in progress` }
+    }
+    const now = this.now()
+    const cfg = this.deps.config()
+    if (this.deps.store.countSince(agentId, now - 3_600_000) >= cfg.maxPerHour) {
+      return { ok: false, status: 429, error: `${agentId} has had ${cfg.maxPerHour} calls in the last hour (calls.maxPerHour)` }
+    }
+    const call: Call = {
+      id: `call-${randomUUID().slice(0, 8)}`, agentId, kind: "voice", reason, urgency: "normal", status: "ringing", createdAt: now,
+      ringingSince: now, answeredAt: null, endedAt: null, ringAgainAt: null, note: null, summary: null, channel: null, chatId: null,
+      placedBy: "owner",
+    }
+    this.deps.store.insert(call)
+    this.deps.log?.(`[calls] the owner calls ${agentId}: ${reason}`)
+    const rang = await this.ring(call)
+    const saved = this.deps.store.get(call.id)!
+    if (rang !== "waiting") return { ok: true, call: saved, rang }
+    return this.waiting.has(call.id) ? { ok: true, call: saved, rang, busy: this.busyInfo(call) } : { ok: true, call: saved, rang: "widget" }
+  }
+
   /** The caller withdraws its own voice call while it waits or rings, for
    *  example to send a message instead (#969). */
   async cancel(input: { agentId?: unknown }, proof: CallerProof = {}): Promise<CallResult> {
@@ -210,7 +249,7 @@ export class CallService {
    *  Returns how it rang. */
   private async ring(call: Call): Promise<Rang> {
     const focus = (this.deps.focus ?? readFocus)()
-    if (focus.active && call.urgency !== "urgent") {
+    if (focus.active && call.urgency !== "urgent" && call.placedBy !== "owner") {
       if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: focusLabel(focus) })) return false
       await this.notice(call, this.missedTitle(call))
       return false

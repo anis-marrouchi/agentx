@@ -472,3 +472,34 @@ describe("inCall: the call check for notices and the popup (#394)", () => {
     expect(calls.inCall()).toBeNull()
   })
 })
+
+describe("the owner calls an agent (#1316)", () => {
+  it("rings without calls.allow or a running turn, and the opener says the owner asked", async () => {
+    await widgetUp()
+    const r = await calls.ownerCall({ agentId: "ops", reason: "Wall post r1: the deploy" })
+    expect(r.ok && r.call).toMatchObject({ agentId: "ops", status: "ringing", placedBy: "owner" })
+    const a = r.ok ? calls.answer(r.call.id) : null
+    expect(a && a.ok && a.opener).toContain("The owner called you")
+  })
+
+  it("rings through Focus, since the owner asked", async () => {
+    await widgetUp()
+    focus = ON
+    const r = await calls.ownerCall({ agentId: "ops", reason: "hi" })
+    expect(r.ok && r.call.status).toBe("ringing")
+  })
+
+  it("keeps one call per agent and the hourly limit", async () => {
+    await widgetUp()
+    expect((await calls.ownerCall({ agentId: "ops", reason: "one" })).ok).toBe(true)
+    expect(await calls.ownerCall({ agentId: "ops", reason: "two" })).toMatchObject({ ok: false, status: 409 })
+    expect(await calls.ownerCall({ agentId: "nobody", reason: "x" })).toMatchObject({ ok: false, status: 404 })
+  })
+
+  it("the route needs the operator key", async () => {
+    const q = new URLSearchParams()
+    const body = { agentId: "ops", reason: "hi" }
+    expect((await handleCalls(calls, () => cfg, "POST", "/calls/owner", q, body)).status).toBe(403)
+    expect((await handleCalls(calls, () => cfg, "POST", "/calls/owner", q, body, {}, true)).status).toBe(201)
+  })
+})

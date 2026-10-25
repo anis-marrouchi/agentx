@@ -94,6 +94,8 @@ The agent keeps the list in `agents/sales/leads.md`, one line per lead:
 
 A lead is **quiet** when its last contact is 7 days old or more and its next step is not `done`.
 
+The Monday research only reports the leads it finds; it cannot add them to `leads.md`, because it runs read-only. To follow up a lead from the research, tell the agent about it in Telegram (`new lead: ...`), or add its line yourself. Until then the morning brief does not list it under **New leads**.
+
 ## 5. Record people who ask not to be contacted
 
 When someone asks you to stop writing to them, record it once. They are then left out of every brief, every research list and every draft.

@@ -35,7 +35,8 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const classes = () => { const s = new Set<string>(); return { toggle: (c: string, on?: boolean) => { (on ?? !s.has(c)) ? s.add(c) : s.delete(c); return s.has(c) }, contains: (c: string) => s.has(c) } }
   const el = (id: string) => {
     if (!els.has(id)) {
-      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page)
+      // The open post's action box (wdo-*) is drawn by the script itself.
+      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (id.startsWith("wdo-") ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       els.set(id, {
@@ -216,6 +217,20 @@ describe("Wall v2 pages (#1316)", () => {
     await w.settle()
     expect(w.calls.length).toBe(before)
     expect(w.el("wall-post").innerHTML).toBe("kept")
+  })
+
+  it("applies a hash typed back after a filter change rewrote it", async () => {
+    const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress")] } })
+    await w.settle()
+    w.click({ "data-post": "r1" })
+    await w.settle()
+    const opened = w.loc.hash
+    w.el("f-q").value = "x"
+    w.click({ "data-profile-clear": "" })
+    expect(w.loc.hash).not.toBe(opened)
+    w.loc.hash = opened
+    w.hashchange()
+    expect(w.el("f-q").value).toBe("")
   })
 
   it("renders a result's Markdown, with links to web addresses only", async () => {
@@ -546,5 +561,45 @@ describe("Capacity per owner on the Wall (#1191)", () => {
     const w = openWall({ data: WALL, hash: "#view=projects" })
     await w.settle()
     expect(w.el("wall-projects").innerHTML).toContain("No agent carries open work.")
+  })
+})
+
+describe("Wall post actions (#1316)", () => {
+  const sent = (w: ReturnType<typeof openWall>, url: string) => w.calls.filter((c) => c.url === url).map((c) => ({ method: c.init?.method, body: JSON.parse(c.init?.body ?? "null") }))
+
+  it("an open post offers a comment, a call and a Space with another agent", async () => {
+    const w = openWall({ hash: "#status=open&post=r1" })
+    await w.settle()
+    const page = w.el("wall-post").innerHTML
+    expect(page).toContain('<textarea id="wdo-text"')
+    expect(page).toContain('data-act="comment"')
+    expect(page).toContain(">Call Customer Desk</button>")
+    expect(page).toContain('<option value="reviewer">Reviewer</option>')
+    expect(page).not.toContain('<option value="cx">')
+  })
+
+  it("a closed post takes no comment, but can still be talked about", async () => {
+    const w = openWall({ hash: "#post=r3" })
+    await w.settle()
+    const page = w.el("wall-post").innerHTML
+    expect(page).not.toContain('data-act="comment"')
+    expect(page).toContain("comments reach an agent only while a post is open")
+    expect(page).toContain('data-act="call"')
+  })
+
+  it("sends the comment and the call to the post's node, the Space to this one", async () => {
+    const w = openWall({ hash: "#status=open&post=r1" })
+    await w.settle()
+    w.el("wdo-text").value = "  Use the staging token "
+    w.click({ "data-act": "comment" })
+    w.click({ "data-act": "call" })
+    w.el("wdo-with").value = "reviewer"
+    w.click({ "data-act": "space" })
+    await w.settle()
+    expect(sent(w, "/api/admin/wall/comment")).toEqual([{ method: "POST", body: { id: "r1", text: "Use the staging token" } }])
+    expect(sent(w, "/api/admin/wall/call")).toEqual([{ method: "POST", body: { id: "r1" } }])
+    expect(sent(w, "/api/admin/wall/space")[0].body).toMatchObject({ id: "r1", agent: "cx", with: "reviewer" })
+    const space = w.calls.find((c) => c.url === "/api/admin/wall/space")!
+    expect(space.init.headers["X-Agentx-Peer"]).toBeUndefined()
   })
 })

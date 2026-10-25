@@ -588,6 +588,18 @@ export const KILL_GRACE_MS = 5_000
 
 export interface SpawnResult extends ExecResult { timedOut: boolean }
 
+/** Process groups started with `killGroup` that have not closed yet. They
+ *  are detached, so they would outlive the daemon: its exit kills them. */
+const liveGroups = new Set<number>()
+let exitHookSet = false
+
+/** SIGKILLs every live `killGroup` process group. Runs on process exit;
+ *  a SIGKILL of the daemon itself still leaves them running. */
+export function stopLiveGroups(): void {
+  for (const pid of liveGroups) try { process.kill(-pid, "SIGKILL") } catch { /* group already gone */ }
+  liveGroups.clear()
+}
+
 /** Runs a process with a time limit that always ends the wait: SIGTERM at
  *  the limit, SIGKILL after `killGraceMs`, and a result after one more
  *  grace period even if a grandchild still holds the output open. With
@@ -615,6 +627,10 @@ export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: strin
       settle(-1, e?.message || String(e))
       return
     }
+    if (opts.killGroup && child.pid) {
+      liveGroups.add(child.pid)
+      if (!exitHookSet) { exitHookSet = true; process.once("exit", stopLiveGroups) }
+    }
     const grace = opts.killGraceMs ?? KILL_GRACE_MS
     const kill = (signal: NodeJS.Signals) => {
       if (opts.killGroup && child.pid) {
@@ -639,9 +655,12 @@ export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: strin
     child.stdout?.on("data", (d) => { stdout += d })
     child.stderr?.on("data", (d) => { stderr += d })
     child.stdin?.on("error", () => { /* the process exited before reading its input */ })
-    child.on("error", (e) => settle(-1, e.message))
+    child.on("error", (e) => { if (child.pid) liveGroups.delete(child.pid); settle(-1, e.message) })
+    // On exit, not close: a background child the command left behind would
+    // outlive the run, and one holding stdout open would also hold off close.
     child.on("exit", () => {
       if (opts.killGroup && child.pid) {
+        liveGroups.delete(child.pid)
         try { process.kill(-child.pid, "SIGKILL") } catch { /* ESRCH: nothing left in the group */ }
       }
     })

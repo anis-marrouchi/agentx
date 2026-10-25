@@ -96,6 +96,16 @@ describe("report — read-only", () => {
     expect(allowed("report", { tool: "mcp__gitlab__get_and_merge" })).toBe(false)
     expect(allowed("report", { tool: "mcp__custom__frobnicate" })).toBe(false)
   })
+
+  it("agentx_content: voice, calendar, status and draft (held for approval) are allowed; nothing else (#1352)", () => {
+    for (const action of ["voice", "calendar", "status", "draft", "Draft"]) {
+      expect(allowed("report", { tool: "mcp__agentx__agentx_content", action })).toBe(true)
+    }
+    // draft is the tool's default action
+    expect(allowed("report", { tool: "mcp__agentx__agentx_content" })).toBe(true)
+    expect(allowed("report", { tool: "mcp__agentx__agentx_content", action: "publish" })).toBe(false)
+    expect(allowed("report", { tool: "mcp__other__content", action: "draft" })).toBe(false)
+  })
 })
 
 describe("propose — branches, commits and MRs, never merge/deploy/delete", () => {

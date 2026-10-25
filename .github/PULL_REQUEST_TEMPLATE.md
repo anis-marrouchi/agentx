@@ -35,4 +35,4 @@ Configuration changes, compatibility, migrations, and recovery steps (if applica
 
 - [ ] No secrets, private logs, or runtime configuration included.
 - [ ] Documentation updated where behavior changed.
-- [ ] PR is focused; experimental limitations are stated honestly.
+- [ ] PR is focused; known limitations are stated honestly.
