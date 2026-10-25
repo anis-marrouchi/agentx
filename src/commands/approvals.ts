@@ -14,7 +14,7 @@ import { parseDestination, readApprovalSettings, updateApprovalSettings, type Ap
 // `agentx wiki proposals approve` keep working and stay in step.
 
 export const approvals = new Command("approvals")
-  .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, WhatsApp replies)")
+  .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, WhatsApp replies, posts)")
 
 const KIND_LABEL: Record<InboxItem["kind"], string> = {
   card: "card",
@@ -22,6 +22,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   memory: "memory",
   wiki: "wiki",
   whatsapp: "whatsapp",
+  content: "post",
   request: "request",
 }
 
@@ -78,12 +79,12 @@ async function answer(key: string, action: InboxAction, opts: { force?: boolean;
 approvals
   .command("approve")
   .alias("yes")
-  .description("say yes: enables the schedule, lets the fact be used, writes the wiki article, or tells the agent yes")
+  .description("say yes: enables the schedule, lets the fact be used, writes the wiki article, publishes the post, or tells the agent yes")
   .argument("<key>", "item key from `agentx approvals list`, e.g. card:2026-01-05-publish-draft-ab12")
   .option("--force", "wiki: approve even if the article changed since the proposal")
   .option("--note <text>", "cards: a note passed to the agent with your answer")
   .option("--choice <n>", "cards with choices: which one, by number or label")
-  .option("--text <message>", "cards with a suggested message: the message as you want it sent")
+  .option("--text <message>", "cards with a suggested message, and posts: the text as you want it sent or published")
   .action((key: string, opts) => answer(key, "yes", opts))
 
 approvals

@@ -143,6 +143,20 @@ for (const card of [
   },
 ]) await post("/approvals", { ...card, raised_by: "cx" })
 
+// A post drafted in the owner's voice (#1291), through the real agent
+// endpoint: two past posts in the agent's voice/ folder, then the draft.
+{
+  const voice = resolve(root, cfg.agents.cx.workspace, "voice")
+  mkdirSync(voice, { recursive: true })
+  writeFileSync(resolve(voice, "2026-03-first-month.md"), "One month of the demo shop. Three things surprised us: people book on Sunday evenings, they read every word of the price list, and they always ask about parking.\n")
+  writeFileSync(resolve(voice, "2026-06-new-hours.md"), "We open an hour earlier from Monday. You asked for it, so here it is. See you at 8.\n")
+  await post("/content/drafts", {
+    agent: "cx", platform: "linkedin", topic: "What 100 bookings taught us", date: "2026-11-02",
+    samples: ["2026-03-first-month.md", "2026-06-new-hours.md"],
+    text: "100 bookings at the demo shop. Three things we learned:\n\n1. Most people book on Sunday evening, so we answer then too.\n2. A short price list gets more bookings than a long one.\n3. Parking is still the first question. It now has its own line on the page.\n\nThank you for the first hundred.",
+  })
+}
+
 const db = new Database(resolve(root, ".agentx/db.sqlite"))
 const insert = db.prepare(`INSERT OR REPLACE INTO session_reviews
   (id,session_id,agent,source,status,updated_at,model,input,result,error)

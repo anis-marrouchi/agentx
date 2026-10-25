@@ -76,6 +76,7 @@ import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
+import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { runMirror } from "@/approvals/mirror"
 import { requestStoreFor } from "@/approvals/inbox"
@@ -4847,6 +4848,26 @@ export class AgentXDaemon {
       if (path === "/screen") {
         if (req.method !== "GET") { this.json(res, 405, { error: "GET only" }); return }
         this.json(res, 200, this.screenView())
+        return
+      }
+
+      // Content drafts, agent side (#1291): raise a post for the owner to
+      // approve, read its status, the voice samples and the calendar.
+      // Publishing is refused here. Gated by isMeshGatedPath above.
+      if (path === "/content" || path.startsWith("/content/")) {
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleContentApi(req.method || "GET", path, body as Record<string, unknown> | undefined, url.searchParams, {
+          root: process.cwd(),
+          workspaceOf: (id) => {
+            const ws = this.registry.getAgent(id)?.workspace
+            return ws ? resolve(process.cwd(), ws) : null
+          },
+        })
+        if (reply.status === 201) {
+          const d = (reply.body as { draft: { id: string; agent: string; platform: string } }).draft
+          this.log(`[content] ${d.agent} drafted a ${d.platform} post: content:${d.id} waits for approval`)
+        }
+        this.json(res, reply.status, reply.body)
         return
       }
 
