@@ -10,6 +10,7 @@ import { EmailAdapter } from "../src/channels/email/adapter"
 import { draftSender } from "../src/channels/email/smtp"
 import { decideEmailDraft, listEmailDrafts } from "../src/channels/email/store"
 import type { IncomingMessage } from "../src/channels/types"
+import { checkLogin } from "../src/connect/email"
 
 // An email round trip against a real IMAP/SMTP server (#1287): GreenMail,
 // started by CI as a service, or locally with
@@ -122,5 +123,11 @@ describe.skipIf(!HOST)("email round trip on a real IMAP/SMTP server", () => {
     const inbox = await customerInbox()
     expect(inbox.length).toBe(before + 1)
     expect(inbox[inbox.length - 1]).toMatchObject({ subject: "Re: Invoice", inReplyTo: asked })
+  })
+
+  it("connect email tries both logins first and names the one that failed", async () => {
+    const input = { agent: "support", address: "support@example.com", user: "support", imapHost: HOST!, imapPort: IMAP_PORT, smtpHost: HOST!, smtpPort: SMTP_PORT, passwordEnv: "X", allowFrom: ["*"], send: "approve" as const }
+    expect(await checkLogin(input, "secret")).toBeNull()
+    expect(await checkLogin(input, "wrong")).toMatch(/^IMAP /)
   })
 })

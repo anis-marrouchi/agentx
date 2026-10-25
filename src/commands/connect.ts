@@ -2,6 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { connectTelegram } from "@/connect/telegram"
 import { connectWhatsApp } from "@/connect/whatsapp"
+import { connectEmail } from "@/connect/email"
 import { invite as meshInvite, join as meshJoin } from "@/connect/mesh"
 
 // --- agentx connect <channel> ---
@@ -43,6 +44,40 @@ connect
       agent: opts.agent,
       sessionDir: opts.sessionDir,
       skipPair: !!opts.skipPair,
+      configPath: opts.config,
+    })
+  })
+
+connect
+  .command("email")
+  .description("bind a mailbox to an agent — IMAP in, SMTP out; the password goes to .env, replies wait for your approval")
+  .option("--agent <id>", "agent that answers the mailbox (skips the prompt)")
+  .option("--address <email>", "the address customers write to")
+  .option("--account <name>", "account label in channels.email.accounts (defaults to agent id)")
+  .option("--imap-host <host>", "IMAP server (Gmail is filled in by itself)")
+  .option("--imap-port <n>", "IMAP port (993: TLS; 143: STARTTLS)")
+  .option("--smtp-host <host>", "SMTP server")
+  .option("--smtp-port <n>", "SMTP port (465: TLS; 587: STARTTLS)")
+  .option("--user <login>", "login name, when it is not the address")
+  .option("--password-env <VAR>", "read the password from this environment variable instead of asking")
+  .option("--allow-from <entries...>", "who may write: addresses, @domain, or * (default: *)")
+  .option("--auto", "send replies as soon as the agent writes them, without your approval")
+  .option("--skip-check", "don't try the IMAP and SMTP logins first")
+  .option("-c, --config <path>", "path to agentx.json")
+  .action(async (opts) => {
+    await connectEmail({
+      agent: opts.agent,
+      account: opts.account,
+      address: opts.address,
+      imapHost: opts.imapHost,
+      imapPort: opts.imapPort,
+      smtpHost: opts.smtpHost,
+      smtpPort: opts.smtpPort,
+      user: opts.user,
+      passwordEnv: opts.passwordEnv,
+      allowFrom: opts.allowFrom,
+      auto: !!opts.auto,
+      skipCheck: !!opts.skipCheck,
       configPath: opts.config,
     })
   })

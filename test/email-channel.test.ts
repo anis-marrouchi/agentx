@@ -7,6 +7,9 @@ import { createEmailDraft, decideEmailDraft, emailDir, listEmailDrafts, readEmai
 import { mailServers } from "../src/channels/email/smtp"
 import { emailAccountSchema } from "../src/daemon/config"
 import { decide, listInbox } from "../src/approvals/inbox"
+import { emailAccountBlock, passwordEnvFor, presetFor } from "../src/connect/email"
+import { shippedTeam } from "../src/teams/catalog"
+import { applyTeam, buildTeamPackage } from "../src/teams/package"
 
 // Email channel (#1287): parsing, threading, who may write, and the drafts
 // the owner approves. The round trip on a real server is in
@@ -153,5 +156,38 @@ describe("the Approvals inbox", () => {
     const r = await decide({ root }, `email:${d.id}`, "yes")
     expect(r).toEqual({ ok: false, error: 'not sent: no email account "missing" in agentx.json' })
     expect(listInbox({ root }, { kinds: ["email"] }).items[0]).toMatchObject({ detail: expect.stringContaining("no email account") })
+  })
+})
+
+describe("agentx connect email", () => {
+  it("fills Gmail's servers, and writes a block the schema accepts with the password left in .env", () => {
+    expect(presetFor("Shop@Gmail.com")).toEqual({ imapHost: "imap.gmail.com", imapPort: 993, smtpHost: "smtp.gmail.com", smtpPort: 465 })
+    expect(presetFor("hello@shop.test")).toBeUndefined()
+    expect(passwordEnvFor("front-desk")).toBe("EMAIL_FRONT_DESK_PASSWORD")
+    const block = emailAccountBlock({
+      agent: "inbox", address: "hello@shop.test", imapHost: "mail.shop.test", imapPort: 143, smtpHost: "mail.shop.test", smtpPort: 587,
+      passwordEnv: "EMAIL_INBOX_PASSWORD", allowFrom: ["*"], send: "approve",
+    })
+    expect(block).toEqual({
+      agent: "inbox", address: "hello@shop.test",
+      imap: { host: "mail.shop.test", port: 143, secure: false, password: "${EMAIL_INBOX_PASSWORD}" },
+      smtp: { host: "mail.shop.test", port: 587, secure: false },
+      allowFrom: ["*"], send: "approve",
+    })
+    expect(emailAccountSchema.safeParse(block).success).toBe(true)
+  })
+})
+
+describe("teams", () => {
+  it("client-inbox can be reached by email too, and an export keeps an email binding without its settings", () => {
+    const t = shippedTeam("client-inbox")!
+    expect(t.channels.map((c) => c.kind)).toEqual(["whatsapp", "email"])
+    const config: any = { agents: {}, crons: {} }
+    const plan = applyTeam(config, t, { workspaceRoot: join(root, "agents"), timezone: "UTC" })
+    expect(plan.channels.find((c) => c.kind === "email")?.step).toBe("agentx connect email --agent inbox")
+    config.channels = { email: { enabled: true, accounts: { inbox: { agent: "inbox", address: "hello@shop.test", imap: { host: "h", password: "${P}" }, smtp: { host: "h" } } } } }
+    const pkg = buildTeamPackage(config, "client-inbox", { result: t.result, title: t.title })
+    expect(pkg.channels).toContainEqual({ kind: "email", agent: "inbox" })
+    expect(JSON.stringify(pkg)).not.toContain("hello@shop.test")
   })
 })
