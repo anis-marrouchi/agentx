@@ -4,9 +4,9 @@ title: "Engines on another AgentX node"
 
 # Engines on another AgentX node (#445)
 
-> **Status:** decided, not built. Waiting on one thing: an answer on the model provider's terms that the owner trusts and that others can read.
+> **Status:** spike closed 2026-10-25 (DevOps backlog sweep). Decided, not built. The build gets its own issue once the model provider's terms are clear: an answer the owner trusts and that others can read.
 > **Owner decision (2026-10-05):** host-side agent first, once the terms are clear. Any agent a teammate can reach goes on `billing: "api"`. A model relay through an existing gateway comes later, if at all.
-> **Source:** the spike thread on [#445](https://github.com/anis-marrouchi/agentx/issues/445), 2026-10-02 to 2026-10-05. This note is the one place that holds its outcome; the thread holds the history.
+> **Source:** the spike thread on [#445](https://github.com/anis-marrouchi/agentx/issues/445), 2026-10-02 to 2026-10-05, closed 2026-10-25. This note is the one place that holds its outcome; the thread holds the history. Do not reopen #445 for the build.
 
 ## The question
 
@@ -105,7 +105,7 @@ For (a) today: per-person agent, tool and skill limits exist; a grant has pause 
 
 ## What happens when the owner says yes
 
-In this order; none is filed yet.
+In this order. None is filed yet: when the terms are clear, file one build issue (not a reopened #445) that links here and covers items 1 to 4.
 
 1. **Billing rule.** Put every agent a teammate or guest can reach on `billing: "api"`, and refuse a guest or limited person's turn on an agent that is still on the subscription. The check is the `billing` setting itself. Docs: the guest-mesh page already says to use `api` for the grant's agent.
 2. **Spend view and export.** Per-person turns, tokens and cost on the People page, with a monthly export.
@@ -118,5 +118,5 @@ Rough guess from the spike: one to two weeks for items 1 to 4. Not measured.
 ## Not done, on purpose
 
 - No code for the engine, the relay or the billing check. The owner's direction is open, not built.
-- No child issue filed.
+- No child issue filed. #445 is closed as a spike; the build issue comes once the terms are clear.
 - OpenAI terms not read on a live page. Anthropic Usage Policy and the OpenRouter key management page not fetched.
