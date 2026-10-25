@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { execFileSync } from "child_process"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs"
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import { closeDb, openDb } from "../src/storage/sqlite"
@@ -94,6 +94,28 @@ describe("what a cut-off run left behind", () => {
     expect(note).toContain("1. Build 1183")
     expect(note).toContain(`${dirty} (branch 1183-lane): 3 changed files not committed`)
     expect(note).toContain(`${ahead} (branch 1188-lane): 1 commit not pushed`)
+  })
+
+  it("still finds a clone named after many file paths", async () => {
+    const repo = clone("workspace", "main-work", 0)
+    const dirty = clone("app-1190", "1190-lane", 2)
+    const reads = Array.from({ length: 120 }, (_, i) => ({ action: "Read", inputSummary: JSON.stringify({ file_path: path.join(repo, "src", `file${i}.ts`) }) }))
+    const left = await findLeftWork(run([...reads, bash(`cd ${dirty}`)]))
+    expect(left).toEqual([{ path: dirty, branch: "1190-lane", changedFiles: 2, unpushedCommits: 0 }])
+  })
+
+  it("reports a clone by the path the run named, not git's real path", async () => {
+    // Like /tmp -> /private/tmp on macOS.
+    const real = clone("real-1191", "1191-lane", 1)
+    const link = path.join(tmp, "link-1191")
+    symlinkSync(real, link)
+    const left = await findLeftWork(run([bash(`cd ${path.join(link, "src")} && ls`)]))
+    expect(left).toEqual([{ path: link, branch: "1191-lane", changedFiles: 1, unpushedCommits: 0 }])
+  })
+
+  it("asks the resumed run to check the work is its own", () => {
+    const note = buildResumeNote(run([]), [{ path: "/tmp/app-1", branch: "b", changedFiles: 1, unpushedCommits: 0 }])
+    expect(note).toContain("check whether the work is yours")
   })
 
   it("says nothing extra when the run started no helpers and left nothing", () => {

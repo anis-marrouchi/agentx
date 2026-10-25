@@ -200,12 +200,12 @@ An agent can hand part of a task to a helper that works in the background, for e
 
 When AgentX starts again, it looks at every folder the cut-off task named in its steps. For each folder that is tracked by git and still holds changes that were never committed (saved in git), or commits that were never pushed (sent to the shared copy), it lists the folder, its branch, and what is unsaved:
 
-- **The task is picked up again:** the agent is told which helpers were stopped and which folders still hold unsaved work, so it can finish that work instead of starting over.
+- **The task is picked up again:** the agent is told which helpers were stopped and which folders still hold unsaved work, so it can finish that work instead of starting over. It is asked to check first that the work is its own, because a shared folder can hold someone else's changes.
 - **The task is not picked up:** you get the list in the message at `notifications.destination`, under "These folders still hold unsaved work".
 
 Either way, each folder is also written to the log, in a line like `[resume] dev-agent t1: unsaved work in /tmp/app-12 (branch 12-new-form): 3 changed files not committed`.
 
-Folders with nothing unsaved are left out. AgentX only reads the folders; it never commits, pushes or deletes anything in them.
+Each folder is shown the way the task named it. On a Mac, `/tmp/app-12` stays `/tmp/app-12`, even though the Mac stores it under `/private/tmp`. Folders with nothing unsaved are left out. AgentX only reads the folders; it never commits, pushes or deletes anything in them.
 
 To stay safe, AgentX never picks the same task up twice:
 
