@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { resolve } from "path"
-import { existsSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
 import { logSlowQueries } from "@/storage/slow-queries"
 import { renderObservabilityPage } from "./ui/pages/observability"
@@ -9,6 +9,7 @@ import type { DaemonConfig } from "./config"
 import { budgetConfigFrom, buildBudgetView, monthKey, monthStart } from "@/agents/agent-budget"
 import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { spendByAgentSince, spendByChatSince, unpricedRunsByAgentSince } from "@/storage/traces"
+import { findConfigPath } from "./config-mutator"
 
 // Anthropic public per-million-token rates. Same numbers
 // src/observability/tracker.ts uses; duplicated here so this module stays
@@ -108,6 +109,24 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
+/**
+ * The budget-related config as agentx.json holds it now (#1295). The
+ * dashboard (`agentx board`) may run in its own process with the config it
+ * started with, while a budget saved from the Cost page or by hand reaches
+ * the daemon's gate on reload; reading the file keeps the card in step with
+ * the gate. Falls back to the config in hand when the file can't be read.
+ */
+export function currentBudgetSource(config?: DaemonConfig, configPath?: string): DaemonConfig | undefined {
+  try {
+    const file = findConfigPath(configPath)
+    if (existsSync(file)) {
+      const parsed = JSON.parse(readFileSync(file, "utf-8"))
+      if (parsed && typeof parsed === "object") return parsed as DaemonConfig
+    }
+  } catch { /* half-written or invalid: use the config in hand */ }
+  return config
+}
+
 export async function handleObservabilityApi(req: IncomingMessage, res: ServerResponse, path: string, config?: DaemonConfig): Promise<boolean> {
   if (!path.startsWith("/api/admin/observability/")) return false
   const slug = path.replace(/^\/api\/admin\/observability\//, "").split("?")[0]
@@ -184,14 +203,16 @@ export async function handleObservabilityApi(req: IncomingMessage, res: ServerRe
     // caps in agentx.json. The same sum the daemon seeds its gate from.
     // Projects (#1290) are the Wall's, mapped the way the daemon maps runs;
     // `agentIds` lets the card set a cap on an agent with no spend yet.
+    // The caps are read fresh from agentx.json on each request (#1295).
     if (slug === "budgets") {
       const now = Date.now()
+      const source = currentBudgetSource(config)
       const since = monthStart(now)
-      const cfg = config ? budgetConfigFrom(config) : {}
-      const byProject = config ? spendByProject(spendByChatSince(opened.db, since), budgetProjectResolver(config)) : {}
+      const cfg = source ? budgetConfigFrom(source) : {}
+      const byProject = source ? spendByProject(spendByChatSince(opened.db, since), budgetProjectResolver(source)) : {}
       sendJson(res, 200, {
         ...buildBudgetView(cfg, spendByAgentSince(opened.db, since), monthKey(now), byProject, unpricedRunsByAgentSince(opened.db, since)),
-        agentIds: Object.keys(config?.agents ?? {}).sort(),
+        agentIds: Object.keys(source?.agents ?? {}).sort(),
       })
       return true
     }
