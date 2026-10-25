@@ -203,13 +203,15 @@ describe("Wall v2 pages (#1316)", () => {
   })
 
   it("renders a result's Markdown, with links to web addresses only", async () => {
-    const text = "**Done**: see [the issue](https://example.com/demo/1) and [this](javascript:alert(1))\n\n- one\n- two\n\n<b>raw</b>"
+    const text = "**Done**: see [the issue](https://example.com/demo/1) and [this](javascript:alert(1)), [here](/tasks/1), [there](//evil.example/x), [back](/\\evil.example/y)\n\n- one\n- two\n\n<b>raw</b>"
     const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress", { result: { text, at: NOW, from: "reply" } })] } })
     await w.settle()
     const res = /<div class="wp__result ax-md">(.*?)<\/div>/s.exec(w.el("wall-feed").innerHTML)![1]
     expect(res).toContain("<strong>Done</strong>")
     expect(res).toContain('<a href="https://example.com/demo/1" target="_blank" rel="noopener noreferrer">the issue</a>')
     expect(res).not.toContain("javascript:")
+    expect(res).toContain('href="/tasks/1"')
+    expect(res).not.toContain("evil.example")
     expect(res).toContain("<ul><li>one</li>")
     expect(res).toContain("&lt;b&gt;raw&lt;/b&gt;")
   })

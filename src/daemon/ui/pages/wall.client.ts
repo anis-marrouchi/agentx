@@ -154,7 +154,8 @@ ${WALL_CAPACITY_SCRIPT}
   function md(text) {
     var html;
     try { html = markdownToHtml(String(text == null ? '' : text)); } catch (e) { return '<p>' + esc(text) + '</p>'; }
-    return html.replace(/href="([^"]*)"/g, function (m, u) { return /^(https?:|mailto:|\/|#)/i.test(u) ? m : 'href="#"'; });
+    // "/" but not "//host" or "/\host": those open another site.
+    return html.replace(/href="([^"]*)"/g, function (m, u) { return /^(https?:|mailto:|\/(?![\/\\])|#)/i.test(u) ? m : 'href="#"'; });
   }
   function linkOrText(ref) {
     return /^https?:\/\//.test(ref) ? '<a href="' + esc(ref) + '" target="_blank" rel="noopener">' + esc(ref) + '</a>' : esc(ref);
