@@ -26,7 +26,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `notify.channel` | string | required | Channel for the job's messages, for example `telegram`. |
 | `notify.chatId` | string | required | The chat on that channel. |
 | `notify.accountId` | string | — | Which account on that channel, when you have more than one. |
-| `deliverResult` | boolean | `true` | Sends the answer from each successful run to `notify`. Set `false` to send only failure messages there. Without `notify`, `true` marks a schedule waiting for a destination: `agentx connect telegram` (when it saves your chat) and `agentx team notify` fill it in. |
+| `deliverResult` | boolean | `true` | Sends the answer from each successful run to `notify`. Set `false` to send only failure messages there. Without `notify`, `true` marks a schedule waiting for a destination: `agentx connect telegram` (when it saves your chat) fills it in for agents that belong to a team, and `agentx team notify` fills it in for a team's schedules. |
 | `fireToken` | string | — | Secret that lets another system start the job now. See [fire a routine](/jobs/fire-a-routine). |
 | `createdBy` | string | — | The agent that created the job from chat. Set by AgentX; an agent may only manage jobs it created, unless it is an admin. |
 | `approval` | object | — | A change an agent asked for that waits for you. Set by AgentX; cleared by `agentx schedule approve` or `agentx schedule reject`. |

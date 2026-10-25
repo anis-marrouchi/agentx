@@ -41,7 +41,7 @@ You need:
 
 2. To see what it would add without writing anything, add `--dry-run`.
 
-`team add` never takes over a folder that is already there. If `agents/<id>` exists, it stops and names the folder. Choose another place with `--workspaces <dir>`, or add `--force` to use the folder as it is: files already in it, such as a skill you edited, are kept and listed in the output. A folder that is another agent's workspace, or sits inside one, is always refused.
+`team add` never takes over a folder that is already there. If `agents/<id>` exists, it stops and names the folder. Choose another place with `--workspaces <dir>`, or add `--force` to use the folder as it is: files already in it, such as a skill you edited, are kept and listed in the output. A skill folder or file that is a shortcut (a symbolic link) to somewhere else is left alone too, so nothing is written outside the workspace. A folder that is another agent's workspace, or sits inside one, is always refused.
 
 The agents run on Claude Code unless you choose another runtime with `--tier`, for example `--tier codex-cli`. Schedules use this machine's time zone unless you set `--timezone`, for example `--timezone Europe/Paris`.
 

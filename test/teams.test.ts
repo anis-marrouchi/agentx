@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest"
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 import { crossFieldProblems, daemonConfigSchema } from "../src/daemon/config"
@@ -147,13 +147,19 @@ describe("results reach the owner", () => {
 
   it("leaves schedules alone that report elsewhere or not at all", () => {
     const config = freshConfig()
+    config.agents = { a: { name: "A", team: "demo" }, solo: { name: "Solo" } }
     config.crons = {
       mine: { enabled: true, schedule: "0 9 * * *", agent: "a", prompt: "x", notify: { channel: "telegram", chatId: "9" }, deliverResult: true },
       quiet: { enabled: true, schedule: "0 9 * * *", agent: "a", prompt: "x" },
       failures: { enabled: true, schedule: "0 9 * * *", agent: "a", prompt: "x", deliverResult: false },
       waiting: { enabled: true, schedule: "0 9 * * *", agent: "a", prompt: "x", deliverResult: true },
+      // Same shape, written by hand for an agent outside any team.
+      handWritten: { enabled: true, schedule: "0 9 * * *", agent: "solo", prompt: "x", deliverResult: true },
     }
     expect(fillPendingDelivery(config, OWNER)).toEqual(["waiting"])
+    expect(config.crons.handWritten.notify).toBeUndefined()
+    // `team notify` names its schedules, so it is not limited to team agents.
+    expect(fillPendingDelivery(config, OWNER, { ids: ["handWritten"] })).toEqual(["handWritten"])
     expect(config.crons.mine.notify.chatId).toBe("9")
     expect(config.crons.quiet.notify).toBeUndefined()
     expect(config.crons.failures.notify).toBeUndefined()
@@ -209,6 +215,26 @@ describe("install never takes over existing files", () => {
     expect(kept).toEqual([skill])
     expect(readFileSync(skill, "utf-8")).toBe("# my own version\n")
     expect(existsSync(join(dir, "reviewer/.claude/skills/merge-request-review/SKILL.md"))).toBe(true)
+  })
+
+  it("never writes through a symlinked skill folder or file, with --force", () => {
+    const t = shippedTeam("dev-team")!
+    const outside = join(dir, "outside")
+    mkdirSync(outside)
+    const skills = join(dir, "dev/.claude/skills")
+    mkdirSync(skills, { recursive: true })
+    symlinkSync(outside, join(skills, "issue-to-merge-request"))
+    const reviewerSkill = join(dir, "reviewer/.claude/skills/merge-request-review")
+    mkdirSync(reviewerSkill, { recursive: true })
+    symlinkSync(join(dir, "missing"), join(reviewerSkill, "SKILL.md")) // dangling
+    const config = freshConfig()
+    const plan = applyTeam(config, t, { workspaceRoot: dir, force: true })
+    let kept: string[] = []
+    expect(() => { kept = writeTeamSkills(t, plan).kept }).not.toThrow()
+    expect(kept).toContain(join(skills, "issue-to-merge-request/SKILL.md"))
+    expect(kept).toContain(join(reviewerSkill, "SKILL.md"))
+    expect(readdirSync(outside)).toEqual([])
+    expect(existsSync(join(dir, "missing"))).toBe(false)
   })
 
   it("refuses a second install under a team name already used", () => {
