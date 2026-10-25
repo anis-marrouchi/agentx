@@ -707,4 +707,16 @@ describe("Wall v2 feed (#1355)", () => {
     expect(posted[1].init.headers["X-Agentx-Peer"]).toBe("http://node-b")
     expect(w.el("wc-text").value).toBe("")
   })
+
+  it("sends a post once when Post is pressed twice while it is in flight", async () => {
+    const w = openWall({ data: V2, live: LIVE2 })
+    await w.settle()
+    w.el("wc-text").value = "@cx please check the deploy log"
+    w.el("wall-compose").on.submit({ preventDefault: () => {} })
+    expect(w.el("wc-post").disabled).toBe(true)
+    w.el("wall-compose").on.submit({ preventDefault: () => {} })
+    await w.settle()
+    expect(w.calls.filter((c) => c.url === "/api/admin/wall/post")).toHaveLength(1)
+    expect(w.el("wc-post").disabled).toBe(false)
+  })
 })
