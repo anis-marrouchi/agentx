@@ -23,7 +23,7 @@ export type RequestState = "candidate" | OpenState | ClosedState
 export const OPEN_STATES: readonly OpenState[] = ["in_progress", "waiting_owner", "waiting_other", "needs_attention"]
 export const CLOSED_STATES: readonly ClosedState[] = ["done", "declined", "dropped"]
 
-export type LinkKind = "run" | "delegation" | "card" | "workflow" | "watcher" | HomeLinkKind
+export type LinkKind = "run" | "step_run" | "delegation" | "card" | "workflow" | "watcher" | HomeLinkKind
 
 /** Where the work of a request lives (#394): the issue, idea file,
  *  approval, ERP record or Desk card the agent named. The latest is kept
@@ -409,7 +409,7 @@ export class RequestStore {
       const priced = this.db.prepare(
         `SELECT l.request_id AS id, SUM(t.cost_usd) AS usd, COUNT(*) AS runs, SUM(CASE WHEN t.cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced
          FROM request_links l JOIN requests r ON r.id = l.request_id JOIN task_traces t ON t.task_id = l.ref
-         WHERE l.kind = 'run' AND r.goal_id IS NOT NULL GROUP BY l.request_id`,
+         WHERE l.kind IN ('run', 'step_run') AND r.goal_id IS NOT NULL GROUP BY l.request_id`,
       ).all() as Array<{ id: string; usd: number | null; runs: number; unpriced: number }>
       for (const p of priced) cost.set(p.id, p)
     } catch {

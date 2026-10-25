@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
-import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
+import { RequestTracker, pickupContext, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi } from "../src/requests/daemon-api"
 import { PlanStore } from "../src/requests/plan-store"
 import { describeGoals, describeOpen, runRequestTool } from "../src/requests/tool"
@@ -69,6 +69,11 @@ describe("parseGoal", () => {
     expect(parseGoal({ title: "x".repeat(121) })).toMatch(/longer/)
     expect(parseGoal(42)).toMatch(/goal must be/)
     expect(goalIdOf("Café opening, Q3")).toBe("cafe-opening-q3")
+    // A title with no Latin letters still gives a stable id.
+    const arabic = parseGoal("إطلاق الموقع الجديد") as any
+    expect(arabic.title).toBe("إطلاق الموقع الجديد")
+    expect(arabic.id).toMatch(/^goal-[0-9a-f]{10}$/)
+    expect(goalIdOf("إطلاق الموقع الجديد")).toBe(arabic.id)
   })
 })
 
@@ -105,6 +110,18 @@ describe("a request accepted with a goal", () => {
     expect(dispatchText(r, steps, steps[1])).toContain('Why: this request serves the goal "Launch the new site" (launch).')
     expect(pickupText(r)).toContain('Why: this request serves the goal "Launch the new site" (launch).')
     expect(describeOpen([r])).toContain("Goal: Launch the new site (launch).")
+  })
+
+  it("counts a plan step run by another agent toward the goal, without moving the request", () => {
+    turn("t1")
+    accept("t1", { goal: "Launch", steps: [{ name: "Build", done: "PR merged" }, { name: "Deploy", agent: "ops", done: "live" }] })
+    tracker.taskStarted({ agentId: "ops", ...pickupContext("req-t1"), taskId: "t-ops", pickup: true, at: "", messagePreview: "deploy" } as any)
+    expect(store.byLink("run", "t-ops")).toBeNull()
+    expect(store.byLink("step_run", "t-ops")?.id).toBe("req-t1")
+    traces([["t1", 0.5], ["t-ops", 0.25]])
+    tracker.taskCompleted({ agentId: "ops", ...pickupContext("req-t1"), taskId: "t-ops", error: "boom", at: "" } as any)
+    expect(store.get("req-t1")!.state).toBe("in_progress")
+    expect(goals()[0]).toMatchObject({ id: "launch", costUsd: 0.75, runs: 2 })
   })
 
   it("refuses a goal on anything but accept, and a malformed one", () => {
