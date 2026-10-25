@@ -100,7 +100,7 @@ The reviewer cannot run anything: it reads the result of the other checks. When 
 - The temporary folder is a git worktree of your clone. It is removed when the run ends; the clone itself is not switched or changed.
 - A run longer than `timeoutMinutes` is stopped and counts as a failure.
 
-1. **Terminal:** keep a clone of the repository on the computer that runs the daemon. Its `origin` must be the pull request's repository.
+1. **Terminal:** keep a clone of the repository on the computer that runs the daemon. Its `origin` must be the pull request's repository. The daemon runs `git fetch` in it, which must work without a prompt: set up a credential helper that answers on its own, or a token. Otherwise the fetch waits on a keychain prompt, or fails with "could not read Username".
 2. **Terminal:** in `agentx.json`, add `tests` to `quality.reviewGate`, one entry per repository:
 
    ```json

@@ -254,7 +254,7 @@ import { listAgentFiles } from "./file-ops"
 import { ScreenBuffer, sweepStaleDumps } from "./screen-buffer"
 import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
-import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
+import { REVIEW_CHANNEL, ReviewGate, stopWhenAborted } from "@/quality/review-gate"
 import { createMergePolicyGitHub, createReviewGateGitHub } from "@/quality/review-gate-github"
 import { createReviewGateGitLab } from "@/quality/review-gate-gitlab"
 import { runTestStep } from "@/quality/test-step"
@@ -1451,7 +1451,10 @@ export class AgentXDaemon {
           // server, no write or shell tools, held at autonomy report.
           isolated: true,
           timeoutMinutes: req.timeoutMinutes,
+          // callerSignal only drops a run still waiting for a slot; a
+          // started one is stopped here, which frees its slot (#1364).
           callerSignal: req.signal,
+          onStart: stopWhenAborted(req.signal, (id, reason) => this.registry.stopRunningTask(id, reason)),
           context: { channel: REVIEW_CHANNEL, chatId: req.chatId, sender: REVIEW_CHANNEL },
         })
         const model = res.billedModel ?? req.model

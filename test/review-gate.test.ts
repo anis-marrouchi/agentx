@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import { reviewGateConfigSchema, daemonConfigSchema } from "../src/daemon/config"
 import {
-  acceptanceCriteria, buildReviewPrompt, fenced, linkedIssues, matchesPath, parseVerdict, ReviewGate, statusText,
+  acceptanceCriteria, buildReviewPrompt, fenced, linkedIssues, matchesPath, parseVerdict, ReviewGate, statusText, stopWhenAborted,
   type CiCheck, type IssueInfo, type PullRequestEvent, type ReviewerRequest, type ReviewerRun, type ReviewGateGitHub,
 } from "../src/quality/review-gate"
 import { FileReviewLedger, summarizeReviews, type ReviewRecord } from "../src/quality/review-ledger"
@@ -339,8 +339,41 @@ describe("new pushes", () => {
     const [a, b] = await Promise.all([first, second])
     expect(a?.reason).toContain("superseded")
     expect(b?.state).toBe("success")
-    // Nothing final was posted on the older commit.
-    expect(t.fake.statuses.filter((s) => s.sha === SHA1 && s.state !== "pending")).toEqual([])
+    // The older commit gets a final status, not a pending one for good (#1364).
+    expect(t.fake.statuses.filter((s) => s.sha === SHA1 && s.state !== "pending")).toEqual([
+      expect.objectContaining({ state: "error", description: expect.stringContaining("superseded") }),
+    ])
+    expect(t.fake.comments).toEqual([])
+  })
+
+  it("stops a reviewer run that has already started when a newer push arrives (#1364)", async () => {
+    const stopped: Array<{ id: string; reason: string }> = []
+    const stop = (id: string, reason: string) => stopped.push({ id, reason })
+    const t = gate({
+      reply: (req) => {
+        if (!req.chatId.includes(SHA1.slice(0, 12))) return Promise.resolve(run(APPROVE))
+        // The run has a slot: the daemon's onStart hook gets its task id.
+        stopWhenAborted(req.signal, stop)("task-1")
+        return new Promise((resolve) => req.signal.addEventListener("abort", () => resolve(run("", { error: "stopped" }))))
+      },
+    })
+    const first = t.g.onPullRequest(event("opened", SHA1))!
+    await vi.waitFor(() => expect(t.requests).toHaveLength(1))
+    expect(stopped).toEqual([])
+    t.fake.pr.headSha = SHA2
+    const second = t.g.onPullRequest(event("synchronize", SHA2))!
+    const [a, b] = await Promise.all([first, second])
+    expect(stopped).toEqual([{ id: "task-1", reason: "review stopped: superseded by a newer push" }])
+    expect(a?.reason).toContain("superseded")
+    expect(b?.state).toBe("success")
+  })
+
+  it("stops a run at once when its review was aborted before the run started", () => {
+    const abort = new AbortController()
+    abort.abort(new Error("superseded by a newer push"))
+    const stopped: string[] = []
+    stopWhenAborted(abort.signal, (id) => stopped.push(id))("task-2")
+    expect(stopped).toEqual(["task-2"])
   })
 })
 
