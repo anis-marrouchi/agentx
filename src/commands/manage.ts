@@ -6,7 +6,7 @@ import { resolve, join, dirname } from "path"
 import { fileURLToPath } from "url"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import { installedSkills, skillHome } from "@/agents/conventions"
-import { applyConfigMutation } from "@/daemon/config-mutator"
+import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
 import { callingAgent, holdAgent, holdIfAgentCreated, readHolds, releaseAgent } from "@/agents/holds"
 
 // --- agentx agent/channel/cron/mesh/skill/hook management commands ---
@@ -127,7 +127,7 @@ agent
     console.log(chalk.dim(`  Workspace: ${ws}`))
     console.log(chalk.dim(`  Created: ${setup.created.length} files (CLAUDE.md, AGENTS.md, settings, rules)`))
     // Added by an agent from its own shell: it waits for the owner (#1169).
-    const by = holdIfAgentCreated(process.cwd(), [answers.id])
+    const by = holdIfAgentCreated(dirname(findConfigPath()), [answers.id])
     if (by) console.log(chalk.yellow(`  Created by agent "${by}": it starts once the owner approves it (agentx approvals approve agent:${answers.id}).`))
     console.log()
   })
