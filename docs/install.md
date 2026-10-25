@@ -8,7 +8,7 @@ Before installing, go through [Before you start](requirements.md) to choose an i
 - **From source** builds AgentX from its code with Node.js.
 - **From npm** installs the published package with Node.js.
 
-AgentX runs on macOS and Linux. Windows is untested; try WSL or Docker (see [Before you start › Operating systems](requirements.md#operating-systems)). Plan on about 10 to 20 minutes for a first install, most of it downloads, plus the time to get a model key.
+AgentX runs on macOS and Linux. Windows is untested; try WSL or Docker (see [Before you start › Operating systems](requirements.md#operating-systems)). With Node.js already on the machine, `npx agentix-cli start` reaches a first agent reply in about **23 seconds** (median of 3 runs on Linux, October 2026, with a model key ready). A check in our automated tests times it again on Linux and macOS on every change and fails above 5 minutes. Add the time to get a model key if you don't have one yet. Docker and source installs take longer, mostly downloads.
 
 AgentX runs as two programs: the **daemon** (the background service that runs agents) and the **dashboard** (the website you open in the browser). Every method below starts both.
 
@@ -111,7 +111,18 @@ The installer does step 1 and then runs `agentx start`. **Terminal:**
 curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.sh | bash
 ```
 
-The script checks for Node.js 22.19 or newer, up to 26. If your Node.js is missing or outside that range, it installs Node 22 for you when nvm (a tool that manages Node.js versions) is on your computer, and makes it the default. Without nvm, it stops and tells you which version to install. Set `AGENTX_SKIP_SETUP=1` to install without starting anything.
+The script checks for Node.js 22.19 or newer, up to 26. If your Node.js is missing or outside that range:
+
+- With nvm (a tool that manages Node.js versions) on your computer, it installs Node 22 through nvm and makes it the default.
+- Without nvm, it downloads the official Node 22 from nodejs.org into `~/.agentx/node`, checks the download against its published checksum, and adds that folder to the PATH in your shell's startup file (`~/.zshrc`, `~/.bashrc`, `~/.bash_profile` on macOS bash, or `~/.profile`). It doesn't need administrator rights. With no Node.js at all, the whole install takes about 40 seconds.
+
+Settings for the script, set before `bash` (for example `curl … | AGENTX_SKIP_SETUP=1 bash`):
+
+| Setting | What it does |
+|---|---|
+| `AGENTX_SKIP_SETUP=1` | Installs without starting anything. |
+| `AGENTX_INSTALL_NODE=0` | Doesn't download Node.js. Without a supported Node.js or nvm, the script stops with one line saying what to install. |
+| `AGENTX_VERSION` | The npm version or tag to install (default `latest`). |
 
 Continue with [Your first agent](./first-agent.md).
 
@@ -155,5 +166,6 @@ These steps delete your settings, agents and task history. Copy anything you wan
 - **The agent doesn't appear in Live:** the daemon was already running when you added it. Restart the daemon (Docker: `docker compose restart daemon dashboard`; otherwise `agentx daemon stop`, then `agentx daemon start --detach`).
 - **npm install fails with `MODULE_NOT_FOUND`:** you have version 0.27.0, which was published with a missing file. Install `agentix-cli@latest`.
 - **`Unsupported engine` or other Node.js errors:** check `node --version`. AgentX needs 22.19 or newer, up to 26.
+- **`agentx: command not found` after the installer added Node.js:** open a new terminal, so it reads the PATH line the installer added. Or run `export PATH="$HOME/.agentx/node/bin:$PATH"` in the current one.
 - **Uninstall: `rm -rf agentx-data` says `Permission denied`:** the containers created some files as another user. On Linux, run `sudo rm -rf agentx-data`.
 - **The page loads but messages get no reply:** follow [It's not answering](./help/its-not-answering.md).

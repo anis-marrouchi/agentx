@@ -1,0 +1,83 @@
+name: First reply
+
+# Times a clean folder from `npx agentix-cli start` to the first agent
+# reply in the browser chat, with a stub model, and fails over 5 minutes
+# (#1286). The time is printed in the log and the job summary.
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'scripts/**', 'install.sh', 'package.json', 'pnpm-lock.yaml', '.github/workflows/first-reply.yml']
+  pull_request:
+    paths: ['src/**', 'scripts/**', 'install.sh', 'package.json', 'pnpm-lock.yaml', '.github/workflows/first-reply.yml']
+  schedule:
+    - cron: '40 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Registry package version to time (e.g. agentix-cli@latest); empty times the source tarball'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+concurrency:
+  group: first-reply-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+jobs:
+  first-reply:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    # Linux runs in a plain Node 22 container: nothing AgentX-related on it.
+    container: ${{ matrix.os == 'ubuntu-latest' && 'node:22-bookworm' || '' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        if: ${{ matrix.os == 'macos-latest' }}
+        with:
+          node-version: '22'
+      - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - name: Build source package
+        if: ${{ github.event_name != 'schedule' && !inputs.package }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Time the first reply
+        env:
+          PACKAGE_SPEC: ${{ github.event_name == 'schedule' && 'agentix-cli@latest' || inputs.package }}
+          FIRST_REPLY_BUDGET_S: '300'
+        run: |
+          if [ -n "$PACKAGE_SPEC" ]; then
+            [[ "$PACKAGE_SPEC" =~ ^agentix-cli@(latest|[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?)$ ]] || exit 1
+            node scripts/first-reply.mjs "$PACKAGE_SPEC"
+          else
+            node scripts/first-reply.mjs
+          fi
+        shell: bash
+
+  install-without-node:
+    # install.sh on a machine with no Node and no nvm: it must bring its own.
+    runs-on: ubuntu-latest
+    container: debian:12
+    timeout-minutes: 10
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null
+      - uses: actions/checkout@v4
+      - name: Run install.sh without Node
+        env:
+          AGENTX_SKIP_SETUP: '1'
+        run: |
+          if command -v node; then echo "This job needs a machine without Node"; exit 1; fi
+          start=$(date +%s)
+          bash install.sh
+          echo "install.sh with no Node: $(( $(date +%s) - start ))s"
+          grep -F '.agentx/node/bin' "$HOME/.profile"
+          PATH="$HOME/.agentx/node/bin:$PATH" agentx --version
+        shell: bash
