@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.163.0](https://github.com/anis-marrouchi/agentx/compare/v0.162.0...v0.163.0) (2026-10-25)
+
+
+### Features
+
+* **wall:** cross-project and cross-agent blocks ([#1193](https://github.com/anis-marrouchi/agentx/issues/1193)) ([#1239](https://github.com/anis-marrouchi/agentx/issues/1239)) ([1b10718](https://github.com/anis-marrouchi/agentx/commit/1b10718e7529cf7a6cd6fa5f7e361d3a713f239f))
+
 ## [0.162.0](https://github.com/anis-marrouchi/agentx/compare/v0.161.0...v0.162.0) (2026-10-25)
 
 
