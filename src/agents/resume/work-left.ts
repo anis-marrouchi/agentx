@@ -1,6 +1,6 @@
 import { execFile } from "child_process"
-import { existsSync, statSync } from "fs"
-import { dirname, resolve } from "path"
+import { existsSync, realpathSync, statSync } from "fs"
+import { dirname, relative, resolve, sep } from "path"
 import { promisify } from "util"
 import type { InterruptedRun } from "@/storage/traces"
 
@@ -15,7 +15,10 @@ import type { InterruptedRun } from "@/storage/traces"
 // and list the ones that still hold work, for the resumed run or, when it
 // isn't resumed, for the operator.
 
-const MAX_PATHS = 60
+// A run can read hundreds of files before it names the next clone, so the
+// raw-path cap is loose; the real budget is distinct folders asked about.
+const MAX_PATHS = 2_000
+const MAX_DIRS = 200
 const MAX_FOLDERS = 20
 const GIT_TIMEOUT_MS = 5_000
 const MAX_HELPERS = 10
@@ -89,7 +92,8 @@ const runGit: Git = async (cwd, args) =>
 
 /** One folder's unsaved work, or null when it is clean or not in git. */
 export async function inspectFolder(root: string, git: Git = runGit): Promise<LeftWork | null> {
-  const status = await git(root, ["status", "--porcelain=v2", "--branch"])
+  // --no-optional-locks: don't take index.lock in a clone someone may be using.
+  const status = await git(root, ["--no-optional-locks", "status", "--porcelain=v2", "--branch"])
   let branch: string | null = null
   let ahead: number | null = null
   let changedFiles = 0
@@ -118,20 +122,37 @@ export async function inspectFolder(root: string, git: Git = runGit): Promise<Le
   return { path: root, branch, changedFiles, unpushedCommits }
 }
 
+/** `top` (git's real path) as the run named it: `dir` walked up as far as
+ *  `top` lies above it. On macOS `/tmp/app` is really `/private/tmp/app`,
+ *  and the agent must be shown the path it used. */
+function asNamed(dir: string, top: string): string {
+  let real: string
+  try { real = realpathSync(dir) } catch { return top }
+  const rel = relative(top, real)
+  if (!rel) return dir
+  if (rel.startsWith("..")) return top
+  let named = dir
+  for (let i = rel.split(sep).length; i > 0; i--) named = dirname(named)
+  return named
+}
+
 /** The git folders the run's tool calls named that still hold unsaved
  *  work. Bounded, and never throws: a folder git can't read is left out. */
 export async function findLeftWork(run: InterruptedRun, git: Git = runGit): Promise<LeftWork[]> {
-  const roots: string[] = []
+  const roots = new Map<string, string>() // real top level -> path as named
+  const asked = new Set<string>()
   for (const p of pathsInToolCalls(run)) {
     const dir = existingDir(p)
-    if (!dir || dir === "/") continue
+    if (!dir || dir === "/" || asked.has(dir)) continue
+    if (asked.size >= MAX_DIRS) break
+    asked.add(dir)
     const top = await git(dir, ["rev-parse", "--show-toplevel"]).then((s) => s.trim()).catch(() => "")
-    if (!top || roots.includes(top)) continue
-    roots.push(top)
-    if (roots.length >= MAX_FOLDERS) break
+    if (!top || roots.has(top)) continue
+    roots.set(top, asNamed(dir, top))
+    if (roots.size >= MAX_FOLDERS) break
   }
   const out: LeftWork[] = []
-  for (const root of roots) {
+  for (const root of roots.values()) {
     const w = await inspectFolder(root, git).catch(() => null)
     if (w) out.push(w)
   }
@@ -156,7 +177,7 @@ export function leftWorkNoteLines(helpers: string[], left: LeftWork[]): string[]
     if (helpers.length > MAX_HELPERS) lines.push(`…and ${helpers.length - MAX_HELPERS} more.`)
   }
   if (left.length) {
-    lines.push("These folders still hold work that was not saved. Look at each one and finish it, or start the helper again on it, rather than starting over:")
+    lines.push("These folders still hold work that was not saved. For each one, first check whether the work is yours (a shared checkout can hold someone else's changes). If it is, finish it or start the helper again on it, rather than starting over:")
     for (const w of left) lines.push(`- ${describeLeftWork(w)}`)
   } else if (helpers.length) {
     lines.push("No folder named in your tool calls has unsaved changes. Start them again if their work is still needed.")
