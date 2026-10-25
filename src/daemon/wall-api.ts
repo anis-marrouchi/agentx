@@ -10,6 +10,7 @@ import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } fro
 import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
 import { forgeCommentsOf, type WallForgeComment, type WallForgeState, type WallForgeStateSource } from "./wall-forge-state"
 import { isStalled, projectOverview, type WallProjects } from "./wall-projects"
+import { wallClosures, wallThroughput } from "./wall-throughput"
 
 // --- The Wall's data (#1180) ---
 //
@@ -505,6 +506,15 @@ export function handleWallApi(path: string, q: URLSearchParams, deps: WallDeps |
     if (!deps) return { status: 200, body: { node, syncedAt, posts: [], failures: [], projects: [], staleAfterHours: null } }
     const posts = wallPosts(deps, days)
     return { status: 200, body: { node, syncedAt, posts, failures: wallFailures(deps.db, deps.now), projects: projectOverview(posts, deps.projects?.names), staleAfterHours: deps.staleAfterHours } }
+  }
+  // Weekly throughput (#1192): this node's closures of the last four
+  // weeks, the owners with open work (a row even with no closure), and
+  // the counts made from them.
+  if (path === `${WALL_PREFIX}/throughput`) {
+    if (!deps) return { status: 200, body: { node, syncedAt, closures: [], owners: [], throughput: wallThroughput([], { now: syncedAt }) } }
+    const closures = wallClosures(deps, projectOf)
+    const owners = [...new Set(deps.store.listOpen().map((r) => r.askedAgent ?? r.agentId))]
+    return { status: 200, body: { node, syncedAt, closures, owners, throughput: wallThroughput(closures, { now: deps.now, projectNames: deps.projects?.names, owners }) } }
   }
   if (path === `${WALL_PREFIX}/thread`) {
     if (!deps) return { status: 404, body: { error: "no requests on this node" } }

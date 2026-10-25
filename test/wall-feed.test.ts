@@ -27,7 +27,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown } = {}) {
   const page = renderWallPage()
   const script = WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -58,7 +58,8 @@ function openWall(opts: { data?: unknown; hash?: string } = {}) {
   const calls: Array<{ url: string; init: any }> = []
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
-    const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? LIVE : { runs: [] }
+    const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? LIVE
+      : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {}) : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
   }
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", script)(
@@ -234,5 +235,43 @@ describe("Projects overview on the Wall (#1190)", () => {
     const w = openWall({ data: { ...WALL, projects: [] }, hash: "#view=projects" })
     await w.settle()
     expect(w.el("wall-projects").innerHTML).toContain("No open work.")
+  })
+})
+
+// #1192: under the overview, closures per week per project and per owner,
+// read once from the throughput reply when the Projects tab opens.
+describe("Weekly throughput on the Wall (#1192)", () => {
+  const W = 7 * 864e5
+  const TP = {
+    node: "node-a", syncedAt: NOW, nodes: [{ name: "node-a", ok: true }],
+    throughput: {
+      weeks: [3, 2, 1, 0].map((i) => ({ from: NOW - (i + 1) * W, to: NOW - i * W })),
+      projects: [{ project: "Web", weeks: [1, 0, 0, 3], total: 4 }, { project: null, weeks: [0, 0, 1, 0], total: 1 }],
+      owners: [{ owner: "cx", weeks: [1, 0, 1, 3], total: 5 }, { owner: "reviewer", weeks: [0, 0, 0, 0], total: 0 }],
+    },
+  }
+
+  it("shows four weeks per project and per owner, with totals and a sparkline", async () => {
+    const w = openWall({ hash: "#view=projects", throughput: TP })
+    await w.settle()
+    expect(w.calls.filter((c) => c.url.startsWith("/api/admin/wall/throughput?peer=fleet"))).toHaveLength(1)
+    const html = w.el("wall-projects").innerHTML
+    expect(html).toContain("Closed per week")
+    expect(html).toContain('<td>Web</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">3</td><td class="num">4</td>')
+    expect(html).toContain("<td><i>Other</i></td><td class=\"num\">0</td>")
+    expect(html).toContain('<td>reviewer</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td>')
+    expect(html).toContain("▃▁▃█")
+  })
+
+  it("does not read throughput until the Projects tab is open", async () => {
+    const w = openWall({ hash: "#view=feed", throughput: TP })
+    await w.settle()
+    expect(w.calls.some((c) => c.url.startsWith("/api/admin/wall/throughput"))).toBe(false)
+  })
+
+  it("says so when the reply has no throughput (an older node)", async () => {
+    const w = openWall({ hash: "#view=projects" })
+    await w.settle()
+    expect(w.el("wall-projects").innerHTML).toContain("Throughput is not available.")
   })
 })

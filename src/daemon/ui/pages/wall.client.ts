@@ -10,6 +10,8 @@
 // browser only. Nothing is written to the daemon. The Projects view
 // (#1190) shows the overview rows the reply carries, one per project;
 // each count links to the list with that project and status in the hash.
+// Under it, weekly throughput (#1192): closures per week per project and
+// per owner over four weeks, read once when the tab first opens.
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -441,7 +443,39 @@ export const WALL_PAGE_SCRIPT = String.raw`
     q.set('view', 'list');
     return '#' + q.toString();
   }
+  // --- Throughput (#1192): closures per week, oldest first, and a sparkline ---
+  var SPARK = '▁▂▃▄▅▆▇█';
+  function spark(ws) {
+    var max = Math.max.apply(null, ws.concat([1]));
+    return ws.map(function (n) { return n ? SPARK[Math.max(1, Math.min(7, Math.round(n / max * 7)))] : SPARK[0]; }).join('');
+  }
+  function throughputHtml() {
+    if (!S.tp) return '<p class="ax-wall__count">Loading throughput…</p>';
+    var t = S.tp.throughput;
+    if (!t) return '<p class="ax-wall__empty">Throughput is not available.</p>';
+    var head = t.weeks.map(function (w) { return '<th>' + esc(stamp(w.from).slice(0, 10)) + '</th>'; }).join('');
+    function table(title, rows, name) {
+      if (!rows.length) return '<p class="ax-wall__empty">No closures in the last four weeks.</p>';
+      return '<table class="wl"><thead><tr><th>' + title + '</th>' + head + '<th>Total</th><th aria-hidden="true"></th></tr></thead><tbody>' +
+        rows.map(function (r) {
+          return '<tr><td>' + name(r) + '</td>' + r.weeks.map(function (n) { return '<td class="num">' + n + '</td>'; }).join('') +
+            '<td class="num">' + r.total + '</td><td aria-hidden="true">' + spark(r.weeks) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    return '<h3>Closed per week</h3><p class="ax-wall__count">Last four weeks, oldest first; each week is seven days.</p>' +
+      table('Project', t.projects, function (r) { return r.project === null ? '<i>Other</i>' : esc(r.project); }) +
+      table('Owner', t.owners, function (r) { return esc(r.owner); });
+  }
+  function loadThroughput() {
+    if (S.tp !== undefined) return;
+    S.tp = null;
+    getJson('/api/admin/wall/throughput?peer=fleet').then(function (d) { S.tp = d; render(); }).catch(function () { S.tp = {}; render(); });
+  }
   function projectsHtml() {
+    loadThroughput();
+    return overviewHtml() + throughputHtml();
+  }
+  function overviewHtml() {
     var rows = (S.data && S.data.projects) || [];
     if (!rows.length) return '<p class="ax-wall__empty">No open work.</p>';
     function cell(r, n, status) {

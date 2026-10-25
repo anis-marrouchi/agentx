@@ -83,6 +83,7 @@ import { wallForgeState, type WallForgeStateSource } from "./wall-forge-state"
 import { forgeReader } from "@/requests/checkers/issue"
 import { handlePortfolioRequest } from "./wall-portfolio"
 import { claimPost, projectOverview, wallProjects } from "./wall-projects"
+import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
@@ -634,6 +635,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       }
       if (path === WALL_PREFIX && method === "GET") {
         sendJson(res, 200, await buildWallFleet(url.searchParams, ctx))
+        return
+      }
+      if (path === `${WALL_PREFIX}/throughput` && method === "GET") {
+        sendJson(res, 200, await buildWallThroughputFleet(ctx))
         return
       }
       if (path === "/api/admin/activity-graph/stream") {
@@ -3133,6 +3138,40 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   }))
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
   return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, projects: projectOverview(posts, projects?.names), staleAfterHours: local.staleAfterHours }
+}
+
+/** Weekly throughput across the mesh (#1192): every node's closures,
+ *  claimed by this node's project mapping, counted here. A peer that does
+ *  not answer (or is older than #1192) is listed and left out. */
+async function buildWallThroughputFleet(ctx: Ctx): Promise<unknown> {
+  const deps = wallDeps(ctx.config)
+  const local = handleWallApi(`${WALL_PREFIX}/throughput`, new URLSearchParams(), deps, localNodeName(ctx.config)).body as any
+  const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string }> = [{ name: local.node, peer: null, ok: true }]
+  const closures: WallClosure[] = [...local.closures]
+  const owners = new Set<string>(local.owners)
+  const projects = deps?.projects ?? null
+  const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
+  await Promise.all(peers.map(async (d) => {
+    const id = d.url.replace(/\/+$/, "")
+    const name = d.name || id
+    const peer = findPeer(id, ctx.config)
+    if (!peer) { nodes.push({ name, peer: id, ok: false, error: "no dashboard address" }); return }
+    try {
+      const r = await fetch(`${peer.url}${WALL_PREFIX}/throughput`, {
+        headers: { Accept: "application/json", "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!r.ok) { nodes.push({ name, peer: id, ok: false, error: `answered ${r.status}` }); return }
+      const body = await r.json() as any
+      nodes.push({ name: body.node || name, peer: id, ok: true })
+      for (const c of Array.isArray(body.closures) ? body.closures : []) closures.push(claimClosure(c, projects))
+      for (const o of Array.isArray(body.owners) ? body.owners : []) owners.add(o)
+    } catch (e: any) {
+      nodes.push({ name, peer: id, ok: false, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) })
+    }
+  }))
+  const now = Date.now()
+  return { node: local.node, syncedAt: now, nodes, throughput: wallThroughput(closures, { now, projectNames: projects?.names, owners: [...owners] }) }
 }
 
 async function buildFleetActivitySnapshot(hours: number, config: DaemonConfig): Promise<FleetSnapshot> {
