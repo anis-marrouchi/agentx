@@ -226,6 +226,7 @@ export class CronScheduler {
         taskType: def.taskType,
         autonomy: def.autonomy,
         onError: def.onError,
+        value: def.value,
         deliverResult: def.deliverResult !== false && Boolean(def.notify),
         consecutiveErrors: 0,
         totalRuns: 0,
