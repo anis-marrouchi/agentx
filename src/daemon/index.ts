@@ -14,7 +14,7 @@ import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { setDispatchBudget } from "@/agents/claude-code-quota"
-import { budgetConfigFrom, budgetProjectOf, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets, setBudgetProjectResolver } from "@/agents/agent-budget"
+import { budgetConfigFrom, budgetProjectOf, getBudgetView, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets, setBudgetProjectResolver } from "@/agents/agent-budget"
 import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
@@ -80,6 +80,7 @@ import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/ag
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { runExceptionsDigest } from "@/crons/exceptions-digest"
 import { runMirror } from "@/approvals/mirror"
 import { requestStoreFor } from "@/approvals/inbox"
 import { configToken, githubIssueComments, postWeekly, runReportCommand } from "@/quality/epic-report"
@@ -2313,6 +2314,7 @@ export class AgentXDaemon {
   /** On the push host: the subscriptions table relayed phones use (#711). */
   private pushHost?: AppPushDeps
   private approvalsSweeping = false
+  private exceptionsDigesting = false
   private deskRoutingBusy = false
   private mirroring = false
 
@@ -2343,6 +2345,34 @@ export class AgentXDaemon {
       .then((r) => { if (r.created || r.completed || r.dismissed || r.failed) this.log(`[mirror] created ${r.created}, completed ${r.completed}, dismissed ${r.dismissed}, failed ${r.failed}`) })
       .catch((e: any) => this.log(`[mirror] failed: ${e?.message ?? e}`))
       .finally(() => { this.mirroring = false })
+  }
+
+  /** The exceptions digest (src/crons/exceptions-digest.ts, #1289): once a
+   *  day, failed or missed schedules, stuck requests and paused agents.
+   *  Nothing wrong, nothing sent. */
+  private exceptionsDigestTick(): void {
+    if (this.exceptionsDigesting || !this.config.exceptionsDigest.enabled) return
+    this.exceptionsDigesting = true
+    const dest = this.config.notifications?.destination
+    void runExceptionsDigest({
+      settings: this.config.exceptionsDigest,
+      fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
+      root: process.cwd(),
+      jobs: () => this.cron.list(),
+      ...(this.requests ? {
+        requests: () => this.config.requests.enabled
+          ? { items: this.requests!.store.listOpen(), staleAfterHours: this.config.requests.staleAfterHours }
+          : { items: [], staleAfterHours: this.config.requests.staleAfterHours },
+      } : {}),
+      budget: () => getBudgetView(),
+      send: async (d, text) => {
+        await this.router.sendOutbound({ channel: d.channel, chatId: d.chatId, accountId: d.accountId, text, told: { passed: true } })
+      },
+      node: this.config.node.name || this.config.node.id,
+      log: this.log,
+    })
+      .catch((e: any) => this.log(`[exceptions] digest failed: ${e?.message ?? e}`))
+      .finally(() => { this.exceptionsDigesting = false })
   }
 
   /** Every minute: expire decision cards, tell agents their results, and
@@ -2459,6 +2489,9 @@ export class AgentXDaemon {
         // Check-ins ask agents to write cards, which takes minutes: beside
         // the sweep too (src/approvals/checkin.ts).
         void this.runCheckin().catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`))
+        // The day's exceptions, if any (#1289). Beside the sweep: it reads
+        // run files and sends a message.
+        this.exceptionsDigestTick()
       } catch (e: any) {
         this.log(`[approvals] sweep failed: ${e?.message ?? e}`)
       } finally {

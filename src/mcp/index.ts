@@ -895,6 +895,11 @@ const TOOLS = [
           type: "string",
           description: "create: where results/failures go. 'here' (default: the current chat), 'none', or 'channel:chatId'.",
         },
+        report: {
+          type: "string",
+          enum: ["always", "exceptions"],
+          description: "create: 'exceptions' sends a run's answer only when something is wrong; a run with nothing to report answers NOTHING_TO_REPORT and sends nothing. Default: always.",
+        },
         mine: { type: "boolean", description: "list: only routines you created." },
         channel: { type: "string", description: "Current chat's channel, from your task context. Used as the default notify target when the runtime didn't provide it." },
         chatId: { type: "string", description: "Current chat id, from your task context." },

@@ -72,6 +72,8 @@ export interface ScheduleJobInput {
   /** False keeps `notify` for failure alerts only. Default: each
    *  successful run's answer is sent there too. */
   deliverResult?: boolean
+  /** `exceptions`: a run with nothing wrong sends nothing (#1289). */
+  report?: "always" | "exceptions"
   onError?: OnErrorValue[]
   enabled?: boolean
   createdBy?: string
@@ -96,9 +98,16 @@ export function buildScheduleJob(input: ScheduleJobInput): Record<string, unknow
   if (input.model) job.model = input.model
   if (input.notify) job.notify = input.notify
   if (input.notify && input.deliverResult === false) job.deliverResult = false
+  if (input.report === "exceptions") job.report = "exceptions"
   if (input.createdBy) job.createdBy = input.createdBy
   if (input.approval) job.approval = input.approval
   return job
+}
+
+/** What a job's `notify` destination receives, as `schedule list` prints it. */
+export function notifyScope(job: { deliverResult?: boolean; report?: string }): string {
+  if (job.deliverResult === false) return "(failures only)"
+  return job.report === "exceptions" ? "(exceptions and failures)" : "(results and failures)"
 }
 
 export function humanizeCron(cron: string): string {

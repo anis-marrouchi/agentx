@@ -20,7 +20,7 @@ Timing can be written the way you'd say it: "every morning at 9", "weekdays at 6
 agentx schedule parse "weekdays at 6pm"
 ```
 
-By default, the job runs as the agent you asked, and after each run its answer is posted back to the chat you asked from. If a run fails, a short failure message goes to the same chat. You can ask for another agent, a time zone, somewhere else to send results, or no chat at all ("don't send me the results"). Without a chat, the results stay in the run history in the dashboard.
+By default, the job runs as the agent you asked, and after each run its answer is posted back to the chat you asked from. If a run fails, a short failure message goes to the same chat. You can ask for another agent, a time zone, somewhere else to send results, or no chat at all ("don't send me the results"). You can also ask to hear only about problems ("tell me only if something is wrong"): then a run that finds nothing wrong sends nothing. See [Report only when something is wrong](../jobs/daily-report.md#report-only-when-something-is-wrong). Without a chat, the results stay in the run history in the dashboard.
 
 If you asked from the AgentX phone app, the answer appears in the same conversation, marked unread. If you asked by voice, it arrives as a push notification on your phone (this needs push notifications set up on this computer). A long answer is shortened to fit the notification; ask the agent by voice and it reads you the full answer.
 

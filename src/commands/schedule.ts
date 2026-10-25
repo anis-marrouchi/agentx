@@ -12,6 +12,7 @@ import {
   DEFAULT_SCHEDULE_TIMEZONE,
   formatFireTime,
   nextFireTime,
+  notifyScope,
   parseOnError,
   rejectSchedule,
   setScheduleEnabled,
@@ -76,6 +77,7 @@ schedule
   .option("--id <name>", "explicit cron id (default: auto-slug of <when>-<agent>)")
   .option("--notify <target>", '"me" (use notifications.destination) or "channel:chatId[:accountId]"')
   .option("--no-deliver", "send only failures to --notify, not each run's answer")
+  .option("--only-exceptions", "the run decides: an answer of NOTHING_TO_REPORT sends nothing to --notify")
   .option("--on-error <modes>", 'comma list of "log|notify|disable" (default: log; notify implies "notify")')
   .option("--timezone <tz>", `IANA timezone (default: ${DEFAULT_SCHEDULE_TIMEZONE})`, DEFAULT_SCHEDULE_TIMEZONE)
   .option("--timeout <seconds>", "max run time", "600")
@@ -128,6 +130,7 @@ schedule
       model: opts.model,
       notify,
       deliverResult: opts.deliver,
+      report: opts.onlyExceptions ? "exceptions" : undefined,
       onError: parseOnError(opts.onError),
       enabled: !opts.disabled,
     })
@@ -147,7 +150,7 @@ schedule
     console.log(chalk.green(`  ✓ ${verb} cron ${chalk.cyan(id)}`))
     console.log(chalk.dim(`    Schedule: ${parsed.cron}  (${parsed.human}, ${opts.timezone})`))
     console.log(chalk.dim(`    Agent: ${opts.agent}`))
-    if (notify) console.log(chalk.dim(`    Notify: ${notify.channel} ${notify.chatId}${job.deliverResult === false ? " (failures only)" : " (results and failures)"}`))
+    if (notify) console.log(chalk.dim(`    Notify: ${notify.channel} ${notify.chatId} ${notifyScope(job)}`))
     if (onErrorModes.length) console.log(chalk.dim(`    On error: ${onErrorModes.join(", ")}`))
     if (!opts.dryRun && result.reloaded) console.log(chalk.dim("    Daemon hot-reloaded."))
   })
@@ -188,7 +191,7 @@ schedule
       console.log(`  ${tag} ${chalk.cyan(id.padEnd(32))} ${chalk.dim(def.schedule.padEnd(14))} ${chalk.dim("→")} ${def.agent}`)
       console.log(chalk.dim(`      ${human} (${def.timezone || "UTC"})`))
       if (def.notify) {
-        console.log(chalk.dim(`      notify: ${def.notify.channel} ${def.notify.chatId}${def.deliverResult === false ? " (failures only)" : " (results and failures)"}`))
+        console.log(chalk.dim(`      notify: ${def.notify.channel} ${def.notify.chatId} ${notifyScope(def)}`))
       }
       if (def.createdBy) console.log(chalk.dim(`      created by agent: ${def.createdBy}`))
       if (builtIn.has(id)) console.log(chalk.dim("      built in: added by AgentX from your settings; a job of the same id in crons replaces it"))

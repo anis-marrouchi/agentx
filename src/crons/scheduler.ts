@@ -13,6 +13,7 @@ import { recordCronDispatch } from "@/intent/sources/cron"
 import { withNewRoot } from "@/events/envelope"
 import { withEventPayload, serializePayload, ROUTINE_PAYLOAD_ENV } from "./event-payload"
 import { NoteStore, renderNotesInbox } from "@/wiki/notes"
+import { isQuietRun, withQuietRule } from "./quiet"
 import { withSourceWarning } from "@/sales/sources"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
@@ -229,6 +230,7 @@ export class CronScheduler {
         onError: def.onError,
         value: def.value,
         deliverResult: def.deliverResult !== false && Boolean(def.notify),
+        report: def.report,
         requireSources: def.requireSources,
         consecutiveErrors: 0,
         totalRuns: 0,
@@ -496,6 +498,7 @@ export class CronScheduler {
       isRetry,
       retryAttempt,
       ...(fire ? { fired: true } : {}),
+      ...(success && isQuietRun(job.report, output) ? { quiet: true } : {}),
     }
 
     if (!success) {
@@ -599,7 +602,7 @@ export class CronScheduler {
       const inbox = this.wikiNotesInbox(job, startedAt)
       const task: AgentTask = {
         message: withOutputCap(
-          withNotesFirst(inbox.block, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt),
+          withQuietRule(withNotesFirst(inbox.block, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt), job.report),
           job.maxOutputTokens,
         ),
         agentId: job.agent,
@@ -631,6 +634,7 @@ export class CronScheduler {
         ...runLinkIds(task, response),
         ...(response.autonomy ? { autonomy: response.autonomy } : {}),
         ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
+        ...(!response.error && isQuietRun(job.report, response.content) ? { quiet: true } : {}),
       }
       if (result.autonomyBlocks) {
         this.log(`Job "${jobId}" (autonomy ${result.autonomy}): ${result.autonomyBlocks.length} action(s) blocked: ${result.autonomyBlocks.map((b) => b.ruleId).join(", ")}`)
@@ -683,7 +687,8 @@ export class CronScheduler {
 
       // An answer that must cite its sources goes out with the lines that
       // do not named under it; the run record keeps the answer as written.
-      const checked = job.requireSources && response.content ? withSourceWarning(response.content) : undefined
+      // A quiet answer (#1289) is not checked: it is sent nowhere.
+      const checked = job.requireSources && response.content && !result.quiet ? withSourceWarning(response.content) : undefined
       if (checked?.unsourced) {
         result.unsourced = checked.unsourced
         this.log(`Job "${jobId}": ${checked.unsourced} answer line(s) without a source`)
@@ -770,7 +775,7 @@ export class CronScheduler {
         const inbox = this.wikiNotesInbox(job, startedAt)
         const task: AgentTask = {
           message: withOutputCap(
-            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withNotesFirst(inbox.block, job.prompt)}`,
+            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withQuietRule(withNotesFirst(inbox.block, job.prompt), job.report)}`,
             job.maxOutputTokens,
           ),
           agentId: job.agent,
@@ -796,6 +801,7 @@ export class CronScheduler {
           ...runLinkIds(task, response),
           ...(response.autonomy ? { autonomy: response.autonomy } : {}),
           ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
+          ...(!response.error && isQuietRun(job.report, response.content) ? { quiet: true } : {}),
         }
 
         this.logRun(result)
@@ -820,6 +826,11 @@ export class CronScheduler {
 
   private async deliverResult(job: CronJobState, text: string | undefined, startedAt: Date): Promise<void> {
     if (!job.deliverResult || !text?.trim()) return
+    // A run of a report-only-exceptions job found nothing wrong (#1289).
+    if (isQuietRun(job.report, text)) {
+      this.log(`Job "${job.id}" had nothing to report; nothing sent`)
+      return
+    }
     if (!this.deliverCallback) {
       this.log(`Job "${job.id}" result not delivered: no delivery path in this context`)
       return
