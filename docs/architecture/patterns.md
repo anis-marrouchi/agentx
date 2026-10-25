@@ -144,7 +144,7 @@ The epic [#1138](https://github.com/anis-marrouchi/agentx/issues/1138) had seven
 
 | Step | What it does | Lives in | Proof |
 |---|---|---|---|
-| A. Settle on hand-back | a request closes when the work it handed out comes back done | `src/requests/store.ts` | **Failed.** Requests with a due time are skipped. Fix: [#1214](https://github.com/anis-marrouchi/agentx/issues/1214). |
+| A. Settle on hand-back | a request closes when the work it handed out comes back done | `src/requests/store.ts` | **Failed** at the epic's close: requests with a due time were skipped ([#1214](https://github.com/anis-marrouchi/agentx/issues/1214)). Fixed in [#1218](https://github.com/anis-marrouchi/agentx/pull/1218), not yet proven live. |
 | P. This page | names the parts and patterns | `docs/architecture/patterns.md` | Met. |
 | B. Reach | seen and answered marks, an urgent ladder, channels that are down in `/health` | `src/notify/reach.ts` | Partly met. Marks and `/health` work. The ladder is off by default, so escalation was not seen live. |
 | C. One Desk | one list and one count of what waits on the owner, routed by three settings | `src/desk/owner-list.ts`, `src/desk/route.ts` | Met. |

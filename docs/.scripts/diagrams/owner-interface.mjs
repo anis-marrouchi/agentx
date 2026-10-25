@@ -12,7 +12,7 @@ const d = createDiagram({
     "Six steps in two parts. An agent makes a Promise: who owes what to whom, by when, and the proof that closes it. " +
     "Proof closes it: a link, a test, an output or a check. Closing writes a Fact: what is true, its source and when it was checked. " +
     "Each change is recorded on the request or its card. Reach picks the one channel where you were last seen, waits, and tries the next one if you did not see it. " +
-    "You read one list, the Desk, on any surface. Two switches are off by default, and one fix is still open (issue 1214).",
+    "You read one list, the Desk, on any surface. Two switches are off by default, and one fix (issue 1214) is merged but not yet proven live.",
 })
 
 d.header("How work reaches you", "Promise and Fact are the model, Reach the controller, Desk the view.", [
@@ -54,8 +54,8 @@ d.list(d.x0, y + ROW + 64, {
   items: [
     ["Urgent ladder is off", "Your switch: notifications.reach.enabled."],
     ["Promise catch is off", "Your switch: requests.catchPromises.enabled."],
-    ["Due work does not settle", "A fix is tracked in issue #1214."],
-    ["Everything else shipped", "Steps A to F, see the table below."],
+    ["Due work: fix not proven", "Fixed in #1218, not yet proven live."],
+    ["Steps C, D and F shipped", "See the table below for each step."],
   ],
   delay: d.now + 1.4,
 })
