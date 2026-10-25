@@ -7121,6 +7121,8 @@ export class AgentXDaemon {
                 context,
                 intentRef,
                 onStart: waits ? track.onStart : onStart,
+                // A queued send already answered 202: nobody waits (#1262).
+                ...(waits ? {} : { background: true }),
               }).finally(() => { if (waits) track.end() })
             }
             if (wait) {

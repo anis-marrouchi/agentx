@@ -510,6 +510,10 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       })),
       timeoutMinutes: Math.ceil(opts.timeoutMs / 60_000),
       onStart: opts.onStart,
+      // The caller's answer comes by callback, not over a held request:
+      // a busy callee is waited for, not given up on (#1262).
+      background: true,
+      callerSignal: opts.signal,
       ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),
     }),
     runPeer: (peer, callee, message, context, opts) => {

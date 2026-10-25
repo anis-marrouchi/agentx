@@ -295,6 +295,38 @@ describe("errors, timeouts and duplicates", () => {
     expect(h.logs.some((l) => l.includes(taskId) && l.includes("duplicate"))).toBe(true)
   })
 
+  it("does not time out a local callee still waiting for its slot (#1262)", async () => {
+    vi.useFakeTimers()
+    const local = deferred<{ content: string; error?: string }>()
+    let opts: any
+    const h = harness({
+      timeoutMs: 1000,
+      runLocal: (_callee, _message, _context, o) => { opts = o; return local.promise },
+    })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
+    // Busy for far longer than the time limit: no timeout yet.
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(h.injected).toHaveLength(0)
+    expect(opts.signal.aborted).toBe(false)
+
+    // The slot frees: the clock starts now.
+    opts.onStart("callee-run-9")
+    await vi.advanceTimersByTimeAsync(999)
+    expect(h.injected).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(2)
+    expect(h.calls.cancel).toEqual(["callee-run-9"])
+    expect(h.injected[0].message).toContain("status=timeout")
+  })
+
+  it("drops a callee's slot wait when the delegation ends first", async () => {
+    const local = deferred<{ content: string; error?: string }>()
+    let opts: any
+    const h = harness({ runLocal: (_callee, _message, _context, o) => { opts = o; return local.promise } })
+    const { taskId } = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
+    await h.mgr.complete(taskId, { status: "lost", text: "gone" })
+    expect(opts.signal.aborted).toBe(true)
+  })
+
   it("suppresses a duplicate completion for the same task id", async () => {
     const h = harness()
     const { taskId } = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })

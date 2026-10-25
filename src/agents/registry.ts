@@ -194,6 +194,18 @@ const TASK_OUTPUT_TTL_MS = 5 * 60 * 1000
 /** How long a cancelled run's agent call may take to reap its subprocess
  *  before the run lets go of its slot anyway. */
 const CANCEL_GRACE_MS = 30_000
+/** How long a run whose caller waits on it may wait for a busy agent's
+ *  slot: just under mesh.sendTask's 30 min default. */
+export const SLOT_WAIT_MS = 25 * 60_000
+/** The same for a background run (#1262), whose caller already moved on:
+ *  long enough for any real backlog to clear, so it is not dropped. Only a
+ *  slot that never frees (a stuck run) ends it. */
+export const BACKGROUND_SLOT_WAIT_MS = 12 * 60 * 60_000
+
+function formatWait(ms: number): string {
+  const m = Math.round(ms / 60_000)
+  return m >= 120 && m % 60 === 0 ? `${m / 60}h` : `${m}m`
+}
 /** Default for agents.<id>.preSpawnTimeoutSec when a definition skipped the schema. */
 const PRE_SPAWN_TIMEOUT_SEC = 300
 
@@ -1461,13 +1473,22 @@ export class AgentRegistry {
       // A guest mesh's turn ("guest") is answered over its open request
       // too, and has no adapter to flush a queued reply to.
       if (qChannel === "api" || qChannel === "app" || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || restricted) {
+        // A background run (#1262) has no HTTP caller to answer within the
+        // mesh's 30 min, so it keeps its place until a slot frees instead
+        // of being dropped at 25 min and re-sent by hand.
         const start = Date.now()
-        const maxWaitMs = 25 * 60_000
+        const maxWaitMs = task.background ? BACKGROUND_SLOT_WAIT_MS : SLOT_WAIT_MS
         const pollIntervalMs = 500
+        let nextNoteAt = start + SLOT_WAIT_MS
         while (state.activeTasks >= state.def.maxConcurrent) {
           if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
-          if (Date.now() - start > maxWaitMs) {
-            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
+          const now = Date.now()
+          if (now - start > maxWaitMs) {
+            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${formatWait(maxWaitMs)}` }
+          }
+          if (task.background && now >= nextNoteAt) {
+            nextNoteAt += SLOT_WAIT_MS
+            this.log(`[${task.agentId}] still busy — background message waiting for a slot for ${formatWait(now - start)} chat=${qChannel}:${qChatId} behind=${state.runningTasks.map((r) => r.id).join(",") || "-"}`)
           }
           await new Promise((r) => setTimeout(r, pollIntervalMs))
         }

@@ -110,6 +110,9 @@ export interface DelegationDeps {
       /** Continue the callee's session from this chat of its own, the
        *  last run on the same home (#1100), instead of a fresh one. */
       resumeFrom?: Array<{ channel: string; chatId: string }>
+      /** Aborted when the delegation ends before the run got a slot:
+       *  the run is then dropped instead of started (#1262). */
+      signal?: AbortSignal
     },
   ): Promise<{ content: string; error?: string }>
   /** Run the callee on a mesh peer and return its answer text. */
@@ -344,6 +347,8 @@ export class DelegationManager {
   private chains = new Map<string, Promise<void>>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private localRuns = new Map<string, string>()
+  /** Local runs still waiting for the callee's slot, by task id. */
+  private slotWaits = new Map<string, AbortController>()
   /** Callback turns a restart stopped, by task id (see HeldRelay). */
   private heldRelays = new Map<string, HeldRelay>()
   /** Delegations whose callee said its run ends to wait (markWaiting). */
@@ -508,28 +513,44 @@ export class DelegationManager {
       // Gone already (a restart reported it lost while it waited).
       if (!this.pendingById.has(id)) return Promise.resolve({ content: "", error: "no longer pending" })
       // The clock starts when the work does, not while it waits its turn.
-      const timer = setTimeout(() => {
-        const runId = this.localRuns.get(id)
-        if (runId) {
-          try { this.deps.cancelLocal?.(runId, `delegation ${id} timed out`) } catch { /* best effort */ }
-        }
-        void this.complete(id, { status: "timeout", text: `No answer from ${who} after ${Math.round(timeoutMs / 60_000) || 1} minute(s).` })
-      }, timeoutMs)
-      ;(timer as any).unref?.()
-      this.timers.set(id, timer)
+      const startClock = () => {
+        if (this.timers.has(id) || !this.pendingById.has(id)) return
+        const timer = setTimeout(() => {
+          const runId = this.localRuns.get(id)
+          if (runId) {
+            try { this.deps.cancelLocal?.(runId, `delegation ${id} timed out`) } catch { /* best effort */ }
+          }
+          void this.complete(id, { status: "timeout", text: `No answer from ${who} after ${Math.round(timeoutMs / 60_000) || 1} minute(s).` })
+        }, timeoutMs)
+        ;(timer as any).unref?.()
+        this.timers.set(id, timer)
+      }
       if (record.peer) {
+        startClock()
         return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
           .then((text) => ({ content: text } as { content: string; error?: string }))
       }
+      // A busy local callee keeps the message until a slot frees (#1262):
+      // the wait for that slot is not part of the time limit.
       const resumeFrom = resumable()
       const mine = chatKeyOf(calleeChat)
       if (homeKey) this.busyChats.add(mine)
+      const slotWait = new AbortController()
+      this.slotWaits.set(id, slotWait)
       return this.deps.runLocal(record.callee, opts.message, calleeContext, {
         timeoutMs,
-        onStart: (runId) => { this.localRuns.set(id, runId) },
+        onStart: (runId) => {
+          this.slotWaits.delete(id)
+          this.localRuns.set(id, runId)
+          startClock()
+        },
         extras: opts.extras,
         ...(resumeFrom?.length ? { resumeFrom } : {}),
-      }).finally(() => { this.busyChats.delete(mine) })
+        signal: slotWait.signal,
+      }).finally(() => {
+        this.busyChats.delete(mine)
+        this.slotWaits.delete(id)
+      })
     }
     // The wait is bounded by this delegation's own time limit: a run ahead
     // that never settles (stuck before it started) does not hold it forever.
@@ -580,6 +601,8 @@ export class DelegationManager {
     if (timer) clearTimeout(timer)
     this.timers.delete(id)
     this.localRuns.delete(id)
+    this.slotWaits.get(id)?.abort(new Error(`delegation ${id} ${result.status} before it started`))
+    this.slotWaits.delete(id)
     this.waiting.delete(id)
     this.append({ type: "done", id, status: result.status, ts: this.now() })
     const entry = this.recent.find((r) => r.id === id)

@@ -144,6 +144,12 @@ export interface AgentTask {
    *  retrying caller would otherwise have every attempt run once the slot
    *  frees (#822). A run that already started is not affected. */
   callerSignal?: AbortSignal
+  /** No caller holds a request open for this run's answer: a queued
+   *  /send/agent, or a delegation that calls back (#1262). When the agent
+   *  is busy, the run waits for its slot as long as BACKGROUND_SLOT_WAIT_MS
+   *  instead of failing after the 25 minutes a waiting HTTP caller gets.
+   *  `callerSignal` still drops it. */
+  background?: boolean
   /** How to re-enter this run if a restart cuts it off (agents/resume).
    *  Absent: recorded as a direct run with this task's context. */
   origin?: import("./resume/origin").RunOrigin
