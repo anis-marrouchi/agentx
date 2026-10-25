@@ -666,12 +666,16 @@ ${WALL_PAGES_SCRIPT}
     return null;
   }
   async function compose() {
+    // One post at a time: a double click or a second Enter would send it twice.
+    if (S.posting) return;
     var text = ($('wc-text').value || '').trim();
     if (!text) { composeNote('Write the post first.'); return; }
     var to = composeTarget(text);
     if (!to) { composeNote(S.live ? 'Pick who it is for: put @ and an agent\'s name in the post.' : 'Still loading the agents…'); return; }
     composeNote('Posting to ' + to.name + '…');
+    S.posting = true; $('wc-post').disabled = true;
     var r = await act('POST', '/api/admin/wall/post', { agent: to.id, text: text }, to.peer);
+    S.posting = false; $('wc-post').disabled = false;
     if (!r.ok) { composeNote('Not posted: ' + r.error); return; }
     $('wc-text').value = '';
     composeNote(r.body.message || 'Posted.');
