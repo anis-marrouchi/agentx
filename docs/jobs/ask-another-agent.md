@@ -92,6 +92,15 @@ Add `"async": false` to the request body to wait for the answer, as in older ver
 
 Sending the same message from the same agent to the same agent again within 10 minutes is treated as a retry. The daemon does not deliver it twice; it answers with the first task id and `"duplicate": true`.
 
+An agent working for another agent sees a chat ID such as `a2a:helper-a:helper-b:dlg-…`: the agent that asked comes first, then the one asked. A message posted to `POST /send` with `"channel": "a2a"` and that chat ID goes to the other agent in it, exactly as a `/send/agent` would. Put the sending agent in `"agentId"`; without it, the message goes to the agent that asked. For example, from a script run by `helper-b` (terminal):
+
+```sh
+curl -s -X POST http://127.0.0.1:18800/send -H 'Content-Type: application/json' \
+  -d '{"channel":"a2a","chatId":"a2a:helper-a:helper-b:dlg-1","agentId":"helper-b","text":"Tests are green"}'
+```
+
+The answer is the same `202` body as `/send/agent`. A chat ID that does not name two agents is refused with `400` and a hint to use `/send/agent`.
+
 If the tool gets no answer from the daemon in time, it says the message was **probably delivered**, not that it failed. Sending it again is safe, for the reason above. The daemon log has a `[send/agent] snd-…` line for each queued message, and a `started as run …` line when the other agent picks it up.
 
 ### One session per piece of work
@@ -141,6 +150,7 @@ Some requests are refused straight away with status `409`:
 - **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.
 - **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask. A dashboard log line starting `[app] warning:` means the dashboard passed over some updates: it was away too long, or too many arrived at once. Ask your agent for the answer again.
 - **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
+- **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.
 - **`agentx_send_agent` says "could not be reached":** the daemon on this machine is not running. Start it with `agentx daemon start --detach`, then send again.
 - **The status list is empty:** only delegations since the last restart are listed, and only on the machine that runs the asking agent.
 - **A follow-up started a new session anyway:** check that both messages named the same `home`, and went to an agent on the same machine. After a restart, or 12 hours after the last run ended, a new session starts. The daemon log line `is on … continues its session` shows when a session was continued. The line `a run on … is still going; starting a fresh session instead` means the earlier run outlasted the wait. Send the message after the earlier run ends. Raising `mesh.delegation.timeoutMinutes` (for a send, the agent's `maxExecutionMinutes`) rarely helps, because the earlier run usually has the same limit and started first.

@@ -53,6 +53,34 @@ export class SendAgentDedupe {
   }
 }
 
+/**
+ * #1251 — POST /send on an a2a chat. The chat ID is
+ * `a2a:<caller>:<callee>[:<dlg-id>]`; the message goes to the agent in it
+ * that did not send it, as a /send/agent would. With no sender named, the
+ * caller (the first agent): the callee is the one told its chat ID.
+ * Null when the chat ID does not name two agents.
+ */
+export function a2aSendBody(body: Record<string, unknown>): Record<string, unknown> | null {
+  const m = /^a2a:([^:]+):([^:]+)(?::[^:]+)?$/.exec(String(body.chatId ?? ""))
+  if (!m) return null
+  const [, caller, callee] = m
+  const sender = typeof body.senderAgentId === "string" ? body.senderAgentId
+    : typeof body.agentId === "string" ? body.agentId
+    : undefined
+  const to = sender === caller ? callee : caller
+  return {
+    agentId: to,
+    text: body.text,
+    // The sender of a callee's note is the callee, the agent the caller asked.
+    senderAgentId: sender ?? callee,
+    // Names the sender's turn in this chat, so a callee's note reaches the
+    // caller's conversation for that delegation (#1100).
+    callerChannel: "a2a",
+    callerChatId: body.chatId,
+    ...(typeof body.callerTaskId === "string" ? { callerTaskId: body.callerTaskId } : {}),
+  }
+}
+
 /** The 202 body for a send that was queued, not waited on. */
 export function queuedBody(taskId: string, agent: string, peer?: string): Record<string, unknown> {
   const who = peer ? `${agent} on ${peer}` : agent
