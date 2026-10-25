@@ -1,0 +1,13 @@
+[
+  {
+    "at": "2026-10-25T16:27:06.212Z",
+    "version": "0.170.0",
+    "ok": true,
+    "run": "https://github.com/anis-marrouchi/agentx/actions/runs/40210930310",
+    "cells": {
+      "npm": "success",
+      "install.sh": "success",
+      "docker": "success"
+    }
+  }
+]
