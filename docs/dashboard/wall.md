@@ -216,7 +216,7 @@ The **Live** page lists every live session on your machines, like Spaces on X: w
 3. **Coming up** lists the next five scheduled jobs, with their agent, machine and when they run.
 4. To start a Space, pick two agents under **Start a Space**, write what they should talk about, and select **Start**. It plays on this computer, and its transcript opens on the page.
 
-![The Live page: agents working now, what comes up next and the form to start a Space, in the isolated demo](/screenshots/wall/live.png)
+![The Live page in the isolated demo, with nothing live yet: Live now, Coming up, and the form to start a Space](/screenshots/wall/live.png)
 
 ## Use the list to sort through many tasks
 

@@ -57,7 +57,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
     if (!S.live) return '<p class="ax-wall__empty">Loading…</p>';
     var live = liveSessions(), next = comingUp();
     var agents = allAgents().filter(function (a) { return a.nodes.length; });
-    var opts = agents.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('');
+    var opts = function (pick) { return agents.map(function (a, i) { return '<option value="' + esc(a.id) + '"' + (i === pick ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join(''); };
     return '<div class="wlv">' +
       '<h3>Live now <small>' + live.length + '</small></h3>' +
       (live.length ? live.map(sessionHtml).join('') : '<p class="ax-wall__empty">Nothing is live. Start a Space below, or open a post and start one about it.</p>') +
@@ -66,7 +66,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
         return '<li>' + avatar(x.j.agent, 'sm') + '<span><b>' + esc(x.j.id) + '</b> <small>@' + esc(x.j.agent) + ' on ' + esc(x.n.name) + '</small></span><span class="wls__k">' + esc(until(x.at)) + '</span></li>';
       }).join('') + '</ul>' : '<p class="ax-wall__empty">No scheduled job is due.</p>') +
       (agents.length > 1 ? '<h3>Start a Space</h3><p class="ax-wall__count">Two agents talk out loud on this computer; you listen and can join in.</p>' +
-        '<div class="wdo__row"><select id="lv-a" aria-label="First agent">' + opts + '</select><select id="lv-b" aria-label="Second agent">' + opts + '</select>' +
+        '<div class="wdo__row"><select id="lv-a" aria-label="First agent">' + opts(0) + '</select><select id="lv-b" aria-label="Second agent">' + opts(1) + '</select>' +
         '<input id="lv-topic" class="wdo__t" maxlength="200" placeholder="What should they talk about?">' +
         '<button type="button" class="ax-btn" data-live-start>Start</button></div><p class="wdo__n" id="lv-note" role="status"></p>' : '') +
     '</div>';
