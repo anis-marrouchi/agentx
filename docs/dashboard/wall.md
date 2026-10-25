@@ -129,7 +129,7 @@ The profile is the **Owner** filter, so its address can be shared like any other
 
 The filters work for both the feed and the list:
 
-- **Owner**, **Status** (Open, **Blocked**, Waiting on the owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, and a search box.
+- **Owner**, **Status** (Open, **Blocked**, Waiting on the owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
 
 The filters are part of the page's address. Copy the address to share the same view.
@@ -156,6 +156,22 @@ A **concurrent** run is two runs going at the same time on the same chat, or two
 4. To see only these posts, tick **Concurrent only** in the filters. In the **List**, the **Runs** column shows **⚠ concurrent**.
 
 Two runs where one starts as the other ends are not flagged. Neither are runs on different chats in different folders. The Wall only shows the flag; it does not stop either run.
+
+## See what waits on QA
+
+A QA agent can give a task a verdict: **BLOCK** (it must not ship as it is), **RISK** (it can ship, with a named risk) or **PASS**. How an agent asks for one and gives one is in [QA sign-off](../jobs/open-requests.md#qa-sign-off).
+
+1. **Browser:** on the Wall, a task with a verdict shows a line such as **QA: BLOCK by qa-agent, 2026-10-25 10:00 UTC+01:00: the export fails on an empty list**. A task still waiting shows **QA: Awaiting QA sign-off**. After a fix for a block, the line keeps the old verdict and adds **new verdict asked**.
+
+   ![A post with QA: BLOCK, who gave it, when and why, in the isolated demo](/screenshots/wall/qa.png)
+2. To see only the tasks waiting on a verdict, tick **Awaiting QA only** in the filters. It keeps tasks marked as needing QA that have no verdict since they were marked, open or closed. Set **Status** to **All** to include closed tasks.
+3. In the **List**, the **Status** column shows **Awaiting QA**, or the verdict and who gave it. Point at it to read the time and the note.
+
+   ![The List with Awaiting QA only ticked: one task, marked Awaiting QA](/screenshots/wall/qa-awaiting.png)
+
+*Scripted demo data; your team's names will differ.*
+
+The Wall only shows the verdict. Giving one is done by the QA agent, and nobody is notified.
 
 ## See failures
 
@@ -213,7 +229,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 6. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 7. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 8. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
-9. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+9. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
+10. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
@@ -227,6 +244,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **A post says "state unknown":** this machine could not read the issue on GitHub or GitLab. Point at it for the reason. "not found" usually means the token cannot see that project; "did not answer in time" clears on the next refresh.
 - **No state on a GitHub or GitLab task:** the machine that keeps the task has no connection to that forge, or the home link is on another GitLab address than the one configured.
 - **No "Comment by" link:** the comment was posted before this version, by a person, or outside AgentX. Only comments AgentX posted, with the id the forge returned, are linked.
+- **A task waits on QA but Awaiting QA only does not list it:** check **Status**. With **Open**, a closed task is hidden; choose **All**. If it is still missing, run `agentx requests --qa awaiting` on the machine that keeps it. When it is not listed there, it was never marked with `needsQa: true`, or it already has a verdict since the mark.
 - **A card is on the Approvals page but not on the Wall:** it was raised outside a task, or it was already answered or expired. Only pending cards that belong to a task show on a post.
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
 - **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.

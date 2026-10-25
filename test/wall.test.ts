@@ -17,6 +17,7 @@ import {
   a2aRoute, handleWallApi, mentionsIn, projectOf, SILENCE_WORDS, sourceIdsIn, wallFailures, wallPost, wallPosts, wallThread, type WallDeps,
 } from "../src/daemon/wall-api"
 import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
+import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 
 // The Wall (#1180): every request as a post, its runs, hand-offs and plan
 // steps as the thread. Read-only over the request, plan and trace records;
@@ -274,6 +275,41 @@ describe("owner decision cards (#1185)", () => {
     expect(html).toContain('<option value="waiting_owner">Waiting on the owner</option>')
     expect(html).toContain("Answer it on the Desk")
     expect(html).not.toMatch(/data-decide|data-verdict/)
+  })
+})
+
+describe("QA verdict (#1188)", () => {
+  beforeAll(() => {
+    // r2: needs QA, no verdict. r3: passed after the ask. r1: blocked, then asked again.
+    store.setNeedsQa("r2", true, T0 + 7100)
+    store.setNeedsQa("r3", true, T0 + 9100)
+    store.recordVerdict("r3", { verdict: "pass", by: "qa", note: null }, T0 + 9200)
+    store.setNeedsQa("r1", true, T0 + 4100)
+    store.recordVerdict("r1", { verdict: "block", by: "qa", note: "login fails, token=supersecretvalue123" }, T0 + 4200)
+    store.setNeedsQa("r1", true, T0 + 4300)
+  })
+
+  it("puts each verdict on its post with who gave it and when", () => {
+    const posts = wallPosts(deps(), 7)
+    const by = (id: string) => posts.find((p) => p.id === id)!
+    expect(by("r3").qa).toEqual({ verdict: "pass", by: "qa", at: T0 + 9200, note: null })
+    expect(by("r3").awaitingQa).toBe(false)
+    expect(by("r2")).toMatchObject({ qa: null, awaitingQa: true })
+    expect(by("r1").qa).toMatchObject({ verdict: "block", by: "qa", at: T0 + 4200 })
+    expect(by("r1").qa!.note).not.toContain("supersecretvalue123")
+    expect(by("r1").awaitingQa).toBe(true)
+  })
+
+  it("comes with the post from the dashboard API and the thread", async () => {
+    const list = JSON.parse((await get("/api/admin/wall")).body)
+    expect(list.posts.find((p: any) => p.id === "r2").awaitingQa).toBe(true)
+    expect((handleWallApi("/api/admin/wall/thread", new URLSearchParams("id=r3"), deps(), "node-a").body as any).post.qa.verdict).toBe("pass")
+  })
+
+  it("offers an awaiting-QA filter that keeps only posts waiting on a verdict", () => {
+    expect(renderWallPage()).toContain('<input type="checkbox" id="f-qa"> Awaiting QA only')
+    expect(WALL_PAGE_SCRIPT).toContain("if (f.qa && !p.awaitingQa) return false;")
+    expect(WALL_PAGE_SCRIPT).toMatch(/FILTERS = \[[^\]]*'qa'/)
   })
 })
 

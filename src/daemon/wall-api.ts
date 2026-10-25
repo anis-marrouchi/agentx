@@ -3,6 +3,7 @@ import { redactSecrets } from "@/agents/memory-trust"
 import type { DecisionCard, IfSilent } from "@/approvals/cards"
 import { cardWords, summarize } from "@/requests/card-view"
 import { activeStepAgentOf, stalledWhy, waitsOn } from "@/requests/loops"
+import { awaitingQa, type QaRecord } from "@/requests/qa"
 import type { PlanStore } from "@/requests/plan-store"
 import { OPEN_STATES, type RequestRecord, type RequestStore } from "@/requests/store"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
@@ -122,6 +123,10 @@ export interface WallPost {
   concurrent: RunOverlap[]
   /** Pending owner decision cards raised from this request (#1185). */
   ownerCards: WallOwnerCard[]
+  /** The latest QA verdict, with who gave it and when (#1188). */
+  qa: QaRecord | null
+  /** Marked as needing QA, with no verdict since. */
+  awaitingQa: boolean
 }
 
 export interface WallEvent {
@@ -358,6 +363,8 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     lastRun: last ? { taskId: last.taskId, agentId: last.agentId! } : null,
     concurrent: concurrentOf(runs, deps),
     ownerCards: ownerCardsOf(r.id, deps),
+    qa: r.qa ? { ...r.qa, note: r.qa.note ? redactSecrets(r.qa.note) : null } : null,
+    awaitingQa: awaitingQa(r),
   }
 }
 
