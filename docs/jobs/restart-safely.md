@@ -194,6 +194,19 @@ Some work still gets cut off: a task that runs longer than the wait, a crash, or
 
 A task that is picked up again is told it was interrupted, along with the steps it had already taken, and asked to check before repeating anything that affects the outside world, such as posting a message, pushing code or deploying.
 
+### Helpers that a restart stops
+
+An agent can hand part of a task to a helper that works in the background, for example a builder that writes code in its own copy of a project (a "clone"). Helpers run inside the agent's task, so a restart stops them too, and they are not started again. Their unsaved changes stay in their folders.
+
+When AgentX starts again, it looks at every folder the cut-off task named in its steps. For each folder that is tracked by git and still holds changes that were never committed (saved in git), or commits that were never pushed (sent to the shared copy), it lists the folder, its branch, and what is unsaved:
+
+- **The task is picked up again:** the agent is told which helpers were stopped and which folders still hold unsaved work, so it can finish that work instead of starting over.
+- **The task is not picked up:** you get the list in the message at `notifications.destination`, under "These folders still hold unsaved work".
+
+Either way, each folder is also written to the log, in a line like `[resume] dev-agent t1: unsaved work in /tmp/app-12 (branch 12-new-form): 3 changed files not committed`.
+
+Folders with nothing unsaved are left out. AgentX only reads the folders; it never commits, pushes or deletes anything in them.
+
 To stay safe, AgentX never picks the same task up twice:
 
 - A task cut off again while being picked up is reported, not retried.
@@ -262,6 +275,12 @@ To check that cut-off work is picked up:
 3. Within a few seconds the chat shows the "Picking it up again" note, then the answer.
 4. **Terminal:** `agentx daemon logs` shows `Resume: 1 resumed, 0 reported, 0 skipped, 0 failed`.
 
+To check that a stopped helper's work is listed:
+
+1. **Terminal:** ask an agent to start a background helper that changes a file in a git folder, such as `/tmp/app-12`, without committing.
+2. **Terminal:** while the helper works, force AgentX closed (`kill -9` on the daemon's process), then start it again.
+3. **Terminal:** `agentx daemon logs` shows `[resume] … unsaved work in /tmp/app-12 (branch …): 1 changed file not committed`.
+
 A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in the first line, instead of `requested by`.
 
 ## If something is wrong
@@ -280,4 +299,5 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 - **`stop` says the daemon is still finishing tasks:** wait, then check with `agentx daemon status` before starting it again.
 - **Another tool got `503 daemon is restarting`:** it asked for new work during a restart. It can try again a little later.
 - **A chat task wasn't picked up:** the log line starting `[resume]` says why. The usual reasons are that it was older than 30 minutes, it was already a second attempt, or there were several restarts in a row.
+- **A helper's work isn't listed after a restart:** AgentX only finds folders the task named in its steps, such as `cd /tmp/app-12`. A folder the helper never named, or one that isn't tracked by git, can't be found. Look for it by hand, and ask agents to work in a folder they name in their commands.
 - **You got a "didn't resume" message you didn't expect:** that task came from somewhere with no chat to answer in. Send the request again, or add its source to `directChannels`.

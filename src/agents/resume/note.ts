@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import type { InterruptedRun } from "@/storage/traces"
+import { backgroundHelpers, leftWorkNoteLines, type LeftWork } from "./work-left"
 
 // --- What a resumed run is told, and the boot history behind the crash-loop brake ---
 
@@ -11,8 +12,11 @@ const MAX_CALL_CHARS = 160
  *  session of a turn cut off mid-way can't be continued (its id is only
  *  known when the turn finishes), so the agent restarts the turn from its
  *  previous context. The tool calls it had already made are listed from the
- *  trace, so it can check before doing an outside action twice. */
-export function buildResumeNote(run: InterruptedRun): string {
+ *  trace, so it can check before doing an outside action twice. Background
+ *  helpers the restart stopped, and the folders still holding their unsaved
+ *  work (`left`, see work-left.ts), are listed too, so nothing is lost
+ *  silently (#1256). */
+export function buildResumeNote(run: InterruptedRun, left: LeftWork[] = []): string {
   const at = new Date(run.startedAt).toISOString().slice(11, 16)
   const lines = [
     `[Resumed after a restart] You started on this request at ${at} UTC, and AgentX restarted before you finished.`,
@@ -31,6 +35,7 @@ export function buildResumeNote(run: InterruptedRun): string {
       "pushing, merging, deploying, sending — check whether it already happened.",
     )
   }
+  lines.push(...leftWorkNoteLines(backgroundHelpers(run), left))
   lines.push("Then finish the request below.", "")
   return lines.join("\n")
 }

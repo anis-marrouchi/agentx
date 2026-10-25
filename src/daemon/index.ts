@@ -65,6 +65,7 @@ import { DEFAULT_REACH_SETTINGS } from "@/notify/reach"
 import { ChannelDownError } from "@/channels/router"
 import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
+import { findLeftWork } from "@/agents/resume/work-left"
 import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { SignalService } from "@/agents/signals/service"
@@ -1692,6 +1693,8 @@ export class AgentXDaemon {
           // task a plan from the trace; running it again would answer nobody.
           : run.channel === WIND_DOWN_CHANNEL ? "stop signal wind-down: its task got a plan from the trace"
           : null,
+        // Background helpers die with their run; their clones don't (#1256).
+        findLeftWork: (run) => findLeftWork(run),
         notifyOperator: dest
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
           : undefined,

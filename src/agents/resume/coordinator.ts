@@ -3,6 +3,7 @@ import { claimResume, recordResumeDecision, type InterruptedRun } from "@/storag
 import type { RunOrigin } from "./origin"
 import { buildResumeNote } from "./note"
 import { planResume, type ResumePlan, type ResumeSettings } from "./policy"
+import { describeLeftWork, type FindLeftWork, type LeftWork } from "./work-left"
 
 // --- Carry out the resume plan, without letting it hurt the daemon ---
 //
@@ -14,7 +15,10 @@ import { planResume, type ResumePlan, type ResumeSettings } from "./policy"
 //   - treats every run separately: an error is logged and recorded on that
 //     run as resume-failed, and never reaches the caller;
 //   - tells the run's chat what happened, or the operator when no chat can
-//     be reached.
+//     be reached;
+//   - lists the folders a run's stopped helpers left unsaved work in: in
+//     the resume note when the run is resumed, to the operator otherwise
+//     (#1256).
 
 export interface Resumer {
   /** Re-enter the run with the note prepended. Resolves once the run has
@@ -56,6 +60,8 @@ export class ResumeCoordinator {
     staggerMs?: number
     /** Runs another part of the daemon picks up itself (see planResume). */
     handledElsewhere?: (run: InterruptedRun) => string | null
+    /** Git folders the run touched that still hold unsaved work. */
+    findLeftWork?: FindLeftWork
   }): Promise<ResumeOutcome[]> {
     const outcomes: ResumeOutcome[] = []
     let plans: ResumePlan[] = []
@@ -66,12 +72,18 @@ export class ResumeCoordinator {
       return outcomes
     }
     const untold: string[] = []
+    // Unsaved folders of runs that aren't resumed: nobody else will look.
+    const unsaved: string[] = []
 
     for (const plan of plans) {
       const { run } = plan
       const outcome = (decision: ResumeOutcome["decision"], reason: string) => {
         outcomes.push({ taskId: run.taskId, agentId: run.agentId, channel: run.channel, decision, reason })
         input.log(`[resume] ${run.agentId} ${run.channel ?? "-"} ${run.taskId}: ${decision} — ${reason}`)
+      }
+      let left: LeftWork[] = []
+      const listLeft = () => {
+        for (const w of left) unsaved.push(`- ${run.agentId}: ${describeLeftWork(w)}`)
       }
       try {
         // Claim before any action — skip, report or resume — so a second
@@ -80,9 +92,11 @@ export class ResumeCoordinator {
           outcome("already-claimed", "another process claimed it")
           continue
         }
+        left = await leftWork(run, input)
         if (plan.action === "skip") {
           recordResumeDecision(input.db, run.taskId, "skipped", plan.reason)
           outcome("skipped", plan.reason)
+          listLeft()
           continue
         }
         const report = async (origin: RunOrigin | null, reason: string) => {
@@ -90,6 +104,7 @@ export class ResumeCoordinator {
           outcome("reported", reason)
           const told = origin ? await this.tell(origin, reportedText(reason), input.log) : false
           if (!told) untold.push(`- ${run.agentId} (${run.channel ?? "no channel"}): ${preview(run)} — ${reason}`)
+          listLeft()
         }
         if (plan.action === "report") {
           await report(plan.origin, plan.reason)
@@ -101,7 +116,7 @@ export class ResumeCoordinator {
           continue
         }
         await this.tell(plan.origin, RESUMED_TEXT, input.log)
-        await resumer.resume({ origin: plan.origin, run, note: buildResumeNote(run), attempt: run.resumeAttempt + 1 })
+        await resumer.resume({ origin: plan.origin, run, note: buildResumeNote(run, left), attempt: run.resumeAttempt + 1 })
         recordResumeDecision(input.db, run.taskId, "resumed", plan.reason)
         outcome("resumed", plan.reason)
       } catch (e: any) {
@@ -109,13 +124,16 @@ export class ResumeCoordinator {
         try { recordResumeDecision(input.db, run.taskId, "resume-failed", reason) } catch { /* db gone: logged below */ }
         outcome("resume-failed", reason)
         untold.push(`- ${run.agentId} (${run.channel ?? "no channel"}): ${preview(run)} — ${reason}`)
+        listLeft()
       }
       if (input.staggerMs) await new Promise((r) => setTimeout(r, input.staggerMs))
     }
 
-    if (untold.length && input.notifyOperator) {
-      const text = [`AgentX restarted and didn't resume ${untold.length} run(s):`, ...untold].join("\n")
-      try { await input.notifyOperator(text) } catch (e: any) { input.log(`[resume] operator notice failed: ${e?.message ?? e}`) }
+    if ((untold.length || unsaved.length) && input.notifyOperator) {
+      const parts: string[] = []
+      if (untold.length) parts.push(`AgentX restarted and didn't resume ${untold.length} run(s):`, ...untold)
+      if (unsaved.length) parts.push("These folders still hold unsaved work from runs the restart cut off and nobody is picking up:", ...unsaved)
+      try { await input.notifyOperator(parts.join("\n")) } catch (e: any) { input.log(`[resume] operator notice failed: ${e?.message ?? e}`) }
     }
     return outcomes
   }
@@ -153,4 +171,15 @@ export class ResumeCoordinator {
 
 function preview(run: InterruptedRun): string {
   return (run.originalMessage ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || "(no message recorded)"
+}
+
+/** The run's unsaved folders, each logged. Never throws. */
+async function leftWork(run: InterruptedRun, input: { findLeftWork?: FindLeftWork; log: (m: string) => void }): Promise<LeftWork[]> {
+  if (!input.findLeftWork) return []
+  let left: LeftWork[] = []
+  try { left = await input.findLeftWork(run) } catch (e: any) {
+    input.log(`[resume] ${run.agentId} ${run.taskId}: couldn't check its folders: ${e?.message ?? e}`)
+  }
+  for (const w of left) input.log(`[resume] ${run.agentId} ${run.taskId}: unsaved work in ${describeLeftWork(w)}`)
+  return left
 }
