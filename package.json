@@ -75,7 +75,7 @@
     "docs:build": "vitepress build docs",
     "docs:check": "node docs/.scripts/check-sidebar.mjs && node docs/.scripts/diagrams.mjs --check && vitepress build docs",
     "docs:diagrams": "node docs/.scripts/diagrams.mjs",
-    "docs:demo": "node dist/cli.js demo --no-open --keep",
+    "docs:demo": "node dist/cli.js demo --no-open --keep --dashboard-token docs-demo-only-token",
     "docs:seed": "node docs/.scripts/seed-demo.mjs",
     "docs:shots": "node docs/.scripts/capture.mjs",
     "docs:shots:mobile": "node docs/.scripts/capture-mobile.mjs",

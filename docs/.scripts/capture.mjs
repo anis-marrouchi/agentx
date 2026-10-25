@@ -173,7 +173,14 @@ try {
   const requested = process.env.DOCS_SHOTS?.split(",")
   const selected = requested ? shots.filter(s => requested.includes(s.name)) : shots
   if (!selected.length) throw new Error("No matching DOCS_SHOTS")
+  // The portfolio opens only on a dashboard with a token (#1194), so
+  // docs:demo sets a demo-only one. Every other page gets it as the owner's
+  // browser would; the portfolio shots go without it, to type the key.
+  const dashToken = cfg.dashboard?.token
+  if (!dashToken && selected.some(s => s.name.startsWith("wall/portfolio"))) throw new Error("The portfolio shots need the demo started with pnpm docs:demo (it sets a demo dashboard token)")
+  await cdp("Network.enable")
   for (const shot of selected) {
+    await cdp("Network.setExtraHTTPHeaders", { headers: dashToken && !shot.name.startsWith("wall/portfolio") ? { Authorization: "Bearer " + dashToken } : {} })
     // A phone-sized page for the shots that say so; the desktop size after.
     await cdp("Emulation.setDeviceMetricsOverride", shot.phone
       ? { width: 390, height: 844, deviceScaleFactor: 3, mobile: true }
