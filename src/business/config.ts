@@ -122,8 +122,10 @@ const clientPolicySchema = z.object({
 export const businessConfigSchema = z.object({
   enabled: z.boolean().default(false),
   timezone: z.string().default("UTC"),
-  mainChannel: channelRefSchema,
-  workSource: workSourceSchema,
+  /** Where the business layer posts. Required once `enabled` is on; an org
+   *  chart alone (the Org view, `agentx business orgchart`) needs none. */
+  mainChannel: channelRefSchema.optional(),
+  workSource: workSourceSchema.default({ type: "backlog", path: ".agentx/backlog.md" }),
   roles: z.record(z.string(), roleSchema).default({}),
   orgChart: z.record(z.string(), orgEntrySchema).default({}),
   /** Per-project metadata. Phase 3 — defaults to empty array, so
@@ -162,6 +164,10 @@ export const businessConfigSchema = z.object({
      *  a kill-switch while iterating on plan formats. */
     dryRun: z.boolean().default(false),
   }).default({}),
+}).superRefine((b, ctx) => {
+  if (b.enabled && !b.mainChannel) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mainChannel"], message: "Required when business.enabled is true" })
+  }
 })
 
 export type BusinessConfig = z.infer<typeof businessConfigSchema>
