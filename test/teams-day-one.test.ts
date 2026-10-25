@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { checkAutonomyPayload } from "../src/guard/autonomy-enforce"
 import { deliverCronResult } from "../src/daemon/delegation-wiring"
 import { CronScheduler } from "../src/crons/scheduler"
 import { shippedTeams } from "../src/teams/catalog"
@@ -66,6 +67,38 @@ describe("day one: each shipped team's first results reach the owner", () => {
       } else {
         expect(sent.length).toBe(before)
       }
+    }
+  })
+
+  // The stub model above never calls a tool, so it cannot see a report
+  // schedule's call refused (#1352). A schedule cannot answer a permission
+  // prompt and the shipped agents run in permissionMode "default" with no
+  // allow list: the autonomy hook must answer "allow" itself, not defer.
+  const REPORT_CALLS: Record<string, { tool_name: string; tool_input: Record<string, unknown> }[]> = {
+    "sales-competitor-watch": [{ tool_name: "Bash", tool_input: { command: "agentx sales watch" } }],
+    "sales-weekly-research": [
+      { tool_name: "WebSearch", tool_input: { query: "demo query" } },
+      { tool_name: "WebFetch", tool_input: { url: "https://example.com/", prompt: "x" } },
+      { tool_name: "Bash", tool_input: { command: "agentx sales leads" } },
+      { tool_name: "Read", tool_input: { file_path: "targets.md" } },
+    ],
+    "sales-daily-brief": [
+      { tool_name: "Bash", tool_input: { command: "agentx sales leads --quiet-only" } },
+      { tool_name: "Bash", tool_input: { command: "agentx sales changes" } },
+    ],
+    "sales-monday-follow-ups": [{ tool_name: "Bash", tool_input: { command: "agentx sales leads --quiet-only" } }],
+    "content-weekly-drafts": [
+      { tool_name: "mcp__agentx__agentx_content", tool_input: { action: "voice", topic: "demo" } },
+      { tool_name: "mcp__agentx__agentx_content", tool_input: { action: "draft", platform: "linkedin", topic: "demo", samples: ["a.md"], text: "x" } },
+    ],
+  }
+  it.each(Object.entries(REPORT_CALLS))("report schedule %s: the tool calls it needs are allowed outright", (id, calls) => {
+    const team = shippedTeams().find((t) => t.schedules[id])
+    expect(team?.schedules[id].autonomy).toBe("report")
+    for (const call of calls) {
+      const r = checkAutonomyPayload(call, { root: dir, agentId: team!.schedules[id].agent, level: "report", taskId: `T-${id}` })
+      expect(r.blocked, `${id}: ${call.tool_name} ${JSON.stringify(call.tool_input)}`).toBeNull()
+      expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe("allow")
     }
   })
 

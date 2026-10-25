@@ -70,6 +70,10 @@ Only the `claude-code` tier can enforce `report` and `propose`. On any other tie
 
 A `report` run may also run `agentx sales leads`, `agentx sales changes`, `agentx sales check` and `agentx sales watch`. They only read and print; `watch` also keeps its own page snapshots in the agent's folder, so the sales brief can report only what changed. See [Find and follow up sales leads](../jobs/sales.md).
 
+A `report` run may also use the `agentx_content` tool to read past posts and the calendar (`voice`, `calendar`, `status`) and to raise a draft (`draft`). A draft only waits in your Approvals inbox; nothing is published until you say yes. See [Draft posts in your voice](../jobs/content.md).
+
+A `report` run cannot stop to ask you for permission, because nobody is there to answer. So a tool call that `report` allows is allowed outright, even when the agent's own `permissionMode` would normally ask first. The workspace guard can still block it.
+
 ## Time limits and cancel
 
 A run is one piece of work an agent does, such as answering a message or running a schedule. Each run takes one of the agent's slots (`maxConcurrent`). A run that never finishes keeps its slot, so AgentX gives runs a time limit and lets you stop them.
