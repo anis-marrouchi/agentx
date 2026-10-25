@@ -42,6 +42,12 @@ import { getEventBus, type AgentXEvents } from "@/events/bus"
  *  workflow matching (cache hits only) and before the wiki entry stamp. */
 const INTENT_WAIT_BEFORE_MATCH_MS = 250
 const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
+/** Channels that never have an outbound adapter: a queued reply on them
+ *  stays on its task, so skipping the post is expected and not logged. */
+const NO_ADAPTER_CHANNELS: ReadonlySet<string> = new Set([
+  "requests", "a2a", "api", "cron", "workflow", "test", "mesh", "subagent", "mcp",
+  "events", "reminder", "heartbeat", "system", "internal", "business", "selftest", "compaction",
+])
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
 import { currentRoot } from "@/events/envelope"
@@ -3763,9 +3769,6 @@ export class AgentRegistry {
     const channel = ctx?.channel
     const chatId = ctx?.chatId
     if (!channel || !chatId) return
-    // No adapter to post on: the reply stays on the task and its session.
-    // `requests` pick-ups land here, their reply read by the tracker (#1263).
-    if (!router.getChannel(channel)) return
     // Operator-cancelled / queued-marker — nothing to deliver
     if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted" || resp.errorKind === "stopped") return
     if (isQueued(resp.error)) return
@@ -3773,6 +3776,15 @@ export class AgentRegistry {
       ? `Error: ${resp.error}`
       : (resp.content || "").trim()
     if (!text) return
+    // No adapter to post on: the reply stays on the task and its session.
+    // `requests` pick-ups land here, their reply read by the tracker (#1259).
+    // A real channel whose adapter failed to start still leaves a log line.
+    if (!router.getChannel(channel)) {
+      if (!NO_ADAPTER_CHANNELS.has(channel.split("@")[0])) {
+        this.log(`[${agentId}] queued response not posted: no adapter for channel "${channel}"`)
+      }
+      return
+    }
     // Resolve account binding for shared-channel adapters (Telegram is
     // multi-account); sendOutbound auto-fills accountId from agentId.
     router.sendOutbound({ channel, chatId, text, agentId } as any)
