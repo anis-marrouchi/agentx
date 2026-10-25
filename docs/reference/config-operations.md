@@ -144,15 +144,15 @@ Each entry in `screen.regions` (for example `"chat": { "x": 0, "y": 0, "width": 
 
 ## business
 
-An experimental layer that runs agents like a team, with roles, working hours and a shared pool of work. It is off by default and its shape may change between minor versions. The whole `business` block is optional; when present, `business.mainChannel` and `business.workSource` are required.
+An experimental layer that runs agents like a team, with roles, working hours and a shared pool of work. It is off by default and its shape may change between minor versions. The whole `business` block is optional. An org chart alone (the [Org](../dashboard/org.md) tab) needs only `business.orgChart`; `business.mainChannel` is required once `business.enabled` is on.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `business.enabled` | boolean | `false` | Turns the business layer on. |
 | `business.timezone` | string | `"UTC"` | Timezone for working hours. |
-| `business.mainChannel` | object | required | Chat where the team posts reports and "no plan today" notices: `channel`, `chatId` and optional `accountId`. |
+| `business.mainChannel` | object | required when `enabled` | Chat where the team posts reports and "no plan today" notices: `channel`, `chatId` and optional `accountId`. |
 | `business.mainChannel.accountId` | string | — | Which account of that channel to post from. |
-| `business.workSource` | object | required | Where agents find work. `type` is `"backlog"`, `"gitlab"` or `"wiki"`. |
+| `business.workSource` | object | `{ "type": "backlog" }` | Where agents find work. `type` is `"backlog"`, `"gitlab"` or `"wiki"`. |
 | `business.workSource.path` | string | `".agentx/backlog.md"` for `backlog` | The backlog file (`backlog`), or the folder to read (`wiki`, required there). |
 | `business.workSource.projects` | list of strings | `[]` | GitLab projects to read (`gitlab`). Empty means all configured GitLab projects. |
 | `business.workSource.glob` | string | `"**/*.md"` | Which files to read in the folder (`wiki`). |

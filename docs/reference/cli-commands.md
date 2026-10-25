@@ -308,7 +308,7 @@ Show whether a release passed its canary soak on this daemon. Without `sha`, the
 
 ## agent
 
-`agentx agent`: Manage agents — add, list, remove.
+`agentx agent`: Manage agents — add, list, remove, pause, resume.
 
 ### `agentx agent list`
 
@@ -325,6 +325,18 @@ No flags.
 ### `agentx agent remove <id>`
 
 Remove an agent from config (keeps workspace).
+
+No flags.
+
+### `agentx agent pause <id>`
+
+Pause an agent: it starts no run until resumed (applies at once). Owner only: refused when run from an agent's terminal. See [Org](../dashboard/org.md).
+
+No flags.
+
+### `agentx agent resume <id>`
+
+Resume a paused agent. An agent that another agent created is approved in Approvals instead.
 
 No flags.
 
