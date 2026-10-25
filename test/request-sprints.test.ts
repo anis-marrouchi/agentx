@@ -5,8 +5,8 @@ import path from "path"
 import Database from "better-sqlite3"
 import { SprintStore } from "../src/requests/sprint-store"
 import {
-  DEFAULT_SPRINT_SETTINGS, cancelSprint, itemEnded, laneAction, laneChatId, parseLaneChat, parseSprint, runSprintSweep,
-  type SprintSweepDeps,
+  DEFAULT_SPRINT_SETTINGS, cancelSprint, itemEnded, laneAction, laneChatId, parseLaneChat, parseSprint, requeueItem, runSprintSweep,
+  type DispatchRef, type SprintSweepDeps,
 } from "../src/requests/sprints"
 import { handleSprintsApi, type SprintsApiDeps } from "../src/requests/sprint-api"
 import { runSprintTool } from "../src/requests/sprint-tool"
@@ -20,7 +20,7 @@ let tmp: string
 let db: Database.Database
 let store: SprintStore
 let clock: number
-let turns: Array<{ agentId: string; text: string; ref: { sprintId: string; lane: string; idx: number } }>
+let turns: Array<{ agentId: string; text: string; ref: DispatchRef }>
 let notices: Array<{ title: string; message: string; key: string }>
 let busy: boolean
 
@@ -51,6 +51,13 @@ function deps(over: Partial<SprintSweepDeps> = {}): SprintSweepDeps {
     now: clock,
     ...over,
   }
+}
+
+/** The last hand-out of an item: what its turn's end carries. */
+function turnOf(lane: string, idx: number): DispatchRef {
+  const t = turns.filter((x) => x.ref.lane === lane && x.ref.idx === idx).at(-1)
+  if (!t) throw new Error(`item ${lane}:${idx} was never handed out`)
+  return t.ref
 }
 
 const sweep = (over: Partial<SprintSweepDeps> = {}) => runSprintSweep(deps({ now: clock, ...over }))
@@ -109,7 +116,7 @@ describe("the sprint check", () => {
     const id = makeSprint()
     await sweep()
     clock += 20 * MIN
-    expect(itemEnded(store, { sprintId: id, lane: "A", idx: 1 }, {}, clock)).toBe("done")
+    expect(itemEnded(store, turnOf("A", 1), {}, clock)).toBe("done")
     await sweep()
     expect(turns.at(-1)).toMatchObject({ agentId: "coder", ref: { lane: "A", idx: 2 } })
     expect(turns.at(-1)!.text).toContain("this is the last one")
@@ -118,11 +125,11 @@ describe("the sprint check", () => {
   it("passes over a held item with a note, and comes back to it once released", async () => {
     const id = makeSprint()
     await sweep()
-    itemEnded(store, { sprintId: id, lane: "B", idx: 1 }, {}, clock)
+    itemEnded(store, turnOf("B", 1), {}, clock)
     await sweep()
     expect(turns.at(-1)!.ref).toMatchObject({ lane: "B", idx: 3 })
     expect(store.events(id).some((e) => e.kind === "passed-held" && /design call/.test(e.detail))).toBe(true)
-    itemEnded(store, { sprintId: id, lane: "B", idx: 3 }, {}, clock)
+    itemEnded(store, turnOf("B", 3), {}, clock)
     await sweep()
     // Only the held item is left: the lane waits, and is not done.
     expect(store.lane(id, "B")?.state).toBe("active")
@@ -134,7 +141,7 @@ describe("the sprint check", () => {
   it("blocks a lane whose turn failed, tells the owner once, and goes on after a retry", async () => {
     const id = makeSprint()
     await sweep()
-    expect(itemEnded(store, { sprintId: id, lane: "A", idx: 1 }, { error: "rate limited" }, clock)).toBe("blocked")
+    expect(itemEnded(store, turnOf("A", 1), { error: "rate limited" }, clock)).toBe("blocked")
     await sweep()
     await sweep()
     expect(notices).toHaveLength(1)
@@ -150,7 +157,7 @@ describe("the sprint check", () => {
   it("leaves an item cut by a shutdown running, and tells the owner when it stays idle", async () => {
     const id = makeSprint()
     await sweep()
-    expect(itemEnded(store, { sprintId: id, lane: "A", idx: 1 }, { interrupted: true }, clock)).toBeNull()
+    expect(itemEnded(store, turnOf("A", 1), { interrupted: true }, clock)).toBeNull()
     expect(store.item(id, "A", 1)?.state).toBe("running")
     clock += 31 * MIN
     busy = true
@@ -177,8 +184,8 @@ describe("the sprint check", () => {
     const parsed = parseSprint({ title: "Small", lanes: [{ agent: "coder", items: ["#1"] }, { agent: "reviewer", items: ["#2"] }] }, hasAgent) as any
     store.create({ id: "spr-0000cccc", createdBy: "lead", ...parsed }, clock)
     await sweep()
-    itemEnded(store, { sprintId: "spr-0000cccc", lane: "A", idx: 1 }, {}, clock)
-    itemEnded(store, { sprintId: "spr-0000cccc", lane: "B", idx: 1 }, {}, clock)
+    itemEnded(store, turnOf("A", 1), {}, clock)
+    itemEnded(store, turnOf("B", 1), {}, clock)
     const r = await sweep()
     expect(r.finished).toBe(1)
     expect(store.get("spr-0000cccc")?.state).toBe("done")
@@ -194,6 +201,57 @@ describe("the sprint check", () => {
     expect(store.lane(id, "A")?.state).toBe("blocked")
     expect(store.item(id, "A", 1)).toMatchObject({ state: "failed" })
     expect(store.item(id, "A", 1)?.note).toContain("no runtime")
+  })
+
+  it("ignores the end of a retried item's old turn: only the new hand-out settles it", async () => {
+    const parsed = parseSprint({ title: "Retry", idleMinutes: 1, lanes: [{ agent: "coder", items: ["#1", "#2"] }] }, hasAgent) as any
+    store.create({ id: "spr-0000dddd", createdBy: "lead", ...parsed }, clock)
+    const sid = "spr-0000dddd"
+    await sweep()
+    const first = turnOf("A", 1)
+    // The lead retries the running item (an idle notice), and it is handed out again.
+    expect(laneAction(store, { sprintId: sid, lane: "A", action: "retry", by: "lead" }, clock)).toBeNull()
+    await sweep()
+    const second = turnOf("A", 1)
+    expect(second.dispatchId).not.toBe(first.dispatchId)
+    // The old turn ends: it no longer owns the item.
+    expect(itemEnded(store, first, {}, clock)).toBeNull()
+    expect(itemEnded(store, first, { error: "boom" }, clock)).toBeNull()
+    await sweep()
+    const states = () => store.items(sid, "A").map((i) => `${i.idx}:${i.state}`)
+    // Before the dispatch token this was ['1:done','2:running']: two turns at once on one lane.
+    expect(states()).toEqual(["1:running", "2:pending"])
+    expect(turns).toHaveLength(2)
+    // The new turn's end settles it, and the lane moves on.
+    expect(itemEnded(store, second, {}, clock)).toBe("done")
+    await sweep()
+    expect(states()).toEqual(["1:done", "2:running"])
+  })
+
+  it("requeues an item whose slot wait timed out only while that hand-out still owns it", async () => {
+    const id = makeSprint()
+    await sweep()
+    const first = turnOf("A", 1)
+    expect(requeueItem(store, first, "slot wait timed out", clock)).toBe(true)
+    expect(store.item(id, "A", 1)).toMatchObject({ state: "pending", dispatchId: null })
+    await sweep()
+    const second = turnOf("A", 1)
+    // A late requeue of the first hand-out leaves the running second one alone.
+    expect(requeueItem(store, first, "slot wait timed out", clock)).toBe(false)
+    expect(store.item(id, "A", 1)).toMatchObject({ state: "running", dispatchId: second.dispatchId })
+    // Nor does it reopen an item settled since.
+    expect(itemEnded(store, second, {}, clock)).toBe("done")
+    expect(requeueItem(store, second, "slot wait timed out", clock)).toBe(false)
+    expect(store.item(id, "A", 1)?.state).toBe("done")
+  })
+
+  it("adds the dispatch token to a table made before it existed", () => {
+    const old = new Database(path.join(tmp, "old.sqlite"))
+    old.exec(`CREATE TABLE sprint_items (sprint_id TEXT NOT NULL, lane TEXT NOT NULL, idx INTEGER NOT NULL, ref TEXT NOT NULL,
+      title TEXT, brief TEXT, state TEXT NOT NULL, note TEXT, dispatched_at INTEGER, finished_at INTEGER, PRIMARY KEY (sprint_id, lane, idx))`)
+    new SprintStore(old)
+    expect((old.prepare("PRAGMA table_info(sprint_items)").all() as any[]).some((c) => c.name === "dispatch_id")).toBe(true)
+    old.close()
   })
 
   it("hands nothing out once cancelled, and nothing while turned off", async () => {

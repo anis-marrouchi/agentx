@@ -109,4 +109,4 @@ Only an agent in a running turn can send these. You do the same from the termina
 - **A lane is idle and one issue stays `running`:** the agent's turn ended without AgentX hearing of it, often after a restart. Check the agent's last run on the issue, then run `--retry A` or `--skip A`.
 - **A lane is idle with only held issues:** release them with `--release A`, or skip them.
 - **You are told too soon about idle lanes:** raise `requests.sprints.idleMinutes`, or have the lead set `idleMinutes` on the sprint.
-- **Two issues of one lane ran at once:** a `--retry` on an issue that was still running starts it again. Wait for the running turn to end, or stop it first.
+- **You retried an issue that was still running:** AgentX hands it out again, and from then on only the new turn's end counts: the old turn ending does not mark the issue done or move the lane on. The old turn may still be working, so stop it first if two turns on one issue would get in each other's way.

@@ -61,6 +61,10 @@ export interface ItemRecord {
   /** Why it is held, failed or skipped. */
   note: string | null
   dispatchedAt: number | null
+  /** The dispatch the running item belongs to. A turn's end settles the
+   *  item only when it carries this token: a retried item's old turn
+   *  ending does not settle the new one. */
+  dispatchId: string | null
   finishedAt: number | null
 }
 
@@ -124,6 +128,7 @@ export function ensureSprintTables(db: Database.Database): void {
       state TEXT NOT NULL,
       note TEXT,
       dispatched_at INTEGER,
+      dispatch_id TEXT,
       finished_at INTEGER,
       PRIMARY KEY (sprint_id, lane, idx),
       FOREIGN KEY (sprint_id, lane) REFERENCES sprint_lanes(sprint_id, lane) ON DELETE CASCADE
@@ -139,6 +144,9 @@ export function ensureSprintTables(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_sprint_events ON sprint_events(sprint_id, at);
   `)
+  // A table made before the dispatch token existed.
+  const cols = db.prepare("PRAGMA table_info(sprint_items)").all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === "dispatch_id")) db.exec("ALTER TABLE sprint_items ADD COLUMN dispatch_id TEXT")
 }
 
 function toSprint(r: any): SprintRecord {
@@ -158,15 +166,18 @@ function toLane(r: any): LaneRecord {
 function toItem(r: any): ItemRecord {
   return {
     sprintId: r.sprint_id, lane: r.lane, idx: r.idx, ref: r.ref, title: r.title ?? null, brief: r.brief ?? null,
-    state: r.state, note: r.note ?? null, dispatchedAt: r.dispatched_at ?? null, finishedAt: r.finished_at ?? null,
+    state: r.state, note: r.note ?? null, dispatchedAt: r.dispatched_at ?? null, dispatchId: r.dispatch_id ?? null,
+    finishedAt: r.finished_at ?? null,
   }
 }
 
 const LANE_COLUMNS: Record<string, string> = { state: "state", note: "note", updatedAt: "updated_at", notifiedAt: "notified_at" }
-const ITEM_COLUMNS: Record<string, string> = { state: "state", note: "note", dispatchedAt: "dispatched_at", finishedAt: "finished_at" }
+const ITEM_COLUMNS: Record<string, string> = {
+  state: "state", note: "note", dispatchedAt: "dispatched_at", dispatchId: "dispatch_id", finishedAt: "finished_at",
+}
 
 export type LanePatch = Partial<Pick<LaneRecord, "state" | "note" | "updatedAt" | "notifiedAt">>
-export type ItemPatch = Partial<Pick<ItemRecord, "state" | "note" | "dispatchedAt" | "finishedAt">>
+export type ItemPatch = Partial<Pick<ItemRecord, "state" | "note" | "dispatchedAt" | "dispatchId" | "finishedAt">>
 
 function patchSql(patch: Record<string, unknown>, columns: Record<string, string>): { sets: string[]; values: unknown[] } {
   const sets: string[] = []
@@ -258,6 +269,17 @@ export class SprintStore {
     const { sets, values } = patchSql(patch, ITEM_COLUMNS)
     if (!sets.length) return
     this.db.prepare(`UPDATE sprint_items SET ${sets.join(", ")} WHERE sprint_id = ? AND lane = ? AND idx = ?`).run(...values, sprintId, lane, idx)
+  }
+
+  /** Updates the item only while it is running under this dispatch.
+   *  False: it was retried, skipped or blocked since, so the caller's turn
+   *  no longer owns it. */
+  updateRunningItem(sprintId: string, lane: string, idx: number, dispatchId: string, patch: ItemPatch): boolean {
+    const { sets, values } = patchSql(patch, ITEM_COLUMNS)
+    if (!sets.length) return false
+    return this.db.prepare(
+      `UPDATE sprint_items SET ${sets.join(", ")} WHERE sprint_id = ? AND lane = ? AND idx = ? AND state = 'running' AND dispatch_id = ?`,
+    ).run(...values, sprintId, lane, idx, dispatchId).changes > 0
   }
 
   /** Ended: every lane done ("done"), or stopped by the lead or the owner ("cancelled"). */

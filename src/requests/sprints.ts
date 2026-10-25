@@ -47,6 +47,19 @@ export function newSprintId(): string {
   return `spr-${randomBytes(4).toString("hex")}`
 }
 
+/** One hand-out of an item: a turn's end settles the item only with it. */
+export function newDispatchId(): string {
+  return `d-${randomBytes(6).toString("hex")}`
+}
+
+/** The item a lane's turn works on, and which hand-out the turn is. */
+export interface DispatchRef {
+  sprintId: string
+  lane: string
+  idx: number
+  dispatchId: string
+}
+
 export function laneChatId(sprintId: string, lane: string): string {
   return `${sprintId}/${lane}`
 }
@@ -157,17 +170,23 @@ export interface ItemEnd {
   interrupted?: boolean
 }
 
+/** The item is running under this hand-out: the turn still owns it. */
+function ownsItem(it: ItemRecord | null, ref: DispatchRef): it is ItemRecord {
+  return !!it && it.state === "running" && it.dispatchId === ref.dispatchId
+}
+
 /** A lane's turn ended. Returns what happened to the item: "done" (the
  *  lane moves on), "blocked" (it failed or was stopped), or null (not the
- *  running item, or cut by a shutdown: the next boot may resume it). */
+ *  running item, or not this hand-out of it: it was retried, skipped or
+ *  blocked since; or cut by a shutdown: the next boot may resume it). */
 export function itemEnded(
   store: SprintStore,
-  ref: { sprintId: string; lane: string; idx: number },
+  ref: DispatchRef,
   end: ItemEnd,
   now: number,
 ): "done" | "blocked" | null {
   const it = store.item(ref.sprintId, ref.lane, ref.idx)
-  if (!it || it.state !== "running") return null
+  if (!ownsItem(it, ref)) return null
   if (end.interrupted || end.errorKind === "interrupted") {
     store.event(ref.sprintId, ref.lane, ref.idx, "interrupted", "the daemon stopped during the turn", now)
     return null
@@ -175,15 +194,24 @@ export function itemEnded(
   const stopped = end.stopped || end.errorKind === "stopped" || end.errorKind === "cancelled"
   if (end.error || stopped) {
     const why = stopped ? `its turn was stopped${end.error ? `: ${end.error}` : ""}` : `its turn failed: ${end.error}`
-    store.updateItem(ref.sprintId, ref.lane, ref.idx, { state: "failed", note: why.slice(0, 500), finishedAt: now })
+    if (!store.updateRunningItem(ref.sprintId, ref.lane, ref.idx, ref.dispatchId, { state: "failed", note: why.slice(0, 500), finishedAt: now })) return null
     store.updateLane(ref.sprintId, ref.lane, { state: "blocked", note: `${it.ref}: ${why}`.slice(0, 500), updatedAt: now, notifiedAt: null })
     store.event(ref.sprintId, ref.lane, ref.idx, "failed", why, now)
     return "blocked"
   }
-  store.updateItem(ref.sprintId, ref.lane, ref.idx, { state: "done", finishedAt: now })
+  if (!store.updateRunningItem(ref.sprintId, ref.lane, ref.idx, ref.dispatchId, { state: "done", finishedAt: now })) return null
   store.updateLane(ref.sprintId, ref.lane, { updatedAt: now, notifiedAt: null })
   store.event(ref.sprintId, ref.lane, ref.idx, "done", "the turn ended", now)
   return "done"
+}
+
+/** The turn never started (no free slot in time): the item goes back to
+ *  the queue, but only while this hand-out still owns it. False: it was
+ *  retried, skipped or blocked since, and is left as it is. */
+export function requeueItem(store: SprintStore, ref: DispatchRef, why: string, now: number): boolean {
+  if (!store.updateRunningItem(ref.sprintId, ref.lane, ref.idx, ref.dispatchId, { state: "pending", dispatchedAt: null, dispatchId: null })) return false
+  store.event(ref.sprintId, ref.lane, ref.idx, "requeued", why, now)
+  return true
 }
 
 export type LaneAction = "retry" | "skip" | "hold" | "release" | "block"
@@ -225,7 +253,9 @@ export function laneAction(
 
   if (input.action === "retry") {
     if (!["failed", "running", "skipped"].includes(it.state)) return `item ${it.idx} is ${it.state}: only a failed, running or skipped item is retried`
-    store.updateItem(s.id, lane.lane, it.idx, { state: "pending", note: null, dispatchedAt: null, finishedAt: null })
+    // A running item's turn may still be going: its end no longer counts,
+    // since the next hand-out gets a new dispatch token.
+    store.updateItem(s.id, lane.lane, it.idx, { state: "pending", note: null, dispatchedAt: null, dispatchId: null, finishedAt: null })
   } else if (input.action === "skip") {
     if (isSettled(it)) return `item ${it.idx} is already ${it.state}`
     store.updateItem(s.id, lane.lane, it.idx, { state: "skipped", note: `skipped by ${by}`.slice(0, 500), finishedAt: now })
@@ -258,7 +288,7 @@ export interface SprintSweepDeps {
   /** Start the lane's turn. Fire and forget: the check never waits on a
    *  model. The turn's end comes back through itemEnded. Throws when the
    *  turn could not even be asked for. */
-  dispatch?: (agentId: string, text: string, ref: { sprintId: string; lane: string; idx: number }) => Promise<void>
+  dispatch?: (agentId: string, text: string, ref: DispatchRef) => Promise<void>
   /** The lane's agent is in a turn in the lane's chat right now. */
   isBusy?: (agentId: string, sprintId: string, lane: string) => boolean
   hasAgent?: (agentId: string) => boolean
@@ -333,9 +363,9 @@ async function followLane(deps: SprintSweepDeps, s: SprintRecord, lane: LaneReco
     store.updateItem(s.id, lane.lane, h.idx, { dispatchedAt: now })
     store.event(s.id, lane.lane, h.idx, "passed-held", `${h.ref} is held${h.note ? ` (${h.note})` : ""}: ${next.ref} goes first`, now)
   }
-  store.updateItem(s.id, lane.lane, next.idx, { state: "running", note: null, dispatchedAt: now })
+  const ref: DispatchRef = { sprintId: s.id, lane: lane.lane, idx: next.idx, dispatchId: newDispatchId() }
+  store.updateItem(s.id, lane.lane, next.idx, { state: "running", note: null, dispatchedAt: now, dispatchId: ref.dispatchId })
   store.updateLane(s.id, lane.lane, { updatedAt: now, notifiedAt: null })
-  const ref = { sprintId: s.id, lane: lane.lane, idx: next.idx }
   try {
     await deps.dispatch(lane.agentId, dispatchText(s, lane, items, { ...next, state: "running" }), ref)
     store.event(s.id, lane.lane, next.idx, "dispatched", `${next.ref} to ${lane.agentId}`, now)
