@@ -96,19 +96,27 @@ export const WALL_LIVE_SCRIPT = String.raw`
   }
 
   // --- @mentions in a comment: the other agents it names ---
+  // A name may be several words ("@Far Agent"); it must end at a word
+  // boundary, so @far does not name "farm" and "a@far" is not a mention.
   function mentionedAgents(text, except) {
-    var nodes = (S.live && S.live.nodes) || [], found = [];
-    (String(text).match(/@[A-Za-z0-9_.:-]+/g) || []).forEach(function (m) {
-      var name = m.slice(1).replace(/[.:]+$/, '').toLowerCase();
-      nodes.forEach(function (n, i) {
-        (n.agents || []).forEach(function (a) {
-          if ((a.id.toLowerCase() === name || (a.name || '').toLowerCase() === name) && a.id !== except && !found.some(function (f) { return f.id === a.id; })) {
-            found.push({ id: a.id, name: a.name || a.id, peer: i === 0 ? null : n.url });
-          }
-        });
+    var nodes = (S.live && S.live.nodes) || [], t = String(text).toLowerCase(), found = [];
+    function at(s) {
+      if (!s) return -1;
+      var tag = '@' + s.toLowerCase();
+      for (var i = t.indexOf(tag); i !== -1; i = t.indexOf(tag, i + 1)) {
+        var after = t.slice(i + tag.length);
+        if ((i === 0 || !/[a-z0-9_]/.test(t.charAt(i - 1))) && !/^([a-z0-9_-]|[.:][a-z0-9_])/.test(after)) return i;
+      }
+      return -1;
+    }
+    nodes.forEach(function (n, i) {
+      (n.agents || []).forEach(function (a) {
+        if (a.id === except || found.some(function (f) { return f.id === a.id; })) return;
+        var pos = [at(a.id), at(a.name)].filter(function (x) { return x !== -1; });
+        if (pos.length) found.push({ id: a.id, name: a.name || a.id, peer: i === 0 ? null : n.url, pos: Math.min.apply(null, pos) });
       });
     });
-    return found;
+    return found.sort(function (x, y) { return x.pos - y.pos; });
   }
   /** Each agent a comment names gets its own post about it, on its machine. */
   async function tellMentioned(p, text) {
