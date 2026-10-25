@@ -4,6 +4,7 @@ import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
+import { goalLine } from "./goals"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
@@ -110,6 +111,7 @@ export function pickupText(r: RequestRecord): string {
     "What they asked:",
     r.text,
     "",
+    ...goalLine(r.goal),
     ...(r.ownerNote && !r.noteSaid ? ["What they say now:", r.ownerNote, ""] : []),
     `Do the work now. ${report} When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
   ].join("\n")

@@ -113,6 +113,7 @@ Agents make a plan with their `agentx_request` tool, when they take the request 
 - AgentX keeps `work` and `estimateMinutes` on the request. A later accept without them uses the kept values.
 - A later accept can change them. AgentX also keeps the first values the agent gave, so `agentx requests show` and the dashboard card show both, like `Work: research (first declared: code, about 90 minute(s))`.
 - When `work` is a kind on your plan-before-starting list, or `estimateMinutes` is over your limit, `steps` are needed. Without them the agent gets `Not started: … needs a plan before it starts`.
+- `goal` is optional: the larger aim the request serves, as `{"id": "shop-relaunch", "title": "Relaunch the shop"}`. The plan has the goal of its request, and each step's agent is told its title. See [Group requests under a goal](./open-requests.md#group-requests-under-a-goal).
 - `name` and `done` are needed on every step. A message step needs `message` and `to` instead of `done`.
 - `agent` is the step's owner. It defaults to the agent that makes the plan.
 - `kind` is one short word. The default is `task`. Only `message` changes what happens: the daemon sends it.

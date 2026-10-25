@@ -40,6 +40,8 @@ Each entry in `dashboard.wall.projects`:
 | `agents` | list of strings | `[]` | Agents whose tasks are in this project. |
 | `workspaces` | list of strings | `[]` | Folders: an agent whose workspace is one of them, or inside one, is in this project. `~/` is your home folder. |
 | `rhythmHours` | number | `dashboard.wall.rhythmHours` | This project's own normal rhythm, in hours. |
+| `budget.monthlyUsd` | number (0–1000000) | unset (no cap) | Most this project's runs may spend in one calendar month (UTC), in US dollars. At the cap, new runs for the project are refused until the month ends or you raise it. Applies on save. See [Cap a project](../help/costs.md#cap-a-project-or-the-whole-fleet). |
+| `budget.warnRatio` | number (above 0, up to 1) | `0.8` | Share of `budget.monthlyUsd` at which you get one notice for the month. |
 
 When two entries name the same repo or agent, the first one wins.
 

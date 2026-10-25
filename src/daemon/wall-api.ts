@@ -9,7 +9,7 @@ import { OPEN_STATES, type RequestRecord, type RequestStore } from "@/requests/s
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
 import { forgeCommentsOf, forgeCommentsOfAll, type WallForgeComment, type WallForgeState, type WallForgeStateSource } from "./wall-forge-state"
-import { isStalled, projectOverview, type WallProjects } from "./wall-projects"
+import { isStalled, projectOverview, repoOfChat, type WallProjects } from "./wall-projects"
 import { wallClosures, wallThroughput } from "./wall-throughput"
 import { blockerOf, type WallBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
@@ -222,8 +222,7 @@ export function projectOf(r: Pick<RequestRecord, "home" | "chatId">): string | n
   const link = r.home?.link ?? ""
   const url = link.match(/^https?:\/\/[^/]+\/(.+?)(?:\/-)?\/(?:issues|merge_requests|pull|pulls)\/\d+/)
   if (url) return url[1]
-  const chat = r.chatId.match(/^([^:\s]+\/[^:\s]+):(?:issue|merge_request|pull)(?::|$)/)
-  return chat ? chat[1] : null
+  return repoOfChat(r.chatId)
 }
 
 const RUN_COLUMNS = `l.ref AS taskId, t.agent_id AS agentId, t.status AS status, t.started_at AS startedAt,
@@ -641,7 +640,7 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
     "SELECT kind, ref, at, ended, ended_at AS endedAt, proof FROM request_links WHERE request_id = ? ORDER BY at, rowid",
   ).all(r.id) as Array<{ kind: string; ref: string; at: number; ended: string | null; endedAt: number | null; proof: string | null }>, []) : []
   for (const l of links) {
-    if (l.kind === "run") {
+    if (l.kind === "run" || l.kind === "step_run") {
       const t = db ? safe(() => db.prepare(
         "SELECT agent_id, status, started_at, duration_ms, error, final_response, message_preview FROM task_traces WHERE task_id = ?",
       ).get(l.ref) as any, null) : null

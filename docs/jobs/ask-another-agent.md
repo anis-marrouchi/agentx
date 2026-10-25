@@ -74,7 +74,7 @@ When no person started the conversation (another agent, a schedule, a workflow) 
 { "accepted": true, "mode": "callback", "taskId": "dlg-…", "agent": "helper", "note": "Sent to helper (task dlg-…). …" }
 ```
 
-A send to an agent on this machine may run as long as that agent's own `maxExecutionMinutes`, plus up to 25 minutes waiting for a free slot. The 30-minute `mesh.delegation.timeoutMinutes` does not cut it off. A send to an agent on another machine still uses `mesh.delegation.timeoutMinutes`.
+A send to an agent on this machine may run as long as that agent's own `maxExecutionMinutes`, once more for each time a run that passes it is picked up again (`resume.timeLimit`, once by default: see [work that runs past its time limit](/jobs/restart-safely#work-that-runs-past-its-time-limit)), plus up to 25 minutes waiting for a free slot. The 30-minute `mesh.delegation.timeoutMinutes` does not cut it off. A send to an agent on another machine still uses `mesh.delegation.timeoutMinutes`.
 
 If the other agent writes back to the sender with `agentx_send_agent` while it works, that message goes into the sender's chat for that work too. It does not open a new chat. When the other agent's run ends, the sender is still told how it ended, because what it wrote may only have been a progress note.
 
@@ -101,7 +101,7 @@ curl -s -X POST http://127.0.0.1:18800/send -H 'Content-Type: application/json' 
   -d '{"channel":"a2a","chatId":"a2a:helper-a:helper-b:dlg-1","agentId":"helper-b","text":"Tests are green"}'
 ```
 
-The answer is the same `202` body as `/send/agent`. A chat ID that does not name two agents is refused with `400` and a hint to use `/send/agent`.
+The answer is the same `202` body as `/send/agent`. The `/send/agent` options `async`, `home`, `context` and `taskType` work here too: `"async": false` waits for the answer. A chat ID that does not name two agents, or an `agentId` that is neither agent in the chat, is refused with `400` and a hint to use `/send/agent`.
 
 If the tool gets no answer from the daemon in time, it says the message was **probably delivered**, not that it failed. Sending it again is safe, for the reason above. The daemon log has a `[send/agent] snd-…` line for each queued message, and a `started as run …` line when the other agent picks it up.
 
@@ -153,6 +153,7 @@ Some requests are refused straight away with status `409`:
 - **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask. A dashboard log line starting `[app] warning:` means the dashboard passed over some updates: it was away too long, or too many arrived at once. Ask your agent for the answer again.
 - **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
 - **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.
+- **`/send` answers `"is not in a2a chat"`:** the `agentId` you sent is not one of the two agents in the `chatId`. Send as the agent the chat belongs to, or use `POST /send/agent`.
 - **A queued `[send/agent] snd-…` line ends in `slot wait timed out after 360m`:** the other agent was busy for 6 hours straight, so the message was not run. Raise that agent's `maxConcurrent`, or look for a run that is stuck, then send the message again.
 - **`agentx_send_agent` says "could not be reached":** the daemon on this machine is not running. Start it with `agentx daemon start --detach`, then send again.
 - **The status list is empty:** only delegations since the last restart are listed, and only on the machine that runs the asking agent.

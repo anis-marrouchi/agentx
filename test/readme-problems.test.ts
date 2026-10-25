@@ -23,7 +23,8 @@ describe("README problems and fit", () => {
     expect(rows.length).toBeGreaterThanOrEqual(5)
     for (const row of rows) {
       const lastCell = row.split("|").slice(-2, -1)[0] ?? ""
-      const links = [...lastCell.matchAll(/\]\((docs\/[^)#]+)\)/g)].map((m) => m[1])
+      // A link may point at a section of its guide (#1290: the budget section).
+      const links = [...lastCell.matchAll(/\]\((docs\/[^)#]+)(?:#[^)]*)?\)/g)].map((m) => m[1])
       expect(links.length, row).toBeGreaterThan(0)
       for (const link of links) expect(existsSync(new URL(link, root)), link).toBe(true)
     }

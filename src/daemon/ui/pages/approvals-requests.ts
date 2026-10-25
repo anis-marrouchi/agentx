@@ -8,7 +8,9 @@
 // The card's rendered text comes from the server (requests/card-view.ts),
 // which escapes before it marks up. Open loops (#1039): a card shows who
 // it is owed to, when it is due and what check closes it; the stalled
-// filter shows only the stalled ones, by what they wait on.
+// filter shows only the stalled ones, by what they wait on. Goals (#1168):
+// above the cards, one line per goal a request names, with how far along it
+// is and what its runs cost; its requests open below it.
 
 export const REQUESTS_HTML = `
   <section class="apv__req" id="req-section" aria-labelledby="req-h">
@@ -20,6 +22,10 @@ export const REQUESTS_HTML = `
       <button type="button" class="ax-chip apv__f" data-stall="owner" aria-pressed="false">Stalled on you <span></span></button>
       <button type="button" class="ax-chip apv__f" data-stall="agent" aria-pressed="false">Stalled on an agent <span></span></button>
       <button type="button" class="ax-chip apv__f" data-stall="person" aria-pressed="false">Stalled on an outside person <span></span></button>
+    </div>
+    <div id="goal-section" class="apv__goals" hidden>
+      <h3 id="goal-h">Goals</h3>
+      <ol id="goal-list" class="apv__goallist" aria-labelledby="goal-h"></ol>
     </div>
     <ol id="req-list" class="apv__list" aria-label="Open requests"></ol>
     <details class="apv__settings" id="req-settings">
@@ -79,6 +85,18 @@ export const REQUESTS_CSS = `
 .apv__loop .is-failed, .apv__loop .is-unverified { color: var(--ax-amber-ink); }
 .apv__loop .is-verified { color: var(--ax-ok, inherit); }
 .apv__stalled { color: var(--ax-err); }
+.apv__goals { margin: 0 0 16px; }
+.apv__goals h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.apv__goallist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.apv__goal { padding: 8px 10px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); font-size: 13px; }
+.apv__goal summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.apv__goal summary b { font-weight: 600; overflow-wrap: anywhere; }
+.apv__goal summary span { color: var(--ax-text-2); font-family: var(--ax-mono); font-size: 12px; }
+.apv__bar { flex: 0 0 96px; height: 6px; border-radius: 3px; background: var(--ax-border); overflow: hidden; }
+.apv__bar i { display: block; height: 100%; background: var(--ax-ok, var(--ax-text-2)); }
+.apv__goal ul { margin: 6px 0 0; padding-left: 20px; line-height: 1.5; }
+.apv__goal li { overflow-wrap: anywhere; }
+.apv__goal li .apv__state { font-size: 11px; margin-left: 4px; }
 `
 
 export const REQUESTS_SCRIPT = `
@@ -100,6 +118,22 @@ var WAITS = { owner: 'you', agent: 'an agent', person: 'an outside person' };
 var VERIFY = { verified: 'check met', unverified: 'check could not say', failed: 'check not met' };
 var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 function agentName(id){ for (var i = 0; i < AGENTS.length; i++) if (AGENTS[i].id === id) return AGENTS[i].name; return id; }
+var CLOSED = { done: 'Done', declined: 'Declined', dropped: 'Dropped' };
+function money(n){ return '$' + (n > 0 && n < 0.01 ? n.toFixed(3) : n.toFixed(2)); }
+// One line per goal (#1168): how far along, what it cost; its requests below.
+function goal(g){
+  var pct = g.progress == null ? null : Math.round(g.progress * 100);
+  var cost = money(g.costUsd || 0) + (g.unpriced ? ' (' + g.unpriced + ' of ' + g.runs + ' runs without a cost)' : '');
+  var rows = (g.requests || []).map(function(r){
+    return '<li>' + esc(r.title) + ' <span class="apv__with">(' + esc(agentName(r.agentId)) + ')</span>' +
+      '<span class="apv__state is-' + esc(r.state) + '">' + esc(STATE[r.state] || CLOSED[r.state] || r.state) + '</span>' +
+      (r.costUsd != null ? ' <small>' + esc(money(r.costUsd)) + '</small>' : '') + ' <code>' + esc(r.id) + '</code></li>';
+  }).join('');
+  return '<li class="apv__goal"><details><summary><b dir="auto">' + esc(g.title) + '</b>' +
+    (pct == null ? '' : '<span class="apv__bar" role="progressbar" aria-label="' + esc(g.title) + ' progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></span>') +
+    '<span>' + g.done + ' of ' + (g.open + g.done) + ' done' + (pct == null ? '' : ' (' + pct + '%)') + ' · ' + g.open + ' open' + (g.dropped ? ' · ' + g.dropped + ' dropped' : '') + ' · ' + esc(cost) + '</span>' +
+    '</summary><ul aria-label="Requests for ' + esc(g.title) + '">' + rows + '</ul></details></li>';
+}
 var STEP = { pending: 'Not started', active: 'In progress', done: 'Done', blocked: 'Blocked', skipped: 'Skipped' };
 // Each step of a tracked plan (#788), escaped here.
 function plan(p){
@@ -126,6 +160,7 @@ function loop(r){
     var now = workLabel(r.work, r.estimateMinutes), first = workLabel(r.firstWork, r.firstEstimateMinutes);
     bits.push('Work: ' + esc(now) + (first && first !== now ? ' <small>(first declared: ' + esc(first) + ')</small>' : ''));
   }
+  if (r.goal) bits.push('Goal: <b>' + esc(r.goal.title) + '</b>');
   if (l && l.check) bits.push('Closes when ' + esc(l.check) + (l.verifyState ? ' <span class="is-' + esc(l.verifyState) + '">(' + esc(VERIFY[l.verifyState] || l.verifyState) + (l.verifyDetail ? ': ' + esc(l.verifyDetail) : '') + ')</span>' : ''));
   // QA sign-off (#1188): the latest verdict, who gave it and when.
   if (r.awaitingQa) bits.push('<span class="is-unverified">Awaiting QA sign-off</span>' + (r.qa ? ' <small>(last: ' + qaWords(r.qa) + ')</small>' : ''));
@@ -196,6 +231,10 @@ async function load(){
     ITEMS = d.items || [];
     AGENTS = d.agents || [];
     $('req-n').textContent = ITEMS.length;
+    var goals = d.goals || [];
+    $('goal-section').hidden = !goals.length;
+    // Not while one is open: a redraw would close it.
+    if (!$('goal-list').querySelector('details[open]')) $('goal-list').innerHTML = goals.map(goal).join('');
     var st = d.stalled || {};
     [].forEach.call($('req-stall').querySelectorAll('button[data-stall]'), function(b){
       var g = b.getAttribute('data-stall');

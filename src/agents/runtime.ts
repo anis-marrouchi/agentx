@@ -159,6 +159,13 @@ export interface AgentTask {
   /** Set on the one automatic retry of a run whose preparation steps hit
    *  the pre-spawn deadline (#340). A retry that hits it again is reported. */
   preSpawnRetry?: number
+  /** Set on a run that continues one stopped at its agent's time limit
+   *  (#1257): how many continuations this request has had, and when its
+   *  first run started (a caller's deadline counts from there). */
+  timeLimitContinuation?: number
+  timeLimitStartedAt?: number
+  /** The request as first sent, without the continuation note. */
+  timeLimitRequest?: string
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and
@@ -629,10 +636,16 @@ function extractCodexUsage(value: any, depth = 0): TokenUsage | undefined {
   if (!value || typeof value !== "object" || depth > 4) return undefined
   const candidate = value.usage || value.token_usage || value.tokenUsage || value.metrics?.usage
   if (candidate && typeof candidate === "object") {
+    // OpenAI's cached_input_tokens is part of input_tokens; TokenUsage keeps
+    // them apart, Anthropic-style (as codex-process.ts does), so the cached
+    // part is not billed twice. Anthropic-style cache_read_input_tokens is
+    // already separate.
+    const openaiCached = firstNumber(candidate.cached_input_tokens, candidate.cachedInputTokens)
+    const input = firstNumber(candidate.input_tokens, candidate.inputTokens, candidate.prompt_tokens, candidate.promptTokens)
     return {
-      inputTokens: firstNumber(candidate.input_tokens, candidate.inputTokens, candidate.prompt_tokens, candidate.promptTokens),
+      inputTokens: Math.max(0, input - openaiCached),
       outputTokens: firstNumber(candidate.output_tokens, candidate.outputTokens, candidate.completion_tokens, candidate.completionTokens),
-      cacheReadTokens: firstNumber(candidate.cache_read_input_tokens, candidate.cached_input_tokens, candidate.cacheReadTokens, candidate.cachedInputTokens),
+      cacheReadTokens: firstNumber(candidate.cache_read_input_tokens, candidate.cacheReadTokens) || openaiCached,
       cacheCreateTokens: firstNumber(candidate.cache_creation_input_tokens, candidate.cacheCreateTokens),
     }
   }
