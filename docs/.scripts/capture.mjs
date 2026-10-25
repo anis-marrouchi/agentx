@@ -33,7 +33,7 @@ const shots = [
   // #1242: a post leads with its result; one tap opens the request under it.
   { name: "wall/result-first", path: "/wall#status=", wait: "#post-req-docs-wall-done .wp__result", clipTo: "#post-req-docs-wall-done" },
   { name: "wall/result-request", path: "/wall#status=", wait: "#post-req-docs-wall-done .wp__ask", steps: [{ click: "#post-req-docs-wall-done .wp__ask summary" }, { wait: "#post-req-docs-wall-done .wp__ask[open]" }], clipTo: "#post-req-docs-wall-done" },
-  { name: "wall/list", path: "/wall#status=&view=list", wait: ".wl" },
+  { name: "wall/list", path: "/wall#status=&grp=owner&view=list", wait: ".wl__g" },
   // #1316: a post on its own with its thread, and the nav's own pages.
   { name: "wall/post", path: "/wall#status=&post=req-docs-wall-done", wait: "#open-req-docs-wall-done .wt li" },
   { name: "wall/agents", path: "/wall#page=agents", wait: ".wag" },
@@ -46,6 +46,11 @@ const shots = [
   { name: "wall/qa", path: "/wall#status=&post=req-docs-qa-block", wait: "#open-req-docs-qa-block .wp__qa", clipTo: "#open-req-docs-qa-block" },
   { name: "wall/qa-awaiting", path: "/wall#status=&qa=1&view=list", wait: ".wl" },
   { name: "wall/phone", path: "/wall", wait: ".wp", phone: true },
+  // #1355: Projects as cards, Jobs per machine, the Creator, the phone dark.
+  { name: "wall/projects", path: "/wall#status=open&view=projects", wait: ".wpc" },
+  { name: "wall/jobs", path: "/wall#status=open&view=jobs", wait: ".wjb" },
+  { name: "wall/creator", path: "/wall#page=creator", wait: ".wcr__a", steps: [{ click: ".wcr__a" }, { wait: ".wcr__a.is-on" }, { type: "#cr-text", text: "Summarise the open support tickets by topic" }, { type: "#cr-done", text: "A short list in the post" }] },
+  { name: "wall/phone-dark", path: "/wall", wait: ".wp", phone: true, dark: true },
   // #1355: the status tabs with the filters open, and the composer.
   { name: "wall/filters", path: "/wall#status=waiting", wait: ".wp", steps: [{ click: "#wall-search" }, { wait: "#wall-filters.is-open" }] },
   { name: "wall/compose", path: "/wall", wait: ".wp", steps: [{ type: "#wc-text", text: "@cx please summarise the open support tickets" }], clipTo: "#wall-compose" },
@@ -57,7 +62,7 @@ const shots = [
   // Blocked tasks grouped by the agent that blocks them (#1193).
   { name: "wall/blocked", path: "/wall#status=blocked&by=agent&view=list", wait: ".wl" },
   // The review queue: pending and decided classifications (#1182).
-  { name: "wall/reviews", path: "/wall#status=&view=reviews", wait: ".wr__diff", clipTo: "#review-docs-review-invoice" },
+  { name: "wall/reviews", path: "/wall#status=&view=reviews", wait: "[data-rtab]", steps: [{ click: '[data-rtab="approved"]' }, { wait: ".wr__diff" }], clipTo: "#review-docs-review-invoice" },
   { name: "live", path: "/live", wait: ".ax-agent__name" },
   { name: "operations", path: "/mesh", wait: "body" },
   { name: "operations/routines", path: "/mesh", wait: "body", steps: [{ clickText: "Operations" }, { wait: "#mx-routines .mx-flags" }, { scroll: "#mx-routines-title" }] },
@@ -202,6 +207,8 @@ try {
     await cdp("Emulation.setDeviceMetricsOverride", shot.phone
       ? { width: 390, height: 844, deviceScaleFactor: 3, mobile: true }
       : { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
+    // Dark for the shots that say so (#1355); light after.
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: shot.dark ? "dark" : "light" }, { name: "prefers-reduced-motion", value: "reduce" }] })
     await cdp("Page.navigate", { url: target + shot.path })
     await sleep(500)
     await wait(shot.wait)

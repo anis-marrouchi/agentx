@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
+import { CRON_VALUE_SCRIPT } from "../src/daemon/ui/cron-value"
 import { wallCapacity } from "../src/daemon/wall-capacity"
 
 // #1207: the Wall reads like a social feed. These tests run the page's real
@@ -30,7 +31,8 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
 
 function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown } = {}) {
   const page = renderWallPage()
-  const script = WALL_PAGE_SCRIPT
+  // As on the page: the value line helpers load before the Wall script.
+  const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
   const classes = () => { const s = new Set<string>(); return { toggle: (c: string, on?: boolean) => { (on ?? !s.has(c)) ? s.add(c) : s.delete(c); return s.has(c) }, contains: (c: string) => s.has(c) } }
   const el = (id: string) => {
@@ -51,13 +53,13 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     return els.get(id)
   }
   const wall = { classList: classes() }
-  let onClick: (ev: any) => void = () => {}
+  const onDoc: Record<string, Array<(ev: any) => void>> = {}
   const onWindow: Record<string, () => void> = {}
   const doc = {
     getElementById: el, hidden: false,
     querySelector: (sel: string) => (sel === ".ax-wall" ? wall : null),
     querySelectorAll: () => [],
-    addEventListener: (t: string, f: (ev: any) => void) => { if (t === "click") onClick = f },
+    addEventListener: (t: string, f: (ev: any) => void) => { (onDoc[t] ??= []).push(f) },
   }
   const loc = { hash: opts.hash ?? "", search: "" }
   const calls: Array<{ url: string; init: any }> = []
@@ -74,14 +76,18 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     { getItem: () => null, setItem: () => {} }, () => 0,
   )
   /** A click on an element carrying these attributes. */
-  const click = (attrs: Record<string, string>) => onClick({
-    preventDefault: () => {},
-    target: { closest: () => ({ hasAttribute: (k: string) => k in attrs, getAttribute: (k: string) => attrs[k] }) },
-  })
+  const click = (attrs: Record<string, string>) => {
+    const t = { hasAttribute: (k: string) => k in attrs, getAttribute: (k: string) => attrs[k] }
+    // closest() finds the element only for a selector naming one of its attributes.
+    const ev = { preventDefault: () => {}, target: { closest: (sel: string) => Object.keys(attrs).some((k) => sel.includes(`[${k}]`)) ? t : null } }
+    for (const f of onDoc.click ?? []) f(ev)
+  }
+  /** A change on an element the script drew, such as the List's Group by. */
+  const change = (id: string, value: string) => { for (const f of onDoc.change ?? []) f({ target: { id, value } }) }
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   /** The browser's hashchange, as after `location.hash = …`. */
   const hashchange = () => onWindow.hashchange?.()
-  return { el, wall, calls, click, settle, loc, hashchange }
+  return { el, wall, calls, click, change, settle, loc, hashchange }
 }
 
 describe("Wall as a social feed (#1207)", () => {
@@ -402,13 +408,18 @@ describe("Projects overview on the Wall (#1190)", () => {
     expect(w.el("wall-projects").hidden).toBe(false)
     expect(w.el("wall-feed").hidden).toBe(true)
     const html = w.el("wall-projects").innerHTML
-    const rows = html.split("<tr>").slice(2)
-    expect(rows[0]).toContain("<td>Web</td>")
-    expect(rows[0]).toContain('href="#status=stalled&amp;project=Web&amp;view=list">1</a>')
-    expect(rows[0]).toContain('href="#status=open&amp;project=Web&amp;view=list">2</a>')
-    expect(rows[1]).toContain("<td>Docs</td><td class=\"num\">0</td>")
-    expect(rows[2]).toContain("<i>Other</i>")
-    expect(rows[2]).toContain('href="#status=in_progress&amp;project=-&amp;view=list">1</a>')
+    // One card per project (#1355), in the reply's order, Other last.
+    const cards = html.split('<article class="wpc">').slice(1)
+    expect(cards).toHaveLength(3)
+    expect(cards[0]).toContain("<b>Web</b>")
+    expect(cards[0]).toContain('<span class="wpc__s is-stalled">stalled</span>')
+    expect(cards[0]).toContain('href="#status=stalled&amp;project=Web&amp;view=list">1</a>')
+    expect(cards[0]).toContain('href="#status=open&amp;project=Web&amp;view=list">2</a>')
+    expect(cards[1]).toContain("<b>Docs</b>")
+    expect(cards[1]).toContain('<span class="wpc__s is-moving">moving</span>')
+    expect(cards[1]).toContain("<dt>open</dt><dd>0</dd>")
+    expect(cards[2]).toContain("<i>Other</i>")
+    expect(cards[2]).toContain('href="#status=in_progress&amp;project=-&amp;view=list">1</a>')
   })
 
   it("filters the list to a project's stalled work, and to Other", async () => {
@@ -706,5 +717,114 @@ describe("Wall v2 feed (#1355)", () => {
     expect(posted[0].init.headers["X-Agentx-Peer"]).toBeUndefined()
     expect(posted[1].init.headers["X-Agentx-Peer"]).toBe("http://node-b")
     expect(w.el("wc-text").value).toBe("")
+  })
+})
+
+describe("Wall v2 pages (#1355)", () => {
+  const PAGES = {
+    ...WALL,
+    posts: [
+      post("a", "cx", "in_progress", { project: "shop", lastMoveAt: NOW - 4 * 864e5, estimateMinutes: 1, runMs: 300e3 }),
+      post("b", "cx", "waiting_other", { project: "shop", blocked: { who: "reviewer", since: NOW - 5 * 864e5, why: "review" }, blockedBy: { kind: "agent", who: "reviewer", project: null } }),
+      post("c", "reviewer", "in_progress", { project: null }),
+    ],
+    projects: [{ project: "shop", open: 2, inProgress: 1, blocked: 1, stalled: 0 }, { project: null, open: 1, inProgress: 1, blocked: 0, stalled: 0 }],
+    capacity: { threshold: 1, owners: [{ owner: "cx", inProgress: 1, waiting: 1, over: true }] },
+  }
+  const runs = (statuses: string[]) => statuses.map((status, i) => ({ at: new Date(NOW - i * 3600e3).toISOString(), status }))
+  const JOBS_LIVE = { nodes: [{
+    ...LIVE.nodes[0], url: "http://node-a",
+    crons: [
+      { id: "digest", agent: "cx", schedule: "0 9 * * *", enabled: true, consecutiveErrors: 0, nextRun: new Date(NOW + 3600e3).toISOString(), value: { why: "the owner reads it", metric: "opened daily" } },
+      { id: "sync", agent: "reviewer", schedule: "*/30 * * * *", enabled: true, consecutiveErrors: 3 },
+    ],
+    cronRuns: [
+      { jobId: "digest", startedAt: new Date(NOW - 60e3).toISOString(), status: "success", taskId: "t-digest" },
+      { jobId: "sync", startedAt: new Date(NOW - 120e3).toISOString(), status: "failed", errorSummary: "token expired" },
+      { jobId: "sync", startedAt: new Date(NOW - 180e3).toISOString(), status: "success", quiet: true },
+    ],
+    routines: [
+      { id: "cron:digest", recent: runs(["success", "success"]), consecutiveFailures: 0, flags: [], lastRun: { at: new Date(NOW - 60e3).toISOString(), status: "success" } },
+      { id: "cron:sync", recent: runs(["failed", "failed", "failed", "success", "success", "success", "success"]), consecutiveFailures: 3, flags: [], lastRun: { at: new Date(NOW - 120e3).toISOString(), status: "failed", summary: "token expired" } },
+    ],
+  }] }
+
+  it("draws the List with seven columns, quick views and amber old waits; Columns adds the rest", async () => {
+    const w = openWall({ data: PAGES, hash: "#status=open&view=list" })
+    await w.settle()
+    const html = w.el("wall-list").innerHTML
+    expect(html).toContain('data-tab="blocked">Blocked</button>')
+    expect(html).toContain('data-quick="cols"')
+    expect(html.match(/<th data-sort=/g)).toHaveLength(7)
+    expect(html).toContain('<td class="num is-amber">4</td>')
+    expect(html).toMatch(/<td class="is-amber">5 \/ 1 min/)
+    w.click({ "data-quick": "cols" })
+    expect(w.el("wall-list").innerHTML.match(/<th data-sort=/g)).toHaveLength(10)
+  })
+
+  it("groups the List by owner, project or blocker, each group with its count and oldest wait", async () => {
+    const w = openWall({ data: PAGES, hash: "#status=open&grp=owner&view=list" })
+    await w.settle()
+    let html = w.el("wall-list").innerHTML
+    expect(html).toMatch(/<tr class="wl__g"><th colspan="7">@cx <small>2 posts · oldest wait 5 d<\/small>/)
+    expect(html).toContain("@reviewer <small>1 post")
+    const b = openWall({ data: PAGES, hash: "#status=open&grp=blocked&view=list" })
+    await b.settle()
+    html = b.el("wall-list").innerHTML
+    expect(html).toContain("@reviewer <small>1 post")
+    expect(html).toContain("No blocker recorded <small>2 posts")
+  })
+
+  it("lists jobs per machine with today's totals, seven squares and look stale", async () => {
+    const w = openWall({ data: PAGES, live: JOBS_LIVE, hash: "#status=open&view=jobs" })
+    await w.settle()
+    const html = w.el("wall-jobs").innerHTML
+    expect(html).toContain("<dt>ran</dt><dd>3</dd>")
+    expect(html).toContain("<dt>worked</dt><dd>1</dd>")
+    expect(html).toContain("<dt>failed</dt><dd>1</dd>")
+    expect(html).toContain("<dt>quiet</dt><dd>1</dd>")
+    expect(html).toContain("<dt>look stale</dt><dd>1</dd>")
+    const sync = html.split("<b>sync</b>")[1]
+    expect(sync).toContain('title="failed 3 times in a row; no value line">look stale</span>')
+    expect(sync.split('class="wjb__sq"')[1].match(/class="is-(ok|err)"/g)).toHaveLength(7)
+    expect(sync).toContain("token expired")
+    expect(sync).toContain('disabled title="Phase 2, not built">Pause</button>')
+    const digest = html.split("<b>digest</b>")[1].split("<b>sync</b>")[0]
+    expect(digest).toContain('<span class="chip chip--done">on</span>')
+    expect(digest.match(/class="is-none"/g)).toHaveLength(5)
+    expect(digest).toContain("t-digest")
+  })
+
+  it("posts a task from the Creator, with Done when, project and estimate", async () => {
+    const w = openWall({ data: PAGES, live: JOBS_LIVE, hash: "#page=creator" })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("New post")
+    let html = w.el("wall-creator").innerHTML
+    expect(html).toContain("This page sends a message")
+    expect(html).toContain('data-creator-agent="cx"')
+    expect(html).toMatch(/data-creator-agent="cx"[^>]*>.*?over capacity/)
+    expect(html).toContain("data-creator-post disabled")
+    w.click({ "data-creator-agent": "reviewer" })
+    w.el("cr-text").value = "Check the release notes"
+    w.el("cr-done").value = "a merged PR"
+    w.el("cr-project").value = "shop"
+    w.el("cr-estimate").value = "30"
+    w.click({ "data-creator-post": "" })
+    await w.settle()
+    const posted = w.calls.filter((c) => c.url === "/api/admin/wall/post").map((c) => JSON.parse(c.init.body))
+    expect(posted).toEqual([{ agent: "reviewer", text: "Check the release notes\nDone when: a merged PR\nProject: shop\nEstimate: 30 min" }])
+    html = w.el("wall-creator").innerHTML
+    expect(html).toContain("Post to Reviewer")
+  })
+
+  it("shows Projects as cards with the worst state and closed per week", async () => {
+    const tp = { throughput: { weeks: [], projects: [{ project: "shop", weeks: [0, 2, 1, 4], total: 7 }], owners: [] } }
+    const w = openWall({ data: PAGES, throughput: tp, hash: "#status=open&view=projects" })
+    await w.settle()
+    await w.settle()
+    const card = w.el("wall-projects").innerHTML.split('<article class="wpc">')[1]
+    expect(card).toContain('<span class="wpc__s is-blocked">blocked</span>')
+    expect(card.match(/<span style="height:\d+px" title="\d closed">/g)).toHaveLength(4)
+    expect(card).toContain('title="4 closed"')
   })
 })

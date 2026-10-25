@@ -12,7 +12,7 @@
 // called from the Wall's own load() so the queue refreshes with the page.
 
 export const WALL_REVIEWS_SCRIPT = String.raw`
-  var R = { data: null, loading: false, threads: {} };
+  var R = { data: null, loading: false, threads: {}, tab: 'pending' };
   function revPath(path) { return (path || []).join(' › ') || '(root)'; }
   function revAxes(axes) { return Object.keys(axes || {}).map(function (k) { return k + '=' + axes[k]; }).join(', '); }
   function revDiff(lines) {
@@ -66,9 +66,17 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
       '</p>';
     if (!list.length) return head + '<p class="ax-wall__empty">No classification has gone to review on this machine.' +
       (v.enabled ? '' : ' The intent graph is off here (graph.enabled in agentx.json).') + '</p>';
-    var pending = list.filter(function (r) { return r.status === 'pending'; }), done = list.filter(function (r) { return r.status !== 'pending'; });
-    return head + (pending.length ? '<h2>Pending</h2>' + pending.map(revCard).join('') : '') +
-      (done.length ? '<h2>Decided</h2>' + done.map(revCard).join('') : '');
+    // A feed with Pending, Approved and Rejected tabs (#1355), and the
+    // paths the graph is least sure about over the pending ones.
+    var tabs = [['pending', 'Pending', c.pending || 0], ['approved', 'Approved', c.approved || 0], ['rejected', 'Rejected', c.rejected || 0]];
+    var shown = list.filter(function (r) { return r.status === R.tab; });
+    var unsure = list.filter(function (r) { return r.status === 'pending' && r.confidence != null; })
+      .sort(function (a, b) { return a.confidence - b.confidence; }).slice(0, 3);
+    return head + '<div class="ax-wall__views wr__tabs" role="tablist">' + tabs.map(function (t) {
+        return '<button type="button" role="tab" data-rtab="' + t[0] + '" class="' + (R.tab === t[0] ? 'is-on' : '') + '" aria-selected="' + (R.tab === t[0] ? 'true' : 'false') + '">' + t[1] + ' ' + t[2] + '</button>';
+      }).join('') + '</div>' +
+      (R.tab === 'pending' && unsure.length ? '<p class="ax-wall__count">Least sure: ' + unsure.map(function (r) { return esc(revPath(r.path)) + ' (' + Number(r.confidence).toFixed(2) + ')'; }).join(', ') + '</p>' : '') +
+      (shown.length ? shown.map(revCard).join('') : '<p class="ax-wall__empty">Nothing ' + esc(R.tab) + '.</p>');
   }
   async function loadReviews() {
     R.loading = true;
@@ -101,12 +109,14 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
     render();
   }
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-rthread]');
-    if (t) toggleReviewThread(t.getAttribute('data-rthread'));
+    var t = ev.target.closest('[data-rthread],[data-rtab]');
+    if (t && t.hasAttribute('data-rtab')) { R.tab = t.getAttribute('data-rtab'); render(); }
+    else if (t) toggleReviewThread(t.getAttribute('data-rthread'));
   });
 `
 
 export const WALL_REVIEWS_CSS = `
+.wr__tabs { margin: 0 0 10px; border-bottom: 1px solid var(--ax-border); }
 .wr { background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); padding: 10px 12px; margin-bottom: 10px; font-size: var(--ax-fs-sm); }
 .wr.is-pending { border-left: 3px solid var(--ax-amber); }
 .wr.is-rejected { border-left: 3px solid var(--ax-red); }

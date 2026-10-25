@@ -24,6 +24,7 @@ import { WALL_PAGE_SCRIPT } from "./wall.client"
 import { renderWallDocument } from "./wall-space"
 import { CRON_JOBS_SCRIPT, CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
+import { WALL_PAGES_CSS } from "./wall-pages.client"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -55,6 +56,7 @@ const NAV_ICON = {
   reviews: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 10l2.5 2.5L16 8"/></svg>',
   failures: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+  more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
 }
 
@@ -74,7 +76,9 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <a class="ax-wall__item" data-nav="reviews" href="#status=open&amp;view=reviews" title="Reviews">${NAV_ICON.reviews}<span>Reviews</span><b class="ax-wall__n" id="wall-rev-n"></b></a>
     <a class="ax-wall__item" data-nav="failures" href="#status=open&amp;view=failures" title="Failures">${NAV_ICON.failures}<span>Failures</span><b class="ax-wall__n" id="wall-fail-n"></b></a>
     <a class="ax-wall__item" data-nav="agents" href="#page=agents" title="Agents">${NAV_ICON.agents}<span>Agents</span><b class="ax-wall__n" id="nav-n-agents"></b></a>
-    <a class="ax-wall__item" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
+    <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
+    <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages">${NAV_ICON.more}<span>More</span></button>
+    <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
     <div class="ax-wall__navfoot">
       <span>The Wall shows the work. It sends something only when you post, comment, call or start a Space.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button">Light / dark</button>
@@ -101,6 +105,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <label>Project <select id="f-project"><option value="">All</option></select></label>
       <label>Node <select id="f-node"><option value="">All</option></select></label>
       <label>Group <select id="f-group"><option value="">All</option></select></label>
+      <label>Group the list by <select id="f-grp"><option value="">nothing</option><option value="owner">owner</option><option value="project">project</option><option value="blocked">blocked by</option></select></label>
       <label>Group blocked by <select id="f-by"><option value="">nothing</option><option value="project">project</option><option value="agent">agent</option></select></label>
       <label class="ax-wall__check"><input type="checkbox" id="f-time"> Time flags only</label>
       <label class="ax-wall__check"><input type="checkbox" id="f-conc"> Concurrent only</label>
@@ -128,6 +133,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
     <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
+    <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
   </div>
   <aside class="ax-wall__aside">
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
@@ -149,7 +155,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${CRON_JOBS_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

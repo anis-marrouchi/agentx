@@ -54,7 +54,12 @@ export interface Routine {
   sampledRuns: number
   flags: RoutineFlag[]
   attention: RoutineAttention | null
+  /** The newest runs, newest first, at most RECENT_RUNS (#1355): the Wall's strip. */
+  recent?: Array<{ at: string; status: RoutineOutcome }>
 }
+
+/** Runs a routine row carries for its strip of squares (#1355). */
+export const RECENT_RUNS = 7
 
 export interface RoutineCronJob {
   id: string
@@ -145,6 +150,7 @@ export function buildRoutines(input: BuildRoutinesInput): Routine[] {
       sampledRuns: runs.length,
       flags: [],
       attention: null,
+      recent: runs.slice(0, RECENT_RUNS).map((r) => ({ at: r.startedAt, status: r.status })),
     }
     routine.flags = scheduleFlags(routine, outcomes, job.schedule, timezone, null, now, t, nextFire)
     out.push(finish(routine))
@@ -190,6 +196,7 @@ export function buildRoutines(input: BuildRoutinesInput): Routine[] {
       sampledRuns: runs.length,
       flags: [],
       attention: null,
+      recent: outcomes.slice(0, RECENT_RUNS).map((o) => ({ at: new Date(o.at).toISOString(), status: o.status })),
     }
     const changedAt = Date.parse(wf.updated || wf.created || "")
     routine.flags = isCron

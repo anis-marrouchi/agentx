@@ -329,3 +329,20 @@ describe("mesh page routines section", () => {
     expect(opened[0]).toContain("&#60;b&#62;boom")
   })
 })
+
+describe("buildRoutines — recent runs for the Wall's strip (#1355)", () => {
+  it("carries the newest seven runs of a job and of a workflow, newest first", () => {
+    const runs = Array.from({ length: 9 }, (_, i) => cronRun("sync", i + 1, i === 0 ? "failed" : "success"))
+    const routines = build({
+      crons: [job("sync")],
+      runs: { sync: runs },
+      workflows: [hookWorkflow("triage")],
+      workflowRuns: [wfRun("triage", 3, "failed"), wfRun("triage", 1)],
+    })
+    const sync = routines.find((r) => r.id === "cron:sync")!
+    expect(sync.recent).toHaveLength(7)
+    expect(sync.recent![0]).toEqual({ at: iso(NOW - HOUR), status: "failed" })
+    expect(sync.recent![6].at).toBe(iso(NOW - 7 * HOUR))
+    expect(routines.find((r) => r.id === "workflow:triage")!.recent!.map((r) => r.status)).toEqual(["success", "failed"])
+  })
+})

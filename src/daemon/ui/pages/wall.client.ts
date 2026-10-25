@@ -32,23 +32,25 @@ import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
+import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
   var OPEN = ['in_progress', 'waiting_owner', 'waiting_other', 'needs_attention'];
   var DAY = 864e5;
-  var FILTERS = ['owner', 'load', 'status', 'idle', 'project', 'node', 'group', 'by', 'time', 'conc', 'qa', 'q'];
+  var FILTERS = ['owner', 'load', 'status', 'idle', 'project', 'node', 'group', 'by', 'grp', 'time', 'conc', 'qa', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents'];
+  var PAGES = ['running', 'agents', 'creator'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
+${WALL_PAGES_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -762,43 +764,15 @@ ${WALL_CAPACITY_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : named[on] || 'Wall';
   }
 
-  // --- List ---
-  var COLS = [
-    ['state', 'Status'], ['post', 'Post'], ['owner', 'Owner'], ['project', 'Project'], ['node', 'Node'],
-    ['idle', 'Days since move'], ['blocked', 'Waits on'], ['time', 'Time / estimate'], ['runs', 'Runs'],
-  ];
+  // --- List: the table itself is in wall-pages.client.ts (#1355) ---
   function sortVal(p, k) {
     return k === 'idle' ? idleDays(p) : k === 'runs' ? p.runs : k === 'time' ? p.runMs : k === 'owner' ? p.owner
       : k === 'project' ? (p.project || '') : k === 'node' ? p.node.name : k === 'blocked' ? (p.blocked ? p.blocked.who : '')
       : k === 'state' ? p.state : p.headline;
   }
-  function listHtml(posts) {
-    var k = S.sort.key, dir = S.sort.dir;
-    posts = posts.slice().sort(function (a, b) { var x = sortVal(a, k), y = sortVal(b, k); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
-    return '<table class="wl"><thead><tr>' + COLS.map(function (c) {
-      return '<th data-sort="' + c[0] + '" aria-sort="' + (k === c[0] ? (dir > 0 ? 'ascending' : 'descending') : 'none') + '">' + c[1] + (k === c[0] ? (dir > 0 ? ' ▲' : ' ▼') : '') + '</th>';
-    }).join('') + '</tr></thead><tbody>' + posts.map(function (p) {
-      return '<tr><td>' + stateBadge(p.state) +
-          (p.forgeState ? '<br><small' + (p.forgeState.unknown ? ' title="' + esc(p.forgeState.unknown) + '">' + esc(forgeName(p.forgeState)) + ' unknown' : '>' + esc(forgeName(p.forgeState)) + ' ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '')) + '</small>' +
-            (forgeClosedOpen(p) ? ' <small title="Closed on the forge, still open here">⚠</small>' : '') +
-            (forgeOpenClosed(p) ? ' <small title="Open on the forge, closed here">⚠</small>' : '') : '') +
-          (qaText(p, true) ? '<br><small' + (p.qa ? ' title="' + esc(qaText(p)) + '"' : '') + '>' + esc(p.awaitingQa ? 'Awaiting QA' : qaText(p, true)) + '</small>' : '') + '</td>' +
-        '<td><a href="#" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a></td>' +
-        '<td>' + esc(p.owner) + '</td><td>' + esc(p.project || '—') + '</td><td>' + esc(p.node.name) + '</td>' +
-        '<td class="num">' + idleDays(p) + '</td>' +
-        '<td>' + (p.blocked ? esc(p.blocked.who) + ' <small>(' + ago(p.blocked.since) + ')</small>' : cardsOf(p).length ? 'owner' : '—') +
-          (cardsOf(p).length ? ' <small>card expires ' + until(cardsOf(p)[0].expiresAt) + '</small>' : '') + '</td>' +
-        '<td>' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + ' min' + (p.timeFlag ? ' <small title="' + esc(p.timeFlag) + '">⚠</small>' : '') +
-          (p.forgeTime ? '<br><small' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>GitLab ' + esc(forgeTimeText(p.forgeTime)) + '</small>' +
-            (forgeFlags(p).length ? ' <small title="' + esc(forgeFlags(p).join('; ')) + '">⚠</small>' : '') : '') + '</td>' +
-        '<td class="num">' + p.runs + (p.failedRuns ? ' <small>(' + p.failedRuns + ' failed)</small>' : '') +
-        (p.concurrent && p.concurrent.length ? ' <small title="Concurrent runs: ' + esc(p.concurrent.map(function (o) { return o.runs.join(' + '); }).join(', ')) + '">⚠ concurrent</small>' : '') + '</td></tr>';
-    }).join('') + '</tbody></table>';
-  }
-
   // --- Blocked, grouped by what blocks it (#1193) ---
   // Only blockers a record names (a hand-off, another agent's plan step,
   // the owner, an outside person) are grouped; the rest are "No blocker
@@ -878,20 +852,7 @@ ${WALL_CAPACITY_SCRIPT}
   }
   function projectsHtml() {
     loadThroughput();
-    return overviewHtml() + capacityHtml(S.data && S.data.capacity) + throughputHtml();
-  }
-  function overviewHtml() {
-    var rows = (S.data && S.data.projects) || [];
-    if (!rows.length) return '<p class="ax-wall__empty">No open work.</p>';
-    function cell(r, n, status) {
-      return '<td class="num">' + (n ? '<a href="' + esc(projectHref(r.project, status)) + '">' + n + '</a>' : '0') + '</td>';
-    }
-    return '<p class="ax-wall__count">Open work on every node, by project. Stalled: no move for more than twice the project\'s normal rhythm.</p>' +
-      '<table class="wl"><thead><tr><th>Project</th><th>Open</th><th>In progress</th><th>Blocked</th><th>Stalled</th></tr></thead><tbody>' +
-      rows.map(function (r) {
-        return '<tr><td>' + (r.project === null ? '<i>Other</i>' : esc(r.project)) + '</td>' + cell(r, r.open, 'open') + cell(r, r.inProgress, 'in_progress') +
-          cell(r, r.blocked, 'blocked') + cell(r, r.stalled, 'stalled') + '</tr>';
-      }).join('') + '</tbody></table>';
+    return projectCardsHtml() + capacityHtml(S.data && S.data.capacity) + throughputHtml();
   }
 
   // --- Failures: agent runs, cron runs, workflow runs ---
@@ -1028,6 +989,12 @@ ${WALL_CAPACITY_SCRIPT}
     // On its own page, Running now leaves the side column.
     $('wall-nodes').parentNode.hidden = page === 'running';
     $('wall-agents-page').hidden = page !== 'agents';
+    $('wall-creator').hidden = page !== 'creator';
+    // The Creator keeps what is typed: a refresh does not repaint a field in use.
+    if (page === 'creator') {
+      var typing = document.activeElement && document.activeElement.id && /^cr-/.test(document.activeElement.id);
+      if (!typing) { creatorRead(); $('wall-creator').innerHTML = creatorHtml(); }
+    }
     if (page === 'post') $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
     if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
@@ -1055,12 +1022,12 @@ ${WALL_CAPACITY_SCRIPT}
     $('wall-jobs').hidden = S.view !== 'jobs';
     $('wall-count').hidden = side;
     if (S.view === 'feed') $('wall-feed').innerHTML = posts.length ? posts.map(function (p) { return postHtml(p); }).join('') : '<p class="ax-wall__empty">No posts match these filters.</p>';
-    if (S.view === 'list') $('wall-list').innerHTML = !posts.length ? '<p class="ax-wall__empty">No posts match these filters.</p>'
-      : f.status === 'blocked' && f.by ? blocksHtml(posts, f.by) : listHtml(posts);
+    if (S.view === 'list') $('wall-list').innerHTML = listBarHtml(f) + (!posts.length ? '<p class="ax-wall__empty">No posts match these filters.</p>'
+      : f.status === 'blocked' && f.by ? blocksHtml(posts, f.by) : listHtml(posts));
     if (S.view === 'failures') $('wall-failures').innerHTML = failuresHtml();
     if (S.view === 'projects') $('wall-projects').innerHTML = projectsHtml();
     // Recurring jobs with their value line (#1183): cron-value.ts.
-    if (S.view === 'jobs') $('wall-jobs').innerHTML = axCronJobsHtml(S.live && S.live.nodes, esc);
+    if (S.view === 'jobs') $('wall-jobs').innerHTML = jobsPageHtml();
     renderReviews(S.view);
   }
   function setView(v, quiet) {
