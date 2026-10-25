@@ -573,3 +573,28 @@ export function spendByAgentSince(db: Database.Database, sinceMs: number): Recor
   for (const r of rows) if (r.usd && r.usd > 0) out[r.agent_id] = r.usd
   return out
 }
+
+/** Recorded run cost per (agent, chat) since `sinceMs`, from which spend
+ *  per project is mapped (#1290). */
+export function spendByChatSince(db: Database.Database, sinceMs: number): Array<{ agentId: string; chatId: string | null; usd: number }> {
+  const rows = db.prepare(`
+    SELECT agent_id, chat_id, SUM(cost_usd) AS usd FROM task_traces
+    WHERE started_at >= ? AND cost_usd IS NOT NULL
+    GROUP BY agent_id, chat_id
+  `).all(sinceMs) as Array<{ agent_id: string; chat_id: string | null; usd: number | null }>
+  return rows.filter((r) => r.usd && r.usd > 0).map((r) => ({ agentId: r.agent_id, chatId: r.chat_id, usd: r.usd as number }))
+}
+
+/** Runs per agent since `sinceMs` that used tokens but have no price
+ *  (local models, #1290): a budget does not see them. */
+export function unpricedRunsByAgentSince(db: Database.Database, sinceMs: number): Record<string, number> {
+  const rows = db.prepare(`
+    SELECT agent_id, COUNT(*) AS n FROM task_traces
+    WHERE started_at >= ? AND cost_usd IS NULL
+      AND COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) > 0
+    GROUP BY agent_id
+  `).all(sinceMs) as Array<{ agent_id: string; n: number }>
+  const out: Record<string, number> = {}
+  for (const r of rows) if (r.n > 0) out[r.agent_id] = r.n
+  return out
+}

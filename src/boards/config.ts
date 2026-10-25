@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { monthlyBudgetSchema } from "@/agents/budget-schema"
 
 // --- Kanban board configuration ---
 //
@@ -141,6 +142,8 @@ export const dashboardConfigSchema = z.object({
       workspaces: z.array(z.string().min(1)).default([]),
       /** This project's normal rhythm in hours. Unset: the one above. */
       rhythmHours: z.number().positive().max(24 * 365).optional(),
+      /** Monthly money budget for this project's runs (#1290). */
+      budget: monthlyBudgetSchema.optional(),
     })).default([]),
     /** Capacity per owner (#1191): an agent whose work in progress plus
      *  the items waiting on it is above `threshold` is flagged over
