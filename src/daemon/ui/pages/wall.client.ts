@@ -23,7 +23,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
   var OPEN = ['in_progress', 'waiting_owner', 'waiting_other', 'needs_attention'];
   var DAY = 864e5;
-  var FILTERS = ['owner', 'status', 'idle', 'project', 'node', 'group', 'by', 'time', 'conc', 'qa', 'q'];
+  var FILTERS = ['owner', 'load', 'status', 'idle', 'project', 'node', 'group', 'by', 'time', 'conc', 'qa', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
@@ -175,6 +175,7 @@ ${WALL_CAPACITY_SCRIPT}
   }
   function match(p, f) {
     if (f.owner && p.owner !== f.owner) return false;
+    if (f.load && !countsFor(p, f.load)) return false;
     if (f.status === 'open' && !isOpen(p)) return false;
     if (f.status === 'closed' && isOpen(p)) return false;
     if (f.status === 'blocked' && !p.blocked) return false;
@@ -707,6 +708,7 @@ ${WALL_CAPACITY_SCRIPT}
       S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
       var posts = S.data.posts || [];
       fillSelect('f-owner', uniq(posts.map(function (p) { return p.owner; })));
+      fillSelect('f-load', uniq(((S.data.capacity && S.data.capacity.owners) || []).map(function (r) { return r.owner; })));
       var other = posts.some(function (p) { return !p.project; }) ? [OTHER] : [];
       fillSelect('f-project', uniq(posts.map(function (p) { return p.project; })).concat(other), function (v) { return v === OTHER ? 'Other (no project)' : v; });
       fillSelect('f-node', uniq(posts.map(function (p) { return p.node.name; })));

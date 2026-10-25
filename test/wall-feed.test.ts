@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
+import { wallCapacity } from "../src/daemon/wall-capacity"
 
 // #1207: the Wall reads like a social feed. These tests run the page's real
 // script against a stubbed DOM and fetch, over the data the Wall already
@@ -339,7 +340,7 @@ describe("Blocked view grouped by blocker (#1193)", () => {
 
 // #1191: the Projects view shows the capacity rows the reply carries, the
 // over-capacity flag only when a threshold is set, each owner a link to
-// its posts.
+// the posts counted for it.
 describe("Capacity per owner on the Wall (#1191)", () => {
   const CAP = (threshold: number | null, over: boolean) => ({
     ...WALL,
@@ -356,7 +357,7 @@ describe("Capacity per owner on the Wall (#1191)", () => {
     expect(html).toContain("Capacity per owner")
     expect(html).toContain("above 2.")
     const rows = html.split("Capacity per owner")[1].split("<tr").slice(2)
-    expect(rows[0]).toContain('href="#owner=cx&amp;view=list">cx</a>')
+    expect(rows[0]).toContain('href="#load=cx&amp;view=list">cx</a>')
     expect(rows[0]).toContain('<td class="num">2</td><td class="num">1</td><td><span class="chip chip--warn">over capacity</span>')
     expect(rows[1]).toContain("<td>ok</td>")
   })
@@ -367,6 +368,33 @@ describe("Capacity per owner on the Wall (#1191)", () => {
     const html = w.el("wall-projects").innerHTML
     expect(html).toContain("No threshold set")
     expect(html).not.toContain("over capacity")
+  })
+
+  // The owner link lists exactly the posts its numbers count: as active
+  // step agent and as a blocker too, not only the posts the agent owns.
+  it("lists the posts counted for an agent, matching its in progress plus waiting", async () => {
+    const on = (who: string) => ({ kind: "agent", who, source: "handoff", project: null, crossProject: false })
+    const posts = [
+      post("a1", "coder", "in_progress"),
+      post("a2", "coder", "in_progress", { stepAgent: "ops" }),
+      post("a3", "coder", "waiting_other", { blockedBy: on("ops") }),
+      post("a4", "ops", "waiting_owner"),
+      post("a5", "ops", "done", { stepAgent: null }),
+      post("a6", "coder", "waiting_other", { blockedBy: on("coder") }),
+    ]
+    const capacity = wallCapacity(posts as any)
+    for (const r of capacity.owners) {
+      const w = openWall({ data: { ...WALL, posts, capacity }, hash: `#load=${r.owner}&view=list` })
+      await w.settle()
+      const ids = [...w.el("wall-list").innerHTML.matchAll(/data-open="([^"]+)"/g)].map((m) => m[1])
+      expect(new Set(ids).size, r.owner).toBe(r.inProgress + r.waiting)
+    }
+    const ops = openWall({ data: { ...WALL, posts, capacity }, hash: "#load=ops&view=list" })
+    await ops.settle()
+    const html = ops.el("wall-list").innerHTML
+    expect(html).toContain('data-open="a2"')
+    expect(html).toContain('data-open="a3"')
+    expect(html).not.toContain('data-open="a4"')
   })
 
   it("says so when no agent carries open work, or the node is older", async () => {
