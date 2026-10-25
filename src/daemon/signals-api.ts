@@ -222,14 +222,19 @@ async function stopAllHttp(body: Record<string, unknown>, deps: SignalsHttpDeps)
         // it answered. Its report after the restart may use either.
         return { node: peer, ok: true, ...reply.body, peer }
       } catch (e: any) {
-        return { node: peer, ok: false, error: /abort|timeout/i.test(String(e?.name ?? e)) ? "no answer in time; its plans may still be saving" : String(e?.message ?? e) }
+        // No answer in time: the order reached it and it is still winding
+        // down, so it reports here after its restart like the others.
+        if (/abort|timeout/i.test(String(e?.name ?? e))) return { node: peer, ok: false, late: true, error: "no answer in time; its plans may still be saving", peer }
+        return { node: peer, ok: false, error: String(e?.message ?? e) }
       }
     }))
     : Promise.resolve(undefined)
   const tasks = wait ? await r.done : r.tasks
   const peers = await peerReplies
-  // The peers that took the order report here after the restart.
-  const took = (peers ?? []).filter((p: any) => p.ok).map((p: any): OrderPeer => ({
+  // The peers that took the order report here after the restart: every one
+  // that answered, or did not answer in time. Not one that was not
+  // reachable or refused it.
+  const took = (peers ?? []).filter((p: any) => p.ok || p.late).map((p: any): OrderPeer => ({
     name: p.peer, ...(typeof p.node === "string" && p.node !== p.peer ? { node: p.node } : {}),
   }))
   if (deps.reporter && took.length) deps.reporter.begin(r.orderId, took)

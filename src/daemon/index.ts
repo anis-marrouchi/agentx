@@ -1756,7 +1756,7 @@ export class AgentXDaemon {
       sendPart: async (coordinator, body) => {
         const reply = await this.signalsForward(coordinator, "POST", "/api/signals/stop-all/report", { ...body, via: { node: selfNode } })
         if (!reply) throw new Error(`no healthy mesh peer named "${coordinator}"`)
-        if (reply.status >= 400) throw new Error(String(reply.body.error ?? `HTTP ${reply.status}`))
+        if (reply.status >= 400) throw Object.assign(new Error(String(reply.body.error ?? `HTTP ${reply.status}`)), { status: reply.status })
       },
       tellOwner: async (text) => {
         for (const line of text.split("\n")) this.log(`  [signals] ${line}`)

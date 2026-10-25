@@ -1,5 +1,5 @@
 import { callerAgentOf, type RunOrigin } from "@/agents/resume/origin"
-import { builderLines, type BuilderWindDown } from "./builders"
+import { BUILDER_SAVE_MS, builderLines, type BuilderWindDown } from "./builders"
 import { outcomeLines, validOrderId, type StopAllOutcome } from "./orders"
 import { agentPlan, machinePlan, resumeNote, windDownMessage, type ResumePlan, type ToolCallRef } from "./plan"
 import { canSignal, describeSender, SignalBudget, type SignalSender, type SignalSettings } from "./policy"
@@ -146,9 +146,9 @@ export class SignalService {
   }
 
   /** How long a stop waits for the agent's plan, at most: the run's slot
-   *  release, then the wind-down turn. */
+   *  release, saving its builders' folders, then the wind-down turn. */
   windDownMs(): number {
-    return RUN_END_WAIT_MS + this.deps.settings().windDownSeconds * 1000 + 5_000
+    return RUN_END_WAIT_MS + (this.deps.windDownBuilders ? BUILDER_SAVE_MS : 0) + this.deps.settings().windDownSeconds * 1000 + 5_000
   }
 
   get(id: string): StoppedTask | null {

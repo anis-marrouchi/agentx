@@ -46,6 +46,9 @@ export interface BuilderWindDown {
 type Git = (cwd: string, args: string[], env?: Record<string, string>) => Promise<string>
 
 const GIT_TIMEOUT_MS = 15_000
+/** How long a stop spends saving builders' folders. A folder not started
+ *  by then is listed as not saved; the stop's wait counts this time. */
+export const BUILDER_SAVE_MS = 60_000
 const execFileP = promisify(execFile)
 const runGit: Git = async (cwd, args, env) =>
   (await execFileP("git", ["-C", cwd, ...args], {
@@ -84,7 +87,7 @@ export async function saveWip(root: string, branch: string, message: string, git
       const made = await git(root, ["update-ref", `refs/heads/${name}`, commit, ""]).then(() => true, () => false)
       if (made) return { branch: name, commit }
     }
-    throw new Error(`branches ${branch} to ${branch}-20 exist already`)
+    throw new Error(`couldn't create branch ${branch} (nor -2 to -20): taken, or a branch named ${branch.split("/").slice(0, -1).join("/")} exists`)
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
@@ -98,16 +101,21 @@ export async function windDownBuilders(input: {
   reason: string
   findLeftWork?: (run: { toolCalls: ToolCallRef[] }) => Promise<LeftWork[]>
   git?: Git
+  now?: () => number
 }): Promise<BuilderWindDown | undefined> {
   const helpers = backgroundHelpers(input)
   if (!helpers.length) return undefined
+  const now = input.now ?? Date.now
+  const deadline = now() + BUILDER_SAVE_MS
   const find = input.findLeftWork ?? ((run) => findLeftWork(run))
   let left: LeftWork[] = []
   try { left = await find(input) } catch { /* no folders known: the helpers are still listed */ }
   const folders: BuilderFolder[] = []
   for (const w of left) {
     const folder: BuilderFolder = { path: w.path, branch: w.branch, changedFiles: w.changedFiles, unpushedCommits: w.unpushedCommits }
-    if (w.changedFiles > 0) {
+    if (w.changedFiles > 0 && now() >= deadline) {
+      folder.error = `not saved: the stop's ${BUILDER_SAVE_MS / 1000}s for saving builders ran out`
+    } else if (w.changedFiles > 0) {
       try {
         const saved = await saveWip(w.path, wipBranchName(input.taskId), `WIP: saved by AgentX when ${input.reason}\n\nTask ${input.taskId}, on ${w.branch ?? "a detached HEAD"}.`, input.git)
         folder.wipBranch = saved.branch

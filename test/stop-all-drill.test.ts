@@ -51,6 +51,7 @@ class Node {
   reporter!: StopAllReporter
   resumed: Array<{ id: string; note: string }> = []
   told: string[] = []
+  sent = 0
 
   constructor(public name: string, private dir: string, running: RunningRef[], private calls: Record<string, any[]>, private mesh: Peers, private peerOf: string) {
     this.running = running
@@ -80,7 +81,8 @@ class Node {
       selfNode: this.name,
       sendPart: async (coordinator, body) => {
         const reply = await this.mesh[coordinator].http("POST", "/api/signals/stop-all/report", { ...body, via: { node: this.name } }, { kind: "peer", peer: this.name })
-        if (reply.status >= 400) throw new Error(String(reply.body.error))
+        this.sent++
+        if (reply.status >= 400) throw Object.assign(new Error(String(reply.body.error)), { status: reply.status })
       },
       tellOwner: async (text) => { this.told.push(text) },
       ownReport: (outcomes) => stopAllReport(this.name, outcomes),
@@ -198,6 +200,41 @@ describe("stop-all drill on a test pair", () => {
     expect(mac.told).toHaveLength(1)
     expect(mac.told[0]).toMatch(/on 2 machine\(s\): 3 resumed/)
     expect(mac.told[0]).toMatch(/^mac: 2 resumed/m)
+  })
+
+  it("counts a peer that answers late as one that took the order", async () => {
+    const { mac, server } = pair()
+    // server takes the order and winds down, but its answer comes after
+    // mac's wait ran out.
+    const real = server.http.bind(server)
+    server.http = async (...args) => {
+      await real(...args)
+      throw Object.assign(new Error("This operation was aborted"), { name: "AbortError" })
+    }
+    const order = await mac.http("POST", "/api/signals/stop-all", { mesh: true, wait: true }, { kind: "owner" })
+    server.http = real
+    expect((order.body.peers as any[])[0]).toMatchObject({ node: "server", ok: false, late: true })
+    expect(order.body.safeToRestart).toBe(false)
+    await Promise.all((await server.restart()).retries)
+    expect(server.sent).toBe(1)
+    expect(server.told).toEqual([])
+    await mac.restart()
+    expect(mac.told).toHaveLength(1)
+    expect(mac.told[0]).toMatch(/on 2 machine\(s\): 3 resumed/)
+    expect(mac.told[0]).toMatch(/^server: 1 resumed/m)
+  })
+
+  it("does not retry a part the coordinator refuses, and tells the owner at once", async () => {
+    const { mac, server } = pair()
+    await mac.http("POST", "/api/signals/stop-all", { mesh: true, wait: true }, { kind: "owner" })
+    // mac lost the order (its folder was cleared): every try would get 404.
+    const real = mac.http.bind(mac)
+    mac.http = async (m, p, body, sender) => real(m, p, { ...body, orderId: "stop-all-12345678" }, sender)
+    await Promise.all((await server.restart()).retries)
+    mac.http = real
+    expect(server.sent).toBe(1)
+    expect(server.told).toHaveLength(1)
+    expect(server.told[0]).toMatch(/mac could not be reached for the combined report/)
   })
 
   it("tells the owner itself when the coordinator cannot be reached", async () => {

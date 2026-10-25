@@ -3,7 +3,7 @@ import { execFileSync } from "child_process"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
-import { builderLines, saveWip, windDownBuilders, wipBranchName } from "../src/agents/signals/builders"
+import { BUILDER_SAVE_MS, builderLines, saveWip, windDownBuilders, wipBranchName } from "../src/agents/signals/builders"
 import { DEFAULT_SIGNAL_SETTINGS } from "../src/agents/signals/policy"
 import { SignalService, type RunningRef } from "../src/agents/signals/service"
 import { StoppedTaskStore, summarizeStopped } from "../src/agents/signals/store"
@@ -114,6 +114,21 @@ describe("windDownBuilders", () => {
     })
     expect(b?.folders[0].error).toMatch(/not a git repository/)
     expect(builderLines(b, "resume").join("\n")).toMatch(/NOT saved \(fatal: not a git repository\), still in the folder/)
+  })
+
+  it("stops saving folders once its time is up, and says so", async () => {
+    let t = 0
+    const saved: string[] = []
+    const b = await windDownBuilders({
+      taskId: "t1", reason: "stop", toolCalls: [builderCall("Build")],
+      findLeftWork: async () => ["/a", "/b"].map((p) => ({ path: p, branch: "main", changedFiles: 1, unpushedCommits: 0 })),
+      // Each folder's save takes the whole budget.
+      git: async (cwd, args) => { if (args[0] === "update-ref") { saved.push(cwd); t += BUILDER_SAVE_MS } return "x" },
+      now: () => t,
+    })
+    expect(saved).toEqual(["/a"])
+    expect(b?.folders[0].wipBranch).toBe("agentx/wip/t1")
+    expect(b?.folders[1].error).toMatch(/not saved: the stop's 60s for saving builders ran out/)
   })
 })
 

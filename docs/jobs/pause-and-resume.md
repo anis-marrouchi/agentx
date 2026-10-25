@@ -95,6 +95,7 @@ Before you restart AgentX, for example to install an update, you can pause every
 
 **One report for all your machines.** With `--mesh`, you get one report, sent by the machine you gave the order on. Each other machine sends it what happened to its tasks after its own restart. The report waits up to 10 minutes for every machine:
 
+- A machine that took the order but did not answer in time (**no answer in time**) still reports to the same machine after its restart, like the others.
 - A machine that sent nothing in that time is listed as **no report**. If it restarts later, its part comes as a second, short message: **Late part of the stop-all …**.
 - A machine that had nothing running is listed as **nothing was running**.
 - A machine that cannot reach the one you gave the order on (for about 10 minutes) sends its own report instead, and says so on its last line.
@@ -109,14 +110,14 @@ A *background builder* is a helper an agent starts to work on its own while the 
 
 When a stop or a stop-all stops a task that had started builders, AgentX does this before the agent writes its plan:
 
-1. For each folder the builders worked in that holds changes not yet committed, it saves every change (new files included, ignored files not) as one commit on a new branch, `agentx/wip/<taskId>`. If that branch exists already, it adds `-2`, `-3` and so on. It never overwrites a branch.
+1. For each folder the builders worked in that holds changes not yet committed, it saves every change (new files included, ignored files not) as one commit on a new branch, `agentx/wip/<taskId>`. If that branch exists already, it adds `-2`, `-3` and so on. It never overwrites a branch. It spends at most 60 seconds on this; a folder it did not get to is listed as **not saved**.
 2. It leaves the folder exactly as it was: same branch, same files, nothing staged or unstaged. The WIP branch is only an extra branch next to it.
 3. It lists commits that were made but not pushed as they are: they are in the folder already.
 4. It tells the agent which builders were stopped and where their work is saved, so the plan says from which branch to start each one again.
 
 When the task resumes, it is told the same, and starts its builders again from their WIP branches. The stop-all line of the task says, for example, **1 builder(s) stopped, 1 folder(s) saved on a WIP branch**, and the report after the restart names the branch. `agentx signal show <taskId>` lists each builder and each folder.
 
-The WIP branch stays in the folder; AgentX does not push it. If the folder is in a place the computer empties when it starts (such as `/tmp` on some systems), restart AgentX, not the whole computer, or push the branch first.
+This is a write into your repositories: a local branch and its commit, on every stop of a task with builders, in each folder those builders changed. The WIP branch stays in the folder; AgentX does not push it. If the folder is in a place the computer empties when it starts (such as `/tmp` on some systems), restart AgentX, not the whole computer, or push the branch first.
 
 Some tasks are not stopped:
 

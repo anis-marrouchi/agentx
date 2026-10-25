@@ -153,7 +153,8 @@ export interface ReporterDeps {
   store: StopAllOrderStore
   selfNode: string
   /** Send this node's part to the coordinator (which knows the sender by
-   *  its mesh identity). Throws when it did not arrive. */
+   *  its mesh identity). Throws when it did not arrive; with `status` set
+   *  to the HTTP status when the coordinator answered with an error. */
   sendPart(coordinator: string, body: { orderId: string; outcomes: StopAllOutcome[] }): Promise<void>
   /** One message to the owner. */
   tellOwner(text: string): Promise<void>
@@ -309,6 +310,9 @@ export class StopAllReporter {
         return
       } catch (e: any) {
         last = String(e?.message ?? e)
+        // The coordinator refused the part (it does not know this order,
+        // or that this node took it): asking again changes nothing.
+        if (refusal(e?.status)) break
       }
       if (i < tries - 1) await new Promise((r) => { const t = setTimeout(r, this.deps.retryMs ?? MEMBER_RETRY_MS); t.unref?.() })
     }
@@ -324,6 +328,11 @@ export class StopAllReporter {
   private save(order: MeshOrder): void {
     try { this.deps.store.save(order) } catch (e: any) { this.deps.log(`[signals] couldn't save stop-all ${order.orderId}: ${e?.message ?? e}`) }
   }
+}
+
+/** A 4xx a retry cannot change: not 408 (timeout) or 429 (too many). */
+function refusal(status: unknown): boolean {
+  return typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 429
 }
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "")
