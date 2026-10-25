@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.170.0](https://github.com/anis-marrouchi/agentx/compare/v0.169.0...v0.170.0) (2026-10-25)
+
+
+### Features
+
+* **email:** email channel with replies held for approval, support queue ([#1287](https://github.com/anis-marrouchi/agentx/issues/1287)) ([#1325](https://github.com/anis-marrouchi/agentx/issues/1325)) ([c6887ca](https://github.com/anis-marrouchi/agentx/commit/c6887caf1e9547240f25b98fb1cbf986d2984ea4))
+* **release:** upgrade promise in the docs gate, install matrix with pass rate, roadmap ([#1294](https://github.com/anis-marrouchi/agentx/issues/1294)) ([#1326](https://github.com/anis-marrouchi/agentx/issues/1326)) ([9aac2d5](https://github.com/anis-marrouchi/agentx/commit/9aac2d503f3498539ac529d157d466a8a9f0e2cb))
+* **teams:** support team, team choice in agentx start, day-one test per team ([#1293](https://github.com/anis-marrouchi/agentx/issues/1293)) ([#1319](https://github.com/anis-marrouchi/agentx/issues/1319)) ([6f62b78](https://github.com/anis-marrouchi/agentx/commit/6f62b784d7b4dc2cb67f64d080f8959d78fc39c6))
+
+
+### Bug Fixes
+
+* **start:** check a --team clash before writing agentx.json ([#1319](https://github.com/anis-marrouchi/agentx/issues/1319) review) ([#1324](https://github.com/anis-marrouchi/agentx/issues/1324)) ([d0f35a2](https://github.com/anis-marrouchi/agentx/commit/d0f35a249ea61d4c82815ca743b4b4ab489e1dc0))
+
 ## [0.169.0](https://github.com/anis-marrouchi/agentx/compare/v0.168.0...v0.169.0) (2026-10-25)
 
 
