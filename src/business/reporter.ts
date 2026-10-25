@@ -14,6 +14,8 @@ export class Reporter {
 
   async postToMain(text: string, agentId?: string): Promise<void> {
     const dest = this.config.mainChannel
+    // The schema requires it once the business layer is on.
+    if (!dest) return
     try {
       await this.router.sendOutbound({
         channel: dest.channel,

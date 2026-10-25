@@ -17,6 +17,8 @@ import { PlanStore, hasPlanTables } from "@/requests/plan-store"
 import { readRequestSettings } from "@/requests/settings"
 import { cardWords } from "@/requests/card-view"
 import { parseDotEnv } from "@/utils/workspace-env"
+import { readHolds, releaseAgent } from "@/agents/holds"
+import { applyConfigMutation, unsetAtPath } from "@/daemon/config-mutator"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -32,6 +34,9 @@ import { parseDotEnv } from "@/utils/workspace-env"
 //             (whatsapp-triage/drafts); yes sends it through wacli
 //   email     replies an agent wrote to a customer's email (channels/email);
 //             yes sends it into the customer's thread, as edited
+//   agent     an agent another agent created (agents/holds); yes lets it
+//             run, no removes it and its schedules from agentx.json and
+//             keeps its folder
 //   content   posts an agent drafted for LinkedIn or X (content/drafts);
 //             yes posts it through the agent's connector, or saves it
 //             ready to paste when there is none
@@ -43,8 +48,8 @@ import { parseDotEnv } from "@/utils/workspace-env"
 // dashboard's /api/admin/approvals. The daemon's agent-facing API and the
 // MCP tool can create cards and read, never decide.
 
-export type ApprovalKind = "card" | "schedule" | "memory" | "wiki" | "whatsapp" | "email" | "content" | "request"
-export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki", "whatsapp", "email", "content", "request"]
+export type ApprovalKind = "card" | "schedule" | "agent" | "memory" | "wiki" | "whatsapp" | "email" | "content" | "request"
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "agent", "memory", "wiki", "whatsapp", "email", "content", "request"]
 
 export type InboxAction = "yes" | "no" | "later"
 
@@ -272,6 +277,27 @@ function emailItems(ctx: InboxContext): InboxItem[] {
   }))
 }
 
+function agentItems(ctx: InboxContext): InboxItem[] {
+  const waiting = Object.entries(readHolds(ctx.root)).filter(([, h]) => h.kind === "approval")
+  if (waiting.length === 0) return []
+  const agents = (readConfigJson(ctx).agents ?? {}) as Record<string, any>
+  return waiting.map(([id, h]) => {
+    const a = agents[id] ?? {}
+    return {
+      key: `agent:${id}`,
+      kind: "agent" as const,
+      title: `New agent "${a.name || id}", created by ${h.by}`,
+      ask: `Let ${a.name || id} (${a.tier || "claude-code"}) start working?`,
+      yes: "let it run",
+      no: "remove it from agentx.json (its folder is kept)",
+      raised_by: h.by,
+      created_at: h.at,
+      detail: clip(`Workspace: ${a.workspace || "?"}. Instructions: ${a.systemPrompt || "(none)"}`),
+      more: `agentx agent list`,
+    }
+  })
+}
+
 function readConfigJson(ctx: InboxContext): Record<string, unknown> {
   try { return JSON.parse(readFileSync(configPathFor(ctx), "utf-8")) } catch { return {} }
 }
@@ -361,6 +387,7 @@ function requestItems(ctx: InboxContext): InboxItem[] {
 const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
   card: cardItems,
   schedule: scheduleItems,
+  agent: agentItems,
   memory: memoryItems,
   wiki: wikiItems,
   whatsapp: whatsappItems,
@@ -482,6 +509,24 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
     case "schedule": {
       const r = await (yes ? approveSchedule : rejectSchedule)(ref, { configPath: configPathFor(ctx), reload: ctx.reload })
       return r.success ? { ok: true, message: r.message } : { ok: false, error: r.message }
+    }
+    case "agent": {
+      if (readHolds(ctx.root)[ref]?.kind !== "approval") return { ok: false, error: `no new agent "${ref}" waits for approval` }
+      if (yes) {
+        releaseAgent(ctx.root, ref, "approval")
+        return { ok: true, message: `${key}: approved. It runs once the daemon has loaded it; if it was added while the daemon was running, run: agentx daemon restart` }
+      }
+      // Its schedules came with it: they go too, rather than point at nobody.
+      const dropped: string[] = []
+      const r = await applyConfigMutation((cfg) => {
+        unsetAtPath(cfg, `agents.${ref}`)
+        for (const [id, job] of Object.entries(cfg.crons ?? {}) as [string, any][]) {
+          if (job?.agent === ref) { delete cfg.crons[id]; dropped.push(id) }
+        }
+      }, { configPath: configPathFor(ctx), reload: ctx.reload })
+      if (!r.success) return { ok: false, error: r.error || "could not remove it from agentx.json" }
+      releaseAgent(ctx.root, ref)
+      return { ok: true, message: `${key}: removed from agentx.json${dropped.length ? `, with its schedules ${dropped.join(", ")}` : ""}; its folder is kept` }
     }
     case "memory": {
       const slash = ref.indexOf("/")

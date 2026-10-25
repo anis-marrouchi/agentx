@@ -5,6 +5,7 @@ import { dirname, resolve } from "path"
 import { fileURLToPath } from "url"
 import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
 import { shippedTeam, shippedTeams } from "@/teams/catalog"
+import { holdIfAgentCreated } from "@/agents/holds"
 import {
   applyTeam,
   buildTeamPackage,
@@ -94,6 +95,8 @@ export async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
     }
     kept = writeTeamSkills(pkg, plan).kept
   }
+  // Added by an agent from its own shell: the new agents wait for the owner (#1169).
+  const heldBy = opts.dryRun ? undefined : holdIfAgentCreated(dirname(path), plan.agents.map((a) => a.id))
 
   for (const a of plan.agents) {
     const skills = a.skills.length ? chalk.dim(`  skills: ${a.skills.join(", ")}`) : ""
@@ -105,6 +108,7 @@ export async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
     console.log(`  ${chalk.green("+")} schedule ${chalk.cyan(id)} — ${job.schedule} (${job.timezone})${job.enabled ? "" : chalk.dim(" disabled")}`)
   }
   if (result.reloaded) console.log(chalk.dim("  (daemon hot-reloaded)"))
+  if (heldBy) console.log(chalk.yellow(`  Added by agent "${heldBy}": these agents start once the owner approves each one (agentx approvals list).`))
   if (kept.length) {
     console.log(chalk.yellow(`  Kept ${kept.length} file${kept.length === 1 ? "" : "s"} already there instead of the team's version:`))
     for (const f of kept) console.log(chalk.dim(`      ${f}`))

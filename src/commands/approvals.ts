@@ -1,5 +1,6 @@
 import { Command } from "commander"
 import chalk from "chalk"
+import { callingAgent } from "@/agents/holds"
 import { createCard, IF_SILENT_VALUES, type DecisionCard } from "@/approvals/cards"
 import { registerCardCommands } from "./approvals-card"
 import { decide, listInbox, type InboxAction, type InboxItem } from "@/approvals/inbox"
@@ -19,6 +20,7 @@ export const approvals = new Command("approvals")
 const KIND_LABEL: Record<InboxItem["kind"], string> = {
   card: "card",
   schedule: "schedule",
+  agent: "new agent",
   memory: "memory",
   wiki: "wiki",
   whatsapp: "whatsapp",
@@ -71,6 +73,12 @@ async function answer(key: string, action: InboxAction, opts: { force?: boolean;
   const hours = opts.hours ? Number(opts.hours) : settings.laterHours
   if (action === "later" && !(hours > 0)) {
     console.error(chalk.red("  --hours must be a positive number")); process.exitCode = 1; return
+  }
+  // A new agent is the owner's call (#1169): the agent that created it, or
+  // any other agent running this CLI from its shell, cannot let it in.
+  const asker = callingAgent()
+  if (asker && key.startsWith("agent:")) {
+    console.error(chalk.red(`  Only the owner decides on a new agent; agent "${asker}" asked.`)); process.exitCode = 1; return
   }
   const r = await decide(ctx(), key, action, { force: opts.force, note: opts.note, laterHours: hours, choice: opts.choice, text: opts.text })
   if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
