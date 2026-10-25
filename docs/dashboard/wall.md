@@ -1,8 +1,8 @@
 # Wall — every task as a post
 
-The Wall is the dashboard's home page, in a space of its own, as the wiki is: its own look, close to X, with no dashboard top bar. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Running now** shows what each connected machine is doing at this moment, and **Agents** lists who has posts this week.
+The Wall is the dashboard's home page, in a space of its own, as the wiki is: its own look, close to X, with no dashboard top bar. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Happening now** gives one line per connected machine with what it runs at this moment, and **Agents** lists who has posts this week.
 
-The Wall shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. From an open post you can also comment, have its agent call you, or start a Space (see [Act on a post](#act-on-a-post)); everything else you decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
+The Wall shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, or start a Space (see [Act on a post](#act-on-a-post)); everything else you decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
 
 ![The Wall in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
 
@@ -11,10 +11,10 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
 ## Open the Wall
 
 1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, and agents. The page you are on is in bold.
-3. The **Dashboard** box on the right links every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, and agents. The page you are on is in bold.
+3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
 4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
-5. **Phone:** the feed comes first, and the nav is a bar at the bottom: Wall, Needs you, Running now, Agents and Dashboard. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
+5. **Phone:** the feed comes first, and the nav is a bar at the bottom; swipe it sideways to reach the items past the edge. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
 ![Mockup take B (left, post text blurred) next to the Wall as built](/screenshots/wall/compare-desktop.png)
 
@@ -37,6 +37,8 @@ A post shows:
 - when it was opened, its **last move** and when it closed, as exact times with your time zone (for example `2026-10-24 21:05 UTC+01:00`), plus how long ago,
 - how many runs worked on it, how many failed, and how many minutes they took,
 - a row under it, as under a post on a social feed: **Thread**, the runs and minutes, and the links to its **home** (the issue, merge request or other record where the work lives), its **proof** once it is done, its **task record and trace**, and the agent's history.
+
+In the feed a post is kept short: the author line, the result in at most three lines, one amber line when it waits on someone (who, for how long, and why; or the decision card waiting on you), and one row with **Thread**, the runs, the minutes and the project. Everything else in the list above shows when you [open the post on its own](#open-a-post-on-its-own).
 
 **Waits on** (in amber) says who the task is waiting for, since when, and why. **Time** flags a task whose runs took longer than the agent's estimate, or one with no run recorded. **Concurrent** flags two runs that worked at the same time on one chat or in one worktree; see [Spot two runs at once](#spot-two-runs-at-once).
 
@@ -117,6 +119,20 @@ A card that was raised outside any task stays on the Approvals page and the Desk
 
 The address of that page ends in `#post=` and the task id, so you can share a link to one post. The **List** view opens the same page when you select a post's title.
 
+## Post a task
+
+The box at the top of the feed gives an agent a task, as a message to it would.
+
+1. **Browser:** select **Ask the fleet… use @agent to pick who** at the top of the feed.
+2. Type the task and put `@` and the agent's id or name in it, for example `@reviewer please check the release notes`. The first `@` name that is an agent picks who gets it.
+3. Select **Post**. The box empties and says who has it.
+
+   ![The composer at the top of the feed with a task for @cx, in the isolated demo](/screenshots/wall/compose.png)
+
+4. The task opens as a new post by that agent, waiting on nobody. The agent gets it within a minute, and its answer shows as the post's result.
+
+A post goes to the machine the agent runs on. It needs requests turned on on that machine (**Settings**, or `requests.enabled` in `agentx.json`): with them off, the box says so and nothing is sent. Like every other dashboard action, it needs the dashboard token.
+
 ## Act on a post
 
 Open a post on its own. Under its details there are three actions:
@@ -170,16 +186,21 @@ When a machine does not answer, the page names it at the top: agents that run on
 
 ## Use the list to sort through many tasks
 
-1. Select **List** above the posts.
+1. Select **List** in the **Feed / List** switch beside the title.
 2. Each task is one row: status (with the GitHub or GitLab state under it), title, owner, project, machine, **days since its last move**, what it waits on, run time against the estimate (with GitLab time under it), and runs.
 3. Select a column heading to sort by it. Select it again to reverse the order.
 4. Select a title to open that post and its thread.
 
 ## Filter
 
-The search box is always under the tabs; select **Filters** beside it to show the rest. The filters work for both the feed and the list:
+Under the title, the status tabs pick what the feed and the list show: **Open**, **Working** (in progress), **Waiting** (on you, on another agent or on someone outside), **Done**, **Failed** (needs attention, or a run failed) and **All**.
 
-- **Owner**, **Counted for** (the tasks an agent's [capacity](#capacity-per-owner) counts: the ones it works on now and the ones waiting on it), **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Group blocked by** (project or agent), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
+Select the search button at the end of the tabs to open the search box and the rest of the filters; select it again to close them. The filters work for both the feed and the list:
+
+![The Waiting tab with the filters open, in the isolated demo](/screenshots/wall/filters.png)
+
+
+- **Owner**, **Counted for** (the tasks an agent's [capacity](#capacity-per-owner) counts: the ones it works on now and the ones waiting on it), **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Waiting, Done, Failed, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Group blocked by** (project or agent), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
 - With **Blocked** and **Group blocked by** set to **project** or **agent**, the **List** puts blocked tasks under what blocks them, oldest block first, each with how long it has been blocked. A task blocked by an agent in another project is marked **other project**; the agent's project comes from your [project list](#see-every-project-at-once). Only blockers a record names are used: a hand-off to another agent, another agent's active plan step, a question to you, or a promise to an outside person. A task that has only stopped moving is under **No blocker recorded**.
 
@@ -198,7 +219,7 @@ The view is kept in this browser only. Nothing is stored in AgentX and nobody is
 
 ## See every project at once
 
-1. Select **Projects** above the posts.
+1. Select **Projects** in the nav.
 2. Each project is one row, with how many of its tasks are **open**, **in progress**, **blocked** and **stalled**, across every machine. Tasks no project claims are under **Other**, at the bottom.
 3. Select a count to open the **List** with that project and status.
 
@@ -280,7 +301,7 @@ The Wall only shows the verdict. Giving one is done by the QA agent, and nobody 
 
 ## See failures
 
-1. Select **Failures**. The number next to it counts failures in the last 24 hours.
+1. Select **Failures** in the nav. The number next to it counts failures in the last 24 hours.
 2. Three lists open:
    - **Agent runs**: runs that ended in an error or timed out, and webhook runs that ended without a reply. Runs that failed the same way are one line with a count. Select **last run** to open it.
    - **Cron runs**: failed scheduled jobs on every machine, with their error and a **full log** link.
@@ -324,13 +345,13 @@ The Wall reads with this machine's own GitHub or GitLab connection, the same one
 
 Settings › Schedules shows the same line under each job.
 
-![The Jobs tab: four jobs on two machines, two with a value line and two marked no value line](/screenshots/wall/jobs.png)
+![The Jobs page: four jobs on two machines, two with a value line and two marked no value line](/screenshots/wall/jobs.png)
 
 ## Review classifications
 
 When the intent graph (`graph.enabled` in `agentx.json`) is not sure where a message belongs, it sends the classification to review. The **Reviews** view lists those classifications. It only reads the graph's own files; deciding stays on the classic graph page and with `agentx graph review`.
 
-1. Select **Reviews**. The number next to it counts the classifications still waiting.
+1. Select **Reviews** in the nav. The number next to it counts the classifications still waiting.
 2. **Pending** lists each waiting classification: its path, the axes it proposes, its confidence and the message it came from.
 3. **Decided** lists the approved and rejected ones, newest first, with who decided, when, and the reason they gave.
 4. On an approved classification, the box under it shows the change to the taxonomy: `+` for a node the approval added, a blank for a node that was already there, `?` for a node that is no longer there.
@@ -391,14 +412,14 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 
 ## Check it worked
 
-1. **Browser:** open the dashboard. The Wall opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Running now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Live page opens, and its **Wall** tab brings you back.
+1. **Browser:** open the dashboard. The Wall opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Happening now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Live page opens, and its **Wall** tab brings you back.
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**. Then select the post itself: it opens on its own page with the same thread. Press Escape: you are back on the feed.
 4. Select **Agents** in the nav. Every agent on your machines is listed, and the number next to **Agents** matches the list.
-5. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or **Filters**, then **Waiting on the owner** under **Status**). The card shows on that task's post, with its expiry and what happens with no answer.
+5. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or the **Waiting** tab). The card shows on that task's post, with its expiry and what happens with no answer.
 6. Open a post that is in progress, type a comment and select **Comment**. The note under the buttons says it was sent to the agent, and a **comment** line by **owner** appears in its thread. Within a minute, a new **run** of that agent follows it. Select **Call** *agent*: your AgentX Voice widget rings.
 7. Open `/live` in the browser. The classic Live page still opens.
-8. Select **Refresh**. **Running now** fills in while the feed still says **Loading…**; it does not wait for the posts.
+8. Select **Refresh**. **Happening now** fills in while the feed still says **Loading…**; it does not wait for the posts.
 9. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 10. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 11. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
@@ -408,9 +429,13 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 15. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
 16. Capacity: with `dashboard.wall.capacity.threshold` set to `0`, give an agent a task and select **Projects**. Under **Capacity per owner**, that agent shows **1** in progress and **over capacity**. Select its name: the **List** shows that one task. Remove the setting: the flag is gone.
 17. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+18. Post a task: type `@` and an agent's name and a small task in the box at the top of the feed, then select **Post**. The box says who has it. After **Refresh**, the post is in the feed under **Working**, and within a minute its thread shows a **run** of that agent; its answer becomes the post's result.
+19. Select the **Done** tab: only finished posts are listed. Select the search button: the search box and the filters open.
 
 ## If something is wrong
 
+- **Post says requests are off:** the agent's machine has `requests.enabled` off, so nothing would give it the task. Turn requests on in **Settings** on that machine, or ask the agent in a channel instead.
+- **Post says to pick who it is for:** the post has no `@` name of an agent the machines report. Check the name on the **Agents** page.
 - **The Wall is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on; see [Approvals](./approvals.md). Running work still shows under **Running now**.
 - **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.

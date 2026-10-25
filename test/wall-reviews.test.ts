@@ -202,7 +202,7 @@ describe("route and page", () => {
 
   it("puts Reviews in the Wall's views, with no decision buttons", () => {
     const html = renderWallPage()
-    expect(html).toContain('data-view="reviews"')
+    expect(html).toContain('data-nav="reviews"')
     expect(html).toContain('id="wall-reviews"')
     expect(html).toContain("/api/admin/wall/reviews")
     expect(html).toContain("/admin/wiki/search?q=")

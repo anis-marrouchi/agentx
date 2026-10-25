@@ -101,7 +101,10 @@ button, input, select { font-family: inherit; }
   body { padding-bottom: 60px; }
   .ax-wall, .ax-wall.is-wide { grid-template-columns: minmax(0, 1fr); }
   .ax-wall__nav { position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: 56px; z-index: 10; flex-direction: row; justify-content: space-around; padding: 0 4px;
-    background: color-mix(in srgb, var(--ax-bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--ax-border); overflow: visible; }
+    background: color-mix(in srgb, var(--ax-bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--ax-border); overflow-x: auto; overflow-y: visible; scrollbar-width: none; }
+  /* Nine items (#1355): the bar scrolls sideways rather than squeeze them. */
+  .ax-wall__nav { justify-content: flex-start; }
+  .ax-wall__item { flex: none; }
   .ax-wall__logo { display: none; }
   .ax-wall__item { padding: 10px; }
   .ax-wall__aside > *, .ax-wall__main { grid-column: 1; }

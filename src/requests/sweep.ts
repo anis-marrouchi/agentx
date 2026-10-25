@@ -1,5 +1,5 @@
 import { isQueued } from "@/agents/queued"
-import { OVERDUE_REASON, type RequestRecord, type RequestStore } from "./store"
+import { OVERDUE_REASON, WALL_CHANNEL, type RequestRecord, type RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
@@ -98,15 +98,22 @@ export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?
  *  the request's card shows as the last answer (#481). */
 export function pickupText(r: RequestRecord): string {
   const first = r.askedAgent && r.askedAgent !== r.agentId ? r.askedAgent : null
-  const asked = `on ${r.channel} (chat ${r.chatId}) on ${new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")} UTC and was not finished.`
-  const report = first
+  const on = new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")
+  const asked = `on ${r.channel} (chat ${r.chatId}) on ${on} UTC and was not finished.`
+  // A post the owner wrote on the Wall (#1355) has no chat to report in.
+  const wall = r.channel === WALL_CHANNEL
+  const report = wall
+    ? "The Wall has no chat: give your report as the answer to this turn, which shows as the post's result."
+    : first
     ? `That chat is ${first}'s: you may have no way to write there, so do not report in it. Give your report as the answer to this turn: the owner reads it on the request's card. If you have a chat of your own with them, you can report there as well.`
     : "Report to them in that chat."
   return [
     `[agentx:request-pickup id=${r.id}]`,
-    first
-      ? `The owner handed this request to you. It was asked of ${first} ${asked}`
-      : `The owner asked you to pick this request up again. It was asked ${asked}`,
+    wall && !first && !r.ownerNote
+      ? `The owner gave you this task on the Wall on ${on} UTC.`
+      : first
+        ? `The owner handed this request to you. It was asked of ${first} ${asked}`
+        : `The owner asked you to pick this request up again. It was asked ${asked}`,
     "",
     "What they asked:",
     r.text,

@@ -22,8 +22,8 @@ import { findConfigPath } from "./config-mutator"
 
 export const REQUESTS_PANEL_PREFIX = "/api/admin/approvals/requests"
 
-/** This node's agents, for the hand-off choice. */
-function agentsOf(configPath?: string): Array<{ id: string; name: string }> {
+/** This node's agents, for the hand-off choice and a Wall post (#1355). */
+export function agentsOf(configPath?: string): Array<{ id: string; name: string }> {
   const path = findConfigPath(configPath)
   if (!existsSync(path)) return []
   try {
