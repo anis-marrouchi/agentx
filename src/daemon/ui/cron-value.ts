@@ -22,14 +22,14 @@ export const CRON_VALUE_CSS = `
  *  line. `nodes` is the live fleet snapshot (name, crons). */
 export const CRON_JOBS_SCRIPT = `
 function axCronJobsHtml(nodes, esc) {
+  if (!nodes) return '<p class="ax-wall__empty">Loading…</p>';
   var rows = [];
-  (nodes || []).forEach(function (n) {
+  nodes.forEach(function (n) {
     (n.crons || []).forEach(function (j) {
       rows.push('<li><b>' + esc(j.id) + '</b> on ' + esc(n.name) + ' · ' + esc(j.schedule) + ' · runs ' + esc(j.agent) + (j.enabled ? '' : ' · <i>off</i>') +
         '<div>' + axCronValueHtml(j.value, esc) + '</div></li>');
     });
   });
-  if (!nodes) return '<p class="ax-wall__empty">Loading…</p>';
   return rows.length ? '<div class="wf"><h3>Recurring jobs</h3><ul>' + rows.join('') + '</ul></div>' : '<p class="ax-wall__empty">No recurring jobs.</p>';
 }
 `
