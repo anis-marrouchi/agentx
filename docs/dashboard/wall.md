@@ -187,6 +187,22 @@ Tasks carry no project of their own. You name the projects once in `agentx.json`
 
 A task belongs to the first project that names its home repo; else the first that names its agent; else the first whose folder holds that agent's workspace. A task no entry names is under **Other**. With no list, a task's project is its home repo. The machine showing the Wall also applies its own list to tasks from other machines, by repo or agent, so one list can name the projects of the whole mesh. All keys: [dashboard settings](../reference/config-operations.md#dashboard).
 
+### Capacity per owner
+
+Under the projects, **Capacity per owner** lists each agent with open work, across every machine:
+
+- **In progress:** open tasks in progress that the agent works on now. When a task has a plan, the agent of its current step works on it, not the task's owner.
+- **Waiting on it:** other agents' tasks whose record says they wait on this agent: an open hand-off to it, or its current plan step.
+- **Capacity:** **over capacity** when in progress plus waiting is above your threshold, else **ok**. A count equal to the threshold is not over.
+
+The flag is off until you set a threshold in `agentx.json`:
+
+```json
+{ "dashboard": { "wall": { "capacity": { "threshold": 3 } } } }
+```
+
+Select an agent's name to open the **List** of its tasks. The Wall only counts; nobody is notified when an agent goes over.
+
 ### Closed per week
 
 Under the projects, **Closed per week** shows how many tasks were closed in each of the last four weeks, per project and per owner, oldest week first, with the total and a small bar line. A week is the seven days up to now, then the seven before, and so on; a task closed exactly seven days ago counts in the older week. Owners with open work but nothing closed show a row of zeros. It reads only when each task closed and the project list above, across every machine; a machine on an older AgentX is left out.
@@ -339,7 +355,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 10. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
 11. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
 12. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
-13. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+13. Capacity: with `dashboard.wall.capacity.threshold` set to `0`, give an agent a task and select **Projects**. Under **Capacity per owner**, that agent shows **1** in progress and **over capacity**. Remove the setting: the flag is gone.
+14. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
@@ -352,6 +369,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **No GitLab time on a GitLab task:** the machine that keeps the task has no GitLab connection, or the home link is on a different GitLab address than the one configured.
 - **A post says "state unknown":** this machine could not read the issue on GitHub or GitLab. Point at it for the reason. "not found" usually means the token cannot see that project; "did not answer in time" clears on the next refresh.
 - **No state on a GitHub or GitLab task:** the machine that keeps the task has no connection to that forge, or the home link is on another GitLab address than the one configured.
+- **An agent is not in Capacity per owner:** it has no open task and nothing waits on it. A task waiting on another agent counts there only when a hand-off or a plan step records it.
 - **No "Comment by" link:** the comment was posted before this version, by a person, or outside AgentX. Only comments AgentX posted, with the id the forge returned, are linked.
 - **A task waits on QA but Awaiting QA only does not list it:** check **Status**. With **Open**, a closed task is hidden; choose **All**. If it is still missing, run `agentx requests --qa awaiting` on the machine that keeps it. When it is not listed there, it was never marked with `needsQa: true`, or it already has a verdict since the mark.
 - **"Couldn't read …" under Reported issues:** this machine could not list that project's issues. "not found" usually means the token cannot see the project or the `project` path is wrong; "did not answer in time" clears on the next refresh.

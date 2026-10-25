@@ -19,6 +19,7 @@ The dashboard is the web page served by `agentx board serve`. See [Dashboard](/d
 | `dashboard.draftAgent` | string | — | Agent that drafts text when you create an issue from a board. |
 | `dashboard.wall.rhythmHours` | number | `requests.staleAfterHours` | The normal rhythm of work on the [Wall](/dashboard/wall#see-every-project-at-once), in hours. An open task with no move for more than twice this is **stalled**. |
 | `dashboard.wall.projects` | list of objects | `[]` | Names the Wall's projects. A task's project comes from its home repo, its agent, or that agent's workspace, checked in that order. Empty: a task's project is its home repo. |
+| `dashboard.wall.capacity.threshold` | whole number | — | Flags an agent **over capacity** on the [Wall](/dashboard/wall#capacity-per-owner) when its tasks in progress plus the tasks waiting on it are above this. Unset: no flag. |
 
 Each entry in `dashboard.daemons`:
 

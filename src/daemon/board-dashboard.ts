@@ -88,11 +88,14 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
 import { claimBlocker } from "./wall-blocks"
+import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
+import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
+import { handleAgentChatApi } from "./agent-chat-api"
 
 // --- Kanban Board Dashboard ---
 //
@@ -791,6 +794,23 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       sendJson(res, 401, { error: "unauthorized" })
       return
     }
+  }
+  // The agent page's chat (#1163), after the token gate above.
+  if (await handleAgentChatApi(req, res, path, {
+    daemonUrl: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token, readBody: readJson,
+  })) return
+  // The chat's "no model yet" box (#1163), after the token gate above.
+  if (path === MODEL_READY_PATH || path === MODEL_KEY_PATH) {
+    if (await handleModelSetupApi(req, res, path, url.searchParams, {
+      dir: process.cwd(),
+      readBody: readJson,
+      reloadDaemon: async () => {
+        const headers: Record<string, string> = {}
+        if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+        const r = await fetch(ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") + "/reload", { method: "POST", headers, signal: AbortSignal.timeout(10_000) })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      },
+    })) return
   }
   if (method === "GET" && path === "/api/admin/config") {
     await handleAdminConfigGet(req, res)
@@ -3084,6 +3104,7 @@ function wallDeps(config: DaemonConfig): WallDeps | null {
     isAgent: (id) => Object.prototype.hasOwnProperty.call(agents, id),
     workspaceOf,
     projects: wallProjects(config.dashboard?.wall, staleAfterHours, workspaceOf),
+    capacityThreshold: config.dashboard?.wall?.capacity?.threshold ?? null,
     cards: () => listCards(ictx.root, "pending"),
     gitlabUrl: forgeConnectorsOf(config).gitlab?.url ?? null,
   }
@@ -3168,7 +3189,9 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
     }
   }))
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
-  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names), staleAfterHours: local.staleAfterHours }
+  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names),
+    // Capacity (#1191): counted here over every node's posts, with this node's threshold.
+    capacity: wallCapacity(posts, deps?.capacityThreshold), staleAfterHours: local.staleAfterHours }
 }
 
 /** Weekly throughput across the mesh (#1192): every node's closures,

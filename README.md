@@ -41,7 +41,7 @@
 
 - your clients or your team already work in WhatsApp, Telegram, GitLab or GitHub;
 - you want the agents, and what they see, on a machine you control ([your data](docs/your-data.md));
-- you have someone technical for a 10 to 20 minute install;
+- you have someone who can run one command in a terminal to install it;
 - you already use Claude Code, Codex, OpenCode or a model API key ([what it costs](docs/help/costs.md)).
 
 **Not for you yet if:**
@@ -111,7 +111,21 @@ The Workflows editor has a chat control. Describe the timing, source, and destin
 
 ## Install
 
-A technical teammate needs a terminal for installation, model setup, and starting the services. The web wizard handles the rest of the initial setup; daily inspection is in the browser. Plan on about 10 to 20 minutes for a first install, plus the time to get a model key. AgentX runs on **macOS and Linux** (Windows is untested; try WSL) and requires **Node.js 22.19 or newer, up to 26**.
+One command, on macOS or Linux with **Node.js 22.19 or newer, up to 26**:
+
+```sh
+npx agentix-cli start
+```
+
+It creates `agentx.json` with one agent in the current folder, starts the daemon and the dashboard in the background, and ends with your first agent's chat open in the browser. If no model is set up yet, the chat asks for an API key, or for the Claude Code login, and then answers. Run it again any time: it reuses what is running and never overwrites your config. Windows is untested; try WSL.
+
+To install the `agentx` command globally first, use the installer, which checks Node.js and then runs the same start:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.sh | bash
+```
+
+With Docker instead (its default image uses an API model rather than a preinstalled model CLI):
 
 ```sh
 git clone https://github.com/anis-marrouchi/agentx.git
@@ -120,21 +134,12 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-Open **http://127.0.0.1:4202/setup**. Compose builds this checkout and starts both services; its default image uses an API model rather than a preinstalled model CLI.
-
-Without Docker, install Node.js 22.19 or newer (up to 26) and pnpm 10, then build and open the wizard:
+Then open **http://127.0.0.1:4202/setup**. From a source checkout, with pnpm 10:
 
 ```sh
 pnpm install
 pnpm build
-node dist/cli.js setup
-```
-
-On a source install, the wizard serves the dashboard and **the daemon is a separate process**. Start it in another terminal, or use the wizard's **Start daemon now** button:
-
-```sh
-node dist/cli.js daemon start --detach
-node dist/cli.js daemon status
+node dist/cli.js start
 ```
 
 The npm package is `agentix-cli`; the installed executable is `agentx`. Follow the [installation guide](docs/install.md) for details.

@@ -1349,6 +1349,19 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-td-scenario:hover { border-color: var(--ax-accent); color: var(--ax-accent); }
 
+.ax-td-model {
+  padding: 12px 14px; background: var(--ax-bg-elev);
+  border-bottom: var(--ax-border-w) solid var(--ax-border);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ax-td-model[hidden], .ax-td-model form[hidden] { display: none; }
+.ax-td-model__t { font-weight: 600; font-size: 13px; }
+.ax-td-model__hint { margin: 0; font-size: 12px; color: var(--ax-text-2); }
+.ax-td-model form { display: flex; gap: 6px; }
+.ax-td-model form .inp { flex: 1; min-width: 0; }
+.ax-td-model__err { font-size: 12px; color: var(--ax-danger, #c0392b); }
+.ax-td-model__err:empty { display: none; }
+
 .ax-td-chat {
   flex: 1; overflow-y: auto; padding: 14px;
   display: flex; flex-direction: column; gap: 8px;

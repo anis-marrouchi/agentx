@@ -12,7 +12,7 @@ import { resolve } from "path"
  * Parse a dotenv-style file. Tolerates the `export KEY=VALUE` form used by
  * shell-sourced files like .env.gitlab on peer-server.
  */
-function parseDotEnv(content: string): Array<[string, string]> {
+export function parseDotEnv(content: string): Array<[string, string]> {
   const out: Array<[string, string]> = []
   for (const raw of content.split("\n")) {
     const trimmed = raw.trim()
