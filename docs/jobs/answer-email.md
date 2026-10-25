@@ -35,7 +35,10 @@ You need:
    agentx daemon restart
    ```
 
-To set it up in the browser instead, open **Settings › Channels › Email**, fill in the form and select **Add mailbox**. The dashboard never sees the password: add the line it names (for example `EMAIL_SUPPORT_PASSWORD=…`) to `.env` yourself, then restart the daemon. The browser form does not try the login first; `agentx connect email` does.
+To set it up in the browser instead, open **Settings › Channels › Email**, fill in the form and select **Add mailbox**.
+
+![Settings, Channels tab, Email: one mailbox answered by the assistant, who may write, replies waiting for approval, and the Add a mailbox form](/screenshots/channels/email.png)
+ The dashboard never sees the password: add the line it names (for example `EMAIL_SUPPORT_PASSWORD=…`) to `.env` yourself, then restart the daemon. The browser form does not try the login first; `agentx connect email` does.
 
 ## 3. Send the replies
 
@@ -43,6 +46,9 @@ When the agent has written a reply, you get a notification: **Email reply to …
 
 1. **Browser:** open **Approvals** and select **Email**. Each reply shows who it goes to, the subject, and the reply text in a box you can edit.
 2. Change the text if you want, then select **Yes** to send it, or **No** to drop it.
+
+![Approvals, Email filter: an email reply to Sam with the reply text in an editable box, and Yes, No and Later](/screenshots/approvals/email-reply.png)
+
 
 From the terminal:
 

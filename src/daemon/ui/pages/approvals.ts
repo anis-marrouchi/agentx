@@ -254,6 +254,7 @@ function item(i){
     + '<p class="apv__ask">' + esc(i.ask) + '</p>'
     + (i.recommend ? '<p class="apv__rec"><b>Recommends:</b> ' + esc(i.recommend) + '</p>' : '')
     + (i.choices ? choices(i) : '')
+    + (i.draft ? draftBox(i) : '')
     + (i.expires ? '<p class="apv__exp' + (soon ? ' is-soon' : '') + '" title="' + esc(new Date(i.expires).toLocaleString()) + '">Expires ' + esc(rel(i.expires)) + ', then: ' + esc(i.if_silent) + '</p>' : '')
     + '<details class="apv__detail"><summary>Details</summary>' + more.join('') + '</details>'
     + '<div class="apv__acts">'
@@ -281,8 +282,12 @@ function choices(i){
     + i.choices.map(function(c, n){
       return '<label class="apv__opt"><input type="radio" name="' + name + '" value="' + (n + 1) + '"' + (n === rec ? ' checked' : '') + '><span>' + esc(c) + (n === rec ? ' <em>recommended</em>' : '') + '</span></label>';
     }).join('')
-    + '</fieldset>'
-    + (i.draft ? '<label class="apv__draft">' + (i.kind === 'email' ? 'The email that is sent (you can edit it)' : 'Message the agent gets (you can edit it)') + '<textarea rows="5" data-draft></textarea></label>' : '');
+    + '</fieldset>';
+}
+
+// The message a yes sends, editable: a card's suggested message, or an email reply.
+function draftBox(i){
+  return '<label class="apv__draft">' + (i.kind === 'email' ? 'The email that is sent (you can edit it)' : 'Message the agent gets (you can edit it)') + '<textarea rows="' + (i.kind === 'email' ? 8 : 5) + '" data-draft></textarea></label>';
 }
 
 async function act(li, action){
@@ -293,9 +298,9 @@ async function act(li, action){
     var picked = li.querySelector('input[type=radio]:checked');
     if (!picked) { say('Pick one of the choices first.', 'err'); var first = li.querySelector('input[type=radio]'); if (first) first.focus(); return; }
     body.choice = Number(picked.value);
-    var ta = li.querySelector('textarea[data-draft]');
-    if (ta && ta.value.trim()) body.text = ta.value;
   }
+  var ta = li.querySelector('textarea[data-draft]');
+  if (action === 'yes' && ta && ta.value.trim()) body.text = ta.value;
   if (action === 'yes' && it && it.text_hash) body.seen = it.text_hash;
   var btns = li.querySelectorAll('button[data-act]');
   btns.forEach(function(b){ b.disabled = true; });

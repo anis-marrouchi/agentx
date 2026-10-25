@@ -11,6 +11,7 @@ The list brings together six kinds of item:
 | **Memory fact** | Something an agent learned from an outside source ([review what agents learn](../jobs/agent-memory.md)) | Lets the agent use it | Keeps it out for good |
 | **Wiki lesson** | A lesson proposed for the shared wiki | Writes the article | Declines it |
 | **WhatsApp reply** | A reply an agent drafted for a watched WhatsApp chat ([watch a WhatsApp chat](../jobs/watch-whatsapp.md)) | Sends it through [wacli](../reference/glossary.md) (the WhatsApp tool AgentX uses) | Drops the draft; nothing is sent |
+| **Email reply** | A reply an agent wrote to a customer's email ([answer customer email](../jobs/answer-email.md)). The text is in a box you can edit | Sends it, as you edited it, into the customer's thread | Drops the reply; nothing is sent |
 | **Post** | A LinkedIn or X post an agent drafted in your voice, with the past posts it followed ([draft posts in your voice](../jobs/content.md)) | Posts it through the agent's connector, or saves it as a file ready to paste when there is none | Drops the draft; nothing is published |
 | **Request** | Something you asked an agent for that failed, ran out of time, was cut off or went quiet ([keep track of what you asked for](../jobs/open-requests.md)) | Hands it back to the agent | Drops the request |
 
@@ -58,7 +59,7 @@ In a narrow browser window the buttons fill the width of the card:
 
 *Fictional demo data. No real agents, people or messages.*
 
-To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki**, **WhatsApp** or **Posts** at the top. With several machines connected, choose the machine in the top bar's machine menu to see its list.
+To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki**, **WhatsApp**, **Email** or **Posts** at the top. With several machines connected, choose the machine in the top bar's machine menu to see its list.
 
 ## Answer from the terminal
 

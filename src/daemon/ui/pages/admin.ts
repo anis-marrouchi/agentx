@@ -2800,9 +2800,10 @@ function renderEmailPane() {
       '<div class="meta">' +
         '<span class="chip ' + (e.enabled ? '' : 'off') + '">' + (e.enabled ? 'enabled' : 'disabled') + '</span>' +
         'agent: <b>' + escapeHtml(acc.agent) + '</b> · IMAP <b>' + escapeHtml(acc.imap) + '</b> · SMTP <b>' + escapeHtml(acc.smtp) + '</b>' +
-        ' · password: <code>' + escapeHtml(acc.passwordRef || 'not set') + '</code>' +
-        ' · who may write: <b>' + escapeHtml(acc.allowFrom.length ? acc.allowFrom.join(', ') : 'nobody') + '</b>' +
+      '</div><div class="meta">' +
+        'who may write: <b>' + escapeHtml(acc.allowFrom.length ? acc.allowFrom.join(', ') : 'nobody') + '</b>' +
         ' · replies: <b>' + (acc.send === 'auto' ? 'sent at once' : 'wait for your approval') + '</b>' +
+        ' · password: <code>' + escapeHtml(acc.passwordRef || 'not set') + '</code>' +
       '</div></div>' +
       '<button class="danger" data-email-del="' + escapeHtml(acc.id) + '">Delete</button></div>').join('');
   $('ch-email').innerHTML =
