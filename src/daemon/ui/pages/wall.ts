@@ -51,6 +51,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <div class="ax-wall__views" role="tablist">
         <button type="button" role="tab" data-view="feed" class="is-on">Feed</button>
         <button type="button" role="tab" data-view="list">List</button>
+        <button type="button" role="tab" data-view="projects">Projects</button>
         <button type="button" role="tab" data-view="failures">Failures <span id="wall-fail-n"></span></button>
       </div>
     </header>
@@ -58,7 +59,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <button type="button" id="f-toggle" class="ax-btn ax-btn--ghost ax-wall__ftoggle" aria-expanded="false">Filters</button>
       <label>Owner <select id="f-owner"><option value="">All</option></select></label>
       <label>Status <select id="f-status">
-        <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option>
+        <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option><option value="stalled">Stalled</option>
         <option value="in_progress">In progress</option><option value="closed">Closed</option><option value="">All</option>
       </select></label>
       <label>No move for <select id="f-idle"><option value="">any time</option><option value="1">1+ day</option><option value="3">3+ days</option><option value="7">7+ days</option></select></label>
@@ -77,6 +78,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-profile" class="ax-wall__profile" aria-label="Agent profile" hidden></section>
     <section id="wall-feed" class="ax-wall__feed" aria-label="Posts"></section>
     <section id="wall-list" class="ax-wall__list" aria-label="Posts as a list" hidden></section>
+    <section id="wall-projects" class="ax-wall__list" aria-label="Projects" hidden></section>
     <section id="wall-failures" class="ax-wall__failures" aria-label="Failures" hidden></section>
   </div>
 </div>`

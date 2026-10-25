@@ -23,7 +23,7 @@ A post shows:
 - its **status** (in progress, waiting on owner, waiting on another agent, needs attention, done, declined or dropped) and a short title,
 - who asked for it,
 - its **group**: the chat it came from. A post only shows what was recorded for its own task, never work from another chat,
-- its **project**, when its home is an issue or merge request,
+- its **project**: the one your [project list](#see-every-project-at-once) names for it (none, so **Other**, when the list names nothing for it); with no list, its home repo when its home is an issue or merge request,
 - when it was opened, its **last move** and when it closed, as exact times with your time zone (for example `2026-10-24 21:05 UTC+01:00`), plus how long ago,
 - how many runs worked on it, how many failed, and how many minutes they took,
 - a row under it, as under a post on a social feed: **Thread**, the runs and minutes, and the links to its **home** (the issue, merge request or other record where the work lives), its **proof** once it is done, its **task record and trace**, and the agent's history.
@@ -129,8 +129,9 @@ The profile is the **Owner** filter, so its address can be shared like any other
 
 The filters work for both the feed and the list:
 
-- **Owner**, **Status** (Open, **Blocked**, Waiting on the owner, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
+- **Owner**, **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
+- **Stalled** shows open tasks with no move for more than twice their project's normal rhythm. **Project** → **Other (no project)** shows tasks no project claims.
 
 The filters are part of the page's address. Copy the address to share the same view.
 
@@ -141,6 +142,33 @@ The filters are part of the page's address. Copy the address to share the same v
 3. Next time, select **My view**.
 
 The view is kept in this browser only. Nothing is stored in AgentX and nobody is notified.
+
+## See every project at once
+
+1. Select **Projects** above the posts.
+2. Each project is one row, with how many of its tasks are **open**, **in progress**, **blocked** and **stalled**, across every machine. Tasks no project claims are under **Other**, at the bottom.
+3. Select a count to open the **List** with that project and status.
+
+A task is **stalled** when it is open and has not moved for more than twice its project's normal rhythm. The rhythm is `rhythmHours` on the project, else `dashboard.wall.rhythmHours`, else the stale time of tasks (`requests.staleAfterHours`, 24 hours unless you set it).
+
+Tasks carry no project of their own. You name the projects once in `agentx.json`, and the Wall reads them; nothing is written to any task:
+
+```json
+{
+  "dashboard": {
+    "wall": {
+      "rhythmHours": 24,
+      "projects": [
+        { "name": "Shop", "repos": ["acme/shop"], "rhythmHours": 8 },
+        { "name": "Support", "agents": ["support-desk"] },
+        { "name": "Docs", "workspaces": ["~/work/docs"] }
+      ]
+    }
+  }
+}
+```
+
+A task belongs to the first project that names its home repo; else the first that names its agent; else the first whose folder holds that agent's workspace. A task no entry names is under **Other**. With no list, a task's project is its home repo. The machine showing the Wall also applies its own list to tasks from other machines, by repo or agent, so one list can name the projects of the whole mesh. All keys: [dashboard settings](../reference/config-operations.md#dashboard).
 
 ## Spot two runs at once
 
@@ -228,7 +256,7 @@ When a machine does not answer, its card turns red and the Wall still shows ever
 
 The **portfolio** is a read-only summary across every group and machine, for people you name, for example a director or an operations lead. It shows counts and titles only:
 
-- **Projects:** per project, how many tasks are open, in progress, blocked and stalled (no move for more than twice the stale time of tasks), and how many finished in the last 7 days. Work with no project is under **Other**.
+- **Projects:** per project, how many tasks are open, in progress, blocked and stalled (no move for more than twice the project's normal rhythm, see [See every project at once](#see-every-project-at-once)), and how many finished in the last 7 days. Work with no project is under **Other**.
 - **Owners:** per agent, the open tasks it carries and how many it finished.
 - **Blocked:** each blocked task's title, project and owner, whether it waits on you or on others, and for how long.
 

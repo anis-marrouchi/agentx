@@ -200,7 +200,7 @@ export const demo = new Command()
   .option("--reuse", "resume an existing .agentx-demo instead of starting fresh (implies --keep)")
   .option("--bind <host>", "dashboard bind address", "127.0.0.1")
   .option("--startup-timeout <seconds>", "seconds each startup step may take (default: 60, longer when the machine is loaded)")
-  .option("--dashboard-token <token>", "set this demo's dashboard.token (the docs screenshots use it to open the portfolio)")
+  .option("--dashboard-token <token>", "set this demo's dashboard.token (the docs screenshots use it to open the portfolio); ignored with --reuse, which keeps the existing config")
   .action(async (opts) => {
     const basePort = parseInt(opts.basePort, 10)
     const root = resolve(process.cwd(), ".agentx-demo")
