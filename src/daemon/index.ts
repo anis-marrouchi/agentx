@@ -228,6 +228,7 @@ import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { recentFeed, streamEnvelopes } from "@/events/feed-http"
 import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
+import { publishNamedEvent } from "@/events/emit"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
@@ -504,14 +505,18 @@ export class AgentXDaemon {
 
     // Wake-on-event subscriptions (src/events/wake.ts). Reads the agents on
     // every event so a reload applies; the woken turn runs under the
-    // event's root so what it causes cannot wake it again.
+    // event's root so what it causes cannot wake it again. A wake the
+    // dispatch cap holds is handed back as held and retried (#1284).
     this.stopEventWaker = new EventWaker({
       agents: () => this.config.agents,
-      dispatch: (agentId, e) => withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
-        message: wakeMessage(e),
-        agentId,
-        context: { channel: "events", chatId: `events:${agentId}` },
-      })),
+      dispatch: async (agentId, e, sub) => {
+        const response = await withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
+          message: wakeMessage(e, sub.prompt),
+          agentId,
+          context: { channel: "events", chatId: `events:${agentId}` },
+        }))
+        return response.errorKind === "dispatch_hold" ? { held: response.error || "dispatch held" } : response
+      },
       log: (msg) => this.log(msg),
       // Peer events (mesh feed) wake only subscriptions naming their node.
       isLocal: (e) => getAgentEventBus().isLocal(e),
@@ -5398,6 +5403,21 @@ export class AgentXDaemon {
           events,
           next: events.length ? events[events.length - 1].id : since,
         })
+        return
+      }
+
+      // A named event from an agent or a script (#1284): `agentx events
+      // emit`, the agentx_emit MCP tool. Control POST: gated by
+      // isControlPost above. From inside a running turn it carries that
+      // agent and that turn's root, so the wake loop guard holds.
+      if (req.method === "POST" && path === "/events") {
+        const body = await readBody(req)
+        const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+        const caller = turn ? { agentId: turn.agentId, rootId: turn.taskId ? this.registry.runningTaskRoot(turn.taskId) : undefined } : null
+        const result = publishNamedEvent(getAgentEventBus(), body, new Set(Object.keys(this.config.agents || {})), caller)
+        if (!result.ok) { this.json(res, 400, { error: result.error }); return }
+        this.log(`[events] emitted ${result.event.type}${result.event.agentId ? ` by ${result.event.agentId}` : ""}: ${result.event.summary}`)
+        this.json(res, 200, { ok: true, event: result.event })
         return
       }
 

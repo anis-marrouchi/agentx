@@ -9,6 +9,7 @@ import type { EventEnvelope } from "@/events/envelope"
 //     agentx events                          # the node's recent events
 //     agentx events --agent helper           # what helper's subscriptions matched
 //     agentx events --agent helper --since <id|iso>
+//     agentx events emit render:ready --summary "batch 3 done"   # #1284
 //
 // Reads the daemon's in-memory ring: /agents/:id/events for one agent's
 // subscriptions (the same answer the agentx_events MCP tool gives), or
@@ -29,6 +30,74 @@ export function eventsUrl(baseUrl: string, opts: { agent?: string; since?: strin
   return `${base}/events/recent?${qs}`
 }
 
+/** Body of POST /events for `agentx events emit`. Run inside an agent's
+ *  turn (a Bash step), the turn's ids ride along so the daemon credits the
+ *  agent and keeps the turn's root. Exported for tests. */
+export function emitBody(
+  name: string,
+  opts: { summary?: string; ref?: string; by?: string },
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const body: Record<string, string> = { name }
+  if (opts.summary) body.summary = opts.summary
+  if (opts.ref) body.ref = opts.ref
+  const by = opts.by || env.AGENTX_AGENT_ID
+  if (by) body.by = by
+  if (env.AGENTX_AGENT_ID) body.senderAgentId = env.AGENTX_AGENT_ID
+  if (env.AGENTX_TASK_ID) body.callerTaskId = env.AGENTX_TASK_ID
+  if (env.AGENTX_CHANNEL) body.callerChannel = env.AGENTX_CHANNEL
+  if (env.AGENTX_CHAT_ID) body.callerChatId = env.AGENTX_CHAT_ID
+  return body
+}
+
+function daemonTarget(opts: { config?: string; node?: string; token?: string }): { baseUrl: string; token: string } {
+  let baseUrl = typeof opts.node === "string" ? opts.node : ""
+  let token = typeof opts.token === "string" ? opts.token : ""
+  if (!baseUrl || !token) {
+    try {
+      const cfg = loadDaemonConfig(opts.config)
+      if (!baseUrl) baseUrl = cfg.dashboard?.daemonUrl || ""
+      if (!token) token = cfg.dashboard?.token || ""
+    } catch {
+      // No config — fall back to localhost:18800 and no auth.
+    }
+  }
+  return { baseUrl: (baseUrl || "http://localhost:18800").replace(/\/+$/, ""), token }
+}
+
+const emitCmd = new Command()
+  .name("emit")
+  .description("publish a named event (for example render:ready) that wakes the agents subscribed to it")
+  .argument("<name>", "event name: letters, digits and : . _ -")
+  .option("--summary <text>", "one short line on what happened")
+  .option("--ref <ref>", "pointer to the details: an issue, a path, a run id")
+  .option("--by <name>", "who emitted it (an agent id or a person's name; default: the running agent)")
+  .action(async (name: string, _opts, cmd: Command) => {
+    const opts = cmd.optsWithGlobals() as { summary?: string; ref?: string; by?: string; config?: string; node?: string; token?: string; json?: boolean }
+    const { baseUrl, token } = daemonTarget(opts)
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (token) headers["Authorization"] = `Bearer ${token}`
+    try {
+      const res = await fetch(`${baseUrl}/events`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(emitBody(name, opts)),
+        signal: AbortSignal.timeout(10_000),
+      })
+      const data = await res.json().catch(() => ({})) as { error?: string; event?: EventEnvelope }
+      if (!res.ok) {
+        console.error(chalk.red(`  Event refused (${res.status}): ${data.error || "unknown error"}`))
+        process.exitCode = 1
+        return
+      }
+      if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
+      console.log(chalk.green(`  ✓ Emitted ${data.event?.type ?? name} on ${data.event?.node ?? "this machine"}`) + chalk.dim(` (event ${data.event?.id ?? "?"})`))
+    } catch (e: any) {
+      console.error(chalk.red(`  daemon unreachable at ${baseUrl}: ${e?.message || e}`))
+      process.exitCode = 1
+    }
+  })
+
 export const eventsCmd = new Command()
   .name("events")
   .description("recent events on this node, or those matching one agent's subscriptions")
@@ -40,19 +109,9 @@ export const eventsCmd = new Command()
   .option("--json", "machine-readable output")
   .option("--node <url>", "daemon URL (defaults to dashboard.daemonUrl from config)")
   .option("--token <token>", "bearer token (defaults to dashboard.token from config)")
+  .addCommand(emitCmd)
   .action(async (opts) => {
-    let baseUrl = typeof opts.node === "string" ? opts.node : ""
-    let token = typeof opts.token === "string" ? opts.token : ""
-    if (!baseUrl || !token) {
-      try {
-        const cfg = loadDaemonConfig(opts.config)
-        if (!baseUrl) baseUrl = cfg.dashboard?.daemonUrl || ""
-        if (!token) token = cfg.dashboard?.token || ""
-      } catch {
-        // No config — fall back to localhost:18800 and no auth.
-      }
-    }
-    if (!baseUrl) baseUrl = "http://localhost:18800"
+    const { baseUrl, token } = daemonTarget(opts)
 
     const headers: Record<string, string> = {}
     if (token) headers["Authorization"] = `Bearer ${token}`

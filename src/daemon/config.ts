@@ -228,6 +228,9 @@ export const eventSubscriptionSchema = z.object({
   /** wake only: no wake when the agent was already woken this many times
    *  in the past hour. */
   maxPerHour: z.number().int().min(1).max(60).default(4),
+  /** wake only: what to do next when this event arrives. Added to the
+   *  woken turn's message after the event itself (#1284). */
+  prompt: z.string().min(1).max(2000).optional(),
 })
 
 

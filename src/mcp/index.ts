@@ -618,6 +618,22 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_emit",
+    description:
+      "Publish a named event on this node, for example `render:ready` or `build:done`, so agents subscribed to it move on without being asked. " +
+      "An agent whose subscription lists the name with delivery `wake` starts a turn that sees the event; others can read it with agentx_events. " +
+      "Use it when you finish something another agent or a later step is waiting for. Your own event never wakes you.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        name: { type: "string", description: "The event name: 1-64 letters, digits or : . _ -, for example `render:ready`." },
+        summary: { type: "string", description: "One short line on what happened, for example `batch 3 done`." },
+        ref: { type: "string", description: "Optional pointer to the details: an issue, a file path, a run id." },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "agentx_signal",
     description:
       "Stop a running agent task cleanly, or resume one that was stopped (#857). " +
@@ -1744,6 +1760,27 @@ async function handleToolCall(
       }
       const { formatEventLine } = await import("@/events/subscriptions")
       return { content: [{ type: "text", text: renderEventsAnswer(agentId, data, formatEventLine) }] }
+    }
+
+    case "agentx_emit": {
+      const name = typeof args.name === "string" ? args.name.trim() : ""
+      if (!name) return { content: [{ type: "text", text: "Error: name is required." }] }
+      const res = await daemonFetch(`${daemonUrl()}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({
+          name,
+          ...(typeof args.summary === "string" ? { summary: args.summary } : {}),
+          ...(typeof args.ref === "string" ? { ref: args.ref } : {}),
+          senderAgentId: process.env.AGENTX_AGENT_ID,
+          ...(process.env.AGENTX_AGENT_ID ? { by: process.env.AGENTX_AGENT_ID } : {}),
+          ...callerFields(),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      }).catch((e: any) => ({ ok: false, status: 0, json: async () => ({ error: e?.message ?? String(e) }) }) as any)
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || `HTTP ${res.status}`}` }] }
+      return { content: [{ type: "text", text: `Emitted ${data.event?.type ?? name} on ${data.event?.node ?? "this node"} (event ${data.event?.id ?? "?"}).` }] }
     }
 
     case "agentx_waiting": {

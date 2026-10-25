@@ -3093,6 +3093,7 @@ export class AgentRegistry {
           const preflightResponse: AgentResponse = {
             content: "",
             error: abort.message,
+            errorKind: "dispatch_hold",
             duration: 0,
           }
           if (!onDelta) {
@@ -3788,6 +3789,12 @@ export class AgentRegistry {
     // multi-account); sendOutbound auto-fills accountId from agentId.
     router.sendOutbound({ channel, chatId, text, agentId } as any)
       .catch((e: any) => this.log(`[${agentId}] queued response post failed: ${e?.message ?? e}`))
+  }
+
+  /** The root a running task works under, when it has one (#1284: an
+   *  event the turn emits carries it, so the loop guard holds). */
+  runningTaskRoot(taskId: string): string | undefined {
+    return this.taskAborts.get(taskId)?.rootId
   }
 
   /** The agent running `taskId` right now, or null once it has finished.
