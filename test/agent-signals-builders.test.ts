@@ -74,6 +74,29 @@ describe("saveWip", () => {
     expect(git(dir, "show", `${second.branch}:b.ts`)).toBe("b3")
   })
 
+  it("fails at once, naming the branch, when a branch named agentx/wip blocks the name", async () => {
+    const dir = dirtyClone()
+    git(dir, "branch", "agentx/wip")
+    const calls: string[] = []
+    const spy = async (cwd: string, args: string[], env?: Record<string, string>) => {
+      calls.push(args[0])
+      return execFileSync("git", ["-C", cwd, ...args], { env: { ...process.env, ...env }, stdio: "pipe" }).toString()
+    }
+    await expect(saveWip(dir, "agentx/wip/run-1", "WIP", spy))
+      .rejects.toThrow("a branch named agentx/wip exists, so git can't create agentx/wip/run-1 next to it; rename that branch (git branch -m agentx/wip <new name>)")
+    expect(calls.filter((c) => c === "update-ref")).toEqual([])
+    expect(git(dir, "branch", "--list", "agentx*").trim()).toBe("agentx/wip")
+  })
+
+  it("keeps git's own error for a locked ref, instead of trying the next name", async () => {
+    const dir = dirtyClone()
+    mkdirSync(path.join(dir, ".git", "refs", "heads", "agentx", "wip"), { recursive: true })
+    writeFileSync(path.join(dir, ".git", "refs", "heads", "agentx", "wip", "run-1.lock"), "")
+    const err = await saveWip(dir, "agentx/wip/run-1", "WIP").then(() => null, (e: Error) => e.message)
+    expect(err).toMatch(/^git couldn't create agentx\/wip\/run-1: .*run-1\.lock/)
+    expect(git(dir, "branch", "--list", "agentx/wip/*")).toBe("")
+  })
+
   it("makes a branch name git accepts from any task id", () => {
     expect(wipBranchName("abc:12/..x y.lock")).toBe("agentx/wip/abc-12-.x-y.lock-x")
     expect(() => execFileSync("git", ["check-ref-format", "--branch", wipBranchName("abc:12/..x y.lock")])).not.toThrow()
@@ -123,7 +146,11 @@ describe("windDownBuilders", () => {
       taskId: "t1", reason: "stop", toolCalls: [builderCall("Build")],
       findLeftWork: async () => ["/a", "/b"].map((p) => ({ path: p, branch: "main", changedFiles: 1, unpushedCommits: 0 })),
       // Each folder's save takes the whole budget.
-      git: async (cwd, args) => { if (args[0] === "update-ref") { saved.push(cwd); t += BUILDER_SAVE_MS } return "x" },
+      git: async (cwd, args) => {
+        if (args[0] === "show-ref") throw new Error("no such branch")
+        if (args[0] === "update-ref") { saved.push(cwd); t += BUILDER_SAVE_MS }
+        return "x"
+      },
       now: () => t,
     })
     expect(saved).toEqual(["/a"])

@@ -80,17 +80,49 @@ export async function saveWip(root: string, branch: string, message: string, git
     await git(root, ["add", "-A", "."], env)
     const tree = (await git(root, ["write-tree"], env)).trim()
     const commit = (await git(root, ["commit-tree", tree, ...(head ? ["-p", head] : []), "-m", message], env)).trim()
+    // A branch named like a folder of the name (`agentx` or `agentx/wip`)
+    // keeps git from creating any branch under it: every suffix would fail
+    // the same way, so say so at once.
+    const blocker = await blockingBranch(root, branch, git)
+    if (blocker) throw new Error(`a branch named ${blocker} exists, so git can't create ${branch} next to it; rename that branch (git branch -m ${blocker} <new name>)`)
     // A branch of that name already (an earlier stop of the same task):
-    // the next free suffix, never an overwrite.
+    // the next free suffix, never an overwrite. Any other failure (a
+    // locked ref, a read-only repo) stops here, with git's own words.
     for (let i = 1; i <= 20; i++) {
       const name = i === 1 ? branch : `${branch}-${i}`
-      const made = await git(root, ["update-ref", `refs/heads/${name}`, commit, ""]).then(() => true, () => false)
-      if (made) return { branch: name, commit }
+      try {
+        await git(root, ["update-ref", `refs/heads/${name}`, commit, ""])
+        return { branch: name, commit }
+      } catch (e: any) {
+        if (await branchExists(root, name, git)) continue
+        throw new Error(`git couldn't create ${name}: ${gitError(e)}`)
+      }
     }
-    throw new Error(`couldn't create branch ${branch} (nor -2 to -20): taken, or a branch named ${branch.split("/").slice(0, -1).join("/")} exists`)
+    throw new Error(`branches ${branch} to ${branch}-20 are all taken`)
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
+}
+
+function branchExists(root: string, name: string, git: Git): Promise<boolean> {
+  return git(root, ["show-ref", "--verify", "-q", `refs/heads/${name}`]).then(() => true, () => false)
+}
+
+/** The existing branch whose name is a folder of `branch` (for
+ *  `agentx/wip/x`: `agentx` or `agentx/wip`), or null. */
+async function blockingBranch(root: string, branch: string, git: Git): Promise<string | null> {
+  const parts = branch.split("/")
+  for (let i = 1; i < parts.length; i++) {
+    const name = parts.slice(0, i).join("/")
+    if (await branchExists(root, name, git)) return name
+  }
+  return null
+}
+
+/** Git's own message for a failed command: its stderr, first lines. */
+function gitError(e: any): string {
+  const err = String(e?.stderr ?? "").trim() || String(e?.message ?? e)
+  return err.split("\n").slice(0, 2).join(" ").slice(0, 300)
 }
 
 /** Wind down the builders a stopped run had started: undefined when it
