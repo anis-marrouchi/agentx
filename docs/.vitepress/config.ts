@@ -153,13 +153,13 @@ const groups = [
 
 export default defineConfig({
   title: "AgentX",
-  description: "AI agents that answer your clients, send your reports and fix your code, on a machine you own.",
+  description: "AI staff for a small company: they find sales, answer clients, write your posts and watch the money, on a machine you own. You approve what matters.",
   cleanUrls: true,
   lastUpdated: true,
   head: [
     ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
     ["meta", { property: "og:title", content: "AgentX — AI agents that get your work done" }],
-    ["meta", { property: "og:description", content: "AI agents that answer your clients, send your reports and fix your code, on a machine you own." }],
+    ["meta", { property: "og:description", content: "AI staff for a small company: they find sales, answer clients, write your posts and watch the money, on a machine you own. You approve what matters." }],
     ["meta", { property: "og:image", content: "/agentx-symbol.png" }],
   ],
   themeConfig: {

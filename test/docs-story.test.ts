@@ -34,10 +34,10 @@ describe("result-first story", () => {
     for (const md of [readme, docsHome, arabic]) expect(firstScreen(md)).not.toContain("harness")
   })
 
-  it("puts the stability notes below the demo and What it does", () => {
-    const state = readme.indexOf("\n## Current state:")
+  it("puts the release notes below the jobs and the demo (#1318)", () => {
+    const state = readme.indexOf("\n### Release status")
+    expect(state).toBeGreaterThan(readme.indexOf("\n## The jobs AgentX does\n"))
     expect(state).toBeGreaterThan(readme.indexOf("\n## See it without an account\n"))
-    expect(state).toBeGreaterThan(readme.indexOf("\n## What it does\n"))
     const arState = arabic.indexOf("\n## الوضع الحالي")
     expect(arState).toBeGreaterThan(arabic.indexOf("\n## جرّبه دون حساب\n"))
     expect(arState).toBeGreaterThan(arabic.indexOf("\n## ماذا يفعل\n"))

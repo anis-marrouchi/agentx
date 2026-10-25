@@ -4,6 +4,16 @@ Let an agent write your LinkedIn and X posts the way you write them. It learns y
 
 ![How the content agent drafts posts and waits for your yes: you keep past posts in a folder, on Friday the agent plans next week in the calendar, on Monday it drafts each post naming the past posts it followed, then each draft waits in your Approvals inbox, and only your yes posts it or saves it ready to paste](/diagrams/content.svg)
 
+## At a glance
+
+| Question | Answer |
+|---|---|
+| **The problem** | Posts go out late or not at all, and when someone else writes them they do not sound like you. |
+| **What AgentX does** | Plans next week's posts every Friday and drafts each one on Monday, in your voice, naming the past posts it followed. |
+| **What you approve** | Every post. Nothing is published until you say yes in **Approvals** or with `agentx approvals approve`. |
+| **What it costs** | Two runs a week on your model account, plus the drafts you ask for. See [What this costs](../help/costs.md). |
+| **First result** | `agentx content drafts` lists one draft per planned post. See [Check it worked](#check-it-worked). |
+
 Three words used on this page:
 
 - **Voice samples**: your past posts, one per file, in a folder the agent reads. Every draft names the samples it followed, so you can see where its tone comes from.
