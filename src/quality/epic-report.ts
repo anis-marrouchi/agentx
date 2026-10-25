@@ -96,6 +96,17 @@ export function gateState(g: GateSetting, week: string): string {
   return `on (since ${g.since})`
 }
 
+/** The weeks with no comment yet, from the week the first gate went on
+ *  up to `last`, oldest first. For a report turned on late, whose daemon
+ *  has no state to name the missed weeks from. */
+export function backfillWeeks(gates: GateSetting[], state: QualityState, last: string): string[] {
+  const first = gates.map((g) => g.since).sort()[0]
+  if (!first) return []
+  const start = isoWeek(first)
+  if (start > last) return []
+  return [start, ...weeksBetween(start, last), ...(start < last ? [last] : [])].filter((w) => !state.comments?.[w])
+}
+
 /** The date of week 3's end: 21 days after the first gate went on. */
 export function verdictDueDate(gates: GateSetting[]): string | undefined {
   const first = gates.map((g) => g.since).sort()[0]

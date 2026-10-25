@@ -3380,6 +3380,7 @@ Post (or preview) the weekly report for a week; edits that week's comment if it 
 | Flag | Default | What it does |
 |---|---|---|
 | `--week <week>` | last week | ISO week, e.g. `2026-W42`. |
+| `--backfill` | — | Post every week that has no comment yet, from the week the first gate in `qualityReport.gates` went on up to last week, oldest first. Cannot be used with `--week`. |
 | `--dry-run` | — | Print the comment instead of posting it. |
 | `-c, --config <path>` | — | Config file. |
 

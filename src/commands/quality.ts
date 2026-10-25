@@ -10,7 +10,7 @@ import {
   type QualityReport, type Scope,
 } from "@/quality/report"
 import {
-  VERDICT_MARKER, configToken, githubIssueComments, isoWeek, latestReport, parseVerdict, postWeekly,
+  VERDICT_MARKER, backfillWeeks, configToken, githubIssueComments, isoWeek, latestReport, parseVerdict, postWeekly,
   publicProblem, readBaseline, readQualityState, runReportCommand, upsertComment, verdictComment, writeQualityState,
 } from "@/quality/epic-report"
 
@@ -113,23 +113,37 @@ quality
   .command("weekly")
   .description("post (or preview) the weekly report for a week; edits that week's comment if it exists")
   .option("--week <week>", "ISO week, e.g. 2026-W42 (default: last week)")
+  .option("--backfill", "post every week with no comment yet, from the week the first gate went on to last week")
   .option("--dry-run", "print the comment instead of posting it")
   .option("-c, --config <path>", "config file")
-  .action(async (opts: { week?: string; dryRun?: boolean; config?: string }) => {
+  .action(async (opts: { week?: string; backfill?: boolean; dryRun?: boolean; config?: string }) => {
     try {
       const { config, s, repo, issue } = settings(opts.config)
-      const week = opts.week ?? isoWeek(new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10))
+      if (opts.week && opts.backfill) throw new Error("use --week or --backfill, not both")
+      const lastWeek = isoWeek(new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10))
+      const week = opts.week ?? lastWeek
       if (!/^\d{4}-W\d{2}$/.test(week)) throw new Error(`--week: use YYYY-Www, e.g. 2026-W42`)
-      const res = await postWeekly({
+      let weeks = [week]
+      if (opts.backfill) {
+        if (!s.gates.length) throw new Error("--backfill starts at the first gate's since: add qualityReport.gates, or post one week with --week")
+        weeks = backfillWeeks(s.gates, readQualityState(process.cwd()), lastWeek)
+        if (!weeks.length) { console.log("Nothing to backfill: every week since the first gate has a comment."); return }
+        console.error(chalk.dim(`  Backfilling ${weeks.join(", ")}`))
+      }
+      const deps = {
         root: process.cwd(),
         settings: s,
         comments: githubIssueComments(repo, issue, async () => configToken(config)),
-        runReport: (w) => runReportCommand(s.command, w, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000, baseline: s.baseline, repo: s.repo }),
-        log: (m) => console.error(chalk.dim(m)),
-      }, { week, dryRun: opts.dryRun })
-      if (res.status === "failed") { console.error(chalk.red(res.error)); process.exitCode = 1; return }
-      if (opts.dryRun) { console.log(res.body); return }
-      if ("url" in res) console.log(chalk.green(`${res.status}: ${res.url}`))
+        runReport: (w: string) => runReportCommand(s.command, w, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000, baseline: s.baseline, repo: s.repo }),
+        log: (m: string) => console.error(chalk.dim(m)),
+      }
+      // Oldest first, so lastPosted and the latest stored report end on the newest week.
+      for (const w of weeks) {
+        const res = await postWeekly(deps, { week: w, dryRun: opts.dryRun })
+        if (res.status === "failed") { console.error(chalk.red(`${w}: ${res.error}`)); process.exitCode = 1; continue }
+        if (opts.dryRun) { console.log(res.body); continue }
+        if ("url" in res) console.log(chalk.green(`${res.status}: ${res.url}`))
+      }
     } catch (e: any) {
       console.error(chalk.red(e?.message ?? e))
       process.exitCode = 1

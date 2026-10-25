@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { qualityReportConfigSchema } from "../src/daemon/config"
 import {
-  baselineFile, fenced, gateState, isoWeek, parseVerdict, postWeekly, publicProblem, readBaseline, readQualityState,
+  backfillWeeks, baselineFile, fenced, gateState, isoWeek, parseVerdict, postWeekly, publicProblem, readBaseline, readQualityState,
   reportCommandLine, reportFile, verdictComment, weekMarker, weekRange, weeklyDue, weeksBetween, writeQualityState,
   type IssueComments, type QualityReportSettings,
 } from "../src/quality/epic-report"
@@ -65,6 +65,15 @@ describe("weeks", () => {
 
   it("names the weeks that were never posted", () => {
     expect(weeklyDue(settings(), { lastPosted: "2026-W39" }, MONDAY_9).skipped).toEqual(["2026-W40", "2026-W41"])
+  })
+
+  it("backfills every week since the first gate that has no comment", () => {
+    const gates = [{ id: "ui", since: "2026-10-01" }, { id: "review", since: "2026-09-30" }]
+    expect(backfillWeeks(gates, {}, "2026-W42")).toEqual(["2026-W40", "2026-W41", "2026-W42"])
+    expect(backfillWeeks(gates, { comments: { "2026-W41": 7 } }, "2026-W42")).toEqual(["2026-W40", "2026-W42"])
+    expect(backfillWeeks(gates, {}, "2026-W40")).toEqual(["2026-W40"])
+    expect(backfillWeeks(gates, {}, "2026-W39")).toEqual([])
+    expect(backfillWeeks([], {}, "2026-W42")).toEqual([])
   })
 })
 
