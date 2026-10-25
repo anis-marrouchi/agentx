@@ -186,6 +186,7 @@ ${WALL_CAPACITY_SCRIPT}
   }
   function writeHash() { history.replaceState(null, '', hashOf(S.post)); }
   function applyHash() {
+    S.applied = location.hash;
     var was = S.post;
     var f = readHash();
     FILTERS.forEach(function (k) {
@@ -954,7 +955,8 @@ ${WALL_CAPACITY_SCRIPT}
     history.replaceState(null, '', h);
     applyHash();
   });
-  window.addEventListener('hashchange', applyHash);
+  // openPost applies its own hash; skip the hashchange that follows it.
+  window.addEventListener('hashchange', function () { if (location.hash !== S.applied) applyHash(); });
 
   // A link from the classic task page: /wall?task=<id> opens that post's thread.
   var fromTask = new URLSearchParams(location.search).get('task');
