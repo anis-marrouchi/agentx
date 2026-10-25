@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.165.0](https://github.com/anis-marrouchi/agentx/compare/v0.164.0...v0.165.0) (2026-10-25)
+
+
+### Features
+
+* **wall:** own space with the take B look, not dashboard styling ([#1242](https://github.com/anis-marrouchi/agentx/issues/1242)) ([#1246](https://github.com/anis-marrouchi/agentx/issues/1246)) ([d7b3c06](https://github.com/anis-marrouchi/agentx/commit/d7b3c06d7fbebd62fa5f9a06b6bd0d7e4a074f64))
+
+
+### Bug Fixes
+
+* **wall:** capacity owner link lists the posts its numbers count ([#1243](https://github.com/anis-marrouchi/agentx/issues/1243) follow-up) ([#1248](https://github.com/anis-marrouchi/agentx/issues/1248)) ([b067e13](https://github.com/anis-marrouchi/agentx/commit/b067e1321f89b630e720f8f13c2505e8d37b7a50))
+
 ## [0.164.0](https://github.com/anis-marrouchi/agentx/compare/v0.163.0...v0.164.0) (2026-10-25)
 
 
