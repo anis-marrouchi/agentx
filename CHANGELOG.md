@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.171.0](https://github.com/anis-marrouchi/agentx/compare/v0.170.0...v0.171.0) (2026-10-25)
+
+
+### Features
+
+* **dashboard:** Org view; agents created by an agent wait for the owner ([#1169](https://github.com/anis-marrouchi/agentx/issues/1169)) ([#1327](https://github.com/anis-marrouchi/agentx/issues/1327)) ([bcccd9e](https://github.com/anis-marrouchi/agentx/commit/bcccd9ea22feaef675a89dd838c1732882d55206))
+
+
+### Bug Fixes
+
+* **connect:** lazy-load mail libraries and warn on an open inbox for shell agents ([#1329](https://github.com/anis-marrouchi/agentx/issues/1329)) ([23e3ce0](https://github.com/anis-marrouchi/agentx/commit/23e3ce0e11572ed822352cd911a987873bf887e9))
+
 ## [0.170.0](https://github.com/anis-marrouchi/agentx/compare/v0.169.0...v0.170.0) (2026-10-25)
 
 
