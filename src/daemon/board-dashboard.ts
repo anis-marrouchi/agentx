@@ -3160,7 +3160,6 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   // names, and every project configured here gets an overview row.
   const projects = deps?.projects ?? null
   const now = Date.now()
-  const peerTimings: Record<string, number> = {}
   // The peers are asked first and build their Walls while this node builds
   // its own, so the fleet takes about the slowest node's time, not the sum
   // of all of them (#1252).
@@ -3177,8 +3176,7 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
       })
       if (!r.ok) return { name, id, error: `answered ${r.status}` }
       const body = await r.json() as any
-      peerTimings[body.node || name] = ms()
-      return { name, id, body }
+      return { name, id, body, answeredMs: ms() }
     } catch (e: any) {
       return { name, id, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) }
     }
@@ -3195,15 +3193,16 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   const posts = tag(local.posts, local.node, null, null)
   const failures = tag(local.failures, local.node, null, null)
   const reported = local.reported ? tag([local.reported], local.node, null, null) : []
+  // Keyed by peer address: two peers can report the same node name.
   const peerTimingsOf: Record<string, unknown> = {}
-  for (const { name, id, body, error } of await peerReplies as Array<{ name: string; id: string; body?: any; error?: string }>) {
+  for (const { name, id, body, error, answeredMs } of await peerReplies as Array<{ name: string; id: string; body?: any; error?: string; answeredMs?: number }>) {
     if (!body) { nodes.push({ name, peer: id, ok: false, error }); continue }
     const node = body.node || name
     nodes.push({ name: node, peer: id, ok: true, syncedAt: body.syncedAt })
     posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], node, id, id).map((p) => claimBlocker(claimPost(p, projects, now), projects)))
     failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], node, id, id))
     if (body.reported && Array.isArray(body.reported.groups)) reported.push(...tag([body.reported], node, id, id))
-    if (withTimings) peerTimingsOf[node] = { answeredMs: peerTimings[node], ...(body.timings ? { build: body.timings } : {}) }
+    if (withTimings) peerTimingsOf[id] = { node, answeredMs, ...(body.timings ? { build: body.timings } : {}) }
   }
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
   return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names),
