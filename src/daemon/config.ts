@@ -1965,6 +1965,13 @@ export const daemonConfigSchema = z.object({
       restarts: z.number().int().positive().default(3),
       windowMinutes: z.number().positive().default(10),
     }).default({}),
+    /** A run stopped at its agent's time limit (maxExecutionMinutes) is
+     *  continued in the same chat, with a note, up to this many times
+     *  (#1257). Scheduled jobs and workflow steps never are. */
+    timeLimit: z.object({
+      enabled: z.boolean().default(true),
+      maxContinuations: z.number().int().min(0).max(3).default(1),
+    }).default({}),
   }).default({}),
   /** Stop and resume signals (agents/signals, #857): stop a running task
    *  cleanly, keep the agent's resume plan, resume it later. The owner may

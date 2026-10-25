@@ -72,6 +72,7 @@ import { StoppedTaskStore } from "@/agents/signals/store"
 import { setSignalService } from "@/agents/signals/instance"
 import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
 import { traceToolCalls } from "@/storage/traces"
+import { timeLimitContinuations } from "@/agents/resume/time-limit"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
@@ -684,6 +685,9 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
         }
+        // A run continued after its time limit lists the tool calls the
+        // stopped run made (#1257).
+        this.registry.setTraceToolCalls((traceId) => traceToolCalls(db, traceId))
         // Task watchers (#1030). Attached whatever the setting says, like
         // requests: the checkpoint reads `watchers.enabled` on every event.
         try {
@@ -4013,7 +4017,7 @@ export class AgentXDaemon {
       message: target.message,
       calleeContext: target.calleeContext,
       extras,
-      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes) }) } : {}),
+      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes, timeLimitContinuations(this.config.resume.timeLimit)) }) } : {}),
       // One session per piece of work (#1100): the body's home, or the one
       // a /task context carries.
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
