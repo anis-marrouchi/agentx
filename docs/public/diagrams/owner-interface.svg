@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 736" width="920" height="736" role="img" aria-labelledby="t d" style="--cycle:4.2s">
 <title id="t">How work reaches you: Promise, Fact, Reach and Desk</title>
-<desc id="d">Six steps in two parts. An agent makes a Promise: who owes what to whom, by when, and the proof that closes it. Proof closes it: a link, a test, an output or a check. Closing writes a Fact: what is true, its source and when it was checked. Each change goes on the event bus; the request and card events are added in step 1. Reach picks the one channel where you were last seen, waits, and tries the next one if you did not see it. You read one list, the Desk, on any surface. Four links are still missing and are built in steps 1 to 4 of issue 1137.</desc>
+<desc id="d">Six steps in two parts. An agent makes a Promise: who owes what to whom, by when, and the proof that closes it. Proof closes it: a link, a test, an output or a check. Closing writes a Fact: what is true, its source and when it was checked. Each change is recorded on the request or its card. Reach picks the one channel where you were last seen, waits, and tries the next one if you did not see it. You read one list, the Desk, on any surface. Two switches are off by default, and one fix (issue 1214) is merged but not yet proven live.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
@@ -79,10 +79,10 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="70" cy="408" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.72s"/>
 <circle cx="70" cy="408" r="15" fill="#0B0D12"/>
 <text x="70" y="413" class="num" text-anchor="middle">4</text>
-<text x="60" y="452" class="title" text-anchor="start">The change goes</text>
-<text x="60" y="473" class="title" text-anchor="start">on the event bus</text>
-<text x="60" y="495" class="note" text-anchor="start">request and card events,</text>
-<text x="60" y="512" class="note" text-anchor="start">added in step 1</text>
+<text x="60" y="452" class="title" text-anchor="start">The change is</text>
+<text x="60" y="473" class="title" text-anchor="start">recorded</text>
+<text x="60" y="495" class="note" text-anchor="start">on the request</text>
+<text x="60" y="512" class="note" text-anchor="start">or its card</text>
 </g>
 <g class="rise" style="animation-delay:1.60s">
 <rect x="328" y="380" width="264" height="152" rx="14" class="card"/>
@@ -105,9 +105,9 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <text x="628" y="491" class="note" text-anchor="start">the Mac or the dashboard</text>
 </g>
 <g class="fade" style="animation-delay:1.75s"><path d="M595 456 H607" class="link"/><path d="M603 452 L608 456 L603 460" class="link"/></g>
-<g class="rise" style="animation-delay:3.32s"><text x="44" y="596" class="band warn" text-anchor="start">NOT WIRED YET (ISSUE #1137)</text></g>
-<g class="rise" style="animation-delay:3.52s"><circle cx="49" cy="622.5" r="4" fill="#B45309"/><text x="62" y="628" class="symptom" text-anchor="start">Four surfaces, four queries</text><text x="62" y="648" class="note" text-anchor="start">Step 1: one owner queue.</text></g>
-<g class="rise" style="animation-delay:3.77s"><circle cx="465" cy="622.5" r="4" fill="#B45309"/><text x="478" y="628" class="symptom" text-anchor="start">Sent is not seen</text><text x="478" y="648" class="note" text-anchor="start">Step 2: presence, seen and dead channels.</text></g>
-<g class="rise" style="animation-delay:4.02s"><circle cx="49" cy="674.5" r="4" fill="#B45309"/><text x="62" y="680" class="symptom" text-anchor="start">Promises only when asked</text><text x="62" y="700" class="note" text-anchor="start">Step 3: read them from the reply.</text></g>
-<g class="rise" style="animation-delay:4.27s"><circle cx="465" cy="674.5" r="4" fill="#B45309"/><text x="478" y="680" class="symptom" text-anchor="start">Closing writes no Fact</text><text x="478" y="700" class="note" text-anchor="start">Step 4: one Promise, one Proof.</text></g>
+<g class="rise" style="animation-delay:3.32s"><text x="44" y="596" class="band warn" text-anchor="start">STILL OPEN (EPIC #1138, CLOSED)</text></g>
+<g class="rise" style="animation-delay:3.52s"><circle cx="49" cy="622.5" r="4" fill="#B45309"/><text x="62" y="628" class="symptom" text-anchor="start">Urgent ladder is off</text><text x="62" y="648" class="note" text-anchor="start">Your switch: notifications.reach.enabled.</text></g>
+<g class="rise" style="animation-delay:3.77s"><circle cx="465" cy="622.5" r="4" fill="#B45309"/><text x="478" y="628" class="symptom" text-anchor="start">Promise catch is off</text><text x="478" y="648" class="note" text-anchor="start">Your switch: requests.catchPromises.enabled.</text></g>
+<g class="rise" style="animation-delay:4.02s"><circle cx="49" cy="674.5" r="4" fill="#B45309"/><text x="62" y="680" class="symptom" text-anchor="start">Due work: fix not proven</text><text x="62" y="700" class="note" text-anchor="start">Fixed in #1218, not yet proven live.</text></g>
+<g class="rise" style="animation-delay:4.27s"><circle cx="465" cy="674.5" r="4" fill="#B45309"/><text x="478" y="680" class="symptom" text-anchor="start">Steps C, D and F shipped</text><text x="478" y="700" class="note" text-anchor="start">See the table below for each step.</text></g>
 </svg>

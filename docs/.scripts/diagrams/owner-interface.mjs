@@ -11,8 +11,8 @@ const d = createDiagram({
   desc:
     "Six steps in two parts. An agent makes a Promise: who owes what to whom, by when, and the proof that closes it. " +
     "Proof closes it: a link, a test, an output or a check. Closing writes a Fact: what is true, its source and when it was checked. " +
-    "Each change goes on the event bus; the request and card events are added in step 1. Reach picks the one channel where you were last seen, waits, and tries the next one if you did not see it. " +
-    "You read one list, the Desk, on any surface. Four links are still missing and are built in steps 1 to 4 of issue 1137.",
+    "Each change is recorded on the request or its card. Reach picks the one channel where you were last seen, waits, and tries the next one if you did not see it. " +
+    "You read one list, the Desk, on any surface. Two switches are off by default, and one fix (issue 1214) is merged but not yet proven live.",
 })
 
 d.header("How work reaches you", "Promise and Fact are the model, Reach the controller, Desk the view.", [
@@ -40,7 +40,7 @@ d.band(band, ROW + 64, "REACH AND DESK: THE CONTROLLER AND THE VIEW", { tint: C.
 d.wrap(model.at(-1), d.x0 + 26, y)
 d.row(
   [
-    { title: ["The change goes", "on the event bus"], note: ["request and card events,", "added in step 1"], who: "ink" },
+    { title: ["The change is", "recorded"], note: ["on the request", "or its card"], who: "ink" },
     { title: ["Reach picks", "one channel"], note: ["where you were last seen;", "unseen, it tries the next"], who: "ink" },
     { title: ["You read one list"], note: ["the Desk, on the phone,", "the Mac or the dashboard"], who: "accent" },
   ],
@@ -49,13 +49,13 @@ d.row(
 )
 
 d.list(d.x0, y + ROW + 64, {
-  title: "NOT WIRED YET (ISSUE #1137)",
+  title: "STILL OPEN (EPIC #1138, CLOSED)",
   columns: 2,
   items: [
-    ["Four surfaces, four queries", "Step 1: one owner queue."],
-    ["Sent is not seen", "Step 2: presence, seen and dead channels."],
-    ["Promises only when asked", "Step 3: read them from the reply."],
-    ["Closing writes no Fact", "Step 4: one Promise, one Proof."],
+    ["Urgent ladder is off", "Your switch: notifications.reach.enabled."],
+    ["Promise catch is off", "Your switch: requests.catchPromises.enabled."],
+    ["Due work: fix not proven", "Fixed in #1218, not yet proven live."],
+    ["Steps C, D and F shipped", "See the table below for each step."],
   ],
   delay: d.now + 1.4,
 })
