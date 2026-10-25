@@ -170,6 +170,10 @@ Tasks carry no project of their own. You name the projects once in `agentx.json`
 
 A task belongs to the first project that names its home repo; else the first that names its agent; else the first whose folder holds that agent's workspace. A task no entry names is under **Other**. With no list, a task's project is its home repo. The machine showing the Wall also applies its own list to tasks from other machines, by repo or agent, so one list can name the projects of the whole mesh. All keys: [dashboard settings](../reference/config-operations.md#dashboard).
 
+### Closed per week
+
+Under the projects, **Closed per week** shows how many tasks were closed in each of the last four weeks, per project and per owner, oldest week first, with the total and a small bar line. A week is the seven days up to now, then the seven before, and so on; a task closed exactly seven days ago counts in the older week. Owners with open work but nothing closed show a row of zeros. It reads only when each task closed and the project list above, across every machine; a machine on an older AgentX is left out.
+
 ## Spot two runs at once
 
 A **concurrent** run is two runs going at the same time on the same chat, or two different agents working at the same time in the same **worktree** (the folder on disk an agent works in). It usually means one task was sent to two agents, or one agent started on it twice. The two runs can then answer twice or change the same files. One agent running two tasks on different chats in its own folder is normal and is not flagged.
