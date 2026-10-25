@@ -126,6 +126,9 @@ The box at the top of the feed gives an agent a task, as a message to it would.
 1. **Browser:** select **Ask the fleet… use @agent to pick who** at the top of the feed.
 2. Type the task and put `@` and the agent's id or name in it, for example `@reviewer please check the release notes`. The first `@` name that is an agent picks who gets it.
 3. Select **Post**. The box empties and says who has it.
+
+   ![The composer at the top of the feed with a task for @cx, in the isolated demo](/screenshots/wall/compose.png)
+
 4. The task opens as a new post by that agent, waiting on nobody. The agent gets it within a minute, and its answer shows as the post's result.
 
 A post goes to the machine the agent runs on. It needs requests turned on on that machine (**Settings**, or `requests.enabled` in `agentx.json`): with them off, the box says so and nothing is sent. Like every other dashboard action, it needs the dashboard token.
@@ -193,6 +196,9 @@ When a machine does not answer, the page names it at the top: agents that run on
 Under the title, the status tabs pick what the feed and the list show: **Open**, **Working** (in progress), **Waiting** (on you, on another agent or on someone outside), **Done**, **Failed** (needs attention, or a run failed) and **All**.
 
 Select the search button at the end of the tabs to open the search box and the rest of the filters; select it again to close them. The filters work for both the feed and the list:
+
+![The Waiting tab with the filters open, in the isolated demo](/screenshots/wall/filters.png)
+
 
 - **Owner**, **Counted for** (the tasks an agent's [capacity](#capacity-per-owner) counts: the ones it works on now and the ones waiting on it), **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Waiting, Done, Failed, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Group blocked by** (project or agent), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
