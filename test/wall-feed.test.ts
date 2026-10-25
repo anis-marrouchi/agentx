@@ -49,6 +49,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   }
   const wall = { classList: classes() }
   let onClick: (ev: any) => void = () => {}
+  const onWindow: Record<string, () => void> = {}
   const doc = {
     getElementById: el, hidden: false,
     querySelector: (sel: string) => (sel === ".ax-wall" ? wall : null),
@@ -65,7 +66,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
   }
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", script)(
-    doc, { addEventListener: () => {} }, fetchStub, loc,
+    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0,
   )
@@ -75,7 +76,9 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     target: { closest: () => ({ hasAttribute: (k: string) => k in attrs, getAttribute: (k: string) => attrs[k] }) },
   })
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
-  return { el, wall, calls, click, settle, loc }
+  /** The browser's hashchange, as after `location.hash = …`. */
+  const hashchange = () => onWindow.hashchange?.()
+  return { el, wall, calls, click, settle, loc, hashchange }
 }
 
 describe("Wall as a social feed (#1207)", () => {
@@ -200,6 +203,19 @@ describe("Wall v2 pages (#1316)", () => {
     const feed = w.el("wall-feed").innerHTML
     expect(feed).toContain('<article class="wp" id="post-r1" data-post="r1" tabindex="0">')
     expect(feed).toMatch(/<a class="wp__link" href="#status=open&amp;post=r1" data-open="r1"[^>]*><time /)
+  })
+
+  it("applies an opened post's hash once, not again on the hashchange that follows", async () => {
+    const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress")] } })
+    await w.settle()
+    w.click({ "data-post": "r1" })
+    await w.settle()
+    const before = w.calls.length
+    w.el("wall-post").innerHTML = "kept"
+    w.hashchange()
+    await w.settle()
+    expect(w.calls.length).toBe(before)
+    expect(w.el("wall-post").innerHTML).toBe("kept")
   })
 
   it("renders a result's Markdown, with links to web addresses only", async () => {
