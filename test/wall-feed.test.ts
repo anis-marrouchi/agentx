@@ -38,11 +38,12 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
       const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
+      const on: Record<string, () => void> = {}
       els.set(id, {
         id, hidden: /\shidden[\s>]/.test(tag[0]), innerHTML: "", textContent: "", value: id === "f-status" ? "open" : "", checked: false,
         type: /type="checkbox"/.test(tag[0]) ? "checkbox" : /type="search"/.test(tag[0]) ? "search" : "select",
         classList: classes(), parentNode: { classList: classes() },
-        addEventListener: () => {}, setAttribute: (k: string, v: string) => { attrs[k] = v },
+        on, addEventListener: (t: string, f: () => void) => { on[t] = f }, setAttribute: (k: string, v: string) => { attrs[k] = v },
       })
     }
     return els.get(id)
@@ -216,6 +217,21 @@ describe("Wall v2 pages (#1316)", () => {
     await w.settle()
     expect(w.calls.length).toBe(before)
     expect(w.el("wall-post").innerHTML).toBe("kept")
+  })
+
+  it("applies a link back to the opened post's hash after a filter moved it (#1335)", async () => {
+    const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress")] } })
+    await w.settle()
+    w.click({ "data-post": "r1" })
+    await w.settle()
+    const opened = w.loc.hash
+    w.el("f-status").value = "done"
+    w.el("f-status").on.change()
+    expect(w.loc.hash).not.toBe(opened)
+    w.loc.hash = opened
+    w.hashchange()
+    await w.settle()
+    expect(w.el("f-status").value).toBe("open")
   })
 
   it("renders a result's Markdown, with links to web addresses only", async () => {
