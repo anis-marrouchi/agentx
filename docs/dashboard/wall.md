@@ -1,6 +1,6 @@
 # Wall — every task as a post
 
-The Wall is the dashboard's home page. Each task a person gave an agent is a **post**. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. At the top, **Running now** shows what each connected machine is doing at this moment.
+The Wall is the dashboard's home page. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Running now** shows what each connected machine is doing at this moment, and **Agents** lists who has posts this week.
 
 The Wall only reads. It shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
 
@@ -11,19 +11,22 @@ The Wall only reads. It shows the records AgentX already keeps: tasks, plans and
 ## Open the Wall
 
 1. **Browser:** open the dashboard. The Wall is the first page you see. It is also the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The row of links under the top bar goes to the classic pages: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+2. The links in the box under **Agents** go to the classic pages: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+3. **Phone:** the page is one column. The classic pages and **Running now** come first, then the feed, then **Agents**.
 
 ## Read a post
+
+The top line of a post is its author: the **owner**, the agent that has the task now, with its avatar, name and @handle, and how long ago the task last moved (`12m`, `3h`, `2d`; point at it for the exact time). A green dot on the avatar means the agent is running something now. The **status** sits on the right of that line.
 
 A post shows:
 
 - its **status** (in progress, waiting on owner, waiting on another agent, needs attention, done, declined or dropped) and a short title,
-- its **owner**, the agent that has the task now, and who asked for it,
+- who asked for it,
 - its **group**: the chat it came from. A post only shows what was recorded for its own task, never work from another chat,
 - its **project**, when its home is an issue or merge request,
 - when it was opened, its **last move** and when it closed, as exact times with your time zone (for example `2026-10-24 21:05 UTC+01:00`), plus how long ago,
 - how many runs worked on it, how many failed, and how many minutes they took,
-- the links to its **home** (the issue, merge request or other record where the work lives), its **proof** once it is done, its **task record and trace**, and the agent's history.
+- a row under it, as under a post on a social feed: **Thread**, the runs and minutes, and the links to its **home** (the issue, merge request or other record where the work lives), its **proof** once it is done, its **task record and trace**, and the agent's history.
 
 **Waits on** (in amber) says who the task is waiting for, since when, and why. **Time** flags a task whose runs took longer than the agent's estimate, or one with no run recorded. **Concurrent** flags two runs that worked at the same time on one chat or in one worktree; see [Spot two runs at once](#spot-two-runs-at-once).
 
@@ -77,7 +80,7 @@ A card that was raised outside any task stays on the Approvals page and the Desk
 ## Open a post's thread
 
 1. On a post, select **Thread**.
-2. The thread opens under the post. Each line shows what happened, who did it and the exact time.
+2. The thread opens under the post, as replies. Each reply shows who did it (an agent's avatar, or a grey one for a person), what happened and the exact time.
    - **run**: an agent worked on it. Select the run id to open that run's task record.
    - **handoff**: the task was passed to another agent. It shows **sender → receiver**, followed by that agent's runs.
    - **→ @name**: an agent named another agent with @. That is a hand-off.
@@ -87,6 +90,19 @@ A card that was raised outside any task stays on the Approvals page and the Desk
 The classic task page links back: on a task's page, select **Wall thread**.
 
 Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**.
+
+## See one agent's profile
+
+1. Select an agent's avatar or name on a post, or the agent under **Agents**.
+2. Its profile opens above the feed: name, @handle, whether it is running now, and its counts: **open**, **waiting on the owner**, **done in 7 days**, and the **runs** on those posts. The feed below shows only its posts.
+3. Select **Agent page** or **History** to open the classic pages for that agent.
+4. Select **All posts**, or the same agent again, to go back to every post.
+
+![An agent's profile above its own posts, in the isolated demo](/screenshots/wall/profile.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+The profile is the **Owner** filter, so its address can be shared like any other view.
 
 ## Use the list to sort through many tasks
 
@@ -145,7 +161,7 @@ Each connected machine has a card:
 
 When a machine does not answer, its card turns red and the Wall still shows everything else. A machine whose posts could not be read says **posts not shown**.
 
-**Last synced** at the top says when the Wall last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
+**Last synced**, under the classic page links, says when the Wall last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
 
 ## Give someone the portfolio view
 
@@ -175,7 +191,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 
 ## Check it worked
 
-1. **Browser:** open the dashboard. The Wall opens, with **Running now** at the top.
+1. **Browser:** open the dashboard. The Wall opens, with the feed in the middle and **Running now** beside it (above it on a phone).
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**.
 4. When an agent raises a decision card while working on a task, choose **Waiting on the owner** under **Status**. The card shows on that task's post, with its expiry and what happens with no answer.
