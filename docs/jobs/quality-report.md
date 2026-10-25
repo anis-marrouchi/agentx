@@ -80,6 +80,20 @@ If the report fails (the report command errors, GitHub refuses the comment, or t
 
 3. To post last week's report, run `agentx quality weekly`. To post another week, add `--week`, for example `agentx quality weekly --week 2026-W41`.
 
+## Post the weeks you missed
+
+If you turn the report on after the gates went on, the daemon only posts from the next Monday on. It does not know about the weeks before, so no comment names them. To post them all at once:
+
+1. **Terminal:** open the folder that holds `agentx.json`.
+2. To see the comments without posting them, run:
+
+   ```sh
+   agentx quality weekly --backfill --dry-run
+   ```
+
+   It lists the weeks it would post: every week from the one the first gate in `gates` went on up to last week that has no comment yet.
+3. To post them, run `agentx quality weekly --backfill`. Weeks that already have a comment are skipped. If one week fails, the others are still posted and the command ends with an error; run it again once the cause is fixed.
+
 ## Post the week-3 verdict
 
 After three weeks with the gates on, the weekly comment says the verdict is due. The decision for each gate is yours.
@@ -105,6 +119,7 @@ Running the verdict again edits the same comment.
 - On Monday after `time`, the issue has a new comment titled **Quality report, 2026-Wnn**.
 - The daemon log has a line like `[quality] weekly report 2026-W42 posted: https://github.com/...`.
 - Running `agentx quality weekly` again for the same week prints `updated:`, and the issue still has one comment for that week.
+- Running `agentx quality weekly --backfill` a second time prints `Nothing to backfill`.
 - After `agentx quality verdict`, the issue has one comment titled **Week-3 verdict per gate**.
 
 ## If something is wrong
@@ -118,6 +133,7 @@ Running the verdict again edits the same comment.
 - **`gh auth login` or `not logged in`.** The report reads GitHub through `gh`. Run `gh auth login` as the user the daemon runs as.
 - **`No report was posted for 2026-W41: the daemon was not running`.** You can post that week with `agentx quality weekly --week 2026-W41`.
 - **`No report was posted for 2026-W41: every try failed`.** The reason is in the daemon log, on the lines starting `[quality] weekly report 2026-W41 FAILED`. Once it is fixed, post that week with `agentx quality weekly --week 2026-W41`.
+- **`--backfill starts at the first gate's since`.** `gates` is empty, so there is no first week. Add your gates, or post one week with `--week`.
 - **`no verdict for: …`.** Every gate in `gates` needs one `--gate`. **`not a configured gate`**: check the id against `gates`.
 - **`no baseline` from `agentx quality verdict`.** The verdict quotes the baseline's fix share, so it needs the baseline from step 3 of [Turn it on](#turn-it-on).
 - **`no weekly report stored yet`.** The verdict cites the latest weekly report kept on this computer. Post one with `agentx quality weekly` first.
