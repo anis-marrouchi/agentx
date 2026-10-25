@@ -28,6 +28,7 @@ Everything the daemon does is published as an event on one in-process bus. Examp
 | `signal` | `emitted` (a workflow signal); `signal:stop`, `signal:stopped`, `signal:resume`, `signal:resume-failed` ([pause and resume a task](/jobs/pause-and-resume)) | the stopped task's ID for the pause and resume types |
 | `mesh` | `forward` (a task sent to a peer), `recovered`, `lost`, `skills-changed`, `added`, `removed`, and from the [mesh feed](#events-from-other-machines): `feed:down`, `feed:up`, `feed:gap` | — |
 | `announce` | `announce` (a note to the whole mesh, see [Announcements](#announcements)) | — |
+| `custom` | any name a script or agent sends, such as `render:ready` (see [Send your own named events](/automations/event-subscriptions#send-your-own-named-events)) | what the sender gave as `--ref` |
 | `reminder` | `reminder:due`, `reminder:dispatched`, `reminder:skipped` ([due reminders](/automations/reminders)) | Apple Reminders ID |
 | `channel` | `in`, `out` | channel message ID |
 | `status` | `status` | — |
@@ -81,6 +82,8 @@ An announcement is a short note to every machine in the mesh, for example planne
 2. To sign it, add `--by <name>`. When the name is an agent ID on the receiving daemon, the event's `agentId` is that agent; otherwise the name starts the summary. Anyone allowed to announce (this machine, or a caller with the mesh token) can sign as any agent.
 
 The daemon publishes one `announce` event, and every other machine picks it up through its feed. Programs can do the same with `POST /mesh/announce` and a body of `{ "text": "…", "by": "…" }`. Off this machine that request needs `Authorization: Bearer <mesh-token>`. Text longer than 2,000 characters is refused, and the summary keeps the first 280.
+
+A named event works the same way but can wake agents: `agentx events emit <name>`, the `agentx_emit` tool, or `POST /events` with a body of `{ "name": "render:ready", "summary": "…", "ref": "…", "by": "…" }`. Off this machine that request needs `Authorization: Bearer <mesh-token>`. See [Send your own named events](/automations/event-subscriptions#send-your-own-named-events).
 
 The phone app lists recent announcements from every machine in its **Alerts** tab and can send a notification for each new one. See [Announcements on the phone](/dashboard/mobile-alerts#announcements).
 

@@ -3278,6 +3278,16 @@ Forget a stopped task and its resume plan, when it won't be resumed. It can no l
 | `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl from config). |
 | `--token <token>` | — | Bearer token (defaults to dashboard.token from config). |
 
+### `agentx events emit <name>`
+
+Send a named event, such as `render:ready`, that wakes the agents subscribed to it. See [Send your own named events](/automations/event-subscriptions#send-your-own-named-events). Takes `--node`, `--token` and `--json` from `agentx events`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--summary <text>` | the name | One short line on what happened. |
+| `--ref <ref>` | — | Pointer to the details: an issue, a path, a run ID. |
+| `--by <name>` | the running agent | Who sent it: an agent ID, or a person's name. |
+
 ## db (advanced)
 
 `agentx db`: Explore the operational SQLite store at .agentx/db.sqlite. **Advanced.**
