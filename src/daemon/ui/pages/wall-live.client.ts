@@ -2,15 +2,19 @@
 //
 // Spliced into WALL_PAGE_SCRIPT's closure, so it uses that script's S, $,
 // esc(), when(), until(), stamp(), avatar(), nameOf(), allAgents(),
-// taskHref(), act(), note(), paintSpace() and pollSpace().
+// wallTaskHref(), act(), note(), paintSpace() and pollSpace().
 //
 // The Live page (#page=live) lists every live session on every machine,
 // as Spaces do on X: the live ones on top (a Space, a lesson on a
-// machine's screen, an agent at work), each with Join; then what comes up
-// next (the next scheduled jobs); then a form to start a Space. Joining a
-// Space on this computer opens it here, with its transcript and a box to
-// say something into it. A Space on another machine plays there, so it is
-// named with its machine. Joining an agent at work opens its live task.
+// machine's screen), then the sessions and jobs running now, as the
+// classic /live shows them (#1381): each card names the agent, what it is
+// on, how long it has run and the last line it wrote, and opens the run's
+// Task page (wall-task.client.ts). Then what comes up next (the next
+// scheduled jobs), then a form to start a Space. Joining a Space on this
+// computer opens it here, with its transcript and a box to say something
+// into it. A Space on another machine plays there, so it is named with
+// its machine. While the page is open the snapshot streams in, so the
+// cards move as the runs do.
 //
 // Also here: who an @mention in a comment names, and the call and join
 // buttons of an agent's page and profile.
@@ -33,14 +37,43 @@ export const WALL_LIVE_SCRIPT = String.raw`
     var rank = { space: 0, lesson: 1, work: 2 };
     return out.sort(function (x, y) { return rank[x.kind] - rank[y.kind] || y.at - x.at; });
   }
+  function dur(ms) {
+    var m = Math.floor(Math.max(0, ms) / 60000);
+    return m < 1 ? Math.floor(Math.max(0, ms) / 1000) + ' s' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
+  }
+  /** The last line a run wrote, said plainly (task.ts's stream sigils). */
+  function activityText(t) {
+    var l = t.lastActivity || '';
+    if (!l) return t.workflow && t.workflow.step ? 'Workflow step: ' + t.workflow.step : t.step ? 'Step: ' + t.step : 'Starting…';
+    if (l.indexOf('→ ') === 0) return 'Using ' + l.slice(2).split('(')[0];
+    if (l.indexOf('← [error] ') === 0) return 'Tool error: ' + l.slice(10);
+    if (l.indexOf('← ') === 0) return 'Tool result: ' + l.slice(2);
+    if (l.indexOf('💭 ') === 0) return 'Thinking: ' + l.slice(2).trim();
+    if (l.indexOf('· ') === 0) return l.slice(2);
+    if (l.indexOf('[error] ') === 0) return 'Error: ' + l.slice(8);
+    return 'Writing: ' + l;
+  }
+  /** A session or job at work: the whole card opens its Task page. */
+  function workHtml(s) {
+    var t = s.task, job = t.channel === 'cron';
+    var jobId = job ? String(t.sender || t.chatId || '').replace(/^cron:/, '') : '';
+    return '<a class="wls is-work" href="' + esc(wallTaskHref(t, s.agent.id, s.node.url)) + '" title="Open this run: its conversation and a box to steer it">' +
+      '<div class="wls__h"><span class="ax-badge ax-badge--live">● ' + (job ? 'Job' : 'Session') + '</span><span class="wls__k">' +
+        esc(s.node.name) + (t.channel && !job ? ' · ' + esc(t.channel) : '') + ' · <span class="wls__dur">for ' + esc(dur(Date.now() - s.at)) + '</span></span></div>' +
+      '<div class="wls__ag">' + avatar(s.agent.id, 'sm') + '<b>' + esc(nameOf(s.agent.id)) + '</b><span class="h">@' + esc(s.agent.id) + '</span>' +
+        (jobId ? '<span class="chip chip--ghost">' + esc(jobId) + '</span>' : '') + '</div>' +
+      '<p class="wls__t">' + esc(s.title) + '</p>' +
+      (t.workflow && t.workflow.title ? '<div class="wls__k">Workflow ' + esc(t.workflow.title) + '</div>' : '') +
+      '<div class="wls__act"><span class="wls__k">Latest</span> ' + esc(activityText(t)) + '</div></a>';
+  }
   function sessionHtml(s) {
+    if (s.kind === 'work') return workHtml(s);
     var who = s.agents.map(function (id) { return avatar(id, 'sm'); }).join('');
     var names = s.agents.map(function (id) { return esc(nameOf(id)); }).join(' and ');
     var label = s.kind === 'space' ? 'Space' : s.kind === 'lesson' ? 'Lesson' : 'Working';
     var join = s.kind === 'space'
       ? (s.here ? '<button type="button" class="ax-btn" data-join-space>Join</button>' : '<span class="wls__k">Plays on ' + esc(s.node.name) + '</span>')
-      : s.kind === 'lesson' ? '<span class="wls__k">On ' + esc(s.node.name) + '\'s screen</span>'
-      : '<a class="ax-btn ax-btn--ghost" href="' + esc(taskHref(s.task.id, s.agent.id, { daemonUrl: s.node.url }, false)) + '">Join</a>';
+      : '<span class="wls__k">On ' + esc(s.node.name) + '\'s screen</span>';
     return '<article class="wls is-' + s.kind + '"><div class="wls__h"><span class="ax-badge ax-badge--live">● ' + label + '</span><span class="wls__k">' + esc(s.node.name) +
       (s.at ? ' · since ' + esc(stamp(s.at).slice(11, 16)) : '') + '</span></div>' +
       '<p class="wls__t">' + esc(s.title) + '</p>' +
@@ -55,12 +88,14 @@ export const WALL_LIVE_SCRIPT = String.raw`
   }
   function livePageHtml() {
     if (!S.live) return '<p class="ax-wall__empty">Loading…</p>';
-    var live = liveSessions(), next = comingUp();
+    var all = liveSessions(), next = comingUp();
+    var live = all.filter(function (s) { return s.kind !== 'work'; }), work = all.filter(function (s) { return s.kind === 'work'; });
     var agents = allAgents().filter(function (a) { return a.nodes.length; });
     var opts = function (pick) { return agents.map(function (a, i) { return '<option value="' + esc(a.id) + '"' + (i === pick ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join(''); };
     return '<div class="wlv">' +
-      '<h3>Live now <small>' + live.length + '</small></h3>' +
-      (live.length ? live.map(sessionHtml).join('') : '<p class="ax-wall__empty">Nothing is live. Start a Space below, or open a post and start one about it.</p>') +
+      (live.length ? '<h3>Spaces and lessons <small>' + live.length + '</small></h3>' + live.map(sessionHtml).join('') : '') +
+      '<h3>Running now <small>' + work.length + '</small></h3>' +
+      (work.length ? '<div class="wlv__work">' + work.map(sessionHtml).join('') + '</div>' : '<p class="ax-wall__empty">No session or job is running.' + (live.length ? '' : ' Start a Space below, or open a post and start one about it.') + '</p>') +
       '<div id="live-space">' + spaceHtml() + '</div>' +
       '<h3>Coming up</h3>' + (next.length ? '<ul class="wlv__next">' + next.map(function (x) {
         return '<li>' + avatar(x.j.agent, 'sm') + '<span><b>' + esc(x.j.id) + '</b> <small>@' + esc(x.j.agent) + ' on ' + esc(x.n.name) + '</small></span><span class="wls__k">' + esc(until(x.at)) + '</span></li>';
@@ -141,7 +176,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
   function agentActsHtml(id) {
     var w = liveTaskOf(id);
     return '<button type="button" class="ax-btn ax-btn--ghost" data-call-agent="' + esc(id) + '" title="' + esc(nameOf(id)) + ' calls you on AgentX Voice">Call</button>' +
-      (w ? '<a class="ax-btn" href="' + esc(taskHref(w.t.id, id, { daemonUrl: w.n.url }, false)) + '">● Join live</a>' : '');
+      (w ? '<a class="ax-btn" href="' + esc(wallTaskHref(w.t, id, w.n.url)) + '">● Join live</a>' : '');
   }
   async function callAgent(id) {
     var nodes = (S.live && S.live.nodes) || [];
@@ -169,7 +204,13 @@ export const WALL_LIVE_CSS = `
 .wls__h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .wls__k { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wls__t { margin: 6px 0 8px; font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
-.wls.is-work .wls__t { font-weight: 500; font-size: var(--ax-fs); }
+.wls.is-work { display: block; color: inherit; text-decoration: none; }
+.wls.is-work:hover { border-color: var(--ax-accent); text-decoration: none; }
+.wls.is-work .wls__t { font-weight: 500; font-size: var(--ax-fs); margin: 4px 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wls__ag { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: var(--ax-fs-sm); min-width: 0; }
+.wls__ag .h { color: var(--ax-muted); }
+.wls__act { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); color: var(--ax-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px solid var(--ax-border); padding-top: 6px; }
+.wls__act .wls__k { font-family: var(--ax-font, inherit); text-transform: uppercase; letter-spacing: .05em; font-size: 10px; }
 .wls__f { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .wls__who { display: inline-flex; align-items: center; gap: 4px; font-size: var(--ax-fs-sm); min-width: 0; }
 .wls__who > span { margin-left: 4px; color: var(--ax-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

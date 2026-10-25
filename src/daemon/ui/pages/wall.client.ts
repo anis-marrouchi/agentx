@@ -34,6 +34,7 @@ import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
+import { WALL_TASK_SCRIPT } from "./wall-task.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -44,15 +45,16 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator', 'live'];
+  var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null };
+  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
+${WALL_TASK_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -182,6 +184,9 @@ ${WALL_LIVE_SCRIPT}
     if (!q.has('status')) f.status = 'open';
     S.view = q.get('view') || S.view;
     S.page = PAGES.indexOf(q.get('page')) >= 0 ? q.get('page') : 'wall';
+    // A Task page names its run (#1381); without one it is the Wall.
+    S.task = S.page === 'task' ? readTask(q) : null;
+    if (S.page === 'task' && !S.task) S.page = 'wall';
     S.post = q.get('post') || '';
     return f;
   }
@@ -194,6 +199,7 @@ ${WALL_LIVE_SCRIPT}
     });
     if (S.view !== 'feed') q.set('view', S.view);
     if (S.page !== 'wall') q.set('page', S.page);
+    if (S.page === 'task' && S.task) TASK_KEYS.forEach(function (k) { if (S.task[k]) q.set(k, S.task[k]); });
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
@@ -625,7 +631,7 @@ ${WALL_LIVE_SCRIPT}
       '<textarea id="wdo-text" class="wdo__t" rows="2" maxlength="4000" placeholder="It reaches ' + esc(nameOf(p.owner)) + ' like a message on any channel. Use @name to bring in another agent.">' + esc(draft) + '</textarea>' +
       '<div class="wdo__row">' +
         '<button type="button" class="ax-btn" data-act="comment">Comment</button>' +
-        (live ? '<a class="ax-btn ax-btn--ghost" href="' + esc(taskHref(live.t.id, p.owner, { daemonUrl: live.n.url }, false)) + '" title="' + esc(nameOf(p.owner)) + ' is working now">● Join live</a>' : '') +
+        (live ? '<a class="ax-btn ax-btn--ghost" href="' + esc(wallTaskHref(live.t, p.owner, live.n.url)) + '" title="' + esc(nameOf(p.owner)) + ' is working now">● Join live</a>' : '') +
         '<button type="button" class="ax-btn ax-btn--ghost" data-act="call" title="' + esc(nameOf(p.owner)) + ' calls you on AgentX Voice about this post">Call ' + esc(nameOf(p.owner)) + '</button>' +
         (others.length
           ? '<span class="wdo__sp"><select id="wdo-with" aria-label="Talks with">' + others.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') + '</select>' +
@@ -818,7 +824,7 @@ ${WALL_LIVE_SCRIPT}
   }
   function navHtml(page, f) {
     var side = ['projects', 'jobs', 'reviews', 'failures'].indexOf(S.view) >= 0;
-    var on = page === 'post' ? 'wall' : page === 'wall' ? (side ? S.view : f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
+    var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'wall' ? (side ? S.view : f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       var me = a.getAttribute('data-nav') === on;
       a.classList.toggle('is-on', me);
@@ -842,7 +848,7 @@ ${WALL_LIVE_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1069,6 +1075,9 @@ ${WALL_LIVE_SCRIPT}
     $('wall-agents-page').hidden = page !== 'agents';
     $('wall-creator').hidden = page !== 'creator';
     $('wall-live').hidden = page !== 'live';
+    $('wall-task').hidden = page !== 'task';
+    paintTask(page);
+    followLive(page);
     // Live repaints with the snapshot, but not over a field in use.
     if (page === 'live') {
       var busy = document.activeElement && document.activeElement.id && /^(lv-|wdo-say)/.test(document.activeElement.id);

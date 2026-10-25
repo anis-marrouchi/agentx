@@ -105,7 +105,7 @@ export function renderTaskPage(opts: TaskPageOpts): string {
   })
 }
 
-const TASK_PAGE_CSS = `
+export const TASK_PAGE_CSS = `
 /* The shell gives <main> no padding, so page content butted straight against
    the sticky topbar. Breathe. */
 .ax-task-page {
@@ -249,10 +249,15 @@ const TASK_PAGE_CSS = `
 
 `
 
-const TASK_PAGE_JS = `
-(function () {
-  var root = document.querySelector('.ax-task-page');
-  if (!root) return;
+/** The page's stream, steer box and Stop, as a function of its root
+ *  element, so the Wall's Task page (#1381) mounts the same code. It
+ *  returns a function that closes the stream and the clock. opts.href
+ *  (id, channel) names where a continued scheduled run's new turn opens. */
+export const TASK_MOUNT_FN = `
+function mountTaskPage(root, opts) {
+  opts = opts || {};
+  var timer = 0, es = null;
+  function close() { clearInterval(timer); if (es) { try { es.close(); } catch (e) {} } }
   var taskId  = root.getAttribute('data-task-id');
   var agentId = root.getAttribute('data-agent-id');
   var nodeUrl = root.getAttribute('data-node-url');
@@ -268,7 +273,8 @@ const TASK_PAGE_JS = `
 
   var buffer = '';
   var raf = 0;
-  var startedAt = Date.now();
+  // The run's clock starts when the run did, when that is known.
+  var startedAt = Date.parse(root.getAttribute('data-ask-at') || '') || Date.now();
   var finished = false;
 
   function setStatus(label, kind) {
@@ -502,7 +508,7 @@ const TASK_PAGE_JS = `
     var m = Math.floor(s / 60);
     elapsedEl.textContent = m > 0 ? m + 'm ' + (s % 60) + 's' : s + 's';
   }
-  setInterval(tickElapsed, 1000);
+  timer = setInterval(tickElapsed, 1000);
   tickElapsed();
 
   // A request handed over by the caller renders immediately, before any
@@ -525,6 +531,7 @@ const TASK_PAGE_JS = `
 
   /** The Task page for another run of the same agent on this node. */
   function taskHref(id, channel) {
+    if (opts.href) return opts.href(id, channel);
     var q = new URLSearchParams(location.search);
     q.set('agent', agentId);
     q.set('node', nodeUrl);
@@ -602,20 +609,20 @@ const TASK_PAGE_JS = `
         drain();
       })
       .catch(function (e) { setStatus(e.message, 'err'); });
-    return;
+    return close;
   }
 
   var url = '/api/task/stream?node=' + encodeURIComponent(nodeUrl)
     + '&agent=' + encodeURIComponent(agentId)
     + '&task=' + encodeURIComponent(taskId);
-  var es;
-  try { es = new EventSource(url); } catch (e) { setStatus('connect failed', 'err'); return; }
+  try { es = new EventSource(url); } catch (e) { setStatus('connect failed', 'err'); return close; }
 
   es.addEventListener('start', function (ev) {
     setStatus('live', 'live');
     try {
       var d = JSON.parse(ev.data);
       if (d.message || d.sender) showAsk(d.message, d.sender, d.startedAt);
+      if (d.startedAt) startedAt = Date.parse(d.startedAt) || startedAt;
       if (d.initial) append(d.initial);
       if (d.done) { finished = true; setStatus('finished', 'done'); }
     } catch (e) {}
@@ -632,6 +639,14 @@ const TASK_PAGE_JS = `
   es.addEventListener('error', function () {
     if (!finished) setStatus('disconnected', 'err');
   });
+  return close;
+}
+`
 
+const TASK_PAGE_JS = `
+${TASK_MOUNT_FN}
+(function () {
+  var root = document.querySelector('.ax-task-page');
+  if (root) mountTaskPage(root);
 })();
 `

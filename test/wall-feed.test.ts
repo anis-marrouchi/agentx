@@ -1083,12 +1083,13 @@ describe("Wall v2 live sessions, comments and calls (#1355)", () => {
     expect(w.el("wall-title").textContent).toBe("Live")
     expect(w.el("nav-n-live").textContent).toBe("3")
     const html = w.el("wall-live").innerHTML
-    const order = [...html.matchAll(/<article class="wls is-(\w+)"/g)].map((m) => m[1])
+    // Spaces first; the runs after them open the Wall's Task page (#1381).
+    const order = [...html.matchAll(/<(?:article|a) class="wls is-(\w+)"/g)].map((m) => m[1])
     expect(order).toEqual(["space", "space", "work"])
     expect(html).toContain("Release notes")
     expect(html).toContain("data-join-space")
     expect(html).toContain("Plays on node-b")
-    expect(html).toContain('href="/tasks/t9?agent=cx&amp;node=http%3A%2F%2Fnode-a"')
+    expect(html).toContain('href="#page=task&amp;task=t9&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;ask=Answering+a+refund&amp;at=')
     expect(html).toContain("<b>digest</b>")
     w.click({ "data-join-space": "" })
     await w.settle()
