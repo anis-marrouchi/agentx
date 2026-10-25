@@ -374,6 +374,13 @@ describe("helpers", () => {
     expect(plan[0].evidence).toBe("https://gitlab.example.com/acme/web/-/merge_requests/9")
     expect(plan[1].evidence.length).toBe(500)
   })
+  it("redacts a token that crosses the proof clamp (#1380)", () => {
+    plans.updateStep("r1", 1, { evidence: `${"x ".repeat(245)}glpat-abcdefghijklmnopqrstuv end`, updatedAt: T0 + 9000 } as any)
+    plans.updateStep("r1", 2, { note: `${"y ".repeat(95)}glpat-abcdefghijklmnopqrstuv end`, updatedAt: T0 + 9000 } as any)
+    const plan = (handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "r1" }), deps(), "n").body as any).plan
+    expect(plan[0].evidence).not.toContain("glpat-")
+    expect(plan[1].note).not.toContain("glpat-")
+  })
   it("answers 404 for an unknown post and an empty wall with no request store", () => {
     expect(handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "nope" }), deps(), "n").status).toBe(404)
     expect((handleWallApi("/api/admin/wall", new URLSearchParams(), null, "n").body as any).posts).toEqual([])
