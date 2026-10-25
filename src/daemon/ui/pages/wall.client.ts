@@ -354,14 +354,6 @@ ${WALL_LIVE_SCRIPT}
       'in <b>' + esc(groupKey(p)) + '</b>',
       p.project ? 'project <b>' + esc(p.project) + '</b>' : '',
     ].filter(Boolean).join(' · ');
-    var meta = [
-      'Opened ' + when(p.createdAt),
-      'Last move ' + when(p.lastMoveAt),
-      p.closedAt ? 'Closed ' + when(p.closedAt) : '',
-      p.estimateMinutes ? 'Estimate <b>' + p.estimateMinutes + ' min</b>' : '',
-      p.forgeState ? forgeStateHtml(p.forgeState) : '',
-      p.forgeTime ? 'GitLab time <b' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>' + esc(forgeTimeText(p.forgeTime, true)) + '</b>' : '',
-    ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
     // Action row: thread, runs, minutes, then the links out.
     var shown = full || S.shown[p.id];
     var acts = [
@@ -396,11 +388,16 @@ ${WALL_LIVE_SCRIPT}
       acts.push('<a href="' + esc(taskHref(p.lastRun.taskId, p.lastRun.agentId, p.node, !isOpen(p))) + '">' + ICON.trace + 'Task record and trace</a>');
       acts.push('<a href="/agents/' + encodeURIComponent(p.lastRun.agentId) + '/history">Agent history</a>');
     }
-    var open = full ? '' : ' data-post="' + esc(p.id) + '" tabindex="0"';
-    return '<article class="' + cls + '" id="' + (full ? 'open-' : 'post-') + esc(p.id) + '"' + open + '>' + avatar(p.owner) + '<div class="wp__b">' +
+    // Opened, a post reads as a task (#1355): the request as its title,
+    // where it stands, its plan, the result, then the facts and the thread.
+    var t = S.threads[p.id];
+    return '<article class="' + cls + ' wtk" id="open-' + esc(p.id) + '">' + avatar(p.owner) + '<div class="wp__b">' +
       '<div class="wp__by">' + by + '</div>' +
-      leadHtml(p, via, full) +
+      '<h1 class="wtk__title">' + esc(p.headline) + '</h1>' +
+      progressHtml(p) +
       (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
+      (t && t.plan && t.plan.length ? planHtml(t.plan) : '') +
+      resultHtml(p) +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
       (forgeClosedOpen(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '') + ', but this post is still open. Do not pick it up.</div>' : '') +
       (forgeOpenClosed(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says open, but this post is ' + esc(p.state) + '. Close it there or reopen it here.</div>' : '') +
@@ -408,12 +405,68 @@ ${WALL_LIVE_SCRIPT}
       conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
       cardsOf(p).map(cardHtml).join('') +
       (qaText(p) ? '<div class="wp__qa">QA: ' + esc(qaText(p)) + (p.awaitingQa && p.qa ? ' — new verdict asked' : '') + '</div>' : '') +
-      '<div class="wp__meta">' + meta + '</div>' +
+      factsHtml(p) +
       '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
-      (full ? doHtml(p) : '') +
-      '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (full ? '<h2 class="wp__th">Thread</h2>' : '') +
-        (shown && S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
+      doHtml(p) +
+      '<div class="wp__thread" data-for="' + esc(p.id) + '"><h2 class="wp__th">Thread</h2>' +
+        (t ? threadHtml(t, p) : '') + '</div>' +
       '</div></article>';
+  }
+
+  // --- The opened task (#1355) ---
+  /** Asked → Working → Waits → Done, each with when it happened. */
+  function progressHtml(p) {
+    var open = isOpen(p), waits = open && waitsOnSomeone(p);
+    var end = p.state === 'done' ? 'Done' : open ? 'Done' : p.state.replace(/_/g, ' ');
+    var steps = [
+      { name: 'Asked', at: esc(ago(p.createdAt)), on: 'is-done' },
+      { name: 'Working', at: p.runs ? p.runs + (p.runs === 1 ? ' run' : ' runs') + (p.runMs ? ', ' + mins(p.runMs) + ' min' : '') : 'not picked up yet',
+        on: !open || waits ? (p.runs ? 'is-done' : '') : 'is-now' },
+    ];
+    if (waits) steps.push({ name: 'Waits', at: 'on ' + esc(p.blocked ? p.blocked.who : 'you') + (p.blocked ? ' for ' + esc(ago(p.blocked.since).replace(' ago', '')) : ''), on: 'is-wait' });
+    steps.push({ name: end, at: p.closedAt ? esc(ago(p.closedAt)) : p.estimateMinutes ? 'estimate ' + hm(p.estimateMinutes) : '', on: open ? '' : p.state === 'done' ? 'is-done' : 'is-end' });
+    return '<ol class="wtk__prog" aria-label="Where it stands">' + steps.map(function (s) {
+      return '<li class="' + s.on + '"' + (s.on === 'is-now' || s.on === 'is-wait' ? ' aria-current="step"' : '') + '><b>' + esc(s.name) + '</b><span>' + s.at + '</span></li>';
+    }).join('') + '</ol>';
+  }
+  var STEP_MARK = { done: '✓', active: '●', blocked: '!', skipped: '–', pending: '' };
+  /** The plan, when the post has one: each step, who owns it, its proof. */
+  function planHtml(plan) {
+    var done = plan.filter(function (s) { return s.state === 'done' || s.state === 'skipped'; }).length;
+    return '<section class="wtk__sec" aria-label="Plan"><h2>Plan <span class="k">' + done + ' of ' + plan.length + ' done</span></h2><ol class="wtk__plan">' +
+      plan.map(function (s) {
+        var proof = s.evidence ? (/^https?:\/\//.test(s.evidence) ? '<a href="' + esc(s.evidence) + '" target="_blank" rel="noopener">Proof</a>' : esc(s.evidence)) : '';
+        return '<li class="is-' + esc(s.state) + '"><span class="wtk__mark" aria-hidden="true">' + (STEP_MARK[s.state] || '') + '</span><div>' +
+          '<b>' + esc(s.name) + '</b> ' + avatar(s.agentId, 'sm') + '<span class="h">@' + esc(s.agentId) + '</span> <span class="chip ' + (s.state === 'blocked' ? 'chip--warn' : s.state === 'done' ? 'chip--done' : 'chip--ghost') + '">' + esc(s.state) + '</span>' +
+          (s.doneWhen ? '<div class="k">Done when: ' + esc(s.doneWhen) + '</div>' : '') +
+          (s.note ? '<div class="wtk__note">' + esc(s.note) + '</div>' : '') +
+          (proof ? '<div class="k">' + proof + '</div>' : '') +
+        '</div></li>';
+      }).join('') + '</ol></section>';
+  }
+  function resultHtml(p) {
+    var r = p.result;
+    if (!r) return '<section class="wtk__sec"><h2>Result</h2><p class="k">No result yet.</p></section>';
+    var from = r.from === 'reply'
+      ? 'Answered ' + shortTime(r.at) + (r.taskId && r.agentId ? ' · <a href="' + esc(taskHref(r.taskId, r.agentId, p.node, !isOpen(p))) + '">run ' + esc(r.taskId) + '</a>' : '')
+      : 'Closed with ' + shortTime(r.at);
+    return '<section class="wtk__sec"><h2>Result</h2><div class="wp__result ax-md">' + md(r.text) + '</div><div class="wp__from">' + from + '</div></section>';
+  }
+  /** Who asked, where, and the clock, as a short list of facts. */
+  function factsHtml(p) {
+    var rows = [
+      ['Asked by', p.askedBy ? esc(p.askedBy) : ''],
+      ['In', esc(groupKey(p))],
+      ['Project', p.project ? esc(p.project) : ''],
+      ['Opened', when(p.createdAt)],
+      ['Last move', when(p.lastMoveAt)],
+      ['Closed', p.closedAt ? when(p.closedAt) : ''],
+      ['Time', (p.runMs ? mins(p.runMs) + ' min of runs' : 'no runs yet') + (p.estimateMinutes ? ' against ' + hm(p.estimateMinutes) : '') + (p.timeFlag ? ' <span class="is-warn">' + esc(p.timeFlag) + '</span>' : '')],
+      ['Forge', p.forgeState ? forgeStateHtml(p.forgeState) : ''],
+      ['GitLab time', p.forgeTime ? '<span' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>' + esc(forgeTimeText(p.forgeTime, true)) + '</span>' : ''],
+      ['Request', esc(p.id)],
+    ];
+    return '<dl class="wtk__facts">' + rows.filter(function (x) { return x[1]; }).map(function (x) { return '<dt>' + x[0] + '</dt><dd>' + x[1] + '</dd>'; }).join('') + '</dl>';
   }
 
   /** The one amber line of a compact post: who it waits on, if anyone. */
@@ -537,7 +590,7 @@ ${WALL_LIVE_SCRIPT}
     try {
       var r = await fetch('/api/admin/wall/thread?id=' + encodeURIComponent(id), { headers: headers(p.node && p.node.peer) });
       var body = await r.json();
-      next = r.ok ? { events: body.events || [] } : { error: body.error || ('HTTP ' + r.status) };
+      next = r.ok ? { events: body.events || [], plan: body.plan || [] } : { error: body.error || ('HTTP ' + r.status) };
     } catch (e) { next = { error: String(e && e.message || e) }; }
     S.threads[id] = next.error && had && had.events ? had : next;
     render();

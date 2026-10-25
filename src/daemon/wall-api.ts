@@ -177,6 +177,18 @@ export interface WallPost {
   awaitingQa: boolean
 }
 
+/** One step of a post's plan, as the opened task shows it (#1355). */
+export interface WallPlanStep {
+  idx: number
+  name: string
+  agentId: string
+  state: string
+  doneWhen: string
+  evidence: string | null
+  /** Why it is blocked or skipped. */
+  note: string | null
+}
+
 export interface WallEvent {
   at: number
   kind: "asked" | "run" | "handoff" | "home" | "link" | "comment" | "plan" | "waiting" | "attention" | "closed"
@@ -689,6 +701,20 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
   return events.sort((a, b) => a.at - b.at)
 }
 
+/** The post's plan steps, in order. Empty: it has no plan. */
+export function wallPlan(r: RequestRecord, deps: WallDeps): WallPlanStep[] {
+  if (!deps.plans?.get(r.id)) return []
+  return deps.plans.steps(r.id).map((s) => ({
+    idx: s.idx,
+    name: clean(s.name, 200),
+    agentId: s.agentId,
+    state: s.state,
+    doneWhen: clean(s.doneWhen, 200),
+    evidence: s.evidence ? redactSecrets(s.evidence) : null,
+    note: s.note ? clean(s.note, 200) : null,
+  }))
+}
+
 /** Webhook runs are stored under their forge's channel, not "webhook". */
 const WEBHOOK_CHANNELS = "'github', 'gitlab'"
 
@@ -765,7 +791,7 @@ export function handleWallApi(path: string, q: URLSearchParams, deps: WallDeps |
     const task = q.get("task")
     const r = id ? deps.store.get(id) : task ? deps.store.byLink("run", task) : null
     if (!r) return { status: 404, body: { error: "no post for that id" } }
-    return { status: 200, body: { node, syncedAt, post: wallPost(r, deps), events: wallThread(r, deps) } }
+    return { status: 200, body: { node, syncedAt, post: wallPost(r, deps), events: wallThread(r, deps), plan: wallPlan(r, deps) } }
   }
   return { status: 404, body: { error: "not found" } }
 }
