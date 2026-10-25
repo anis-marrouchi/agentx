@@ -55,6 +55,7 @@ const groups = [
   { text: "Everyday tasks", collapsed: true, items: [
     { text: "Answer questions", link: "/jobs/answer-questions" },
     { text: "Send a daily report", link: "/jobs/daily-report" },
+    { text: "Find and follow up sales leads", link: "/jobs/sales" },
     { text: "Post a weekly quality report", link: "/jobs/quality-report" },
     { text: "Watch GitLab", link: "/jobs/watch-gitlab" },
     { text: "Answer customers on WhatsApp", link: "/jobs/answer-whatsapp" },

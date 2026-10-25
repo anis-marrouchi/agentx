@@ -31,6 +31,8 @@ export interface CronJobState {
   /** Send each successful run's answer to the job's `notify` target.
    *  True whenever the job has `notify`, unless `deliverResult: false`. */
   deliverResult?: boolean
+  /** Flag answer lines that state a fact without a source (#1288). */
+  requireSources?: boolean
   lastRun?: Date
   nextRun?: Date
   lastSuccess?: Date
@@ -73,4 +75,7 @@ export interface CronRunResult {
   /** Tool calls the autonomy guard blocked — what the routine would have
    *  done with more power. */
   autonomyBlocks?: AutonomyBlock[]
+  /** Answer lines that stated a fact without a source, on a job with
+   *  `requireSources` (#1288). Absent when every line had one. */
+  unsourced?: number
 }

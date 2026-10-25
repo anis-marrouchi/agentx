@@ -812,6 +812,10 @@ const cronJobSchema = z.object({
    *  to report reports there, including the chat an agent's schedule was
    *  requested from (#738). `false` keeps `notify` for failure alerts only. */
   deliverResult: z.boolean().optional(),
+  /** Check the answer before it is delivered: every line that states a
+   *  fact must carry a source link, or the owner is told which do not
+   *  (#1288). See src/sales/sources.ts. */
+  requireSources: z.boolean().optional(),
   /** Secret that lets an external system fire this job now via
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */
