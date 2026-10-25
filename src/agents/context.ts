@@ -584,7 +584,10 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
  */
 function buildChannelLayer(input: ContextInput, maxTokens: number): ContextLayer {
   const lines: string[] = [`Channel: ${input.channel}`]
-  if (input.chatId) lines.push(`Chat ID: ${input.chatId}  (use this verbatim in /recall, /send)`)
+  // #1251 — /send on an a2a chat reaches the other agent in it.
+  if (input.chatId) lines.push(input.channel === "a2a"
+    ? `Chat ID: ${input.chatId}  (use this verbatim in /recall; /send with channel "a2a" messages the other agent in this chat)`
+    : `Chat ID: ${input.chatId}  (use this verbatim in /recall, /send)`)
   const rules: string[] = []
   const tags = [input.channel]
 
