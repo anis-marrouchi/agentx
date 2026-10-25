@@ -117,7 +117,7 @@ One command, on macOS or Linux with **Node.js 22.19 or newer, up to 26**:
 npx agentix-cli start
 ```
 
-It creates `agentx.json` with one agent in the current folder, starts the daemon and the dashboard in the background, and ends with your first agent's chat open in the browser. From typing the command to the first reply took about 23 seconds on Linux (median of 3 runs, model key ready); an automated check times it on Linux and macOS on every change and fails above 5 minutes. If no model is set up yet, the chat asks for an API key, or for the Claude Code login, and then answers. Run it again any time: it reuses what is running and never overwrites your config. Windows is untested; try WSL.
+It creates `agentx.json` with one agent in the current folder, starts the daemon and the dashboard in the background, and ends with your first agent's chat open in the browser. From typing the command to the first reply took about 23 seconds on Linux and 24 seconds on macOS (median of 3 runs each, model key ready); an automated check times it on Linux and macOS on every change and fails above 5 minutes. If no model is set up yet, the chat asks for an API key, or for the Claude Code login, and then answers. Run it again any time: it reuses what is running and never overwrites your config. Windows is untested; try WSL.
 
 To install the `agentx` command globally first, use the installer, which checks Node.js (and downloads Node 22 into `~/.agentx/node` when it is missing) and then runs the same start:
 
