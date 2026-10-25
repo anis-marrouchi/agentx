@@ -449,7 +449,8 @@ Add a team: its agents, skills and schedules. `<name>` is a team from `team list
 |---|---|---|
 | `--tier <tier>` | — | Runtime for every agent of the team (default: the package's, else claude-code). |
 | `--timezone <tz>` | — | Time zone for schedules that do not set one (default: this machine's). |
-| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. |
+| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. Refused when an agent's folder already exists or is another agent's workspace. |
+| `--force` | — | Use workspace folders that already exist; files in them are never overwritten. Another agent's workspace is still refused. |
 | `--dry-run` | — | Show what would be added, write nothing. |
 | `-c, --config <path>` | — | Path to agentx.json. |
 
@@ -461,13 +462,22 @@ Add a team from a package file made by `team export`.
 |---|---|---|
 | `--tier <tier>` | — | Runtime for every agent of the team (default: the package's, else claude-code). |
 | `--timezone <tz>` | — | Time zone for schedules that do not set one (default: this machine's). |
-| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. |
+| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. Refused when an agent's folder already exists or is another agent's workspace. |
+| `--force` | — | Use workspace folders that already exist; files in them are never overwritten. Another agent's workspace is still refused. |
 | `--dry-run` | — | Show what would be added, write nothing. |
+| `-c, --config <path>` | — | Path to agentx.json. |
+
+### `agentx team notify <name> [target]`
+
+Send the answers of a team's schedules to you. `[target]` is `me` (the default: `notifications.destination`, the chat `agentx connect telegram` saves) or `channel:chatId[:accountId]`. Only the schedules the team marked as reporting to you change.
+
+| Flag | Default | What it does |
+|---|---|---|
 | `-c, --config <path>` | — | Path to agentx.json. |
 
 ### `agentx team export <name>`
 
-Write a team to one file you can share: agents, prompts, skills, schedules, channel kinds. No secrets.
+Write a team to one file you can share: agents, prompts, skills, schedules, channel kinds. No channel settings; common token formats are checked.
 
 | Flag | Default | What it does |
 |---|---|---|

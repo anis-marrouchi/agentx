@@ -1,14 +1,17 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest"
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 import { crossFieldProblems, daemonConfigSchema } from "../src/daemon/config"
+import { CronScheduler } from "../src/crons/scheduler"
 import { shippedTeam, shippedTeams } from "../src/teams/catalog"
 import {
   TEAM_FORMAT,
   applyTeam,
   buildTeamPackage,
+  fillPendingDelivery,
   parseTeamPackage,
+  teamConflicts,
   writeTeamSkills,
 } from "../src/teams/package"
 
@@ -86,6 +89,128 @@ describe("shipped teams", () => {
     const codexPlan = applyTeam(codex, t, { workspaceRoot: join(dir, "codex"), tier: "codex-cli" })
     writeTeamSkills(t, codexPlan)
     expect(existsSync(join(dir, "codex/dev/.agents/skills/issue-to-merge-request/SKILL.md"))).toBe(true)
+  })
+})
+
+describe("results reach the owner", () => {
+  const OWNER = { channel: "telegram", chatId: "2000", accountId: "sales" }
+  const prevCwd = process.cwd()
+  afterEach(() => { process.chdir(prevCwd) })
+
+  /** Run cron `id` of `config` once, as the daemon would, and return what it delivered. */
+  async function runOnce(config: any, id: string, answer: string) {
+    process.chdir(dir)
+    const parsed = daemonConfigSchema.parse(config)
+    const registry = { execute: vi.fn(async () => ({ duration: 5, content: answer })) }
+    const s: any = new CronScheduler(parsed as any, registry as any, undefined, () => {})
+    s.scheduleNext = () => {}
+    s.scheduleRetry = () => {}
+    s.running = true
+    const deliver = vi.fn(async () => {})
+    s.setDeliverCallback(deliver)
+    await s.executeJob(id)
+    return deliver
+  }
+
+  it("team add, then connect telegram: Monday's drafts are delivered", async () => {
+    const t = shippedTeam("sales-follow-up")!
+    const config = freshConfig()
+    const plan = applyTeam(config, t, { workspaceRoot: join(dir, "agents"), timezone: "UTC" })
+    // No chat to report to yet: the schedule waits for one.
+    expect(plan.delivery).toEqual({ schedules: ["sales-monday-follow-ups"], to: undefined })
+    expect(config.crons["sales-monday-follow-ups"].deliverResult).toBe(true)
+    expect(config.crons["sales-monday-follow-ups"].notify).toBeUndefined()
+    expectValid(config)
+
+    // What `connect telegram` writes once it has captured the owner's chat.
+    config.notifications = { destination: OWNER }
+    expect(fillPendingDelivery(config, OWNER)).toEqual(["sales-monday-follow-ups"])
+    expect(config.crons["sales-monday-follow-ups"].notify).toEqual(OWNER)
+    expect(config.crons["sales-monday-follow-ups"].onError).toContain("notify")
+    expectValid(config)
+
+    const deliver = await runOnce(config, "sales-monday-follow-ups", "2 leads are quiet.")
+    expect(deliver).toHaveBeenCalledWith("sales-monday-follow-ups", "sales", "2 leads are quiet.", expect.any(String))
+  })
+
+  it("reports straight to the owner's chat when it is already set", () => {
+    for (const t of shippedTeams()) {
+      const config = freshConfig()
+      config.notifications = { destination: OWNER }
+      const plan = applyTeam(config, t, { workspaceRoot: join(dir, t.name) })
+      expect(plan.delivery.to).toEqual(OWNER)
+      expect(plan.delivery.schedules.sort()).toEqual(Object.keys(t.schedules).sort())
+      for (const id of Object.keys(t.schedules)) expect(config.crons[id].notify).toEqual(OWNER)
+      expectValid(config)
+    }
+  })
+
+  it("leaves schedules alone that report elsewhere or not at all", () => {
+    const config = freshConfig()
+    config.crons = {
+      mine: { enabled: true, schedule: "0 9 * * *", agent: "a", prompt: "x", notify: { channel: "telegram", chatId: "9" }, deliverResult: true },
+      quiet: { enabled: true, schedule: "0 9 * * *", agent: "a", prompt: "x" },
+      failures: { enabled: true, schedule: "0 9 * * *", agent: "a", prompt: "x", deliverResult: false },
+      waiting: { enabled: true, schedule: "0 9 * * *", agent: "a", prompt: "x", deliverResult: true },
+    }
+    expect(fillPendingDelivery(config, OWNER)).toEqual(["waiting"])
+    expect(config.crons.mine.notify.chatId).toBe("9")
+    expect(config.crons.quiet.notify).toBeUndefined()
+    expect(config.crons.failures.notify).toBeUndefined()
+  })
+
+  it("exports whether a schedule reports, never where", () => {
+    const pkg: any = {
+      format: TEAM_FORMAT, name: "demo", title: "Demo", result: "x",
+      agents: { helper: { name: "Helper" } },
+      schedules: { s: { agent: "helper", schedule: "0 9 * * *", prompt: "x", deliver: false } },
+    }
+    const config = freshConfig()
+    applyTeam(config, parseTeamPackage(pkg), { workspaceRoot: dir })
+    expect(config.crons.s.deliverResult).toBeUndefined()
+    expect(buildTeamPackage(config, "demo").schedules.s.deliver).toBe(false)
+  })
+})
+
+describe("install never takes over existing files", () => {
+  it("refuses a workspace folder that already exists, unless --force", () => {
+    const t = shippedTeam("dev-team")!
+    mkdirSync(join(dir, "dev"))
+    const config = freshConfig()
+    expect(() => applyTeam(config, t, { workspaceRoot: dir })).toThrow(/folder .*dev \(already exists/)
+    expect(config.agents).toEqual({})
+    expect(config.crons).toEqual({})
+    expect(() => applyTeam(config, t, { workspaceRoot: dir, force: true })).not.toThrow()
+  })
+
+  it("refuses another agent's workspace, even with --force", () => {
+    const t = shippedTeam("dev-team")!
+    const config = freshConfig()
+    config.agents.mine = { name: "Mine", workspace: join(dir, "reviewer") }
+    expect(teamConflicts(config, t, { workspaceRoot: dir, force: true })).toEqual([
+      `folder ${join(dir, "reviewer")} (the workspace of agent "mine")`,
+    ])
+    expect(() => applyTeam(config, t, { workspaceRoot: dir, force: true })).toThrow(/workspace of agent "mine"/)
+  })
+
+  it("keeps a hand-edited skill file instead of overwriting it", () => {
+    const t = shippedTeam("dev-team")!
+    const skill = join(dir, "dev/.claude/skills/issue-to-merge-request/SKILL.md")
+    mkdirSync(join(skill, ".."), { recursive: true })
+    writeFileSync(skill, "# my own version\n")
+    const config = freshConfig()
+    const plan = applyTeam(config, t, { workspaceRoot: dir, force: true })
+    const { kept } = writeTeamSkills(t, plan)
+    expect(kept).toEqual([skill])
+    expect(readFileSync(skill, "utf-8")).toBe("# my own version\n")
+    expect(existsSync(join(dir, "reviewer/.claude/skills/merge-request-review/SKILL.md"))).toBe(true)
+  })
+
+  it("refuses a second install under a team name already used", () => {
+    const t = shippedTeam("client-inbox")!
+    const config = freshConfig()
+    config.agents.helper = { name: "Helper", workspace: join(dir, "helper"), team: "client-inbox" }
+    expect(() => applyTeam(config, t, { workspaceRoot: dir })).toThrow(/team "client-inbox" \(agents helper\)/)
   })
 })
 
@@ -170,6 +295,23 @@ describe("export then import", () => {
     const source = workingInstall()
     source.agents.sales.systemPrompt += `\nUse ${GL_TOKEN} for GitLab.`
     expect(() => buildTeamPackage(source, "sales-follow-up")).toThrow(/agents\.sales\.systemPrompt: looks like a GitLab token/)
+  })
+
+  it("skips symlinks: no loop, nothing from outside the workspace", () => {
+    const source = workingInstall()
+    const outside = join(dir, "outside")
+    mkdirSync(outside)
+    writeFileSync(join(outside, "secret.txt"), "outside-content")
+    const pricing = join(dir, "a/sales/.claude/skills/pricing")
+    symlinkSync(pricing, join(pricing, "notes/loop"))
+    symlinkSync(join(outside, "secret.txt"), join(pricing, "secret.txt"))
+    symlinkSync(outside, join(dir, "a/sales/.claude/skills/linked"))
+    writeFileSync(join(outside, "SKILL.md"), "# linked\n")
+
+    const pkg = buildTeamPackage(source, "sales-follow-up")
+    expect(JSON.stringify(pkg)).not.toContain("outside-content")
+    expect(Object.keys(pkg.agents.sales.skills).sort()).toEqual(["lead-follow-up", "pricing"])
+    expect(Object.keys(pkg.agents.sales.skills.pricing).sort()).toEqual(["SKILL.md", "notes/table.md"])
   })
 
   it("exports a hand-picked set of agents with --agents", () => {

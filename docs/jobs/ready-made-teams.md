@@ -41,6 +41,8 @@ You need:
 
 2. To see what it would add without writing anything, add `--dry-run`.
 
+`team add` never takes over a folder that is already there. If `agents/<id>` exists, it stops and names the folder. Choose another place with `--workspaces <dir>`, or add `--force` to use the folder as it is: files already in it, such as a skill you edited, are kept and listed in the output. A folder that is another agent's workspace is always refused.
+
 The agents run on Claude Code unless you choose another runtime with `--tier`, for example `--tier codex-cli`. Schedules use this machine's time zone unless you set `--timezone`, for example `--timezone Europe/Paris`.
 
 ## 3. Connect the channel
@@ -59,11 +61,23 @@ The agents run on Claude Code unless you choose another runtime with `--tier`, f
    agentx daemon restart
    ```
 
+### Get the team's results
+
+The team's schedules send their answers to your own chat, the one AgentX calls `notifications.destination`.
+
+- If that chat is already set, the output of `team add` says **Results go to you on telegram**. Nothing else to do.
+- If not, the output says **Then tell AgentX where to send you the results**. Run `agentx connect telegram` and answer yes when it offers to listen for your first message. The team's schedules then report to that chat, and the command lists them.
+- To send them somewhere else, in the terminal, run:
+
+  ```bash
+  agentx team notify sales-follow-up telegram:<chat id>
+  ```
+
 The channel pages explain each step in detail: [Answer customers on WhatsApp](./answer-whatsapp.md), [Connect Telegram](../connect-telegram.md) and [Watch GitLab](./watch-gitlab.md).
 
 ## Share a team with another machine
 
-A team that works for you can be copied to another AgentX install as one file. The file holds the agents, their instructions and skills, the schedules, and which kind of channel each agent expects. It never holds tokens, chat ids, phone numbers, contact routes, webhook secrets or where reports are sent, and schedules that run a shell command are left out. If an instruction or a skill contains something that looks like a token, the export stops and names where it is.
+A team that works for you can be copied to another AgentX install as one file. The file holds the agents, their instructions and skills, the schedules, and which kind of channel each agent expects, and whether each schedule reports to you. It never copies channel settings: no tokens, chat ids, phone numbers, contact routes, webhook secrets or where reports are sent, and schedules that run a shell command are left out. Instructions and skills are copied as written. The export stops and names the place when one contains a common token format (GitHub, GitLab, Anthropic, Slack, Telegram, AWS, private keys), but it cannot recognise every password or connection string, so read them before you share the file.
 
 1. On your machine, in the terminal, run:
 
@@ -98,13 +112,18 @@ Each agent's `team` setting is described in [Configuration: agents](../reference
 
 1. In the terminal, run `agentx team list`. The team shows `installed`.
 2. In the terminal, run `agentx schedule list`. The team's schedules are listed with a filled dot, which means they are on.
-3. Send a message to the agent on the channel you connected. It answers.
+3. In the same list, each of the team's schedules has a `notify:` line that ends with `(results and failures)`.
+4. Send a message to the agent on the channel you connected. It answers.
 
 ## If something is wrong
 
 | What you see | What to do |
 |---|---|
 | `Already in this install: agent "inbox"` | An agent or schedule with that id exists. Remove it with `agentx agent remove <id>` or `agentx schedule remove <id>`, then add the team again. |
+| `Already in this install: team "client-inbox"` | That team is already added, maybe from another file. Remove its agents first, or export it under another name. |
+| `Already in this install: folder …/agents/dev (already exists…)` | Choose another `--workspaces` folder, or add `--force` to use it. Its files are kept. |
+| `Already in this install: folder … (the workspace of agent "…")` | Another agent works in that folder. Choose another `--workspaces` folder. |
+| The schedule ran but no message arrived | `agentx schedule list` shows no `notify:` line for it. Run `agentx team notify <team>` (uses your saved chat), or give `telegram:<chat id>`. |
 | `No team named "<name>"` | Check the spelling with `agentx team list`. To add from a file, give the file's path, ending in `.json`. |
 | `looks like a GitLab token` (or another kind of secret) | A token is written in an instruction, a skill or a schedule. Take it out, put it in the channel settings instead, and export again. |
 | `Not a valid team package` | The file was edited by hand or comes from a newer version. The lines below the message name each wrong key. |

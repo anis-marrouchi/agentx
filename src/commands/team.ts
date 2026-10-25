@@ -8,11 +8,14 @@ import { shippedTeam, shippedTeams } from "@/teams/catalog"
 import {
   applyTeam,
   buildTeamPackage,
+  fillPendingDelivery,
+  ownerDestination,
   parseTeamPackage,
   teamConflicts,
   teamMembers,
   writeTeamSkills,
   type InstallPlan,
+  type NotifyTarget,
   type TeamPackage,
 } from "@/teams/package"
 
@@ -55,18 +58,18 @@ function resolvePackage(nameOrFile: string): TeamPackage {
   fail(`No team named "${nameOrFile}". Run: agentx team list`)
 }
 
-interface AddOpts { tier?: string; timezone?: string; workspaces?: string; dryRun?: boolean; config?: string }
+interface AddOpts { tier?: string; timezone?: string; workspaces?: string; force?: boolean; dryRun?: boolean; config?: string }
 
 async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
   if (opts.tier && !TIERS.includes(opts.tier)) fail(`--tier must be one of: ${TIERS.join(", ")}`)
   const { path, config } = readConfig(opts.config)
-  const taken = teamConflicts(config, pkg)
-  if (taken.length) fail(`Already in this install: ${taken.join(", ")}.\nRemove them first (agentx agent remove <id>, agentx schedule remove <id>), or edit the package's ids.`)
-
   const workspaceRoot = resolve(dirname(path), opts.workspaces ?? "agents")
+  const taken = teamConflicts(config, pkg, { workspaceRoot, force: opts.force })
+  if (taken.length) fail(`Already in this install: ${taken.join(", ")}.\nRemove them first (agentx agent remove <id>, agentx schedule remove <id>), choose another --workspaces folder, or edit the package's ids.`)
+
   let plan: InstallPlan | undefined
   const result = await applyConfigMutation((cfg) => {
-    plan = applyTeam(cfg, pkg, { workspaceRoot, tier: opts.tier as any, timezone: opts.timezone })
+    plan = applyTeam(cfg, pkg, { workspaceRoot, tier: opts.tier as any, timezone: opts.timezone, force: opts.force })
   }, { configPath: path, dryRun: !!opts.dryRun })
   if (!result.success || !plan) fail(`Config save failed: ${result.error}`)
 
@@ -75,18 +78,20 @@ async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
   console.log(chalk.dim(`  ${pkg.result}`))
   console.log()
 
+  let kept: string[] = []
   if (!opts.dryRun) {
     const { setupWorkspace } = await import("@/agents/workspace-setup")
     const wikiSkill = wikiSkillSource()
     for (const a of plan.agents) {
       mkdirSync(a.workspace, { recursive: true })
       setupWorkspace(a.id, result.after && (result.after as any).agents[a.id], "19900", () => {})
-      if (wikiSkill && a.tier === "claude-code") {
-        mkdirSync(resolve(a.workspace, ".claude/skills/wiki"), { recursive: true })
-        cpSync(wikiSkill, resolve(a.workspace, ".claude/skills/wiki/SKILL.md"))
+      const wikiTarget = resolve(a.workspace, ".claude/skills/wiki/SKILL.md")
+      if (wikiSkill && a.tier === "claude-code" && !existsSync(wikiTarget)) {
+        mkdirSync(dirname(wikiTarget), { recursive: true })
+        cpSync(wikiSkill, wikiTarget, { errorOnExist: true, force: false })
       }
     }
-    writeTeamSkills(pkg, plan)
+    kept = writeTeamSkills(pkg, plan).kept
   }
 
   for (const a of plan.agents) {
@@ -99,6 +104,23 @@ async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
     console.log(`  ${chalk.green("+")} schedule ${chalk.cyan(id)} — ${job.schedule} (${job.timezone})${job.enabled ? "" : chalk.dim(" disabled")}`)
   }
   if (result.reloaded) console.log(chalk.dim("  (daemon hot-reloaded)"))
+  if (kept.length) {
+    console.log(chalk.yellow(`  Kept ${kept.length} file${kept.length === 1 ? "" : "s"} already there instead of the team's version:`))
+    for (const f of kept) console.log(chalk.dim(`      ${f}`))
+  }
+
+  const { delivery } = plan
+  if (delivery.schedules.length) {
+    console.log()
+    if (delivery.to) {
+      console.log(`  Results go to you on ${delivery.to.channel} (${delivery.to.chatId}): ${delivery.schedules.join(", ")}`)
+    } else {
+      console.log(chalk.bold("  Then tell AgentX where to send you the results"))
+      console.log(`    ${delivery.schedules.join(", ")} will send ${delivery.schedules.length === 1 ? "its" : "their"} answers once you do one of these:`)
+      console.log(`    agentx connect telegram   ${chalk.dim("(say yes when it offers to listen for your first message)")}`)
+      console.log(`    agentx team notify ${pkg.name} telegram:<chat id>`)
+    }
+  }
 
   if (plan.channels.length) {
     console.log()
@@ -163,6 +185,7 @@ team
   .option("--tier <tier>", "runtime for every agent of the team (default: the package's, else claude-code)")
   .option("--timezone <tz>", "time zone for schedules that do not set one (default: this machine's)")
   .option("--workspaces <dir>", "folder for the agents' workspaces, next to agentx.json", "agents")
+  .option("--force", "use workspace folders that already exist; files in them are never overwritten")
   .option("--dry-run", "show what would be added, write nothing")
   .option("-c, --config <path>", "path to agentx.json")
   .action(async (name: string, opts: AddOpts) => {
@@ -175,6 +198,7 @@ team
   .option("--tier <tier>", "runtime for every agent of the team (default: the package's, else claude-code)")
   .option("--timezone <tz>", "time zone for schedules that do not set one (default: this machine's)")
   .option("--workspaces <dir>", "folder for the agents' workspaces, next to agentx.json", "agents")
+  .option("--force", "use workspace folders that already exist; files in them are never overwritten")
   .option("--dry-run", "show what would be added, write nothing")
   .option("-c, --config <path>", "path to agentx.json")
   .action(async (file: string, opts: AddOpts) => {
@@ -182,8 +206,41 @@ team
   })
 
 team
+  .command("notify <name> [target]")
+  .description('send the answers of a team\'s schedules to you. [target]: "me" (notifications.destination, the default) or "channel:chatId[:accountId]"')
+  .option("-c, --config <path>", "path to agentx.json")
+  .action(async (name: string, target: string | undefined, opts) => {
+    const { path, config } = readConfig(opts.config)
+    const members = teamMembers(config, name)
+    if (!members.length) fail(`No agents belong to team "${name}". Run: agentx team list`)
+    const to = parseNotifyTarget(target ?? "me", config)
+    const ids = Object.entries(config.crons || {})
+      .filter(([, c]: any) => members.includes(c?.agent) && c.deliverResult === true)
+      .map(([id]) => id)
+    if (!ids.length) fail(`Team "${name}" has no schedules that report to you.`)
+    let set: string[] = []
+    const result = await applyConfigMutation((cfg) => {
+      set = fillPendingDelivery(cfg, to, { ids, replace: true })
+    }, { configPath: path })
+    if (!result.success) fail(`Config save failed: ${result.error}`)
+    console.log(chalk.green(`  Results of ${set.join(", ")} now go to ${to.channel} (${to.chatId})`))
+    if (result.reloaded) console.log(chalk.dim("  (daemon hot-reloaded)"))
+  })
+
+function parseNotifyTarget(target: string, config: any): NotifyTarget {
+  if (target === "me") {
+    const dest = ownerDestination(config)
+    if (!dest) fail(`No notifications.destination yet. Run: agentx connect telegram, or give "channel:chatId".`)
+    return dest
+  }
+  const [channel, chatId, accountId] = target.split(":")
+  if (!channel || !chatId) fail(`Not a target: ${target} (use "me" or "channel:chatId[:accountId]")`)
+  return accountId ? { channel, chatId, accountId } : { channel, chatId }
+}
+
+team
   .command("export <name>")
-  .description("write a team to one file you can share: agents, prompts, skills, schedules, channel kinds. No secrets")
+  .description("write a team to one file you can share: agents, prompts, skills, schedules, channel kinds. No channel config, tokens checked")
   .option("-o, --output <file>", "file to write; - prints it (default: <name>.team.json)")
   .option("--agents <ids...>", "agents to export (default: the agents installed with this team)")
   .option("--title <text>", "title shown in `team list`")
@@ -215,6 +272,7 @@ team
     const n = Object.keys(pkg.agents).length
     const s = Object.keys(pkg.schedules).length
     console.log(chalk.green(`  Team "${name}" written to ${out}`))
-    console.log(chalk.dim(`  ${n} agent${n === 1 ? "" : "s"}, ${s} schedule${s === 1 ? "" : "s"}; no tokens, chat ids, contacts or commands`))
+    console.log(chalk.dim(`  ${n} agent${n === 1 ? "" : "s"}, ${s} schedule${s === 1 ? "" : "s"}; no chat ids, contacts, routes or commands`))
+    console.log(chalk.dim("  Common token formats were checked; read the prompts and skills for passwords before you share it."))
     console.log(chalk.dim(`  On the other install: agentx team import ${out.split("/").pop()}`))
   })

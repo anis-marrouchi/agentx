@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs"
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs"
 import { dirname, join, relative, resolve, sep } from "path"
 import { isCronExpression } from "@/daemon/config"
 import { autonomyLevelSchema } from "@/guard/autonomy"
@@ -61,6 +61,10 @@ const teamScheduleSchema = z.object({
   taskType: z.string().trim().min(1).max(64).optional(),
   autonomy: autonomyLevelSchema.optional(),
   onError: z.array(z.enum(["log", "notify", "disable"])).optional(),
+  /** Send each run's answer to the owner. Where it goes is never in the
+   *  package: install points it at `notifications.destination` (the chat
+   *  `connect telegram` captures), or leaves it waiting for one. */
+  deliver: z.boolean().default(true),
 }).strict()
 
 export const TEAM_CHANNEL_KINDS = ["telegram", "whatsapp", "gitlab", "github"] as const
@@ -148,21 +152,49 @@ export interface InstallOptions {
   tier?: typeof TIERS[number]
   /** Time zone for schedules that do not name one. Unset: this machine's. */
   timezone?: string
+  /** Accept workspace folders that already exist (never another agent's).
+   *  Files already in them are still never overwritten by the team's skills. */
+  force?: boolean
 }
+
+export interface NotifyTarget { channel: string; chatId: string; accountId?: string }
 
 export interface InstallPlan {
   agents: { id: string; workspace: string; tier: string; skills: string[] }[]
   schedules: string[]
   /** The channels to connect by hand: the one step `team add` leaves. */
   channels: { kind: TeamChannelKind; agent: string; why?: string; step: string }[]
+  /** Schedules whose answers go to the owner, and where. `to` unset: they
+   *  wait for a destination (`connect telegram`, or `team notify`). */
+  delivery: { schedules: string[]; to?: NotifyTarget }
 }
 
-/** The agent and schedule ids `pkg` would add that `config` already has. */
-export function teamConflicts(config: any, pkg: TeamPackage): string[] {
-  return [
+/**
+ * What stops `pkg` from installing into `config`: agent and schedule ids
+ * already taken, a team of the same name, and workspace folders that already exist or belong to
+ * another agent. An existing folder is accepted with `force`; another
+ * agent's workspace never is.
+ */
+export function teamConflicts(config: any, pkg: TeamPackage, opts?: Pick<InstallOptions, "workspaceRoot" | "force">): string[] {
+  const problems = [
     ...Object.keys(pkg.agents).filter((id) => config.agents?.[id]).map((id) => `agent "${id}"`),
     ...Object.keys(pkg.schedules).filter((id) => config.crons?.[id]).map((id) => `schedule "${id}"`),
   ]
+  // Two installs under one tag would be listed and exported as one team.
+  const members = teamMembers(config, pkg.name)
+  if (members.length) problems.push(`team "${pkg.name}" (agents ${members.join(", ")})`)
+  if (!opts) return problems
+  const owners = new Map<string, string>()
+  for (const [id, a] of Object.entries(config.agents || {}) as [string, any][]) {
+    if (typeof a?.workspace === "string") owners.set(resolve(a.workspace), id)
+  }
+  for (const id of Object.keys(pkg.agents)) {
+    const workspace = resolve(opts.workspaceRoot, id)
+    const owner = owners.get(workspace)
+    if (owner) problems.push(`folder ${workspace} (the workspace of agent "${owner}")`)
+    else if (!opts.force && existsSync(workspace)) problems.push(`folder ${workspace} (already exists; --force uses it without overwriting its files)`)
+  }
+  return problems
 }
 
 /**
@@ -173,11 +205,12 @@ export function teamConflicts(config: any, pkg: TeamPackage): string[] {
  * is taken, before changing anything.
  */
 export function applyTeam(config: any, pkg: TeamPackage, opts: InstallOptions): InstallPlan {
-  const taken = teamConflicts(config, pkg)
+  const taken = teamConflicts(config, pkg, opts)
   if (taken.length) throw new Error(`Already in this install: ${taken.join(", ")}. Remove them first, or edit the package's ids.`)
 
   const timezone = opts.timezone ?? DEFAULT_SCHEDULE_TIMEZONE
-  const plan: InstallPlan = { agents: [], schedules: [], channels: [] }
+  const dest = ownerDestination(config)
+  const plan: InstallPlan = { agents: [], schedules: [], channels: [], delivery: { schedules: [], to: dest } }
   config.agents = config.agents || {}
   config.crons = config.crons || {}
 
@@ -215,12 +248,49 @@ export function applyTeam(config: any, pkg: TeamPackage, opts: InstallOptions): 
     if (s.maxOutputTokens !== undefined) job.maxOutputTokens = s.maxOutputTokens
     if (s.taskType) job.taskType = s.taskType
     if (s.autonomy) job.autonomy = s.autonomy
+    if (s.deliver) {
+      // `deliverResult: true` with no `notify` marks a schedule that waits
+      // for a destination; fillPendingDelivery completes it.
+      job.deliverResult = true
+      if (dest) setNotify(job, dest)
+      plan.delivery.schedules.push(id)
+    }
     config.crons[id] = job
     plan.schedules.push(id)
   }
 
   for (const c of pkg.channels) plan.channels.push({ ...c, step: connectStep(c.kind, c.agent) })
   return plan
+}
+
+/** The owner's chat (`notifications.destination`), when one is set. */
+export function ownerDestination(config: any): NotifyTarget | undefined {
+  const d = config.notifications?.destination
+  if (!d?.channel || !d?.chatId) return undefined
+  return clean({ channel: String(d.channel), chatId: String(d.chatId), accountId: d.accountId })
+}
+
+function setNotify(job: Record<string, any>, to: NotifyTarget): void {
+  job.notify = { ...to }
+  const onError: string[] = Array.isArray(job.onError) ? job.onError : job.onError ? [job.onError] : ["log"]
+  job.onError = onError.includes("notify") ? onError : [...onError, "notify"]
+}
+
+/**
+ * Point schedules that wait for a destination (`deliverResult: true`, no
+ * `notify`) at `to`, in place. With `ids`, only those schedules, and with
+ * `replace`, also ones that already have a destination. Returns the ids set.
+ */
+export function fillPendingDelivery(config: any, to: NotifyTarget, opts: { ids?: string[]; replace?: boolean } = {}): string[] {
+  const set: string[] = []
+  for (const [id, job] of Object.entries(config.crons || {}) as [string, any][]) {
+    if (!job || job.deliverResult !== true || job.command) continue
+    if (opts.ids && !opts.ids.includes(id)) continue
+    if (job.notify && !opts.replace) continue
+    setNotify(job, to)
+    set.push(id)
+  }
+  return set
 }
 
 /** The command that connects `kind` to `agent`. */
@@ -233,9 +303,14 @@ export function connectStep(kind: TeamChannelKind, agent: string): string {
   }
 }
 
-/** Write each agent's skills where its runtime reads them. Returns the folders written. */
-export function writeTeamSkills(pkg: TeamPackage, plan: InstallPlan): string[] {
+/**
+ * Write each agent's skills where its runtime reads them. A file that is
+ * already there is kept, never overwritten. Returns the folders written to
+ * and the files kept.
+ */
+export function writeTeamSkills(pkg: TeamPackage, plan: InstallPlan): { written: string[]; kept: string[] } {
   const written: string[] = []
+  const kept: string[] = []
   for (const a of plan.agents) {
     const skills = pkg.agents[a.id].skills
     if (!Object.keys(skills).length) continue
@@ -246,13 +321,14 @@ export function writeTeamSkills(pkg: TeamPackage, plan: InstallPlan): string[] {
       for (const [rel, content] of Object.entries(files)) {
         const target = resolve(dir, rel)
         if (!target.startsWith(dir + sep)) continue // parse already refused this; belt and braces
+        if (existsSync(target)) { kept.push(target); continue }
         mkdirSync(dirname(target), { recursive: true })
-        writeFileSync(target, content)
+        writeFileSync(target, content, { flag: "wx" })
       }
       written.push(dir)
     }
   }
-  return written
+  return { written, kept }
 }
 
 // --- Export ---
@@ -324,6 +400,8 @@ export function buildTeamPackage(config: any, name: string, opts: ExportOptions 
       taskType: c.taskType,
       autonomy: c.autonomy,
       onError: c.onError === undefined ? undefined : Array.isArray(c.onError) ? c.onError : [c.onError],
+      // Whether answers go to the owner, never where.
+      deliver: c.deliverResult === true || (Boolean(c.notify) && c.deliverResult !== false),
     })
   }
 
@@ -381,6 +459,7 @@ function readSkills(tier: string | undefined, workspace: string | undefined): Re
   if (!workspace) return out
   for (const { name, dir } of installedSkills(tier, workspace)) {
     if (BUILT_IN_SKILLS.has(name) || !ID.test(name)) continue
+    if (lstatSync(dir).isSymbolicLink()) continue // a linked skill lives outside the workspace
     const files: Record<string, string> = {}
     for (const file of walk(dir)) {
       const buf = readFileSync(file)
@@ -392,12 +471,14 @@ function readSkills(tier: string | undefined, workspace: string | undefined): Re
   return out
 }
 
+/** Regular files under `dir`. Symlinks are skipped, never followed: a link
+ *  could loop, or pull a file from outside the workspace into the package. */
 function walk(dir: string): string[] {
   const out: string[] = []
   for (const entry of readdirSync(dir).sort()) {
     if (entry.startsWith(".")) continue
     const p = join(dir, entry)
-    const st = statSync(p)
+    const st = lstatSync(p)
     if (st.isDirectory()) out.push(...walk(p))
     else if (st.isFile()) out.push(p)
   }
