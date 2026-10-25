@@ -3751,7 +3751,7 @@ export class AgentRegistry {
    * while the agent is busy are queued and re-dispatched here, bypassing
    * the router; without this helper the agent's reply would never reach
    * the user. Skipped silently for internal channels (`test`, `api`,
-   * `a2a`, `cron`, `workflow`, …) where no adapter is registered.
+   * `a2a`, `cron`, `workflow`, `requests`, …) where no adapter is registered.
    */
   private postQueuedResponseToChannel(
     agentId: string,
@@ -3763,6 +3763,10 @@ export class AgentRegistry {
     const channel = ctx?.channel
     const chatId = ctx?.chatId
     if (!channel || !chatId) return
+    // No adapter: an internal chat with no one to post to (#1259). A
+    // request pick-up ("requests") keeps its reply anyway: the tracker
+    // reads it from task:completed and shows it on the request's card.
+    if (!router.getChannel(channel)) return
     // Operator-cancelled / queued-marker — nothing to deliver
     if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted" || resp.errorKind === "stopped") return
     if (isQueued(resp.error)) return
