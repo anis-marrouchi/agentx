@@ -85,6 +85,8 @@ const groups = [
     { text: "Have a second agent review pull requests", link: "/jobs/review-gate" },
     { text: "Let agents merge only edge changes", link: "/jobs/merge-policy" },
     { text: "Have a second agent write tests from the issue", link: "/jobs/spec-tests" },
+    { text: "Give each coding task its own worktree", link: "/jobs/task-worktrees" },
+    { text: "Hand Linear and Jira issues to an agent", link: "/jobs/linear-jira" },
   ] },
   { text: "Teamwork", collapsed: true, items: [
     { text: "When an agent asks another", link: "/jobs/ask-another-agent" },

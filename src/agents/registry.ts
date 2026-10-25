@@ -78,6 +78,7 @@ import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
 import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
+import { TASK_WORKTREE_DEFAULTS, pickCheckout, prepareTaskWorktree, pruneTaskWorktrees, worktreeInstructions, worktreeTarget } from "./task-worktrees"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -713,6 +714,11 @@ export class AgentRegistry {
   private cloudSessions?: CloudSessionStore
   /** Spec-test runs (#992), one per issue. Created on first use. */
   private specTests?: SpecTestStore
+  /** Worktrees being made (#1292), by agent and issue, so two tasks on
+   *  one issue arriving together share one `git worktree add`. */
+  private worktreesPending = new Map<string, ReturnType<typeof prepareTaskWorktree>>()
+  /** When each checkout's old worktrees were last pruned. */
+  private worktreesPrunedAt = new Map<string, number>()
   /** The context each running task was started with, by RunningTask id.
    *  Kept apart from RunningTask because /agents serialises that, and a
    *  context can carry a whole conversation history. Read by A2A
@@ -1203,6 +1209,56 @@ export class AgentRegistry {
       void this.startSpecTests(task.agentId, spec, route.cwd, (text) => launch({ cwd: route.cwd, prompt: text, sessionId }).then((r) => { if (!r.ok) throw new Error(r.reason) }))
     }
     return { content: result.content, error: result.error, cloudSession: result.cloudSession, duration: Date.now() - started }
+  }
+
+  /** The agent and task to run locally: in the issue's own worktree when
+   *  `agents.<id>.worktrees` is on (#1292), else unchanged. A worktree that
+   *  cannot be made is logged, and the task runs in the workspace.
+   *  `fresh`: the worktree is new, so a session kept for the chat was
+   *  started in another folder, and Claude Code keeps sessions per folder. */
+  private async inTaskWorktree(def: AgentDef, task: AgentTask): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean }> {
+    const settings = { ...TASK_WORKTREE_DEFAULTS, ...(def.worktrees ?? {}) }
+    if (!settings.enabled) return { def, task }
+    const target = worktreeTarget(task.context?.channel, task.context?.chatId)
+    if (!target) return { def, task }
+    const label = `${target.repo ? `${target.repo}#` : ""}${target.id}`
+    const picked = pickCheckout(target, [task.context?.runbookPath, def.workspace].filter((d): d is string => !!d))
+    if ("reason" in picked) {
+      this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${picked.reason}`)
+      return { def, task }
+    }
+    const key = `${task.agentId}:${picked.dir}:${label}`
+    let pending = this.worktreesPending.get(key)
+    if (!pending) {
+      pending = prepareTaskWorktree(target, picked.dir, settings, { exec: execProcess, log: (l) => this.log(l) })
+      this.worktreesPending.set(key, pending)
+      void pending.finally(() => this.worktreesPending.delete(key)).catch(() => {})
+    }
+    let wt: Awaited<typeof pending>
+    try {
+      wt = await pending
+    } catch (e: any) {
+      wt = { error: e?.message || String(e) }
+    }
+    if ("error" in wt) {
+      this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${wt.error}`)
+      return { def, task }
+    }
+    this.log(`[worktrees] ${task.agentId} ${label}: ${wt.reused ? "reusing" : "created"} ${wt.dir} on ${wt.branch}`)
+    const last = this.worktreesPrunedAt.get(picked.dir) ?? 0
+    if (Date.now() - last > 3_600_000) {
+      this.worktreesPrunedAt.set(picked.dir, Date.now())
+      void pruneTaskWorktrees(picked.dir, settings, { exec: execProcess, log: (l) => this.log(l), keep: wt.dir })
+        .then((gone) => { if (gone.length) this.log(`[worktrees] removed ${gone.length} unused worktree(s): ${gone.join(", ")}`) })
+        .catch((e: any) => this.log(`[worktrees] prune failed: ${e?.message || e}`))
+    }
+    const note = worktreeInstructions(wt)
+    return {
+      fresh: !wt.reused,
+      // A persistent process keeps the folder it was started in.
+      def: { ...def, persistentProcess: false },
+      task: { ...task, cwd: wt.dir, systemPromptAppend: task.systemPromptAppend ? `${task.systemPromptAppend}\n\n${note}` : note },
+    }
   }
 
   private specTestSettings() {
@@ -3257,7 +3313,8 @@ export class AgentRegistry {
           const gated = runDispatchGates()
           if (gated) return gated
         }
-        return executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
+        const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt)
+        return executeTask(local.def, local.task, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, local.fresh ? undefined : resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
       }, CANCEL_GRACE_MS)
 
       // Improvement plan #3 — fail with a typed error when the agent

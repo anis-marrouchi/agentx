@@ -3184,7 +3184,11 @@ Recent reviews: how many passed, failed or ended in error, what they cost, and t
 
 ### `agentx review-gate replay <repo> <prs...>`
 
-Review past pull requests at their latest commit without posting anything on GitHub, and print how many the reviewer flagged. Spends model budget like a real review. Takes the same `--config`, `--node` and `--token` flags.
+Review past pull requests at their latest commit without posting anything on GitHub or GitLab, and print how many the reviewer flagged. Spends model budget like a real review. Takes the same `--config`, `--node` and `--token` flags.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--gitlab` | — | `<repo>` is a GitLab project (`group/project`, subgroups allowed) and the numbers are merge requests. |
 
 ## retro (advanced)
 

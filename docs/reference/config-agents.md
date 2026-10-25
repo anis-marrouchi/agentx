@@ -64,6 +64,9 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `cloudSessions.maxPerDay` | number | `0` | Most cloud sessions this agent may start per day; `0` means no limit. Past it, tasks run locally. |
 | `cloudSessions.openHours` | number (1–168) | `24` | How long a started session counts as open: no local run starts for its issue, and comments on the issue are forwarded to it. |
 | `cloudSessions.launchTimeoutSeconds` | number (10–600) | `120` | How long `claude --cloud` may take to print the session id before the launch is given up and the task runs locally. |
+| `worktrees.enabled` | boolean | `false` | Runs each of this agent's issue tasks (GitHub, GitLab, Linear, Jira) in a git worktree of its own, on the branch `agentx/issue-<n>`. Pull and merge request tasks keep running in the clone. See [Give each coding task its own worktree](/jobs/task-worktrees). |
+| `worktrees.root` | folder | `.agentx-worktrees/<clone name>` beside the clone | Where the worktrees are made. |
+| `worktrees.maxAgeDays` | number (1–365) | `14` | A worktree no task used for this many days, with no uncommitted change, is removed. Its branch stays. |
 | `wiki.contribute.enabled` | boolean | `false` | Once a day, the agent reviews its own work and suggests sourced facts for the shared wiki. Adds the daily `wiki-contribute` and `wiki-contribute-merge` jobs. See [Let agents keep the wiki up to date](/jobs/wiki-contributions). |
 | `wiki.contribute.maxPatches` | number (1–200) | `30` | Most suggestions one daily run may make. |
 | `wiki.contribute.maxCostUsd` | number (0–20) | `wiki.contributions.maxCostUsd` | Most model spend one daily run may reach, in dollars. |

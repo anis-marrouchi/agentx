@@ -4,6 +4,8 @@ When an agent writes code, it usually writes the tests too. If the agent misread
 
 The **review gate** adds a second reader before the merge. When an agent opens a pull request (a proposed change on GitHub) or pushes to one, a **different agent** reads it, starting from nothing, and checks it against the **issue** the pull request says it fixes. Its verdict shows on the pull request as a check named `agentx/review`.
 
+The gate works on GitHub pull requests, and on GitLab **merge requests** (GitLab's name for a pull request) when you [turn it on for GitLab](#on-gitlab-merge-requests). The issue can also be a [Linear or Jira issue](#link-a-linear-or-jira-issue).
+
 The gate is off until you turn it on. Here is the whole path:
 
 ![How the review gate checks a pull request: you pick a reviewer agent, turn the gate on and link each pull request to its issue; an agent opens or pushes to a pull request, the commit shows agentx/review pending, and a reviewer in a fresh session gets the issue, its criteria, the diff and the CI result; the verdict becomes the commit's status and a failure gets a comment; you read agentx/review before you merge, and a new push starts a new review](/diagrams/review-gate.svg)
@@ -42,6 +44,17 @@ Part of #12
 
 A plain "#12" in a sentence is not a link. A link to an issue in **another repository** (`Fixes other-org/other-repo#12`) is ignored: the criteria must come from the pull request's own repository. In the issue, write the acceptance criteria under a heading named **Acceptance criteria**, one list item each. Without such a heading, every checklist item (`- [ ]`) in the issue counts.
 
+### Link a Linear or Jira issue
+
+When [Linear or Jira](/jobs/linear-jira) is connected, a pull request can link an issue there by its key, with the same words:
+
+```text
+Fixes ENG-12
+Refs PROJ-4, PROJ-5
+```
+
+Only keys of a team or project listed in `trackers.linear.routes` or `trackers.jira.routes` count. The reviewer then reads that issue's text and acceptance criteria, exactly as it would a GitHub issue's.
+
 ## Before you start
 
 1. **Browser:** make sure the [GitHub channel](/reference/config-channels#github) already works: an issue in the repository reaches an agent and gets a comment.
@@ -66,7 +79,18 @@ A plain "#12" in a sentence is not a link. A link to an issue in **another repos
 2. **Terminal:** restart the daemon with `agentx daemon restart --when-idle`.
 3. **Browser:** wait for the next agent pull request, and look at its checks list.
 
-### From advisory to required
+### On GitLab merge requests
+
+The same gate reviews GitLab merge requests. Its verdict is the commit status `agentx/review` on the merge request's latest commit, which GitLab shows as an extra job in the commit's pipeline. GitLab has no **error** state: a review that could not be done shows as **failed**, its description starting with "error:".
+
+1. **Browser:** make sure the [GitLab channel](/reference/config-channels#gitlab) already works: an `@`-mention in an issue reaches an agent. Its token (`channels.gitlab.token`) needs the `api` scope to post statuses and comments.
+2. **Browser:** in the project's **Settings › Webhooks**, make sure the AgentX webhook ticks **Merge request events**.
+3. **Terminal:** in `agentx.json`, add `"forges": ["github", "gitlab"]` to `quality.reviewGate` (or `["gitlab"]` for GitLab only), and restart the daemon.
+4. **Browser:** to make it block merges, in the project's **Settings › Merge requests**, tick **Pipelines must succeed**.
+
+A merge request counts as an agent's when it was opened or pushed by an account AgentX posts with, or its description carries an agent's signature. It links its issue with the same words as on GitHub: `Closes #12`.
+
+## From advisory to required
 
 In **advisory** mode the status is shown, with "[advisory]" at the start of its description, but nothing stops a merge. Run it like this for at least three working days and read the results with `agentx review-gate list`.
 
@@ -91,6 +115,7 @@ Under `quality.reviewGate`:
 | `maxReviewsPerPrPerDay` | number | `6` | The most reviews one pull request gets in 24 hours. Past it, the status is **error** "review limit" and no comment is posted. `0`: no limit. |
 | `ciWaitMinutes` | number (minutes) | `5` | How long to wait for the other checks to finish before reviewing, so the reviewer sees their result. |
 | `maxDiffKb` | number (kilobytes) | `256` | A longer diff is cut to this size, and the reviewer is told it is incomplete. |
+| `forges` | list of `"github"`, `"gitlab"` | `["github"]` | Where the gate reviews: GitHub pull requests, GitLab merge requests, or both. |
 
 ## See what reviews cost
 
@@ -109,6 +134,8 @@ You can replay pull requests that have already merged, to see what the reviewer 
    ```sh
    agentx review-gate replay example-org/example-repo 101 102 103 104 105
    ```
+
+   For a GitLab project, add `--gitlab` and give merge request numbers: `agentx review-gate replay --gitlab example-group/example-project 7 8 9`.
 
 3. **Terminal:** read the last line, for example `flagged 3 of 5`: the reviewer found unmet criteria or defects in three of them.
 
@@ -133,5 +160,6 @@ You can replay pull requests that have already merged, to see what the reviewer 
 - **The log says reviewer and author use the same model.** In advisory mode the review still runs; in required mode it ends as **error**. Set `quality.reviewGate.reviewer.model` to a different model for a more independent second reading.
 - **Error "review limit".** The pull request was reviewed `maxReviewsPerPrPerDay` times in the last 24 hours. Read the earlier review comments and decide yourself, or raise the limit. The count starts again 24 hours after the oldest of those reviews.
 - **Error "reviewer failed: … cannot be enforced".** The reviewer runs read-only, and its agent cannot be held to that: it is on another computer of your mesh, or its engine does not support read-only runs. Pick a reviewer agent that runs on this computer with Claude Code.
+- **No `agentx/review` on a GitLab merge request.** Check that `quality.reviewGate.forges` lists `"gitlab"` and that the webhook sends **Merge request events**. **Terminal:** look for `[review-gate:gitlab]` lines in the daemon log; "401" or "403" there means the GitLab token lacks the `api` scope.
 - **The status stays at "pending" for good.** The daemon restarted while a review was running, and that review was lost. **Browser:** push a new commit, or edit the pull request's description, to start a new review. A review never resumes after a restart.
 - **"review comment not posted" in the status.** The verdict is failure, but the comment listing the problems could not be posted (the log says why). Give the GitHub App or token permission to comment on pull requests.
