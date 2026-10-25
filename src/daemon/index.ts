@@ -69,7 +69,7 @@ import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { findLeftWork } from "@/agents/resume/work-left"
 import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, spendByChatSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
-import { SignalService } from "@/agents/signals/service"
+import { SignalService, stopAllReport } from "@/agents/signals/service"
 import { StoppedTaskStore } from "@/agents/signals/store"
 import { setSignalService } from "@/agents/signals/instance"
 import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
@@ -79,6 +79,7 @@ import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
+import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { runMirror } from "@/approvals/mirror"
 import { requestStoreFor } from "@/approvals/inbox"
@@ -236,7 +237,7 @@ import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
-import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
+import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -247,6 +248,9 @@ import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
 import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
 import { createMergePolicyGitHub, createReviewGateGitHub } from "@/quality/review-gate-github"
+import { createReviewGateGitLab } from "@/quality/review-gate-gitlab"
+import { TrackerDispatcher, reviewGateTrackers, type TrackerName } from "@/trackers"
+import { TRACKER_WEBHOOK_PATHS, handleTrackerWebhook, trackerClients } from "@/trackers/http"
 import { approvalCardInput, cardVerdict, MergePolicy } from "@/quality/merge-policy"
 import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
 import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
@@ -298,6 +302,11 @@ export class AgentXDaemon {
   /** Pre-merge review gate (#990). Built with the GitHub channel; does
    *  nothing while quality.reviewGate.enabled is false. */
   private reviewGate?: ReviewGate
+  /** The same gate on GitLab merge requests (#1292), when
+   *  quality.reviewGate.forges lists "gitlab". */
+  private gitlabReviewGate?: ReviewGate
+  /** Linear and Jira issues handed to agents (#1292). */
+  private trackerDispatcher?: TrackerDispatcher
   /** Core vs edge paths (#1047); does nothing while
    *  quality.mergePolicy.enabled is false. */
   private mergePolicy?: MergePolicy
@@ -1151,6 +1160,9 @@ export class AgentXDaemon {
     if (this.interruptedRuns.length > 0) {
       setTimeout(() => { void this.resumeInterruptedRuns() }, 5_000).unref?.()
     }
+    // Tasks a stop-all order stopped before this restart (#1271): each
+    // resumes from its plan, and the owner gets one report.
+    setTimeout(() => { void this.resumeStopAll() }, 5_000).unref?.()
     this.log("")
 
     // Write PID file
@@ -1389,15 +1401,30 @@ export class AgentXDaemon {
   /** The review gate (#990): the reviewer runs as its own agent in a fresh
    *  session keyed by the reviewed commit, so it never resumes the
    *  author's conversation or an earlier review. */
-  private buildReviewGate(github: GitHubAdapter): ReviewGate {
+  private buildReviewGate(forge: GitHubAdapter | GitLabAdapter): ReviewGate {
+    const isGitLab = forge instanceof GitLabAdapter
+    const name = isGitLab ? "gitlab" : "github"
+    // Linear and Jira issues a PR links by key (#1292), read from the
+    // current config on every review so a reload applies.
+    const trackers = {
+      prefixes: () => reviewGateTrackers(trackerClients(this.config.trackers))?.prefixes() ?? [],
+      getIssue: async (key: string) => (await reviewGateTrackers(trackerClients(this.config.trackers))?.getIssue(key)) ?? null,
+    }
     return new ReviewGate({
-      config: () => this.config.quality.reviewGate,
-      github: createReviewGateGitHub((repo) => github.getTokenForRepo(repo)),
-      repoAgent: (repo) => github.agentFor(repo),
+      config: () => {
+        const cfg = this.config.quality.reviewGate
+        return { ...cfg, enabled: cfg.enabled && cfg.forges.includes(name) }
+      },
+      github: forge instanceof GitLabAdapter
+        ? createReviewGateGitLab(forge.apiAccess().host, () => forge.apiAccess().token)
+        : createReviewGateGitHub((repo) => forge.getTokenForRepo(repo)),
+      repoAgent: (repo) => forge.agentFor(repo),
       agentModel: (agentId) => this.registry.getAgent(agentId)?.model,
-      isAgentLogin: (login) => github.isAgentLogin(login),
+      isAgentLogin: (login) => forge.isAgentLogin(login),
       ledger: this.reviewLedger,
-      log: (m) => this.log(`[review-gate] ${m}`),
+      forge: name,
+      trackers,
+      log: (m) => this.log(`[review-gate${isGitLab ? ":gitlab" : ""}] ${m}`),
       runReviewer: async (req) => {
         const started = Date.now()
         const res = await this.registry.execute({
@@ -1425,6 +1452,27 @@ export class AgentXDaemon {
         }
       },
     })
+  }
+
+  /** Runs labelled Linear and Jira issues on their route's agent (#1292).
+   *  The chat id names the issue, so a worktree-enabled agent works in the
+   *  issue's own worktree of the route's checkout. */
+  private trackers(): TrackerDispatcher {
+    if (!this.trackerDispatcher) {
+      this.trackerDispatcher = new TrackerDispatcher({
+        log: (m) => this.log(m),
+        run: async (t) => {
+          const channel = t.chatId.split(":")[0]
+          const res = await withNewRoot(() => this.registry.execute({
+            message: t.message,
+            agentId: t.agentId,
+            context: { channel, chatId: t.chatId, sender: channel, runbookPath: t.runbookPath },
+          }))
+          return { content: res.content, error: res.error }
+        },
+      })
+    }
+    return this.trackerDispatcher
   }
 
   /** Deliver a notice to the owner through the channel router: the
@@ -1617,6 +1665,9 @@ export class AgentXDaemon {
       settings: () => this.config.signals,
       store: new StoppedTaskStore(resolve(process.cwd(), ".agentx/signals/stopped")),
       findRunning: (by) => this.registry.signalTarget(by),
+      // A plan-writing turn is not a task of its own: stopping it would
+      // leave its task without a plan.
+      listRunning: () => this.registry.signalTargets().filter((t) => t.channel !== WIND_DOWN_CHANNEL),
       stopRun: (taskId, reason) => this.registry.stopRunningTask(taskId, reason),
       whenRunEnds: (taskId, ms) => this.registry.whenRunEnds(taskId, ms),
       toolCalls: (traceId) => {
@@ -1679,6 +1730,21 @@ export class AgentXDaemon {
     })
   }
 
+  /** Resume every task a stop-all order stopped, then send the owner one
+   *  report (#1271). Never throws. */
+  private async resumeStopAll(): Promise<void> {
+    try {
+      const outcomes = await this.signals.resumeStopAll({ staggerMs: 2_000 })
+      if (!outcomes.length) return
+      const report = stopAllReport(this.config.node.name || this.config.node.id || "local", outcomes)!
+      for (const line of report.split("\n")) this.log(`  [signals] ${line}`)
+      const dest = this.config.notifications?.destination
+      if (dest) await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text: report })
+    } catch (e: any) {
+      this.log(`[signals] stop-all resume failed: ${e?.message ?? e}`)
+    }
+  }
+
   /** Resume, report or skip each run the last restart cut off. Never throws. */
   private async resumeInterruptedRuns(): Promise<void> {
     const runs = this.interruptedRuns
@@ -1695,14 +1761,18 @@ export class AgentXDaemon {
         boots: this.bootTimes,
         log: this.log,
         staggerMs: 2_000,
-        // A delegation result's relay turn is re-run by the delegation
-        // manager (#846); resuming it here too would answer twice.
-        handledElsewhere: (run) => this.config.mesh.delegation.requeueRelayOnRestart && isDelegationRelay(run.originalMessage)
-          ? "delegation result relay: the delegation manager runs it again"
+        handledElsewhere: (run) => {
+          // A delegation result's relay turn is re-run by the delegation
+          // manager (#846); resuming it here too would answer twice.
+          if (this.config.mesh.delegation.requeueRelayOnRestart && isDelegationRelay(run.originalMessage)) return "delegation result relay: the delegation manager runs it again"
           // A pause's plan-writing turn: signals.recover() above gave its
           // task a plan from the trace; running it again would answer nobody.
-          : run.channel === WIND_DOWN_CHANNEL ? "stop signal wind-down: its task got a plan from the trace"
-          : null,
+          if (run.channel === WIND_DOWN_CHANNEL) return "stop signal wind-down: its task got a plan from the trace"
+          // A task a stop-all stopped whose trace was still open (#1271):
+          // resumeStopAll() resumes it from its plan.
+          const order = this.signals.stopAllOwner(run.taskId)
+          return order ? `stopped by ${order}: it resumes from its plan` : null
+        },
         // Background helpers die with their run; their clones don't (#1256).
         findLeftWork: (run) => findLeftWork(run),
         notifyOperator: dest
@@ -3265,6 +3335,8 @@ export class AgentXDaemon {
         })
       }
       gitlab.setProjectRules(this.projectRules)
+      this.gitlabReviewGate = this.buildReviewGate(gitlab)
+      gitlab.onMergeRequestEvent((event) => { void this.gitlabReviewGate?.onPullRequest(event) })
       this.router.addChannel(gitlab)
       this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)
     }
@@ -4038,6 +4110,9 @@ export class AgentXDaemon {
           context,
           intentRef,
           onStart: waits ? track.onStart : onStart,
+          // A queued send has no caller holding a request open: it
+          // waits behind long runs instead of being dropped (#1258).
+          ...(waits ? {} : { slotWaitMs: SEND_AGENT_SLOT_WAIT_MS }),
         }).finally(() => { if (waits) track.end() })
       }
       if (wait) {
@@ -4871,6 +4946,26 @@ export class AgentXDaemon {
       if (path === "/screen") {
         if (req.method !== "GET") { this.json(res, 405, { error: "GET only" }); return }
         this.json(res, 200, this.screenView())
+        return
+      }
+
+      // Content drafts, agent side (#1291): raise a post for the owner to
+      // approve, read its status, the voice samples and the calendar.
+      // Publishing is refused here. Gated by isMeshGatedPath above.
+      if (path === "/content" || path.startsWith("/content/")) {
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleContentApi(req.method || "GET", path, body as Record<string, unknown> | undefined, url.searchParams, {
+          root: process.cwd(),
+          workspaceOf: (id) => {
+            const ws = this.registry.getAgent(id)?.workspace
+            return ws ? resolve(process.cwd(), ws) : null
+          },
+        })
+        if (reply.status === 201) {
+          const d = (reply.body as { draft: { id: string; agent: string; platform: string } }).draft
+          this.log(`[content] ${d.agent} drafted a ${d.platform} post: content:${d.id} waits for approval`)
+        }
+        this.json(res, reply.status, reply.body)
         return
       }
 
@@ -6060,6 +6155,17 @@ export class AgentXDaemon {
           this.json(res, 500, { error: "hook failed", message: String(e?.message || e) }); return
         }
       }
+      // Linear and Jira issue webhooks (#1292): signed, outside mesh auth.
+      // Before the generic route, which would read the name as an agent id.
+      const trackerName: TrackerName | undefined = req.method === "POST" ? TRACKER_WEBHOOK_PATHS[path] : undefined
+      if (trackerName) {
+        await handleTrackerWebhook(trackerName, req, res, {
+          config: () => this.config.trackers,
+          dispatcher: this.trackers(),
+          log: (m) => this.log(m),
+        })
+        return
+      }
       // wacli's signed message feed for watched WhatsApp chats. Before the
       // generic route, which would read "wacli" as an agent id.
       if (req.method === "POST" && path === WACLI_WEBHOOK_PATH) {
@@ -6379,10 +6485,10 @@ export class AgentXDaemon {
         }
         if (req.method === "POST" && path === "/api/review-gate/replay") {
           const parsed = parseReplayBody((await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>)
-          const gate = this.reviewGate
+          const gate = "error" in parsed ? undefined : parsed.forge === "gitlab" ? this.gitlabReviewGate : this.reviewGate
           if ("error" in parsed || !gate) {
             res.writeHead(400, { "Content-Type": "application/json" })
-            res.end(JSON.stringify({ error: "error" in parsed ? parsed.error : "the GitHub channel is off on this node" }))
+            res.end(JSON.stringify({ error: "error" in parsed ? parsed.error : `the ${parsed.forge === "gitlab" ? "GitLab" : "GitHub"} channel is off on this node` }))
             return
           }
           res.writeHead(200, { "Content-Type": "application/x-ndjson" })
@@ -6424,7 +6530,8 @@ export class AgentXDaemon {
           service: this.signals,
           selfNode: this.config.node.name || this.config.node.id || "local",
           sender,
-          forward: async (node, method, target, fwdBody) => {
+          peers: () => (this.mesh?.directory() ?? []).filter((p) => p.healthy).map((p) => p.peer),
+          forward: async (node, method, target, fwdBody, timeoutMs) => {
             const want = node.toLowerCase()
             const peer = this.mesh?.directory().find((p) => p.healthy && (p.peer.toLowerCase() === want || p.node?.toLowerCase() === want))
             if (!peer) return null
@@ -6432,7 +6539,7 @@ export class AgentXDaemon {
               method,
               headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
               ...(fwdBody ? { body: JSON.stringify(fwdBody) } : {}),
-              signal: AbortSignal.timeout(15_000),
+              signal: AbortSignal.timeout(timeoutMs ?? 15_000),
             })
             const data = await r.json().catch(() => ({ error: `peer answered ${r.status}` }))
             return { status: r.status, body: data as Record<string, unknown> }

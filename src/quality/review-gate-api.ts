@@ -20,7 +20,7 @@ function brief(r: ReviewRecord) {
   return {
     at: r.at, repo: r.repo, pr: r.pr, sha: r.sha.slice(0, 12), state: r.state, reason: r.reason.slice(0, 200),
     reviewer: r.reviewer, model: r.model, unmet: r.unmet, defects: r.defects, costUsd: r.costUsd, minutes: r.minutes,
-    sincePushMinutes: r.sincePushMinutes, ...(r.replay ? { replay: true } : {}),
+    sincePushMinutes: r.sincePushMinutes, ...(r.forge ? { forge: r.forge } : {}), ...(r.replay ? { replay: true } : {}),
   }
 }
 
@@ -62,10 +62,15 @@ export async function replay(
   write({ done: true, flagged, of: prs.length })
 }
 
-export function parseReplayBody(body: Record<string, unknown>): { repo: string; prs: number[] } | { error: string } {
+export function parseReplayBody(body: Record<string, unknown>): { repo: string; prs: number[]; forge: "github" | "gitlab" } | { error: string } {
+  const forge = body.forge === "gitlab" ? "gitlab" : "github"
+  if (body.forge !== undefined && body.forge !== "github" && body.forge !== "gitlab") return { error: "forge must be github or gitlab" }
   const repo = typeof body.repo === "string" ? body.repo.trim() : ""
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return { error: "repo must be owner/name" }
+  // A GitLab project can sit in subgroups: group/subgroup/project.
+  if (forge === "gitlab" ? !/^[\w.-]+(?:\/[\w.-]+)+$/.test(repo) : !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+    return { error: forge === "gitlab" ? "repo must be group/project" : "repo must be owner/name" }
+  }
   const prs = (Array.isArray(body.prs) ? body.prs : []).map(Number).filter((n) => Number.isInteger(n) && n > 0)
   if (!prs.length || prs.length > 20) return { error: "prs must list 1 to 20 PR numbers" }
-  return { repo, prs }
+  return { repo, prs, forge }
 }

@@ -198,8 +198,15 @@ const REPORT_SHELL_COMMANDS = new Set([
   "sort", "uniq", "cut", "tr", "diff", "cmp", "comm", "basename", "dirname", "realpath",
   "readlink", "jq", "column", "nl", "seq", "true", "false", "test", "[", "sleep", "ps",
   "uptime", "echo", "printf", "base64", "md5", "md5sum", "shasum", "sha256sum", "less", "more",
-  "printenv", "dig", "nslookup", "host", "find", "git", "gh", "glab", "curl",
+  "printenv", "dig", "nslookup", "host", "find", "git", "gh", "glab", "curl", "agentx",
 ])
+
+/** `agentx sales` subcommands a report routine may run (#1288). They read
+ *  leads.md and opt-outs.md and print; `watch` also fetches the pages in
+ *  competitors.md (GET only, like curl here) and keeps its snapshots in the
+ *  workspace's .agentx-sales/, which is what lets a read-only brief report
+ *  only what changed. `opt-out` changes who may be contacted: not here. */
+const AGENTX_SALES_READ = new Set(["leads", "changes", "check", "watch"])
 
 const GIT_READ = new Set([
   "status", "log", "diff", "show", "rev-parse", "ls-files", "ls-tree", "blame", "shortlog",
@@ -248,6 +255,11 @@ function reportShellWord(words: string[]): string | null {
       }
       if (!action || !GH_READ_ACTIONS.has(action)) return `${base} ${group ?? ""} ${action ?? ""} is not read-only`.replace(/\s+/g, " ").trim()
       return null
+    }
+    case "agentx": {
+      const [group, action] = args.filter((a) => !a.startsWith("-"))
+      if (group === "sales" && action && AGENTX_SALES_READ.has(action)) return null
+      return `agentx ${group ?? ""} ${action ?? ""} is not read-only`.replace(/\s+/g, " ").trim()
     }
     case "curl": {
       const m = args.findIndex((a) => /^(-X|--request)$/.test(a))

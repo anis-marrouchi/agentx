@@ -39,6 +39,8 @@ export interface ReviewRecord {
   diffTruncated?: boolean
   /** Run by `agentx review-gate replay`: nothing was posted. */
   replay?: boolean
+  /** Set for a GitLab merge request; unset means GitHub. */
+  forge?: "gitlab"
 }
 
 export interface ReviewLedger {

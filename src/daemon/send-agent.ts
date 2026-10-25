@@ -14,6 +14,12 @@ import { newEventId } from "@/intent/ulid"
  *  so the retry that timeout provoked is caught. */
 export const SEND_AGENT_DEDUPE_MS = 10 * 60_000
 
+/** How long a queued send to a busy local agent waits for a free slot
+ *  (#1258). Nobody holds a request open for it, so the 25 min cap of a
+ *  waiting caller does not apply: the message stays in line behind long
+ *  runs instead of being dropped, and is refused only past this age. */
+export const SEND_AGENT_SLOT_WAIT_MS = 6 * 60 * 60_000
+
 /** Most entries the dedupe window holds; the oldest go first. */
 export const SEND_AGENT_DEDUPE_MAX = 500
 

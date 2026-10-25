@@ -68,6 +68,8 @@ The level applies to that run only. It is enforced by a guard hook on the run's 
 
 Only the `claude-code` tier can enforce `report` and `propose`. On any other tier, or when the agent is only reachable through a mesh peer, the run fails with an error; it is never run with full permissions instead. A restricted run always starts its own process and does not reuse a warm persistent process. `report` is an allowlist. `propose` is a denylist of act-level steps, so an agent that tries hard enough can get around it through indirection. Use `report` when you need a hard boundary.
 
+A `report` run may also run `agentx sales leads`, `agentx sales changes`, `agentx sales check` and `agentx sales watch`. They only read and print; `watch` also keeps its own page snapshots in the agent's folder, so the sales brief can report only what changed. See [Find and follow up sales leads](../jobs/sales.md).
+
 ## Time limits and cancel
 
 A run is one piece of work an agent does, such as answering a message or running a schedule. Each run takes one of the agent's slots (`maxConcurrent`). A run that never finishes keeps its slot, so AgentX gives runs a time limit and lets you stop them.

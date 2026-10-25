@@ -55,10 +55,12 @@ const groups = [
   { text: "Everyday tasks", collapsed: true, items: [
     { text: "Answer questions", link: "/jobs/answer-questions" },
     { text: "Send a daily report", link: "/jobs/daily-report" },
+    { text: "Find and follow up sales leads", link: "/jobs/sales" },
     { text: "Post a weekly quality report", link: "/jobs/quality-report" },
     { text: "Watch GitLab", link: "/jobs/watch-gitlab" },
     { text: "Answer customers on WhatsApp", link: "/jobs/answer-whatsapp" },
     { text: "Watch a WhatsApp chat", link: "/jobs/watch-whatsapp" },
+    { text: "Draft posts in your voice", link: "/jobs/content" },
     { text: "Get notified", link: "/jobs/notifications" },
     { text: "See waiting decisions in Reminders and Calendar", link: "/jobs/reminders-mirror" },
     { text: "Get agents' ideas in Apple Notes", link: "/jobs/ideas-to-notes" },
@@ -84,6 +86,8 @@ const groups = [
     { text: "Have a second agent review pull requests", link: "/jobs/review-gate" },
     { text: "Let agents merge only edge changes", link: "/jobs/merge-policy" },
     { text: "Have a second agent write tests from the issue", link: "/jobs/spec-tests" },
+    { text: "Give each coding task its own worktree", link: "/jobs/task-worktrees" },
+    { text: "Hand Linear and Jira issues to an agent", link: "/jobs/linear-jira" },
   ] },
   { text: "Teamwork", collapsed: true, items: [
     { text: "When an agent asks another", link: "/jobs/ask-another-agent" },

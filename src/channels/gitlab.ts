@@ -102,7 +102,7 @@ interface GitLabIssueEvent {
   }
 }
 
-interface GitLabMREvent {
+export interface GitLabMREvent {
   object_kind: "merge_request"
   user: { id?: number; name: string; username: string }
   project: { path_with_namespace: string }
@@ -118,6 +118,11 @@ interface GitLabMREvent {
     url: string
     assignee_ids?: number[]
     reviewer_ids?: number[]
+    /** Set on an `update` that pushed commits: the previous head. */
+    oldrev?: string
+    last_commit?: { id: string; timestamp?: string }
+    draft?: boolean
+    work_in_progress?: boolean
   }
   assignees?: Array<{ id: number; name?: string; username: string }>
   reviewers?: Array<{ id: number; name?: string; username: string }>
@@ -181,10 +186,52 @@ export interface GitLabTokenStatus {
   checkedAt: string
 }
 
+/** A merge request event in the review gate's terms (#1292): the actions
+ *  GitHub names opened, reopened, synchronize (a push), edited, closed. */
+export interface MergeRequestEventInfo {
+  action: string
+  repo: string
+  number: number
+  headSha: string
+  pushedAt: number
+  draft: boolean
+  /** Who did it: on an open or a push, the MR's author or pusher. */
+  authorLogin: string
+  title: string
+  body: string
+}
+
+/** The gate's view of a GitLab merge request webhook, or null when it has
+ *  no head commit or is an action the gate ignores (approve, unapprove). */
+export function mergeRequestEventInfo(event: GitLabMREvent): MergeRequestEventInfo | null {
+  const a = event.object_attributes
+  const sha = a.last_commit?.id
+  if (!sha) return null
+  const action = a.action === "open" ? "opened"
+    : a.action === "reopen" ? "reopened"
+    : a.action === "close" || a.action === "merge" ? "closed"
+    : a.action === "update" ? (a.oldrev ? "synchronize" : "edited")
+    : null
+  if (!action) return null
+  const at = Date.parse(a.last_commit?.timestamp ?? "")
+  return {
+    action,
+    repo: event.project.path_with_namespace,
+    number: a.iid,
+    headSha: sha,
+    pushedAt: action === "synchronize" || action === "opened" ? Date.now() : (Number.isFinite(at) ? at : Date.now()),
+    draft: !!(a.draft ?? a.work_in_progress),
+    authorLogin: event.user?.username ?? "",
+    title: a.title ?? "",
+    body: a.description ?? "",
+  }
+}
+
 export class GitLabAdapter implements ChannelAdapter {
   readonly name = "gitlab"
   private config: GitLabChannelConfig
   private handler?: (msg: IncomingMessage) => Promise<void>
+  private mergeRequestListeners: Array<(event: MergeRequestEventInfo) => void> = []
   private server?: ReturnType<typeof createServer>
   private botUsername?: string  // resolved on first API call
   private botUsernames: Set<string> = new Set()  // all known bot users (to prevent cascading)
@@ -273,6 +320,27 @@ export class GitLabAdapter implements ChannelAdapter {
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
     this.handler = handler
+  }
+
+  /** Every merge request webhook, agent MRs included (the review gate,
+   *  #1292). Called before the bot and project-rule filters below. */
+  onMergeRequestEvent(listener: (event: MergeRequestEventInfo) => void): void {
+    this.mergeRequestListeners.push(listener)
+  }
+
+  /** The agent routed to a project, for the review gate's author check. */
+  agentFor(project: string): string | undefined {
+    return this.resolveAgent(project)
+  }
+
+  /** True for a username AgentX posts with: its MRs are agent MRs. */
+  isAgentLogin(username: string): boolean {
+    return this.postsAs(username) || this.isBotUser(username)
+  }
+
+  /** The API base and the shared token, for the review gate's REST calls. */
+  apiAccess(): { host: string; token: string | undefined } {
+    return { host: this.config.host, token: this.config.token }
   }
 
   /** Give every agent without an explicit agentMappings row its default
@@ -1235,6 +1303,12 @@ export class GitLabAdapter implements ChannelAdapter {
    * Handle merge request events.
    */
   private async handleMR(event: GitLabMREvent, res: ServerResponse): Promise<void> {
+    const info = this.mergeRequestListeners.length ? mergeRequestEventInfo(event) : null
+    if (info) {
+      for (const l of this.mergeRequestListeners) {
+        try { l(info) } catch (e: any) { this.log(`merge request listener failed: ${e?.message || e}`) }
+      }
+    }
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
     // Skip bot-triggered MR updates (cascade prevention)

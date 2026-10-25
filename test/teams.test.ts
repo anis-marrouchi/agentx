@@ -26,6 +26,9 @@ let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "agentx-teams-")) })
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
 
+const SALES_SCHEDULES = ["sales-competitor-watch", "sales-daily-brief", "sales-monday-follow-ups", "sales-weekly-research"]
+const SALES_SKILLS = ["competitor-watch", "daily-brief", "lead-follow-up", "lead-research"]
+
 function freshConfig(): any {
   return { node: { id: "demo-node", name: "Demo node" }, agents: {}, crons: {} }
 }
@@ -117,14 +120,17 @@ describe("results reach the owner", () => {
     const config = freshConfig()
     const plan = applyTeam(config, t, { workspaceRoot: join(dir, "agents"), timezone: "UTC" })
     // No chat to report to yet: the schedule waits for one.
-    expect(plan.delivery).toEqual({ schedules: ["sales-monday-follow-ups"], to: undefined })
+    // The competitor watch only records changes for the brief: it reports nowhere.
+    expect(plan.delivery).toEqual({ schedules: ["sales-weekly-research", "sales-daily-brief", "sales-monday-follow-ups"], to: undefined })
+    expect(config.crons["sales-competitor-watch"].deliverResult).toBeUndefined()
     expect(config.crons["sales-monday-follow-ups"].deliverResult).toBe(true)
     expect(config.crons["sales-monday-follow-ups"].notify).toBeUndefined()
     expectValid(config)
 
     // What `connect telegram` writes once it has captured the owner's chat.
     config.notifications = { destination: OWNER }
-    expect(fillPendingDelivery(config, OWNER)).toEqual(["sales-monday-follow-ups"])
+    expect(fillPendingDelivery(config, OWNER)).toEqual(["sales-weekly-research", "sales-daily-brief", "sales-monday-follow-ups"])
+    expect(config.crons["sales-competitor-watch"].notify).toBeUndefined()
     expect(config.crons["sales-monday-follow-ups"].notify).toEqual(OWNER)
     expect(config.crons["sales-monday-follow-ups"].onError).toContain("notify")
     expectValid(config)
@@ -139,8 +145,9 @@ describe("results reach the owner", () => {
       config.notifications = { destination: OWNER }
       const plan = applyTeam(config, t, { workspaceRoot: join(dir, t.name) })
       expect(plan.delivery.to).toEqual(OWNER)
-      expect(plan.delivery.schedules.sort()).toEqual(Object.keys(t.schedules).sort())
-      for (const id of Object.keys(t.schedules)) expect(config.crons[id].notify).toEqual(OWNER)
+      const delivered = Object.keys(t.schedules).filter((id) => t.schedules[id].deliver)
+      expect(plan.delivery.schedules.sort()).toEqual(delivered.sort())
+      for (const id of delivered) expect(config.crons[id].notify).toEqual(OWNER)
       expectValid(config)
     }
   })
@@ -284,8 +291,8 @@ describe("export then import", () => {
       expect(file).not.toContain(leak)
     }
     expect(Object.keys(pkg.agents)).toEqual(["sales"])
-    expect(Object.keys(pkg.schedules)).toEqual(["sales-monday-follow-ups"])
-    expect(Object.keys(pkg.agents.sales.skills).sort()).toEqual(["lead-follow-up", "pricing"])
+    expect(Object.keys(pkg.schedules).sort()).toEqual(SALES_SCHEDULES)
+    expect(Object.keys(pkg.agents.sales.skills).sort()).toEqual([...SALES_SKILLS, "pricing"].sort())
     expect(pkg.agents.sales.skills.pricing["notes/table.md"]).toBe("| plan | price |\n")
     expect(pkg.channels).toEqual([{ kind: "telegram", agent: "sales" }, { kind: "whatsapp", agent: "sales" }])
 
@@ -299,9 +306,11 @@ describe("export then import", () => {
     const pick = (a: any) => ({ name: a.name, tier: a.tier, model: a.model, systemPrompt: a.systemPrompt, mentions: a.mentions, team: a.team })
     expect(pick(target.agents.sales)).toEqual(pick(source.agents.sales))
     const job = (c: any) => ({ enabled: c.enabled, schedule: c.schedule, timezone: c.timezone, agent: c.agent, prompt: c.prompt, timeout: c.timeout, autonomy: c.autonomy, maxOutputTokens: c.maxOutputTokens })
-    expect(job(target.crons["sales-monday-follow-ups"])).toEqual(job(source.crons["sales-monday-follow-ups"]))
+    for (const id of SALES_SCHEDULES) expect(job(target.crons[id])).toEqual(job(source.crons[id]))
     expect(target.crons["sales-monday-follow-ups"].timezone).toBe("Europe/Paris")
-    expect(Object.keys(target.crons)).toEqual(["sales-monday-follow-ups"])
+    expect(target.crons["sales-daily-brief"].requireSources).toBe(true)
+    expect(target.crons["sales-competitor-watch"].deliverResult).toBeUndefined()
+    expect(Object.keys(target.crons).sort()).toEqual(SALES_SCHEDULES)
     expect(readFileSync(join(dir, "b/sales/.claude/skills/pricing/notes/table.md"), "utf-8")).toBe("| plan | price |\n")
     expect(existsSync(join(dir, "b/sales/.claude/skills/wiki"))).toBe(false)
 
@@ -341,7 +350,7 @@ describe("export then import", () => {
 
     const pkg = buildTeamPackage(source, "sales-follow-up")
     expect(JSON.stringify(pkg)).not.toContain("outside-content")
-    expect(Object.keys(pkg.agents.sales.skills).sort()).toEqual(["lead-follow-up", "pricing"])
+    expect(Object.keys(pkg.agents.sales.skills).sort()).toEqual([...SALES_SKILLS, "pricing"].sort())
     expect(Object.keys(pkg.agents.sales.skills.pricing).sort()).toEqual(["SKILL.md", "notes/table.md"])
   })
 
@@ -349,7 +358,7 @@ describe("export then import", () => {
     const source = workingInstall()
     const pkg = buildTeamPackage(source, "mine", { agents: ["sales", "other"] })
     expect(Object.keys(pkg.agents).sort()).toEqual(["other", "sales"])
-    expect(Object.keys(pkg.schedules).sort()).toEqual(["other-job", "sales-monday-follow-ups"])
+    expect(Object.keys(pkg.schedules).sort()).toEqual(["other-job", ...SALES_SCHEDULES])
     expect(() => buildTeamPackage(source, "nobody")).toThrow(/No agents belong to team "nobody"/)
   })
 })

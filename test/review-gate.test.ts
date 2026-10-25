@@ -389,7 +389,7 @@ describe("replay", () => {
   })
 
   it("validates its body", () => {
-    expect(parseReplayBody({ repo: "acme/api", prs: [1, "2"] })).toEqual({ repo: "acme/api", prs: [1, 2] })
+    expect(parseReplayBody({ repo: "acme/api", prs: [1, "2"] })).toEqual({ repo: "acme/api", prs: [1, 2], forge: "github" })
     expect(parseReplayBody({ repo: "nope", prs: [1] })).toHaveProperty("error")
     expect(parseReplayBody({ repo: "acme/api", prs: [] })).toHaveProperty("error")
   })
