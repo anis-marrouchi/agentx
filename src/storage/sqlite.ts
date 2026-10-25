@@ -428,6 +428,7 @@ function runMigrations(db: Database.Database): void {
   ensureColumns(db, "task_traces", LESSON_IMPACT_COLUMNS)
   ensureColumns(db, "task_traces", PERSON_COLUMNS)
   ensureColumns(db, "task_history", PERSON_COLUMNS)
+  ensureColumns(db, "task_traces", COST_COLUMNS)
   // A person's latest turns, read by the member page every 30 s (#448).
   // Without it that read walks every run on record. Partial: most runs
   // carry no person, and those rows stay out of the index.
@@ -647,6 +648,9 @@ const LESSON_IMPACT_COLUMNS: Array<[string, string]> = [
 /** People (#384): the id of the known person who started the run. NULL for
  *  an unknown sender, for turns software starts, and on older rows. */
 export const PERSON_COLUMNS: Array<[string, string]> = [["person", "TEXT"]]
+
+/** What a run cost in USD, summed per agent per month for the budget (#1162). */
+export const COST_COLUMNS: Array<[string, string]> = [["cost_usd", "REAL"]]
 
 /** Add any of `columns` the table lacks. Idempotent. */
 export function ensureColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {

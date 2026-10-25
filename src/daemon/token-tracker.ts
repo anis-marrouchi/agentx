@@ -93,6 +93,18 @@ export function getModelFamily(model: string): string {
   return "claude-sonnet"
 }
 
+/**
+ * Whether `model` is one the pricing table really prices. getModelFamily()
+ * maps every unknown model to Sonnet, which is fine for a display estimate
+ * but not for spend that pauses an agent (#1162): a local, Codex or Gemini
+ * model must not be charged Claude rates. No model counts only on the
+ * claude-code tier, whose engine is Claude.
+ */
+export function isPricedModel(model: string | undefined, tier?: string): boolean {
+  if (!model) return tier === "claude-code"
+  return /claude|fable|mythos|opus|sonnet|haiku/i.test(model)
+}
+
 export interface ChannelUsage {
   tasks: number
   inputTokens: number

@@ -5,6 +5,9 @@ import Database from "better-sqlite3"
 import { logSlowQueries } from "@/storage/slow-queries"
 import { renderObservabilityPage } from "./ui/pages/observability"
 import type { TopbarPeer } from "./topbar"
+import type { DaemonConfig } from "./config"
+import { budgetConfigFrom, buildBudgetView, monthKey, monthStart } from "@/agents/agent-budget"
+import { spendByAgentSince } from "@/storage/traces"
 
 // Anthropic public per-million-token rates. Same numbers
 // src/observability/tracker.ts uses; duplicated here so this module stays
@@ -104,7 +107,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
-export async function handleObservabilityApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+export async function handleObservabilityApi(req: IncomingMessage, res: ServerResponse, path: string, config?: DaemonConfig): Promise<boolean> {
   if (!path.startsWith("/api/admin/observability/")) return false
   const slug = path.replace(/^\/api\/admin\/observability\//, "").split("?")[0]
 
@@ -174,6 +177,14 @@ export async function handleObservabilityApi(req: IncomingMessage, res: ServerRe
       const url = new URL(req.url || "/", "http://_")
       const range = parseRange(url.searchParams.get("range"))
       sendJson(res, 200, buildCost(opened.db, range))
+      return true
+    }
+    // Monthly budgets (#1162): the month's trace sum per agent against the
+    // caps in agentx.json. The same sum the daemon seeds its gate from.
+    if (slug === "budgets") {
+      const now = Date.now()
+      const cfg = config ? budgetConfigFrom(config) : {}
+      sendJson(res, 200, buildBudgetView(cfg, spendByAgentSince(opened.db, monthStart(now)), monthKey(now)))
       return true
     }
     if (slug === "cost.csv") {

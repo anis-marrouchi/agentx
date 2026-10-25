@@ -18,7 +18,7 @@ import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
-import { TokenTracker, splitTaskUsageByTier } from "@/daemon/token-tracker"
+import { TokenTracker, isPricedModel, splitTaskUsageByTier } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
 import { injectedContextOf } from "./injected-context"
 import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
@@ -53,6 +53,8 @@ import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
+import { budgetConfigFrom, preflightBudgetGate, setAgentBudgets } from "./agent-budget"
+import { BudgetHolds } from "./budget-holds"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { describeProfile, fullClaudeArgs, isolatedClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
@@ -662,6 +664,9 @@ export class AgentRegistry {
    * free and run at once.
    */
   private voiceClaims = new Set<string>()
+  /** Chat messages waiting for an agent paused by its monthly budget (#1162). */
+  private budgetHolds = new BudgetHolds()
+  private budgetReleaseTimer: ReturnType<typeof setInterval> | null = null
   /** Intent Knowledge Graph classifier. Null when graph.enabled=false. */
   private classifier?: Classifier
   private graphStore?: GraphStore
@@ -747,6 +752,8 @@ export class AgentRegistry {
       maxPerHour: config.session.maxClaudeCodeDispatchesPerHour,
       maxPer5h: config.session.maxClaudeCodeDispatchesPer5h,
     })
+    // Monthly money budgets (#1162). The daemon re-applies them on save.
+    setAgentBudgets(budgetConfigFrom(config))
 
     if (config.graph?.enabled) {
       this.graphStore = new GraphStore({
@@ -1399,6 +1406,38 @@ export class AgentRegistry {
     const { channel: qChannel, chatId: qChatId } = warmProcessChat(task.context)
     // Held from a voice wait ending until the chat is marked running.
     let voiceClaim: string | undefined
+
+    // Monthly budget (#1162): a chat message to a paused agent waits for
+    // the agent to resume instead of failing. The chat is told why once
+    // per pause; the reply comes when the held message runs. Callers that
+    // await the answer (API, crons, other agents) get the refusal from the
+    // gate inside the run instead.
+    if (!restricted) {
+      const overBudget = preflightBudgetGate(task.agentId)
+      const ctxChannel = task.context?.channel
+      const ctxChat = task.context?.chatId
+      if (overBudget && ctxChannel && ctxChat && getMessageRouter()?.getChannel(ctxChannel)) {
+        const held = this.budgetHolds.hold(task.agentId, {
+          text: task.message,
+          channel: ctxChannel,
+          chatId: String(ctxChat),
+          context: task.context as Record<string, unknown>,
+          heldAt: task.queuedAt ?? Date.now(),
+        })
+        if (held !== "full") {
+          this.armBudgetRelease()
+          const waiting = this.budgetHolds.count(task.agentId)
+          this.log(`[${task.agentId}] over budget — message held (${waiting} waiting) chat=${ctxChannel}:${ctxChat}`)
+          if (held === "held") return { content: "", error: queuedMarker("budget", waiting) }
+          return {
+            content: "",
+            error: `${overBudget.message} This message is kept and runs when the agent resumes.`,
+            errorKind: "budget_cap",
+          }
+        }
+        this.log(`[${task.agentId}] over budget — hold is full, message refused`)
+      }
+    }
 
     if (state.activeTasks >= state.def.maxConcurrent) {
       // Synchronous API callers (mesh /task, /ask, direct curl) can't observe
@@ -3064,6 +3103,24 @@ export class AgentRegistry {
         if (warning) this.log(`[${task.agentId}] ${warning}`)
         return null
       }
+      // Monthly money budget (#1162): an agent past its cap, or a fleet past
+      // the fleet cap, starts no new run, on any tier and warm or cold, until
+      // the cap is raised or the month turns.
+      const overBudget = preflightBudgetGate(task.agentId)
+      if (overBudget) {
+        traceStep("budget-gate")
+        this.log(`[${task.agentId}] run refused — ${overBudget.reason}`)
+        if (!onDelta) {
+          output.buffer = `[error] ${overBudget.message}`
+          for (const sub of output.subscribers) {
+            try { sub(output.buffer) } catch { /* */ }
+          }
+        }
+        state.errors++
+        finalResponse = { content: "", error: overBudget.message, errorKind: "budget_cap", duration: 0 }
+        return finalResponse
+      }
+
       const cloudRoute = this.planCloudSession(state.def, task)
       if (cloudRoute.route === "local") {
         const gated = runDispatchGates()
@@ -3184,6 +3241,14 @@ export class AgentRegistry {
       // threshold that TokenTracker.record() applies — extracted as a
       // helper so the two sites can never drift.
       const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
+      // What the run cost: the runtime's own figure when it reports one
+      // (Claude Code's total_cost_usd), else the tokens at the billed
+      // model's rate, for Claude models only: other models have no price
+      // here and record no cost. Summed per agent per month (#1162).
+      const pricedModel = response.billedModel || task.model || state.def.model || undefined
+      const costUsd = response.costUsd ?? (split && isPricedModel(pricedModel, state.def.tier)
+        ? this.tokenTracker.cost({ tasks: 1, totalDuration: 0, errors: 0, ...split }, pricedModel)
+        : undefined)
       completedEmitted = true
       getEventBus().emit("task:completed", {
         taskId: traceTaskId,
@@ -3207,6 +3272,7 @@ export class AgentRegistry {
         resumeSessionId: resumeSessionId || undefined,
         jevArm: requestGate.arm,
         numTurns: response.numTurns,
+        costUsd: costUsd !== undefined && Number.isFinite(costUsd) && costUsd > 0 ? costUsd : undefined,
         injectedContext,
         finalResponse: response.content || undefined,
         // Per-task model attribution: prefer what the runtime actually
@@ -3638,6 +3704,45 @@ export class AgentRegistry {
 
   private safe(s: string): string {
     return s.replace(/[^a-zA-Z0-9_.:-]/g, "_")
+  }
+
+  /** Check every minute whether held work may run: the month may have
+   *  turned. A raised cap releases it at once (releaseBudgetHolds). */
+  private armBudgetRelease(): void {
+    if (this.budgetReleaseTimer) return
+    this.budgetReleaseTimer = setInterval(() => this.releaseBudgetHolds(), 60_000)
+    this.budgetReleaseTimer.unref?.()
+  }
+
+  /**
+   * Run the messages held for agents whose budget gate passes again, each
+   * as a queued turn with its reply posted to its chat. Called on a timer
+   * and when the budgets change. Returns how many were released.
+   */
+  releaseBudgetHolds(): number {
+    let released = 0
+    for (const agentId of this.budgetHolds.agents()) {
+      if (preflightBudgetGate(agentId)) continue
+      const held = this.budgetHolds.take(agentId)
+      released += held.length
+      this.log(`[${agentId}] budget allows runs again — releasing ${held.length} held message(s)`)
+      for (const h of held) {
+        const ctx = (h.context as AgentTask["context"]) || { channel: h.channel, chatId: h.chatId }
+        this.execute({ message: h.text, agentId, context: ctx, queuedAt: h.heldAt })
+          .then((resp) => this.postQueuedResponseToChannel(agentId, ctx, resp))
+          .catch((e) => this.log(`[${agentId}] held message failed: ${e?.message ?? e}`))
+      }
+    }
+    if (this.budgetHolds.size === 0 && this.budgetReleaseTimer) {
+      clearInterval(this.budgetReleaseTimer)
+      this.budgetReleaseTimer = null
+    }
+    return released
+  }
+
+  /** Messages waiting for `agentId` to come back under its budget. */
+  heldForBudget(agentId: string): number {
+    return this.budgetHolds.count(agentId)
   }
 
   /**

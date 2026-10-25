@@ -69,6 +69,8 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `wiki.contribute.model` | string | `wiki.contributions.model` | Model for this agent's daily run. |
 | `wiki.notes.dir` | string | the AgentX note store, `.agentx/agent-memory/<agent>/` | The folder `wiki query` reads this agent's notes from when `wiki.query.notes.enabled` is on. A relative path is read from the folder that holds `agentx.json`. See [Search the agent's own notes](/jobs/wiki-live-answers#search-the-agent-s-own-notes). |
 | `wiki.absorb.enabled` | boolean | `true` | `false` leaves the agent out of `agentx wiki absorb` unless it is named with `--agent`. Its conversations are still saved. See [Leave an agent out of the wiki absorb](/jobs/agent-memory#_11-leave-an-agent-out-of-the-wiki-absorb). |
+| `budget.monthlyUsd` | number (0–1000000) | unset (no cap) | Most this agent may spend in one calendar month (UTC), in US dollars. At the cap, new runs are refused until the month ends or you raise it. `0` means no cap. Applies on save. See [Set a monthly budget for an agent](../help/costs.md#set-a-monthly-budget-for-an-agent). |
+| `budget.warnRatio` | number (above 0, up to 1) | `0.8` | Share of `budget.monthlyUsd` at which you get one notice for the month. |
 | `toolUseRequired` | list of string | `[]` | Tool names, such as `Write`, of which at least one must be used in a run; otherwise the run fails with `tool_required_not_called`. |
 | `gitlabAutoReply` | boolean | — | For this agent, overrides the GitLab or GitHub channel's `autoReplyLegacy`: `true` posts the agent's final answer as a comment, `false` does not. |
 | `persistentProcess` | boolean | `false` | Keeps a warm process per conversation for `claude-code`, `codex-cli` and `opencode` agents so replies start faster. |
@@ -96,6 +98,8 @@ One entry per agent, keyed by agent id (`agents.<id>`).
   }
 }
 ```
+
+A top-level `budget` with the same two keys caps all agents together: `"budget": { "monthlyUsd": 200 }` next to `agents`. Reaching it pauses every agent until the month ends or you raise it.
 
 ### Instructions AgentX adds for coding agents
 

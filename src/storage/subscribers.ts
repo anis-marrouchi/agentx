@@ -190,6 +190,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           // The model the turn was billed on, so a trace can be priced
           // at its own rate (workflow pilot-report, #928).
           model: p.billedModel ?? null,
+          costUsd: p.costUsd ?? null,
         })
       } catch { /* */ }
     }

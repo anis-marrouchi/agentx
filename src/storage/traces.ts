@@ -92,6 +92,8 @@ export interface TraceEndInput {
   /** Model the turn was billed on. Known only once the turn ends, so the
    *  start row usually has none. Omitted leaves the column untouched. */
   model?: string | null
+  /** What the run cost in USD (#1162). Omitted leaves the column untouched. */
+  costUsd?: number | null
 }
 
 /** Ids of the lessons injected into one task's prompt. Memory facts and
@@ -264,6 +266,7 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
       error = ?,
       final_response = COALESCE(?, final_response),
       model = COALESCE(?, model),
+      cost_usd = COALESCE(?, cost_usd),
       finished_at = ?,
       duration_ms = ? - started_at
     WHERE task_id = ?
@@ -286,6 +289,7 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
     input.error ?? null,
     input.finalResponse ?? null,
     input.model ?? null,
+    input.costUsd ?? null,
     finishedAt,
     finishedAt,
     taskId,
@@ -553,4 +557,19 @@ export function traceToolCalls(
      WHERE task_id = ? AND name = 'tool_use' ORDER BY seq LIMIT ?
   `).all(taskId, limit) as Array<Record<string, any>>
   return rows.map((s) => ({ action: s.action ?? null, inputSummary: s.input_summary ?? null }))
+}
+
+/**
+ * Recorded run cost per agent since `sinceMs` (a month start, for the
+ * monthly budget, #1162). Rows without a cost add nothing.
+ */
+export function spendByAgentSince(db: Database.Database, sinceMs: number): Record<string, number> {
+  const rows = db.prepare(`
+    SELECT agent_id, SUM(cost_usd) AS usd FROM task_traces
+    WHERE started_at >= ? AND cost_usd IS NOT NULL
+    GROUP BY agent_id
+  `).all(sinceMs) as Array<{ agent_id: string; usd: number | null }>
+  const out: Record<string, number> = {}
+  for (const r of rows) if (r.usd && r.usd > 0) out[r.agent_id] = r.usd
+  return out
 }

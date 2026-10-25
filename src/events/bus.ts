@@ -229,6 +229,10 @@ export interface AgentXEvents {
     jevArm?: "treatment" | "holdout"
     /** Runtime-reported turn count, when the runtime reports one. */
     numTurns?: number
+    /** What the run cost in USD: the runtime's own figure when reported,
+     *  else its tokens at the billed model's rate. Feeds the monthly
+     *  budget (#1162) and task_traces.cost_usd. */
+    costUsd?: number
     /** Lessons injected into this turn's prompt (memory, procedures, wiki). */
     injectedContext?: { memory: string[]; procedures: string[]; wiki: boolean }
     /** Agent's final reply text — recorded into task_traces.final_response

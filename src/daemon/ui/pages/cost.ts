@@ -36,6 +36,16 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
 
   <section class="ax-cost__kpis" id="cost-kpis"></section>
 
+  <section class="ax-cost__card ax-cost__budgets" id="cost-budgets-card" hidden>
+    <div class="ax-cost__card-head">
+      <div>
+        <div class="ax-cost__card-title">Monthly budgets</div>
+        <div class="ax-cost__card-sub">Spend this month (UTC) against each cap · <span id="cost-budgets-month" class="ax-mono">—</span></div>
+      </div>
+    </div>
+    <div id="cost-budgets" role="list"></div>
+  </section>
+
   <section class="ax-cost__hero">
     <div class="ax-cost__card">
       <div class="ax-cost__card-head">
@@ -254,6 +264,18 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
     .ax-cost__chips-row{display:inline-flex;gap:4px;flex-wrap:wrap}
     .ax-cost__agent-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 7px 2px 5px;background:var(--ax-surface-2);border:1px solid var(--ax-border);border-radius:999px;font-size:10.5px;color:var(--ax-text-2)}
     .ax-cost__agent-chip i{width:6px;height:6px;border-radius:50%;display:inline-block}
+    .ax-cost__budgets{margin-bottom:16px}
+    .ax-cost__budget{display:grid;grid-template-columns:minmax(0,1fr) minmax(80px,2fr) auto auto;align-items:center;gap:12px;padding:9px 18px;border-top:1px solid var(--ax-border);font-size:12px}
+    .ax-cost__budget-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ax-cost__budget-bar{position:relative;height:6px;background:var(--ax-surface-2);border-radius:3px;overflow:hidden}
+    .ax-cost__budget-bar i{position:absolute;inset:0 auto 0 0;background:var(--ax-accent);border-radius:3px}
+    .ax-cost__budget--warn .ax-cost__budget-bar i{background:var(--ax-warn)}
+    .ax-cost__budget--paused .ax-cost__budget-bar i{background:var(--ax-err)}
+    .ax-cost__budget-amt{font-family:var(--ax-mono);white-space:nowrap;color:var(--ax-text-2)}
+    .ax-cost__budget-state{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--ax-muted);min-width:64px;text-align:right}
+    .ax-cost__budget--warn .ax-cost__budget-state{color:var(--ax-warn)}
+    .ax-cost__budget--paused .ax-cost__budget-state{color:var(--ax-err)}
+    @media (max-width:680px){.ax-cost__budget{grid-template-columns:minmax(0,1fr) auto auto;row-gap:6px}.ax-cost__budget-bar{grid-column:1/-1;grid-row:2}.ax-cost__budget-state{min-width:0}}
     .ax-cost__empty{padding:32px 18px;text-align:center;color:var(--ax-muted);font-size:12px;font-style:italic}
   `
 
@@ -318,6 +340,35 @@ export function renderCostPage(opts: CostPageOpts = {}): string {
         render();
       } catch (e) { console.error('cost fetch failed', e); }
     }
+
+    /* Monthly budgets (#1162): spend vs cap per agent, from the month's traces. */
+    var BUDGET_LABEL = { ok: 'On track', warn: 'Near cap', paused: 'Paused', uncapped: 'No cap' };
+    function budgetRow(name, b){
+      var pct = b.capUsd ? Math.min(100, (b.ratio || 0) * 100) : 0;
+      var amt = fmtCost(b.spentUsd) + (b.capUsd ? ' / ' + fmtCost(b.capUsd) : '');
+      return '<div class="ax-cost__budget ax-cost__budget--' + esc(b.state) + '" role="listitem">'
+        + '<div class="ax-cost__budget-name">' + esc(name) + '</div>'
+        + '<div class="ax-cost__budget-bar"' + (b.capUsd ? ' role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(pct) + '" aria-label="' + esc(name) + ' budget used"' : '') + '><i style="width:' + pct + '%"></i></div>'
+        + '<div class="ax-cost__budget-amt">' + amt + '</div>'
+        + '<div class="ax-cost__budget-state">' + esc(BUDGET_LABEL[b.state] || b.state) + '</div>'
+      + '</div>';
+    }
+    async function loadBudgets(){
+      var card = document.getElementById('cost-budgets-card');
+      try {
+        var r = await fetch('/api/admin/observability/budgets', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        var v = await r.json();
+        var capped = (v.agents || []).some(function(a){ return a.capUsd; }) || (v.fleet && v.fleet.capUsd);
+        if (!capped) { card.hidden = true; return; }
+        document.getElementById('cost-budgets-month').textContent = v.month || '—';
+        var rows = (v.agents || []).map(function(a){ return budgetRow(a.agentId, a); });
+        if (v.fleet && v.fleet.capUsd) rows.unshift(budgetRow('All agents', v.fleet));
+        document.getElementById('cost-budgets').innerHTML = rows.join('');
+        card.hidden = false;
+      } catch (e) { console.error('budget fetch failed', e); }
+    }
+    loadBudgets();
 
     function render(){
       if (!state.data) return;

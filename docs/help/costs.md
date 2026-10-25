@@ -197,6 +197,40 @@ On top of the plan limit, you can cap how many fresh Claude Code sessions AgentX
 
 Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a change when you save the file; no restart is needed. When a cap is reached, fresh sessions are held and the error names the setting to raise.
 
+## Set a monthly budget for an agent
+
+A budget is the most an agent may spend in one calendar month. The month follows UTC (world time), so it can turn a few hours before or after midnight where you are. AgentX adds up what each run cost: the price Claude Code reports for the run, or, for a run on another Claude engine, its tokens priced at the model's rate (the same prices as the Cost page). Runs on models that aren't Claude (such as GPT, Gemini or a local model) have no price in AgentX, so they don't count toward a budget.
+
+- When an agent reaches 80% of its budget, you get one notice. It is not repeated that month.
+- When it reaches 100%, the agent is paused. Other agents keep working.
+  - A message sent to it in a chat (Telegram, WhatsApp, GitHub, GitLab and other channels) waits. The chat gets one reply that says why; further messages in that chat wait without a reply. Up to 200 messages wait per agent.
+  - Work that needs an answer at once, such as a schedule, another agent or the API, is refused, and the error says why and which setting to raise.
+- On the first day of the next month, or as soon as you raise the budget, the agent works again. The messages that waited then run in order, and their answers go to their chats.
+
+On a Claude subscription the figures are what the work would cost with an API key (see [See what your agents spent](#see-what-your-agents-spent)), so a budget then limits how much of the plan an agent may use.
+
+1. Open `agentx.json` in a text editor.
+2. Under the agent, add a `budget` with the most it may spend each month, in US dollars:
+
+   ```json
+   "agents": {
+     "helper": {
+       "name": "Helper",
+       "workspace": "./workspaces/helper",
+       "budget": { "monthlyUsd": 40 }
+     }
+   }
+   ```
+
+3. Optional: to be warned at another share of the budget, add `"warnRatio"`, for example `"warnRatio": 0.5` for 50%.
+4. Optional: to cap all agents together, add a `budget` at the top level of the file, next to `agents`: `"budget": { "monthlyUsd": 200 }`. Reaching it pauses every agent.
+5. Save the file. The budget applies at once; no restart is needed.
+6. **Browser:** open `/admin/cost`. The **Monthly budgets** card shows each agent's spend this month against its budget, with **On track**, **Near cap** or **Paused**.
+
+![The Monthly budgets card on the Cost page, with one agent near its cap and one paused](/screenshots/costs/budgets.png)
+
+To resume a paused agent before the month ends, raise its `monthlyUsd` and save the file. Waiting messages are kept in memory only: if the daemon restarts while the agent is paused, they are lost, and the people who sent them need to send them again.
+
 ## Check it worked
 
 1. **Browser:** open `/admin/cost`. The page shows a **Last ingest** time and figures for the period you picked.
@@ -204,6 +238,7 @@ Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a ch
 3. **Terminal (developers, in a source copy):** `agentx usage report` ends with `Report: .agentx/reports/token_report.md`, and that file exists.
 4. **Terminal:** `agentx usage surfaces` prints `Surface usage — last 30 days`. The commands you ran in the folder, such as `usage surfaces` itself, appear in the list.
 5. **Terminal:** `agentx usage plan` prints `Claude plan (as Claude Code last reported it)`, then a line per window once an agent has run a turn.
+6. **Browser:** with a budget set, `/admin/cost` shows the **Monthly budgets** card. To try the pause, give a test agent `"budget": { "monthlyUsd": 0.01 }` and send it two messages: the first runs, the second is refused with `Monthly budget reached`.
 
 ## If something is wrong
 
@@ -221,4 +256,9 @@ Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a ch
 - **`Claude plan limit reached: Claude Code reports the … window as rejected`:** the subscription's rolling window is full. Wait for the reset time in the message; open conversations keep working. Run `agentx usage plan` to see every window, and `agentx usage plan --lift` if you know the plan is accepting work again. If this happens every day, consider a larger plan or fewer scheduled jobs.
 - **`agentx usage plan` says `Daemon answered 404`:** the running daemon is older than the command. Restart it with `agentx daemon restart`.
 - **`Local dispatch cap reached: …`:** you set `session.maxClaudeCodeDispatchesPerHour` or `session.maxClaudeCodeDispatchesPer5h` and the fleet reached it. Raise the setting or remove it; the change applies when you save `agentx.json`.
+- **`Monthly budget reached: agent … has spent …`:** the agent used its budget for this month. Raise `agents.<id>.budget.monthlyUsd` in `agentx.json` and save, or wait for the next month.
+- **`Monthly fleet budget reached: …`:** all agents together reached the top-level `budget.monthlyUsd`. Raise it and save, or wait for the next month.
+- **The Monthly budgets card is missing:** no agent has a `budget` with `monthlyUsd` above `0`, or the dashboard can't read `.agentx/db.sqlite` yet. Set a budget, let an agent run once, then reload the page.
+- **An agent's spend stays at `$0` with a budget set:** the agent runs on a model that isn't Claude (such as GPT, Gemini or a local model), or its engine reports no tokens. AgentX has no price for those runs, so the budget never pauses the agent. Check that provider's billing page.
+- **A chat got `This message is kept and runs when the agent resumes` and no answer came:** the agent is still over its budget. Raise `agents.<id>.budget.monthlyUsd` and save; the waiting messages run within a minute. If the daemon restarted meanwhile, the message was lost: send it again.
 - **Spending is higher than expected:** check **Settings** › **Schedules** for jobs that run very often, and lower their frequency.
