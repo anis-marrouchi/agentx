@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.167.0](https://github.com/anis-marrouchi/agentx/compare/v0.166.0...v0.167.0) (2026-10-25)
+
+
+### Features
+
+* **events:** named events from agents and scripts that wake listeners ([#1284](https://github.com/anis-marrouchi/agentx/issues/1284)) ([#1303](https://github.com/anis-marrouchi/agentx/issues/1303)) ([fb6760c](https://github.com/anis-marrouchi/agentx/commit/fb6760c3db01bfd4dbce6f9e5700c6ea78e088df))
+
 ## [0.166.0](https://github.com/anis-marrouchi/agentx/compare/v0.165.1...v0.166.0) (2026-10-25)
 
 
