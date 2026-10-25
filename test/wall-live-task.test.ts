@@ -234,4 +234,11 @@ describe("lastActivityLine (#1381)", () => {
     expect(lastActivityLine("")).toBeUndefined()
     expect(lastActivityLine("x".repeat(300))).toHaveLength(160)
   })
+
+  it("redacts a secret before cutting the line, since /health carries it", () => {
+    const key = "sk-ant-" + "a".repeat(40)
+    expect(lastActivityLine("← export KEY=" + key)).toBe("← export KEY=[redacted]")
+    const cut = lastActivityLine("y".repeat(140) + " " + key) ?? ""
+    expect(cut).not.toContain("sk-ant-")
+  })
 })

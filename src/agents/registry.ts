@@ -26,6 +26,7 @@ import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
+import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
@@ -194,11 +195,13 @@ export interface RunningTask {
 
 type TaskOutputSubscriber = (chunk: string) => void
 
-/** The last non-empty line of a run's output, cut to 160 characters. */
+/** The last non-empty line of a run's output, secrets redacted, then cut
+ *  to 160 characters. It goes out on /health, so redact before clamping
+ *  (#1383). */
 export function lastActivityLine(buffer: string): string | undefined {
   const lines = buffer.split("\n")
   for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim()
+    const line = redactSecrets(lines[i].trim())
     if (line) return line.length > 160 ? line.slice(0, 159) + "…" : line
   }
   return undefined
