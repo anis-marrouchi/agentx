@@ -3,7 +3,7 @@
 The dashboard is the AgentX website that runs on your own machine. You use it in a browser to see what agents are doing and to change settings. It is a separate program from the daemon (the AgentX background service that actually runs the agents), so the dashboard can load while the daemon is stopped.
 
 ::: warning There is no login on the computer itself
-The dashboard trusts every browser on the computer it runs on. It asks for no password there. Anyone who can use that computer can open the dashboard, change settings and answer [approvals](./approvals.md). Lock the computer when you step away: that is what keeps others out. A dashboard token (`dashboard.token`) doesn't change this, because pages opened on the computer carry it. Other devices can't reach the dashboard unless you share it: see [Open the dashboard through your own web address](../jobs/reverse-proxy.md).
+The dashboard trusts every browser on the computer it runs on. It asks for no password there. Anyone who can use that computer can open the dashboard, change settings and answer [approvals](./approvals.md). Lock the computer when you step away: that is what keeps others out. A dashboard token (`dashboard.token`) doesn't change this, because pages opened on the computer carry it. Other devices can't reach the dashboard unless you share it: see [Open the dashboard through your own web address](../jobs/reverse-proxy.md). With a token set, a browser on another device signs in with the token once, and its pages never carry the token: see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device).
 :::
 
 ## Open it
