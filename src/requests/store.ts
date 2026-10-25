@@ -260,8 +260,6 @@ const placeholders = (n: number) => Array(n).fill("?").join(",")
 /** WHERE clause of a request waiting on QA (qa.ts awaitingQa). */
 const AWAITING_QA = "qa_requested_at IS NOT NULL AND (qa_at IS NULL OR qa_at < qa_requested_at)"
 
-/** SET clause for a statement that writes `state`: the change time moves
- *  only when the state is really different. Takes the new state, then now. */
 /** How the quiet check words a request raised for being past its due
  *  time. Settling reads it back (#1214). */
 export const OVERDUE_REASON = "Past its due time"
@@ -273,6 +271,8 @@ const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pic
                   AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded')))
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')`
 
+/** SET clause for a statement that writes `state`: the change time moves
+ *  only when the state is really different. Takes the new state, then now. */
 const STATE_CHANGED = "state_changed_at = CASE WHEN state IS ? THEN state_changed_at ELSE ? END"
 
 export class RequestStore {
