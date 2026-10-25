@@ -61,7 +61,7 @@ Each comment an agent posted on that issue through AgentX gets its own **Comment
 
 The Wall reads the state with this machine's own GitHub or GitLab connection (`channels.github` or `requests.checkers.github`, `channels.gitlab` or `requests.checkers.gitlab`). It never changes the issue. The answer is kept for 5 minutes, so the **checked** time can be a few minutes old. When the forge cannot be read, the post says **state unknown**, never a guessed state. Point at **state unknown** to see the reason.
 
-Comment links start with comments posted after this version. Older comments are not linked.
+Comment links start with comments posted after this version. Older comments are not linked, so a post with no **Comment by …** link does not mean the agent never commented. AgentX keeps comment links for 90 days, then removes them when AgentX starts.
 
 ## See what waits on you
 
