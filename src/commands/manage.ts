@@ -479,6 +479,17 @@ channel
       console.log(chalk.dim("  WhatsApp: disabled"))
     }
 
+    // Email
+    const em = config.channels?.email
+    if (em?.enabled && Object.keys(em.accounts || {}).length) {
+      console.log(chalk.bold("  Email:"))
+      for (const [id, acc] of Object.entries(em.accounts) as [string, any][]) {
+        console.log(`    ${id}: ${acc.address} -> agent: ${acc.agent}, replies ${acc.send === "auto" ? "sent at once" : "wait for approval"}`)
+      }
+    } else {
+      console.log(chalk.dim("  Email: disabled (agentx connect email)"))
+    }
+
     // GitLab
     const gl = config.channels?.gitlab
     if (gl?.enabled) {

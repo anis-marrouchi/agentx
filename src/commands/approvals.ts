@@ -80,7 +80,7 @@ async function answer(key: string, action: InboxAction, opts: { force?: boolean;
 approvals
   .command("approve")
   .alias("yes")
-  .description("say yes: enables the schedule, lets the fact be used, writes the wiki article, publishes the post, or tells the agent yes")
+  .description("say yes: enables the schedule, lets the fact be used, writes the wiki article, publishes the post, sends the email reply, or tells the agent yes")
   .argument("<key>", "item key from `agentx approvals list`, e.g. card:2026-01-05-publish-draft-ab12")
   .option("--force", "wiki: approve even if the article changed since the proposal")
   .option("--note <text>", "cards: a note passed to the agent with your answer")

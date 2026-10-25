@@ -8,7 +8,7 @@
 
 | Agent | What it does |
 |---|---|
-| `support` | Answers questions on Telegram from the documents in `docs/`, ends each answer with `Source: docs/<file>`, and writes what the documents do not cover in `open-questions.md` for you. |
+| `support` | Answers questions on Telegram, and by email if you connect a mailbox, from the documents in `docs/`, ends each answer with `Source: docs/<file>`, and writes what the documents do not cover in `open-questions.md` for you. |
 
 ## What runs on its own
 
@@ -22,3 +22,4 @@
 1. Run `agentx team add support` in the folder that holds your `agentx.json`.
 2. Copy your guides, FAQs and policies into `agents/support/docs/`, as `.md` or `.txt` files.
 3. Run `agentx connect telegram --agent support` and follow the steps to pair your bot.
+4. Optional, a support mailbox: run `agentx connect email --agent support`. Each email reply, with its `Source:` line, waits in Approvals until you send it. See `docs/jobs/answer-email.md`.

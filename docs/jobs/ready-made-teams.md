@@ -63,6 +63,8 @@ The agents run on Claude Code unless you choose another runtime with `--tier`, f
 
    For the support desk it is `agentx connect telegram --agent support`, for the sales follow-up `agentx connect telegram --agent sales`, and for the content team `agentx connect telegram --agent content`. For the dev team, run `agentx channel add`, choose GitLab, and route your project to `dev`.
 
+   The support desk and the client inbox can also answer email: run `agentx connect email --agent support` (or `--agent inbox`). Each email reply waits for your approval. See [Answer customer email](./answer-email.md).
+
 2. Start the daemon, or restart it if it was running:
 
    ```bash
