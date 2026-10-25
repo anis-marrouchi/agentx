@@ -261,6 +261,7 @@ Where you see it:
 - On the request's card under **Approvals** › **Open requests**: **Awaiting QA sign-off**, or **QA: PASS by …** with the time and the note.
 
   ![Two request cards: one shows QA: BLOCK with who gave it, when and why; the other shows Awaiting QA sign-off](/screenshots/approvals/qa.png)
+- On the request's post on the [Wall](../dashboard/wall.md#see-what-waits-on-qa), with **Awaiting QA only** in its filters.
 - In the terminal: `agentx requests show <id>`, and `agentx requests --qa awaiting` for every request still waiting on QA, open or done. `--qa block`, `--qa risk` and `--qa pass` list the requests whose latest verdict is that one.
 - From a script: `GET /requests?qa=awaiting` (see [Read the list from a script](#read-the-list-from-a-script)).
 

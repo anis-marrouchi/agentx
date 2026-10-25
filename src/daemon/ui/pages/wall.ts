@@ -67,6 +67,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <label>Group <select id="f-group"><option value="">All</option></select></label>
       <label class="ax-wall__check"><input type="checkbox" id="f-time"> Time flags only</label>
       <label class="ax-wall__check"><input type="checkbox" id="f-conc"> Concurrent only</label>
+      <label class="ax-wall__check"><input type="checkbox" id="f-qa"> Awaiting QA only</label>
       <input id="f-q" type="search" placeholder="Search" aria-label="Search posts">
       <span class="ax-wall__saved">
         <button type="button" id="v-mine" class="ax-btn ax-btn--ghost">My view</button>
@@ -154,6 +155,7 @@ const WALL_PAGE_CSS = `
 .chip--err { background: var(--ax-red-t, color-mix(in srgb, var(--ax-red) 15%, transparent)); color: var(--ax-red-ink, var(--ax-err)); }
 .chip--ghost { background: var(--ax-surface-2); color: var(--ax-muted); }
 .wp__block { margin-top: 6px; font-size: var(--ax-fs-sm); color: var(--ax-amber-ink, var(--ax-warn)); }
+.wp__qa { margin-top: 4px; font-size: var(--ax-fs-xs); }
 .wp__flag { margin-top: 4px; font-size: var(--ax-fs-xs); color: var(--ax-warn); }
 .wp__meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: var(--ax-fs-xs); color: var(--ax-muted); margin-top: 8px; }
 .wp__meta b { color: var(--ax-text-2); font-weight: 500; }

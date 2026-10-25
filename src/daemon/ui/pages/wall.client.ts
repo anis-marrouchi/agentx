@@ -13,7 +13,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
   var OPEN = ['in_progress', 'waiting_owner', 'waiting_other', 'needs_attention'];
   var DAY = 864e5;
-  var FILTERS = ['owner', 'status', 'idle', 'project', 'node', 'group', 'time', 'conc', 'q'];
+  var FILTERS = ['owner', 'status', 'idle', 'project', 'node', 'group', 'time', 'conc', 'qa', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
   var S = { data: null, live: null, wf: null, view: 'feed', sort: { key: 'idle', dir: -1 }, threads: {} };
   var $ = function (id) { return document.getElementById(id); };
@@ -172,6 +172,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (f.group && groupKey(p) !== f.group) return false;
     if (f.time && !p.timeFlag && !forgeFlags(p).length) return false;
     if (f.conc && !(p.concurrent && p.concurrent.length)) return false;
+    if (f.qa && !p.awaitingQa) return false;
     if (f.q) {
       var hay = [p.headline, p.owner, p.id, p.project, p.home && p.home.link, p.askedBy]
         .concat(cardsOf(p).map(function (c) { return c.title + ' ' + c.ask; })).join(' ').toLowerCase();
@@ -230,6 +231,12 @@ export const WALL_PAGE_SCRIPT = String.raw`
       '</section>';
   }
 
+  // QA verdict (#1188): "PASS by qa-agent, <when>: note", or awaiting sign-off.
+  function qaText(p, short) {
+    if (p.qa) return p.qa.verdict.toUpperCase() + ' by ' + p.qa.by + (short ? '' : ', ' + stamp(p.qa.at) + (p.qa.note ? ': ' + p.qa.note : ''));
+    return p.awaitingQa ? 'Awaiting QA sign-off' : '';
+  }
+
   // --- Feed ---
   function postHtml(p) {
     var multi = S.data && S.data.nodes && S.data.nodes.length > 1;
@@ -281,6 +288,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       (forgeFlags(p).length ? '<div class="wp__flag">GitLab time: ' + esc(forgeFlags(p).join('; ')) + '</div>' : '') +
       conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
       cardsOf(p).map(cardHtml).join('') +
+      (qaText(p) ? '<div class="wp__qa">QA: ' + esc(qaText(p)) + (p.awaitingQa && p.qa ? ' — new verdict asked' : '') + '</div>' : '') +
       '<div class="wp__meta">' + meta + '</div>' +
       '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
       '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
@@ -405,7 +413,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
     }).join('') + '</tr></thead><tbody>' + posts.map(function (p) {
       return '<tr><td>' + stateBadge(p.state) +
           (p.forgeState ? '<br><small' + (p.forgeState.unknown ? ' title="' + esc(p.forgeState.unknown) + '">' + esc(forgeName(p.forgeState)) + ' unknown' : '>' + esc(forgeName(p.forgeState)) + ' ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '')) + '</small>' +
-            (forgeClosedOpen(p) ? ' <small title="Closed on the forge, still open here">⚠</small>' : '') : '') + '</td>' +
+            (forgeClosedOpen(p) ? ' <small title="Closed on the forge, still open here">⚠</small>' : '') : '') +
+          (qaText(p, true) ? '<br><small' + (p.qa ? ' title="' + esc(qaText(p)) + '"' : '') + '>' + esc(p.awaitingQa ? 'Awaiting QA' : qaText(p, true)) + '</small>' : '') + '</td>' +
         '<td><a href="#" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a></td>' +
         '<td>' + esc(p.owner) + '</td><td>' + esc(p.project || '—') + '</td><td>' + esc(p.node.name) + '</td>' +
         '<td class="num">' + idleDays(p) + '</td>' +

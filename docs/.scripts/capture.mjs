@@ -34,6 +34,9 @@ const shots = [
   { name: "wall/concurrent", path: "/wall", wait: "#post-req-docs-wall-question .ax-conc", clipTo: "#post-req-docs-wall-question" },
   // A pending decision card on its post (#1185), under "Waiting on the owner".
   { name: "wall/owner-card", path: "/wall#status=waiting_owner", wait: "#post-req-docs-wall-question .wc", clipTo: "#post-req-docs-wall-question" },
+  // A QA verdict on its post, and the awaiting-QA filter (#1188).
+  { name: "wall/qa", path: "/wall", wait: "#post-req-docs-qa-block .wp__qa", clipTo: "#post-req-docs-qa-block" },
+  { name: "wall/qa-awaiting", path: "/wall#status=&qa=1&view=list", wait: ".wl" },
   { name: "wall/phone", path: "/wall", wait: ".wp", phone: true },
   // The portfolio (#1194), opened with the demo-only key seed-demo.mjs made.
   { name: "wall/portfolio", path: "/portfolio", wait: "#key-form", steps: [{ type: "#key", text: "agx_live_" + "demo".repeat(16) }, { click: "#key-form button" }, { wait: "#projects table" }], full: true },
