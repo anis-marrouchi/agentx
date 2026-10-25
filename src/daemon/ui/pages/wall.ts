@@ -62,7 +62,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <a class="ax-wall__item" data-nav="agents" href="#page=agents" title="Agents">${NAV_ICON.agents}<span>Agents</span><b class="ax-wall__n" id="nav-n-agents"></b></a>
     <a class="ax-wall__item" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
     <div class="ax-wall__navfoot">
-      <span>Read-only. The Wall shows the work; it sends nothing.</span>
+      <span>The Wall shows the work. It sends something only when you comment, call or start a Space from a post.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button">Light / dark</button>
     </div>
   </nav>
@@ -124,7 +124,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section class="ax-wall__box ax-wall__about" aria-labelledby="wall-about-h">
       <h2 id="wall-about-h">Dashboard</h2>
       <nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav>
-      <p>The Wall is something you open, not something that pings you. Nothing here sends a message or a push.</p>
+      <p>The Wall is something you open, not something that pings you. It never pings you on its own.</p>
     </section>
   </aside>
 </div>`
@@ -278,6 +278,19 @@ const WALL_PAGE_CSS = `
 .wt .men { background: var(--ax-blue-t, var(--ax-surface-2)); }
 .wt .more { font: inherit; font-size: var(--ax-fs-xs); background: none; border: 0; color: var(--ax-accent); cursor: pointer; padding: 0; }
 .wt .wt { margin-top: 4px; }
+
+/* What the owner does from an open post (#1316): comment, call, Space. */
+.wdo { margin: 12px 0 0; padding: 12px 0 0; border-top: 1px solid var(--ax-border); display: flex; flex-direction: column; gap: 8px; }
+.wdo__l { font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.wdo__t { width: 100%; font: inherit; color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 8px 10px; resize: vertical; }
+.wdo__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wdo__row .wdo__t { flex: 1; min-width: 160px; width: auto; }
+.wdo__sp { display: inline-flex; gap: 6px; align-items: center; }
+.wdo__sp select { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 5px 10px; }
+.wdo__n { margin: 0; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
+.wdo__n:empty { display: none; }
+.wsp { border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-lg); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.wsp__t { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--ax-fs-sm); max-height: 260px; overflow-y: auto; }
 
 /* Agent profile: shown above the feed when the owner filter names one agent. */
 .ax-wall__profile { border-bottom: 1px solid var(--ax-border); }

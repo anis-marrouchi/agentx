@@ -36,6 +36,9 @@ export interface Call {
   note: string | null
   /** The agent's own summary, written after hang-up. */
   summary: string | null
+  /** "owner": the owner placed it, asking the agent to talk (from a Wall
+   *  post, #1316). Unset or null: the agent placed it. */
+  placedBy?: "owner" | null
 }
 
 /** A call waiting for a busy owner: since when, and when the owner was
@@ -57,7 +60,7 @@ export const LIVE: CallStatus[] = ["ringing", "answered", "later"]
 
 const COLUMNS = `id, agent_id AS agentId, kind, reason, urgency, status, created_at AS createdAt,
   ringing_since AS ringingSince, answered_at AS answeredAt, ended_at AS endedAt,
-  ring_again_at AS ringAgainAt, note, summary, channel, chat_id AS chatId`
+  ring_again_at AS ringAgainAt, note, summary, channel, chat_id AS chatId, placed_by AS placedBy`
 
 export class CallStore {
   constructor(private db: Database.Database) {
@@ -77,6 +80,9 @@ export class CallStore {
     // forget it: since when it waits, and when the owner was last told.
     if (!have.has("waiting_since")) db.exec("ALTER TABLE calls ADD COLUMN waiting_since INTEGER")
     if (!have.has("told_at")) db.exec("ALTER TABLE calls ADD COLUMN told_at INTEGER")
+    // Who placed it (#1316): "owner" for a call the owner asked for from
+    // the Wall; null for the agent's own call, as every older row is.
+    if (!have.has("placed_by")) db.exec("ALTER TABLE calls ADD COLUMN placed_by TEXT")
   }
 
   /** Ringing calls marked as waiting for a busy owner, by id. */
@@ -93,9 +99,9 @@ export class CallStore {
 
   insert(call: Call): void {
     this.db.prepare(`INSERT INTO calls (id, agent_id, kind, reason, urgency, status, created_at, ringing_since,
-      answered_at, ended_at, ring_again_at, note, summary, channel, chat_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      answered_at, ended_at, ring_again_at, note, summary, channel, chat_id, placed_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       call.id, call.agentId, call.kind, call.reason, call.urgency, call.status, call.createdAt,
-      call.ringingSince, call.answeredAt, call.endedAt, call.ringAgainAt, call.note, call.summary, call.channel, call.chatId)
+      call.ringingSince, call.answeredAt, call.endedAt, call.ringAgainAt, call.note, call.summary, call.channel, call.chatId, call.placedBy ?? null)
   }
 
   get(id: string): Call | undefined {

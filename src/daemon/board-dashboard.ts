@@ -11,7 +11,7 @@ import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
 import { handleLogin, hasSession, hasStreamTicket, isOffBox, pageToken, redirectToLogin, streamTicket, STREAM_TICKET_TTL_S } from "./dashboard-session"
-import { loadOperatorKey } from "@/requests/operator"
+import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
 import { currentPeople, handleMemberRequest } from "./member-routes"
 import { MemberStore } from "@/members/store"
 import { forgeLink } from "@/members/work"
@@ -90,6 +90,7 @@ import { handlePortfolioRequest } from "./wall-portfolio"
 import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
+import { handleWallAction, isWallActionPath, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -868,6 +869,15 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       enabled: !!graph?.enabled,
     }, localNodeName(ctx.config), Date.now())
     sendJson(res, reply.status, reply.body)
+    return
+  }
+  // The Wall's writes (#1316): comment on a post, call its agent, a Space.
+  // After the token gate above; the proxy above sends a comment or a call
+  // to the node that keeps the post.
+  if (isWallActionPath(path)) {
+    const body = method === "POST" ? await readJson(req) : {}
+    const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config) })
+    sendJson(res, reply!.status, reply!.body)
     return
   }
   // The Wall (#1180): read-only posts and threads from this node's records.
@@ -3281,6 +3291,25 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
 /** This node's Wall reply: the posts, then the forge's word on them, then
  *  reported failures. With `?timings=1` on the list, the reply says how
  *  long each part took (#1252): numbers only. */
+/** The Wall's calls to this node's daemon (#1316): the dashboard's token,
+ *  and the operator key, since every one of them is the owner's. */
+function wallDaemon(config: DaemonConfig): (method: "GET" | "POST", path: string, body?: unknown) => Promise<WallReply> {
+  const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const token = dashboardTokenForNode(config.dashboard, url)
+  const key = loadOperatorKey(process.cwd())
+  return async (method, path, body) => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (token) headers["Authorization"] = `Bearer ${token}`
+    if (key) headers[OPERATOR_HEADER] = key
+    try {
+      const r = await fetch(url + path, { method, headers, body: method === "POST" ? JSON.stringify(body ?? {}) : undefined, signal: AbortSignal.timeout(15_000) })
+      return { status: r.status, body: await r.json().catch(() => ({ error: `HTTP ${r.status}` })) }
+    } catch (e: any) {
+      return { status: 502, body: { error: `The daemon on this computer did not answer: ${e?.message ?? e}` } }
+    }
+  }
+}
+
 async function wallLocal(path: string, q: URLSearchParams, ctx: Ctx, deps = wallDeps(ctx.config)): Promise<{ status: number; body: unknown }> {
   const reply = handleWallApi(path, q, deps, localNodeName(ctx.config))
   const t1 = performance.now()

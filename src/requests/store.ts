@@ -23,7 +23,10 @@ export type RequestState = "candidate" | OpenState | ClosedState
 export const OPEN_STATES: readonly OpenState[] = ["in_progress", "waiting_owner", "waiting_other", "needs_attention"]
 export const CLOSED_STATES: readonly ClosedState[] = ["done", "declined", "dropped"]
 
-export type LinkKind = "run" | "step_run" | "delegation" | "card" | "workflow" | "watcher" | HomeLinkKind
+export type LinkKind = "run" | "step_run" | "delegation" | "card" | "workflow" | "watcher" | "comment" | HomeLinkKind
+
+/** Longest owner comment kept on a request (#1316). */
+export const COMMENT_MAX = 4000
 
 /** Where the work of a request lives (#394): the issue, idea file,
  *  approval, ERP record or Desk card the agent named. The latest is kept
@@ -545,6 +548,13 @@ export class RequestStore {
 
   link(requestId: string, kind: LinkKind, ref: string, now: number): void {
     this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)").run(requestId, kind, ref, now)
+  }
+
+  /** The owner commented on the request from the Wall (#1316): kept as a
+   *  "comment" link, its words in the link's proof column. */
+  comment(requestId: string, ref: string, text: string, now: number): void {
+    this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at, proof) VALUES (?, 'comment', ?, ?, ?)")
+      .run(requestId, ref, now, text.slice(0, COMMENT_MAX))
   }
 
   /** How the linked work ended ("done", "waiting", "error"…), and the

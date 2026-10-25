@@ -114,7 +114,7 @@ import { FactLedger } from "@/wiki/facts/ledger"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
 import { isOwnerTurn, OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
-import { isOperatorTurn, loadOperatorKey, operatorContext, operatorVouch, ownerProven } from "@/requests/operator"
+import { isOperatorTurn, loadOperatorKey, OPERATOR_HEADER, operatorContext, operatorKeyMatches, operatorVouch, ownerProven } from "@/requests/operator"
 import { WikiCurateApi } from "./wiki-curate-api"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
 import { GuestStore } from "@/guests/store"
@@ -4961,7 +4961,8 @@ export class AgentXDaemon {
         const body = req.method === "POST" ? await readBody(req) : {}
         const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
         const proof = { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") }
-        const reply = await handleCalls(this.calls, () => this.config.calls, req.method || "GET", path, url.searchParams, body, proof)
+        const owner = operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER])
+        const reply = await handleCalls(this.calls, () => this.config.calls, req.method || "GET", path, url.searchParams, body, proof, owner)
         this.json(res, reply.status, reply.body)
         return
       }

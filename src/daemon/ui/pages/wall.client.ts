@@ -7,7 +7,7 @@
 // cards (#1185) come with their post and are shown without buttons:
 // answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
-// browser only. Nothing is written to the daemon. The Projects view
+// browser only. The only writes are an open post's actions (below). The Projects view
 // (#1190) shows the overview rows the reply carries, one per project;
 // each count links to the list with that project and status in the hash.
 // Under it, weekly throughput (#1192): closures per week per project and
@@ -22,6 +22,11 @@
 // (#page=running, #page=agents), and each nav item carries its count.
 // Results and thread lines render their Markdown through the shared
 // renderer; links in them go to web, mail or same-site addresses only.
+//
+// The only writes (#1316, wall-actions.ts), from an open post: a comment
+// that reaches the agent on the post (sent to the node that keeps it), a
+// voice call from that agent, and a Space: two agents talk about the post
+// out loud on this computer, with the owner's words going into it.
 
 import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
@@ -39,7 +44,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The pages the nav opens besides the Wall itself (#1316). */
   var PAGES = ['running', 'agents'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {} };
+  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml })}
 ${WALL_REVIEWS_SCRIPT}
@@ -381,6 +386,7 @@ ${WALL_CAPACITY_SCRIPT}
       (qaText(p) ? '<div class="wp__qa">QA: ' + esc(qaText(p)) + (p.awaitingQa && p.qa ? ' — new verdict asked' : '') + '</div>' : '') +
       '<div class="wp__meta">' + meta + '</div>' +
       '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
+      (full ? doHtml(p) : '') +
       '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (full ? '<h2 class="wp__th">Thread</h2>' : '') +
         (shown && S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
       '</div></article>';
@@ -508,6 +514,108 @@ ${WALL_CAPACITY_SCRIPT}
     if (p) return postHtml(p, true);
     if (!S.data) return '<p class="ax-wall__empty">Loading…</p>';
     return '<p class="ax-wall__empty">This post is not on the Wall: it may be older than seven days, or its node did not answer. <button type="button" class="wa-more" data-back>Back to the feed</button></p>';
+  }
+
+  // --- What the owner does from an open post (#1316) ---
+  function doHtml(p) {
+    var others = allAgents().filter(function (a) { return a.id !== p.owner; });
+    var draft = S.drafts[p.id] || '';
+    return '<div class="wdo" data-for="' + esc(p.id) + '">' +
+      (isOpen(p)
+        ? '<label class="wdo__l" for="wdo-text">Comment to @' + esc(p.owner) + '</label>' +
+          '<textarea id="wdo-text" class="wdo__t" rows="2" maxlength="4000" placeholder="It reaches ' + esc(nameOf(p.owner)) + ' like a message on any channel">' + esc(draft) + '</textarea>'
+        : '<p class="wdo__n">This post is ' + esc(p.state) + ': comments reach an agent only while a post is open.</p>') +
+      '<div class="wdo__row">' +
+        (isOpen(p) ? '<button type="button" class="ax-btn" data-act="comment">Comment</button>' : '') +
+        '<button type="button" class="ax-btn ax-btn--ghost" data-act="call" title="' + esc(nameOf(p.owner)) + ' calls you on AgentX Voice about this post">Call ' + esc(nameOf(p.owner)) + '</button>' +
+        (others.length
+          ? '<span class="wdo__sp"><select id="wdo-with" aria-label="Talks with">' + others.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') + '</select>' +
+            '<button type="button" class="ax-btn ax-btn--ghost" data-act="space" title="Two agents talk about this post out loud on this computer">Start a Space</button></span>'
+          : '') +
+      '</div>' +
+      '<p class="wdo__n" id="wdo-note" role="status">' + esc(S.doNote || '') + '</p>' +
+      '<div id="wdo-space">' + spaceHtml() + '</div>' +
+    '</div>';
+  }
+  async function act(method, path, body, peer) {
+    try {
+      var h = headers(peer);
+      h['Content-Type'] = 'application/json';
+      var r = await fetch(path, { method: method, headers: h, body: body ? JSON.stringify(body) : undefined });
+      var b = await r.json().catch(function () { return {}; });
+      return r.ok ? { ok: true, body: b } : { ok: false, error: b.error || ('HTTP ' + r.status) };
+    } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  }
+  function note(text) { S.doNote = text; var el = $('wdo-note'); if (el) el.textContent = text; }
+  async function doAct(kind) {
+    var p = findPost(S.post);
+    if (!p) return;
+    var peer = p.node && p.node.peer;
+    if (kind === 'comment') {
+      var text = ($('wdo-text') && $('wdo-text').value || '').trim();
+      if (!text) { note('Write the comment first.'); return; }
+      note('Sending…');
+      var r = await act('POST', '/api/admin/wall/comment', { id: p.id, text: text }, peer);
+      if (!r.ok) { note('Not sent: ' + r.error); return; }
+      delete S.drafts[p.id];
+      if ($('wdo-text')) $('wdo-text').value = '';
+      note(r.body.message || 'Sent.');
+      loadThread(p.id);
+    } else if (kind === 'call') {
+      note('Calling…');
+      var c = await act('POST', '/api/admin/wall/call', { id: p.id }, peer);
+      note(c.ok ? nameOf(p.owner) + ' is calling you on AgentX Voice.' + (c.body.busy ? ' You look busy: it waits for you.' : '') : 'No call: ' + c.error);
+    } else if (kind === 'space') {
+      var w = $('wdo-with') && $('wdo-with').value;
+      note('Starting the Space…');
+      // A Space always runs here, where the owner listens: no peer.
+      var s = await act('POST', '/api/admin/wall/space', { id: p.id, agent: p.owner, with: w, topic: p.headline || p.id, context: (p.need || '').slice(0, 1500) });
+      if (!s.ok) { note('No Space: ' + s.error); return; }
+      note('');
+      S.space = s.body;
+      S.spaceTopic = p.headline || p.id;
+      paintSpace();
+      pollSpace();
+    } else if (kind === 'space-say') {
+      var said = ($('wdo-say') && $('wdo-say').value || '').trim();
+      if (!said) return;
+      var y = await act('POST', '/api/admin/wall/space/say', { text: said });
+      if (!y.ok) { note('Not heard: ' + y.error); return; }
+      $('wdo-say').value = '';
+    } else if (kind === 'space-stop') {
+      await act('POST', '/api/admin/wall/space/stop', {});
+      S.space = null;
+      paintSpace();
+    }
+  }
+  function spaceHtml() {
+    var t = S.space;
+    if (!t || t.active === false || t.kind !== 'talk') return '';
+    var lines = (t.transcript || []).slice(-12).map(function (x) { return '<li><b>' + esc(x.name) + '</b> ' + md(x.text) + '</li>'; }).join('');
+    return '<section class="wsp" aria-label="Space">' +
+      '<header><span class="ax-badge ax-badge--live">Live</span> <b>Space</b>' + (S.spaceTopic ? ' · ' + esc(S.spaceTopic) : '') + '</header>' +
+      (lines ? '<ol class="wsp__t">' + lines + '</ol>' : '<p class="wdo__n">They are starting…</p>') +
+      '<div class="wdo__row"><input id="wdo-say" class="wdo__t" maxlength="1000" placeholder="Say something into the Space">' +
+      '<button type="button" class="ax-btn ax-btn--ghost" data-act="space-say">Say</button>' +
+      '<button type="button" class="ax-btn ax-btn--ghost" data-act="space-stop">End</button></div>' +
+    '</section>';
+  }
+  /** Repaint only the Space, so what the owner types stays where it is. */
+  function paintSpace() {
+    var el = $('wdo-space');
+    if (!el) return;
+    var typed = $('wdo-say') && $('wdo-say').value;
+    el.innerHTML = spaceHtml();
+    if (typed && $('wdo-say')) $('wdo-say').value = typed;
+  }
+  function pollSpace() {
+    if (S.spaceTimer) return;
+    S.spaceTimer = setInterval(async function () {
+      var r = await act('GET', '/api/admin/wall/space');
+      S.space = r.ok ? r.body : S.space;
+      if (!S.space || S.space.active === false || S.space.kind !== 'talk') { clearInterval(S.spaceTimer); S.spaceTimer = null; S.space = null; }
+      paintSpace();
+    }, 3000);
   }
 
   // --- Agents page (#1316): every agent the nodes report, with its posts ---
@@ -901,8 +1009,9 @@ ${WALL_CAPACITY_SCRIPT}
   }
 
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-back],[data-post]');
+    var t = ev.target.closest('[data-act],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-back],[data-post]');
     if (!t) return;
+    if (t.hasAttribute('data-act')) { doAct(t.getAttribute('data-act')); return; }
     if (t.hasAttribute('data-post')) {
       // A tap on the post itself opens it; its links, buttons and the
       // request summary keep their own job, and selecting text opens nothing.
@@ -931,6 +1040,8 @@ ${WALL_CAPACITY_SCRIPT}
       openPost(t.getAttribute('data-open'));
     }
   });
+  // A comment being written survives the feed's refresh.
+  document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'wdo-text' && S.post) S.drafts[S.post] = ev.target.value; });
   // Keyboard: Enter on a post opens it, Escape goes back to the feed.
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter' && ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-post')) { ev.preventDefault(); openPost(ev.target.getAttribute('data-post')); }

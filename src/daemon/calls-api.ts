@@ -12,6 +12,11 @@
 //                               403 no such running turn, or not in
 //                               calls.allow; 409 one already in
 //                               progress; 429 over calls.maxPerHour
+//   POST /calls/owner           {agentId, reason}: the owner asks the agent
+//                               to talk (a Wall post's Call, #1316). Only
+//                               with the operator key (`owner`): 201 ringing,
+//                               403 without the key, 404 no such agent here,
+//                               409 one already in progress, 429 over the limit
 //   POST /calls/cancel          {agentId}, same proof: the caller withdraws
 //                               its voice call that waits or rings
 //                               200 {call}; 404 it has none
@@ -53,7 +58,16 @@ export async function handleCalls(
   query: URLSearchParams,
   body: Record<string, unknown>,
   proof: CallerProof = {},
+  /** The request showed this node's operator key: it is the owner's. */
+  owner = false,
 ): Promise<Reply> {
+  if (path === "/calls/owner") {
+    if (method !== "POST") return { status: 405, body: { error: "POST" } }
+    if (!owner) return { status: 403, body: { error: "Only the owner's own surfaces (the dashboard) place a call to an agent." } }
+    const r = await calls.ownerCall(body)
+    if (!r.ok) return { status: r.status, body: { error: r.error } }
+    return { status: 201, body: { call: r.call, rang: r.rang, ...(r.busy ? { busy: r.busy } : {}) } }
+  }
   if (path === "/calls") {
     if (method === "POST") {
       const r = await calls.request(body, proof)
