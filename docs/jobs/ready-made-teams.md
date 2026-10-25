@@ -41,7 +41,7 @@ You need:
 
 2. To see what it would add without writing anything, add `--dry-run`.
 
-`team add` never takes over a folder that is already there. If `agents/<id>` exists, it stops and names the folder. Choose another place with `--workspaces <dir>`, or add `--force` to use the folder as it is: files already in it, such as a skill you edited, are kept and listed in the output. A folder that is another agent's workspace is always refused.
+`team add` never takes over a folder that is already there. If `agents/<id>` exists, it stops and names the folder. Choose another place with `--workspaces <dir>`, or add `--force` to use the folder as it is: files already in it, such as a skill you edited, are kept and listed in the output. A folder that is another agent's workspace, or sits inside one, is always refused.
 
 The agents run on Claude Code unless you choose another runtime with `--tier`, for example `--tier codex-cli`. Schedules use this machine's time zone unless you set `--timezone`, for example `--timezone Europe/Paris`.
 
@@ -122,7 +122,7 @@ Each agent's `team` setting is described in [Configuration: agents](../reference
 | `Already in this install: agent "inbox"` | An agent or schedule with that id exists. Remove it with `agentx agent remove <id>` or `agentx schedule remove <id>`, then add the team again. |
 | `Already in this install: team "client-inbox"` | That team is already added, maybe from another file. Remove its agents first, or export it under another name. |
 | `Already in this install: folder …/agents/dev (already exists…)` | Choose another `--workspaces` folder, or add `--force` to use it. Its files are kept. |
-| `Already in this install: folder … (the workspace of agent "…")` | Another agent works in that folder. Choose another `--workspaces` folder. |
+| `Already in this install: folder … (overlaps the workspace of agent "…")` | Another agent works in that folder, or in a folder around it. Choose another `--workspaces` folder. |
 | The schedule ran but no message arrived | `agentx schedule list` shows no `notify:` line for it. Run `agentx team notify <team>` (uses your saved chat), or give `telegram:<chat id>`. |
 | `No team named "<name>"` | Check the spelling with `agentx team list`. To add from a file, give the file's path, ending in `.json`. |
 | `looks like a GitLab token` (or another kind of secret) | A token is written in an instruction, a skill or a schedule. Take it out, put it in the channel settings instead, and export again. |

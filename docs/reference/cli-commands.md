@@ -449,8 +449,8 @@ Add a team: its agents, skills and schedules. `<name>` is a team from `team list
 |---|---|---|
 | `--tier <tier>` | — | Runtime for every agent of the team (default: the package's, else claude-code). |
 | `--timezone <tz>` | — | Time zone for schedules that do not set one (default: this machine's). |
-| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. Refused when an agent's folder already exists or is another agent's workspace. |
-| `--force` | — | Use workspace folders that already exist; files in them are never overwritten. Another agent's workspace is still refused. |
+| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. Refused when an agent's folder already exists or overlaps another agent's workspace. |
+| `--force` | — | Use workspace folders that already exist; files in them are never overwritten. A folder that overlaps another agent's workspace is still refused. |
 | `--dry-run` | — | Show what would be added, write nothing. |
 | `-c, --config <path>` | — | Path to agentx.json. |
 
@@ -462,8 +462,8 @@ Add a team from a package file made by `team export`.
 |---|---|---|
 | `--tier <tier>` | — | Runtime for every agent of the team (default: the package's, else claude-code). |
 | `--timezone <tz>` | — | Time zone for schedules that do not set one (default: this machine's). |
-| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. Refused when an agent's folder already exists or is another agent's workspace. |
-| `--force` | — | Use workspace folders that already exist; files in them are never overwritten. Another agent's workspace is still refused. |
+| `--workspaces <dir>` | `agents` | Folder for the agents' workspaces, next to agentx.json. Refused when an agent's folder already exists or overlaps another agent's workspace. |
+| `--force` | — | Use workspace folders that already exist; files in them are never overwritten. A folder that overlaps another agent's workspace is still refused. |
 | `--dry-run` | — | Show what would be added, write nothing. |
 | `-c, --config <path>` | — | Path to agentx.json. |
 

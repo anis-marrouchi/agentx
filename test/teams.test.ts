@@ -188,9 +188,14 @@ describe("install never takes over existing files", () => {
     const config = freshConfig()
     config.agents.mine = { name: "Mine", workspace: join(dir, "reviewer") }
     expect(teamConflicts(config, t, { workspaceRoot: dir, force: true })).toEqual([
-      `folder ${join(dir, "reviewer")} (the workspace of agent "mine")`,
+      `folder ${join(dir, "reviewer")} (overlaps the workspace of agent "mine")`,
     ])
     expect(() => applyTeam(config, t, { workspaceRoot: dir, force: true })).toThrow(/workspace of agent "mine"/)
+
+    // Nor a folder inside one, as with --workspaces pointing into it.
+    const nested = freshConfig()
+    nested.agents.mine = { name: "Mine", workspace: dir }
+    expect(teamConflicts(nested, t, { workspaceRoot: join(dir, "agents"), force: true }).length).toBe(2)
   })
 
   it("keeps a hand-edited skill file instead of overwriting it", () => {

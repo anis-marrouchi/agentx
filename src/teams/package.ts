@@ -171,8 +171,8 @@ export interface InstallPlan {
 
 /**
  * What stops `pkg` from installing into `config`: agent and schedule ids
- * already taken, a team of the same name, and workspace folders that already exist or belong to
- * another agent. An existing folder is accepted with `force`; another
+ * already taken, a team of the same name, and workspace folders that already exist or overlap
+ * another agent's. An existing folder is accepted with `force`; another
  * agent's workspace never is.
  */
 export function teamConflicts(config: any, pkg: TeamPackage, opts?: Pick<InstallOptions, "workspaceRoot" | "force">): string[] {
@@ -190,8 +190,9 @@ export function teamConflicts(config: any, pkg: TeamPackage, opts?: Pick<Install
   }
   for (const id of Object.keys(pkg.agents)) {
     const workspace = resolve(opts.workspaceRoot, id)
-    const owner = owners.get(workspace)
-    if (owner) problems.push(`folder ${workspace} (the workspace of agent "${owner}")`)
+    // The same folder, or one inside the other: either agent would edit the other's files.
+    const owner = [...owners].find(([w]) => w === workspace || workspace.startsWith(w + sep) || w.startsWith(workspace + sep))?.[1]
+    if (owner) problems.push(`folder ${workspace} (overlaps the workspace of agent "${owner}")`)
     else if (!opts.force && existsSync(workspace)) problems.push(`folder ${workspace} (already exists; --force uses it without overwriting its files)`)
   }
   return problems

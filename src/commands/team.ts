@@ -109,6 +109,18 @@ async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
     for (const f of kept) console.log(chalk.dim(`      ${f}`))
   }
 
+  if (plan.channels.length) {
+    console.log()
+    console.log(chalk.bold("  One step left: connect the channel"))
+    // One step per channel kind: a GitLab project is connected once, and
+    // the other agents are reached on it by @mention.
+    const kinds = [...new Set(plan.channels.map((c) => c.kind))]
+    for (const kind of kinds) {
+      const of = plan.channels.filter((c) => c.kind === kind)
+      console.log(`    ${of[0].step}`)
+      for (const c of of) if (c.why) console.log(chalk.dim(`      ${c.agent}: ${c.why}`))
+    }
+  }
   const { delivery } = plan
   if (delivery.schedules.length) {
     console.log()
@@ -122,18 +134,6 @@ async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
     }
   }
 
-  if (plan.channels.length) {
-    console.log()
-    console.log(chalk.bold("  One step left: connect the channel"))
-    // One step per channel kind: a GitLab project is connected once, and
-    // the other agents are reached on it by @mention.
-    const kinds = [...new Set(plan.channels.map((c) => c.kind))]
-    for (const kind of kinds) {
-      const of = plan.channels.filter((c) => c.kind === kind)
-      console.log(`    ${of[0].step}`)
-      for (const c of of) if (c.why) console.log(chalk.dim(`      ${c.agent}: ${c.why}`))
-    }
-  }
   console.log()
 }
 
