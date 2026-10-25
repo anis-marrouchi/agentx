@@ -66,6 +66,7 @@ import { DEFAULT_REACH_SETTINGS } from "@/notify/reach"
 import { ChannelDownError } from "@/channels/router"
 import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
+import { findLeftWork } from "@/agents/resume/work-left"
 import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, spendByChatSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { SignalService, stopAllReport } from "@/agents/signals/service"
@@ -1773,6 +1774,8 @@ export class AgentXDaemon {
           const order = this.signals.stopAllOwner(run.taskId)
           return order ? `stopped by ${order}: it resumes from its plan` : null
         },
+        // Background helpers die with their run; their clones don't (#1256).
+        findLeftWork: (run) => findLeftWork(run),
         notifyOperator: dest
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
           : undefined,
