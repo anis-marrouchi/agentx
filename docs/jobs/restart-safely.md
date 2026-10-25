@@ -218,6 +218,36 @@ Set these in `agentx.json` under `resume`. Every value shown is the default:
 - `directChannels`: non-chat sources to pick up anyway, such as `["voice"]`. Their answer isn't delivered anywhere; only the work gets done. Add a source only when the work is what matters.
 - `"enabled": false` turns picking up off; everything is reported.
 
+## Work that runs past its time limit
+
+Each agent has a time limit for one run, `maxExecutionMinutes` (20 minutes unless you change it). When a run passes it, AgentX stops the run. It then picks the work up once more in the same conversation. The agent is told that it hit its time limit, and which steps it had already taken. It is asked to finish, or to say what is done, what is left and what is blocking it. The answer goes to whoever asked, as usual.
+
+The same exceptions apply as after a restart:
+
+| The run came from | What happens |
+|---|---|
+| A chat, the API, or one agent asking another | It's picked up once more. |
+| A scheduled job | It ends with the time-limit error. The next scheduled run does the work. |
+| A workflow step | It ends with the time-limit error. The workflow decides whether to retry. |
+| Another node (the agent lives there) | That node picks it up itself. |
+
+When the run is not picked up again, its error says why, for example `Claude Code timed out after 30m. … It was not continued (already continued once).`
+
+When one agent sends work to an agent on this machine, the sender waits long enough for the extra run: the time limit once more for each pick-up.
+
+Set it in `agentx.json` under `resume`. The values shown are the defaults:
+
+```json
+"resume": {
+  "timeLimit": { "enabled": true, "maxContinuations": 1 }
+}
+```
+
+- `maxContinuations`: how many times one request is picked up again after its time limit, from 0 to 3.
+- `"enabled": false` turns it off: a run that passes its time limit ends with the error, as before.
+
+If a kind of task always needs longer, raise the agent's `maxExecutionMinutes` instead.
+
 ## Check it worked
 
 To check the restart command:
@@ -262,6 +292,14 @@ To check that cut-off work is picked up:
 3. Within a few seconds the chat shows the "Picking it up again" note, then the answer.
 4. **Terminal:** `agentx daemon logs` shows `Resume: 1 resumed, 0 reported, 0 skipped, 0 failed`.
 
+To check that work past its time limit is picked up:
+
+1. **Terminal:** on a test agent, set `maxExecutionMinutes` to `1` in `agentx.json`.
+2. **Browser or chat:** ask that agent for something that takes a few minutes.
+3. **Terminal:** after a minute, `agentx daemon logs` shows `[resume] … stopped at its 1m time limit; continuing (1/1)`.
+4. The answer arrives in the same chat. If the second run hits the limit too, the error ends with `It was not continued (already continued once).`
+5. **Terminal:** set `maxExecutionMinutes` back.
+
 A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in the first line, instead of `requested by`.
 
 ## If something is wrong
@@ -280,4 +318,5 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 - **`stop` says the daemon is still finishing tasks:** wait, then check with `agentx daemon status` before starting it again.
 - **Another tool got `503 daemon is restarting`:** it asked for new work during a restart. It can try again a little later.
 - **A chat task wasn't picked up:** the log line starting `[resume]` says why. The usual reasons are that it was older than 30 minutes, it was already a second attempt, or there were several restarts in a row.
+- **A task that passed its time limit wasn't picked up again:** the log line `[resume] … not continued — …` says why: it was a scheduled job or a workflow step, it had already been picked up once, or the caller's own time limit left no time. Raise the agent's `maxExecutionMinutes` if the task always needs longer.
 - **You got a "didn't resume" message you didn't expect:** that task came from somewhere with no chat to answer in. Send the request again, or add its source to `directChannels`.

@@ -153,6 +153,13 @@ export interface AgentTask {
   /** Set on the one automatic retry of a run whose preparation steps hit
    *  the pre-spawn deadline (#340). A retry that hits it again is reported. */
   preSpawnRetry?: number
+  /** Set on a run that continues one stopped at its agent's time limit
+   *  (#1257): how many continuations this request has had, and when its
+   *  first run started (a caller's deadline counts from there). */
+  timeLimitContinuation?: number
+  timeLimitStartedAt?: number
+  /** The request as first sent, without the continuation note. */
+  timeLimitRequest?: string
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and

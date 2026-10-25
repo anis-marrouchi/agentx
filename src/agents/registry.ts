@@ -27,6 +27,7 @@ import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
+import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
@@ -638,6 +639,8 @@ export class AgentRegistry {
   }
   /** See setRunNote. */
   private runNote?: (started: AgentXEvents["task:started"]) => string | undefined
+  /** See setTraceToolCalls. */
+  private traceToolCalls?: (traceId: string) => Array<{ action: string | null; inputSummary: string | null }>
   /** Workflow auto-runner — invoked when workflow matching is in `mode: "auto"`
    *  and a candidate workflow's confidence ≥ autoRunThreshold. Wired by the
    *  daemon after the workflow dispatcher is constructed. Returns the runId of
@@ -819,6 +822,12 @@ export class AgentRegistry {
    *  attach; unset, no note is added. */
   setRunNote(note: ((started: AgentXEvents["task:started"]) => string | undefined) | undefined): void {
     this.runNote = note
+  }
+
+  /** Wire the trace lookup a time-limit continuation lists the stopped
+   *  run's tool calls from (#1257). Unset, the note lists none. */
+  setTraceToolCalls(lookup: AgentRegistry["traceToolCalls"]): void {
+    this.traceToolCalls = lookup
   }
 
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
@@ -1292,6 +1301,46 @@ export class AgentRegistry {
         error: `I couldn't get started on this: preparing the run stalled twice (step "${step}"). Please send it again.`,
         errorKind: "interrupted",
       }
+    }
+    // Stopped at the agent's time limit (#1257): continue it in the same
+    // chat, under a cap, so its session carries the work on; otherwise say
+    // why it stopped there. The continuation answers the same caller.
+    const limit = planTimeLimit({
+      error: response.error,
+      errorKind: response.errorKind,
+      viaMesh: response.viaMesh,
+      channel: task.context?.channel,
+      chatId: task.context?.chatId,
+      workflowRunId: task.workflowRunId,
+      continuation: task.timeLimitContinuation ?? 0,
+      timeoutMinutes: task.timeoutMinutes,
+      elapsedMs: Date.now() - (task.timeLimitStartedAt ?? startedAt),
+      callerGone: task.callerSignal?.aborted ?? false,
+      settings: this.config.resume?.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS,
+    })
+    if (limit.action === "continue") {
+      const settings = this.config.resume?.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS
+      const stoppedTrace = task.taskId
+      let toolCalls: Array<{ action: string | null; inputSummary: string | null }> = []
+      try { toolCalls = stoppedTrace && this.traceToolCalls ? this.traceToolCalls(stoppedTrace) : [] } catch { /* the note lists none */ }
+      const note = buildTimeLimitNote(limit.minutes, toolCalls, limit.continuation >= settings.maxContinuations)
+      this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${stoppedTrace ?? "-"}: stopped at its ${limit.minutes}m time limit; continuing (${limit.continuation}/${settings.maxContinuations})`)
+      const request = task.timeLimitRequest ?? task.message
+      return this.execute({
+        ...task,
+        message: `${note}\n${request}`,
+        timeLimitRequest: request,
+        timeLimitContinuation: limit.continuation,
+        timeLimitStartedAt: task.timeLimitStartedAt ?? startedAt,
+        ...(limit.timeoutMinutes ? { timeoutMinutes: limit.timeoutMinutes } : {}),
+        resumedFrom: stoppedTrace ?? task.resumedFrom,
+        runningTaskId: undefined,
+        freshSession: false,
+      }, onDelta, onThinking, onEvent)
+    }
+    if (limit.action === "report") {
+      this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${task.taskId ?? "-"}: stopped at its ${limit.minutes}m time limit; not continued — ${limit.reason}`)
+      response = { ...response, error: reportedTimeLimitError(response.error!, limit.reason) }
     }
     if (task.intentRef) {
       try {
