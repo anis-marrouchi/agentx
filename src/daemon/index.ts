@@ -14,7 +14,8 @@ import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { setDispatchBudget } from "@/agents/claude-code-quota"
-import { budgetConfigFrom, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets } from "@/agents/agent-budget"
+import { budgetConfigFrom, budgetProjectOf, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets, setBudgetProjectResolver } from "@/agents/agent-budget"
+import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { isRestricted } from "@/guard/autonomy"
@@ -65,7 +66,7 @@ import { DEFAULT_REACH_SETTINGS } from "@/notify/reach"
 import { ChannelDownError } from "@/channels/router"
 import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
-import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
+import { getTrace, listTraces, cleanupOrphanedTraces, spendByAgentSince, spendByChatSince, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { SignalService } from "@/agents/signals/service"
 import { StoppedTaskStore } from "@/agents/signals/store"
@@ -1880,8 +1881,14 @@ export class AgentXDaemon {
       applied.push("dispatch-budget")
     }
     // Monthly money budgets (#1162): raising a cap resumes a paused agent.
-    if (JSON.stringify(budgetConfigFrom(this.config)) !== JSON.stringify(budgetConfigFrom(next))) {
+    // A changed project list re-maps the month's spend to projects (#1290).
+    const projectsChanged = JSON.stringify(next.dashboard?.wall?.projects ?? []) !== JSON.stringify(this.config.dashboard?.wall?.projects ?? [])
+    if (projectsChanged || JSON.stringify(budgetConfigFrom(this.config)) !== JSON.stringify(budgetConfigFrom(next))) {
       setAgentBudgets(budgetConfigFrom(next))
+      if (projectsChanged) {
+        setBudgetProjectResolver(budgetProjectResolver(next))
+        this.seedBudgets()
+      }
       // A raised cap lets the messages held for a paused agent run now.
       this.registry.releaseBudgetHolds()
       applied.push("budgets")
@@ -2862,20 +2869,25 @@ export class AgentXDaemon {
    *  cost is added as it completes, and a line it crosses tells the owner
    *  once. The registry refuses runs past a cap (preflightBudgetGate). */
   private startBudgets(): void {
-    if (this.db) {
-      try {
-        seedMonthSpend(spendByAgentSince(this.db, monthStart()))
-      } catch (e: any) {
-        this.log(`  Budgets: couldn't read this month's spend (${e?.message ?? e}); counting from now`)
-      }
-    }
+    this.seedBudgets()
     getAgentEventBus().on("task:completed", (p: AgentXEvents["task:completed"]) => {
-      for (const n of recordAgentSpend(p.agentId, p.costUsd)) {
+      for (const n of recordAgentSpend(p.agentId, p.costUsd, undefined, budgetProjectOf(p.agentId, p.chatId))) {
         this.log(`[budget] ${n.title}: ${n.message}`)
         void this.notifyOwner(n.title, n.message, "budget", n.kind === "cap" ? 5 : 4, { key: `budget:${n.kind}:${n.scope}:${n.month}:${n.capUsd}` })
           .catch((e) => this.log(`[budget] couldn't tell the owner (${e?.message ?? e})`))
       }
     })
+  }
+
+  /** The month's spend per agent and per project (#1290), from the traces. */
+  private seedBudgets(): void {
+    if (!this.db) return
+    try {
+      const since = monthStart()
+      seedMonthSpend(spendByAgentSince(this.db, since), undefined, spendByProject(spendByChatSince(this.db, since), budgetProjectOf))
+    } catch (e: any) {
+      this.log(`  Budgets: couldn't read this month's spend (${e?.message ?? e}); counting from now`)
+    }
   }
 
   /** Tell the owner through the notify path: a push to the default
