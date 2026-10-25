@@ -36,6 +36,8 @@ Your installed version may differ. `agentx <command> --help` always shows the fl
 
 `agentx init`: Initialize agentx configuration in the current directory.
 
+It writes `agentx.json` with one agent, `assistant`, whose workspace is `agents/assistant` (as with `agentx start`), so `agentx team add` can put a team's agents next to it in `agents/`.
+
 | Flag | Default | What it does |
 |---|---|---|
 | `--force` | — | Overwrite existing config. |
