@@ -74,6 +74,8 @@ A `report` run may also use the `agentx_content` tool to read past posts and the
 
 A `report` run cannot stop to ask you for permission, because nobody is there to answer. So a tool call that `report` allows is allowed outright, even when the agent's own `permissionMode` would normally ask first. The workspace guard can still block it.
 
+Other tools added through MCP (a way to plug extra tools into an agent) are judged by their names. A `report` run may use a tool whose name reads like a lookup, such as `get_status` or `list_issues`. It is blocked when the name, or the `action` it is asked to take, names a change such as `create`, `set`, `send` or `delete`.
+
 ## Time limits and cancel
 
 A run is one piece of work an agent does, such as answering a message or running a schedule. Each run takes one of the agent's slots (`maxConcurrent`). A run that never finishes keeps its slot, so AgentX gives runs a time limit and lets you stop them.

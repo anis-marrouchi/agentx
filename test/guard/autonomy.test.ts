@@ -97,6 +97,14 @@ describe("report — read-only", () => {
     expect(allowed("report", { tool: "mcp__custom__frobnicate" })).toBe(false)
   })
 
+  it("a read-named MCP tool is blocked when its action argument changes state", () => {
+    expect(allowed("report", { tool: "mcp__custom__get_status", action: "list" })).toBe(true)
+    expect(allowed("report", { tool: "mcp__custom__get_status", action: "catalog" })).toBe(true)
+    for (const action of ["set", "delete", "createItem", "send_message"]) {
+      expect(allowed("report", { tool: "mcp__custom__get_status", action })).toBe(false)
+    }
+  })
+
   it("agentx_content: voice, calendar, status and draft (held for approval) are allowed; nothing else (#1352)", () => {
     for (const action of ["voice", "calendar", "status", "draft", "Draft"]) {
       expect(allowed("report", { tool: "mcp__agentx__agentx_content", action })).toBe(true)
