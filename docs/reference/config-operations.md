@@ -13,7 +13,7 @@ The dashboard is the web page served by `agentx board serve`. See [Dashboard](/d
 | `dashboard.enabled` | boolean | `false` | Turns the dashboard server on. |
 | `dashboard.port` | number | `4202` | Port the dashboard listens on. |
 | `dashboard.bind` | string | `"127.0.0.1"` | Address the dashboard listens on. Keep it local unless a reverse proxy sits in front ([your own address](/jobs/reverse-proxy)). |
-| `dashboard.token` | string | — | Bearer token required for changes made through the dashboard. Unset means changes need no token. |
+| `dashboard.token` | string | — | Bearer token required for changes made through the dashboard and for its admin data, such as the Health, Cost and Ledger pages' spend, budgets, errors and checks. Pages served by the dashboard send it for you. Unset means no token is needed. |
 | `dashboard.daemonUrl` | string | `"http://localhost:18800"` | The main daemon the dashboard reads live data from. |
 | `dashboard.daemons` | list of objects | `[]` | Extra daemons to show, beyond the peers the main daemon already knows. |
 | `dashboard.draftAgent` | string | — | Agent that drafts text when you create an issue from a board. |

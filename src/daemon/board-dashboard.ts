@@ -610,7 +610,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       res.end()
       return
     }
-    handleObservabilityGet(req, res, buildTopbarPeers(ctx.config))
+    if (!pageAllowed(req, res, ctx, path)) return
+    handleObservabilityGet(req, res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
     return
   }
   // ── Cross-mesh API proxy (must precede every /api/admin/* handler) ──
@@ -705,9 +706,6 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     }
   }
 
-  if (method === "GET" && path.startsWith("/api/admin/observability/")) {
-    if (await handleObservabilityApi(req, res, path, ctx.config)) return
-  }
   // /api/admin/logs/stream — SSE tail of the daemon's stdout. Mirrors
   // `agentx daemon logs -f`. On systemd-managed nodes this calls
   // journalctl; on others it falls back to /tmp/agentx-daemon.log.
@@ -715,36 +713,21 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     await streamDaemonLogs(req, res)
     return
   }
-  // /api/admin/doctor — preflight check JSON. Same shape as
-  // `agentx doctor --json`, served in-process.
-  if (method === "GET" && path === "/api/admin/doctor") {
-    try {
-      const { runDoctorChecks } = await import("@/commands/doctor")
-      const url = new URL(req.url || "/", "http://_")
-      const running = url.searchParams.get("running") !== "false"
-      const result = await runDoctorChecks({ running })
-      sendJson(res, 200, result)
-    } catch (e: any) {
-      sendJson(res, 500, { error: e?.message || String(e) })
-    }
-    return
-  }
   // /admin/ledger — read-only window over .agentx/intent/ledger.sqlite.
   // Mirrors `agentx ledger stats/events/divergences/active`. Replay and
   // lineage stay CLI-only.
   if (method === "GET" && path === "/admin/ledger") {
+    if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderLedgerPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderLedgerPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
-  }
-  if (method === "GET" && path.startsWith("/api/admin/ledger/")) {
-    if (await handleLedgerApi(req, res, path)) return
   }
   // /admin/cost — token-spend page. Replaces the standalone
   // `agentx usage serve` (port 4201) and the Cost tab inside Health.
   if (method === "GET" && path === "/admin/cost") {
+    if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   // /admin/projects — aggregated per-project view. Data via
@@ -804,6 +787,28 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       sendJson(res, 401, { error: "unauthorized" })
       return
     }
+  }
+  // Health, Cost and Ledger reads (#1302): spend, budgets, errors, doctor
+  // output. After the token gate above; their pages send dashboard.token.
+  if (method === "GET" && path.startsWith("/api/admin/observability/")) {
+    if (await handleObservabilityApi(req, res, path, ctx.config)) return
+  }
+  // /api/admin/doctor — preflight check JSON. Same shape as
+  // `agentx doctor --json`, served in-process.
+  if (method === "GET" && path === "/api/admin/doctor") {
+    try {
+      const { runDoctorChecks } = await import("@/commands/doctor")
+      const url = new URL(req.url || "/", "http://_")
+      const running = url.searchParams.get("running") !== "false"
+      const result = await runDoctorChecks({ running })
+      sendJson(res, 200, result)
+    } catch (e: any) {
+      sendJson(res, 500, { error: e?.message || String(e) })
+    }
+    return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/ledger/")) {
+    if (await handleLedgerApi(req, res, path)) return
   }
   // Set or raise a monthly budget from the Cost page (#1290), after the
   // token gate above. { scope: agent|project|fleet, id?, monthlyUsd, warnRatio? }
