@@ -321,10 +321,10 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 
 ## Check it worked
 
-1. **Browser:** open the dashboard. The Wall opens, with the feed in the middle and **Running now** beside it (above it on a phone).
+1. **Browser:** open the dashboard. The Wall opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Running now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Live page opens, and its **Wall** tab brings you back.
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**.
-4. When an agent raises a decision card while working on a task, choose **Waiting on the owner** under **Status**. The card shows on that task's post, with its expiry and what happens with no answer.
+4. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or **Filters**, then **Waiting on the owner** under **Status**). The card shows on that task's post, with its expiry and what happens with no answer.
 5. Open `/live` in the browser. The classic Live page still opens.
 6. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 7. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
