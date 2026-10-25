@@ -65,6 +65,8 @@ const teamScheduleSchema = z.object({
    *  package: install points it at `notifications.destination` (the chat
    *  `connect telegram` captures), or leaves it waiting for one. */
   deliver: z.boolean().default(true),
+  /** Flag answer lines that state a fact without a source link (#1288). */
+  requireSources: z.boolean().optional(),
 }).strict()
 
 export const TEAM_CHANNEL_KINDS = ["telegram", "whatsapp", "gitlab", "github"] as const
@@ -249,6 +251,7 @@ export function applyTeam(config: any, pkg: TeamPackage, opts: InstallOptions): 
     if (s.maxOutputTokens !== undefined) job.maxOutputTokens = s.maxOutputTokens
     if (s.taskType) job.taskType = s.taskType
     if (s.autonomy) job.autonomy = s.autonomy
+    if (s.requireSources) job.requireSources = true
     if (s.deliver) {
       // `deliverResult: true` with no `notify` marks a schedule that waits
       // for a destination; fillPendingDelivery completes it.
@@ -420,6 +423,7 @@ export function buildTeamPackage(config: any, name: string, opts: ExportOptions 
       maxOutputTokens: c.maxOutputTokens,
       taskType: c.taskType,
       autonomy: c.autonomy,
+      requireSources: c.requireSources === true ? true : undefined,
       onError: c.onError === undefined ? undefined : Array.isArray(c.onError) ? c.onError : [c.onError],
       // Whether answers go to the owner, never where.
       deliver: c.deliverResult === true || (Boolean(c.notify) && c.deliverResult !== false),

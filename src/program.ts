@@ -36,6 +36,7 @@ import { rag as ragCmd } from "@/commands/rag"
 import { backlog } from "@/commands/backlog"
 import { schedule } from "@/commands/schedule"
 import { team } from "@/commands/team"
+import { sales } from "@/commands/sales"
 import { approvals } from "@/commands/approvals"
 import { people } from "@/commands/people"
 import { requests } from "@/commands/requests"
@@ -106,6 +107,7 @@ export async function buildProgram(): Promise<Command> {
     daemon, doctor,              // operate
     agent, channel, schedule,    // configure the things that carry work
     team,                        // ready-made teams, installed in one step
+    sales,                       // the sales team's leads, opt-outs and competitor watch
     approvals,                   // decisions waiting for you
     requests,                    // what you asked for that is not finished
     requestStatus,               // a request's state, where it was made
