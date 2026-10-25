@@ -385,6 +385,7 @@ No flags.
 | `--id <name>` | — | Explicit cron id (default: auto-slug of &lt;when&gt;-&lt;agent&gt;). |
 | `--notify <target>` | — | "me" (use notifications.destination) or "channel:chatId[:accountId]". |
 | `--no-deliver` | — | Send only failures to `--notify`, not each run's answer. |
+| `--only-exceptions` | — | The run decides: an answer of NOTHING_TO_REPORT sends nothing to `--notify`. |
 | `--on-error <modes>` | — | Comma list of "log\|notify\|disable" (default: log; notify implies "notify"). |
 | `--timezone <tz>` | `Africa/Tunis` | IANA timezone (default: Africa/Tunis). |
 | `--timeout <seconds>` | `600` | Max run time. |

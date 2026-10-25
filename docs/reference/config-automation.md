@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, the weekly quality report, resuming after a restart, due reminders, native apps and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, the daily exceptions digest, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, the weekly quality report, resuming after a restart, due reminders, native apps and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -30,6 +30,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `notify.chatId` | string | required | The chat on that channel. |
 | `notify.accountId` | string | — | Which account on that channel, when you have more than one. |
 | `deliverResult` | boolean | `true` | Sends the answer from each successful run to `notify`. Set `false` to send only failure messages there. Without `notify`, `true` marks a schedule waiting for a destination: `agentx connect telegram` (when it saves your chat) fills it in for agents that belong to a team, and `agentx team notify` fills it in for a team's schedules. |
+| `report` | `"always"` \| `"exceptions"` | `"always"` | `"exceptions"`: the run decides whether there is anything to say. The agent is asked to reply with exactly `NOTHING_TO_REPORT` when all is well, and such a run sends nothing to `notify`. Failure messages are sent either way. See [report only when something is wrong](/jobs/daily-report#report-only-when-something-is-wrong). |
 | `fireToken` | string | — | Secret that lets another system start the job now. See [fire a routine](/jobs/fire-a-routine). |
 | `createdBy` | string | — | The agent that created the job from chat. Set by AgentX; an agent may only manage jobs it created, unless it is an admin. |
 | `approval` | object | — | A change an agent asked for that waits for you. Set by AgentX; cleared by `agentx schedule approve` or `agentx schedule reject`. |
@@ -47,6 +48,23 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
     "onError": ["notify", "disable"],
     "notify": { "channel": "telegram", "chatId": "123456789" }
   }
+}
+```
+
+## `exceptionsDigest`
+
+One message a day that lists only what is wrong on this machine: schedules whose latest run failed or that did not run when due, stuck open requests, and agents paused by their budget. When nothing is wrong, nothing is sent. Off by default. Guide: [Get a daily list of what is wrong](/jobs/exceptions-digest).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `exceptionsDigest.enabled` | boolean | `false` | Turns the digest on. |
+| `exceptionsDigest.time` | string (`HH:MM`, 24-hour) | `"09:00"` | When it goes out each day. |
+| `exceptionsDigest.timezone` | string | — | Time zone `time` is read in, for example `Europe/Paris`. Unset: this computer's. |
+| `exceptionsDigest.destination` | object | — | Where it goes: `channel`, `chatId` and optional `accountId`. Unset: `notifications.destination`. |
+
+```json
+{
+  "exceptionsDigest": { "enabled": true, "time": "08:30", "timezone": "Europe/Paris" }
 }
 ```
 

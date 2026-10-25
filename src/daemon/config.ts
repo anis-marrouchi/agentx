@@ -812,6 +812,11 @@ const cronJobSchema = z.object({
    *  to report reports there, including the chat an agent's schedule was
    *  requested from (#738). `false` keeps `notify` for failure alerts only. */
   deliverResult: z.boolean().optional(),
+  /** `exceptions`: the run decides whether there is anything to say. It is
+   *  asked to answer exactly NOTHING_TO_REPORT when all is as expected, and
+   *  such a quiet run sends nothing to `notify` (#1289). Failures are
+   *  alerted either way. Unset or `always`: every answer is sent. */
+  report: z.enum(["always", "exceptions"]).optional(),
   /** Secret that lets an external system fire this job now via
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */
@@ -1861,6 +1866,24 @@ export const daemonConfigSchema = z.object({
   }).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
+  /** One message a day that lists only what is wrong: failed or missed
+   *  schedules, stuck requests, paused agents (#1289). Nothing wrong,
+   *  nothing sent. See src/crons/exceptions-digest.ts. */
+  exceptionsDigest: z.object({
+    enabled: z.boolean().default(false),
+    /** Local time, 24-hour HH:MM. */
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM, 24-hour").default("09:00"),
+    /** IANA timezone for `time`. Unset: this machine's. */
+    timezone: z.string().refine((tz) => {
+      try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true } catch { return false }
+    }, "unknown timezone").optional(),
+    /** Where it goes. Unset: notifications.destination. */
+    destination: z.object({
+      channel: z.string(),
+      chatId: z.string(),
+      accountId: z.string().optional(),
+    }).optional(),
+  }).default({}),
   /** Notes agents leave for the wiki observe/sweep run (#825). */
   wikiNotes: wikiNotesSchema.default({}),
   services: z.record(z.string(), serviceSchema).default({}),

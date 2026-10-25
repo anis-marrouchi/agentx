@@ -10,6 +10,7 @@ import {
   isValidScheduleId,
   isValidTimezone,
   nextFireTime,
+  notifyScope,
   SUPPORTED_PHRASES_HINT,
   type NotifyTarget,
   type ScheduleApproval,
@@ -110,7 +111,7 @@ function describeJob(id: string, job: any, now: Date): string {
     `- ${id} [${state}] ${job.schedule} — ${humanizeCron(job.schedule)} (${tz})`,
     `  agent: ${job.agent}; created by: ${job.createdBy || "operator"}; next: ${next}`,
   ]
-  if (job.notify) lines.push(`  notify: ${job.notify.channel} ${job.notify.chatId}${job.deliverResult === false ? " (failures only)" : " (results and failures)"}`)
+  if (job.notify) lines.push(`  notify: ${job.notify.channel} ${job.notify.chatId} ${notifyScope(job)}`)
   if (job.command) lines.push(`  command: ${preview(String(job.command))}`)
   else if (job.prompt) lines.push(`  prompt: ${preview(String(job.prompt))}`)
   return lines.join("\n")
@@ -192,6 +193,8 @@ export async function runScheduleTool(
 
     const notify = resolveNotify(args, caller)
     if (notify === "invalid") return 'Error: `notify` must be "here", "none", or "channel:chatId".'
+    const report = str(args.report)
+    if (report && report !== "always" && report !== "exceptions") return 'Error: `report` must be "always" or "exceptions".'
 
     const approval: ScheduleApproval = {
       action: "create",
@@ -204,6 +207,7 @@ export async function runScheduleTool(
       prompt,
       timezone,
       notify,
+      report: report as "always" | "exceptions" | undefined,
       enabled: false,
       createdBy: caller.agentId,
       approval,
@@ -219,7 +223,7 @@ export async function runScheduleTool(
       `When: ${parsed.human} — cron \`${parsed.cron}\` (${timezone})`,
       `Next fire: ${next}`,
       `Agent: ${agent}`,
-      notify ? `Results and failures go to: ${notify.channel} ${notify.chatId}${notify.channel === "voice" ? " (as a push notification)" : ""}` : "Results go to: run log only (no chat)",
+      notify ? `${report === "exceptions" ? "Exceptions" : "Results"} and failures go to: ${notify.channel} ${notify.chatId}${notify.channel === "voice" ? " (as a push notification)" : ""}` : "Results go to: run log only (no chat)",
       `Prompt: ${preview(prompt, 400)}`,
       "",
       `Approve: agentx schedule approve ${jobId}`,

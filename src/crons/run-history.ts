@@ -21,6 +21,8 @@ export interface CronRunHistoryItem {
   rootTaskId?: string;
   traceId?: string;
   sessionId?: string;
+  /** A report-only-exceptions run that had nothing to report (#1289). */
+  quiet?: boolean;
 }
 
 export interface ReadCronRunHistoryOptions {
@@ -223,6 +225,8 @@ function parseRun(
       ? value.retryAttempt
       : 0,
   };
+
+  if (value.quiet === true && value.success === true) run.quiet = true;
 
   for (const field of ID_FIELDS) {
     const id = value[field];

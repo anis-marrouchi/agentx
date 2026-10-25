@@ -1,6 +1,7 @@
 import type { CronValue } from "./value-line"
 import type { AutonomyLevel } from "@/guard/autonomy"
 import type { AutonomyBlock } from "@/guard/autonomy-enforce"
+import type { CronReportMode } from "./quiet"
 
 // --- Cron system types ---
 
@@ -31,6 +32,8 @@ export interface CronJobState {
   /** Send each successful run's answer to the job's `notify` target.
    *  True whenever the job has `notify`, unless `deliverResult: false`. */
   deliverResult?: boolean
+  /** `exceptions`: a run that answers NOTHING_TO_REPORT sends nothing (#1289). */
+  report?: CronReportMode
   lastRun?: Date
   nextRun?: Date
   lastSuccess?: Date
@@ -73,4 +76,6 @@ export interface CronRunResult {
   /** Tool calls the autonomy guard blocked — what the routine would have
    *  done with more power. */
   autonomyBlocks?: AutonomyBlock[]
+  /** A `report: "exceptions"` run that had nothing to report (#1289). */
+  quiet?: boolean
 }

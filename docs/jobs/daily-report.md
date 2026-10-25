@@ -71,11 +71,46 @@ To be told only when the schedule **fails**, and not get the reports, add `--no-
 
 An agent you ask from a chat ("every day at 9, send me a report") sets this up for you: see [Ask an agent to schedule something](../automations/schedules-from-chat.md).
 
+## Report only when something is wrong
+
+A check that runs every day and says "all fine" every day soon gets ignored. Set the schedule to report only exceptions, and the agent decides on each run whether there is anything to say. When everything is as expected, nothing is sent.
+
+How it works: AgentX adds one line to the end of the prompt, asking the agent to reply with exactly `NOTHING_TO_REPORT` when all is well. A run that answers with that word sends nothing to the chat. Any other answer is sent as usual. A failed run still sends its short failure message.
+
+### From the terminal
+
+1. **Terminal:** preview the schedule. Replace `reporter` with one of your agent IDs:
+   ```sh
+   agentx schedule "daily at 7am" --agent reporter --do "Check that last night's backups finished and are less than a day old" --notify me --only-exceptions --dry-run
+   ```
+2. Read the preview. The `Notify:` line ends with `(exceptions and failures)`.
+3. **Terminal:** run the same command again without `--dry-run` to save it.
+
+### In `agentx.json`
+
+1. Open `agentx.json` in a text editor.
+2. Find the schedule under `crons`.
+3. Add `"report": "exceptions"`:
+   ```json
+   "backup-check": {
+     "schedule": "0 7 * * *",
+     "agent": "reporter",
+     "prompt": "Check that last night's backups finished and are less than a day old",
+     "notify": { "channel": "telegram", "chatId": "123456789" },
+     "report": "exceptions"
+   }
+   ```
+4. Save the file. The daemon picks up the change by itself.
+
+Write the prompt so the agent knows what "wrong" means: name what to check and the limit, such as "less than a day old". Each quiet run is still kept, so you can open it in **Operations** to see what the agent checked.
+
+To get one message a day that lists every failed or missed schedule, stuck request and paused agent, and nothing when all is well, see [Get a daily list of what is wrong](./exceptions-digest.md).
+
 ## Check it worked
 
 1. **Browser:** in **Settings › Schedules**, the new schedule appears in the list with its timing and agent.
 2. **Terminal:** `agentx schedule list` shows it with a plain-English description of when it runs.
-3. If you gave it a chat: after its first run time, the report arrives in that chat.
+3. If you gave it a chat: after its first run time, the report arrives in that chat. For a schedule that reports only exceptions, nothing arrives when all is well: open the run in **Operations** instead (next step).
 4. After its first run time, **Browser:** open **Operations**, switch the view to **Operations**, and find the schedule under **Today's automations**. Its drawer lists the run with an **Open** link. See [Operations](../dashboard/operations.md).
 
 ## If something is wrong
@@ -85,4 +120,6 @@ An agent you ask from a chat ("every day at 9, send me a report") sets this up f
 - **`Cron "…" already exists`:** pick another name, or delete the old schedule first.
 - **Nothing ran:** check that the daemon is running with `agentx daemon status`, and that the schedule is switched on (`agentx schedule on <id>`).
 - **It ran but no message arrived:** run `agentx schedule list`. The schedule needs a `notify:` line that ends with `(results and failures)`. If there is no `notify:` line, follow [Deliver the report to a chat](#deliver-the-report-to-a-chat). If it says `(failures only)`, remove `"deliverResult": false` from the schedule in `agentx.json`. If the line is there, check the run in **Operations**: a run with an empty answer sends nothing.
+- **A report-only-exceptions schedule sends "all fine" messages:** the agent did not answer with the exact word. Add to the prompt: "If all is well, reply with only NOTHING_TO_REPORT."
+- **A report-only-exceptions schedule never sends anything:** open its runs in **Operations**. If they all say `NOTHING_TO_REPORT`, make the prompt say plainly what counts as wrong.
 - **The run failed:** open it from Operations to read the error. See also [It's not answering](../help/its-not-answering.md).
