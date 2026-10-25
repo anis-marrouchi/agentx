@@ -30,6 +30,9 @@ const shots = [
   // The Wall (#1180): the home page, a post's thread, the list, and a phone.
   { name: "wall/wall", path: "/wall", wait: ".wp" },
   { name: "wall/thread", path: "/wall", wait: ".wp", steps: [{ click: "#post-req-docs-wall-handoff [data-thread]" }, { wait: "#post-req-docs-wall-handoff .wt li" }], clipTo: "#post-req-docs-wall-handoff" },
+  // #1242: a post leads with its result; one tap opens the request under it.
+  { name: "wall/result-first", path: "/wall#status=", wait: "#post-req-docs-wall-done .wp__result", clipTo: "#post-req-docs-wall-done" },
+  { name: "wall/result-request", path: "/wall#status=", wait: "#post-req-docs-wall-done .wp__ask", steps: [{ click: "#post-req-docs-wall-done .wp__ask summary" }, { wait: "#post-req-docs-wall-done .wp__ask[open]" }], clipTo: "#post-req-docs-wall-done" },
   { name: "wall/list", path: "/wall#status=&view=list", wait: ".wl" },
   { name: "wall/concurrent", path: "/wall", wait: "#post-req-docs-wall-question .ax-conc", clipTo: "#post-req-docs-wall-question" },
   // A pending decision card on its post (#1185), under "Waiting on the owner".

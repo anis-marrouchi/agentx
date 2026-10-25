@@ -185,6 +185,14 @@ const WALL_PAGE_CSS = `
 .wp__via { color: var(--ax-muted); font-size: var(--ax-fs-xs); margin-top: 1px; overflow-wrap: anywhere; }
 .wp__via b { color: var(--ax-text-2); font-weight: 500; }
 .wp__title { font-size: var(--ax-fs); font-weight: 700; line-height: 1.35; margin: 2px 0 0; overflow-wrap: anywhere; }
+/* Result first (#1242): the answer is the post, the request opens under it. */
+.wp__result { font-size: var(--ax-fs); line-height: 1.4; margin: 2px 0 0; overflow-wrap: anywhere; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+.wp__from { color: var(--ax-muted); font-size: var(--ax-fs-xs); margin-top: 2px; }
+.wp__from a { color: inherit; }
+.wp__ask { margin-top: 6px; border-left: 2px solid var(--ax-border); padding-left: 8px; font-size: var(--ax-fs-sm); }
+.wp__ask summary { cursor: pointer; color: var(--ax-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wp__ask summary .k { color: var(--ax-text-2); font-weight: 600; }
+.wp__ask[open] summary { white-space: normal; color: var(--ax-text); }
 .chip { display: inline-block; font-size: var(--ax-fs-xs); line-height: 1.5; border-radius: var(--ax-radius-pill); padding: 0 9px; background: var(--ax-blue-t, var(--ax-surface-2)); color: var(--ax-accent); white-space: nowrap; }
 .chip--done { background: color-mix(in srgb, var(--ax-green) 15%, transparent); color: var(--ax-green); }
 .chip--warn { background: var(--ax-amber-t, color-mix(in srgb, var(--ax-amber) 18%, transparent)); color: var(--ax-amber-ink, var(--ax-warn)); }

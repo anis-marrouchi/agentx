@@ -34,6 +34,10 @@ import { blockerOf, type WallBlocker } from "./wall-blocks"
 // A post's project and its stalled mark come from the project mapping
 // (#1190, ./wall-projects); the list reply carries one overview row per
 // project with its open, in progress, blocked and stalled counts.
+//
+// A post leads with its result (#1242): what its own last run answered,
+// else what it was closed with. The request it answers is the post's own
+// record, opened from the result. No result recorded: the request alone.
 
 export const WALL_PREFIX = "/api/admin/wall"
 const HOUR = 3_600_000
@@ -84,6 +88,19 @@ export interface WallRun {
   error: string | null
   channel: string | null
   chatId: string | null
+  /** The run's final reply. Never sent as is: only a post's result reads it. */
+  reply: string | null
+}
+
+/** What a post delivered or answered (#1242): its own last run that ended
+ *  ok with a reply, else the proof or reason it was closed with. */
+export interface WallResult {
+  text: string
+  at: number
+  from: "reply" | "close"
+  /** The run the reply came from. Null for a close. */
+  taskId: string | null
+  agentId: string | null
 }
 
 export interface WallPost {
@@ -137,6 +154,9 @@ export interface WallPost {
    *  each linked by its own id (#1184). */
   comments: WallForgeComment[]
   lastRun: { taskId: string; agentId: string } | null
+  /** The result, which the feed shows first; the request sits behind it.
+   *  Null: nothing delivered or answered yet. */
+  result: WallResult | null
   /** Runs of this post that overlapped another run on the same chat or in
    *  the same worktree, with both run ids (#1187). Empty: none. */
   concurrent: RunOverlap[]
@@ -203,7 +223,7 @@ function runsOf(db: Database.Database | null, requestId: string): WallRun[] {
     return (db.prepare(
       `SELECT l.ref AS taskId, t.agent_id AS agentId, t.status AS status, t.started_at AS startedAt,
               t.finished_at AS finishedAt, t.duration_ms AS durationMs, t.error AS error,
-              t.channel AS channel, t.chat_id AS chatId
+              t.channel AS channel, t.chat_id AS chatId, t.final_response AS reply
        FROM request_links l LEFT JOIN task_traces t ON t.task_id = l.ref
        WHERE l.request_id = ? AND l.kind = 'run' ORDER BY l.at, l.rowid`,
     ).all(requestId) as WallRun[])
@@ -213,6 +233,23 @@ function runsOf(db: Database.Database | null, requestId: string): WallRun[] {
 }
 
 const FAILED = new Set(["error", "timeout"])
+
+/** A result as written, line breaks and links kept (summarize() drops
+ *  markdown marks, "_" in links too), cut to the post's length. */
+function resultText(s: string): string {
+  const text = redactSecrets(s.trim().replace(/\n{3,}/g, "\n\n"))
+  return text.length > TEXT_MAX ? `${text.slice(0, TEXT_MAX - 1).trimEnd()}…` : text
+}
+
+/** The post's result: the newest of its own runs that ended ok with a
+ *  reply, else what it was closed with. Nothing recorded: null, no guess. */
+export function resultOf(r: Pick<RequestRecord, "closedAt" | "evidence" | "closeReason">, runs: WallRun[]): WallResult | null {
+  const run = [...runs].reverse().find((x) => x.status === "ok" && x.reply?.trim())
+  if (run) return { text: resultText(run.reply!), at: run.finishedAt ?? run.startedAt ?? 0, from: "reply", taskId: run.taskId, agentId: run.agentId }
+  const why = r.evidence ?? r.closeReason
+  if (r.closedAt && why?.trim()) return { text: resultText(why), at: r.closedAt, from: "close", taskId: null, agentId: null }
+  return null
+}
 
 /** How far back a run that overlaps one of a post's runs may have started. */
 const OVERLAP_LOOKBACK = DAY
@@ -390,6 +427,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     forgeState: null,
     comments: forgeCommentsOf({ home: r.home, group: { channel: r.channel, chatId: r.chatId }, createdAt: r.createdAt, closedAt: r.closedAt }, deps.db, deps.gitlabUrl, deps.now),
     lastRun: last ? { taskId: last.taskId, agentId: last.agentId! } : null,
+    result: resultOf(r, runs),
     concurrent: concurrentOf(runs, deps),
     ownerCards: ownerCardsOf(r.id, deps),
     qa: r.qa ? { ...r.qa, note: r.qa.note ? redactSecrets(r.qa.note) : null } : null,

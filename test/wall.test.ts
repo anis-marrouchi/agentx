@@ -155,6 +155,22 @@ describe("posts", () => {
     expect(JSON.stringify(thread)).not.toContain("supersecretvalue123")
   })
 
+  it("leads with the result: its own last ok reply, else the close, else none (#1242)", () => {
+    const posts = wallPosts(deps(), 7)
+    const r1 = posts.find((p) => p.id === "r1")!
+    expect(r1.result).toMatchObject({ from: "reply", taskId: "t1", agentId: "coder" })
+    expect(r1.result!.text).toContain("Asked @pm to check")
+    // r2's runs all failed: no result, and nothing guessed from the hand-off or the chat.
+    expect(posts.find((p) => p.id === "r2")!.result).toBeNull()
+    expect(posts.find((p) => p.id === "r3")!.result).toMatchObject({ from: "reply", text: "Done", taskId: "t5" })
+    // Closed with no run recorded: the proof it was closed with.
+    const closedOnly = wallPost({ ...store.get("r3")!, id: "r-no-run" }, deps())
+    expect(closedOnly.result).toMatchObject({ from: "close", taskId: null, at: T0 + 9000 })
+    expect(closedOnly.result!.text).toContain("merge_requests/9")
+    // Runs' raw replies never ride along on the post.
+    expect(JSON.stringify(posts)).not.toContain("unrelated chat-A turn")
+  })
+
   it("redacts the proof and keeps a link a link", () => {
     const r3 = { ...store.get("r3")!, evidence: "https://gitlab.example.com/acme/api/-/merge_requests/9 token=supersecretvalue123" }
     const post = wallPost(r3, deps())

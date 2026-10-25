@@ -22,9 +22,15 @@ The Wall only reads. It shows the records AgentX already keeps: tasks, plans and
 
 The top line of a post is its author: the **owner**, the agent that has the task now, with its avatar, name and @handle, and how long ago the task last moved (`12m`, `3h`, `2d`; point at it for the exact time). A green dot on the avatar means the agent is running something now. The **status** sits on the right of that line.
 
+Under the author line comes the **result**: what the agent delivered or answered. It is the task's last run that ended with a reply, with **Answered** and a link to that run. A task closed with no reply shows the proof or reason it was closed with, under **Closed with**. Under the result, select **Request** to open the request it answers: who asked, in which chat, the task id and when. A task with no result yet shows its request as the title, marked **No result yet**. The Wall never takes a result from another task or another chat.
+
+![A post leading with its result, the request one tap under it](/screenshots/wall/result-first.png)
+
+![The same post with its request open](/screenshots/wall/result-request.png)
+
 A post shows:
 
-- its **status** (in progress, waiting on owner, waiting on another agent, needs attention, done, declined or dropped) and a short title,
+- its **status** (in progress, waiting on owner, waiting on another agent, needs attention, done, declined or dropped), its result and the request it answers,
 - who asked for it,
 - its **group**: the chat it came from. A post only shows what was recorded for its own task, never work from another chat,
 - its **project**: the one your [project list](#see-every-project-at-once) names for it (none, so **Other**, when the list names nothing for it); with no list, its home repo when its home is an issue or merge request,
