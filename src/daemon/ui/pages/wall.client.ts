@@ -447,6 +447,22 @@ export const WALL_PAGE_SCRIPT = String.raw`
     var since = Date.now() - DAY;
     return ((S.wf && S.wf.runs) || []).filter(function (r) { return r.status === 'failed' && Date.parse(r.updatedAt) >= since; });
   }
+  // Open issues a reporting job opened, one row per dedupe signature (#1186).
+  // Absent unless a node sets wall.reportedIssues.
+  function reportedHtml() {
+    var all = (S.data && S.data.reported) || [];
+    function forge(f) { return f === 'github' ? 'GitHub' : 'GitLab'; }
+    return all.map(function (r) {
+      var rows = (r.groups || []).map(function (g) {
+        var link = /^https?:\/\//.test(g.url) ? ' · <a href="' + esc(g.url) + '" target="_blank" rel="noopener" title="' + esc(g.title) + '">' + esc(g.ref) + '</a>' : '';
+        return '<li><b>' + esc(g.signature) + '</b> ×' + esc(g.count) + ', last seen ' + when(g.lastAt) + link + '</li>';
+      });
+      var notes = (r.unread || []).map(function (u) { return '<p class="ax-wall__empty">Couldn\'t read ' + esc(u.project) + ' on ' + forge(u.forge) + ': ' + esc(u.why) + '</p>'; })
+        .concat((r.truncated || []).map(function (t) { return '<p class="ax-wall__empty">' + esc(t.project) + ' on ' + forge(t.forge) + ': only the newest 100 issues are grouped.</p>'; }));
+      var title = 'Reported issues labelled ' + esc(r.label) + (all.length > 1 && r.node ? ' on ' + esc(r.node.name) : '');
+      return '<div class="wf"><h3>' + title + '</h3>' + (rows.length ? '<ul>' + rows.join('') + '</ul>' : (r.unread || []).length ? '' : '<p class="ax-wall__empty">No open issues with this label.</p>') + notes.join('') + '</div>';
+    }).join('');
+  }
   function failuresHtml() {
     var runs = (S.data && S.data.failures) || [], crons = cronFailures(), wfs = workflowFailures();
     function block(title, rows, empty) { return '<div class="wf"><h3>' + title + '</h3>' + (rows.length ? '<ul>' + rows.join('') + '</ul>' : '<p class="ax-wall__empty">' + empty + '</p>') + '</div>'; }
@@ -454,6 +470,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       return '<li><b>' + esc(f.agentId) + '</b> ' + (f.count > 1 ? '×' + f.count + ' ' : '') + esc(f.status) + ', last ' + when(f.lastAt) +
         ' · <a href="' + esc(taskHref(f.lastTaskId, f.agentId, f.node, true)) + '">last run</a><div class="err">' + esc(f.error) + '</div></li>';
     }), 'No failed agent runs.') +
+    reportedHtml() +
     block('Cron runs, last 24 h', crons.map(function (g) {
       var r = g.run, job = (g.node.crons || []).find(function (j) { return j.id === r.jobId; });
       return '<li><b>' + esc(r.jobId) + '</b> on ' + esc(g.node.name) + ' ' + (g.count > 1 ? '×' + g.count + ' ' : '') + esc(r.status) + ', last ' + when(Date.parse(r.startedAt)) +
