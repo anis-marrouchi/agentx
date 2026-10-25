@@ -7,7 +7,9 @@
 // cards (#1185) come with their post and are shown without buttons:
 // answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
-// browser only. Nothing is written to the daemon.
+// browser only. Nothing is written to the daemon. The Projects view
+// (#1190) shows the overview rows the reply carries, one per project;
+// each count links to the list with that project and status in the hash.
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -15,6 +17,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var DAY = 864e5;
   var FILTERS = ['owner', 'status', 'idle', 'project', 'node', 'group', 'time', 'conc', 'qa', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
+  /** The project filter's value for work with no project: "Other". */
+  var OTHER = '-';
   var S = { data: null, live: null, wf: null, view: 'feed', sort: { key: 'idle', dir: -1 }, threads: {} };
   var $ = function (id) { return document.getElementById(id); };
 
@@ -165,9 +169,10 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (f.status === 'closed' && isOpen(p)) return false;
     if (f.status === 'blocked' && !p.blocked) return false;
     if (f.status === 'waiting_owner' && !waitsOnOwner(p)) return false;
-    if (f.status && ['open', 'closed', 'blocked', 'waiting_owner'].indexOf(f.status) < 0 && p.state !== f.status) return false;
+    if (f.status === 'stalled' && !p.stalled) return false;
+    if (f.status && ['open', 'closed', 'blocked', 'waiting_owner', 'stalled'].indexOf(f.status) < 0 && p.state !== f.status) return false;
     if (+f.idle && idleDays(p) < +f.idle) return false;
-    if (f.project && p.project !== f.project) return false;
+    if (f.project && (f.project === OTHER ? p.project : p.project !== f.project)) return false;
     if (f.node && p.node.name !== f.node) return false;
     if (f.group && groupKey(p) !== f.group) return false;
     if (f.time && !p.timeFlag && !forgeFlags(p).length) return false;
@@ -180,9 +185,9 @@ export const WALL_PAGE_SCRIPT = String.raw`
     }
     return true;
   }
-  function fillSelect(id, values) {
+  function fillSelect(id, values, label) {
     var el = $(id), keep = el.value;
-    el.innerHTML = '<option value="">All</option>' + values.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('');
+    el.innerHTML = '<option value="">All</option>' + values.map(function (v) { return '<option value="' + esc(v) + '">' + esc(label ? label(v) : v) + '</option>'; }).join('');
     el.value = keep && values.indexOf(keep) >= 0 ? keep : '';
   }
   // GitLab time tracking (#1189): logged vs estimate, its flags, or "unknown".
@@ -428,6 +433,28 @@ export const WALL_PAGE_SCRIPT = String.raw`
     }).join('') + '</tbody></table>';
   }
 
+  // --- Projects (#1190): one row per project, each count a link to the list ---
+  function projectHref(project, status) {
+    var q = new URLSearchParams();
+    q.set('status', status);
+    q.set('project', project === null ? OTHER : project);
+    q.set('view', 'list');
+    return '#' + q.toString();
+  }
+  function projectsHtml() {
+    var rows = (S.data && S.data.projects) || [];
+    if (!rows.length) return '<p class="ax-wall__empty">No open work.</p>';
+    function cell(r, n, status) {
+      return '<td class="num">' + (n ? '<a href="' + esc(projectHref(r.project, status)) + '">' + n + '</a>' : '0') + '</td>';
+    }
+    return '<p class="ax-wall__count">Open work on every node, by project. Stalled: no move for more than twice the project\'s normal rhythm.</p>' +
+      '<table class="wl"><thead><tr><th>Project</th><th>Open</th><th>In progress</th><th>Blocked</th><th>Stalled</th></tr></thead><tbody>' +
+      rows.map(function (r) {
+        return '<tr><td>' + (r.project === null ? '<i>Other</i>' : esc(r.project)) + '</td>' + cell(r, r.open, 'open') + cell(r, r.inProgress, 'in_progress') +
+          cell(r, r.blocked, 'blocked') + cell(r, r.stalled, 'stalled') + '</tr>';
+      }).join('') + '</tbody></table>';
+  }
+
   // --- Failures: agent runs, cron runs, workflow runs ---
   function cronFailures() {
     var out = [], since = Date.now() - DAY;
@@ -516,16 +543,18 @@ export const WALL_PAGE_SCRIPT = String.raw`
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list');
-    $('wall-profile').hidden = !f.owner || S.view === 'failures';
+    $('wall-profile').hidden = !f.owner || S.view === 'failures' || S.view === 'projects';
     if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
     $('wall-agents').innerHTML = agentsHtml();
     $('wall-feed').hidden = S.view !== 'feed';
     $('wall-list').hidden = S.view !== 'list';
     $('wall-failures').hidden = S.view !== 'failures';
-    $('wall-count').hidden = S.view === 'failures';
+    $('wall-projects').hidden = S.view !== 'projects';
+    $('wall-count').hidden = S.view === 'failures' || S.view === 'projects';
     if (S.view === 'feed') $('wall-feed').innerHTML = posts.length ? posts.map(postHtml).join('') : '<p class="ax-wall__empty">No posts match these filters.</p>';
     if (S.view === 'list') $('wall-list').innerHTML = posts.length ? listHtml(posts) : '<p class="ax-wall__empty">No posts match these filters.</p>';
     if (S.view === 'failures') $('wall-failures').innerHTML = failuresHtml();
+    if (S.view === 'projects') $('wall-projects').innerHTML = projectsHtml();
     var n = failCount();
     $('wall-fail-n').textContent = n ? '(' + n + ')' : '';
     $('wall-nodes').innerHTML = nodesHtml();
@@ -551,7 +580,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
       S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
       var posts = S.data.posts || [];
       fillSelect('f-owner', uniq(posts.map(function (p) { return p.owner; })));
-      fillSelect('f-project', uniq(posts.map(function (p) { return p.project; })));
+      var other = posts.some(function (p) { return !p.project; }) ? [OTHER] : [];
+      fillSelect('f-project', uniq(posts.map(function (p) { return p.project; })).concat(other), function (v) { return v === OTHER ? 'Other (no project)' : v; });
       fillSelect('f-node', uniq(posts.map(function (p) { return p.node.name; })));
       fillSelect('f-group', uniq(posts.map(groupKey)));
       applyHash();

@@ -82,6 +82,7 @@ import { gitlabTimeReader, wallForgeTime, type WallForgeTimeSource } from "./wal
 import { wallForgeState, type WallForgeStateSource } from "./wall-forge-state"
 import { forgeReader } from "@/requests/checkers/issue"
 import { handlePortfolioRequest } from "./wall-portfolio"
+import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
@@ -3050,14 +3051,17 @@ function wallDeps(config: DaemonConfig): WallDeps | null {
   const store = requestStoreFor(ictx)
   if (!store) return null
   const agents = config.agents ?? {}
+  const staleAfterHours = readRequestSettings().staleAfterHours
+  const workspaceOf = (id: string) => agents[id]?.workspace ?? null
   return {
     store,
     plans: planStoreFor(ictx),
     db: dashboardDb(),
     now: Date.now(),
-    staleAfterHours: readRequestSettings().staleAfterHours,
+    staleAfterHours,
     isAgent: (id) => Object.prototype.hasOwnProperty.call(agents, id),
-    workspaceOf: (id) => agents[id]?.workspace ?? null,
+    workspaceOf,
+    projects: wallProjects(config.dashboard?.wall, staleAfterHours, workspaceOf),
     cards: () => listCards(ictx.root, "pending"),
     gitlabUrl: forgeConnectorsOf(config).gitlab?.url ?? null,
   }
@@ -3103,6 +3107,10 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
     items.map((x) => ({ ...x, node: { name, peer, daemonUrl } }))
   const posts = tag(local.posts, local.node, null, null)
   const failures = tag(local.failures, local.node, null, null)
+  // Projects (#1190): this node's mapping also claims the peer posts it
+  // names, and every project configured here gets an overview row.
+  const projects = deps?.projects ?? null
+  const now = Date.now()
   const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
   await Promise.all(peers.map(async (d) => {
     const id = d.url.replace(/\/+$/, "")
@@ -3117,14 +3125,14 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
       if (!r.ok) { nodes.push({ name, peer: id, ok: false, error: `answered ${r.status}` }); return }
       const body = await r.json() as any
       nodes.push({ name: body.node || name, peer: id, ok: true, syncedAt: body.syncedAt })
-      posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], body.node || name, id, id))
+      posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], body.node || name, id, id).map((p) => claimPost(p, projects, now)))
       failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], body.node || name, id, id))
     } catch (e: any) {
       nodes.push({ name, peer: id, ok: false, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) })
     }
   }))
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
-  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, staleAfterHours: local.staleAfterHours }
+  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, projects: projectOverview(posts, projects?.names), staleAfterHours: local.staleAfterHours }
 }
 
 async function buildFleetActivitySnapshot(hours: number, config: DaemonConfig): Promise<FleetSnapshot> {

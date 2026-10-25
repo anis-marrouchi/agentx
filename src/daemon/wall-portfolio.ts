@@ -35,7 +35,7 @@ const OTHER = "Other"
 /** The posts the summary is made from: the Wall's, maybe from other nodes
  *  (`titled` is missing on a node older than this). */
 export type PortfolioPost = Pick<WallPost, "id" | "state" | "headline" | "owner" | "project" | "home" | "lastMoveAt" | "closedAt" | "blocked">
-  & { titled?: boolean; node?: { name: string } }
+  & { titled?: boolean; node?: { name: string }; stalled?: boolean }
 
 export interface PortfolioSummary {
   node: string
@@ -62,8 +62,11 @@ export function portfolioTitle(p: PortfolioPost): string {
 
 const isOpen = (state: string) => (OPEN_STATES as readonly string[]).includes(state)
 
-/** Open, with no move for more than twice the requests' stale time. */
-export function isStalledPost(p: Pick<PortfolioPost, "state" | "lastMoveAt">, now: number, staleAfterHours: number): boolean {
+/** Open, with no move for more than twice its project's rhythm: the mark
+ *  the Wall set from the project mapping (#1190), else twice the
+ *  requests' stale time (a node older than the mapping). */
+export function isStalledPost(p: Pick<PortfolioPost, "state" | "lastMoveAt" | "stalled">, now: number, staleAfterHours: number): boolean {
+  if (typeof p.stalled === "boolean") return p.stalled
   return isOpen(p.state) && now - p.lastMoveAt > 2 * staleAfterHours * HOUR
 }
 
