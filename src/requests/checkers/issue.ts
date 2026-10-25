@@ -20,6 +20,9 @@ export interface ForgeItem {
   /** Who closed or merged it, and when (ISO), as the forge says (#1184). */
   closedBy?: string | null
   closedAt?: string | null
+  /** Its milestone title and assignee logins, as the forge says (#1195). */
+  milestone?: string | null
+  assignees?: string[]
 }
 
 /** Reads one item, or says why it could not (unknown, not visible, down). */
@@ -104,6 +107,13 @@ function labelNames(v: unknown): string[] {
   return v.map((l: any) => (typeof l === "string" ? l : String(l?.name ?? ""))).filter(Boolean)
 }
 
+/** Milestone and assignees: the same fields on both forges, the login
+ *  under `login` (GitHub) or `username` (GitLab). */
+function planOf(b: any, key: "login" | "username"): { milestone: string | null; assignees: string[] } {
+  const people: any[] = Array.isArray(b?.assignees) ? b.assignees : b?.assignee ? [b.assignee] : []
+  return { milestone: login(b?.milestone?.title), assignees: people.map((a) => login(a?.[key])).filter((a): a is string => !!a) }
+}
+
 export interface ForgeConnectors {
   github?: { apiUrl: string; token?: string }
   gitlab?: { url: string; token?: string }
@@ -144,10 +154,11 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
       if (state === "open") closer = { closedBy: null, closedAt: null }
       const url = String(issue.body?.html_url ?? `${ref.project}#${ref.number}`)
       const labels = labelNames(issue.body?.labels)
-      if (!opts.notes) return { state, url, labels, ...closer }
+      const plan = planOf(issue.body, "login")
+      if (!opts.notes) return { state, url, labels, ...closer, ...plan }
       const notes = await get(`${base}/issues/${ref.number}/comments?per_page=100`, headers)
       if (!notes.ok) return { error: `its notes: ${notes.error}` }
-      return { state, url, labels, ...closer, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
+      return { state, url, labels, ...closer, ...plan, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
     }
     const c = connectors.gitlab
     if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }
@@ -163,9 +174,10 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
     const closer = state === "merged"
       ? { closedBy: login((b?.merge_user ?? b?.merged_by)?.username), closedAt: login(b?.merged_at) }
       : state === "closed" ? { closedBy: login(b?.closed_by?.username), closedAt: login(b?.closed_at) } : { closedBy: null, closedAt: null }
-    if (!opts.notes) return { state, url, labels, ...closer }
+    const plan = planOf(b, "username")
+    if (!opts.notes) return { state, url, labels, ...closer, ...plan }
     const notes = await get(`${base}/notes?per_page=100&sort=desc&order_by=created_at`, headers)
     if (!notes.ok) return { error: `its notes: ${notes.error}` }
-    return { state, url, labels, ...closer, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")).reverse() }
+    return { state, url, labels, ...closer, ...plan, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")).reverse() }
   }
 }

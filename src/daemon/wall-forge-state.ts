@@ -4,6 +4,7 @@ import type { IssueState } from "@/requests/checkers"
 import { forgeCommentsOn } from "@/storage/forge-comments"
 import type { WallPost } from "./wall-api"
 import { forgeCache, isForgeError, type ForgeCacheOptions } from "./wall-forge-cache"
+import { forgeMismatch, type ForgeMismatch } from "./wall-forge-mismatch"
 import { gitlabRefOf } from "./wall-forge-time"
 
 // --- The Wall's forge home: live state, closer, exact comments (#1184) ---
@@ -14,6 +15,9 @@ import { gitlabRefOf } from "./wall-forge-time"
 // something a person closed. One read-only GET per home, cached and
 // time-boxed (wall-forge-cache.ts). A forge that cannot be read gives
 // "state unknown", never a guess.
+//
+// Its milestone and assignees come from the same GET, and a marker shows
+// when the forge and the post disagree on open or closed (#1195).
 //
 // The comments an agent posted there through the daemon are linked by the
 // id the forge gave them (storage/forge-comments.ts).
@@ -34,6 +38,12 @@ export interface WallForgeState {
   state: IssueState | null
   closedBy: string | null
   closedAt: number | null
+  /** Its milestone and assignees on the forge (#1195). Null / empty: none
+   *  set, or unknown. */
+  milestone: string | null
+  assignees: string[]
+  /** The forge and the post disagree on open or closed (#1195). */
+  mismatch: ForgeMismatch | null
   /** When the forge was read. Null: no answer yet. */
   checkedAt: number | null
   /** Why the state is unknown. Null: it was read. */
@@ -98,7 +108,7 @@ export function forgeCommentsOf(
   })
 }
 
-interface ForgeStateAnswer { state: IssueState; closedBy: string | null; closedAt: number | null }
+interface ForgeStateAnswer { state: IssueState; closedBy: string | null; closedAt: number | null; milestone: string | null; assignees: string[] }
 
 export interface WallForgeStateSource {
   /** Sets `forgeState` on every post: null when it has no forge home. */
@@ -114,7 +124,7 @@ export function wallForgeState(
     const item = await read(home.provider, home.ref, { notes: false })
     if (isForgeError(item)) return item
     const at = item.closedAt ? Date.parse(item.closedAt) : NaN
-    return { state: item.state, closedBy: item.closedBy ?? null, closedAt: Number.isFinite(at) ? at : null }
+    return { state: item.state, closedBy: item.closedBy ?? null, closedAt: Number.isFinite(at) ? at : null, milestone: item.milestone ?? null, assignees: item.assignees ?? [] }
   }, opts)
   const name = (p: ForgeHome["provider"]) => (p === "github" ? "GitHub" : "GitLab")
   return {
@@ -132,11 +142,11 @@ export function wallForgeState(
         const h = homes[i]
         const got = h ? reads.get(h.key) : undefined
         if (!h || !got) { post.forgeState = null; return }
-        const base = { provider: h.home.provider, ref: h.home.key, state: null, closedBy: null, closedAt: null, checkedAt: null }
+        const base = { provider: h.home.provider, ref: h.home.key, state: null, closedBy: null, closedAt: null, milestone: null, assignees: [], mismatch: null, checkedAt: null }
         if (got.kind === "skipped") { post.forgeState = { ...base, unknown: `not read yet (many ${name(h.home.provider)} homes); shown on a later refresh` }; return }
         if (got.kind === "late") { post.forgeState = { ...base, unknown: `${name(h.home.provider)} did not answer in time` }; return }
         if (isForgeError(got.answer)) { post.forgeState = { ...base, checkedAt: got.at, unknown: got.answer.error }; return }
-        post.forgeState = { ...base, ...got.answer, checkedAt: got.at, unknown: null }
+        post.forgeState = { ...base, ...got.answer, mismatch: forgeMismatch(post.state, got.answer.state), checkedAt: got.at, unknown: null }
       })
       return posts
     },

@@ -128,8 +128,8 @@ describe("issue", () => {
       return new Response("", { status: 404 })
     }) as unknown as typeof fetch
     const read = forgeReader({ github: { apiUrl: "https://api.github.com", token: "t1" }, gitlab: { url: "https://gitlab.example.com", token: "t2" } }, fake)
-    expect(await read("github", { project: "acme/app", number: 12, mr: true }, { notes: false })).toEqual({ state: "merged", url: "https://github.com/acme/app/pull/12", labels: ["Review"], closedBy: null, closedAt: null })
-    expect(await read("gitlab", { project: "g/app", number: 3, mr: true }, { notes: true })).toEqual({ state: "open", url: "https://gitlab.example.com/g/app/-/merge_requests/3", labels: ["Doing"], closedBy: null, closedAt: null, notes: ["oldest", "newest"] })
+    expect(await read("github", { project: "acme/app", number: 12, mr: true }, { notes: false })).toEqual({ state: "merged", url: "https://github.com/acme/app/pull/12", labels: ["Review"], closedBy: null, closedAt: null, milestone: null, assignees: [] })
+    expect(await read("gitlab", { project: "g/app", number: 3, mr: true }, { notes: true })).toEqual({ state: "open", url: "https://gitlab.example.com/g/app/-/merge_requests/3", labels: ["Doing"], closedBy: null, closedAt: null, milestone: null, assignees: [], notes: ["oldest", "newest"] })
     expect(await read("github", { project: "acme/app", number: 99, mr: false }, { notes: false })).toEqual({ error: "not found (or not visible to the connector)" })
     expect(asked[0]).toBe("https://api.github.com/repos/acme/app/issues/12 Bearer t1")
     expect(asked).toContain("https://gitlab.example.com/api/v4/projects/g%2Fapp/merge_requests/3 t2")

@@ -199,16 +199,21 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (t.unknown) return 'unknown' + (why ? ' (' + t.unknown + ')' : '');
     return hm(t.loggedMinutes) + ' logged' + (t.estimateMinutes ? ' of ' + hm(t.estimateMinutes) : ', no estimate');
   }
-  // Forge home (#1184): its live state, who closed it, when that was checked.
+  // Forge home (#1184): its live state, who closed it, when that was checked;
+  // its milestone and assignees (#1195).
   function forgeName(f) { return f.provider === 'github' ? 'GitHub' : 'GitLab'; }
   function forgeStateHtml(f) {
     var checked = f.checkedAt ? ' <small>checked ' + ago(f.checkedAt) + '</small>' : '';
     if (f.unknown) return forgeName(f) + ' <b title="' + esc(f.unknown) + '">state unknown</b>' + checked;
     return forgeName(f) + ' <b>' + esc(f.state) + '</b>' + (f.closedBy ? ' by <b>' + esc(f.closedBy) + '</b>' : '') +
-      (f.closedAt && f.state !== 'open' ? ' ' + when(f.closedAt) : '') + checked;
+      (f.closedAt && f.state !== 'open' ? ' ' + when(f.closedAt) : '') +
+      (f.milestone ? ' · milestone <b>' + esc(f.milestone) + '</b>' : '') +
+      (f.assignees && f.assignees.length ? ' · assigned to <b>' + f.assignees.map(esc).join(', ') + '</b>' : '') + checked;
   }
-  // Closed on the forge while the post is still open: nobody should pick it up.
-  function forgeClosedOpen(p) { return p.forgeState && !p.forgeState.unknown && p.forgeState.state !== 'open' && isOpen(p); }
+  // The forge and the post disagree (#1195): closed there and open here, so
+  // nobody should pick it up; or open there and closed here.
+  function forgeClosedOpen(p) { return !!p.forgeState && p.forgeState.mismatch === 'forge-closed'; }
+  function forgeOpenClosed(p) { return !!p.forgeState && p.forgeState.mismatch === 'forge-open'; }
   function uniq(xs) { return xs.filter(function (x, i) { return x && xs.indexOf(x) === i; }).sort(); }
 
   // --- Concurrent sessions (#1187): two runs at once on one chat or worktree ---
@@ -292,6 +297,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
       (forgeClosedOpen(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '') + ', but this post is still open. Do not pick it up.</div>' : '') +
+      (forgeOpenClosed(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says open, but this post is ' + esc(p.state) + '. Close it there or reopen it here.</div>' : '') +
       (forgeFlags(p).length ? '<div class="wp__flag">GitLab time: ' + esc(forgeFlags(p).join('; ')) + '</div>' : '') +
       conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
       cardsOf(p).map(cardHtml).join('') +
@@ -420,7 +426,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
     }).join('') + '</tr></thead><tbody>' + posts.map(function (p) {
       return '<tr><td>' + stateBadge(p.state) +
           (p.forgeState ? '<br><small' + (p.forgeState.unknown ? ' title="' + esc(p.forgeState.unknown) + '">' + esc(forgeName(p.forgeState)) + ' unknown' : '>' + esc(forgeName(p.forgeState)) + ' ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '')) + '</small>' +
-            (forgeClosedOpen(p) ? ' <small title="Closed on the forge, still open here">⚠</small>' : '') : '') +
+            (forgeClosedOpen(p) ? ' <small title="Closed on the forge, still open here">⚠</small>' : '') +
+            (forgeOpenClosed(p) ? ' <small title="Open on the forge, closed here">⚠</small>' : '') : '') +
           (qaText(p, true) ? '<br><small' + (p.qa ? ' title="' + esc(qaText(p)) + '"' : '') + '>' + esc(p.awaitingQa ? 'Awaiting QA' : qaText(p, true)) + '</small>' : '') + '</td>' +
         '<td><a href="#" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a></td>' +
         '<td>' + esc(p.owner) + '</td><td>' + esc(p.project || '—') + '</td><td>' + esc(p.node.name) + '</td>' +
