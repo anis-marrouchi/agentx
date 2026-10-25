@@ -1,8 +1,8 @@
 # The owner interface and its patterns
 
-![How work reaches you. An agent makes a Promise, proof closes it, and a Fact is written. The change goes on the event bus, Reach picks one channel where you were last seen, and you read one list, the Desk. Four links are not wired yet and are built in steps 1 to 4 of issue #1137.](/diagrams/owner-interface.svg)
+![How work reaches you. An agent makes a Promise, proof closes it, and a Fact is written. Reach picks one channel where you were last seen, and you read one list, the Desk. Two switches are off by default, and one fix is still open.](/diagrams/owner-interface.svg)
 
-Status: **a map, not a feature.** Nothing on this page is a setting. It names the parts AgentX uses for work that concerns a person (usually the owner, the person who runs this install), and the recurring shapes that work takes. The plan to bring the code in line with it is [#1137](https://github.com/anis-marrouchi/agentx/issues/1137).
+Status: **a map, not a feature.** Nothing on this page is a setting. It names the parts AgentX uses for work that concerns a person (usually the owner, the person who runs this install), and the recurring shapes that work takes. The plan was [#1137](https://github.com/anis-marrouchi/agentx/issues/1137); the work to bring the code in line with it was the epic [#1138](https://github.com/anis-marrouchi/agentx/issues/1138), closed on 2026-10-25. [Where the plan landed](#where-the-plan-landed) says what shipped and what is still open.
 
 Classic apps have a well-known split: a *model* holds the data, a *view* shows it, a *controller* decides what happens. Work around a person has its own split. This page names it, so a new feature can say which part it belongs to instead of inventing a fifth place to keep a due date.
 
@@ -15,9 +15,7 @@ Classic apps have a well-known split: a *model* holds the data, a *view* shows i
 | **Reach** | controller | where the person is, which channel to use, whether the message landed, and what happens if it did not |
 | **Desk** | view | one list of what concerns the person, shown on any surface (phone, dashboard, computer), shaped by settings and not by code |
 
-The parts are meant to talk over the event bus (`src/events/bus.ts`): one part publishes that something changed, the others listen. Today the bus carries only message, task and session events, and none of the four parts publish on it. Step 1 of #1137 adds a "request changed" and a "card changed" event.
-
-Today the four parts exist in pieces, spread across several stores. [#1137](https://github.com/anis-marrouchi/agentx/issues/1137) lists what is where and the order in which they are joined.
+The parts were meant to talk over the event bus (`src/events/bus.ts`): one part publishes that something changed, the others listen. The bus still carries only message, task and session events. The Desk is read in one place instead (`src/desk/owner-list.ts`), and Reach runs on a one-minute check (`src/notify/reach-attach.ts`), so no "request changed" or "card changed" event was needed.
 
 ## Patterns
 
@@ -32,7 +30,7 @@ A *pattern* is a recurring shape of agent work with a name. Each entry below say
 
 - **Problem**: "done" is said without proof, and nobody knows who is waiting.
 - **Shape**: an owner, who it is owed to, a due time, and the proof that closes it.
-- **Lives in**: `src/requests/store.ts` (the `promise`, `owed_to`, `due_at` and `close_when` columns), `src/requests/tool.ts` (the `promise` action agents call).
+- **Lives in**: `src/requests/store.ts` (the `promise`, `owed_to`, `due_at` and `close_when` columns), `src/requests/promise.ts` (the one way to open, raise and close one; closing with a proof writes a fact), `src/requests/tool.ts` (the `promise` action agents call), `src/requests/catch.ts` (reads "I'll do X" from a reply, when switched on).
 - **Do it well**: record a promise when you make it, not when you finish. Give it a `closeWhen` check wherever one exists, so the daemon closes it and not your memory.
 
 ### Fact
@@ -46,7 +44,7 @@ A *pattern* is a recurring shape of agent work with a name. Each entry below say
 
 - **Problem**: the same thing is tracked in three places, and the three disagree.
 - **Shape**: one record per thing. Everything else points at that record.
-- **Lives in**: `src/requests/store.ts` and `src/approvals/cards.ts` today. Step 4 of #1137 folds the other stores that hold a due date into these two.
+- **Lives in**: `src/requests/store.ts` and `src/approvals/cards.ts`. Watchers (`src/watchers/store.ts`) and plan steps (`src/requests/plan-store.ts`) keep their own stores, but their escalation and their done go through the one promise path in `src/requests/promise.ts`.
 - **Do it well**: before adding a table with a due date or a status, check whether a request or a card already is the home.
 
 ### Listener
@@ -67,7 +65,7 @@ A *pattern* is a recurring shape of agent work with a name. Each entry below say
 
 - **Problem**: news is shouted on every channel at once, or sent to a channel that stopped working.
 - **Shape**: where the person was last seen, then one channel, then a wait, then the next channel.
-- **Lives in**: `src/notify/index.ts` sends today. Presence, "seen" and the next-channel rule are steps 2a and 2b of #1137.
+- **Lives in**: `src/notify/index.ts` (sends), `src/notify/reach.ts` (presence, the sent → seen → answered marks, the next-channel ladder, channels that are down), `src/notify/reach-attach.ts` (runs it in the daemon).
 - **Do it well**: send to one place. Urgent items may move to the next channel when unseen; everything else waits for the digest.
 
 ### Told once
@@ -139,6 +137,25 @@ A *pattern* is a recurring shape of agent work with a name. Each entry below say
 - **Shape**: an estimate. Work of a set kind, or over a set number of minutes, needs a plan with steps and a proof per step.
 - **Lives in**: `src/requests/daemon-api.ts` (refuses the accept), `src/requests/plan-store.ts` (keeps the steps).
 - **Do it well**: give each step a proof someone else can check, not "done".
+
+## Where the plan landed
+
+The epic [#1138](https://github.com/anis-marrouchi/agentx/issues/1138) had seven steps. Each one had a proof of done, checked on a live node before the epic was closed on 2026-10-25.
+
+| Step | What it does | Lives in | Proof |
+|---|---|---|---|
+| A. Settle on hand-back | a request closes when the work it handed out comes back done | `src/requests/store.ts` | **Failed.** Requests with a due time are skipped. Fix: [#1214](https://github.com/anis-marrouchi/agentx/issues/1214). |
+| P. This page | names the parts and patterns | `docs/architecture/patterns.md` | Met. |
+| B. Reach | seen and answered marks, an urgent ladder, channels that are down in `/health` | `src/notify/reach.ts` | Partly met. Marks and `/health` work. The ladder is off by default, so escalation was not seen live. |
+| C. One Desk | one list and one count of what waits on the owner, routed by three settings | `src/desk/owner-list.ts`, `src/desk/route.ts` | Met. |
+| D. Promise → Fact | one promise path; closing with a proof writes a fact | `src/requests/promise.ts` | Met, with tests. |
+| E. Catch "I'll do X" | reads a firm promise from a reply | `src/requests/catch.ts` | Precision met (1.00 on a held-out set, see `bench/README.md`). Off by default, so not measured live. |
+| F. Status follows the work | tells when an issue's status label is behind the work | `src/requests/status-board.ts` | Met. |
+
+Two switches are the owner's choice, not open work:
+
+- `notifications.reach.enabled` turns on the urgent ladder. See [Get notified › Did it land](/jobs/notifications#_7-did-it-land-seen-answered-and-urgent-messages).
+- `requests.catchPromises.enabled` turns on the promise catch. It spends one short model call on most of your turns. See [Promises caught in a reply](/jobs/open-requests#promises-caught-in-a-reply).
 
 ## Adding or changing a pattern
 
