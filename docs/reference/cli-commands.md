@@ -3246,6 +3246,7 @@ The sessions still open for their issue, newest first: the issue, the session id
 
 Forget the session for each issue, written `owner/repo#number`, so the next comment on it runs normally. Takes the same `--file` and `--config` flags.
 
+## retro (advanced)
 
 `agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).
 
