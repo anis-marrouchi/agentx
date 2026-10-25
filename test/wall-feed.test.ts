@@ -1189,4 +1189,34 @@ describe("Wall v2 task view (#1355)", () => {
     expect(done).toMatch(/<li class="is-done"><b>Done<\/b><span>\d+s ago<\/span>/)
     expect(d.el("wall-post").innerHTML).toContain("<dt>Closed</dt>")
   })
+
+  // Review notes on #1377.
+  const strip = (html: string) => /<ol class="wtk__prog"[^>]*>(.*?)<\/ol>/.exec(html)![1]
+  const one = (p: unknown, thread?: unknown) => openWall({ hash: "#post=x", data: { ...WALL, posts: [p] }, thread })
+
+  it("names who a post waits on: another agent, the active step's owner, never you", async () => {
+    const a = one(post("x", "cx", "waiting_other"))
+    await a.settle()
+    expect(strip(a.el("wall-post").innerHTML)).toContain("<b>Waits</b><span>on another agent</span>")
+    const b = one(post("x", "cx", "waiting_other"), { events: [], plan: PLAN })
+    await b.settle()
+    expect(strip(b.el("wall-post").innerHTML)).toContain("<b>Waits</b><span>on @reviewer</span>")
+  })
+
+  it("says who blocks a post once, in the strip, and why under it", async () => {
+    const w = one(post("x", "cx", "waiting_other", { blocked: { who: "reviewer", since: NOW - 3 * 3600e3, why: "needs a review" } }))
+    await w.settle()
+    const page = w.el("wall-post").innerHTML
+    expect(strip(page)).toContain("<b>Waits</b><span>on reviewer for 3 h</span>")
+    expect(page).toMatch(/<div class="wp__block" title="Since [^"]+">Why it waits: needs a review<\/div>/)
+    expect(page.match(/>reviewer</g)?.length ?? 0).toBeLessThanOrEqual(1)
+  })
+
+  it("leaves an open post nobody picked up at Asked", async () => {
+    const w = one(post("x", "cx", "in_progress", { runs: 0, runMs: 0 }))
+    await w.settle()
+    const s = strip(w.el("wall-post").innerHTML)
+    expect(s).toContain('<li class="is-now" aria-current="step"><b>Asked</b>')
+    expect(s).toContain('<li class=""><b>Working</b><span>not picked up yet</span>')
+  })
 })

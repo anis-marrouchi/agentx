@@ -394,8 +394,8 @@ ${WALL_LIVE_SCRIPT}
     return '<article class="' + cls + ' wtk" id="open-' + esc(p.id) + '">' + avatar(p.owner) + '<div class="wp__b">' +
       '<div class="wp__by">' + by + '</div>' +
       '<h1 class="wtk__title">' + esc(p.headline) + '</h1>' +
-      progressHtml(p) +
-      (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
+      progressHtml(p, t && t.plan) +
+      (p.blocked ? '<div class="wp__block" title="Since ' + esc(stamp(p.blocked.since)) + '">Why it waits: ' + esc(p.blocked.why) + '</div>' : '') +
       (t && t.plan && t.plan.length ? planHtml(t.plan) : '') +
       resultHtml(p) +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
@@ -415,19 +415,28 @@ ${WALL_LIVE_SCRIPT}
 
   // --- The opened task (#1355) ---
   /** Asked → Working → Waits → Done, each with when it happened. */
-  function progressHtml(p) {
+  function progressHtml(p, plan) {
     var open = isOpen(p), waits = open && waitsOnSomeone(p);
     var end = p.state === 'done' ? 'Done' : open ? 'Done' : p.state.replace(/_/g, ' ');
+    // Open and never run: it still stands at Asked, not at Working.
+    var asked = open && !waits && !p.runs;
     var steps = [
-      { name: 'Asked', at: esc(ago(p.createdAt)), on: 'is-done' },
+      { name: 'Asked', at: esc(ago(p.createdAt)), on: asked ? 'is-now' : 'is-done' },
       { name: 'Working', at: p.runs ? p.runs + (p.runs === 1 ? ' run' : ' runs') + (p.runMs ? ', ' + mins(p.runMs) + ' min' : '') : 'not picked up yet',
-        on: !open || waits ? (p.runs ? 'is-done' : '') : 'is-now' },
+        on: !open || waits ? (p.runs ? 'is-done' : '') : asked ? '' : 'is-now' },
     ];
-    if (waits) steps.push({ name: 'Waits', at: 'on ' + esc(p.blocked ? p.blocked.who : 'you') + (p.blocked ? ' for ' + esc(ago(p.blocked.since).replace(' ago', '')) : ''), on: 'is-wait' });
+    if (waits) steps.push({ name: 'Waits', at: 'on ' + waitsOn(p, plan) + (p.blocked ? ' for ' + esc(ago(p.blocked.since).replace(' ago', '')) : ''), on: 'is-wait' });
     steps.push({ name: end, at: p.closedAt ? esc(ago(p.closedAt)) : p.estimateMinutes ? 'estimate ' + hm(p.estimateMinutes) : '', on: open ? '' : p.state === 'done' ? 'is-done' : 'is-end' });
     return '<ol class="wtk__prog" aria-label="Where it stands">' + steps.map(function (s) {
       return '<li class="' + s.on + '"' + (s.on === 'is-now' || s.on === 'is-wait' ? ' aria-current="step"' : '') + '><b>' + esc(s.name) + '</b><span>' + s.at + '</span></li>';
     }).join('') + '</ol>';
+  }
+  /** Who an open post waits on: the blocker, you, or another agent. */
+  function waitsOn(p, plan) {
+    if (p.blocked) return esc(p.blocked.who);
+    if (waitsOnOwner(p)) return 'you';
+    var step = (plan || []).filter(function (s) { return s.state === 'active' || s.state === 'blocked'; })[0];
+    return step ? '@' + esc(step.agentId) : 'another agent';
   }
   var STEP_MARK = { done: '✓', active: '●', blocked: '!', skipped: '–', pending: '' };
   /** The plan, when the post has one: each step, who owns it, its proof. */

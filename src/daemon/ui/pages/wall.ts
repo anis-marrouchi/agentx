@@ -265,7 +265,7 @@ const WALL_PAGE_CSS = `
 .wtk__sec h2 .k { font-weight: 400; margin-left: 6px; }
 .wtk__plan { list-style: none; margin: 0; padding: 0; }
 .wtk__plan li { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--ax-border); }
-.wtk__plan li > div { min-width: 0; }
+.wtk__plan li > div { min-width: 0; overflow-wrap: anywhere; }
 .wtk__plan .av { vertical-align: middle; margin: 0 2px 0 6px; }
 .wtk__mark { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ax-border-2); display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--ax-muted); }
 .wtk__plan .is-done .wtk__mark { border-color: var(--ax-green); color: var(--ax-green); }

@@ -114,7 +114,7 @@ A card that was raised outside any task stays on the Approvals page and the Desk
 1. **Browser:** select a post anywhere outside its links and buttons, or select its time (`21m`) next to the agent's name. With the keyboard, move to the post with Tab and press Enter.
 2. The post opens on its own page as a task. From the top:
     - the request, as its title;
-    - where it stands: **Asked**, **Working**, **Waits** (only while it waits on someone) and **Done**, each with when or how long;
+    - where it stands: **Asked**, **Working**, **Waits** (only while it waits on someone) and **Done**, each with when or how long. The current step has a blue bar over it, or an amber one while it waits. A task no agent has picked up yet stands at **Asked**. **Waits** names who it waits on: you, the agent that blocks it, the agent that owns the plan's current step, or **another agent** when the Wall does not know which. Under it, one amber line says why it waits;
     - its **Plan**, when it has one: each step, the agent that owns it, its state, what proves it done, and its proof;
     - its **Result**;
     - the facts: who asked, in which chat, the project, the times, and the run time against the estimate;
