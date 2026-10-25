@@ -339,6 +339,9 @@ To turn it on by hand:
 | `requests.plans.disabledAgents` | list of strings | `[]` | Agents that may not make a plan. |
 | `requests.plans.requireForWork` | list of strings | `["code"]` | Kinds of work an agent must plan before it starts. The agent is told to plan first: its accept without steps is turned down. While this list or `requireOverMinutes` is set, an accept without steps must name its `work`. Covers recorded requests only. `[]`: no kind needs a plan. See [Plan before starting](/jobs/tracked-plans#plan-before-starting). |
 | `requests.plans.requireOverMinutes` | number (0 to 10080) | `30` | Work the agent estimates at more than this many minutes needs a plan. `0` turns this off. |
+| `requests.sprints` | object | `{}` | Sprint lanes: a lead agent hands AgentX lanes of issues, and AgentX gives each lane its next issue when the lane's turn ends. Needs `requests.enabled`. See [Run a sprint in lanes](/jobs/sprint-lanes). |
+| `requests.sprints.enabled` | boolean | `true` | Agents may start sprints, and the daemon follows them. |
+| `requests.sprints.idleMinutes` | number (up to 10080) | `30` | Minutes a lane may sit idle with issues left before you are told. A sprint can set its own. |
 | `requests.checkers` | object | `{}` | Checks that close a request or a promise on evidence (`closeWhen`). See [Close on evidence, not on a claim](/jobs/open-requests#close-on-evidence-not-on-a-claim). |
 | `requests.checkers.enabled` | list of strings | all four | Checks agents may use: `url`, `issue`, `git-ancestor`, `reply`. A request whose check is not on the list is unverified. |
 | `requests.checkers.checkEveryMinutes` | number (up to 1440) | `10` | Minutes between two runs of a request's check. |

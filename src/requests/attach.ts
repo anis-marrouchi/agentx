@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { getEventBus } from "@/events/bus"
 import { RequestStore } from "./store"
 import { PlanStore } from "./plan-store"
+import { SprintStore } from "./sprint-store"
 import { RequestTracker, type RequestSettings } from "./tracker"
 import { traceInbound, type InboundLog } from "./checkers/reply"
 import { DriftStore } from "./drift/store"
@@ -12,6 +13,8 @@ export interface AttachedRequests {
   store: RequestStore
   tracker: RequestTracker
   plans: PlanStore
+  /** Sprint lanes (#1241). */
+  sprints: SprintStore
   /** Inbound turns, for the reply checker (#1039). */
   inbound: InboundLog
   /** What status drift has told and written (#1138 step F). */
@@ -36,6 +39,7 @@ export function attachRequests(
     store,
     tracker,
     plans,
+    sprints: new SprintStore(db),
     inbound: traceInbound(db),
     drift: new DriftStore(db),
     detach: () => {
