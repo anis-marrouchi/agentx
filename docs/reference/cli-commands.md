@@ -20,7 +20,7 @@ Your installed version may differ. `agentx <command> --help` always shows the fl
 | `--port <n>` | `18800` | Daemon port for a new install; an existing agentx.json keeps its own. |
 | `--dashboard-port <n>` | `4202` | Dashboard port for a new install. |
 | `--startup-timeout <seconds>` | `60` | Seconds the daemon and the dashboard each may take to answer. |
-| `--team <name>` | — | Also add this ready-made team, on the same engine as the first agent. A team already added is left as it is. |
+| `--team <name>` | — | Also add this ready-made team, on the same engine as the first agent. A team already added is left as it is. If one of its agents, schedules or folders is already taken, start stops before writing anything. |
 | `--no-open` | — | Don't open the browser. |
 
 ## setup

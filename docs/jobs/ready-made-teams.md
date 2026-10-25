@@ -146,5 +146,6 @@ Each agent's `team` setting is described in [Configuration: agents](../reference
 | `Not a valid team package` | The file was edited by hand or comes from a newer version. The lines below the message name each wrong key. |
 | `No agents belong to team "<name>"` | Those agents were not added with `team add`. Name them with `--agents`. |
 | The team is added but nobody answers | The channel is not connected yet, or the daemon was not restarted. Do step 3. |
+| `agentx start` stopped with **Team … can't be added: already in this folder** | An agent, schedule or `agents/<id>` folder with the team's name is already there. Nothing was written. Remove or rename it, or run `agentx start` without `--team`. |
 | `agentx start` printed **Restart it to start the team's agents** | The daemon was already running when the team was added. Run `agentx daemon restart`. |
 | The support agent says someone will reply, for a question your guide covers | The guide is not in `agents/support/docs/`, or is not a `.md` or `.txt` file. Move it there and ask again. |

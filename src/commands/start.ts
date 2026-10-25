@@ -4,7 +4,7 @@ import prompts from "prompts"
 import { spawn } from "child_process"
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "fs"
 import { hostname } from "os"
-import { join, resolve } from "path"
+import { dirname, join, resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
 import { runWizard } from "@/daemon/setup-wizard"
 import { modelReadiness } from "@/daemon/model-ready"
@@ -49,27 +49,36 @@ export const start = new Command()
     // 1. Config: create one with a single agent, or leave the existing one alone.
     let configPath = existingConfigPath(dir)
     const created = !configPath
+    const payload = created ? firstAgentPayload(hostname().replace(/\.local$/, ""), Boolean(findBinary("claude"))) : undefined
+
+    // 1a. A ready-made team (#1293): --team, or a choice on a first run in a
+    // terminal. Decided before anything is written, so a team that collides
+    // with an agent, schedule or folder already here leaves no half-made
+    // install behind.
+    const teamName: string | undefined = opts.team ?? (created && process.stdin.isTTY && process.stdout.isTTY ? await chooseTeam() : undefined)
+    const teamPlan = teamName
+      ? startTeamPlan(
+          configPath ? JSON.parse(readFileSync(configPath, "utf-8")) : { agents: { [payload!.agent.id]: payload!.agent } },
+          teamName,
+          { workspaceRoot: resolve(configPath ? dirname(configPath) : dir, "agents") },
+        )
+      : undefined
+    if (teamPlan && "error" in teamPlan) fail(`${teamPlan.error} See \`${cmd} team list\`.`)
+
     if (configPath) {
       console.log(chalk.dim(`  Using ${configPath} (left as it is)`))
     } else {
-      const hasClaude = Boolean(findBinary("claude"))
-      const payload = firstAgentPayload(hostname().replace(/\.local$/, ""), hasClaude)
-      runWizard(payload, dir, { daemonPort: port(opts.port, "--port"), dashboardPort: port(opts.dashboardPort, "--dashboard-port") })
+      runWizard(payload!, dir, { daemonPort: port(opts.port, "--port"), dashboardPort: port(opts.dashboardPort, "--dashboard-port") })
       configPath = resolve(dir, "agentx.json")
-      console.log(chalk.green(`  ✓ Created agentx.json with one agent, ${payload.agent.id} (engine: ${payload.agent.tier})`))
+      console.log(chalk.green(`  ✓ Created agentx.json with one agent, ${payload!.agent.id} (engine: ${payload!.agent.tier})`))
     }
 
-    // 1b. A ready-made team (#1293): --team, or a choice on a first run in a terminal.
-    const teamName: string | undefined = opts.team ?? (created && process.stdin.isTTY && process.stdout.isTTY ? await chooseTeam() : undefined)
+    // 1b. Add the team.
     let teamAdded = false
-    if (teamName) {
-      const plan = startTeamPlan(JSON.parse(readFileSync(configPath, "utf-8")), teamName)
-      if ("error" in plan) fail(`${plan.error} See \`${cmd} team list\`.`)
-      if ("skip" in plan) console.log(chalk.dim(`  ${plan.skip}`))
-      if ("add" in plan) {
-        await installTeam(shippedTeam(plan.add.team)!, { config: configPath, tier: plan.add.tier, provider: plan.add.provider })
-        teamAdded = true
-      }
+    if (teamPlan && "skip" in teamPlan) console.log(chalk.dim(`  ${teamPlan.skip}`))
+    if (teamPlan && "add" in teamPlan) {
+      await installTeam(shippedTeam(teamPlan.add.team)!, { config: configPath, tier: teamPlan.add.tier, provider: teamPlan.add.provider })
+      teamAdded = true
     }
 
     let cfg
