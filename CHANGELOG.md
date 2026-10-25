@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.174.0](https://github.com/anis-marrouchi/agentx/compare/v0.173.0...v0.174.0) (2026-10-25)
+
+
+### Features
+
+* **signals:** setting to turn off WIP branch saving, list repo writes ([#1340](https://github.com/anis-marrouchi/agentx/issues/1340)) ([#1362](https://github.com/anis-marrouchi/agentx/issues/1362)) ([42360fc](https://github.com/anis-marrouchi/agentx/commit/42360fc60e9cae7c6fb8588b6a468080b4081fb6))
+
 ## [0.173.0](https://github.com/anis-marrouchi/agentx/compare/v0.172.0...v0.173.0) (2026-10-25)
 
 
