@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import type { InterruptedRun } from "@/storage/traces"
+import { backgroundNoteLines } from "./background"
 
 // --- What a resumed run is told, and the boot history behind the crash-loop brake ---
 
@@ -31,6 +32,7 @@ export function buildResumeNote(run: InterruptedRun): string {
       "pushing, merging, deploying, sending — check whether it already happened.",
     )
   }
+  lines.push(...backgroundNoteLines(run.backgroundWork ?? []))
   lines.push("Then finish the request below.", "")
   return lines.join("\n")
 }

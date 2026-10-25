@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import { claimResume, recordResumeDecision, type InterruptedRun } from "@/storage/traces"
 import type { RunOrigin } from "./origin"
+import { backgroundReportClause } from "./background"
 import { buildResumeNote } from "./note"
 import { planResume, type ResumePlan, type ResumeSettings } from "./policy"
 
@@ -33,8 +34,9 @@ export interface ResumeOutcome {
 }
 
 export const RESUMED_TEXT = "AgentX restarted while working on this. Picking it up again."
-export function reportedText(reason: string): string {
-  return `AgentX restarted while working on this, and it wasn't picked up again (${reason}). Send it again if you still need it.`
+export function reportedText(reason: string, run?: Pick<InterruptedRun, "backgroundWork">): string {
+  const left = backgroundReportClause(run?.backgroundWork ?? [])
+  return `AgentX restarted while working on this, and it wasn't picked up again (${reason}).${left ? ` ${left}` : ""} Send it again if you still need it.`
 }
 
 export class ResumeCoordinator {
@@ -83,13 +85,16 @@ export class ResumeCoordinator {
         if (plan.action === "skip") {
           recordResumeDecision(input.db, run.taskId, "skipped", plan.reason)
           outcome("skipped", plan.reason)
+          // Whatever picks it up again starts fresh: the work its background
+          // jobs left behind would be found only by hand (#1260).
+          if (run.backgroundWork?.length) untold.push(`- ${run.agentId} (${run.channel ?? "no channel"}): ${preview(run)} — ${plan.reason}${withBackground(run)}`)
           continue
         }
         const report = async (origin: RunOrigin | null, reason: string) => {
           recordResumeDecision(input.db, run.taskId, "reported", reason)
           outcome("reported", reason)
-          const told = origin ? await this.tell(origin, reportedText(reason), input.log) : false
-          if (!told) untold.push(`- ${run.agentId} (${run.channel ?? "no channel"}): ${preview(run)} — ${reason}`)
+          const told = origin ? await this.tell(origin, reportedText(reason, run), input.log) : false
+          if (!told) untold.push(`- ${run.agentId} (${run.channel ?? "no channel"}): ${preview(run)} — ${reason}${withBackground(run)}`)
         }
         if (plan.action === "report") {
           await report(plan.origin, plan.reason)
@@ -108,7 +113,7 @@ export class ResumeCoordinator {
         const reason = `resume failed: ${e?.message ?? e}`
         try { recordResumeDecision(input.db, run.taskId, "resume-failed", reason) } catch { /* db gone: logged below */ }
         outcome("resume-failed", reason)
-        untold.push(`- ${run.agentId} (${run.channel ?? "no channel"}): ${preview(run)} — ${reason}`)
+        untold.push(`- ${run.agentId} (${run.channel ?? "no channel"}): ${preview(run)} — ${reason}${withBackground(run)}`)
       }
       if (input.staggerMs) await new Promise((r) => setTimeout(r, input.staggerMs))
     }
@@ -149,6 +154,11 @@ export class ResumeCoordinator {
       return false
     }
   }
+}
+
+function withBackground(run: InterruptedRun): string {
+  const left = backgroundReportClause(run.backgroundWork ?? [])
+  return left ? `. ${left}` : ""
 }
 
 function preview(run: InterruptedRun): string {

@@ -16,7 +16,8 @@ import { join } from "path"
 const hang = vi.hoisted(() => ({ on: false, skills: false }))
 // When set, stands in for the agent process: settles after `agentMs`.
 // `until` (epoch ms), when set, overrides it with an absolute end time.
-const spawn = vi.hoisted(() => ({ agentMs: 0, until: 0, calls: 0, reapOnAbort: false }))
+// `events` are fed to the run's onEvent first, like a live stream.
+const spawn = vi.hoisted(() => ({ agentMs: 0, until: 0, calls: 0, reapOnAbort: false, events: [] as any[] }))
 vi.mock("../src/agents/runtime", async (importOriginal) => {
   const real: any = await importOriginal()
   return {
@@ -28,6 +29,7 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
       // Like the real runtime: an abort reaps the process and the run
       // returns at once, reading the kill however it reads it.
       const signal: AbortSignal | undefined = args[7]
+      for (const e of spawn.events) args[6]?.(e)
       return new Promise((res) => {
         const t = setTimeout(() => res({ content: "done", duration: 1 }), ms)
         if (spawn.reapOnAbort) signal?.addEventListener("abort", () => {
@@ -79,13 +81,13 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function registry(extra: Record<string, unknown> = {}): AgentRegistry {
+function registry(extra: Record<string, unknown> = {}, logs: string[] = []): AgentRegistry {
   const config = daemonConfigSchema.parse({
     node: { id: "test", name: "test" },
     agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
     ...extra,
   })
-  return new AgentRegistry(config, () => {})
+  return new AgentRegistry(config, (...a: unknown[]) => logs.push(a.join(" ")))
 }
 
 const agentState = (r: AgentRegistry) => r.list().find((a) => a.id === "ops")!
@@ -163,6 +165,40 @@ describe("a run a daemon shutdown cuts off (#297)", () => {
       expect(agentState(r).active).toBe(0)
     } finally {
       getEventBus().off("task:completed", onCompleted)
+      spawn.agentMs = 0
+      spawn.reapOnAbort = false
+    }
+  })
+
+  it("names the background work it had going, in the log and on its trace (#1260)", async () => {
+    spawn.agentMs = 60_000
+    spawn.reapOnAbort = true
+    spawn.events = [{ type: "assistant", message: { content: [
+      { type: "tool_use", name: "Agent", input: { description: "Lane builder", prompt: "cd /tmp/agentx-1182 and fix it", run_in_background: true } },
+      { type: "tool_use", name: "Bash", input: { command: "pnpm test" } },
+    ] } }]
+    hang.on = false
+    const steps: any[] = []
+    const onStep = (p: any) => { steps.push(p) }
+    getEventBus().on("task:step", onStep)
+    const logs: string[] = []
+    try {
+      const r = registry({}, logs)
+      const { started, run } = startRun(r)
+      const id = await started
+      await vi.waitFor(() => expect(r.runningBackgroundWork()).toHaveLength(1))
+      expect(r.runningBackgroundWork()[0]).toMatchObject({ taskId: id, agentId: "ops", work: [{ kind: "subagent", label: "Lane builder", dirs: ["/tmp/agentx-1182"] }] })
+
+      r.interruptRunning(REASON)
+      await run
+      expect(logs).toContain(`[ops] task ${id} had 1 background job(s): subagent "Lane builder"; work dirs: /tmp/agentx-1182`)
+      const saved = steps.find((s) => s.name === "background_work")
+      expect(saved).toMatchObject({ action: "interrupted" })
+      expect(JSON.parse(saved.inputSummary)).toEqual([{ kind: "subagent", tool: "Agent", label: "Lane builder", dirs: ["/tmp/agentx-1182"] }])
+      expect(r.runningBackgroundWork()).toEqual([])
+    } finally {
+      getEventBus().off("task:step", onStep)
+      spawn.events = []
       spawn.agentMs = 0
       spawn.reapOnAbort = false
     }

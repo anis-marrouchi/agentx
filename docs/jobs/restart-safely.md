@@ -194,6 +194,19 @@ Some work still gets cut off: a task that runs longer than the wait, a crash, or
 
 A task that is picked up again is told it was interrupted, along with the steps it had already taken, and asked to check before repeating anything that affects the outside world, such as posting a message, pushing code or deploying.
 
+### Background work started by a task
+
+An agent can start work that keeps going on its own while the task carries on: a helper agent sent off in the background, or a long command, such as a test run, left running in the background. A restart stops that work along with the task, sometimes halfway through changing files. AgentX keeps a list of this work for each running task, with the folders it works in (its *work dirs*), as far as the agent's instructions name them (for example `cd /tmp/app-1182` or `git clone … /tmp/app-1182`):
+
+1. While AgentX waits for tasks to finish, the log lists each running task's background work, for example `[dev-agent] task … has 2 background job(s): subagent "Fix the login bug", shell "pnpm test"; work dirs: /tmp/app-1182`.
+2. When the wait runs out and the task is stopped, the log says what it had going (`… had 2 background job(s) …`), and AgentX saves the list with the task's record.
+3. After the restart:
+   - A task that is picked up again is told which background work was stopped and in which work dirs. It is asked to look there first (`git status`, `git log`), keep and finish what is left, commit and push it, and start again only the work that hadn't finished.
+   - A task that is reported says so too: "It had 2 background job(s) going, stopped by the restart; work left in /tmp/app-1182."
+   - A scheduled job is still not run again, but if it had background work, you get a message (at `notifications.destination`) naming the work dirs, so the work left there isn't lost.
+
+Nothing needs to be set up for this.
+
 To stay safe, AgentX never picks the same task up twice:
 
 - A task cut off again while being picked up is reported, not retried.
@@ -262,6 +275,14 @@ To check that cut-off work is picked up:
 3. Within a few seconds the chat shows the "Picking it up again" note, then the answer.
 4. **Terminal:** `agentx daemon logs` shows `Resume: 1 resumed, 0 reported, 0 skipped, 0 failed`.
 
+To check that background work is named:
+
+1. **Chat:** ask an agent to start a long command in the background in a folder, for example to run the tests in `/tmp/demo-app`, and keep working.
+2. **Terminal:** while it works, run `agentx daemon restart` with a short wait, for example after `agentx config set shutdown.drainTimeoutSeconds 5`.
+3. **Terminal:** `agentx daemon logs` shows `… has 1 background job(s): shell "…"; work dirs: /tmp/demo-app` and, after the wait, `… had 1 background job(s) …`.
+4. **Chat:** the task is picked up again, and the agent checks `/tmp/demo-app` before starting the command again.
+5. **Terminal:** set the wait back, for example `agentx config set shutdown.drainTimeoutSeconds 300`.
+
 A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in the first line, instead of `requested by`.
 
 ## If something is wrong
@@ -280,4 +301,5 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 - **`stop` says the daemon is still finishing tasks:** wait, then check with `agentx daemon status` before starting it again.
 - **Another tool got `503 daemon is restarting`:** it asked for new work during a restart. It can try again a little later.
 - **A chat task wasn't picked up:** the log line starting `[resume]` says why. The usual reasons are that it was older than 30 minutes, it was already a second attempt, or there were several restarts in a row.
+- **A task's background work isn't named after a restart:** AgentX only sees work the agent started in the background with its own tools, and only the folders its instructions name. Work started some other way (for example a command that detaches itself with `nohup … &`) isn't listed. Look in the work dirs the task mentioned, and ask the agent to start that work in the background with its own tools next time.
 - **You got a "didn't resume" message you didn't expect:** that task came from somewhere with no chat to answer in. Send the request again, or add its source to `directChannels`.

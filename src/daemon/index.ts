@@ -74,6 +74,7 @@ import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_
 import { traceToolCalls } from "@/storage/traces"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
+import { describeBackgroundWork } from "@/agents/resume/background"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
@@ -1234,6 +1235,10 @@ export class AgentXDaemon {
       let active = inflightCount()
       if (active > 0) {
         this.log(`  Draining ${active} in-flight task(s) — local=${this.registry.getActiveTaskCount()}, mesh-forwards=${this.router.getActiveMeshForwardCount()} (max ${Math.round(drainTimeoutMs / 1000)}s)...`)
+        // Background work isn't counted above: it ends when its run does.
+        for (const r of this.registry.runningBackgroundWork()) {
+          this.log(`  [${r.agentId}] task ${r.taskId} has ${describeBackgroundWork(r.work)}`)
+        }
         while (active > 0 && Date.now() - drainStart < drainTimeoutMs) {
           await new Promise(r => setTimeout(r, 500))
           active = inflightCount()

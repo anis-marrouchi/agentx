@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import { newEventId } from "@/intent/ulid"
 import { boundInjectedContext } from "@/agents/injected-context"
+import { BACKGROUND_WORK_STEP, decodeBackgroundWork, type BackgroundWork } from "@/agents/resume/background"
 
 // --- Task trace store ---
 //
@@ -447,6 +448,8 @@ export interface InterruptedRun {
   resumeAttempt: number
   /** Tool calls it had made, in order, for the resume note. */
   toolCalls: Array<{ action: string | null; inputSummary: string | null }>
+  /** Background subagents and shells the restart stopped with it (#1260). */
+  backgroundWork?: BackgroundWork[]
 }
 
 /** Close every run left in flight by the previous daemon, marking it
@@ -471,7 +474,12 @@ export function takeInterruptedRuns(db: Database.Database, now = Date.now()): In
     SELECT action, input_summary FROM task_trace_steps
      WHERE task_id = ? AND name = 'tool_use' ORDER BY seq
   `)
+  const background = db.prepare(`
+    SELECT input_summary FROM task_trace_steps
+     WHERE task_id = ? AND name = ? ORDER BY seq DESC LIMIT 1
+  `)
   return take().map((r) => ({
+    backgroundWork: decodeBackgroundWork((background.get(r.task_id, BACKGROUND_WORK_STEP) as Record<string, any> | undefined)?.input_summary),
     taskId: r.task_id,
     agentId: r.agent_id,
     channel: r.channel ?? null,

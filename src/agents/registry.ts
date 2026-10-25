@@ -27,6 +27,7 @@ import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
+import { BACKGROUND_WORK_STEP, describeBackgroundWork, encodeBackgroundWork, noteBackgroundWork, type BackgroundWork } from "./resume/background"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
@@ -690,6 +691,8 @@ export class AgentRegistry {
     traceId?: string; sender?: string; rootId?: string; origin?: RunOrigin
     /** Set when the run is a workflow step (#857: not stoppable with a plan). */
     workflowRunId?: string
+    /** Background subagents and shells the run started (#1260). */
+    backgroundWork: BackgroundWork[]
   }> = new Map()
   /** Runs a daemon shutdown stopped, with the reason each one reports. */
   private interruptedRuns: Map<string, string> = new Map()
@@ -1603,7 +1606,9 @@ export class AgentRegistry {
     // AbortController for operator stop / replace. Stored under the running
     // task id so /api/tasks/:id/cancel can resolve and abort it.
     const abortController = new AbortController()
+    const backgroundWork: BackgroundWork[] = []
     this.taskAborts.set(runningTask.id, {
+      backgroundWork,
       agentId: task.agentId,
       channel: runningTask.channel,
       chatId: typeof runningTask.chatId === "string" ? runningTask.chatId : "",
@@ -1700,6 +1705,7 @@ export class AgentRegistry {
         // SQLite subscriber persists it under traceTaskId.
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
+        noteBackgroundWork(backgroundWork, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
         recordRateLimitEvent(event, undefined, task.model || state.def.model)
         // Caller-supplied event subscriber (HTTP SSE callers, etc.).
@@ -1714,6 +1720,7 @@ export class AgentRegistry {
         noteFirstEvent()
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
+        noteBackgroundWork(backgroundWork, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
         recordRateLimitEvent(event, undefined, task.model || state.def.model)
         if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
@@ -3920,17 +3927,44 @@ export class AgentRegistry {
    * Daemon shutdown: stop every run still going once the drain limit is
    * spent. Each one ends as `interrupted` with `reason` rather than as a
    * failure of its own, and its trace stays in flight for resume on boot.
+   * The background work a run started dies with it (#1260): it is named in
+   * the log and saved on the trace first, so the resume note and the
+   * reports after boot can say which work dirs it left behind.
    * Returns how many runs it stopped.
    */
   interruptRunning(reason: string): number {
     let n = 0
     for (const [taskId, e] of this.taskAborts) {
       this.interruptedRuns.set(taskId, reason)
+      if (e.backgroundWork.length) {
+        this.log(`[${e.agentId}] task ${taskId} had ${describeBackgroundWork(e.backgroundWork)}`)
+        if (e.traceId) {
+          try {
+            getEventBus().emit("task:step", {
+              taskId: e.traceId,
+              agentId: e.agentId,
+              name: BACKGROUND_WORK_STEP,
+              action: "interrupted",
+              status: "error",
+              inputSummary: encodeBackgroundWork(e.backgroundWork),
+              at: new Date().toISOString(),
+            } as any)
+          } catch { /* observability never blocks the shutdown */ }
+        }
+      }
       try { e.controller.abort(new Error(reason)) } catch { /* */ }
       this.log(`[${e.agentId}] task ${taskId} interrupted — ${reason}`)
       n++
     }
     return n
+  }
+
+  /** Background work each running run has started, for runs with any:
+   *  what a restart would stop besides the runs themselves (#1260). */
+  runningBackgroundWork(): Array<{ taskId: string; agentId: string; work: BackgroundWork[] }> {
+    return [...this.taskAborts]
+      .filter(([, e]) => e.backgroundWork.length > 0)
+      .map(([taskId, e]) => ({ taskId, agentId: e.agentId, work: [...e.backgroundWork] }))
   }
 
   /** Stop every in-flight run of `agentId` in one chat. Used when a streaming
