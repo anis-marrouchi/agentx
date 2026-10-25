@@ -49,7 +49,7 @@ d.row(
 )
 
 d.list(d.x0, y + ROW + 64, {
-  title: "STILL OPEN (EPIC #1138, CLOSED)",
+  title: "STATUS (EPIC #1138, CLOSED)",
   columns: 2,
   items: [
     ["Urgent ladder is off", "Your switch: notifications.reach.enabled."],
