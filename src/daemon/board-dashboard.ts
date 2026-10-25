@@ -1,4 +1,5 @@
 import { readMonitorBody, monitorTargets } from "./session-monitor"
+import { cronValueOf, type CronValue } from "@/crons/value-line"
 import { renderMonitorPage } from "./ui/pages/monitor"
 import { renderActivityPage } from "./ui/pages/activity"
 import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
@@ -1851,6 +1852,8 @@ interface NodeLive {
     nextRun?: string
     retryPending?: boolean
     consecutiveErrors: number
+    /** Why it runs and the number that proves it (#1183). */
+    value?: CronValue
   }>
   cronRuns?: Array<{
     jobId: string
@@ -2016,6 +2019,7 @@ export async function fetchDaemonAgents(
         nextRun: job.nextRun,
         retryPending: job.retryPending === true,
         consecutiveErrors: Number(job.consecutiveErrors) || 0,
+        value: cronValueOf(job.value),
       }))
     }
     if (cronRunsRes && cronRunsRes.ok) {

@@ -516,16 +516,20 @@ export const WALL_PAGE_SCRIPT = String.raw`
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list');
-    $('wall-profile').hidden = !f.owner || S.view === 'failures';
+    var side = S.view === 'failures' || S.view === 'jobs';
+    $('wall-profile').hidden = !f.owner || side;
     if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
     $('wall-agents').innerHTML = agentsHtml();
     $('wall-feed').hidden = S.view !== 'feed';
     $('wall-list').hidden = S.view !== 'list';
     $('wall-failures').hidden = S.view !== 'failures';
-    $('wall-count').hidden = S.view === 'failures';
+    $('wall-jobs').hidden = S.view !== 'jobs';
+    $('wall-count').hidden = side;
     if (S.view === 'feed') $('wall-feed').innerHTML = posts.length ? posts.map(postHtml).join('') : '<p class="ax-wall__empty">No posts match these filters.</p>';
     if (S.view === 'list') $('wall-list').innerHTML = posts.length ? listHtml(posts) : '<p class="ax-wall__empty">No posts match these filters.</p>';
     if (S.view === 'failures') $('wall-failures').innerHTML = failuresHtml();
+    // Recurring jobs with their value line (#1183): cron-value.ts.
+    if (S.view === 'jobs') $('wall-jobs').innerHTML = axCronJobsHtml(S.live && S.live.nodes, esc);
     var n = failCount();
     $('wall-fail-n').textContent = n ? '(' + n + ')' : '';
     $('wall-nodes').innerHTML = nodesHtml();

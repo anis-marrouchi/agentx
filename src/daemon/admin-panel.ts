@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSyn
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
+import { cronValueOf } from "@/crons/value-line"
 import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
 import { TokenStore } from "./token-store"
@@ -287,6 +288,7 @@ function getAdminState() {
     agent: c.agent,
     prompt: (c.prompt || "").slice(0, 200),
     enabled: c.enabled !== false,
+    value: cronValueOf(c.value),
   }))
   const webhooks = Array.isArray(cfg.webhooks) ? cfg.webhooks.map((w: any) => ({
     id: w.id,

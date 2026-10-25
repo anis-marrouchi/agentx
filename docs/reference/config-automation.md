@@ -21,6 +21,9 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `maxOutputTokens` | number (50–8000) | — | Asks the agent to keep its answer under about this many tokens. A soft cap added to the prompt. |
 | `taskType` | string (up to 64 characters) | — | The type of task each run is. It picks the proof a watcher asks for before the run counts as done (`watchers.evidence.<type>`). Unset, or a type with no rule of its own: the rule for `cron`, if there is one. To exempt a job from proof, remove the `cron` rule rather than set a type. See [Require proof of done](/automations/task-watchers#_5-require-proof-of-done-optional). |
 | `autonomy` | `"report"` \| `"propose"` \| `"act"` | — (acts as `act`) | How much the run may do. See [routine autonomy](./config.md#routine-autonomy). Not allowed on command jobs. |
+| `value` | object | — | The job's value line: why it runs and the number that proves it. Shown as written on the Wall's **Jobs** tab and in Settings › Schedules. A job without one shows **no value line**. |
+| `value.why` | string (1–200 characters) | required | Why the job runs, for example `Keeps the support queue answered overnight`. |
+| `value.metric` | string (1–200 characters) | required | The number that proves it, for example `Tickets older than 12 h each morning: 0`. AgentX does not measure it. |
 | `onError` | `"log"` \| `"notify"` \| `"disable"`, or a list of them | `"log"` | What happens when a run fails: log it, send a message, or turn the job off after 3 failures in a row. From the second failure in a row a message is sent anyway. |
 | `notify` | object | — | Where this job's messages go: the answer from each successful run, and failure messages. |
 | `notify.channel` | string | required | Channel for the job's messages, for example `telegram`. |
