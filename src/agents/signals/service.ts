@@ -1,7 +1,7 @@
 import { callerAgentOf, type RunOrigin } from "@/agents/resume/origin"
 import { agentPlan, machinePlan, resumeNote, windDownMessage, type ResumePlan, type ToolCallRef } from "./plan"
 import { canSignal, describeSender, SignalBudget, type SignalSender, type SignalSettings } from "./policy"
-import type { StoppedTask, StoppedTaskStore } from "./store"
+import type { StoppedState, StoppedTask, StoppedTaskStore } from "./store"
 
 // --- Stop a running task cleanly, and resume it from its plan (#857) ---
 //
@@ -15,6 +15,11 @@ import type { StoppedTask, StoppedTaskStore } from "./store"
 // A step of a workflow run (#870): the stop pauses the whole run at that
 // step (not failed), and the resume re-enters the step inside the run,
 // which then goes on to its later steps.
+// stopAll (#1271): the owner's order to stop every running task on this
+//         node. Each one goes through stop(), so each writes its plan; the
+//         records carry the order id, and the next boot's resumeStopAll()
+//         resumes every one of them from its plan, one attempt each, and
+//         answers with one report.
 // Both publish `signal` events, so subscribers and the live page see them.
 // Every step is logged; nothing here throws to the caller except through
 // the returned result.
@@ -39,6 +44,8 @@ export interface SignalServiceDeps {
   store: StoppedTaskStore
   /** A running task by its id, or the only one of `agentId` on a chat. */
   findRunning(by: { taskId?: string; agentId?: string; channel?: string; chatId?: string }): RunningRef | null
+  /** Every running task a stop-all addresses (#1271). Absent: none. */
+  listRunning?(): RunningRef[]
   /** End the run with status `stopped`. False when it is no longer running. */
   stopRun(taskId: string, reason: string): boolean
   /** Resolves once the run has let go of its slot, or after `timeoutMs`. */
@@ -82,6 +89,45 @@ export function deliveryOf(origin: RunOrigin | null, workflow?: StoppedTask["wor
   return "nobody: the answer is kept on its task page and trace only"
 }
 
+/** One task of a stop-all order, as the order's answer lists it. */
+export interface StopAllEntry {
+  id: string
+  agentId: string
+  /** `refused`: stop() would not stop it; `error` says why. */
+  state: StoppedState | "refused"
+  /** Who wrote its resume plan, once saved. */
+  plan?: "agent" | "machine"
+  error?: string
+}
+
+export type StopAllResult =
+  | { ok: true; orderId: string; tasks: StopAllEntry[]; done: Promise<StopAllEntry[]> }
+  | { ok: false; status: 403; error: string }
+
+/** What the boot pass did with one stop-all task (#1271). */
+export interface StopAllOutcome {
+  id: string
+  agentId: string
+  decision: "resumed" | "resume-failed" | "skipped"
+  reason: string
+}
+
+/** The one message the owner gets after a restart that followed a stop-all
+ *  (#1271): every task of the order, by agent. Null when there were none. */
+export function stopAllReport(node: string, outcomes: StopAllOutcome[]): string | null {
+  if (!outcomes.length) return null
+  const count = (d: StopAllOutcome["decision"]) => outcomes.filter((o) => o.decision === d).length
+  const lines = [`After the stop-all on ${node}: ${count("resumed")} resumed, ${count("resume-failed")} failed, ${count("skipped")} skipped.`]
+  const agents = [...new Set(outcomes.map((o) => o.agentId))].sort()
+  for (const agent of agents) {
+    for (const o of outcomes.filter((x) => x.agentId === agent)) {
+      lines.push(`- ${agent} ${o.id}: ${o.decision === "resume-failed" ? "failed" : o.decision}${o.decision === "resumed" ? "" : ` (${o.reason})`}`)
+    }
+  }
+  if (count("resume-failed") || count("skipped")) lines.push("Resume one by hand with: agentx signal resume <id>")
+  return lines.join("\n")
+}
+
 /** Time the stopped run gets to let go of its slot before the wind-down
  *  starts anyway (the registry's cancel grace, plus a little). */
 const RUN_END_WAIT_MS = 35_000
@@ -100,6 +146,12 @@ export class SignalService {
     return this.deps.store.list({ ...opts, now: this.now() })
   }
 
+  /** How long a stop waits for the agent's plan, at most: the run's slot
+   *  release, then the wind-down turn. */
+  windDownMs(): number {
+    return RUN_END_WAIT_MS + this.deps.settings().windDownSeconds * 1000 + 5_000
+  }
+
   get(id: string): StoppedTask | null {
     return this.deps.store.get(id)
   }
@@ -108,6 +160,7 @@ export class SignalService {
     sender: SignalSender,
     target: { taskId?: string; agentId?: string; channel?: string; chatId?: string },
     reason?: string,
+    order?: { orderId: string },
   ): Promise<SignalResult> {
     const run = this.deps.findRunning(target)
     if (!run) return { ok: false, status: 404, error: "no running task matches (it may have finished already)" }
@@ -143,6 +196,7 @@ export class SignalService {
       originalMessage: run.originalMessage,
       origin: run.origin,
       ...(workflow ? { workflow } : {}),
+      ...(order ? { stopAll: { orderId: order.orderId } } : {}),
       stoppedAt: new Date(this.now()).toISOString(),
       stoppedBy: by,
       reason: why,
@@ -159,6 +213,98 @@ export class SignalService {
     this.deps.log(`[signals] ${run.agentId} task ${run.taskId} stopped by ${by}${why ? ` (${why})` : ""}; winding down`)
     const done = this.windDown(record, settings.windDownSeconds * 1000)
     return { ok: true, record, done }
+  }
+
+  /** Stop every running task on this node (#1271). The owner's order, or
+   *  a mesh peer's that signals.allowPeers names; never an agent's. A task
+   *  stop() refuses (a workflow step that cannot pause) is listed as
+   *  `refused` and keeps running. `done` resolves once every plan is saved. */
+  async stopAll(sender: SignalSender, reason?: string): Promise<StopAllResult> {
+    if (sender.kind === "agent") return { ok: false, status: 403, error: "only the owner or a mesh peer may stop every task" }
+    const settings = this.deps.settings()
+    if (!settings.enabled) return { ok: false, status: 403, error: "signals are turned off on this node (signals.enabled)" }
+    if (sender.kind === "peer" && !settings.allowPeers.map((p) => p.toLowerCase()).includes(sender.peer.toLowerCase())) {
+      return { ok: false, status: 403, error: `mesh peer "${sender.peer}" is not in signals.allowPeers` }
+    }
+    const orderId = `stop-all-${new Date(this.now()).toISOString().replace(/[^0-9]/g, "").slice(0, 14)}`
+    const why = reason?.trim() ? `stop-all: ${reason.trim()}` : "stop-all"
+    const tasks: StopAllEntry[] = []
+    const pending: Array<Promise<StopAllEntry>> = []
+    for (const run of this.deps.listRunning?.() ?? []) {
+      const r = await this.stop(sender, { taskId: run.taskId }, why, { orderId })
+      if (!r.ok) {
+        // Finished between the list and the stop: nothing left to stop.
+        if (r.status === 404) continue
+        tasks.push({ id: run.taskId, agentId: run.agentId, state: "refused", error: r.error })
+        continue
+      }
+      tasks.push({ id: r.record.id, agentId: r.record.agentId, state: r.record.state })
+      if (r.done) pending.push(r.done.then((s) => ({ id: s.id, agentId: s.agentId, state: s.state, plan: s.plan?.author })))
+    }
+    this.deps.log(`[signals] stop-all ${orderId} by ${describeSender(sender)}: ${pending.length} stopped, ${tasks.length - pending.length} refused`)
+    this.deps.publish({
+      type: "signal:stop-all", agentId: "*", rootId: orderId, ref: orderId,
+      summary: `stop-all by ${describeSender(sender)}: ${pending.length} task(s) stopped`,
+    })
+    const done = Promise.all(pending).then((saved) => tasks.map((t) => saved.find((s) => s.id === t.id) ?? t))
+    return { ok: true, orderId, tasks, done }
+  }
+
+  /** The stop-all order that owns a run the last restart cut off, or null
+   *  (#1271). Its trace can still be `in-flight` (a `--no-wait` order and a
+   *  quick restart, or a run that ignored the abort): resumeStopAll()
+   *  resumes it from its plan, so the interrupted-run resume must not run
+   *  it a second time. Matched by trace id or task id. */
+  stopAllOwner(runId: string): string | null {
+    const record = this.deps.store.list({ limit: 200, now: this.now() })
+      .find((r) => r.stopAll && (r.traceId === runId || r.id === runId))
+    return record?.stopAll?.orderId ?? null
+  }
+
+  /** At boot, after recover(): resume every task a stop-all stopped, from
+   *  its plan, one attempt each (#1271). No age limit: the order said it
+   *  would come back. A task already tried by an earlier boot is never
+   *  tried again, and is reported as skipped once; `agentx signal resume`
+   *  still works on it. Never throws. */
+  async resumeStopAll(opts: { staggerMs?: number } = {}): Promise<StopAllOutcome[]> {
+    const outcomes: StopAllOutcome[] = []
+    const records = this.deps.store.list({ state: "stopped", limit: 200, now: this.now() })
+      .filter((r) => r.stopAll)
+      .sort((a, b) => a.stoppedAt.localeCompare(b.stoppedAt))
+    for (const record of records) {
+      const order = record.stopAll!
+      // Each task is in one report only; later boots leave it out.
+      if (order.reported) continue
+      if (order.attemptedAt) {
+        this.save({ ...record, stopAll: { ...order, reported: true } })
+        outcomes.push({ id: record.id, agentId: record.agentId, decision: "skipped", reason: `already tried at ${order.attemptedAt}${order.error ? `: ${order.error}` : ""}` })
+        continue
+      }
+      if (!record.origin && !record.workflow) {
+        this.save({ ...record, stopAll: { ...order, reported: true } })
+        outcomes.push({ id: record.id, agentId: record.agentId, decision: "skipped", reason: "no record of how to re-enter it" })
+        continue
+      }
+      if (outcomes.some((o) => o.decision !== "skipped") && opts.staggerMs) await new Promise((r) => setTimeout(r, opts.staggerMs))
+      // Marked before the attempt: a restart in the middle of it never
+      // tries it a second time.
+      const attemptedAt = new Date(this.now()).toISOString()
+      this.save({ ...record, stopAll: { ...order, attemptedAt } })
+      let r: SignalResult
+      try {
+        r = await this.resume({ kind: "owner", name: "stop-all restart" }, record.id, `resumed after ${order.orderId}`)
+      } catch (e: any) {
+        r = { ok: false, status: 500, error: String(e?.message ?? e) }
+      }
+      if (r.ok) {
+        outcomes.push({ id: record.id, agentId: record.agentId, decision: "resumed", reason: `answer goes to ${r.delivery ?? "its origin"}` })
+      } else {
+        const latest = this.deps.store.get(record.id)
+        if (latest?.state === "stopped") this.save({ ...latest, stopAll: { ...order, attemptedAt, error: r.error.slice(0, 300), reported: true } })
+        outcomes.push({ id: record.id, agentId: record.agentId, decision: "resume-failed", reason: r.error })
+      }
+    }
+    return outcomes
   }
 
   async resume(sender: SignalSender, id: string, reason?: string): Promise<SignalResult> {

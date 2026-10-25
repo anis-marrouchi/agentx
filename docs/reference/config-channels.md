@@ -243,6 +243,25 @@ When AgentX cannot connect to the ntfy server, or the server answers "busy" (`42
 - AgentX gives up after about 20 seconds in total, whatever the number of tries. When that limit stops a try, the log says `send time limit of 20000 ms reached`.
 - It does not try again when the server may already have received the notification: for example when the connection breaks halfway, or the server answers with another error. This way your phone never gets the same notification twice.
 
+## Linear and Jira (trackers)
+
+A labelled Linear or Jira issue goes to the agent routed for its team or project, and its answer comes back as a comment. The webhooks arrive at `POST /webhook/linear` and `POST /webhook/jira` on the daemon. Keys and secrets are read from the environment variables named below. Set up with [Hand Linear and Jira issues to an agent](../jobs/linear-jira.md).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `trackers.linear.enabled` | boolean | `false` | Turns Linear on. Off, its webhook answers `404`. |
+| `trackers.linear.apiKeyEnv` | string | `"LINEAR_API_KEY"` | Variable holding the Linear API key. |
+| `trackers.linear.webhookSecretEnv` | string | `"LINEAR_WEBHOOK_SECRET"` | Variable holding the webhook's signing secret. Unset, every webhook is refused (`503`). |
+| `trackers.linear.label` | string | `"agentx"` | The label that hands an issue to an agent. |
+| `trackers.linear.routes` | list | `[]` | `{ "team", "agent", "checkout"? }` per Linear team key. |
+| `trackers.jira.enabled` | boolean | `false` | Turns Jira on. Needs `baseUrl`. |
+| `trackers.jira.baseUrl` | string | — | Your Jira's address, such as `https://example.atlassian.net`. |
+| `trackers.jira.emailEnv` | string | `"JIRA_EMAIL"` | Variable holding the Jira Cloud account email. Empty for Jira Server, whose token is sent on its own. |
+| `trackers.jira.tokenEnv` | string | `"JIRA_API_TOKEN"` | Variable holding the API token or personal access token. |
+| `trackers.jira.webhookSecretEnv` | string | `"JIRA_WEBHOOK_SECRET"` | Variable holding the webhook's secret. Unset, every webhook is refused (`503`). |
+| `trackers.jira.label` | string | `"agentx"` | The label that hands an issue to an agent. |
+| `trackers.jira.routes` | list | `[]` | `{ "project", "agent", "checkout"? }` per Jira project key. |
+
 ## Browser calls (WebRTC)
 
 WebRTC lets people call an agent from a browser.

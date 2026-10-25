@@ -21,6 +21,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `maxOutputTokens` | number (50–8000) | — | Asks the agent to keep its answer under about this many tokens. A soft cap added to the prompt. |
 | `taskType` | string (up to 64 characters) | — | The type of task each run is. It picks the proof a watcher asks for before the run counts as done (`watchers.evidence.<type>`). Unset, or a type with no rule of its own: the rule for `cron`, if there is one. To exempt a job from proof, remove the `cron` rule rather than set a type. See [Require proof of done](/automations/task-watchers#_5-require-proof-of-done-optional). |
 | `autonomy` | `"report"` \| `"propose"` \| `"act"` | — (acts as `act`) | How much the run may do. See [routine autonomy](./config.md#routine-autonomy). Not allowed on command jobs. |
+| `requireSources` | boolean | — | Check each answer before it is sent: every line that states a fact must carry a link (`https://…`, or a link to a `.md` file in the agent's folder). If one does not, the message ends with a warning that names the line, and the run record counts it as `unsourced`. See [sales leads](../jobs/sales.md). |
 | `value` | object | — | The job's value line: why it runs and the number that proves it. Shown as written on the Wall's **Jobs** tab and in Settings › Schedules. A job without one shows **no value line**. |
 | `value.why` | string (1–200 characters) | required | Why the job runs, for example `Keeps the support queue answered overnight`. |
 | `value.metric` | string (1–200 characters) | required | The number that proves it, for example `Tickets older than 12 h each morning: 0`. AgentX does not measure it. |
@@ -452,6 +453,9 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.crashLoop` | object | `{}` | Stops picking up work when the daemon keeps restarting. |
 | `resume.crashLoop.restarts` | number (1 or more) | `3` | This many restarts… |
 | `resume.crashLoop.windowMinutes` | number | `10` | …within this many minutes pauses picking up work. |
+| `resume.timeLimit` | object | `{}` | Work stopped at its agent's time limit (`maxExecutionMinutes`). See [work that runs past its time limit](/jobs/restart-safely#work-that-runs-past-its-time-limit). |
+| `resume.timeLimit.enabled` | boolean | `true` | Picks the work up again in the same conversation, with a note that it hit its time limit. Scheduled jobs and workflow steps never are. |
+| `resume.timeLimit.maxContinuations` | number (0–3) | `1` | How many times one request is picked up again after its time limit. |
 
 ## `quality`
 
@@ -480,7 +484,7 @@ Pausing a running task with a resume plan, and resuming it later. You may always
 | `signals.enabled` | boolean | `true` | Turns pausing and resuming on. Off: every signal is refused, yours included. |
 | `signals.windDownSeconds` | number (10–1800) | `120` | How long a paused agent gets to write its resume plan. Past it, the plan-writing turn is stopped and AgentX writes the plan from the run's trace. |
 | `signals.allowAgents` | list of strings | `[]` | Agents that may pause or resume any task on this machine. `"*"` allows every agent. An agent never pauses its own task. |
-| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. A machine using its own token from `mesh.peers` is that machine, with or without naming itself. The list does not hold for the shared `MESH_TOKEN`: such a machine is believed about its name, and counts as the owner when it names none. Use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
+| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts, including a stop-all order (`agentx signal stop --all --mesh`). A machine using its own token from `mesh.peers` is that machine, with or without naming itself. The list does not hold for the shared `MESH_TOKEN`: such a machine is believed about its name, and counts as the owner when it names none. Use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
 | `signals.maxPerRoot` | number (1–100) | `6` | Loop brake: most signals from agents and other machines one request (one root id) may carry in a day. The owner's are never counted. |
 
 ## `reminders`

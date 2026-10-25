@@ -40,6 +40,8 @@ Each entry in `dashboard.wall.projects`:
 | `agents` | list of strings | `[]` | Agents whose tasks are in this project. |
 | `workspaces` | list of strings | `[]` | Folders: an agent whose workspace is one of them, or inside one, is in this project. `~/` is your home folder. |
 | `rhythmHours` | number | `dashboard.wall.rhythmHours` | This project's own normal rhythm, in hours. |
+| `budget.monthlyUsd` | number (0–1000000) | unset (no cap) | Most this project's runs may spend in one calendar month (UTC), in US dollars. At the cap, new runs for the project are refused until the month ends or you raise it. Applies on save. See [Cap a project](../help/costs.md#cap-a-project-or-the-whole-fleet). |
+| `budget.warnRatio` | number (above 0, up to 1) | `0.8` | Share of `budget.monthlyUsd` at which you get one notice for the month. |
 
 When two entries name the same repo or agent, the first one wins.
 
@@ -300,6 +302,7 @@ Gates that check agent pull requests before they merge. Each one is off by defau
 | `quality.reviewGate.maxReviewsPerPrPerDay` | number | `6` | Most reviews of one pull request in 24 hours; past it the status is `error`. `0`: no limit. |
 | `quality.reviewGate.ciWaitMinutes` | number | `5` | How long to wait for other checks before reviewing. |
 | `quality.reviewGate.maxDiffKb` | number | `256` | A longer diff is cut, and the reviewer is told. |
+| `quality.reviewGate.forges` | string[] | `["github"]` | Where the gate reviews: `"github"` pull requests, `"gitlab"` merge requests, or both. See [On GitLab merge requests](/jobs/review-gate#on-gitlab-merge-requests). |
 | `quality.mergePolicy.enabled` | boolean | `false` | Posts the `agentx/merge-policy` status on every pull request: core paths need a person's approval. See [Let agents merge only edge changes](/jobs/merge-policy). |
 | `quality.mergePolicy.mode` | `"advisory"` or `"required"` | `"advisory"` | Advisory marks an unapproved core change "[advisory]" and passes it. Required leaves it pending until a person approves. |
 | `quality.mergePolicy.corePaths` | string[] | `[]` | Core files, as patterns. Empty: nothing is core. |

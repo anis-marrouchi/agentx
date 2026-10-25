@@ -11,6 +11,7 @@ The list brings together six kinds of item:
 | **Memory fact** | Something an agent learned from an outside source ([review what agents learn](../jobs/agent-memory.md)) | Lets the agent use it | Keeps it out for good |
 | **Wiki lesson** | A lesson proposed for the shared wiki | Writes the article | Declines it |
 | **WhatsApp reply** | A reply an agent drafted for a watched WhatsApp chat ([watch a WhatsApp chat](../jobs/watch-whatsapp.md)) | Sends it through [wacli](../reference/glossary.md) (the WhatsApp tool AgentX uses) | Drops the draft; nothing is sent |
+| **Post** | A LinkedIn or X post an agent drafted in your voice, with the past posts it followed ([draft posts in your voice](../jobs/content.md)) | Posts it through the agent's connector, or saves it as a file ready to paste when there is none | Drops the draft; nothing is published |
 | **Request** | Something you asked an agent for that failed, ran out of time, was cut off or went quiet ([keep track of what you asked for](../jobs/open-requests.md)) | Hands it back to the agent | Drops the request |
 
 Answering here is the same as answering with the older commands (`agentx schedule approve`, `agentx memory facts approve`, `agentx wiki proposals approve`). They keep working, and both ways stay in step.
@@ -57,7 +58,7 @@ In a narrow browser window the buttons fill the width of the card:
 
 *Fictional demo data. No real agents, people or messages.*
 
-To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki** or **WhatsApp** at the top. With several machines connected, choose the machine in the top bar's machine menu to see its list.
+To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki**, **WhatsApp** or **Posts** at the top. With several machines connected, choose the machine in the top bar's machine menu to see its list.
 
 ## Answer from the terminal
 
@@ -144,7 +145,7 @@ When [open requests](../jobs/open-requests.md) are on, a request you gave an age
 - **No** drops the request. A note you add is kept as the reason.
 - **Later** puts it off, like any other item.
 
-Under the inbox, **Open requests** lists everything you asked for that is not finished, oldest first, whatever its state, one card each: its headline and what is needed from you (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)), the agent that has it, why it is not finished, your own words under **You said** and the agent's last answer. On the card you reply, hand it to an agent, press **Done** or **Drop**: see [decide on a request](../jobs/open-requests.md#decide-on-a-request). **Settings: open requests** below the list turns the feature on and sets who counts as you, the channels, the quiet time, how long closed requests are kept and whether AgentX writes a headline when the agent gave none.
+Under the inbox, **Open requests** lists everything you asked for that is not finished, oldest first, whatever its state, one card each: its headline and what is needed from you (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)), the agent that has it, why it is not finished, your own words under **You said** and the agent's last answer. On the card you reply, hand it to an agent, press **Done** or **Drop**: see [decide on a request](../jobs/open-requests.md#decide-on-a-request). Above the cards, **Goals** lists each goal a request names, with how far along it is and what it cost: see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal). **Settings: open requests** below the list turns the feature on and sets who counts as you, the channels, the quiet time, how long closed requests are kept and whether AgentX writes a headline when the agent gave none.
 
 ## Check-ins: a few times a day
 
@@ -372,7 +373,7 @@ For what is on your screen:
 
 - **The Approvals tab shows nothing, but `agentx schedule list` shows a request:** the dashboard reads the folder it was started in. Start `agentx board serve` from the same folder as the daemon.
 - **"Couldn't read …" above the list:** one of the sources couldn't be read, so the list may be incomplete. The message says which one; the other kinds still work.
-- **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it.
+- **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it. On another device, [sign in](../jobs/reverse-proxy.md#sign-in-from-another-device) first.
 - **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.
 - **A card says `then: keep` although the agent asked for `approve`:** that is expected. A card never approves itself; answer it yourself if the work should go ahead.
 - **An agent gets "a card from you on this source is still pending":** it already has an open card with the same `source` link, so the same question would reach you twice. The message names the open card: answer it, or let the agent close it with the `resolve` action and raise a new one. Cards without a `source`, and cards from another agent or another machine, are not affected.

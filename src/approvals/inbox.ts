@@ -5,6 +5,8 @@ import { approveSchedule, formatFireTime, humanizeCron, nextFireTime, rejectSche
 import { listProposals, readProposal, type PromotionProposal } from "@/wiki/proposals"
 import { approveProposal, rejectProposal } from "@/wiki/promote"
 import { decideDraft, listDrafts, readDraft, type SendReply } from "@/whatsapp-triage/drafts"
+import { decideContentDraft, listContentDrafts, readContentDraft, PLATFORM_LABEL, type PublishContent } from "@/content/drafts"
+import { hasConnector, publisher } from "@/content/publish"
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
 import { openDb } from "@/storage/sqlite"
@@ -25,6 +27,9 @@ import { cardWords } from "@/requests/card-view"
 //   wiki      lessons proposed for the shared wiki (wiki/proposals, wiki/promote)
 //   whatsapp  replies an agent drafted for a watched WhatsApp chat
 //             (whatsapp-triage/drafts); yes sends it through wacli
+//   content   posts an agent drafted for LinkedIn or X (content/drafts);
+//             yes posts it through the agent's connector, or saves it
+//             ready to paste when there is none
 //   request   something you asked for that failed, timed out, was cut off
 //             or went quiet (requests/store); yes hands it back to its
 //             agent, no drops it
@@ -33,8 +38,8 @@ import { cardWords } from "@/requests/card-view"
 // dashboard's /api/admin/approvals. The daemon's agent-facing API and the
 // MCP tool can create cards and read, never decide.
 
-export type ApprovalKind = "card" | "schedule" | "memory" | "wiki" | "whatsapp" | "request"
-export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki", "whatsapp", "request"]
+export type ApprovalKind = "card" | "schedule" | "memory" | "wiki" | "whatsapp" | "content" | "request"
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki", "whatsapp", "content", "request"]
 
 export type InboxAction = "yes" | "no" | "later"
 
@@ -79,6 +84,9 @@ export interface InboxContext {
   now?: number
   /** Sends an approved WhatsApp reply. Default: wacli. Tests swap it. */
   sendWhatsApp?: SendReply
+  /** Publishes an approved content draft. Default: the agent's LinkedIn
+   *  or X connector, else a ready-to-paste file. Tests swap it. */
+  publishContent?: PublishContent
   /** Open requests. Default: .agentx/db.sqlite when `root` is the folder
    *  this process runs from. Tests pass their own. */
   requests?: RequestStore
@@ -238,6 +246,32 @@ function whatsappItems(ctx: InboxContext): InboxItem[] {
   }))
 }
 
+function readConfigJson(ctx: InboxContext): Record<string, unknown> {
+  try { return JSON.parse(readFileSync(configPathFor(ctx), "utf-8")) } catch { return {} }
+}
+
+function contentItems(ctx: InboxContext): InboxItem[] {
+  const drafts = listContentDrafts(ctx.root, "pending")
+  if (drafts.length === 0) return []
+  const config = readConfigJson(ctx)
+  return drafts.map((d) => {
+    const where = PLATFORM_LABEL[d.platform] ?? d.platform
+    return {
+      key: `content:${d.id}`,
+      kind: "content" as const,
+      title: `${where} post${d.topic ? `: ${d.topic}` : ""}${d.date ? ` (for ${d.date})` : ""}`,
+      // The whole post: the owner approves exactly what will be published.
+      ask: `Publish this on ${where}? "${d.text}"`,
+      yes: hasConnector({ config }, d.agent, d.platform) ? `post it on ${where}` : "save it ready to paste (no connector is set)",
+      no: "drop the draft",
+      raised_by: d.agent,
+      created_at: d.created_at,
+      detail: clip(`Follows your past posts: ${d.samples.join(", ")}`),
+      more: `agentx content show ${d.id}`,
+    }
+  })
+}
+
 /** The requests store, or null when there is no database to read. */
 export function requestStoreFor(ctx: InboxContext): RequestStore | null {
   if (ctx.requests) return ctx.requests
@@ -292,6 +326,7 @@ const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
   memory: memoryItems,
   wiki: wikiItems,
   whatsapp: whatsappItems,
+  content: contentItems,
   request: requestItems,
 }
 
@@ -350,7 +385,7 @@ export interface DecideOptions {
   by?: string
   /** Cards with choices: which one (1-based number or the label). */
   choice?: string | number
-  /** Cards with a draft: the message as the operator edited it. */
+  /** Cards with a draft, and content drafts: the message as the operator edited it. */
   text?: string
 }
 
@@ -371,6 +406,7 @@ function stillPending(ctx: InboxContext, kind: ApprovalKind, ref: string): boole
     case "card": return readCard(ctx.root, ref)?.status === "pending"
     case "wiki": return readProposal(wikiDirFor(ctx), ref)?.status === "pending"
     case "whatsapp": return readDraft(ctx.root, ref)?.status === "pending"
+    case "content": return readContentDraft(ctx.root, ref)?.status === "pending"
     default: return SOURCES[kind](ctx).some((i) => i.key === `${kind}:${ref}`)
   }
 }
@@ -428,6 +464,16 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
       const r = await decideDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, send: ctx.sendWhatsApp })
       if (!r.ok) return r
       return { ok: true, message: yes ? `${key}: sent to ${r.draft.chat_name || r.draft.to}` : `${key}: dropped, nothing sent` }
+    }
+    case "content": {
+      const publish = ctx.publishContent ?? publisher({ config: readConfigJson(ctx) })
+      const r = await decideContentDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, text: opts.text, publish })
+      if (!r.ok) return r
+      if (!yes) return { ok: true, message: `${key}: dropped, nothing published` }
+      const where = PLATFORM_LABEL[r.draft.platform]
+      return { ok: true, message: r.draft.status === "posted"
+        ? `${key}: posted on ${where}${r.draft.url ? ` (${r.draft.url})` : ""}`
+        : `${key}: no ${where} connector is set, so it is saved ready to paste: ${r.draft.file}` }
     }
     case "request": {
       const store = requestStoreFor(ctx)

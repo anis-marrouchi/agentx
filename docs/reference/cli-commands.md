@@ -499,6 +499,53 @@ Write a team to one file you can share: agents, prompts, skills, schedules, chan
 | `--description <text>` | — | A few lines on how the team works. |
 | `-c, --config <path>` | — | Path to agentx.json. |
 
+## sales
+
+`agentx sales`: The sales team's lead list, opt-outs and competitor watch. Run it in the sales agent's folder, or pass `--workspace`. See [Find and follow up sales leads](../jobs/sales.md).
+
+### `agentx sales leads`
+
+New leads (added today or yesterday) and quiet leads from `leads.md`, leaving out everyone in `opt-outs.md`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--workspace <dir>` | this folder | The sales agent's folder. |
+| `--days <n>` | `7` | Days without contact before a lead is quiet. |
+| `--quiet-only` | — | List only the quiet leads. |
+
+### `agentx sales opt-out <name>`
+
+Record that someone asked not to be contacted; they are left out of every list and draft.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--company <company>` | — | Their company (unset: the person at every company). |
+| `--reason <text>` | — | Why, in a few words. |
+| `--workspace <dir>` | this folder | The sales agent's folder. |
+
+### `agentx sales watch`
+
+Check the pages in `competitors.md` and print only what changed since the last check.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--workspace <dir>` | this folder | The sales agent's folder. |
+
+### `agentx sales changes`
+
+Competitor changes recorded by `sales watch`, for the brief.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <duration>` | `24h` | How far back, like `24h` or `3d`. |
+| `--workspace <dir>` | this folder | The sales agent's folder. |
+
+### `agentx sales check <file>`
+
+List the lines of an answer that state a fact without a source link. `-` reads standard input. Exits with 1 when a line has no source.
+
+No flags.
+
 ## approvals
 
 `agentx approvals`: One inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, requests that are not finished).
@@ -514,12 +561,14 @@ What is waiting, most urgent first.
 
 ### `agentx approvals approve <key>`
 
-Say yes: enables the schedule, lets the fact be used, writes the wiki article, or tells the agent yes.
+Say yes: enables the schedule, lets the fact be used, writes the wiki article, publishes the post, or tells the agent yes.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--force` | — | Wiki: approve even if the article changed since the proposal. |
 | `--note <text>` | — | Cards: a note passed to the agent with your answer. |
+| `--choice <n>` | — | Cards with choices: which one, by number or label. |
+| `--text <message>` | — | Cards with a suggested message, and posts (`content:<id>`): the text as you want it sent or published. |
 
 ### `agentx approvals reject <key>`
 
@@ -3137,7 +3186,11 @@ Recent reviews: how many passed, failed or ended in error, what they cost, and t
 
 ### `agentx review-gate replay <repo> <prs...>`
 
-Review past pull requests at their latest commit without posting anything on GitHub, and print how many the reviewer flagged. Spends model budget like a real review. Takes the same `--config`, `--node` and `--token` flags.
+Review past pull requests at their latest commit without posting anything on GitHub or GitLab, and print how many the reviewer flagged. Spends model budget like a real review. Takes the same `--config`, `--node` and `--token` flags.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--gitlab` | — | `<repo>` is a GitLab project (`group/project`, subgroups allowed) and the numbers are merge requests. |
 
 ## retro (advanced)
 
@@ -3221,6 +3274,9 @@ Stop a running task; the agent writes a resume plan.
 | `--agent <id>` | — | With `--channel` and `--chat`: the agent's only task on that chat. |
 | `--channel <channel>` | — | The task's channel. |
 | `--chat <chatId>` | — | The task's chat id. |
+| `--all` | — | Stop every running task on this machine. Each writes its plan and resumes from it the next time AgentX starts. See [Stop everything before a restart](/jobs/pause-and-resume#stop-everything-before-a-restart). |
+| `--mesh` | — | With `--all`: on every connected mesh machine too. |
+| `--no-wait` | — | With `--all`: answer at once instead of waiting for the plans. |
 | `-r, --reason <reason>` | — | Why: shown to the agent and on the Live page. |
 
 ### `agentx signal list`
@@ -3277,6 +3333,16 @@ Forget a stopped task and its resume plan, when it won't be resumed. It can no l
 | `--json` | — | Emit JSON. |
 | `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl from config). |
 | `--token <token>` | — | Bearer token (defaults to dashboard.token from config). |
+
+### `agentx events emit <name>`
+
+Send a named event, such as `render:ready`, that wakes the agents subscribed to it. See [Send your own named events](/automations/event-subscriptions#send-your-own-named-events). Takes `--node`, `--token` and `--json` from `agentx events`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--summary <text>` | the name | One short line on what happened. |
+| `--ref <ref>` | — | Pointer to the details: an issue, a path, a run ID. |
+| `--by <name>` | the running agent | Who sent it: an agent ID, or a person's name. |
 
 ## db (advanced)
 
@@ -4031,6 +4097,43 @@ No flags.
 Disable a watch rule.
 
 No flags.
+
+## content (advanced)
+
+`agentx content`: Posts drafted in your voice: drafts waiting for approval, voice samples, the content calendar. **Advanced.** See [Draft posts in your voice](../jobs/content.md). You approve or reject a draft with `agentx approvals approve|reject content:<id>`.
+
+### `agentx content drafts`
+
+Drafts and what happened to them, newest last (default: the ones waiting). Also runs as plain `agentx content`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--all` | — | Include posted, ready, rejected and failed drafts. |
+| `--json` | — | Machine-readable output. |
+
+### `agentx content show <id>`
+
+One draft in full, with the voice samples it followed. `<id>` may keep its `content:` prefix.
+
+No flags.
+
+### `agentx content voice`
+
+The past posts an agent learns your voice from (`voice/` in its workspace).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | required | The content agent, such as `content`. |
+| `--topic <words>` | — | Show the samples closest to a topic. |
+
+### `agentx content calendar`
+
+An agent's content calendar (`calendar.md` in its workspace).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | required | The content agent, such as `content`. |
+| `--days <n>` | `14` | How many days ahead. |
 
 ## demo (advanced)
 

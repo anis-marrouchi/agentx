@@ -60,10 +60,12 @@ const shots = [
   { name: "monitor-only-you", path: "/monitor", wait: "#you .bf-act", steps: [{ scroll: "#you" }] },
   { name: "monitor-agents-handle", path: "/monitor", wait: "#agents .bf-act", steps: [{ scroll: "#agents" }] },
   { name: "approvals/inbox", path: "/approvals", wait: ".apv__item" },
+  { name: "content/approvals-post", path: "/approvals", wait: ".apv__item", steps: [{ click: '.apv__f[data-kind="content"]' }] },
   { name: "approvals/details", path: "/approvals", wait: ".apv__item", steps: [{ click: ".apv__detail summary" }] },
   { name: "approvals/choices", path: "/approvals", wait: ".apv__choices", steps: [{ scroll: ".apv__item:has(.apv__choices)" }] },
   { name: "approvals/plan", path: "/approvals", wait: ".apv__plan", steps: [{ scroll: ".apv__item:has(.apv__plan)" }] },
   { name: "approvals/qa", path: "/approvals", wait: ".apv__item[data-id='req-docs-qa-block']", steps: [{ scroll: ".apv__item[data-id='req-docs-qa-block']" }] },
+  { name: "approvals/goals", path: "/approvals", wait: "#goal-list .apv__goal", steps: [{ click: "#goal-list .apv__goal summary" }, { scroll: "#goal-section" }] },
   { name: "approvals/request-headline", path: "/approvals", wait: ".apv__plan", steps: [{ click: ".apv__item:has(.apv__plan) .apv__detail summary" }, { scroll: ".apv__item:has(.apv__plan)" }] },
   // One Desk (#1138 step C): the one count, and the three settings.
   { name: "approvals/one-count", path: "/approvals", wait: ".apv__item", steps: [{ waitText: ["#apv-count", "waiting for you"] }] },

@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
+import { monthlyBudgetSchema } from "@/agents/budget-schema"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
@@ -161,6 +162,9 @@ export const INTEGRATION_KINDS = [
   "vercel",
   // Voice / SMS
   "twilio",
+  // Social posting (content team: approved drafts post here)
+  "linkedin",
+  "x",
   // Catch-all
   "custom",
 ] as const
@@ -227,18 +231,11 @@ export const eventSubscriptionSchema = z.object({
   /** wake only: no wake when the agent was already woken this many times
    *  in the past hour. */
   maxPerHour: z.number().int().min(1).max(60).default(4),
+  /** wake only: what to do next when this event arrives. Added to the
+   *  woken turn's message after the event itself (#1284). */
+  prompt: z.string().min(1).max(2000).optional(),
 })
 
-/** Monthly money budget (#1162): most this scope may spend in one
- *  calendar month (UTC). Spend is the recorded cost of each run. At
- *  warnRatio × monthlyUsd the owner gets one notice; at the cap new runs
- *  are refused until the month ends or the cap is raised. Applies on save. */
-const monthlyBudgetSchema = z.object({
-  /** USD per calendar month. 0 or unset = no cap. */
-  monthlyUsd: z.number().min(0).max(1_000_000).optional(),
-  /** Share of the cap at which the owner is warned (default 0.8). */
-  warnRatio: z.number().gt(0).max(1).default(0.8),
-})
 
 const agentConfigSchema = z.object({
   name: z.string(),
@@ -368,6 +365,21 @@ const agentConfigSchema = z.object({
     /** Seconds `claude --cloud` may take to print the session id before
      *  the launch is given up and the task runs locally. */
     launchTimeoutSeconds: z.number().int().min(10).max(600).default(120),
+  }).default({}),
+  /** Run each local task for an issue (GitHub, GitLab, Linear, Jira) in a
+   *  git worktree of its own, on the branch `agentx/issue-<n>` (#1292).
+   *  Off by default. The checkout is the project rule's `runbook` path or
+   *  the agent's workspace; for a forge issue its origin must be the
+   *  issue's repository. Pull and merge request tasks keep running in the
+   *  checkout. See src/agents/task-worktrees.ts. */
+  worktrees: z.object({
+    enabled: z.boolean().default(false),
+    /** Folder for the worktrees. Unset: `.agentx-worktrees/<checkout
+     *  name>` beside the checkout. */
+    root: z.string().min(1).optional(),
+    /** A worktree no task used for this many days, with no uncommitted
+     *  change, is removed. Its branch is kept. */
+    maxAgeDays: z.number().min(1).max(365).default(14),
   }).default({}),
   /** Improvement plan #3 — tool-use-required preset. When set,
    *  AgentX inspects the stream-json events from each task and
@@ -812,6 +824,10 @@ const cronJobSchema = z.object({
    *  to report reports there, including the chat an agent's schedule was
    *  requested from (#738). `false` keeps `notify` for failure alerts only. */
   deliverResult: z.boolean().optional(),
+  /** Check the answer before it is delivered: every line that states a
+   *  fact must carry a source link, or the owner is told which do not
+   *  (#1288). See src/sales/sources.ts. */
+  requireSources: z.boolean().optional(),
   /** Secret that lets an external system fire this job now via
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */
@@ -1334,6 +1350,42 @@ export const reviewGateConfigSchema = z.object({
   /** Diffs longer than this many kilobytes are cut, and the reviewer is
    *  told the diff is incomplete. */
   maxDiffKb: z.number().int().positive().max(2048).default(256),
+  /** Where the gate reviews: GitHub pull requests, GitLab merge requests
+   *  (#1292), or both. GitLab needs the GitLab channel and its token. */
+  forges: z.array(z.enum(["github", "gitlab"])).min(1).default(["github"]),
+}).default({})
+
+const trackerRouteSchema = z.object({
+  /** The agent that gets the labelled issues. Must run on this node. */
+  agent: z.string().min(1),
+  /** A local clone of the repository the work lands in. With the agent's
+   *  `worktrees` on, each issue gets a worktree of it. */
+  checkout: z.string().min(1).optional(),
+})
+
+/** Linear and Jira as issue sources (src/trackers, #1292). Secrets are
+ *  read from the environment variables named here. */
+export const trackersConfigSchema = z.object({
+  linear: z.object({
+    enabled: z.boolean().default(false),
+    apiKeyEnv: z.string().min(1).default("LINEAR_API_KEY"),
+    webhookSecretEnv: z.string().min(1).default("LINEAR_WEBHOOK_SECRET"),
+    /** Adding this label to an issue hands it to its team's agent. */
+    label: z.string().min(1).default("agentx"),
+    routes: z.array(trackerRouteSchema.extend({ team: z.string().min(1) })).default([]),
+  }).default({}),
+  jira: z.object({
+    enabled: z.boolean().default(false),
+    /** "https://example.atlassian.net", or your Jira Server address. */
+    baseUrl: z.string().url().optional(),
+    /** Jira Cloud: the account's email. Leave the variable unset for Jira
+     *  Server, whose personal access token is sent on its own. */
+    emailEnv: z.string().min(1).default("JIRA_EMAIL"),
+    tokenEnv: z.string().min(1).default("JIRA_API_TOKEN"),
+    webhookSecretEnv: z.string().min(1).default("JIRA_WEBHOOK_SECRET"),
+    label: z.string().min(1).default("agentx"),
+    routes: z.array(trackerRouteSchema.extend({ project: z.string().min(1) })).default([]),
+  }).default({}),
 }).default({})
 /** Merge policy (#1047): pull requests that change a core path wait for a
  *  person's approval; edge-only ones merge on green CI. Both path lists
@@ -1877,6 +1929,8 @@ export const daemonConfigSchema = z.object({
   calls: callsSchema,
   /** Watched WhatsApp chats triaged by an agent (src/whatsapp-triage). */
   whatsappTriage: whatsappTriageSchema,
+  /** Linear and Jira issues as work for agents and as review criteria (#1292). */
+  trackers: trackersConfigSchema,
   approvals: approvalsConfigSchema,
   /** Quality gates for agent-written changes (#987). Each is off by default. */
   quality: z.object({
@@ -1973,6 +2027,13 @@ export const daemonConfigSchema = z.object({
     crashLoop: z.object({
       restarts: z.number().int().positive().default(3),
       windowMinutes: z.number().positive().default(10),
+    }).default({}),
+    /** A run stopped at its agent's time limit (maxExecutionMinutes) is
+     *  continued in the same chat, with a note, up to this many times
+     *  (#1257). Scheduled jobs and workflow steps never are. */
+    timeLimit: z.object({
+      enabled: z.boolean().default(true),
+      maxContinuations: z.number().int().min(0).max(3).default(1),
     }).default({}),
   }).default({}),
   /** Stop and resume signals (agents/signals, #857): stop a running task

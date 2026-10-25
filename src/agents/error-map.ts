@@ -18,6 +18,9 @@ export interface FriendlyError {
     | "usage_cap"
     /** An agent or the fleet reached its AgentX monthly budget (#1162). */
     | "budget_cap"
+    /** A cold dispatch held by the plan window, overage gate or local
+     *  dispatch cap; it goes through once the window frees up (#1284). */
+    | "dispatch_hold"
     | "auth"
     | "permission"
     | "rate_limit"

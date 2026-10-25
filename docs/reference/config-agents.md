@@ -55,7 +55,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `contextReferences` | boolean | `false` | Adds a checked list of references from the workspace's `references/` registry to the agent's context. |
 | `richMessages` | boolean | `true` | Lets the agent send buttons, polls and media on chat channels, and also quick replies in the [phone app](../dashboard/mobile-chat.md), including replies relayed by mesh delegation or `/send`. `false` sends plain text only: no buttons, polls, media or quick replies, and on the phone no pictures inside answers (they show as links) and no files (their names show as text). Speech is not affected. |
 | `maxConcurrent` | number | `1` | How many runs of this agent can happen at the same time. |
-| `maxExecutionMinutes` | number (1–240) | `20` | Time limit for one run; the process is stopped when it passes. |
+| `maxExecutionMinutes` | number (1–240) | `20` | Time limit for one run; the process is stopped when it passes. The work is then picked up once more in the same conversation (`resume.timeLimit`). |
 | `preSpawnTimeoutSec` | number (10–3600) | `300` | Time a run may spend getting ready before its agent process starts. Each preparation step also has a short limit of its own (5 to 30 seconds); a step that runs past it is skipped and the run goes on without it. When the whole time passes anyway, the run is stopped, its slot is freed, its record is marked `timeout` with the step it was stuck on, and the message is tried once more from the start; if that stalls too, the sender is told in plain words to send it again. Applies to every run, whatever started it. See [Time limits and cancel](./config.md#time-limits-and-cancel). |
 | `drainTimeoutSeconds` | number (0–86400) | — | How long a daemon stop waits for this agent's running tasks, when that is longer than `shutdown.drainTimeoutSeconds`. For agents whose tasks take long, such as renders. See [change how long it waits](/jobs/restart-safely#change-how-long-it-waits). |
 | `permissionMode` | string | `"default"` | Permission mode for the agent's CLI. The agent runs with nobody to answer, so no step comes to you: in `default`, `acceptEdits` and `plan` a step that needs permission is refused, and `bypassPermissions` lets it act without asking. See [What always waits for you](/jobs/keep-it-safe#what-always-waits-for-you). |
@@ -64,6 +64,9 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `cloudSessions.maxPerDay` | number | `0` | Most cloud sessions this agent may start per day; `0` means no limit. Past it, tasks run locally. |
 | `cloudSessions.openHours` | number (1–168) | `24` | How long a started session counts as open: no local run starts for its issue, and comments on the issue are forwarded to it. |
 | `cloudSessions.launchTimeoutSeconds` | number (10–600) | `120` | How long `claude --cloud` may take to print the session id before the launch is given up and the task runs locally. |
+| `worktrees.enabled` | boolean | `false` | Runs each of this agent's issue tasks (GitHub, GitLab, Linear, Jira) in a git worktree of its own, on the branch `agentx/issue-<n>`. Pull and merge request tasks keep running in the clone. See [Give each coding task its own worktree](/jobs/task-worktrees). |
+| `worktrees.root` | folder | `.agentx-worktrees/<clone name>` beside the clone | Where the worktrees are made. |
+| `worktrees.maxAgeDays` | number (1–365) | `14` | A worktree no task used for this many days, with no uncommitted change, is removed. Its branch stays. |
 | `wiki.contribute.enabled` | boolean | `false` | Once a day, the agent reviews its own work and suggests sourced facts for the shared wiki. Adds the daily `wiki-contribute` and `wiki-contribute-merge` jobs. See [Let agents keep the wiki up to date](/jobs/wiki-contributions). |
 | `wiki.contribute.maxPatches` | number (1–200) | `30` | Most suggestions one daily run may make. |
 | `wiki.contribute.maxCostUsd` | number (0–20) | `wiki.contributions.maxCostUsd` | Most model spend one daily run may reach, in dollars. |
@@ -100,7 +103,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 }
 ```
 
-A top-level `budget` with the same two keys caps all agents together: `"budget": { "monthlyUsd": 200 }` next to `agents`. Reaching it pauses every agent until the month ends or you raise it.
+A top-level `budget` with the same two keys caps all agents together: `"budget": { "monthlyUsd": 200 }` next to `agents`. Reaching it pauses every agent until the month ends or you raise it. A project's budget sits on its entry in [`dashboard.wall.projects`](config-operations.md#dashboard). All three can also be set on the Cost page (`/admin/cost`).
 
 ### Instructions AgentX adds for coding agents
 
@@ -130,7 +133,7 @@ Each item in `agents.<id>.integrations` declares one service. Secrets never go i
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `kind` | string | required | Service, such as `telegram-bot`, `gitlab-user`, `gmail`, `hubspot` or `custom`. `agentx doctor` warns on unknown kinds. |
+| `kind` | string | required | Service, such as `telegram-bot`, `gitlab-user`, `gmail`, `hubspot`, `linkedin`, `x` or `custom`. `agentx doctor` warns on unknown kinds. A `linkedin` or `x` entry lets approved posts go out; see [Draft posts in your voice](../jobs/content.md#connect-linkedin-or-x). |
 | `label` | string | required | Readable name, unique per agent and kind. |
 | `credentials` | object | `{}` | Where the secret lives. Only the keys below are accepted. |
 | `credentials.tokenEnv` | string | — | Environment variable holding the main token. |

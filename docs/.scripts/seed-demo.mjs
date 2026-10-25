@@ -143,6 +143,20 @@ for (const card of [
   },
 ]) await post("/approvals", { ...card, raised_by: "cx" })
 
+// A post drafted in the owner's voice (#1291), through the real agent
+// endpoint: two past posts in the agent's voice/ folder, then the draft.
+{
+  const voice = resolve(root, cfg.agents.cx.workspace, "voice")
+  mkdirSync(voice, { recursive: true })
+  writeFileSync(resolve(voice, "2026-03-first-month.md"), "One month of the demo shop. Three things surprised us: people book on Sunday evenings, they read every word of the price list, and they always ask about parking.\n")
+  writeFileSync(resolve(voice, "2026-06-new-hours.md"), "We open an hour earlier from Monday. You asked for it, so here it is. See you at 8.\n")
+  await post("/content/drafts", {
+    agent: "cx", platform: "linkedin", topic: "What 100 bookings taught us", date: "2026-11-02",
+    samples: ["2026-03-first-month.md", "2026-06-new-hours.md"],
+    text: "100 bookings at the demo shop. Three things we learned:\n\n1. Most people book on Sunday evening, so we answer then too.\n2. A short price list gets more bookings than a long one.\n3. Parking is still the first question. It now has its own line on the page.\n\nThank you for the first hundred.",
+  })
+}
+
 const db = new Database(resolve(root, ".agentx/db.sqlite"))
 const insert = db.prepare(`INSERT OR REPLACE INTO session_reviews
   (id,session_id,agent,source,status,updated_at,model,input,result,error)
@@ -234,6 +248,23 @@ db.transaction(() => {
   link.run(ids[2], "run", "docs-wall-5", ago(40))
   // The newsletter question as a pending decision card on its post (#1185).
   link.run(ids[1], "card", "docs-wall-newsletter-day", ago(50))
+})()
+// Goals (#1168): two goals over the requests above, with the cost of their runs.
+db.transaction(() => {
+  const goal = db.prepare("UPDATE requests SET goal_id = ?, goal_title = ? WHERE id = ?")
+  for (const id of ["req-docs-plan", "req-docs-qa-wait", "req-docs-qa-block"]) goal.run("shop-relaunch", "Relaunch the demo shop", id)
+  for (const id of ["req-docs-wall-question", "req-docs-wall-done"]) goal.run("office-newsletter", "Monthly newsletter for the demo office", id)
+  const cost = db.prepare("UPDATE task_traces SET cost_usd = ? WHERE task_id = ?")
+  cost.run(0.42, "docs-wall-4")
+  cost.run(0.18, "docs-wall-5")
+  db.prepare("DELETE FROM task_traces WHERE task_id LIKE 'docs-goal-%'").run()
+  const trace = db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, chat_id, status, started_at, finished_at, duration_ms, message_preview, final_response, cost_usd)
+    VALUES (?, 'cx', 'dashboard', 'demo', 'ok', ?, ?, ?, ?, ?, ?)`)
+  const link = db.prepare("INSERT OR REPLACE INTO request_links (request_id, kind, ref, at) VALUES (?, 'run', ?, ?)")
+  for (const [id, req, minutes, usd] of [["docs-goal-1", "req-docs-plan", 90, 1.37], ["docs-goal-2", "req-docs-qa-wait", 55, 0.64], ["docs-goal-3", "req-docs-qa-block", 75, 0.91]]) {
+    trace.run(id, ago(minutes), ago(minutes - 8), 8 * 60000, "Demo shop work", "Done.", usd)
+    link.run(req, id, ago(minutes))
+  }
 })()
 {
   const iso = (ms) => new Date(ms).toISOString()

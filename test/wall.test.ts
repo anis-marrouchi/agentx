@@ -419,6 +419,33 @@ describe("routes", () => {
     expect(fleet.posts.map((p: any) => p.id).sort()).toEqual(["r1", "r2", "r3"])
   })
 
+  it("keeps one timing per peer when two peers report the same node name (#1255)", async () => {
+    const stub = (build: number) => createServer((_req, res) => {
+      res.setHeader("Content-Type", "application/json")
+      res.end(JSON.stringify({ node: "twin", syncedAt: 1, posts: [], failures: [], timings: { totalMs: build } }))
+    })
+    const peers = [stub(11), stub(22)]
+    for (const p of peers) await new Promise<void>((r) => p.listen(0, "127.0.0.1", () => r()))
+    const urls = peers.map((p) => `http://127.0.0.1:${(p.address() as AddressInfo).port}`)
+    const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, agents: { coder: { name: "Coder", workspace: process.cwd() } },
+      dashboard: { daemons: urls.map((url) => ({ name: "twin", url })) } })
+    const fleetServer = createServer((req, res) => {
+      void handleBoardRequest(req, res, { boards: [], sources: new Map(), config } as unknown as Ctx)
+    })
+    await new Promise<void>((r) => fleetServer.listen(0, "127.0.0.1", () => r()))
+    try {
+      const r = await fetch(`http://127.0.0.1:${(fleetServer.address() as AddressInfo).port}/api/admin/wall?peer=fleet&timings=1`)
+      const fleet = await r.json() as any
+      expect(fleet.nodes.filter((n: any) => n.name === "twin")).toHaveLength(2)
+      expect(Object.keys(fleet.timings.peers).sort()).toEqual([...urls].sort())
+      for (const [i, url] of urls.entries()) {
+        expect(fleet.timings.peers[url]).toMatchObject({ node: "twin", answeredMs: expect.any(Number), build: { totalMs: i ? 22 : 11 } })
+      }
+    } finally {
+      for (const s of [fleetServer, ...peers]) await new Promise<void>((r) => s.close(() => r()))
+    }
+  })
+
   it("sits behind the dashboard token", async () => {
     token = "tok-123"
     try {

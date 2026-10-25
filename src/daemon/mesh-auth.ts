@@ -40,6 +40,8 @@ export function isMeshGatedPath(path: string): boolean {
     // Approvals list held memory facts and draft wiki articles, and a card
     // written from off-box would ask the operator in an agent's name.
     path === "/approvals" || path.startsWith("/approvals/") ||
+    // Content drafts: posts not yet approved, and the owner's past posts.
+    path === "/content" || path.startsWith("/content/") ||
     // What is on the owner's screen (#1100): card titles, held notices,
     // queued spoken lines and requests, with who raised each.
     path === "/screen" ||
@@ -104,6 +106,8 @@ export function isControlPost(path: string): boolean {
     path === "/send" || path === "/send/agent" || path === "/send/contact" ||
     // A note to the whole mesh, published in this node's name.
     path === "/mesh/announce" ||
+    // A named event that can wake agents here (#1284).
+    path === "/events" ||
     // AgentX Voice's settings window: rewrites agentx.json, and speaks.
     path === "/voice/settings" || path === "/voice/preview" ||
     /^\/api\/tasks\/[^/]+\/(cancel|followup)$/.test(path) ||
@@ -116,6 +120,8 @@ export function isControlPost(path: string): boolean {
     /^\/workflow-runs\/[^/]+\/cancel$/.test(path) ||
     // Stop and resume signals (#857).
     path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" ||
+    // Stopping every task on this node, ahead of a restart (#1271).
+    path === "/api/signals/stop-all" ||
     // Replaying past PRs through the review gate spends model budget (#990).
     path === "/api/review-gate/replay"
 }

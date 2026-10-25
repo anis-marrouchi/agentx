@@ -51,6 +51,57 @@ export const CACHE_AWARE_PRICING: Record<string, { input: number; output: number
   "claude-haiku":     { input: 1,    output: 5,    cacheRead: 0.1,   cacheCreate: 1.25 },
 }
 
+// List prices of other providers' API models, per million tokens (checked
+// 2026-10-25 against public price lists). Used for budgets only (#1290):
+// getModelFamily() never returns these keys, so the usage report is
+// unchanged. A key matches a model id that equals it or continues with "-"
+// (a dated snapshot or variant), longest key first: "gpt-5-mini-2025-08-07"
+// is "gpt-5-mini", "gpt-5.5" matches nothing and stays unpriced. Add a model
+// the same way in .agentx/pricing/custom.json. Neither provider charges for
+// writing the cache, so cacheCreate is the input rate.
+export const API_MODEL_PRICING: typeof CACHE_AWARE_PRICING = {
+  // OpenAI
+  "gpt-5":                 { input: 1.25, output: 10,   cacheRead: 0.125, cacheCreate: 1.25 },
+  "gpt-5.1":               { input: 1.25, output: 10,   cacheRead: 0.125, cacheCreate: 1.25 },
+  "gpt-5-mini":            { input: 0.25, output: 2,    cacheRead: 0.025, cacheCreate: 0.25 },
+  "gpt-5-nano":            { input: 0.05, output: 0.4,  cacheRead: 0.005, cacheCreate: 0.05 },
+  "gpt-4.1":               { input: 2,    output: 8,    cacheRead: 0.5,   cacheCreate: 2 },
+  "gpt-4.1-mini":          { input: 0.4,  output: 1.6,  cacheRead: 0.1,   cacheCreate: 0.4 },
+  "gpt-4.1-nano":          { input: 0.1,  output: 0.4,  cacheRead: 0.025, cacheCreate: 0.1 },
+  "gpt-4o":                { input: 2.5,  output: 10,   cacheRead: 1.25,  cacheCreate: 2.5 },
+  "gpt-4o-mini":           { input: 0.15, output: 0.6,  cacheRead: 0.075, cacheCreate: 0.15 },
+  "o3":                    { input: 2,    output: 8,    cacheRead: 0.5,   cacheCreate: 2 },
+  "o4-mini":               { input: 1.1,  output: 4.4,  cacheRead: 0.275, cacheCreate: 1.1 },
+  // Google (prompts up to 200K tokens)
+  "gemini-2.5-pro":        { input: 1.25, output: 10,   cacheRead: 0.125, cacheCreate: 1.25 },
+  "gemini-2.5-flash":      { input: 0.3,  output: 2.5,  cacheRead: 0.03,  cacheCreate: 0.3 },
+  "gemini-2.5-flash-lite": { input: 0.1,  output: 0.4,  cacheRead: 0.01,  cacheCreate: 0.1 },
+  "gemini-3-flash":        { input: 0.5,  output: 3,    cacheRead: 0.05,  cacheCreate: 0.5 },
+  "gemini-3.1-pro":        { input: 2,    output: 12,   cacheRead: 0.2,   cacheCreate: 2 },
+  "gemini-3.1-flash-lite": { input: 0.25, output: 1.5,  cacheRead: 0.025, cacheCreate: 0.25 },
+}
+
+/** Claude and API list prices together: the table before any override. */
+const DEFAULT_PRICING: typeof CACHE_AWARE_PRICING = { ...CACHE_AWARE_PRICING, ...API_MODEL_PRICING }
+
+const isClaudeModel = (model: string): boolean => /claude|fable|mythos|opus|sonnet|haiku/i.test(model)
+
+/**
+ * The key of `table` that prices a non-Claude model, or null. Matches the
+ * whole id or a "-" continuation, after any "provider/" prefix, longest
+ * key first.
+ */
+export function apiModelFamily(model: string, table: typeof CACHE_AWARE_PRICING = DEFAULT_PRICING): string | null {
+  if (isClaudeModel(model)) return null
+  const id = model.toLowerCase().replace(/^.*\//, "")
+  let best: string | null = null
+  for (const key of Object.keys(table)) {
+    if (key.startsWith("claude-")) continue
+    if ((id === key || id.startsWith(`${key}-`)) && (!best || key.length > best.length)) best = key
+  }
+  return best
+}
+
 /** Per-request input size (input + cacheCreate + cacheRead) above this
  *  threshold triggers Anthropic's extended-context tier: all four rates
  *  get multiplied. Applies to Opus 4.x and Sonnet 4.x 1M variants. */
@@ -98,11 +149,12 @@ export function getModelFamily(model: string): string {
  * maps every unknown model to Sonnet, which is fine for a display estimate
  * but not for spend that pauses an agent (#1162): a local, Codex or Gemini
  * model must not be charged Claude rates. No model counts only on the
- * claude-code tier, whose engine is Claude.
+ * claude-code tier, whose engine is Claude. Other providers' API models
+ * count when the table lists them (#1290); local models never do.
  */
-export function isPricedModel(model: string | undefined, tier?: string): boolean {
+export function isPricedModel(model: string | undefined, tier?: string, table: typeof CACHE_AWARE_PRICING = DEFAULT_PRICING): boolean {
   if (!model) return tier === "claude-code"
-  return /claude|fable|mythos|opus|sonnet|haiku/i.test(model)
+  return isClaudeModel(model) || apiModelFamily(model, table) !== null
 }
 
 export interface ChannelUsage {
@@ -252,6 +304,22 @@ export class TokenTracker {
    */
   cost(usage: AgentUsage | ChannelUsage, model?: string): number {
     return TokenTracker.calculateCost(usage, model, this.pricing)
+  }
+
+  /**
+   * What one run cost at list price, for budgets (#1162, #1290): Claude
+   * models through cost(), other providers' API models at their flat rate
+   * (no long-prompt surcharge), undefined for a model with no price.
+   */
+  runCost(usage: TaskUsage, model: string | undefined, tier?: string): number | undefined {
+    if (!isPricedModel(model, tier, this.pricing)) return undefined
+    const family = model ? apiModelFamily(model, this.pricing) : null
+    if (!family) return this.cost({ tasks: 1, totalDuration: 0, errors: 0, ...splitTaskUsageByTier(usage) }, model)
+    const p = this.pricing[family]
+    return ((usage.inputTokens || 0) * p.input +
+      (usage.outputTokens || 0) * p.output +
+      (usage.cacheReadTokens || 0) * p.cacheRead +
+      (usage.cacheCreateTokens || 0) * p.cacheCreate) / 1_000_000
   }
 
   /**
@@ -656,7 +724,7 @@ export class TokenTracker {
 export function loadPricingWithOverrides(
   overridePath: string = PRICING_OVERRIDE_PATH,
 ): typeof CACHE_AWARE_PRICING {
-  const result = JSON.parse(JSON.stringify(CACHE_AWARE_PRICING))
+  const result = JSON.parse(JSON.stringify(DEFAULT_PRICING))
   try {
     const p = resolve(process.cwd(), overridePath)
     if (!existsSync(p)) return result

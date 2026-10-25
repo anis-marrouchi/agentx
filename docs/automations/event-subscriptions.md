@@ -24,6 +24,7 @@ A woken agent is protected against loops and floods:
 - Each `wake` subscription wakes the agent at most its own `maxPerHour` times in any hour. When every matching subscription has used up its hour, the event is skipped, and the daemon log says `wake skipped for <agent>: rate-limit`.
 - A second wake that arrives while the agent is still busy with the first waits for it to finish, then runs as its own task. Wakes are never merged into one task.
 - Events from other machines (the [mesh feed](/reference/events#events-from-other-machines)) wake an agent only when the subscription lists that machine in `nodes`. Pull and digest subscriptions see them either way.
+- A wake starts a new conversation, so it counts against the [dispatch limits](/reference/config-agents#session) (`session.maxClaudeCodeDispatchesPerHour` and `session.maxClaudeCodeDispatchesPer5h`) and the plan window. When one of them holds the wake, it is not lost: the daemon tries again after 5 minutes, then 10, 20 and every 30 minutes, for about 7 hours. Each hold is logged as `wake of <agent> held: <reason>`. After the last try the log says `dropped after 16 retries`. At most 100 held wakes wait at once.
 
 ## The settings
 
@@ -37,6 +38,7 @@ Subscriptions go in `agentx.json`, under `agents.<id>.subscriptions`. It is a li
 | `match` | text | — | Only events whose summary contains this text. Upper and lower case count as the same. |
 | `delivery` | `"pull"` \| `"digest"` \| `"wake"` | `"pull"` | How the agent hears about a match (see the table above). |
 | `maxPerHour` | number (1–60) | `4` | For `wake` only: the most times this subscription wakes the agent in an hour. Each subscription counts its own wakes. |
+| `prompt` | text (up to 2,000 characters) | — | For `wake` only: what the agent should do when this event arrives. It is added to the woken task's message, after the event. |
 
 An agent does not see its own events unless it lists its own id in `agents`.
 
@@ -71,6 +73,38 @@ A woken task runs on the `events` channel, in a conversation of its own (`events
 
 The loop protection has limits. The daemon remembers which `rootId` values an agent worked on for 24 hours, and at most 2,000 per agent. It only remembers them for agents that had a `wake` subscription when the event happened, and it forgets them when the daemon restarts. Outside those limits, `maxPerHour` is the only thing that stops a loop, so keep it low.
 
+## Send your own named events
+
+Besides the built-in events, any script or agent can send a **named event**, such as `render:ready` or `build:done`. Agents that follow that name hear about it like any other event. With `wake`, they start working on their own, without anyone sending them a message.
+
+A name is 1 to 64 letters, digits or `:` `.` `_` `-`, and starts with a letter or a digit. The event's `kind` is `custom` and its `type` is the name.
+
+1. **Editor:** in `agentx.json`, give the agent that should react a subscription to the name, with `wake` and a `prompt`:
+   ```json
+   "subscriptions": [
+     { "kinds": ["render:ready"], "delivery": "wake", "maxPerHour": 6, "prompt": "Check the new batch and upload it." }
+   ]
+   ```
+2. **Editor:** save the file.
+3. **Terminal:** where the work finishes (the end of a script, for example), run:
+   ```bash
+   agentx events emit render:ready --summary "batch 3 done" --ref renders/batch-3
+   ```
+   It prints `✓ Emitted render:ready on <machine>`.
+
+An agent sends one with the `agentx_emit` tool (`name`, and optionally `summary` and `ref`). When an agent runs `agentx events emit` itself, or calls the tool, the event is recorded as that agent's. It also carries the `rootId` of the agent's task, so the loop protection above still applies: the event never wakes the agent whose work led to it.
+
+| Option | What it does |
+|---|---|
+| `--summary <text>` | One short line on what happened. Without it, the summary is the name. |
+| `--ref <ref>` | Where to find the details: an issue, a file path, a run ID. |
+| `--by <name>` | Who sent it. An agent ID is recorded as that agent. Any other name goes in front of the summary. Inside an agent's task, the default is that agent. |
+| `--node <url>`, `--token <token>` | Send it to another machine's daemon. That needs its mesh token. |
+
+The woken task's message gives the event's name, summary, `ref` and who sent it, followed by the subscription's `prompt`.
+
+To wake an agent on another machine, list the sending machine in that agent's subscription: `"nodes": ["<machine name>"]`.
+
 ## Read events yourself
 
 1. **Terminal:** run `agentx events --agent helper`. You see the events that match `helper`'s subscriptions, oldest first, with each event's ID.
@@ -90,6 +124,7 @@ Anyone on the daemon's own machine can read any agent's list, just as they can r
 1. **Terminal:** send the followed agent a task, for example `agentx daemon send reviewer "Reply with a short hello"`.
 2. **Terminal:** when it has answered, run `agentx events --agent helper`. You see a `task:completed reviewer@<machine>` line.
 3. For a `wake` subscription, **Terminal:** run `agentx daemon logs`. You see `waking helper`, followed by a task for `helper` on the `events` channel.
+4. For a named event, **Terminal:** run `agentx events emit test:ping --summary "hello"`, then `agentx events --kind custom`. You see a `test:ping` line.
 
 ## If something is wrong
 
@@ -98,6 +133,8 @@ Anyone on the daemon's own machine can read any agent's list, just as they can r
 - **`config check` names a field under `subscriptions`:** a value is wrong, for example an unknown `delivery` or an empty `kinds` list. Compare it with the settings table above.
 - **The agent isn't woken by another machine's events:** add that machine's `node.name` to the subscription's `nodes`.
 - **The agent isn't woken:** look in `agentx daemon logs` for `wake skipped for <agent>`. The reason follows: `rate-limit` (raise `maxPerHour` or wait), `own-root` (the event came from the agent's own work) or `duplicate-root` (it was already woken for that `rootId`).
+- **`agentx events emit` says `name must be 1-64 letters…`:** use only letters, digits and `:` `.` `_` `-`, and start with a letter or a digit.
+- **The log says `wake of <agent> held`:** a dispatch limit or the plan window is holding new conversations. The daemon tries again on its own. To let it through sooner, raise the limit named in the reason.
 - **A fresh conversation shows no digest:** only events since the agent's last finished task are listed, and only for `digest` subscriptions. A continued conversation never gets one. The agent can call `agentx_events` instead.
 - **The same events show up in the digest again:** the digest counts from the agent's last task that returned an answer or an error. A task that was cancelled, timed out or was cut off by a restart does not count, so the events after it are listed again in the next fresh conversation.
 - **`agentx_events` answers `Unauthorized: mesh token required`:** the tool reached the daemon through an address other than this machine's own. It uses `AGENTX_DAEMON_URL` when set, and otherwise the address in `node.bind`. The call carries a token only when one is set: `AGENTX_TOKEN`, `MESH_TOKEN` or `dashboard.token`. Set `AGENTX_TOKEN` to the node's `MESH_TOKEN`, or set `AGENTX_DAEMON_URL` to `http://127.0.0.1:<port>` for the agent, or use a `node.bind` of the form `0.0.0.0:<port>`.

@@ -9,6 +9,13 @@ import { summarizeStopped } from "@/agents/signals/store"
 //   POST /api/signals/stop    { taskId } | { agentId, channel, chatId }, reason?, node?
 //   POST /api/signals/resume  { id, reason?, node? }
 //   POST /api/signals/drop    { id, node? }            forget a stopped task (#871)
+//   POST /api/signals/stop-all { reason?, mesh?, wait? } stop every task (#1271)
+//
+// stop-all is the owner's order (or a peer's that signals.allowPeers
+// names), never an agent's. With `mesh`, the owner's order also goes to
+// every healthy mesh peer, one hop, each deciding by its own allowPeers.
+// With `wait`, the answer comes once every plan is saved, here and on the
+// peers, and says whether it is safe to restart.
 //
 // `node` names a mesh peer: the signal is forwarded there with this node's
 // peer token, and the peer decides by its own signals.allowPeers. The
@@ -77,13 +84,15 @@ export interface SignalsHttpDeps {
   selfNode: string
   sender: SignalSender | { error: string }
   /** Send the request on to a mesh peer; null when no healthy peer has that name. */
-  forward(node: string, method: "GET" | "POST", path: string, body?: Record<string, unknown>): Promise<SignalsReply | null>
+  forward(node: string, method: "GET" | "POST", path: string, body?: Record<string, unknown>, timeoutMs?: number): Promise<SignalsReply | null>
+  /** Names of the healthy mesh peers, for a stop-all with `mesh`. */
+  peers?(): string[]
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined)
 
 export function isSignalsPath(path: string): boolean {
-  return path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" || path === "/api/signals/stopped" ||
+  return path === "/api/signals/stop" || path === "/api/signals/stop-all" || path === "/api/signals/resume" || path === "/api/signals/drop" || path === "/api/signals/stopped" ||
     /^\/api\/signals\/stopped\/[^/]+$/.test(path)
 }
 
@@ -105,7 +114,9 @@ export async function handleSignalsHttp(
     qs.delete("node")
     const target = method === "GET" ? `${path}${qs.toString() ? `?${qs}` : ""}` : path
     const { node: _node, ...rest } = body
-    const reply = await deps.forward(node, method === "GET" ? "GET" : "POST", target, method === "GET" ? undefined : { ...rest, via })
+    // A waiting stop-all answers once the peer's plans are saved.
+    const timeoutMs = path === "/api/signals/stop-all" && body.wait === true ? deps.service.windDownMs() + STOP_ALL_PEER_SLACK_MS : undefined
+    const reply = await deps.forward(node, method === "GET" ? "GET" : "POST", target, method === "GET" ? undefined : { ...rest, via }, timeoutMs)
     return reply ?? { status: 404, body: { error: `no healthy mesh peer named "${node}"` } }
   }
 
@@ -145,6 +156,7 @@ export async function handleSignalsHttp(
       },
     }
   }
+  if (path === "/api/signals/stop-all") return stopAllHttp(body, deps)
   if (path === "/api/signals/resume") {
     const id = str(body.id)
     if (!id) return { status: 400, body: { error: "send { id } of a stopped task" } }
@@ -160,4 +172,50 @@ export async function handleSignalsHttp(
     return { status: 200, body: { ok: true, node: deps.selfNode, id: r.record.id, agentId: r.record.agentId, rootId: r.record.rootId, dropped: true } }
   }
   return { status: 404, body: { error: "not found" } }
+}
+
+/** Extra time a waiting stop-all gives the peers past this node's own
+ *  wind-down time: the run's slot release and the forward itself. */
+const STOP_ALL_PEER_SLACK_MS = 90_000
+
+async function stopAllHttp(body: Record<string, unknown>, deps: SignalsHttpDeps): Promise<SignalsReply> {
+  const sender = deps.sender as SignalSender
+  const wait = body.wait === true
+  const reason = str(body.reason)
+  const r = await deps.service.stopAll(sender, reason)
+  if (!r.ok) return { status: r.status, body: { error: r.error } }
+  // Only the owner's own order fans out; a peer's never goes on.
+  const fanOut = body.mesh === true && sender.kind === "owner"
+  const timeoutMs = deps.service.windDownMs() + STOP_ALL_PEER_SLACK_MS
+  const peerReplies = fanOut
+    ? Promise.all((deps.peers?.() ?? []).map(async (peer) => {
+      try {
+        const reply = await deps.forward(peer, "POST", "/api/signals/stop-all", { reason, wait, via: { node: deps.selfNode } }, wait ? timeoutMs : undefined)
+        if (!reply) return { node: peer, ok: false, error: "not reachable" }
+        if (reply.status >= 400) return { node: peer, ok: false, error: String(reply.body.error ?? `HTTP ${reply.status}`) }
+        return { node: peer, ok: true, ...reply.body }
+      } catch (e: any) {
+        return { node: peer, ok: false, error: /abort|timeout/i.test(String(e?.name ?? e)) ? "no answer in time; its plans may still be saving" : String(e?.message ?? e) }
+      }
+    }))
+    : Promise.resolve(undefined)
+  const tasks = wait ? await r.done : r.tasks
+  const peers = await peerReplies
+  // A refused task is still running: a restart would cut it off.
+  const allSaved = tasks.every((t) => t.state !== "winding-down" && t.state !== "refused")
+  const refused = tasks.filter((t) => t.state === "refused").map((t) => t.id)
+  const peersSafe = !peers || peers.every((p: any) => p.ok && p.safeToRestart === true)
+  return {
+    status: wait ? 200 : 202,
+    body: {
+      ok: true, node: deps.selfNode, orderId: r.orderId, tasks,
+      ...(peers ? { peers } : {}),
+      ...(wait ? { safeToRestart: allSaved && peersSafe } : {}),
+      message: wait
+        ? (allSaved && peersSafe ? "Every task stopped and its plan is saved. Safe to restart; each task resumes from its plan on start."
+          : refused.length ? `Not safe to restart: ${refused.join(", ")} could not be stopped and is still running; see tasks and peers.`
+          : "Not every plan is confirmed saved; see tasks and peers.")
+        : "Stopping. Each agent is writing its resume plan; GET /api/signals/stopped shows them once saved.",
+    },
+  }
 }

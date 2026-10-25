@@ -6,6 +6,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 //
 //   agentx review-gate list [--days 7]               recent reviews and their cost
 //   agentx review-gate replay <owner/repo> <pr…>     review past PRs, post nothing
+//     --gitlab                                       …merge requests of a GitLab project
 //
 // The replay is the seeded check: run it on PRs that later needed a
 // same-day fix and see how many the reviewer would have flagged. Settings:
@@ -71,15 +72,16 @@ common(reviewGateCmd
     console.log(chalk.dim(`  cost $${s.costUsd}${s.unpriced ? ` (+${s.unpriced} unpriced)` : ""}, ${s.minutes} min, ${s.tokens} tokens` +
       (s.p90SincePushMinutes !== undefined ? `, push → status p90 ${s.p90SincePushMinutes} min` : "")))
     for (const r of data.reviews) {
-      console.log(`  ${r.at.slice(0, 16).replace("T", " ")}  ${r.repo}#${r.pr} ${r.sha.slice(0, 7)}  ${paint(r.state)}  ${chalk.dim(r.reason)}${r.replay ? chalk.dim(" (replay)") : ""}`)
+      console.log(`  ${r.at.slice(0, 16).replace("T", " ")}  ${r.repo}${r.forge === "gitlab" ? "!" : "#"}${r.pr} ${r.sha.slice(0, 7)}  ${paint(r.state)}  ${chalk.dim(r.reason)}${r.replay ? chalk.dim(" (replay)") : ""}`)
     }
   })
 
 common(reviewGateCmd
   .command("replay <repo> <prs...>")
-  .description("review past PRs at their head commit without posting anything; counts how many get flagged"))
+  .description("review past PRs at their head commit without posting anything; counts how many get flagged")
+  .option("--gitlab", "the repo is a GitLab project and the numbers are merge requests"))
   .action(async (repo: string, prs: string[], opts) => {
-    const res = await request(opts, "POST", "/api/review-gate/replay", { repo, prs: prs.map(Number) })
+    const res = await request(opts, "POST", "/api/review-gate/replay", { repo, prs: prs.map(Number), ...(opts.gitlab ? { forge: "gitlab" } : {}) })
     const reader = res.body!.getReader()
     const decoder = new TextDecoder()
     let buf = ""

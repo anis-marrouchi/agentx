@@ -18,7 +18,7 @@ import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
-import { TokenTracker, isPricedModel, splitTaskUsageByTier } from "@/daemon/token-tracker"
+import { TokenTracker, splitTaskUsageByTier } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
 import { injectedContextOf } from "./injected-context"
 import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
@@ -27,6 +27,7 @@ import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
+import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
@@ -53,8 +54,9 @@ import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
-import { budgetConfigFrom, preflightBudgetGate, setAgentBudgets } from "./agent-budget"
-import { BudgetHolds } from "./budget-holds"
+import { budgetConfigFrom, budgetProjectOf, preflightBudgetGate, setAgentBudgets, setBudgetProjectResolver } from "./agent-budget"
+import { budgetProjectResolver } from "./budget-projects"
+import { BudgetHolds, MAX_HELD_PER_AGENT } from "./budget-holds"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { describeProfile, fullClaudeArgs, isolatedClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
@@ -76,6 +78,7 @@ import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
 import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
+import { TASK_WORKTREE_DEFAULTS, pickCheckout, prepareTaskWorktree, pruneTaskWorktrees, worktreeInstructions, worktreeTarget } from "./task-worktrees"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -95,6 +98,13 @@ const STEP_BUDGET_MS: Record<string, number> = {
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
 import { prepareOutbox } from "@/utils/app-outbox"
+
+/** Channels that never have an outbound adapter: a queued reply on them
+ *  stays on its task, so skipping the post is expected and not logged. */
+const NO_ADAPTER_CHANNELS: ReadonlySet<string> = new Set([
+  "requests", "a2a", "api", "cron", "workflow", "test", "mesh", "subagent", "mcp",
+  "events", "reminder", "heartbeat", "system", "internal", "business", "selftest", "compaction",
+])
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -196,6 +206,10 @@ const TASK_OUTPUT_TTL_MS = 5 * 60 * 1000
 const CANCEL_GRACE_MS = 30_000
 /** Default for agents.<id>.preSpawnTimeoutSec when a definition skipped the schema. */
 const PRE_SPAWN_TIMEOUT_SEC = 300
+/** How long a caller that waits for a busy agent's slot (api, a2a, mcp,
+ *  ...) waits when its task names no `slotWaitMs`: slightly under
+ *  mesh.sendTask's 30 min default cap. */
+export const DEFAULT_SLOT_WAIT_MS = 25 * 60_000
 
 /** Persisted record of a finished task, written to .agentx/task-history. */
 export interface TaskRecord {
@@ -637,6 +651,8 @@ export class AgentRegistry {
   }
   /** See setRunNote. */
   private runNote?: (started: AgentXEvents["task:started"]) => string | undefined
+  /** See setTraceToolCalls. */
+  private traceToolCalls?: (traceId: string) => Array<{ action: string | null; inputSummary: string | null }>
   /** Workflow auto-runner — invoked when workflow matching is in `mode: "auto"`
    *  and a candidate workflow's confidence ≥ autoRunThreshold. Wired by the
    *  daemon after the workflow dispatcher is constructed. Returns the runId of
@@ -665,7 +681,7 @@ export class AgentRegistry {
    */
   private voiceClaims = new Set<string>()
   /** Chat messages waiting for an agent paused by its monthly budget (#1162). */
-  private budgetHolds = new BudgetHolds()
+  private budgetHolds: BudgetHolds
   private budgetReleaseTimer: ReturnType<typeof setInterval> | null = null
   /** Intent Knowledge Graph classifier. Null when graph.enabled=false. */
   private classifier?: Classifier
@@ -702,6 +718,11 @@ export class AgentRegistry {
   private cloudSessions?: CloudSessionStore
   /** Spec-test runs (#992), one per issue. Created on first use. */
   private specTests?: SpecTestStore
+  /** Worktrees being made (#1292), by agent and issue, so two tasks on
+   *  one issue arriving together share one `git worktree add`. */
+  private worktreesPending = new Map<string, ReturnType<typeof prepareTaskWorktree>>()
+  /** When each checkout's old worktrees were last pruned. */
+  private worktreesPrunedAt = new Map<string, number>()
   /** The context each running task was started with, by RunningTask id.
    *  Kept apart from RunningTask because /agents serialises that, and a
    *  context can carry a whole conversation history. Read by A2A
@@ -752,8 +773,15 @@ export class AgentRegistry {
       maxPerHour: config.session.maxClaudeCodeDispatchesPerHour,
       maxPer5h: config.session.maxClaudeCodeDispatchesPer5h,
     })
-    // Monthly money budgets (#1162). The daemon re-applies them on save.
+    // Monthly money budgets (#1162, #1290). The daemon re-applies them on save.
     setAgentBudgets(budgetConfigFrom(config))
+    setBudgetProjectResolver(budgetProjectResolver(config))
+    // Held work is on disk, so a restart keeps it; release what may run.
+    this.budgetHolds = new BudgetHolds(MAX_HELD_PER_AGENT, resolve(process.cwd(), ".agentx/budget-holds.json"), (m) => this.log(m))
+    if (this.budgetHolds.size) {
+      this.log(`[budget] ${this.budgetHolds.size} held message(s) kept from before the restart`)
+      this.armBudgetRelease()
+    }
 
     if (config.graph?.enabled) {
       this.graphStore = new GraphStore({
@@ -811,6 +839,12 @@ export class AgentRegistry {
    *  attach; unset, no note is added. */
   setRunNote(note: ((started: AgentXEvents["task:started"]) => string | undefined) | undefined): void {
     this.runNote = note
+  }
+
+  /** Wire the trace lookup a time-limit continuation lists the stopped
+   *  run's tool calls from (#1257). Unset, the note lists none. */
+  setTraceToolCalls(lookup: AgentRegistry["traceToolCalls"]): void {
+    this.traceToolCalls = lookup
   }
 
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
@@ -1181,6 +1215,56 @@ export class AgentRegistry {
     return { content: result.content, error: result.error, cloudSession: result.cloudSession, duration: Date.now() - started }
   }
 
+  /** The agent and task to run locally: in the issue's own worktree when
+   *  `agents.<id>.worktrees` is on (#1292), else unchanged. A worktree that
+   *  cannot be made is logged, and the task runs in the workspace.
+   *  `fresh`: the worktree is new, so a session kept for the chat was
+   *  started in another folder, and Claude Code keeps sessions per folder. */
+  private async inTaskWorktree(def: AgentDef, task: AgentTask): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean }> {
+    const settings = { ...TASK_WORKTREE_DEFAULTS, ...(def.worktrees ?? {}) }
+    if (!settings.enabled) return { def, task }
+    const target = worktreeTarget(task.context?.channel, task.context?.chatId)
+    if (!target) return { def, task }
+    const label = `${target.repo ? `${target.repo}#` : ""}${target.id}`
+    const picked = pickCheckout(target, [task.context?.runbookPath, def.workspace].filter((d): d is string => !!d))
+    if ("reason" in picked) {
+      this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${picked.reason}`)
+      return { def, task }
+    }
+    const key = `${task.agentId}:${picked.dir}:${label}`
+    let pending = this.worktreesPending.get(key)
+    if (!pending) {
+      pending = prepareTaskWorktree(target, picked.dir, settings, { exec: execProcess, log: (l) => this.log(l) })
+      this.worktreesPending.set(key, pending)
+      void pending.finally(() => this.worktreesPending.delete(key)).catch(() => {})
+    }
+    let wt: Awaited<typeof pending>
+    try {
+      wt = await pending
+    } catch (e: any) {
+      wt = { error: e?.message || String(e) }
+    }
+    if ("error" in wt) {
+      this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${wt.error}`)
+      return { def, task }
+    }
+    this.log(`[worktrees] ${task.agentId} ${label}: ${wt.reused ? "reusing" : "created"} ${wt.dir} on ${wt.branch}`)
+    const last = this.worktreesPrunedAt.get(picked.dir) ?? 0
+    if (Date.now() - last > 3_600_000) {
+      this.worktreesPrunedAt.set(picked.dir, Date.now())
+      void pruneTaskWorktrees(picked.dir, settings, { exec: execProcess, log: (l) => this.log(l), keep: wt.dir })
+        .then((gone) => { if (gone.length) this.log(`[worktrees] removed ${gone.length} unused worktree(s): ${gone.join(", ")}`) })
+        .catch((e: any) => this.log(`[worktrees] prune failed: ${e?.message || e}`))
+    }
+    const note = worktreeInstructions(wt)
+    return {
+      fresh: !wt.reused,
+      // A persistent process keeps the folder it was started in.
+      def: { ...def, persistentProcess: false },
+      task: { ...task, cwd: wt.dir, systemPromptAppend: task.systemPromptAppend ? `${task.systemPromptAppend}\n\n${note}` : note },
+    }
+  }
+
   private specTestSettings() {
     return { ...SPEC_TESTS_DEFAULTS, ...(this.config.quality?.specTests ?? {}) }
   }
@@ -1284,6 +1368,46 @@ export class AgentRegistry {
         error: `I couldn't get started on this: preparing the run stalled twice (step "${step}"). Please send it again.`,
         errorKind: "interrupted",
       }
+    }
+    // Stopped at the agent's time limit (#1257): continue it in the same
+    // chat, under a cap, so its session carries the work on; otherwise say
+    // why it stopped there. The continuation answers the same caller.
+    const limit = planTimeLimit({
+      error: response.error,
+      errorKind: response.errorKind,
+      viaMesh: response.viaMesh,
+      channel: task.context?.channel,
+      chatId: task.context?.chatId,
+      workflowRunId: task.workflowRunId,
+      continuation: task.timeLimitContinuation ?? 0,
+      timeoutMinutes: task.timeoutMinutes,
+      elapsedMs: Date.now() - (task.timeLimitStartedAt ?? startedAt),
+      callerGone: task.callerSignal?.aborted ?? false,
+      settings: this.config.resume?.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS,
+    })
+    if (limit.action === "continue") {
+      const settings = this.config.resume?.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS
+      const stoppedTrace = task.taskId
+      let toolCalls: Array<{ action: string | null; inputSummary: string | null }> = []
+      try { toolCalls = stoppedTrace && this.traceToolCalls ? this.traceToolCalls(stoppedTrace) : [] } catch { /* the note lists none */ }
+      const note = buildTimeLimitNote(limit.minutes, toolCalls, limit.continuation >= settings.maxContinuations)
+      this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${stoppedTrace ?? "-"}: stopped at its ${limit.minutes}m time limit; continuing (${limit.continuation}/${settings.maxContinuations})`)
+      const request = task.timeLimitRequest ?? task.message
+      return this.execute({
+        ...task,
+        message: `${note}\n${request}`,
+        timeLimitRequest: request,
+        timeLimitContinuation: limit.continuation,
+        timeLimitStartedAt: task.timeLimitStartedAt ?? startedAt,
+        ...(limit.timeoutMinutes ? { timeoutMinutes: limit.timeoutMinutes } : {}),
+        resumedFrom: stoppedTrace ?? task.resumedFrom,
+        runningTaskId: undefined,
+        freshSession: false,
+      }, onDelta, onThinking, onEvent)
+    }
+    if (limit.action === "report") {
+      this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${task.taskId ?? "-"}: stopped at its ${limit.minutes}m time limit; not continued — ${limit.reason}`)
+      response = { ...response, error: reportedTimeLimitError(response.error!, limit.reason) }
     }
     if (task.intentRef) {
       try {
@@ -1413,9 +1537,9 @@ export class AgentRegistry {
     // await the answer (API, crons, other agents) get the refusal from the
     // gate inside the run instead.
     if (!restricted) {
-      const overBudget = preflightBudgetGate(task.agentId)
       const ctxChannel = task.context?.channel
       const ctxChat = task.context?.chatId
+      const overBudget = preflightBudgetGate(task.agentId, undefined, budgetProjectOf(task.agentId, ctxChat))
       if (overBudget && ctxChannel && ctxChat && getMessageRouter()?.getChannel(ctxChannel)) {
         const held = this.budgetHolds.hold(task.agentId, {
           text: task.message,
@@ -1464,16 +1588,23 @@ export class AgentRegistry {
       // the lane its next item: queued, it would end at once, unrun.
       if (qChannel === "api" || qChannel === "app" || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted) {
         const start = Date.now()
-        const maxWaitMs = 25 * 60_000
+        const maxWaitMs = task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
         const pollIntervalMs = 500
+        if (state.activeTasks >= state.def.maxConcurrent) {
+          this.log(`[${task.agentId}] busy, waiting for a slot (up to ${Math.round(maxWaitMs / 60000)}m) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId}`)
+        }
         while (state.activeTasks >= state.def.maxConcurrent) {
           if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
           if (Date.now() - start > maxWaitMs) {
+            this.log(`[${task.agentId}] slot wait timed out after ${Math.round(maxWaitMs / 60000)}m chat=${qChannel}:${qChatId} — message not run`)
             return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
           }
           await new Promise((r) => setTimeout(r, pollIntervalMs))
         }
         // Slot freed — fall through to normal execution path below.
+        if (Date.now() - start >= 60_000) {
+          this.log(`[${task.agentId}] slot free after ${Math.round((Date.now() - start) / 60000)}m wait chat=${qChannel}:${qChatId}`)
+        }
       } else if (qChannel === "voice") {
         // /ask waits on the answer to speak it, and "voice" has no adapter
         // to re-route a queued reply to: queued, it was answered into
@@ -3087,6 +3218,7 @@ export class AgentRegistry {
           const preflightResponse: AgentResponse = {
             content: "",
             error: abort.message,
+            errorKind: "dispatch_hold",
             duration: 0,
           }
           if (!onDelta) {
@@ -3105,10 +3237,11 @@ export class AgentRegistry {
         if (warning) this.log(`[${task.agentId}] ${warning}`)
         return null
       }
-      // Monthly money budget (#1162): an agent past its cap, or a fleet past
-      // the fleet cap, starts no new run, on any tier and warm or cold, until
-      // the cap is raised or the month turns.
-      const overBudget = preflightBudgetGate(task.agentId)
+      // Monthly money budget (#1162): an agent past its cap, a run whose
+      // project is past its cap (#1290), or a fleet past the fleet cap,
+      // starts no new run, on any tier and warm or cold, until the cap is
+      // raised or the month turns.
+      const overBudget = preflightBudgetGate(task.agentId, undefined, budgetProjectOf(task.agentId, task.context?.chatId))
       if (overBudget) {
         traceStep("budget-gate")
         this.log(`[${task.agentId}] run refused — ${overBudget.reason}`)
@@ -3193,7 +3326,8 @@ export class AgentRegistry {
           const gated = runDispatchGates()
           if (gated) return gated
         }
-        return executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
+        const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt)
+        return executeTask(local.def, local.task, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, local.fresh ? undefined : resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
       }, CANCEL_GRACE_MS)
 
       // Improvement plan #3 — fail with a typed error when the agent
@@ -3245,11 +3379,12 @@ export class AgentRegistry {
       const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
       // What the run cost: the runtime's own figure when it reports one
       // (Claude Code's total_cost_usd), else the tokens at the billed
-      // model's rate, for Claude models only: other models have no price
-      // here and record no cost. Summed per agent per month (#1162).
+      // model's list price: Claude, or another provider's API model in the
+      // price table (#1290). A model with no price (local) records no cost.
+      // Summed per agent, project and month (#1162).
       const pricedModel = response.billedModel || task.model || state.def.model || undefined
-      const costUsd = response.costUsd ?? (split && isPricedModel(pricedModel, state.def.tier)
-        ? this.tokenTracker.cost({ tasks: 1, totalDuration: 0, errors: 0, ...split }, pricedModel)
+      const costUsd = response.costUsd ?? (response.usage
+        ? this.tokenTracker.runCost(response.usage, pricedModel, state.def.tier)
         : undefined)
       completedEmitted = true
       getEventBus().emit("task:completed", {
@@ -3724,8 +3859,9 @@ export class AgentRegistry {
   releaseBudgetHolds(): number {
     let released = 0
     for (const agentId of this.budgetHolds.agents()) {
-      if (preflightBudgetGate(agentId)) continue
-      const held = this.budgetHolds.take(agentId)
+      // Per message: a project cap holds only that project's chats.
+      const held = this.budgetHolds.take(agentId, (h) => !preflightBudgetGate(agentId, undefined, budgetProjectOf(agentId, h.chatId)))
+      if (!held.length) continue
       released += held.length
       this.log(`[${agentId}] budget allows runs again — releasing ${held.length} held message(s)`)
       for (const h of held) {
@@ -3772,10 +3908,25 @@ export class AgentRegistry {
       ? `Error: ${resp.error}`
       : (resp.content || "").trim()
     if (!text) return
+    // No adapter to post on: the reply stays on the task and its session.
+    // `requests` pick-ups land here, their reply read by the tracker (#1259).
+    // A real channel whose adapter failed to start still leaves a log line.
+    if (!router.getChannel(channel)) {
+      if (!NO_ADAPTER_CHANNELS.has(channel.split("@")[0])) {
+        this.log(`[${agentId}] queued response not posted: no adapter for channel "${channel}"`)
+      }
+      return
+    }
     // Resolve account binding for shared-channel adapters (Telegram is
     // multi-account); sendOutbound auto-fills accountId from agentId.
     router.sendOutbound({ channel, chatId, text, agentId } as any)
       .catch((e: any) => this.log(`[${agentId}] queued response post failed: ${e?.message ?? e}`))
+  }
+
+  /** The root a running task works under, when it has one (#1284: an
+   *  event the turn emits carries it, so the loop guard holds). */
+  runningTaskRoot(taskId: string): string | undefined {
+    return this.taskAborts.get(taskId)?.rootId
   }
 
   /** The agent running `taskId` right now, or null once it has finished.
@@ -3909,8 +4060,17 @@ export class AgentRegistry {
       const ids = [...this.taskAborts].filter(([, e]) => e.agentId === by.agentId && e.channel === by.channel && e.chatId === by.chatId).map(([k]) => k)
       id = ids.length === 1 ? ids[0] : undefined
     }
-    const e = id ? this.taskAborts.get(id) : undefined
-    if (!id || !e) return null
+    return id ? this.signalTargetOf(id) : null
+  }
+
+  /** Every running task, as a stop-all signal addresses them (#1271). */
+  signalTargets(): Array<NonNullable<ReturnType<AgentRegistry["signalTarget"]>>> {
+    return [...this.taskAborts].filter(([, e]) => !e.controller.signal.aborted).map(([id]) => this.signalTargetOf(id)).filter((t): t is NonNullable<typeof t> => t !== null)
+  }
+
+  private signalTargetOf(id: string): ReturnType<AgentRegistry["signalTarget"]> {
+    const e = this.taskAborts.get(id)
+    if (!e) return null
     return {
       taskId: id, traceId: e.traceId, agentId: e.agentId, channel: e.channel, chatId: e.chatId,
       sender: e.sender, rootId: e.rootId, originalMessage: e.originalMessage, origin: e.origin ?? null,

@@ -618,6 +618,22 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_emit",
+    description:
+      "Publish a named event on this node, for example `render:ready` or `build:done`, so agents subscribed to it move on without being asked. " +
+      "An agent whose subscription lists the name with delivery `wake` starts a turn that sees the event; others can read it with agentx_events. " +
+      "Use it when you finish something another agent or a later step is waiting for. Your own event never wakes you.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        name: { type: "string", description: "The event name: 1-64 letters, digits or : . _ -, for example `render:ready`." },
+        summary: { type: "string", description: "One short line on what happened, for example `batch 3 done`." },
+        ref: { type: "string", description: "Optional pointer to the details: an issue, a file path, a run id." },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "agentx_signal",
     description:
       "Stop a running agent task cleanly, or resume one that was stopped (#857). " +
@@ -922,6 +938,28 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_content",
+    description:
+      "Draft posts in the owner's voice for LinkedIn or X, and hold them for approval. You never publish: the owner's yes in the Approvals inbox posts it (or saves it ready to paste when no connector is set). " +
+      "Actions: voice (the owner's past posts in voice/ closest to a topic), calendar (planned posts in calendar.md), draft (default: raise a post for approval), status (what happened to a draft). " +
+      "Before drafting, call voice, read the sample files it names and follow them. Every draft must name in `samples` the files it followed. " +
+      "Example: {action:'draft', platform:'linkedin', topic:'Lessons from our first year', date:'2026-11-02', samples:['2026-03-launch.md'], text:'...'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["voice", "calendar", "draft", "status"], description: "draft (default), voice, calendar or status." },
+        platform: { type: "string", enum: ["linkedin", "x"], description: "draft: where the post goes. X takes 280 characters, LinkedIn 3000." },
+        text: { type: "string", description: "draft: the whole post, exactly as it should be published." },
+        samples: { type: "array", items: { type: "string" }, description: "draft: the file names in voice/ this post follows (1-10)." },
+        topic: { type: "string", description: "draft, voice: what the post is about, in a few words." },
+        date: { type: "string", description: "draft: the calendar date it is planned for, YYYY-MM-DD. Its calendar row moves to 'drafted'." },
+        n: { type: "number", description: "voice: how many samples (1-10, default 3)." },
+        id: { type: "string", description: "status: the draft id you got from draft." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
     name: "agentx_note",
     description:
       "Put an idea for the owner into their notes app (Apple Notes, folder AgentX), instead of sending it in chat. " +
@@ -945,6 +983,7 @@ const TOOLS = [
       "Use accept when the work goes on after this turn; wait when the next step is the owner's answer (give the question); " +
       "done when it is finished (give a link to the evidence: PR, issue, message, deploy); decline when you will not do it (give the reason). " +
       "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
+      "When the request serves a larger goal (a launch, a client project, a quarter's target), name it on accept with goal {id, title}; goals lists every goal with its open and done requests, how far along it is and what it cost. " +
       "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
       "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
       "The daemon hands each step to its agent in order, nudges a step that goes quiet, sends an owner-approved message itself, and tells the owner at the end or when a step is blocked. " +
@@ -962,7 +1001,13 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list"], description: "list (default), accept, wait, done, decline, step, promise, describe or qa." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa or goals." },
+        goal: {
+          type: "object",
+          description: "accept, optional: the goal this request serves, {id, title}: id a short name (letters, digits, dashes), title a few plain words. A title alone gives the id. Reuse the id of a goal goals lists.",
+          properties: { id: { type: "string" }, title: { type: "string" } },
+          required: ["title"],
+        },
         needsQa: { type: "boolean", description: "accept, wait, promise, describe, optional: true marks the request as needing a QA verdict (again, after a fix); false clears the mark." },
         verdict: { type: "string", enum: ["block", "risk", "pass"], description: "qa: block (must not ship as it is), risk (can ship, with a named risk) or pass (signed off)." },
         headline: { type: "string", description: "accept, wait, promise, describe: what the request is, in a few plain words (at most 80 characters, no bare ids or links). Titles the owner's card, push and Desk line." },
@@ -1777,6 +1822,27 @@ async function handleToolCall(
       return { content: [{ type: "text", text: renderEventsAnswer(agentId, data, formatEventLine) }] }
     }
 
+    case "agentx_emit": {
+      const name = typeof args.name === "string" ? args.name.trim() : ""
+      if (!name) return { content: [{ type: "text", text: "Error: name is required." }] }
+      const res = await daemonFetch(`${daemonUrl()}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({
+          name,
+          ...(typeof args.summary === "string" ? { summary: args.summary } : {}),
+          ...(typeof args.ref === "string" ? { ref: args.ref } : {}),
+          senderAgentId: process.env.AGENTX_AGENT_ID,
+          ...(process.env.AGENTX_AGENT_ID ? { by: process.env.AGENTX_AGENT_ID } : {}),
+          ...callerFields(),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      }).catch((e: any) => ({ ok: false, status: 0, json: async () => ({ error: e?.message ?? String(e) }) }) as any)
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || `HTTP ${res.status}`}` }] }
+      return { content: [{ type: "text", text: `Emitted ${data.event?.type ?? name} on ${data.event?.node ?? "this node"} (event ${data.event?.id ?? "?"}).` }] }
+    }
+
     case "agentx_waiting": {
       const on = typeof args.on === "string" ? args.on.trim() : ""
       if (!on) return { content: [{ type: "text", text: "Error: say what the work waits for (on)." }] }
@@ -1874,6 +1940,12 @@ async function handleToolCall(
     case "agentx_approval": {
       const { runApprovalTool } = await import("@/approvals/tool")
       const text = await runApprovalTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_content": {
+      const { runContentTool } = await import("@/content/tool")
+      const text = await runContentTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 

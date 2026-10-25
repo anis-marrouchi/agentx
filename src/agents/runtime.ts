@@ -100,6 +100,9 @@ export interface AgentTask {
    *  here (instead of in the user-message body) keeps it inside Claude's
    *  cached system prompt across session resumes. */
   systemPromptAppend?: string
+  /** Folder the agent runs in, in place of its workspace: the issue's own
+   *  worktree (#1292). The workspace still supplies its `.env`. */
+  cwd?: string
   /** Per-invocation override for the context assembly strategy. When unset,
    *  the registry falls back to config.session.contextStrategy. Set this
    *  from benchmark harnesses that want to A/B the same request under
@@ -144,6 +147,12 @@ export interface AgentTask {
    *  retrying caller would otherwise have every attempt run once the slot
    *  frees (#822). A run that already started is not affected. */
   callerSignal?: AbortSignal
+  /** How long a run from a caller that waits for a slot (api, a2a, mcp,
+   *  ...) may wait for a busy agent before it is refused. Default 25 min,
+   *  under mesh.sendTask's 30 min cap for a caller holding a request
+   *  open. A queued /send/agent has no such caller and waits longer, so
+   *  its message is not dropped behind long runs (#1258). */
+  slotWaitMs?: number
   /** How to re-enter this run if a restart cuts it off (agents/resume).
    *  Absent: recorded as a direct run with this task's context. */
   origin?: import("./resume/origin").RunOrigin
@@ -153,6 +162,13 @@ export interface AgentTask {
   /** Set on the one automatic retry of a run whose preparation steps hit
    *  the pre-spawn deadline (#340). A retry that hits it again is reported. */
   preSpawnRetry?: number
+  /** Set on a run that continues one stopped at its agent's time limit
+   *  (#1257): how many continuations this request has had, and when its
+   *  first run started (a caller's deadline counts from there). */
+  timeLimitContinuation?: number
+  timeLimitStartedAt?: number
+  /** The request as first sent, without the continuation note. */
+  timeLimitRequest?: string
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and
@@ -623,10 +639,16 @@ function extractCodexUsage(value: any, depth = 0): TokenUsage | undefined {
   if (!value || typeof value !== "object" || depth > 4) return undefined
   const candidate = value.usage || value.token_usage || value.tokenUsage || value.metrics?.usage
   if (candidate && typeof candidate === "object") {
+    // OpenAI's cached_input_tokens is part of input_tokens; TokenUsage keeps
+    // them apart, Anthropic-style (as codex-process.ts does), so the cached
+    // part is not billed twice. Anthropic-style cache_read_input_tokens is
+    // already separate.
+    const openaiCached = firstNumber(candidate.cached_input_tokens, candidate.cachedInputTokens)
+    const input = firstNumber(candidate.input_tokens, candidate.inputTokens, candidate.prompt_tokens, candidate.promptTokens)
     return {
-      inputTokens: firstNumber(candidate.input_tokens, candidate.inputTokens, candidate.prompt_tokens, candidate.promptTokens),
+      inputTokens: Math.max(0, input - openaiCached),
       outputTokens: firstNumber(candidate.output_tokens, candidate.outputTokens, candidate.completion_tokens, candidate.completionTokens),
-      cacheReadTokens: firstNumber(candidate.cache_read_input_tokens, candidate.cached_input_tokens, candidate.cacheReadTokens, candidate.cachedInputTokens),
+      cacheReadTokens: firstNumber(candidate.cache_read_input_tokens, candidate.cacheReadTokens) || openaiCached,
       cacheCreateTokens: firstNumber(candidate.cache_creation_input_tokens, candidate.cacheCreateTokens),
     }
   }
@@ -867,7 +889,7 @@ export async function executeClaudeCode(
       const childEnv = claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing)
       let killed = false
       const proc = execFile("claude", args, {
-        cwd: agent.workspace,
+        cwd: task.cwd ?? agent.workspace,
         timeout: timeoutMs,
         maxBuffer: 10 * 1024 * 1024,
         env: { ...childEnv, HOME: childEnv.HOME || "/home/" + (childEnv.USER || "user") },
@@ -1027,7 +1049,7 @@ export async function executeClaudeCodeStreaming(
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const spawnEnv = claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing)
     const proc = execa("claude", args, {
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       timeout: streamTimeoutMs,
       reject: false,
       env: spawnEnv,
@@ -1298,7 +1320,7 @@ export async function executeCodexCli(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const result = await execa("codex", args, {
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       timeout: timeoutMs,
       reject: false,
       env: buildRuntimeEnv(agent, task),
@@ -1379,7 +1401,7 @@ export async function executeCodexCliStreaming(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const proc = execa("codex", args, {
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       timeout: timeoutMs,
       reject: false,
       env: buildRuntimeEnv(agent, task),
@@ -1533,7 +1555,7 @@ export async function executeOpenCodeCli(
       try {
         server = await openCodeProcessPool.acquire({
           key: JSON.stringify([task.agentId, task.context?.channel, task.context?.chatId]),
-          cwd: agent.workspace, env, model: task.model || agent.model,
+          cwd: task.cwd ?? agent.workspace, env, model: task.model || agent.model,
           permission: agent.permissionMode, fresh: task.freshSession, signal: abortSignal,
         })
         args.splice(1, 0, "--server", server.url)
@@ -1547,7 +1569,7 @@ export async function executeOpenCodeCli(
     }
     if (abortSignal?.aborted) throw new Error("task cancelled by operator")
     const proc = execa("opencode", args, {
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       timeout: timeoutMs,
       reject: false,
       env,
@@ -1664,7 +1686,7 @@ export async function executeSdk(
       prompt,
       options: {
         model: task.model || agent.model,
-        cwd: agent.workspace,
+        cwd: task.cwd ?? agent.workspace,
         permissionMode: "bypassPermissions" as any,
       },
     })
@@ -1783,7 +1805,7 @@ export async function executeOrchestrator(
 
     const baseOpts = {
       task: fullTask,
-      cwd: agent.workspace,
+      cwd: task.cwd ?? agent.workspace,
       provider: providerName as any,
       model: task.model || agent.model,
       apiKey,
@@ -2306,7 +2328,7 @@ export async function executeTask(
         try {
           const result = await codexProcessPool.run({
             key: JSON.stringify([task.agentId, task.context?.channel, task.context?.chatId]),
-            cwd: agent.workspace, env: buildRuntimeEnv(agent, task),
+            cwd: task.cwd ?? agent.workspace, env: buildRuntimeEnv(agent, task),
             args: buildCodexAgentxMcpArgs(), model: task.model || agent.model,
             bypass: agent.permissionMode === "bypassPermissions",
             prompt: buildCodexPrompt(buildPrompt(agent, task, historyContext), task.systemPromptAppend),
