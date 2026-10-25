@@ -4,6 +4,16 @@ The sales agent finds new leads, sends you a short brief every weekday morning, 
 
 ![You set it up once: describe your customers, list the competitor pages, tell the agent about your leads. Then every morning the agent checks the pages, sends you a brief with a link on every line, and on Mondays drafts follow-ups that you send yourself.](/diagrams/sales.svg)
 
+## At a glance
+
+| Question | Answer |
+|---|---|
+| **The problem** | Leads go quiet because nobody followed up, and nobody has time to research prospects or watch competitors. |
+| **What AgentX does** | Finds up to 10 new leads a week, sends a brief every weekday morning, reports only what changed on competitor pages, and drafts a follow-up for each quiet lead. |
+| **What you approve** | Everything that reaches a person. The agent cannot send: you send each draft yourself. |
+| **What it costs** | About 12 runs a week on your model account, plus the questions you ask. See [What this costs](../help/costs.md). |
+| **First result** | `agentx sales watch` lists the pages it watches; the next weekday after 08:30 the brief arrives in Telegram. See [Check it worked](#check-it-worked). |
+
 It comes as the ready-made team `sales-follow-up`: one agent, `sales`, and four schedules (tasks that run by themselves at set times).
 
 | Schedule | When | What you get |
