@@ -37,6 +37,17 @@ Only add addresses you control. Anything on the list can send your agents instru
 
 <!-- No screenshot: the fix is a line in a file and a restart; the only screen is the dashboard page you already have open. -->
 
+## Sign in from another device
+
+With a dashboard token (`dashboard.token` in `agentx.json`), a browser that is not on the AgentX machine signs in before it sees the Wall, Settings, Approvals, People or an agent's page. A request through a reverse proxy counts as another device, even when the proxy runs on the AgentX machine.
+
+1. **Browser:** open the dashboard's address. It shows **Sign in to this dashboard**.
+2. Paste the dashboard token and select **Sign in**. You land on the page you asked for.
+
+![The sign-in page](/screenshots/dashboard/sign-in.png)
+
+The browser keeps a sign-in cookie for 30 days. The cookie is not the token, and pages opened this way never contain the token. To sign every browser out, change `dashboard.token` and restart the dashboard. On the AgentX machine itself nothing changes: there is no sign-in there.
+
 ## Check it worked
 
 1. **Browser:** reload the dashboard through your proxy's address.
@@ -45,9 +56,12 @@ Only add addresses you control. Anything on the list can send your agents instru
    ```sh
    curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Origin: https://example.net" http://127.0.0.1:4202/api/draft
    ```
+4. **Browser:** with a dashboard token set, open the proxy's address in a private window. It asks you to sign in, and the page source holds no `AX_LOCAL_TOKEN`.
 
 ## If something is wrong
 
+- **"That token is not right" when you sign in:** paste the value of `dashboard.token` from the `agentx.json` the dashboard uses, with no spaces around it.
+- **Asked to sign in again on every visit:** the browser is dropping the cookie. Allow cookies for the dashboard's address.
 - **Still "Forbidden: request from a page on another origin":** the address in `.env` must match what the browser shows exactly, including `https://` and any port such as `:8443`. Then restart both services.
 - **It worked, then stopped after a restart:** the service might be started from another folder. The `.env` file must sit next to the `agentx.json` that the service uses.
 - **A tool that calls AgentX from its own web page stopped working:** that is the protection working. Call AgentX from a server or the command line instead, or add that tool's address to `AGENTX_ALLOWED_ORIGINS` if you trust it.
