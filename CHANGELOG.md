@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.172.0](https://github.com/anis-marrouchi/agentx/compare/v0.171.0...v0.172.0) (2026-10-25)
+
+
+### Features
+
+* **signals:** stop-all winds down background builders, one report for the mesh, drill test ([#1328](https://github.com/anis-marrouchi/agentx/issues/1328)) ([#1333](https://github.com/anis-marrouchi/agentx/issues/1333)) ([e1e32fe](https://github.com/anis-marrouchi/agentx/commit/e1e32fe2bdab6b94e717c115f27105fed8101d52))
+* **wall:** open a post with its thread, Markdown posts, nav pages with counts, Agents page ([#1316](https://github.com/anis-marrouchi/agentx/issues/1316)) ([#1320](https://github.com/anis-marrouchi/agentx/issues/1320)) ([86aeeb3](https://github.com/anis-marrouchi/agentx/commit/86aeeb3d56445eb44aed627766b84212806cab4f))
+
 ## [0.171.0](https://github.com/anis-marrouchi/agentx/compare/v0.170.0...v0.171.0) (2026-10-25)
 
 
