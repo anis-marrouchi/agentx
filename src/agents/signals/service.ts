@@ -1,5 +1,5 @@
 import { callerAgentOf, type RunOrigin } from "@/agents/resume/origin"
-import { BUILDER_SAVE_MS, builderLines, type BuilderWindDown } from "./builders"
+import { builderLines, builderWindDownMs, type BuilderWindDown } from "./builders"
 import { outcomeLines, validOrderId, type StopAllOutcome } from "./orders"
 import { agentPlan, machinePlan, resumeNote, windDownMessage, type ResumePlan, type ToolCallRef } from "./plan"
 import { canSignal, describeSender, SignalBudget, type SignalSender, type SignalSettings } from "./policy"
@@ -59,7 +59,7 @@ export interface SignalServiceDeps {
   toolCalls(traceId: string | undefined): ToolCallRef[]
   /** Save the work of the background builders the run had started
    *  (builders.ts, #1328). Absent: builders are not wound down. */
-  windDownBuilders?(input: { taskId: string; toolCalls: ToolCallRef[]; reason: string }): Promise<BuilderWindDown | undefined>
+  windDownBuilders?(input: { taskId: string; toolCalls: ToolCallRef[]; reason: string; save: boolean }): Promise<BuilderWindDown | undefined>
   /** Run the wind-down turn and answer with its text. Must stop the turn
    *  itself once `timeoutMs` has passed. */
   windDown(input: { id: string; agentId: string; rootId: string; message: string; timeoutMs: number }): Promise<{ content?: string; error?: string }>
@@ -146,9 +146,12 @@ export class SignalService {
   }
 
   /** How long a stop waits for the agent's plan, at most: the run's slot
-   *  release, saving its builders' folders, then the wind-down turn. */
+   *  release, saving its builders' folders (only listing them when saving
+   *  is off), then the wind-down turn. */
   windDownMs(): number {
-    return RUN_END_WAIT_MS + (this.deps.windDownBuilders ? BUILDER_SAVE_MS : 0) + this.deps.settings().windDownSeconds * 1000 + 5_000
+    const settings = this.deps.settings()
+    const builders = this.deps.windDownBuilders ? builderWindDownMs(settings.saveBuilderWork !== false) : 0
+    return RUN_END_WAIT_MS + builders + settings.windDownSeconds * 1000 + 5_000
   }
 
   get(id: string): StoppedTask | null {
@@ -404,7 +407,7 @@ export class SignalService {
       // The run has let go, so its builders are stopped too: save what they
       // left before the agent writes its plan, so the plan can name it.
       if (this.deps.windDownBuilders) {
-        builders = await this.deps.windDownBuilders({ taskId: record.id, toolCalls: calls, reason: `${record.stoppedBy} stopped the task` })
+        builders = await this.deps.windDownBuilders({ taskId: record.id, toolCalls: calls, reason: `${record.stoppedBy} stopped the task`, save: this.deps.settings().saveBuilderWork !== false })
           .catch((e: any) => { this.deps.log(`[signals] ${record.agentId} task ${record.id}: couldn't wind down its builders: ${e?.message ?? e}`); return undefined })
         if (builders) {
           const saved = builders.folders.filter((f) => f.wipBranch)

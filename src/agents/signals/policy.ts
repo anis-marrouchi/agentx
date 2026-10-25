@@ -30,6 +30,9 @@ export interface SignalSettings {
   allowPeers: string[]
   /** Most signals one root id may carry in a day. */
   maxPerRoot: number
+  /** Save the work a stopped task's background builders left as a local
+   *  agentx/wip/<taskId> branch in their git folders (builders.ts, #1340). */
+  saveBuilderWork: boolean
 }
 
 export const DEFAULT_SIGNAL_SETTINGS: SignalSettings = {
@@ -38,6 +41,7 @@ export const DEFAULT_SIGNAL_SETTINGS: SignalSettings = {
   allowAgents: [],
   allowPeers: [],
   maxPerRoot: 6,
+  saveBuilderWork: true,
 }
 
 export type SignalKind = "stop" | "resume"

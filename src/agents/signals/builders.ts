@@ -53,6 +53,11 @@ const SCAN_TIMEOUT_MS = 5_000
  *  folder not reached in time is listed as not saved. */
 export const BUILDER_SAVE_MS = 60_000
 const OUT_OF_TIME = "the stop's time to save builder work ran out"
+const SAVE_OFF = "saving builder work is turned off (signals.saveBuilderWork)"
+
+/** The time a stop gives its builders' folders: the save, or with saving
+ *  turned off only the scan that lists them. */
+export const builderWindDownMs = (save: boolean) => (save ? BUILDER_SAVE_MS : SCAN_TIMEOUT_MS)
 const execFileP = promisify(execFile)
 const runGit: Git = async (cwd, args, env, timeoutMs) =>
   (await execFileP("git", ["-C", cwd, ...args], {
@@ -124,6 +129,9 @@ export async function windDownBuilders(input: {
   taskId: string
   toolCalls: ToolCallRef[]
   reason: string
+  /** False: no WIP branch is written, each folder with changes is listed
+   *  as not saved (signals.saveBuilderWork, #1340). Default true. */
+  save?: boolean
   findLeftWork?: (run: { toolCalls: ToolCallRef[] }) => Promise<LeftWork[]>
   git?: Git
   /** Overridable in tests. */
@@ -133,7 +141,8 @@ export async function windDownBuilders(input: {
   const helpers = backgroundHelpers(input)
   if (!helpers.length) return undefined
   const now = input.now ?? Date.now
-  const deadline = now() + (input.budgetMs ?? BUILDER_SAVE_MS)
+  const save = input.save !== false
+  const deadline = now() + (input.budgetMs ?? builderWindDownMs(save))
   // Every git call ends by the deadline, however many folders there are.
   const base = input.git ?? runGit
   const timed = (capMs: number): Git => (cwd, args, env) => {
@@ -149,7 +158,9 @@ export async function windDownBuilders(input: {
   const folders: BuilderFolder[] = []
   for (const w of left) {
     const folder: BuilderFolder = { path: w.path, branch: w.branch, changedFiles: w.changedFiles, unpushedCommits: w.unpushedCommits }
-    if (w.changedFiles > 0 && now() >= deadline) {
+    if (w.changedFiles > 0 && !save) {
+      folder.error = SAVE_OFF
+    } else if (w.changedFiles > 0 && now() >= deadline) {
       folder.error = OUT_OF_TIME
     } else if (w.changedFiles > 0) {
       try {

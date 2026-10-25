@@ -211,3 +211,58 @@ describe("a stop winds the builders down before the plan", () => {
     expect(notes[0]).toContain("agentx/wip/run-1")
   })
 })
+
+describe("signals.saveBuilderWork off (#1340)", () => {
+  /** Real git, with every call's arguments recorded. */
+  const recordingGit = (seen: string[][]) => async (cwd: string, args: string[], env?: Record<string, string>) => {
+    seen.push(args)
+    return execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe", env: { ...process.env, ...env } }).toString()
+  }
+
+  it("writes no branch, runs no update-ref, and the stop line says not saved", async () => {
+    const dir = dirtyClone()
+    const branchesBefore = git(dir, "branch", "--list")
+    const seen: string[][] = []
+    const run: RunningRef = {
+      taskId: "run-1", traceId: "trace-1", agentId: "dev", channel: "telegram", chatId: "1", rootId: "root-1",
+      originalMessage: "Ship lanes", origin: { kind: "router", adapter: "telegram", message: { id: "m1" } },
+    }
+    let running = [run]
+    let windDownMessage = ""
+    const service = new SignalService({
+      settings: () => ({ ...DEFAULT_SIGNAL_SETTINGS, saveBuilderWork: false }),
+      store: new StoppedTaskStore(path.join(tmp, "stopped")),
+      findRunning: (by) => running.find((r) => r.taskId === by.taskId) ?? null,
+      listRunning: () => [...running],
+      stopRun: (id) => { running = running.filter((r) => r.taskId !== id); return true },
+      whenRunEnds: async () => {},
+      toolCalls: () => [builderCall("Build the lanes view"), bash(`cd ${dir} && pnpm build`)],
+      windDownBuilders: (input) => windDownBuilders({ ...input, git: recordingGit(seen) }),
+      windDown: async ({ message }) => { windDownMessage = message; return { content: "Done: half.\nLeft: lanes.\nNext action: restart.\nHalf-applied: nothing" } },
+      resume: async () => {},
+      publish: () => {},
+      log: () => {},
+    })
+    const r = await service.stopAll({ kind: "owner" }, "update")
+    if (!r.ok) throw new Error(r.error)
+    const [entry] = await r.done
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.filter((args) => args.includes("update-ref"))).toEqual([])
+    expect(git(dir, "branch", "--list")).toBe(branchesBefore)
+    expect(entry.builders).toEqual({ count: 1, saved: 0, notSaved: 1 })
+    expect(windDownMessage).toContain("NOT saved (saving builder work is turned off (signals.saveBuilderWork)), still in the folder")
+  })
+
+  it("leaves the time to save out of the time a stop waits", () => {
+    const service = (saveBuilderWork: boolean, withBuilders = true) => new SignalService({
+      settings: () => ({ ...DEFAULT_SIGNAL_SETTINGS, saveBuilderWork }),
+      store: new StoppedTaskStore(path.join(tmp, `s-${saveBuilderWork}-${withBuilders}`)),
+      findRunning: () => null, listRunning: () => [], stopRun: () => false, whenRunEnds: async () => {},
+      toolCalls: () => [], windDown: async () => ({}), resume: async () => {}, publish: () => {}, log: () => {},
+      ...(withBuilders ? { windDownBuilders: async () => undefined } : {}),
+    })
+    // Only the 5 s scan that lists the folders is left.
+    expect(service(false).windDownMs() - service(false, false).windDownMs()).toBe(5_000)
+    expect(service(true).windDownMs() - service(false).windDownMs()).toBe(BUILDER_SAVE_MS - 5_000)
+  })
+})
