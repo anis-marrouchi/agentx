@@ -78,6 +78,7 @@ jobs:
           start=$(date +%s)
           bash install.sh
           echo "install.sh with no Node: $(( $(date +%s) - start ))s"
-          grep -F '.agentx/node/bin' "$HOME/.profile"
+          # bash on Linux: install.sh writes the PATH line to ~/.bashrc
+          grep -F '.agentx/node/bin' "$HOME/.bashrc"
           PATH="$HOME/.agentx/node/bin:$PATH" agentx --version
         shell: bash
