@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { RequestStore } from "../src/requests/store"
+import { pickupText } from "../src/requests/sweep"
 import { handleWallAction, isWallActionPath, redactTalk, type Reply, type WallActionDeps } from "../src/daemon/wall-actions"
 import { wallThread } from "../src/daemon/wall-api"
 
@@ -39,6 +40,7 @@ const post = (path: string, body: Record<string, unknown>) => handleWallAction("
 describe("routes", () => {
   it("claims only its own paths", () => {
     expect(isWallActionPath("/api/admin/wall/comment")).toBe(true)
+    expect(isWallActionPath("/api/admin/wall/post")).toBe(true)
     expect(isWallActionPath("/api/admin/wall/space/stop")).toBe(true)
     expect(isWallActionPath("/api/admin/wall/thread")).toBe(false)
     expect(isWallActionPath("/api/admin/wall")).toBe(false)
@@ -58,6 +60,28 @@ describe("comment", () => {
     expect((await post("/comment", { id: "nope", text: "hi" }))!.status).toBe(404)
     store.close("r1", "done", "shipped", T0 + 2000)
     expect((await post("/comment", { id: "r1", text: "hi" }))!.status).toBe(409)
+  })
+})
+
+describe("post (#1355)", () => {
+  it("opens a post owed to the owner, marked for the agent to pick up", async () => {
+    const r = await post("/post", { agent: "coder", text: "  Check the deploy log  " })
+    expect(r).toMatchObject({ status: 200, body: { ok: true, agentId: "coder", id: expect.stringMatching(/^wp-/) } })
+    const rec = store.get((r!.body as any).id)!
+    expect(rec).toMatchObject({ state: "in_progress", channel: "wall", chatId: "owner", agentId: "coder", text: "Check the deploy log", owedTo: "owner" })
+    const [picked] = store.takePickups()
+    expect(picked.id).toBe(rec.id)
+    expect(pickupText(picked)).toMatch(/gave you this task on the Wall/)
+    expect(pickupText(picked)).toMatch(/answer to this turn/)
+  })
+
+  it("refuses an empty post, an agent not on this computer, and requests turned off", async () => {
+    expect((await post("/post", { agent: "coder", text: " " }))!.status).toBe(400)
+    expect((await post("/post", { agent: "../x", text: "hi" }))!.status).toBe(400)
+    expect((await post("/post", { agent: "ghost", text: "hi" }))!.status).toBe(404)
+    writeFileSync(deps.inbox.configPath!, JSON.stringify({ agents: { coder: { name: "Coder" } }, requests: { enabled: false } }))
+    expect((await post("/post", { agent: "coder", text: "hi" }))!.status).toBe(409)
+    expect(store.takePickups().filter((x) => x.channel === "wall")).toEqual([])
   })
 })
 

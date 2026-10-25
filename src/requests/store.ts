@@ -25,6 +25,9 @@ export const CLOSED_STATES: readonly ClosedState[] = ["done", "declined", "dropp
 
 export type LinkKind = "run" | "step_run" | "delegation" | "card" | "workflow" | "watcher" | "comment" | HomeLinkKind
 
+/** The channel of a post the owner wrote on the Wall (#1355). */
+export const WALL_CHANNEL = "wall"
+
 /** Longest owner comment kept on a request (#1316). */
 export const COMMENT_MAX = 4000
 
@@ -325,6 +328,16 @@ export class RequestStore {
       input.home?.kind ?? null, input.home ? input.home.link.slice(0, HOME_LINK_MAX) : null,
     )
     if (input.home) this.linkHome(input.id, input.home, input.now)
+  }
+
+  /** A post the owner wrote on the Wall (#1355): open at once, in
+   *  progress, owed to the owner, and marked for pick-up, so the daemon's
+   *  requests check gives it to the agent as a new turn. */
+  addWallPost(input: { id: string; agentId: string; text: string; now: number }): void {
+    this.db.prepare(
+      `INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, state_changed_at, owed_to, pickup_at)
+       VALUES (?, 'in_progress', ?, 'owner', 'owner', ?, ?, ?, ?, ?, 'owner', ?)`,
+    ).run(input.id, WALL_CHANNEL, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, input.now)
   }
 
   /** How many open promises this agent holds. */

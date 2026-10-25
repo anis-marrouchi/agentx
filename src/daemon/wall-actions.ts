@@ -3,8 +3,9 @@ import { redactSecrets } from "@/agents/memory-trust"
 import type { InboxContext } from "@/approvals/inbox"
 import { requestStoreFor } from "@/approvals/inbox"
 import { summarize } from "@/requests/card-view"
-import { COMMENT_MAX, OPEN_STATES } from "@/requests/store"
-import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
+import { readRequestSettings } from "@/requests/settings"
+import { COMMENT_MAX, OPEN_STATES, TEXT_MAX } from "@/requests/store"
+import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 
 // --- What the owner does from a Wall post (#1316) ---
 //
@@ -17,6 +18,10 @@ import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 //        request is handed back to it with the words, and the daemon's
 //        requests check starts its turn within a minute. The comment is
 //        also kept on the request, so it shows in the post's thread.
+//   POST /api/admin/wall/post         {agent, text}  a new post (#1355): the
+//        owner gives an agent of this node a task from the Wall's composer.
+//        It opens as a request owed to the owner, and the requests check
+//        gives it to the agent as a new turn within a minute.
 //   POST /api/admin/wall/call         {id}  the agent that has the task now
 //        calls the owner on AgentX Voice about it (the daemon's
 //        POST /calls/owner, with the operator key).
@@ -36,6 +41,7 @@ import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 export const WALL_ACTIONS_PREFIX = "/api/admin/wall"
 export const WALL_COMMENT_PATH = `${WALL_ACTIONS_PREFIX}/comment`
 export const WALL_CALL_PATH = `${WALL_ACTIONS_PREFIX}/call`
+export const WALL_POST_PATH = `${WALL_ACTIONS_PREFIX}/post`
 export const WALL_SPACE_PATH = `${WALL_ACTIONS_PREFIX}/space`
 
 const AGENT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
@@ -57,7 +63,7 @@ export interface WallActionDeps {
 
 /** Is this one of the Wall's write routes, or the Space read? */
 export function isWallActionPath(path: string): boolean {
-  return path === WALL_COMMENT_PATH || path === WALL_CALL_PATH || path === WALL_SPACE_PATH || path.startsWith(`${WALL_SPACE_PATH}/`)
+  return path === WALL_COMMENT_PATH || path === WALL_POST_PATH || path === WALL_CALL_PATH || path === WALL_SPACE_PATH || path.startsWith(`${WALL_SPACE_PATH}/`)
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "")
@@ -96,6 +102,25 @@ export async function handleWallAction(method: string, path: string, body: Recor
     if (sent.status !== 200) return sent
     store.comment(id, `wc-${now}-${randomUUID().slice(0, 8)}`, text, now)
     return { status: 200, body: { ok: true, agentId: r.agentId, message: `Sent to ${r.agentId}: it goes on with this post within a minute, and its answer shows in the thread.` } }
+  }
+
+  if (path === WALL_POST_PATH) {
+    if (method !== "POST") return { status: 405, body: { error: "POST" } }
+    const agentId = str(body.agent)
+    const text = str(body.text)
+    if (!AGENT_RE.test(agentId) || !text) return { status: 400, body: { error: "send { agent, text }" } }
+    if (text.length > TEXT_MAX) return { status: 400, body: { error: `the post is longer than ${TEXT_MAX} characters` } }
+    const agent = agentsOf(deps.inbox.configPath).find((a) => a.id === agentId)
+    if (!agent) return { status: 404, body: { error: `"${agentId}" is not an agent on this computer` } }
+    // The agent is told by the requests check, which is off with the feature.
+    if (!readRequestSettings(deps.inbox.configPath).enabled) {
+      return { status: 409, body: { error: "Requests are off on this computer, so nothing would give the agent the post." } }
+    }
+    const store = requestStoreFor(deps.inbox)
+    if (!store) return { status: 503, body: { error: "the requests store is not available" } }
+    const id = `wp-${now}-${randomUUID().slice(0, 8)}`
+    store.addWallPost({ id, agentId, text, now })
+    return { status: 200, body: { ok: true, id, agentId, message: `Posted: ${agent.name} gets it within a minute, and its answer shows on the post.` } }
   }
 
   if (path === WALL_CALL_PATH) {

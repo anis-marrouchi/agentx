@@ -37,6 +37,11 @@ export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
   ["People", "/people"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
+/** The status tabs over the feed and the list (#1355): filter value, label. */
+export const WALL_STATUS_TABS: Array<[string, string]> = [
+  ["open", "Open"], ["in_progress", "Working"], ["waiting", "Waiting"], ["done", "Done"], ["failed", "Failed"], ["", "All"],
+]
+
 /** Where the Wall's "Dashboard" link goes: the first classic page. */
 export const WALL_DASHBOARD_HREF = "/live"
 
@@ -45,6 +50,11 @@ const NAV_ICON = {
   needs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>',
   live: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>',
   agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>',
+  projects: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/></svg>',
+  jobs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  reviews: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 10l2.5 2.5L16 8"/></svg>',
+  failures: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
 }
 
@@ -59,33 +69,33 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <a class="ax-wall__item is-on" data-nav="wall" href="#status=open&amp;view=feed" title="Wall">${NAV_ICON.wall}<span>Wall</span><b class="ax-wall__n" id="nav-n-wall"></b></a>
     <a class="ax-wall__item" data-nav="needs" href="#status=waiting_owner&amp;view=feed" title="Needs you">${NAV_ICON.needs}<span>Needs you</span><b class="ax-wall__n" id="nav-n-needs"></b></a>
     <a class="ax-wall__item" data-nav="running" href="#page=running" title="Running now">${NAV_ICON.live}<span>Running now</span><b class="ax-wall__n" id="nav-n-running"></b></a>
+    <a class="ax-wall__item" data-nav="projects" href="#status=open&amp;view=projects" title="Projects">${NAV_ICON.projects}<span>Projects</span><b class="ax-wall__n" id="nav-n-projects"></b></a>
+    <a class="ax-wall__item" data-nav="jobs" href="#status=open&amp;view=jobs" title="Jobs">${NAV_ICON.jobs}<span>Jobs</span><b class="ax-wall__n" id="nav-n-jobs"></b></a>
+    <a class="ax-wall__item" data-nav="reviews" href="#status=open&amp;view=reviews" title="Reviews">${NAV_ICON.reviews}<span>Reviews</span><b class="ax-wall__n" id="wall-rev-n"></b></a>
+    <a class="ax-wall__item" data-nav="failures" href="#status=open&amp;view=failures" title="Failures">${NAV_ICON.failures}<span>Failures</span><b class="ax-wall__n" id="wall-fail-n"></b></a>
     <a class="ax-wall__item" data-nav="agents" href="#page=agents" title="Agents">${NAV_ICON.agents}<span>Agents</span><b class="ax-wall__n" id="nav-n-agents"></b></a>
     <a class="ax-wall__item" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
     <div class="ax-wall__navfoot">
-      <span>The Wall shows the work. It sends something only when you comment, call or start a Space from a post.</span>
+      <span>The Wall shows the work. It sends something only when you post, comment, call or start a Space.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button">Light / dark</button>
     </div>
   </nav>
   <div class="ax-wall__main">
     <header class="ax-wall__head">
-      <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1></div>
+      <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1>
+        <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span></div>
       <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
-      <div class="ax-wall__views" id="wall-views" role="tablist">
-        <button type="button" role="tab" data-view="feed" class="is-on">Feed</button>
-        <button type="button" role="tab" data-view="list">List</button>
-        <button type="button" role="tab" data-view="projects">Projects</button>
-        <button type="button" role="tab" data-view="failures">Failures <span id="wall-fail-n"></span></button>
-        <button type="button" role="tab" data-view="jobs">Jobs</button>
-        <button type="button" role="tab" data-view="reviews">Reviews <span id="wall-rev-n"></span></button>
+      <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
+        ${WALL_STATUS_TABS.map(([v, label]) => `<button type="button" role="tab" data-tab="${v}">${label}</button>`).join("")}
+        <button type="button" id="wall-search" class="ax-wall__search" aria-expanded="false" aria-controls="wall-filters" title="Search and filters">${NAV_ICON.search}</button>
       </div>
     </header>
     <section class="ax-wall__filters" id="wall-filters" aria-label="Filters">
-      <button type="button" id="f-toggle" class="ax-btn ax-btn--ghost ax-wall__ftoggle" aria-expanded="false">Filters</button>
       <label>Owner <select id="f-owner"><option value="">All</option></select></label>
       <label>Counted for <select id="f-load"><option value="">All</option></select></label>
       <label>Status <select id="f-status">
         <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option><option value="stalled">Stalled</option>
-        <option value="in_progress">In progress</option><option value="closed">Closed</option><option value="">All</option>
+        <option value="in_progress">In progress</option><option value="waiting">Waiting</option><option value="done">Done</option><option value="failed">Failed</option><option value="closed">Closed</option><option value="">All</option>
       </select></label>
       <label>No move for <select id="f-idle"><option value="">any time</option><option value="1">1+ day</option><option value="3">3+ days</option><option value="7">7+ days</option></select></label>
       <label>Project <select id="f-project"><option value="">All</option></select></label>
@@ -101,6 +111,13 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
         <button type="button" id="v-save" class="ax-btn ax-btn--ghost">Save as my view</button>
       </span>
     </section>
+    <form id="wall-compose" class="ax-wall__compose" aria-label="New post">
+      <span class="av av--person" aria-hidden="true">You</span>
+      <div class="ax-wall__composeb">
+        <textarea id="wc-text" rows="2" maxlength="4000" placeholder="Ask the fleet… use @agent to pick who" aria-label="New post: start with @agent"></textarea>
+        <div class="ax-wall__composerow"><span id="wc-note" class="wdo__n" role="status"></span><button type="submit" class="ax-btn" id="wc-post">Post</button></div>
+      </div>
+    </form>
     <section id="wall-profile" class="ax-wall__profile" aria-label="Agent profile" hidden></section>
     <section id="wall-feed" class="ax-wall__feed" aria-label="Posts"></section>
     <section id="wall-list" class="ax-wall__list" aria-label="Posts as a list" hidden></section>
@@ -114,7 +131,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   </div>
   <aside class="ax-wall__aside">
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
-      <h2 id="wall-nodes-h">Running now</h2>
+      <h2 id="wall-nodes-h">Happening now</h2>
       <div id="wall-nodes"><p class="ax-wall__empty">Loading…</p></div>
     </section>
     <section class="ax-wall__box ax-wall__agents" aria-labelledby="wall-agents-h">
@@ -122,9 +139,9 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <div id="wall-agents"><p class="ax-wall__empty">Loading…</p></div>
     </section>
     <section class="ax-wall__box ax-wall__about" aria-labelledby="wall-about-h">
-      <h2 id="wall-about-h">Dashboard</h2>
-      <nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav>
+      <h2 id="wall-about-h">Quiet by design</h2>
       <p>The Wall is something you open, not something that pings you. It never pings you on its own.</p>
+      <details class="ax-wall__classicd"><summary>Dashboard pages</summary><nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav></details>
     </section>
   </aside>
 </div>`
@@ -157,6 +174,22 @@ const WALL_PAGE_CSS = `
 .ax-wall__views button { flex: 1 0 auto; font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ax-muted); padding: 14px 12px 11px; cursor: pointer; white-space: nowrap; }
 .ax-wall__views button:hover { background: var(--ax-surface); }
 .ax-wall__views button.is-on { color: var(--ax-text); border-bottom-color: var(--ax-accent); }
+.ax-wall__views .ax-wall__search { flex: 0 0 auto; display: inline-flex; align-items: center; padding: 10px 14px; }
+.ax-wall__search svg { width: 18px; height: 18px; }
+.ax-wall__search[aria-expanded="true"] { color: var(--ax-accent); }
+/* Feed or List, a small switch beside the title (#1355). */
+.ax-wall__switch { margin-left: auto; display: inline-flex; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); overflow: hidden; }
+.ax-wall__switch button { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; background: none; border: 0; color: var(--ax-muted); padding: 4px 12px; cursor: pointer; }
+.ax-wall__switch button.is-on { background: var(--ax-text); color: var(--ax-bg); }
+
+/* The composer at the top of the feed (#1355). */
+.ax-wall__compose { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); margin: 0; }
+.ax-wall__compose .av { cursor: default; font-size: 12px; }
+.ax-wall__composeb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.ax-wall__compose textarea { width: 100%; font: inherit; font-size: 17px; color: var(--ax-text); background: none; border: 0; resize: vertical; padding: 8px 0; }
+.ax-wall__compose textarea:focus { outline: none; }
+.ax-wall__composerow { display: flex; gap: 8px; align-items: center; justify-content: flex-end; border-top: 1px solid var(--ax-border); padding-top: 8px; }
+.ax-wall__composerow .wdo__n { margin-right: auto; }
 
 /* Filters: a search line; the rest open under "Filters", as on X. */
 .ax-wall__filters { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; font-size: var(--ax-fs-xs); color: var(--ax-muted); padding: 10px 16px; border-bottom: 1px solid var(--ax-border); }
@@ -166,10 +199,9 @@ const WALL_PAGE_CSS = `
 .ax-wall__filters input[type=search]:focus { outline: none; border-color: var(--ax-accent); background: var(--ax-bg); }
 .ax-wall__saved { display: flex; gap: 6px; }
 .ax-wall__saved .ax-btn { font-size: var(--ax-fs-xs); padding: 3px 12px; }
-.ax-wall__ftoggle { order: 2; padding: 6px 14px; }
-.ax-wall__filters input[type=search] { order: 1; }
-.ax-wall__filters > label, .ax-wall__filters > .ax-wall__saved { order: 3; }
-.ax-wall__filters:not(.is-open) > label, .ax-wall__filters:not(.is-open) > .ax-wall__saved { display: none; }
+.ax-wall__filters input[type=search] { order: -1; flex-basis: 100%; }
+/* Closed until the search button opens it (#1355). */
+.ax-wall__filters:not(.is-open) { display: none; }
 
 /* Avatars: initials on a colour taken from the agent id. */
 .av { --av-h: 210; width: 40px; height: 40px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
@@ -193,7 +225,8 @@ const WALL_PAGE_CSS = `
 .wp__via b { color: var(--ax-text-2); font-weight: 500; }
 .wp__title { font-size: var(--ax-fs); font-weight: 700; line-height: 1.35; margin: 2px 0 0; overflow-wrap: anywhere; }
 /* Result first (#1242): the answer is the post, the request opens under it. */
-.wp__result { font-size: var(--ax-fs); line-height: 1.4; margin: 2px 0 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+/* Compact in the feed (#1355): at most three lines; the opened post has it all. */
+.wp__result { font-size: var(--ax-fs); line-height: 1.4; margin: 2px 0 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 /* A post in the feed opens on its own when selected (#1316). */
 .wp[data-post] { cursor: pointer; }
 .wp[data-post]:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: -2px; }
@@ -307,6 +340,14 @@ const WALL_PAGE_CSS = `
 
 /* Side column boxes (the dashboard links are styled in wall-space.ts) */
 .ax-wall__nodes > div { display: flex; flex-direction: column; }
+/* Happening now (#1355): one line per machine; Running now has the rest. */
+.wh { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; font-size: var(--ax-fs-sm); border-top: 1px solid var(--ax-border); min-width: 0; }
+.wh:first-child { border-top: 0; }
+.wh b { flex: none; }
+.wh span { color: var(--ax-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wh.is-down b, .wh.is-down span { color: var(--ax-red-ink, var(--ax-err)); }
+.ax-wall__classicd { margin-top: 8px; font-size: var(--ax-fs-xs); }
+.ax-wall__classicd summary { cursor: pointer; color: var(--ax-accent); margin-bottom: 6px; }
 .wn { padding: 8px 0; font-size: var(--ax-fs-sm); border-top: 1px solid var(--ax-border); }
 .wn:first-child { border-top: 0; }
 .wn header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
@@ -349,9 +390,6 @@ const WALL_PAGE_CSS = `
 
 /* Narrow widths: the column order is set in wall-space.ts. */
 @media (max-width: 640px) {
-  .ax-wall__nodes > div { flex-direction: row; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; }
-  .wn { flex: 0 0 78%; scroll-snap-align: start; border-top: 0; border-left: 1px solid var(--ax-border); padding: 0 0 0 10px; }
-  .wn:first-child { border-left: 0; padding-left: 0; }
   .ax-wall__filters label { flex: 1 1 45%; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
   .ax-wall__filters select, .ax-wall__filters input[type=search] { max-width: none; width: 100%; }
   .ax-wall__head { position: static; }

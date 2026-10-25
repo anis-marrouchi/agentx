@@ -87,7 +87,7 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
       if (!R.data && !R.loading) loadReviews();
       $('wall-reviews').innerHTML = revList();
     }
-    $('wall-rev-n').textContent = R.data && R.data.counts && R.data.counts.pending ? '(' + R.data.counts.pending + ')' : '';
+    $('wall-rev-n').textContent = R.data && R.data.counts && R.data.counts.pending ? String(R.data.counts.pending) : '';
   }
   async function toggleReviewThread(id) {
     if (R.threads[id]) { delete R.threads[id]; render(); return; }

@@ -141,7 +141,7 @@ describe("the value line on the page", () => {
 
   it("is on the Wall's Recurring jobs view and on Settings › Schedules", () => {
     const wall = renderWallPage()
-    expect(wall).toContain('data-view="jobs"')
+    expect(wall).toContain('data-nav="jobs"')
     expect(wall).toContain('id="wall-jobs"')
     expect(wall).toContain("function axCronValueHtml")
     const admin = renderAdminPage()

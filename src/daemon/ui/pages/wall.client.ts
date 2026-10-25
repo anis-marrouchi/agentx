@@ -92,6 +92,10 @@ ${WALL_CAPACITY_SCRIPT}
   function waitsOnOwner(p) { return p.state === 'waiting_owner' || cardsOf(p).length > 0; }
   function mins(ms) { return Math.round((ms || 0) / 60000); }
   function isOpen(p) { return OPEN.indexOf(p.state) >= 0; }
+  // The status tabs (#1355): Waiting is on the owner or on anyone else;
+  // Failed is a post that needs attention or has a failed run.
+  function waitsOnSomeone(p) { return isOpen(p) && (waitsOnOwner(p) || p.state === 'waiting_other' || !!p.blocked); }
+  function isFailed(p) { return p.state === 'needs_attention' || p.failedRuns > 0; }
   function groupKey(p) { return p.group.channel + ' · ' + p.group.chatId; }
   function idleDays(p) { return Math.floor((Date.now() - p.lastMoveAt) / DAY); }
   function stateBadge(state) {
@@ -236,7 +240,9 @@ ${WALL_CAPACITY_SCRIPT}
     if (f.status === 'blocked' && !p.blocked) return false;
     if (f.status === 'waiting_owner' && !waitsOnOwner(p)) return false;
     if (f.status === 'stalled' && !p.stalled) return false;
-    if (f.status && ['open', 'closed', 'blocked', 'waiting_owner', 'stalled'].indexOf(f.status) < 0 && p.state !== f.status) return false;
+    if (f.status === 'waiting' && !waitsOnSomeone(p)) return false;
+    if (f.status === 'failed' && !isFailed(p)) return false;
+    if (f.status && ['open', 'closed', 'blocked', 'waiting_owner', 'stalled', 'waiting', 'failed'].indexOf(f.status) < 0 && p.state !== f.status) return false;
     if (+f.idle && idleDays(p) < +f.idle) return false;
     if (f.project && (f.project === OTHER ? p.project : p.project !== f.project)) return false;
     if (f.node && p.node.name !== f.node) return false;
@@ -359,6 +365,20 @@ ${WALL_CAPACITY_SCRIPT}
       '<span title="Runs that worked on it"' + (p.failedRuns ? ' class="is-err"' : '') + '>' + ICON.runs + p.runs + (p.runs === 1 ? ' run' : ' runs') + (p.failedRuns ? ', ' + p.failedRuns + ' failed' : '') + '</span>',
       p.runMs ? '<span title="Minutes the runs took">' + ICON.time + mins(p.runMs) + ' min</span>' : '',
     ];
+    // Compact in the feed (#1355): the author line, the result, one amber
+    // line when it waits on someone, and one row of icons with the
+    // project. Times, asker, group, GitLab time and the links are in the
+    // opened post.
+    if (!full) {
+      if (p.project) acts.push('<span title="Project">' + ICON.link + esc(p.project) + '</span>');
+      return '<article class="' + cls + '" id="post-' + esc(p.id) + '" data-post="' + esc(p.id) + '" tabindex="0">' + avatar(p.owner) + '<div class="wp__b">' +
+        '<div class="wp__by">' + by + '</div>' +
+        leadHtml(p, via, false) +
+        (waitLine(p) ? '<div class="wp__block">' + waitLine(p) + '</div>' : '') +
+        '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
+        '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (shown && S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
+        '</div></article>';
+    }
     if (p.home) acts.push(/^https?:\/\//.test(p.home.link)
       ? '<a href="' + esc(p.home.link) + '" target="_blank" rel="noopener" title="Home: ' + esc(p.home.link) + '">' + ICON.link + '<span class="home">Home: ' + esc(p.home.link.replace(/^https?:\/\//, '')) + '</span></a>'
       : '<span title="Home">' + ICON.link + 'Home: ' + esc(p.home.link) + '</span>');
@@ -390,6 +410,16 @@ ${WALL_CAPACITY_SCRIPT}
       '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (full ? '<h2 class="wp__th">Thread</h2>' : '') +
         (shown && S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
       '</div></article>';
+  }
+
+  /** The one amber line of a compact post: who it waits on, if anyone. */
+  function waitLine(p) {
+    if (p.blocked) return 'Waits on <b>' + esc(p.blocked.who) + '</b> for ' + esc(ago(p.blocked.since).replace(' ago', '')) + ' — ' + esc(p.blocked.why);
+    var c = cardsOf(p)[0];
+    if (c) return 'Waits on you: <b>' + esc(c.title) + '</b>, ' + (c.expiresAt <= Date.now() ? 'its card expired' : 'card expires ' + until(c.expiresAt));
+    if (p.state === 'waiting_owner') return 'Waits on you';
+    if (forgeClosedOpen(p)) return esc(forgeName(p.forgeState)) + ' says ' + esc(p.forgeState.state) + ': do not pick it up';
+    return '';
   }
 
   // Repeats in a row (same kind, author, status and words) fold into one
@@ -618,6 +648,34 @@ ${WALL_CAPACITY_SCRIPT}
     }, 3000);
   }
 
+  // --- The composer (#1355): a new post, to the agent its first @name picks ---
+  function composeNote(text) { $('wc-note').textContent = text; }
+  /** The agent a post is for: its first @name that is an agent, and its node. */
+  function composeTarget(text) {
+    var nodes = (S.live && S.live.nodes) || [];
+    var names = (String(text).match(/@[A-Za-z0-9_.:-]+/g) || []).map(function (m) { return m.slice(1).replace(/[.:]+$/, ''); });
+    for (var i = 0; i < names.length; i++) {
+      for (var j = 0; j < nodes.length; j++) {
+        var a = (nodes[j].agents || []).find(function (x) { return x.id === names[i] || (x.name || '').toLowerCase() === names[i].toLowerCase(); });
+        // The first node is this one; an agent only on a peer goes there.
+        if (a) return { id: a.id, name: a.name || a.id, peer: j === 0 ? null : nodes[j].url };
+      }
+    }
+    return null;
+  }
+  async function compose() {
+    var text = ($('wc-text').value || '').trim();
+    if (!text) { composeNote('Write the post first.'); return; }
+    var to = composeTarget(text);
+    if (!to) { composeNote(S.live ? 'Pick who it is for: put @ and an agent\'s name in the post.' : 'Still loading the agents…'); return; }
+    composeNote('Posting to ' + to.name + '…');
+    var r = await act('POST', '/api/admin/wall/post', { agent: to.id, text: text }, to.peer);
+    if (!r.ok) { composeNote('Not posted: ' + r.error); return; }
+    $('wc-text').value = '';
+    composeNote(r.body.message || 'Posted.');
+    load();
+  }
+
   // --- Agents page (#1316): every agent the nodes report, with its posts ---
   function allAgents() {
     var by = {};
@@ -674,8 +732,14 @@ ${WALL_CAPACITY_SCRIPT}
     ((S.live && S.live.nodes) || []).forEach(function (x) { (x.agents || []).forEach(function (a) { n += (a.runningTasks || []).length; }); });
     return n;
   }
+  function jobCount() {
+    var n = 0;
+    ((S.live && S.live.nodes) || []).forEach(function (x) { n += (x.crons || []).length; });
+    return n;
+  }
   function navHtml(page, f) {
-    var on = page === 'post' ? 'wall' : page === 'wall' ? (f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
+    var side = ['projects', 'jobs', 'reviews', 'failures'].indexOf(S.view) >= 0;
+    var on = page === 'post' ? 'wall' : page === 'wall' ? (side ? S.view : f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       var me = a.getAttribute('data-nav') === on;
       a.classList.toggle('is-on', me);
@@ -687,15 +751,18 @@ ${WALL_CAPACITY_SCRIPT}
       needs: posts ? posts.filter(waitsOnOwner).length : null,
       running: S.live ? runningCount() : null,
       agents: S.live || posts ? allAgents().length : null,
+      projects: S.data && S.data.projects ? S.data.projects.length : null,
+      jobs: S.live ? jobCount() : null,
     };
-    var title = { wall: 'open posts', needs: 'posts waiting on you', running: 'tasks running now', agents: 'agents' };
+    var title = { wall: 'open posts', needs: 'posts waiting on you', running: 'tasks running now', agents: 'agents', projects: 'projects with open work', jobs: 'recurring jobs' };
     Object.keys(counts).forEach(function (k) {
       var el = $('nav-n-' + k), n = counts[k];
       el.textContent = n == null ? '' : String(n);
       el.classList.toggle('is-zero', !n);
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : on === 'needs' ? 'Needs you' : 'Wall';
+    var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', needs: 'Needs you' };
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : named[on] || 'Wall';
   }
 
   // --- List ---
@@ -887,6 +954,18 @@ ${WALL_CAPACITY_SCRIPT}
     return runs + cronFailures().reduce(function (n, g) { return n + g.count; }, 0) + workflowFailures().length;
   }
 
+  // --- Happening now (#1355): one line per machine, who runs what ---
+  function happeningHtml() {
+    var live = (S.live && S.live.nodes) || [];
+    if (!live.length) return '<p class="ax-wall__empty">Loading…</p>';
+    return live.map(function (n) {
+      var down = !n.reachable || n.error, running = [];
+      (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + (t.messagePreview || '').slice(0, 60)); }); });
+      var what = down ? 'does not answer' : running.length ? running[0] + (running.length > 1 ? ' · +' + (running.length - 1) + ' more' : '') : 'nothing running';
+      return '<div class="wh' + (down ? ' is-down' : '') + '"><b>' + esc(n.name) + '</b><span title="' + esc(running.join('\n')) + '">' + esc(what) + '</span></div>';
+    }).join('') + '<a class="wa-more" href="#page=running">See all running</a>';
+  }
+
   // --- Running now, per node, with ops details ---
   function nodesHtml() {
     var wallNodes = (S.data && S.data.nodes) || [];
@@ -928,13 +1007,22 @@ ${WALL_CAPACITY_SCRIPT}
   // --- Render ---
   function render() {
     // Running now draws from /api/live alone: it does not wait on the feed (#1252).
-    $('wall-nodes').innerHTML = nodesHtml();
+    $('wall-nodes').innerHTML = happeningHtml();
     var f = current();
     var page = S.post ? 'post' : S.page, onWall = page === 'wall';
+    var posts_ = onWall && (S.view === 'feed' || S.view === 'list');
     navHtml(page, f);
     $('wall-back').hidden = page !== 'post';
-    $('wall-views').hidden = !onWall;
-    $('wall-filters').hidden = !onWall;
+    // Status tabs, search and the Feed / List switch belong to the posts (#1355).
+    $('wall-views').hidden = !posts_;
+    $('wall-switch').hidden = !posts_;
+    $('wall-filters').hidden = !posts_;
+    $('wall-compose').hidden = !(onWall && S.view === 'feed');
+    document.querySelectorAll('[data-tab]').forEach(function (b) {
+      var me = b.getAttribute('data-tab') === f.status;
+      b.classList.toggle('is-on', me);
+      b.setAttribute('aria-selected', me ? 'true' : 'false');
+    });
     $('wall-post').hidden = page !== 'post';
     $('wall-running').hidden = page !== 'running';
     // On its own page, Running now leaves the side column.
@@ -950,7 +1038,8 @@ ${WALL_CAPACITY_SCRIPT}
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list');
     $('wall-agents').innerHTML = agentsHtml();
     var n = failCount();
-    $('wall-fail-n').textContent = n ? '(' + n + ')' : '';
+    $('wall-fail-n').textContent = n ? String(n) : '';
+    $('wall-fail-n').classList.toggle('is-zero', !n);
     var synced = S.data.syncedAt;
     $('wall-synced').textContent = stamp(synced);
     $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
@@ -1009,9 +1098,10 @@ ${WALL_CAPACITY_SCRIPT}
   }
 
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-act],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-back],[data-post]');
+    var t = ev.target.closest('[data-act],[data-tab],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-back],[data-post]');
     if (!t) return;
     if (t.hasAttribute('data-act')) { doAct(t.getAttribute('data-act')); return; }
+    if (t.hasAttribute('data-tab')) { $('f-status').value = t.getAttribute('data-tab'); writeHash(); render(); return; }
     if (t.hasAttribute('data-post')) {
       // A tap on the post itself opens it; its links, buttons and the
       // request summary keep their own job, and selecting text opens nothing.
@@ -1051,10 +1141,13 @@ ${WALL_CAPACITY_SCRIPT}
     $('f-' + k).addEventListener(k === 'q' ? 'input' : 'change', function () { writeHash(); render(); });
   });
   $('wall-refresh').addEventListener('click', load);
-  $('f-toggle').addEventListener('click', function () {
-    var open = $('f-toggle').parentNode.classList.toggle('is-open');
-    $('f-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+  // The search button opens the filters, with the search box first (#1355).
+  $('wall-search').addEventListener('click', function () {
+    var open = $('wall-filters').classList.toggle('is-open');
+    $('wall-search').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open && $('f-q').focus) $('f-q').focus();
   });
+  $('wall-compose').addEventListener('submit', function (ev) { ev.preventDefault(); compose(); });
   $('v-save').addEventListener('click', function () {
     writeHash();
     try { localStorage.setItem(SAVED_KEY, location.hash); $('v-save').textContent = 'Saved'; setTimeout(function () { $('v-save').textContent = 'Save as my view'; }, 1500); } catch (e) { /* private mode: nothing kept */ }

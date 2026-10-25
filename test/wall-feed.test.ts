@@ -39,11 +39,13 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
       const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (id.startsWith("wdo-") ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
+      const on: Record<string, (ev: unknown) => void> = {}
       els.set(id, {
+        on,
         id, hidden: /\shidden[\s>]/.test(tag[0]), innerHTML: "", textContent: "", value: id === "f-status" ? "open" : "", checked: false,
         type: /type="checkbox"/.test(tag[0]) ? "checkbox" : /type="search"/.test(tag[0]) ? "search" : "select",
         classList: classes(), parentNode: { classList: classes() },
-        addEventListener: () => {}, setAttribute: (k: string, v: string) => { attrs[k] = v },
+        addEventListener: (t: string, f: (ev: unknown) => void) => { on[t] = f }, setAttribute: (k: string, v: string) => { attrs[k] = v },
       })
     }
     return els.get(id)
@@ -94,15 +96,22 @@ describe("Wall as a social feed (#1207)", () => {
     expect(feed).toContain('<span class="chip state ">in progress</span>')
   })
 
-  it("puts thread, runs, minutes and links in an action row", async () => {
+  it("puts thread, runs and minutes in a compact action row; the links in the opened post (#1355)", async () => {
     const w = openWall()
     await w.settle()
-    const row = /<div class="wp__acts">(.*?)<\/div>/.exec(w.el("wall-feed").innerHTML)![1]
+    const feed = w.el("wall-feed").innerHTML
+    const row = /<div class="wp__acts">(.*?)<\/div>/.exec(feed)![1]
     expect(row).toContain('data-thread="r1"')
     expect(row).toContain("1 run</span>")
     expect(row).toContain("2 min</span>")
-    expect(row).toContain('href="https://example.com/demo/shop/issues/47"')
-    expect(row).toContain("Task record and trace</a>")
+    expect(feed).not.toContain('href="https://example.com/demo/shop/issues/47"')
+    expect(feed).not.toContain('class="wp__meta"')
+    const open = openWall({ hash: "#post=r1" })
+    await open.settle()
+    const page = open.el("wall-post").innerHTML
+    expect(page).toContain('href="https://example.com/demo/shop/issues/47"')
+    expect(page).toContain("Task record and trace</a>")
+    expect(page).toContain('class="wp__meta"')
   })
 
   it("lists the agents with their open posts, most open first", async () => {
@@ -301,19 +310,19 @@ describe("Running now does not wait on the feed (#1252)", () => {
     expect(w.calls.map((c) => c.url)).toContain("/api/live")
     const nodes = w.el("wall-nodes").innerHTML
     expect(nodes).toContain("<b>node-a</b>")
-    expect(nodes).toContain("<b>Customer Desk</b>")
+    expect(nodes).toContain("Customer Desk: x")
     expect(w.el("wall-feed").innerHTML).toBe("")
     answer({ ok: true, status: 200, json: async () => WALL })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
-    expect(w.el("wall-nodes").innerHTML).toContain("<b>Customer Desk</b>")
+    expect(w.el("wall-nodes").innerHTML).toContain("Customer Desk: x")
   })
 
   it("still draws Running now when the feed fails", async () => {
     const w = openWall({ feed: Promise.resolve({ ok: false, status: 504, json: async () => ({}) }) })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain("Could not load the Wall")
-    expect(w.el("wall-nodes").innerHTML).toContain("<b>Customer Desk</b>")
+    expect(w.el("wall-nodes").innerHTML).toContain("Customer Desk: x")
   })
 })
 
@@ -328,24 +337,27 @@ describe("QA verdict on the Wall (#1188)", () => {
       post("q5", "cx", "in_progress"),
     ],
   }
-  const qaLine = (feed: string, id: string) => /<div class="wp__qa">(.*?)<\/div>/.exec(feed.split(`id="post-${id}"`)[1]?.split('id="post-')[0] ?? "")?.[1]
+  // The QA line is in the opened post; the compact feed post leaves it out (#1355).
+  const qaLine = async (id: string) => {
+    const w = openWall({ data: QA, hash: `#post=${id}` })
+    await w.settle()
+    return /<div class="wp__qa">(.*?)<\/div>/.exec(w.el("wall-post").innerHTML)?.[1]
+  }
 
   it("shows a risk verdict with who gave it, when and its escaped note", async () => {
-    const w = openWall({ data: QA })
-    await w.settle()
-    const line = qaLine(w.el("wall-feed").innerHTML, "q1")!
+    const line = (await qaLine("q1"))!
     expect(line).toMatch(/^QA: RISK by qa-check, .+: slow on &lt;mobile&gt;$/)
     expect(line).not.toContain("new verdict asked")
   })
 
   it("marks a block asked again, a pass, and no line without QA", async () => {
+    expect(await qaLine("q2")).toBe("QA: Awaiting QA sign-off")
+    expect(await qaLine("q3")).toMatch(/^QA: BLOCK by qa-check, .+: login fails — new verdict asked$/)
+    expect(await qaLine("q4")).toMatch(/^QA: PASS by qa-check, [^<]+ UTC[+-]\d\d:\d\d$/)
+    expect(await qaLine("q5")).toBeUndefined()
     const w = openWall({ data: QA })
     await w.settle()
-    const feed = w.el("wall-feed").innerHTML
-    expect(qaLine(feed, "q2")).toBe("QA: Awaiting QA sign-off")
-    expect(qaLine(feed, "q3")).toMatch(/^QA: BLOCK by qa-check, .+: login fails — new verdict asked$/)
-    expect(qaLine(feed, "q4")).toMatch(/^QA: PASS by qa-check, [^<]+ UTC[+-]\d\d:\d\d$/)
-    expect(qaLine(feed, "q5")).toBeUndefined()
+    expect(w.el("wall-feed").innerHTML).not.toContain('class="wp__qa"')
   })
 
   it("keeps only posts awaiting a verdict when the filter is on", async () => {
@@ -601,5 +613,98 @@ describe("Wall post actions (#1316)", () => {
     expect(sent(w, "/api/admin/wall/space")[0].body).toMatchObject({ id: "r1", agent: "cx", with: "reviewer" })
     const space = w.calls.find((c) => c.url === "/api/admin/wall/space")!
     expect(space.init.headers["X-Agentx-Peer"]).toBeUndefined()
+  })
+})
+
+describe("Wall v2 feed (#1355)", () => {
+  const V2 = {
+    ...WALL,
+    posts: [
+      post("a", "cx", "in_progress", { project: "shop" }),
+      post("b", "cx", "waiting_other", { blocked: { who: "reviewer", since: NOW - 3 * 3600e3, why: "needs a review" } }),
+      post("c", "reviewer", "waiting_owner", { ownerCards: [{ title: "Ship it?", ask: "Ship it?", expiresAt: NOW + 3600e3, recommend: "yes", silence: "wait", ifSilent: "discard", raisedBy: "reviewer", createdAt: NOW - 600e3 }] }),
+      post("d", "cx", "in_progress", { failedRuns: 2, runs: 3 }),
+      post("e", "reviewer", "done"),
+    ],
+    projects: [{ project: "shop", open: 1, inProgress: 1, blocked: 0, stalled: 0 }],
+  }
+  const LIVE2 = { nodes: [
+    { ...LIVE.nodes[0], url: "http://node-a", crons: [{ id: "j1", agent: "cx", schedule: "0 9 * * *", enabled: true, consecutiveErrors: 0 }] },
+    { name: "node-b", url: "http://node-b", reachable: true, agents: [{ id: "far", name: "Far Agent", runningTasks: [] }] },
+  ] }
+  const ids = (html: string) => [...html.matchAll(/id="post-([^"]+)"/g)].map((m) => m[1])
+
+  it("filters by the status tabs: Working, Waiting, Done, Failed, All", async () => {
+    const tab = async (status: string) => {
+      const w = openWall({ data: V2, hash: `#status=${status}` })
+      await w.settle()
+      return ids(w.el("wall-feed").innerHTML)
+    }
+    expect(await tab("open")).toEqual(["a", "b", "c", "d"])
+    expect(await tab("in_progress")).toEqual(["a", "d"])
+    expect(await tab("waiting")).toEqual(["b", "c"])
+    expect(await tab("done")).toEqual(["e"])
+    expect(await tab("failed")).toEqual(["d"])
+    expect(await tab("")).toEqual(["a", "b", "c", "d", "e"])
+  })
+
+  it("a tab click sets the status filter in the link", async () => {
+    const w = openWall({ data: V2 })
+    await w.settle()
+    w.click({ "data-tab": "waiting" })
+    expect(w.el("f-status").value).toBe("waiting")
+    expect(w.loc.hash).toContain("status=waiting")
+    expect(ids(w.el("wall-feed").innerHTML)).toEqual(["b", "c"])
+  })
+
+  it("keeps a compact post to one amber line on who it waits on", async () => {
+    const w = openWall({ data: V2 })
+    await w.settle()
+    const feed = w.el("wall-feed").innerHTML
+    const of = (id: string) => feed.split(`id="post-${id}"`)[1].split('id="post-')[0]
+    expect(of("b")).toMatch(/<div class="wp__block">Waits on <b>reviewer<\/b> for 3 h — needs a review<\/div>/)
+    expect(of("c")).toContain('<div class="wp__block">Waits on you: <b>Ship it?</b>, card expires in 60 min</div>')
+    expect(of("c")).not.toContain('class="wc"')
+    expect(of("a")).not.toContain("wp__block")
+    expect(of("a")).toContain("shop</span>")
+  })
+
+  it("counts Projects and Jobs in the nav, and opens them from it", async () => {
+    const w = openWall({ data: V2, live: LIVE2, hash: "#status=open&view=jobs" })
+    await w.settle()
+    expect(w.el("nav-n-projects").textContent).toBe("1")
+    expect(w.el("nav-n-jobs").textContent).toBe("1")
+    expect(w.el("wall-title").textContent).toBe("Jobs")
+    expect(w.el("wall-views").hidden).toBe(true)
+    expect(w.el("wall-compose").hidden).toBe(true)
+    expect(w.el("wall-jobs").hidden).toBe(false)
+  })
+
+  it("shows one line per machine under Happening now", async () => {
+    const w = openWall({ data: V2, live: LIVE2 })
+    await w.settle()
+    const side = w.el("wall-nodes").innerHTML
+    expect(side).toContain('<div class="wh"><b>node-a</b><span title="Customer Desk: x">Customer Desk: x</span></div>')
+    expect(side).toContain("<b>node-b</b><span title=\"\">nothing running</span>")
+    expect(side).toContain('href="#page=running"')
+  })
+
+  it("posts from the composer to the agent its @name picks, on that agent's node", async () => {
+    const w = openWall({ data: V2, live: LIVE2 })
+    await w.settle()
+    expect(w.el("wall-compose").hidden).toBe(false)
+    const submit = async (text: string) => { w.el("wc-text").value = text; w.el("wall-compose").on.submit({ preventDefault: () => {} }); await w.settle() }
+    await submit("hello, no one picked")
+    expect(w.el("wc-note").textContent).toMatch(/Pick who it is for/)
+    await submit("@cx please check the deploy log")
+    await submit("@far look at node b")
+    const posted = w.calls.filter((c) => c.url === "/api/admin/wall/post")
+    expect(posted.map((c) => JSON.parse(c.init.body))).toEqual([
+      { agent: "cx", text: "@cx please check the deploy log" },
+      { agent: "far", text: "@far look at node b" },
+    ])
+    expect(posted[0].init.headers["X-Agentx-Peer"]).toBeUndefined()
+    expect(posted[1].init.headers["X-Agentx-Peer"]).toBe("http://node-b")
+    expect(w.el("wc-text").value).toBe("")
   })
 })
