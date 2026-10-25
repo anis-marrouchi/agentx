@@ -108,7 +108,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (f.project && p.project !== f.project) return false;
     if (f.node && p.node.name !== f.node) return false;
     if (f.group && groupKey(p) !== f.group) return false;
-    if (f.time && !p.timeFlag) return false;
+    if (f.time && !p.timeFlag && !forgeFlags(p).length) return false;
     if (f.conc && !(p.concurrent && p.concurrent.length)) return false;
     if (f.q) {
       var hay = [p.headline, p.owner, p.id, p.project, p.home && p.home.link, p.askedBy].join(' ').toLowerCase();
@@ -120,6 +120,13 @@ export const WALL_PAGE_SCRIPT = String.raw`
     var el = $(id), keep = el.value;
     el.innerHTML = '<option value="">All</option>' + values.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('');
     el.value = keep && values.indexOf(keep) >= 0 ? keep : '';
+  }
+  // GitLab time tracking (#1189): logged vs estimate, its flags, or "unknown".
+  function forgeFlags(p) { return (p.forgeTime && p.forgeTime.flags) || []; }
+  function hm(m) { var h = Math.floor(m / 60), r = m % 60; return h ? h + ' h' + (r ? ' ' + r + ' min' : '') : r + ' min'; }
+  function forgeTimeText(t, why) {
+    if (t.unknown) return 'unknown' + (why ? ' (' + t.unknown + ')' : '');
+    return hm(t.loggedMinutes) + ' logged' + (t.estimateMinutes ? ' of ' + hm(t.estimateMinutes) : ', no estimate');
   }
   function uniq(xs) { return xs.filter(function (x, i) { return x && xs.indexOf(x) === i; }).sort(); }
 
@@ -147,6 +154,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       p.closedAt ? 'Closed ' + when(p.closedAt) : '',
       'Runs <b>' + p.runs + '</b>' + (p.failedRuns ? ' (' + p.failedRuns + ' failed)' : '') + (p.runMs ? ', ' + mins(p.runMs) + ' min' : ''),
       p.estimateMinutes ? 'Estimate <b>' + p.estimateMinutes + ' min</b>' : '',
+      p.forgeTime ? 'GitLab time <b' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>' + esc(forgeTimeText(p.forgeTime, true)) + '</b>' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
     var links = [];
     if (p.home) links.push('Home: ' + linkOrText(p.home.link));
@@ -160,6 +168,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       '<div class="wp__head">' + stateBadge(p.state) + '<span class="wp__title">' + esc(p.headline) + '</span></div>' +
       (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
+      (forgeFlags(p).length ? '<div class="wp__flag">GitLab time: ' + esc(forgeFlags(p).join('; ')) + '</div>' : '') +
       conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
       '<div class="wp__meta">' + meta + '</div>' +
       '<div class="wp__links">' + links.join('') + '</div>' +
@@ -222,7 +231,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   // --- List ---
   var COLS = [
     ['state', 'Status'], ['post', 'Post'], ['owner', 'Owner'], ['project', 'Project'], ['node', 'Node'],
-    ['idle', 'Days since move'], ['blocked', 'Waits on'], ['time', 'Run / estimate'], ['runs', 'Runs'],
+    ['idle', 'Days since move'], ['blocked', 'Waits on'], ['time', 'Time / estimate'], ['runs', 'Runs'],
   ];
   function sortVal(p, k) {
     return k === 'idle' ? idleDays(p) : k === 'runs' ? p.runs : k === 'time' ? p.runMs : k === 'owner' ? p.owner
@@ -240,7 +249,9 @@ export const WALL_PAGE_SCRIPT = String.raw`
         '<td>' + esc(p.owner) + '</td><td>' + esc(p.project || '—') + '</td><td>' + esc(p.node.name) + '</td>' +
         '<td class="num">' + idleDays(p) + '</td>' +
         '<td>' + (p.blocked ? esc(p.blocked.who) + ' <small>(' + ago(p.blocked.since) + ')</small>' : '—') + '</td>' +
-        '<td>' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + ' min' + (p.timeFlag ? ' <small title="' + esc(p.timeFlag) + '">⚠</small>' : '') + '</td>' +
+        '<td>' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + ' min' + (p.timeFlag ? ' <small title="' + esc(p.timeFlag) + '">⚠</small>' : '') +
+          (p.forgeTime ? '<br><small' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>GitLab ' + esc(forgeTimeText(p.forgeTime)) + '</small>' +
+            (forgeFlags(p).length ? ' <small title="' + esc(forgeFlags(p).join('; ')) + '">⚠</small>' : '') : '') + '</td>' +
         '<td class="num">' + p.runs + (p.failedRuns ? ' <small>(' + p.failedRuns + ' failed)</small>' : '') +
         (p.concurrent && p.concurrent.length ? ' <small title="Concurrent runs: ' + esc(p.concurrent.map(function (o) { return o.runs.join(' + '); }).join(', ')) + '">⚠ concurrent</small>' : '') + '</td></tr>';
     }).join('') + '</tbody></table>';
