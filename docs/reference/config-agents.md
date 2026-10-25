@@ -133,7 +133,7 @@ Each item in `agents.<id>.integrations` declares one service. Secrets never go i
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `kind` | string | required | Service, such as `telegram-bot`, `gitlab-user`, `gmail`, `hubspot` or `custom`. `agentx doctor` warns on unknown kinds. |
+| `kind` | string | required | Service, such as `telegram-bot`, `gitlab-user`, `gmail`, `hubspot`, `linkedin`, `x` or `custom`. `agentx doctor` warns on unknown kinds. A `linkedin` or `x` entry lets approved posts go out; see [Draft posts in your voice](../jobs/content.md#connect-linkedin-or-x). |
 | `label` | string | required | Readable name, unique per agent and kind. |
 | `credentials` | object | `{}` | Where the secret lives. Only the keys below are accepted. |
 | `credentials.tokenEnv` | string | — | Environment variable holding the main token. |

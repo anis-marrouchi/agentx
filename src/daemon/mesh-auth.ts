@@ -40,6 +40,8 @@ export function isMeshGatedPath(path: string): boolean {
     // Approvals list held memory facts and draft wiki articles, and a card
     // written from off-box would ask the operator in an agent's name.
     path === "/approvals" || path.startsWith("/approvals/") ||
+    // Content drafts: posts not yet approved, and the owner's past posts.
+    path === "/content" || path.startsWith("/content/") ||
     // What is on the owner's screen (#1100): card titles, held notices,
     // queued spoken lines and requests, with who raised each.
     path === "/screen" ||

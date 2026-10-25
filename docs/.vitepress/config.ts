@@ -60,6 +60,7 @@ const groups = [
     { text: "Watch GitLab", link: "/jobs/watch-gitlab" },
     { text: "Answer customers on WhatsApp", link: "/jobs/answer-whatsapp" },
     { text: "Watch a WhatsApp chat", link: "/jobs/watch-whatsapp" },
+    { text: "Draft posts in your voice", link: "/jobs/content" },
     { text: "Get notified", link: "/jobs/notifications" },
     { text: "See waiting decisions in Reminders and Calendar", link: "/jobs/reminders-mirror" },
     { text: "Get agents' ideas in Apple Notes", link: "/jobs/ideas-to-notes" },

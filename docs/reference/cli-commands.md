@@ -561,12 +561,14 @@ What is waiting, most urgent first.
 
 ### `agentx approvals approve <key>`
 
-Say yes: enables the schedule, lets the fact be used, writes the wiki article, or tells the agent yes.
+Say yes: enables the schedule, lets the fact be used, writes the wiki article, publishes the post, or tells the agent yes.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--force` | — | Wiki: approve even if the article changed since the proposal. |
 | `--note <text>` | — | Cards: a note passed to the agent with your answer. |
+| `--choice <n>` | — | Cards with choices: which one, by number or label. |
+| `--text <message>` | — | Cards with a suggested message, and posts (`content:<id>`): the text as you want it sent or published. |
 
 ### `agentx approvals reject <key>`
 
@@ -4092,6 +4094,43 @@ No flags.
 Disable a watch rule.
 
 No flags.
+
+## content (advanced)
+
+`agentx content`: Posts drafted in your voice: drafts waiting for approval, voice samples, the content calendar. **Advanced.** See [Draft posts in your voice](../jobs/content.md). You approve or reject a draft with `agentx approvals approve|reject content:<id>`.
+
+### `agentx content drafts`
+
+Drafts and what happened to them, newest last (default: the ones waiting). Also runs as plain `agentx content`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--all` | — | Include posted, ready, rejected and failed drafts. |
+| `--json` | — | Machine-readable output. |
+
+### `agentx content show <id>`
+
+One draft in full, with the voice samples it followed. `<id>` may keep its `content:` prefix.
+
+No flags.
+
+### `agentx content voice`
+
+The past posts an agent learns your voice from (`voice/` in its workspace).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | required | The content agent, such as `content`. |
+| `--topic <words>` | — | Show the samples closest to a topic. |
+
+### `agentx content calendar`
+
+An agent's content calendar (`calendar.md` in its workspace).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | required | The content agent, such as `content`. |
+| `--days <n>` | `14` | How many days ahead. |
 
 ## demo (advanced)
 

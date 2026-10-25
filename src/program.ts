@@ -64,6 +64,7 @@ import { serve } from "@/commands/serve"
 import { demo } from "@/commands/demo"
 import { exec as execCmd } from "@/commands/exec"
 import { whatsapp } from "@/commands/whatsapp"
+import { content } from "@/commands/content"
 import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
 import { contribute } from "@/commands/contribute"
@@ -177,6 +178,8 @@ const ADVANCED = [
   migrate, retention, notifications,
   // Channel-specific + demo
   whatsapp, demo,
+  // Posts drafted in your voice (the content team)
+  content,
   // One-shot task for scripts and benchmarks
   execCmd,
   // Deprecated — superseded by `agentx attach`

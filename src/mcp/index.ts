@@ -938,6 +938,28 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_content",
+    description:
+      "Draft posts in the owner's voice for LinkedIn or X, and hold them for approval. You never publish: the owner's yes in the Approvals inbox posts it (or saves it ready to paste when no connector is set). " +
+      "Actions: voice (the owner's past posts in voice/ closest to a topic), calendar (planned posts in calendar.md), draft (default: raise a post for approval), status (what happened to a draft). " +
+      "Before drafting, call voice, read the sample files it names and follow them. Every draft must name in `samples` the files it followed. " +
+      "Example: {action:'draft', platform:'linkedin', topic:'Lessons from our first year', date:'2026-11-02', samples:['2026-03-launch.md'], text:'...'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["voice", "calendar", "draft", "status"], description: "draft (default), voice, calendar or status." },
+        platform: { type: "string", enum: ["linkedin", "x"], description: "draft: where the post goes. X takes 280 characters, LinkedIn 3000." },
+        text: { type: "string", description: "draft: the whole post, exactly as it should be published." },
+        samples: { type: "array", items: { type: "string" }, description: "draft: the file names in voice/ this post follows (1-10)." },
+        topic: { type: "string", description: "draft, voice: what the post is about, in a few words." },
+        date: { type: "string", description: "draft: the calendar date it is planned for, YYYY-MM-DD. Its calendar row moves to 'drafted'." },
+        n: { type: "number", description: "voice: how many samples (1-10, default 3)." },
+        id: { type: "string", description: "status: the draft id you got from draft." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
     name: "agentx_note",
     description:
       "Put an idea for the owner into their notes app (Apple Notes, folder AgentX), instead of sending it in chat. " +
@@ -1880,6 +1902,12 @@ async function handleToolCall(
     case "agentx_approval": {
       const { runApprovalTool } = await import("@/approvals/tool")
       const text = await runApprovalTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_content": {
+      const { runContentTool } = await import("@/content/tool")
+      const text = await runContentTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 

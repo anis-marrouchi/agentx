@@ -162,6 +162,9 @@ export const INTEGRATION_KINDS = [
   "vercel",
   // Voice / SMS
   "twilio",
+  // Social posting (content team: approved drafts post here)
+  "linkedin",
+  "x",
   // Catch-all
   "custom",
 ] as const

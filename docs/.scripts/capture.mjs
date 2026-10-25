@@ -60,6 +60,7 @@ const shots = [
   { name: "monitor-only-you", path: "/monitor", wait: "#you .bf-act", steps: [{ scroll: "#you" }] },
   { name: "monitor-agents-handle", path: "/monitor", wait: "#agents .bf-act", steps: [{ scroll: "#agents" }] },
   { name: "approvals/inbox", path: "/approvals", wait: ".apv__item" },
+  { name: "content/approvals-post", path: "/approvals", wait: ".apv__item", steps: [{ click: '.apv__f[data-kind="content"]' }] },
   { name: "approvals/details", path: "/approvals", wait: ".apv__item", steps: [{ click: ".apv__detail summary" }] },
   { name: "approvals/choices", path: "/approvals", wait: ".apv__choices", steps: [{ scroll: ".apv__item:has(.apv__choices)" }] },
   { name: "approvals/plan", path: "/approvals", wait: ".apv__plan", steps: [{ scroll: ".apv__item:has(.apv__plan)" }] },

@@ -11,6 +11,7 @@ Add a team of agents that already does a job, in one command. A **team** is a se
 | `client-inbox` | Every client message on WhatsApp gets a polite answer within minutes, and each evening you get the short list of what still needs you. |
 | `sales-follow-up` | Every Monday morning you get a ready-to-send follow-up for each lead that has gone quiet, and nothing is sent until you approve it. It also researches new leads, sends a daily brief with a source link on every line, and watches competitor pages. See [Find and follow up sales leads](./sales.md). |
 | `dev-team` | Issues you assign on GitLab come back as merge requests with a second agent's review, and each weekday morning you see what is stuck. |
+| `content` | Every Friday next week's posts are planned in your content calendar, every Monday they are drafted in your voice from your past posts, and nothing is published until you approve it. See [Draft posts in your voice](./content.md). |
 
 Each team has a README next to its package in the source (`src/teams/catalog/<team>/README.md`) that lists its agents and schedules.
 
@@ -53,7 +54,7 @@ The agents run on Claude Code unless you choose another runtime with `--tier`, f
    agentx connect whatsapp --agent inbox
    ```
 
-   For the sales follow-up it is `agentx connect telegram --agent sales`. For the dev team, run `agentx channel add`, choose GitLab, and route your project to `dev`.
+   For the sales follow-up it is `agentx connect telegram --agent sales`, and for the content team `agentx connect telegram --agent content`. For the dev team, run `agentx channel add`, choose GitLab, and route your project to `dev`.
 
 2. Start the daemon, or restart it if it was running:
 
