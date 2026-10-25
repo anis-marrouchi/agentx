@@ -12,6 +12,7 @@ import { forgeCommentsOf, type WallForgeComment, type WallForgeState, type WallF
 import { isStalled, projectOverview, type WallProjects } from "./wall-projects"
 import { wallClosures, wallThroughput } from "./wall-throughput"
 import { blockerOf, type WallBlocker } from "./wall-blocks"
+import { wallCapacity } from "./wall-capacity"
 
 // --- The Wall's data (#1180) ---
 //
@@ -34,6 +35,10 @@ import { blockerOf, type WallBlocker } from "./wall-blocks"
 // A post's project and its stalled mark come from the project mapping
 // (#1190, ./wall-projects); the list reply carries one overview row per
 // project with its open, in progress, blocked and stalled counts.
+//
+// Capacity per owner (#1191, ./wall-capacity): each post carries the agent
+// of its active plan step, and the list reply one row per agent with its
+// work in progress, the items waiting on it and an over-capacity flag.
 
 export const WALL_PREFIX = "/api/admin/wall"
 const HOUR = 3_600_000
@@ -57,6 +62,8 @@ export interface WallDeps {
   gitlabUrl?: string | null
   /** The project mapping (#1190). Unset: a post's project is its home repo. */
   projects?: WallProjects | null
+  /** Over-capacity threshold (#1191). Unset: the flag is off. */
+  capacityThreshold?: number | null
 }
 
 /** A pending owner decision card, as the Wall shows it: no answer here. */
@@ -121,6 +128,8 @@ export interface WallPost {
   /** What a record says it waits on, with that agent's project (#1193).
    *  Null when blocked with no record of a blocker, or not blocked. */
   blockedBy: WallBlocker | null
+  /** The agent of the active plan step, while open (#1191). Null: none. */
+  stepAgent: string | null
   estimateMinutes: number | null
   runMs: number
   runs: number
@@ -346,9 +355,9 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
   const project = deps.projects ? deps.projects.of(r, repo) : { name: repo, rhythmHours: deps.staleAfterHours }
   let blocked: WallPost["blocked"] = null
   let blockedBy: WallBlocker | null = null
+  const stepAgent = (OPEN_STATES as readonly string[]).includes(r.state) ? safe(() => activeStepAgentOf(deps.plans)(r.id), null) : null
   if (waiting || stall) {
     const handedTo = r.state === "waiting_other" ? openHandoffTo(deps.db, r.id) : null
-    const stepAgent = activeStepAgentOf(deps.plans)(r.id)
     const look = waitsOn(r, { isAgent: deps.isAgent, activeStepAgent: () => stepAgent })
     const on = handedTo ? { who: handedTo } : look
     const why = r.state === "waiting_owner" ? (r.question ?? "waiting on the owner")
@@ -381,6 +390,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     closeReason: r.closeReason ? clean(r.closeReason, 200) : null,
     blocked,
     blockedBy,
+    stepAgent,
     estimateMinutes: r.estimateMinutes,
     runMs,
     runs: runs.length,
@@ -516,9 +526,12 @@ export function handleWallApi(path: string, q: URLSearchParams, deps: WallDeps |
   const syncedAt = deps?.now ?? Date.now()
   if (path === WALL_PREFIX) {
     const days = Math.max(0, Math.min(WALL_DAYS_MAX, Number(q.get("days") ?? 7) || 0))
-    if (!deps) return { status: 200, body: { node, syncedAt, posts: [], failures: [], projects: [], staleAfterHours: null } }
+    if (!deps) return { status: 200, body: { node, syncedAt, posts: [], failures: [], projects: [], capacity: wallCapacity([]), staleAfterHours: null } }
     const posts = wallPosts(deps, days)
-    return { status: 200, body: { node, syncedAt, posts, failures: wallFailures(deps.db, deps.now), projects: projectOverview(posts, deps.projects?.names), staleAfterHours: deps.staleAfterHours } }
+    return { status: 200, body: {
+      node, syncedAt, posts, failures: wallFailures(deps.db, deps.now), projects: projectOverview(posts, deps.projects?.names),
+      capacity: wallCapacity(posts, deps.capacityThreshold), staleAfterHours: deps.staleAfterHours,
+    } }
   }
   // Weekly throughput (#1192): this node's closures of the last four
   // weeks, the owners with open work (a row even with no closure), and

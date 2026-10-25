@@ -142,6 +142,12 @@ export const dashboardConfigSchema = z.object({
       /** This project's normal rhythm in hours. Unset: the one above. */
       rhythmHours: z.number().positive().max(24 * 365).optional(),
     })).default([]),
+    /** Capacity per owner (#1191): an agent whose work in progress plus
+     *  the items waiting on it is above `threshold` is flagged over
+     *  capacity on the Wall. Unset: no flag. */
+    capacity: z.object({
+      threshold: z.number().int().min(0).max(1000).optional(),
+    }).optional(),
   }).default({}),
 }).default({})
 

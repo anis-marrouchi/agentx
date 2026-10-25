@@ -12,9 +12,11 @@
 // each count links to the list with that project and status in the hash.
 // Under it, weekly throughput (#1192): closures per week per project and
 // per owner over four weeks, read once when the tab first opens.
+// Between them, capacity per owner (#1191, wall-capacity.client.ts).
 //
 // The Reviews view (#1182) lives in wall-reviews.client.ts.
 
+import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
@@ -28,6 +30,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var S = { data: null, live: null, wf: null, view: 'feed', sort: { key: 'idle', dir: -1 }, threads: {} };
   var $ = function (id) { return document.getElementById(id); };
 ${WALL_REVIEWS_SCRIPT}
+${WALL_CAPACITY_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -526,7 +529,7 @@ ${WALL_REVIEWS_SCRIPT}
   }
   function projectsHtml() {
     loadThroughput();
-    return overviewHtml() + throughputHtml();
+    return overviewHtml() + capacityHtml(S.data && S.data.capacity) + throughputHtml();
   }
   function overviewHtml() {
     var rows = (S.data && S.data.projects) || [];

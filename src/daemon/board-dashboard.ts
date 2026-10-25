@@ -88,6 +88,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
 import { claimBlocker } from "./wall-blocks"
+import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
@@ -3084,6 +3085,7 @@ function wallDeps(config: DaemonConfig): WallDeps | null {
     isAgent: (id) => Object.prototype.hasOwnProperty.call(agents, id),
     workspaceOf,
     projects: wallProjects(config.dashboard?.wall, staleAfterHours, workspaceOf),
+    capacityThreshold: config.dashboard?.wall?.capacity?.threshold ?? null,
     cards: () => listCards(ictx.root, "pending"),
     gitlabUrl: forgeConnectorsOf(config).gitlab?.url ?? null,
   }
@@ -3168,7 +3170,9 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
     }
   }))
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
-  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names), staleAfterHours: local.staleAfterHours }
+  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names),
+    // Capacity (#1191): counted here over every node's posts, with this node's threshold.
+    capacity: wallCapacity(posts, deps?.capacityThreshold), staleAfterHours: local.staleAfterHours }
 }
 
 /** Weekly throughput across the mesh (#1192): every node's closures,

@@ -318,3 +318,42 @@ describe("Blocked view grouped by blocker (#1193)", () => {
     expect(open.el("wall-list").innerHTML).not.toContain("<h3>")
   })
 })
+
+// #1191: the Projects view shows the capacity rows the reply carries, the
+// over-capacity flag only when a threshold is set, each owner a link to
+// its posts.
+describe("Capacity per owner on the Wall (#1191)", () => {
+  const CAP = (threshold: number | null, over: boolean) => ({
+    ...WALL,
+    capacity: { threshold, owners: [
+      { owner: "cx", inProgress: 2, waiting: 1, over },
+      { owner: "reviewer", inProgress: 0, waiting: 0, over: false },
+    ] },
+  })
+
+  it("lists each owner with in progress, waiting and the flag", async () => {
+    const w = openWall({ data: CAP(2, true), hash: "#view=projects" })
+    await w.settle()
+    const html = w.el("wall-projects").innerHTML
+    expect(html).toContain("Capacity per owner")
+    expect(html).toContain("above 2.")
+    const rows = html.split("Capacity per owner")[1].split("<tr").slice(2)
+    expect(rows[0]).toContain('href="#owner=cx&amp;view=list">cx</a>')
+    expect(rows[0]).toContain('<td class="num">2</td><td class="num">1</td><td><span class="chip chip--warn">over capacity</span>')
+    expect(rows[1]).toContain("<td>ok</td>")
+  })
+
+  it("shows no flag when no threshold is set", async () => {
+    const w = openWall({ data: CAP(null, false), hash: "#view=projects" })
+    await w.settle()
+    const html = w.el("wall-projects").innerHTML
+    expect(html).toContain("No threshold set")
+    expect(html).not.toContain("over capacity")
+  })
+
+  it("says so when no agent carries open work, or the node is older", async () => {
+    const w = openWall({ data: WALL, hash: "#view=projects" })
+    await w.settle()
+    expect(w.el("wall-projects").innerHTML).toContain("No agent carries open work.")
+  })
+})
