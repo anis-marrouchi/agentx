@@ -277,6 +277,13 @@ export const TOPBAR_SCRIPT = `<script>
           || url.indexOf('/api/workflows') >= 0
           || url.indexOf('/api/agents') >= 0;
     }
+    // The dashboard checks dashboard.token before it proxies to a peer
+    // (#1201), so a proxied call needs it even where the local route has no
+    // gate (/api/agents, /api/workflows). Same source as the pages use.
+    function localToken(){
+      if (window.AX_LOCAL_TOKEN) return window.AX_LOCAL_TOKEN;
+      try { return localStorage.getItem('ax_token') || ''; } catch (e) { return ''; }
+    }
     var origFetch = window.fetch.bind(window);
     window.fetch = function(input, init){
       try {
@@ -285,8 +292,10 @@ export const TOPBAR_SCRIPT = `<script>
           var url = typeof input === 'string' ? input : (input && input.url) || '';
           if (shouldProxy(url)) {
             init = init || {};
-            init.headers = new Headers(init.headers || {});
+            init.headers = new Headers(init.headers || (input && typeof input !== 'string' && input.headers) || {});
             init.headers.set('X-Agentx-Peer', peer);
+            var tok = localToken();
+            if (tok && !init.headers.has('Authorization')) init.headers.set('Authorization', 'Bearer ' + tok);
           }
         }
       } catch (e) {}
