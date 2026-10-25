@@ -279,14 +279,16 @@ function setNotify(job: Record<string, any>, to: NotifyTarget): void {
 
 /**
  * Point schedules that wait for a destination (`deliverResult: true`, no
- * `notify`) at `to`, in place. With `ids`, only those schedules, and with
- * `replace`, also ones that already have a destination. Returns the ids set.
+ * `notify`) at `to`, in place. Without `ids`, only schedules of agents that
+ * belong to a team: a hand-written cron of that shape stays as it is. With
+ * `ids`, exactly those schedules, and with `replace`, also ones that already
+ * have a destination. Returns the ids set.
  */
 export function fillPendingDelivery(config: any, to: NotifyTarget, opts: { ids?: string[]; replace?: boolean } = {}): string[] {
   const set: string[] = []
   for (const [id, job] of Object.entries(config.crons || {}) as [string, any][]) {
     if (!job || job.deliverResult !== true || job.command) continue
-    if (opts.ids && !opts.ids.includes(id)) continue
+    if (opts.ids ? !opts.ids.includes(id) : !config.agents?.[job.agent]?.team) continue
     if (job.notify && !opts.replace) continue
     setNotify(job, to)
     set.push(id)
@@ -305,9 +307,27 @@ export function connectStep(kind: TeamChannelKind, agent: string): string {
 }
 
 /**
+ * True when `target` or any folder between `root` and it is a symlink,
+ * dangling ones included. `root` itself may be one: that is the user's choice.
+ */
+function linkOnPath(root: string, target: string): boolean {
+  let p = root
+  for (const part of relative(root, target).split(sep)) {
+    p = join(p, part)
+    try {
+      if (lstatSync(p).isSymbolicLink()) return true
+    } catch {
+      return false // nothing there yet, so nothing below it either
+    }
+  }
+  return false
+}
+
+/**
  * Write each agent's skills where its runtime reads them. A file that is
- * already there is kept, never overwritten. Returns the folders written to
- * and the files kept.
+ * already there is kept, never overwritten, and nothing is written through a
+ * symlink (it could point outside the workspace). Returns the folders
+ * written to and the files kept.
  */
 export function writeTeamSkills(pkg: TeamPackage, plan: InstallPlan): { written: string[]; kept: string[] } {
   const written: string[] = []
@@ -322,7 +342,7 @@ export function writeTeamSkills(pkg: TeamPackage, plan: InstallPlan): { written:
       for (const [rel, content] of Object.entries(files)) {
         const target = resolve(dir, rel)
         if (!target.startsWith(dir + sep)) continue // parse already refused this; belt and braces
-        if (existsSync(target)) { kept.push(target); continue }
+        if (existsSync(target) || linkOnPath(a.workspace, target)) { kept.push(target); continue }
         mkdirSync(dirname(target), { recursive: true })
         writeFileSync(target, content, { flag: "wx" })
       }
