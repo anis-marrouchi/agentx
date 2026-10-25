@@ -1,7 +1,5 @@
 import chalk from "chalk"
 import prompts from "prompts"
-import nodemailer from "nodemailer"
-import { ImapFlow } from "imapflow"
 import { existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
@@ -18,6 +16,8 @@ import { emailAccountBlock, GMAIL_APP_PASSWORDS_URL, passwordEnvFor, presetFor, 
 /** Log in to IMAP and SMTP once. Returns what failed, or null. */
 export async function checkLogin(i: EmailAccountInput, password: string): Promise<string | null> {
   const user = i.user || i.address
+  // Loaded here, not at the top: program.ts imports this file on every CLI start.
+  const [{ ImapFlow }, { default: nodemailer }] = await Promise.all([import("imapflow"), import("nodemailer")])
   const imap = new ImapFlow({ host: i.imapHost, port: i.imapPort, secure: i.imapPort === 993, auth: { user, pass: password }, logger: false })
   try {
     await imap.connect()
