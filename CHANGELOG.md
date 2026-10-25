@@ -2,6 +2,32 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.168.0](https://github.com/anis-marrouchi/agentx/compare/v0.167.0...v0.168.0) (2026-10-25)
+
+
+### Features
+
+* **content:** drafts in your voice, a weekly calendar, approve then post ([#1291](https://github.com/anis-marrouchi/agentx/issues/1291)) ([#1300](https://github.com/anis-marrouchi/agentx/issues/1300)) ([1bed92f](https://github.com/anis-marrouchi/agentx/commit/1bed92f64cfbab32760f7d76c7de520ab4fe02c4))
+* **dev:** worktree per coder task, GitLab review gate, Linear and Jira ([#1292](https://github.com/anis-marrouchi/agentx/issues/1292)) ([#1299](https://github.com/anis-marrouchi/agentx/issues/1299)) ([7a277f2](https://github.com/anis-marrouchi/agentx/commit/7a277f22d7e6075748620e6587559a7aeaa7b903))
+* **install:** time the first reply in CI, install Node without nvm ([#1286](https://github.com/anis-marrouchi/agentx/issues/1286)) ([#1297](https://github.com/anis-marrouchi/agentx/issues/1297)) ([879b346](https://github.com/anis-marrouchi/agentx/commit/879b3461a47c97e2a2df7c930dd761a1a88198ac))
+* **requests:** sprint lanes hand out the next item when a lane's turn ends ([#1241](https://github.com/anis-marrouchi/agentx/issues/1241)) ([#1244](https://github.com/anis-marrouchi/agentx/issues/1244)) ([7041790](https://github.com/anis-marrouchi/agentx/commit/704179069c568f9dae607819ba930a7378ccf836))
+* **sales:** lead research, sourced brief and competitor watch ([#1288](https://github.com/anis-marrouchi/agentx/issues/1288)) ([#1298](https://github.com/anis-marrouchi/agentx/issues/1298)) ([a4a1c5c](https://github.com/anis-marrouchi/agentx/commit/a4a1c5c6f7e1d21082efcaf89c5d0e79a7cb5406))
+* **schedules:** report only exceptions, daily exceptions digest ([#1289](https://github.com/anis-marrouchi/agentx/issues/1289)) ([#1296](https://github.com/anis-marrouchi/agentx/issues/1296)) ([d7242e0](https://github.com/anis-marrouchi/agentx/commit/d7242e060f81859abaa705f606bf2f3c06d066e2))
+* **signals:** fleet stop-all, resume every task from its plan after the restart ([#1271](https://github.com/anis-marrouchi/agentx/issues/1271)) ([#1273](https://github.com/anis-marrouchi/agentx/issues/1273)) ([8b03ea0](https://github.com/anis-marrouchi/agentx/commit/8b03ea03fb3a3ee76b8ff3db50798679e391d9a5))
+
+
+### Bug Fixes
+
+* **agents:** queued /send/agent waits behind busy agents instead of dropping at 25 min ([#1258](https://github.com/anis-marrouchi/agentx/issues/1258)) ([#1265](https://github.com/anis-marrouchi/agentx/issues/1265)) ([62df508](https://github.com/anis-marrouchi/agentx/commit/62df5089049bb3150e481bfe98a5dfa751f4c663))
+* **budgets:** budgets API reads agentx.json on each request ([#1295](https://github.com/anis-marrouchi/agentx/issues/1295)) ([#1312](https://github.com/anis-marrouchi/agentx/issues/1312)) ([d8dbaaa](https://github.com/anis-marrouchi/agentx/commit/d8dbaaa86ce55a1f94961baad21754ee08a19827))
+* **content:** refuse a yes on changed text; CLI reads tokens from .env ([#1300](https://github.com/anis-marrouchi/agentx/issues/1300)) ([#1314](https://github.com/anis-marrouchi/agentx/issues/1314)) ([db61b5b](https://github.com/anis-marrouchi/agentx/commit/db61b5b36b7d59594b278e6a15f41906cc8f7280))
+* **dashboard:** keep dashboard.token out of pages served off-box ([#1307](https://github.com/anis-marrouchi/agentx/issues/1307)) ([f77de98](https://github.com/anis-marrouchi/agentx/commit/f77de983582712671c7c2268524a6a7c79f7240c))
+* **dashboard:** observability, doctor and ledger reads need dashboard.token ([#1302](https://github.com/anis-marrouchi/agentx/issues/1302)) ([#1305](https://github.com/anis-marrouchi/agentx/issues/1305)) ([5e6b4f2](https://github.com/anis-marrouchi/agentx/commit/5e6b4f2e6c69efb158fe33dd1135b44e549c32d3))
+* **registry:** log when a real channel has no adapter for a queued reply ([#1279](https://github.com/anis-marrouchi/agentx/issues/1279)) ([187b9f1](https://github.com/anis-marrouchi/agentx/commit/187b9f1d3e46b644b3df360c763bbafd8ab77345))
+* **requests:** goal cost counts other agents' plan steps; non-Latin goal titles ([#1168](https://github.com/anis-marrouchi/agentx/issues/1168)) ([#1281](https://github.com/anis-marrouchi/agentx/issues/1281)) ([0a65bd4](https://github.com/anis-marrouchi/agentx/commit/0a65bd4d941cbc9e730d0a4bb3b53f4454d11368))
+* **resume:** continue a run stopped at its time limit ([#1257](https://github.com/anis-marrouchi/agentx/issues/1257)) ([#1269](https://github.com/anis-marrouchi/agentx/issues/1269)) ([a511794](https://github.com/anis-marrouchi/agentx/commit/a511794728f463cadf1f22f025a77b231e5c9c5e))
+* **resume:** list stopped background helpers and their unsaved clones after a restart ([#1256](https://github.com/anis-marrouchi/agentx/issues/1256)) ([#1270](https://github.com/anis-marrouchi/agentx/issues/1270)) ([870c21d](https://github.com/anis-marrouchi/agentx/commit/870c21d29af004c306d5eae02d88f72ef8c0866e))
+
 ## [0.167.0](https://github.com/anis-marrouchi/agentx/compare/v0.166.0...v0.167.0) (2026-10-25)
 
 
