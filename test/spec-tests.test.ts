@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { homedir, tmpdir } from "os"
 import { join } from "path"
 import { execFileSync } from "child_process"
@@ -24,6 +24,7 @@ import {
   runSpecTests,
   selectSpecTestFiles,
   spawnWithTimeout,
+  stopLiveGroups,
   specAgentArgs,
   specAgentDenyRules,
   specTestAuthorInstructions,
@@ -261,6 +262,18 @@ describe("helpers", () => {
     const pidFile = join(mkdtempSync(join(tmpdir(), "agentx-killgroup-")), "pid")
     const r = await spawnWithTimeout("sh", ["-c", `sleep 30 >/dev/null 2>&1 & echo $! > ${pidFile}`], { cwd: tmpdir(), timeoutMs: 10_000, killGroup: true })
     expect(r).toMatchObject({ code: 0, timedOut: false })
+    const pid = Number(readFileSync(pidFile, "utf-8").trim())
+    await new Promise((ok) => setTimeout(ok, 100))
+    expect(() => process.kill(pid, 0)).toThrow()
+  })
+
+  it("stopLiveGroups stops a running killGroup command and its children", async () => {
+    const pidFile = join(mkdtempSync(join(tmpdir(), "agentx-killgroup-")), "pid")
+    const run = spawnWithTimeout("sh", ["-c", `sleep 30 & echo $! > ${pidFile}.tmp && mv ${pidFile}.tmp ${pidFile}; wait`], { cwd: tmpdir(), timeoutMs: 10_000, killGroup: true })
+    for (let i = 0; i < 50 && !existsSync(pidFile); i++) await new Promise((ok) => setTimeout(ok, 20))
+    stopLiveGroups()
+    const r = await run
+    expect(r.timedOut).toBe(false)
     const pid = Number(readFileSync(pidFile, "utf-8").trim())
     await new Promise((ok) => setTimeout(ok, 100))
     expect(() => process.kill(pid, 0)).toThrow()
