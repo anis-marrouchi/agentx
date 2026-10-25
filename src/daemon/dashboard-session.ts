@@ -58,6 +58,37 @@ export function pageToken(req: IncomingMessage, token: string | undefined): stri
   return token && !isOffBox(req) ? token : undefined
 }
 
+// --- Stream tickets (#1305 follow-up) ---
+//
+// EventSource cannot send an Authorization header, so a page on this machine
+// (which holds AX_LOCAL_TOKEN but no session cookie) trades the token for a
+// ticket at POST /api/admin/stream-ticket and puts it in the stream URL as
+// ?st=. A ticket is an expiry plus an HMAC keyed by the token: it opens a
+// stream for a minute, never names the token, and dies with a token rotation.
+
+export const STREAM_TICKET_TTL_S = 60
+
+function ticketMac(token: string, exp: number): string {
+  return createHmac("sha256", token).update(`agentx-stream-ticket-v1:${exp}`).digest("base64url")
+}
+
+/** A ticket for `token` that opens a stream until now + STREAM_TICKET_TTL_S. */
+export function streamTicket(token: string, now = Date.now()): string {
+  const exp = Math.floor(now / 1000) + STREAM_TICKET_TTL_S
+  return `${exp}.${ticketMac(token, exp)}`
+}
+
+/** True when the request URL carries an unexpired ticket for this token. */
+export function hasStreamTicket(req: IncomingMessage, token: string | undefined, now = Date.now()): boolean {
+  if (!token) return false
+  let got = ""
+  try { got = new URL(req.url || "/", "http://_").searchParams.get("st") || "" } catch { return false }
+  const dot = got.indexOf(".")
+  const exp = Number(got.slice(0, dot))
+  if (dot <= 0 || !Number.isInteger(exp) || exp * 1000 < now) return false
+  return sameSecret(got.slice(dot + 1), ticketMac(token, exp))
+}
+
 /** Only a path on this server; anything else goes home. */
 function safeNext(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/"

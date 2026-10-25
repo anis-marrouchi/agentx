@@ -10,7 +10,7 @@ import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
-import { handleLogin, hasSession, isOffBox, pageToken, redirectToLogin } from "./dashboard-session"
+import { handleLogin, hasSession, hasStreamTicket, isOffBox, pageToken, redirectToLogin, streamTicket, STREAM_TICKET_TTL_S } from "./dashboard-session"
 import { loadOperatorKey } from "@/requests/operator"
 import { currentPeople, handleMemberRequest } from "./member-routes"
 import { MemberStore } from "@/members/store"
@@ -429,7 +429,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/activity") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderActivityPage({ peers: buildTopbarPeers(ctx.config), view: url.searchParams.get("view") }))
+    res.end(renderActivityPage({ peers: buildTopbarPeers(ctx.config), view: url.searchParams.get("view"), localToken: pageToken(req, ctx.token) }))
     return
   }
   if (method === "GET" && path === "/monitor") {
@@ -630,7 +630,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // peer-selector contract. Mirror of the shouldProxy() allowlist on
   // the client side (topbar.ts). Treat them the same as /api/admin/*
   // so admin pages proxy to the chosen peer when the selector is set.
-  if (path.startsWith("/api/admin/") || path.startsWith("/api/workflows") || path.startsWith("/api/agents")) {
+  // A stream ticket is minted by, and only opens streams on, this node, so
+  // its route never follows the selector.
+  if ((path.startsWith("/api/admin/") && path !== STREAM_TICKET_PATH) || path.startsWith("/api/workflows") || path.startsWith("/api/agents")) {
     // An explicit ?peer=fleet (the /activity map) beats the topbar's
     // per-node header: that view is mesh-wide by definition.
     const peerId = url.searchParams.get("peer") === "fleet" ? "fleet"
@@ -641,7 +643,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // one route open on this node without the token (the board's agent
     // list asks for it without one), so the proxy leaves it open too.
     const openLocally = method === "GET" && path === "/api/agents"
-    if (peerId && peerId !== "primary" && !openLocally && !adminTokenOk(req, ctx)) {
+    if (peerId && peerId !== "primary" && !openLocally && !adminTokenOk(req, ctx) && !streamTicketOk(req, ctx, method, path)) {
       sendJson(res, 401, { error: "unauthorized" })
       return
     }
@@ -706,13 +708,6 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     }
   }
 
-  // /api/admin/logs/stream — SSE tail of the daemon's stdout. Mirrors
-  // `agentx daemon logs -f`. On systemd-managed nodes this calls
-  // journalctl; on others it falls back to /tmp/agentx-daemon.log.
-  if (method === "GET" && path === "/api/admin/logs/stream") {
-    await streamDaemonLogs(req, res)
-    return
-  }
   // /admin/ledger — read-only window over .agentx/intent/ledger.sqlite.
   // Mirrors `agentx ledger stats/events/divergences/active`. Replay and
   // lineage stay CLI-only.
@@ -760,15 +755,6 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end()
     return
   }
-  if (method === "GET" && path === "/api/admin/activity-graph") {
-    if (await handleActivityGraphApi(req, res, path)) return
-  }
-  if (method === "GET" && path.startsWith("/api/admin/activity-graph/stream")) {
-    if (await handleActivityGraphStream(req, res, path)) return
-  }
-  if (method === "GET" && path.startsWith("/api/admin/activity-graph/dispatch/")) {
-    if (await handleActivityGraphDetail(req, res, path)) return
-  }
   // /admin/agents/<id> — dedicated per-agent page with md editor + skill mgr.
   const agentPageMatch = method === "GET" && path.match(/^\/admin\/agents\/([a-z0-9][a-z0-9_-]*)$/)
   if (agentPageMatch) {
@@ -783,10 +769,34 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // Local admin calls: enforce dashboard.token (if configured) BEFORE the
     // dispatcher runs. The legacy ctx.token check further down only catches
     // paths nothing else handled — admin routes were silently bypassing it.
-    if (!adminTokenOk(req, ctx)) {
+    if (!adminTokenOk(req, ctx) && !streamTicketOk(req, ctx, method, path)) {
       sendJson(res, 401, { error: "unauthorized" })
       return
     }
+  }
+  // Trade the header token (or session cookie) for a short-lived ticket an
+  // EventSource can carry as ?st= (see dashboard-session.ts).
+  if (method === "POST" && path === STREAM_TICKET_PATH) {
+    sendJson(res, 200, ctx.token ? { ticket: streamTicket(ctx.token), expiresInS: STREAM_TICKET_TTL_S } : { ticket: "" })
+    return
+  }
+  // /api/admin/logs/stream — SSE tail of the daemon's stdout. Mirrors
+  // `agentx daemon logs -f`. On systemd-managed nodes this calls
+  // journalctl; on others it falls back to /tmp/agentx-daemon.log.
+  if (method === "GET" && path === "/api/admin/logs/stream") {
+    await streamDaemonLogs(req, res)
+    return
+  }
+  // The /activity map's local snapshot, stream and dispatch detail. Behind
+  // the gate above like every admin read; the stream takes a ticket.
+  if (method === "GET" && path === "/api/admin/activity-graph") {
+    if (await handleActivityGraphApi(req, res, path)) return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/activity-graph/stream")) {
+    if (await handleActivityGraphStream(req, res, path)) return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/activity-graph/dispatch/")) {
+    if (await handleActivityGraphDetail(req, res, path)) return
   }
   // Health, Cost and Ledger reads (#1302): spend, budgets, errors, doctor
   // output. After the token gate above; their pages send dashboard.token.
@@ -3107,6 +3117,15 @@ function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
   if (got === ctx.token || hasSession(req, ctx.token)) return true
   const rec = got ? new TokenStore().verify(got) : null
   return !!rec && recordHasScope(rec, "dashboard:write")
+}
+
+const STREAM_TICKET_PATH = "/api/admin/stream-ticket"
+const STREAM_PATHS = new Set(["/api/admin/logs/stream", "/api/admin/activity-graph/stream"])
+
+/** An EventSource GET on a stream route with a valid ?st= ticket. Tickets
+ *  open nothing else: every other read sends the header or the cookie. */
+function streamTicketOk(req: IncomingMessage, ctx: Ctx, method: string, path: string): boolean {
+  return method === "GET" && STREAM_PATHS.has(path) && hasStreamTicket(req, ctx.token)
 }
 
 /** A page that carries AX_LOCAL_TOKEN (#1306). Off-box, a caller that has not
