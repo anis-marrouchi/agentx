@@ -1731,6 +1731,23 @@ export const approvalsConfigSchema = z.object({
   }).default({}),
 }).default({})
 
+/** The Wall (#1180). `reportedIssues` (#1186): open issues a reporting job
+ *  opened on a forge, found by their label and grouped by the reporter's
+ *  dedupe signature on the Failures tab. Unset: not read, nothing shown. */
+export const wallConfigSchema = z.object({
+  reportedIssues: z.object({
+    label: z.string().min(1).max(100),
+    /** The signature is the first capture of this on the title. Unset, or
+     *  no match: the title, normalized like the Failures tab's errors. */
+    titleSignature: z.string().max(200).refine((s) => { try { new RegExp(s); return true } catch { return false } }, "not a valid regular expression").optional(),
+    /** Where to look: one read of the labelled open issues per project. */
+    sources: z.array(z.object({
+      forge: z.enum(["github", "gitlab"]),
+      project: z.string().regex(/^[\w.-]+(?:\/[\w.-]+)+$/, "owner/repo or group/project"),
+    })).min(1).max(10),
+  }).optional(),
+}).default({})
+
 export const daemonConfigSchema = z.object({
   node: z.object({
     id: z.string(),
@@ -2209,6 +2226,7 @@ export const daemonConfigSchema = z.object({
   business: businessConfigSchema.optional(),
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,
+  wall: wallConfigSchema,
   graph: graphConfigSchema,
   decisions: decisionsConfigSchema,
   /** Workflow engine — declarative state machines that bind channel events

@@ -461,6 +461,10 @@ export function wallThread(r: RequestRecord, deps: WallDeps): WallEvent[] {
 /** Webhook runs are stored under their forge's channel, not "webhook". */
 const WEBHOOK_CHANNELS = "'github', 'gitlab'"
 
+/** The shape of a failure text: lower case, ids and numbers as "#". */
+export const failureSignature = (text: string): string =>
+  text.toLowerCase().replace(/[0-9a-f]{8,}/g, "#").replace(/\d+/g, "#").replace(/\s+/g, " ").slice(0, 80)
+
 /** Failed agent runs in the last day, one row per agent and error shape,
  *  plus webhook runs that ended without a reply. */
 export function wallFailures(db: Database.Database | null, now: number): WallFailure[] {
@@ -474,7 +478,7 @@ export function wallFailures(db: Database.Database | null, now: number): WallFai
   const groups = new Map<string, WallFailure>()
   for (const x of rows) {
     const error = x.status === "ok" ? "webhook run ended without a reply" : String(x.error || x.status)
-    const signature = error.toLowerCase().replace(/[0-9a-f]{8,}/g, "#").replace(/\d+/g, "#").replace(/\s+/g, " ").slice(0, 80)
+    const signature = failureSignature(error)
     const key = `${x.agent_id}|${signature}`
     const g = groups.get(key)
     if (g) { g.count++; continue }

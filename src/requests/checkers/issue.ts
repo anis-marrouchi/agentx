@@ -119,6 +119,16 @@ export interface ForgeConnectors {
   gitlab?: { url: string; token?: string }
 }
 
+/** The headers a forge read sends: the connector's token, if it has one. */
+export function forgeHeaders(provider: "github" | "gitlab", connectors: ForgeConnectors): Record<string, string> {
+  if (provider === "github") {
+    const token = connectors.github?.token
+    return { Accept: "application/vnd.github+json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  }
+  const token = connectors.gitlab?.token
+  return token ? { "PRIVATE-TOKEN": token } : {}
+}
+
 /** The reader over the REST APIs of GitHub and GitLab. One page of notes
  *  (the newest 100 on GitLab, the first 100 on GitHub). */
 export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch = fetch): ForgeReader {
@@ -138,7 +148,7 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
       const c = connectors.github
       if (!c) return { error: "no github connector on this node (channels.github or requests.checkers.github)" }
       const api = c.apiUrl.replace(/\/$/, "")
-      const headers: Record<string, string> = { Accept: "application/vnd.github+json", ...(c.token ? { Authorization: `Bearer ${c.token}` } : {}) }
+      const headers = forgeHeaders("github", connectors)
       const base = `${api}/repos/${ref.project}`
       const issue = await get(`${base}/issues/${ref.number}`, headers)
       if (!issue.ok) return { error: issue.error }
@@ -162,7 +172,7 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
     }
     const c = connectors.gitlab
     if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }
-    const headers: Record<string, string> = c.token ? { "PRIVATE-TOKEN": c.token } : {}
+    const headers = forgeHeaders("gitlab", connectors)
     const base = `${c.url.replace(/\/$/, "")}/api/v4/projects/${encodeURIComponent(ref.project)}/${ref.mr ? "merge_requests" : "issues"}/${ref.number}`
     const item = await get(base, headers)
     if (!item.ok) return { error: item.error }
