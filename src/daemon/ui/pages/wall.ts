@@ -9,17 +9,20 @@
 // avatar, name and @handle, with an action row under it; tapping an agent
 // shows its profile over its own posts.
 //
+// It is its own space (#1242), the way the wiki is: its own page shell,
+// tokens and type taken from the approved take B mockup (left nav, feed
+// column, side column), with no dashboard top bar. The left nav links back
+// to the dashboard and the classic pages, and the dashboard keeps its Wall
+// tab. Theme follows the dashboard's stored choice (`ax-theme`).
+//
 // The HTML is a skeleton; WALL_PAGE_SCRIPT paints it from
 // /api/admin/wall?peer=fleet, /api/live and /api/workflows/runs.
 
-import { renderShell, type TopbarPeer } from ".."
 import { WALL_PAGE_SCRIPT } from "./wall.client"
 import { CRON_JOBS_SCRIPT, CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 
 export interface WallPageOpts {
-  peers?: TopbarPeer[]
-  currentPeerId?: string
   localToken?: string
 }
 
@@ -29,14 +32,40 @@ export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
   ["People", "/people"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
+/** Where "Back to the dashboard" goes: its first page after the Wall. */
+export const WALL_DASHBOARD_HREF = "/live"
+
+// Line icons for the left nav, 24px grid, drawn with currentColor.
+const ICON: Record<string, string> = {
+  "/wall": '<path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/>',
+  "/live": '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  "/mesh": '<circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6 8l5 8M18 8l-5 8"/>',
+  "/monitor": '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  "/approvals": '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  "/people": '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.8 3 2.6 3.5 5.2"/>',
+  "/activity": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  "/workflows": '<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 8v8M8 6h4a4 4 0 0 1 4 4v0M8 18h4a4 4 0 0 0 4-4"/>',
+  "/admin": '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  dashboard: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/>',
+  theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>',
+}
+const icon = (k: string) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k] || ""}</svg>`
+
 export function renderWallPage(opts: WallPageOpts = {}): string {
   const token = opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : ""
-  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")
-  // A feed column with a side column, read like a social feed (#1207):
-  // posts in the middle; Running now, Agents and the classic pages beside.
+  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}" title="${label}">${icon(href)}<span>${label}</span></a>`).join("")
+  // Take B (#1242): left nav, feed column, side column. The feed column
+  // spans every side row; the last row takes the slack so the side boxes
+  // stay packed at the top.
   const body = `<div class="ax-wall">
-  <section class="ax-wall__box ax-wall__side" aria-label="Classic pages">
-    <nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav>
+  <nav class="ax-wall__nav" aria-label="Wall and classic pages">
+    <a class="ax-wall__brand" href="/wall" aria-label="AgentX Wall"><span class="ax-wall__mark">ax</span><span>AgentX</span></a>
+    <a href="/wall" class="is-on" aria-current="page" title="Wall">${icon("/wall")}<span>Wall</span></a>
+    <div class="ax-wall__classic">${classic}</div>
+    <a href="${WALL_DASHBOARD_HREF}" class="ax-wall__back" title="Back to the dashboard">${icon("dashboard")}<span>Back to the dashboard</span></a>
+    <button type="button" id="wall-theme" class="ax-wall__theme" aria-label="Switch light or dark" title="Switch light or dark">${icon("theme")}<span>Theme</span></button>
+  </nav>
+  <section class="ax-wall__box ax-wall__side" aria-label="Sync">
     <span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" class="ax-btn ax-btn--ghost" type="button">Refresh</button></span>
   </section>
   <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
@@ -47,7 +76,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <h2 id="wall-agents-h">Agents</h2>
     <div id="wall-agents"><p class="ax-wall__empty">Loading…</p></div>
   </section>
-  <div class="ax-wall__main">
+  <main class="ax-wall__main">
     <header class="ax-wall__head">
       <div class="ax-wall__titlebar"><h1>Wall</h1><p id="wall-count" class="ax-wall__count"></p></div>
       <div class="ax-wall__views" role="tablist">
@@ -87,35 +116,110 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-failures" class="ax-wall__failures" aria-label="Failures" hidden></section>
     <section id="wall-jobs" class="ax-wall__failures" aria-label="Recurring jobs" hidden></section>
     <section id="wall-reviews" class="ax-wall__reviews" aria-label="Review queue" hidden></section>
-  </div>
+  </main>
 </div>`
 
-  return renderShell({
-    title: "AgentX · Wall",
-    activeTab: "wall",
-    subtitle: "Wall",
-    peers: opts.peers,
-    currentPeerId: opts.currentPeerId,
-    body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS,
-    scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${CRON_JOBS_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
-  })
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentX · Wall</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+${WALL_THEME_BOOT}
+<style>${WALL_TOKENS_CSS}${WALL_SHELL_CSS}${WALL_PAGE_CSS}${CRON_VALUE_CSS}${WALL_REVIEWS_CSS}</style>
+</head>
+<body class="ax-wall-space">
+${body}
+${token}<script>${WALL_THEME_SCRIPT}</script>
+<script>${CRON_VALUE_SCRIPT}\n${CRON_JOBS_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>
+</body>
+</html>`
 }
+
+// Same key and default as the dashboard's bootstrap, so switching theme in
+// either space carries over to the other.
+const WALL_THEME_BOOT = `<script>(function(){try{var t=localStorage.getItem('ax-theme');if(t!=='light'&&t!=='dark'){t='dark';localStorage.setItem('ax-theme',t)}document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','dark')}})();</script>`
+const WALL_THEME_SCRIPT = `(function(){var b=document.getElementById('wall-theme');if(!b)return;b.addEventListener('click',function(){var r=document.documentElement;var t=r.getAttribute('data-theme')==='dark'?'light':'dark';r.setAttribute('data-theme',t);try{localStorage.setItem('ax-theme',t)}catch(e){}});})();`
+
+// Take B tokens. The Wall's own palette and type, under the --ax-* names
+// its post, cron and review styles already read, so nothing below changes
+// name. Light is white with a soft grey side column; dark is near-black.
+const WALL_TOKENS_CSS = `
+:root {
+  --ax-bg: #ffffff; --ax-bg-elev: #f7f9f9; --ax-surface: #f7f9f9; --ax-surface-2: #eff3f4; --ax-surface-3: #e7ecef;
+  --ax-border: #eff3f4; --ax-border-2: #cfd9de; --ax-text: #0f1419; --ax-text-2: #536471; --ax-muted: #536471;
+  --ax-blue: #1d9bf0; --ax-blue-d: #1a8cd8; --ax-blue-t: #e8f5fd; --ax-accent: #1d9bf0; --ax-accent-2: #1a8cd8; --ax-accent-t: #e8f5fd;
+  --ax-green: #00ba7c; --ax-green-d: #00875a; --ax-amber: #ffad1f; --ax-amber-t: #fff6e5; --ax-amber-ink: #8a5a00;
+  --ax-red: #f4212e; --ax-red-t: #fee8ea; --ax-red-ink: #b0101b;
+  --ax-ok: var(--ax-green); --ax-warn: var(--ax-amber-ink); --ax-err: var(--ax-red); --ax-info: var(--ax-blue);
+  --ax-radius: 12px; --ax-radius-lg: 16px; --ax-radius-sm: 6px; --ax-radius-pill: 9999px;
+  --ax-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --ax-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ax-fs: 15px; --ax-fs-sm: 14px; --ax-fs-xs: 13px;
+  color-scheme: light;
+}
+[data-theme="dark"] {
+  --ax-bg: #000000; --ax-bg-elev: #16181c; --ax-surface: #16181c; --ax-surface-2: #202327; --ax-surface-3: #2f3336;
+  --ax-border: #2f3336; --ax-border-2: #536471; --ax-text: #e7e9ea; --ax-text-2: #a3abb3; --ax-muted: #8b98a5;
+  --ax-blue-t: #0b2537; --ax-accent-t: #0b2537;
+  --ax-green: #00ba7c; --ax-green-d: #3fd39f; --ax-amber: #ffd400; --ax-amber-t: #2a2410; --ax-amber-ink: #ffd400;
+  --ax-red: #f4212e; --ax-red-t: #2a0c10; --ax-red-ink: #ff7b84;
+  color-scheme: dark;
+}
+`
+
+// The space itself: body, left nav, buttons and badges. No dashboard chrome.
+const WALL_SHELL_CSS = `
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body.ax-wall-space { background: var(--ax-bg); color: var(--ax-text); font-family: var(--ax-font); font-size: var(--ax-fs); line-height: 1.35; -webkit-font-smoothing: antialiased; }
+.ax-wall-space a { color: inherit; }
+.ax-wall-space :focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+
+.ax-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-weight: 700; font-size: var(--ax-fs-sm);
+  border-radius: var(--ax-radius-pill); padding: 6px 16px; border: 1px solid transparent; background: var(--ax-text); color: var(--ax-bg); cursor: pointer; text-decoration: none; }
+.ax-btn:hover { opacity: .88; }
+.ax-btn--ghost { background: transparent; color: var(--ax-text); border-color: var(--ax-border-2); }
+.ax-btn--ghost:hover { opacity: 1; background: color-mix(in srgb, var(--ax-text) 8%, transparent); }
+.ax-badge { display: inline-block; font-size: var(--ax-fs-xs); font-weight: 600; line-height: 1.5; border-radius: var(--ax-radius-pill); padding: 0 8px; background: var(--ax-surface-2); color: var(--ax-text-2); white-space: nowrap; }
+.ax-badge--live { background: color-mix(in srgb, var(--ax-green) 15%, transparent); color: var(--ax-green-d); }
+.ax-badge--warn { background: var(--ax-amber-t); color: var(--ax-amber-ink); }
+.ax-badge--err { background: var(--ax-red-t); color: var(--ax-red-ink); }
+
+/* Left nav: brand, Wall, the classic pages, back to the dashboard, theme. */
+.ax-wall__nav { grid-column: 1; grid-row: 1 / -1; position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px 16px; align-self: start; }
+.ax-wall__classic { display: contents; }
+.ax-wall__nav > a, .ax-wall__nav .ax-wall__classic a, .ax-wall__theme { display: flex; align-items: center; gap: 18px; width: max-content; max-width: 100%; padding: 11px 16px 11px 12px; border-radius: var(--ax-radius-pill);
+  font: inherit; font-size: 19px; color: var(--ax-text); text-decoration: none; background: none; border: 0; cursor: pointer; }
+.ax-wall__nav > a:hover, .ax-wall__nav .ax-wall__classic a:hover, .ax-wall__theme:hover { background: color-mix(in srgb, var(--ax-text) 9%, transparent); }
+.ax-wall__nav > a.is-on { font-weight: 700; }
+.ax-wall__nav svg { width: 26px; height: 26px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ax-wall__nav > a.is-on svg { stroke-width: 2.6; }
+.ax-wall__brand { font-weight: 800; }
+.ax-wall__mark { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; background: var(--ax-text); color: var(--ax-bg); font-family: var(--ax-mono); font-size: 14px; font-weight: 700; }
+.ax-wall__nav > a.ax-wall__back { margin-top: 14px; width: 100%; justify-content: center; background: var(--ax-accent); color: #fff; font-weight: 700; font-size: 16px; padding: 14px 16px; }
+.ax-wall__nav > a.ax-wall__back:hover { background: var(--ax-accent-2); }
+.ax-wall__back svg { display: none; }
+.ax-wall__theme { margin-top: auto; font-size: var(--ax-fs); color: var(--ax-text-2); }
+`
 
 const WALL_PAGE_CSS = `
 /* A display rule beats the user agent's [hidden] rule: keep hidden hidden. */
 .ax-wall [hidden] { display: none !important; }
-/* Feed column plus side column (#1207). The main column spans every side row;
-   the last row takes the slack so the side boxes stay packed at the top. */
-.ax-wall { display: grid; grid-template-columns: minmax(0, 620px) 330px; grid-template-rows: auto auto auto 1fr; column-gap: 24px;
-  justify-content: center; align-items: start; max-width: 1180px; margin: 0 auto; }
-.ax-wall.is-wide { grid-template-columns: minmax(0, 1fr) 300px; }
-.ax-wall__main { grid-column: 1; grid-row: 1 / span 4; min-width: 0; border-left: 1px solid var(--ax-border); border-right: 1px solid var(--ax-border); min-height: 70vh; }
-.ax-wall__side { grid-column: 2; grid-row: 3; }
-.ax-wall__nodes { grid-column: 2; grid-row: 1; }
-.ax-wall__agents { grid-column: 2; grid-row: 2; }
+/* Take B (#1242): left nav, feed column, side column. The feed column
+   spans every side row; the last row takes the slack so the side boxes
+   stay packed at the top. The List view widens the feed column. */
+.ax-wall { display: grid; grid-template-columns: 260px minmax(0, 600px) 350px; grid-template-rows: auto auto auto 1fr; column-gap: 28px;
+  justify-content: center; align-items: start; max-width: 1290px; margin: 0 auto; min-height: 100vh; }
+.ax-wall.is-wide { grid-template-columns: 260px minmax(0, 1fr) 300px; max-width: none; }
+.ax-wall__main { grid-column: 2; grid-row: 1 / span 4; min-width: 0; border-left: 1px solid var(--ax-border); border-right: 1px solid var(--ax-border); min-height: 100vh; }
+.ax-wall__nodes { grid-column: 3; grid-row: 1; margin-top: 12px; }
+.ax-wall__agents { grid-column: 3; grid-row: 2; }
+.ax-wall__side { grid-column: 3; grid-row: 3; background: none; border: 1px solid var(--ax-border); }
 .ax-wall__box { background: var(--ax-surface); border-radius: var(--ax-radius-lg); padding: 12px 16px; margin-bottom: 16px; min-width: 0; }
-.ax-wall__box h2 { font-size: 19px; font-weight: 800; margin: 0 0 8px; color: var(--ax-text); }
+.ax-wall__box h2 { font-size: 20px; font-weight: 800; margin: 0 0 8px; color: var(--ax-text); }
 .ax-wall__empty, .ax-wall__count { color: var(--ax-muted); font-size: var(--ax-fs-sm); margin: 0; }
 .ax-wall__feed .ax-wall__empty, .ax-wall__list > .ax-wall__empty { padding: 32px 16px; text-align: center; }
 
@@ -224,10 +328,7 @@ const WALL_PAGE_CSS = `
 .wpf__links a { color: var(--ax-accent); text-decoration: none; }
 
 /* Side column boxes */
-.ax-wall__classic { display: flex; flex-wrap: wrap; gap: 6px; }
-.ax-wall__classic a { font-size: var(--ax-fs-xs); padding: 3px 10px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); color: var(--ax-text-2); text-decoration: none; background: var(--ax-bg); }
-.ax-wall__classic a:hover { color: var(--ax-text); border-color: var(--ax-border-2); }
-.ax-wall__sync { font-size: var(--ax-fs-xs); color: var(--ax-muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 10px; }
+.ax-wall__sync { font-size: var(--ax-fs-xs); color: var(--ax-muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .ax-wall__sync.is-stale time { color: var(--ax-warn); }
 .ax-wall__nodes > div { display: flex; flex-direction: column; }
 .wn { padding: 8px 0; font-size: var(--ax-fs-sm); border-top: 1px solid var(--ax-border); }
@@ -262,16 +363,41 @@ const WALL_PAGE_CSS = `
 .wf ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--ax-fs-sm); }
 .wf .err { color: var(--ax-text-2); font-family: var(--ax-mono); font-size: var(--ax-fs-xs); overflow-wrap: anywhere; }
 
-/* One column below desktop width: classic pages and Running now first,
-   then the feed, then the agents. */
-@media (max-width: 1000px) {
-  .ax-wall, .ax-wall.is-wide { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
-  .ax-wall__side, .ax-wall__nodes, .ax-wall__agents, .ax-wall__main { grid-column: 1; grid-row: auto; }
-  .ax-wall__side { order: 1; } .ax-wall__nodes { order: 2; } .ax-wall__main { order: 3; } .ax-wall__agents { order: 4; margin-top: 16px; }
-  .ax-wall__main { border-left: 0; border-right: 0; }
+/* Narrower desktop: the left nav folds to an icon rail, as on X. */
+@media (max-width: 1280px) {
+  .ax-wall { grid-template-columns: 76px minmax(0, 600px) 330px; column-gap: 20px; }
+  .ax-wall.is-wide { grid-template-columns: 76px minmax(0, 1fr) 280px; }
+  .ax-wall__nav { align-items: center; padding: 8px 4px 16px; }
+  .ax-wall__nav span:not(.ax-wall__mark) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .ax-wall__nav > a, .ax-wall__nav .ax-wall__classic a, .ax-wall__theme { padding: 12px; gap: 0; }
+  .ax-wall__nav > a.ax-wall__back { width: auto; padding: 12px; }
+  .ax-wall__back svg { display: block; }
 }
+/* Tablet: icon rail plus one column. Sync and Running now first, then the
+   feed, then the agents. */
+@media (max-width: 1000px) {
+  .ax-wall, .ax-wall.is-wide { grid-template-columns: 76px minmax(0, 1fr); grid-template-rows: none; column-gap: 0; }
+  .ax-wall__nav { grid-row: 1 / span 4; }
+  .ax-wall__side, .ax-wall__nodes, .ax-wall__agents, .ax-wall__main { grid-column: 2; grid-row: auto; margin: 0; border-radius: 0; }
+  .ax-wall__side { order: 1; border-width: 0 0 1px; } .ax-wall__nodes { order: 2; } .ax-wall__main { order: 3; min-height: 0; } .ax-wall__agents { order: 4; }
+  .ax-wall__main { border-right: 0; }
+  .ax-wall__side, .ax-wall__nodes, .ax-wall__agents { border-left: 1px solid var(--ax-border); }
+}
+/* Phone: one column, and the nav becomes a tab bar along the bottom. */
 @media (max-width: 640px) {
-  .ax-wall__box { margin-bottom: 10px; padding: 10px 12px; }
+  body.ax-wall-space { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+  .ax-wall, .ax-wall.is-wide { grid-template-columns: minmax(0, 1fr); }
+  .ax-wall__side, .ax-wall__nodes, .ax-wall__agents, .ax-wall__main { grid-column: 1; border-left: 0; }
+  .ax-wall__nav { position: fixed; top: auto; left: 0; right: 0; bottom: 0; height: auto; z-index: 10; flex-direction: row; align-items: center; gap: 0; padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    overflow-x: auto; overflow-y: hidden; background: color-mix(in srgb, var(--ax-bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--ax-border); }
+  .ax-wall__brand { display: none !important; }
+  .ax-wall__nav > a, .ax-wall__nav .ax-wall__classic a, .ax-wall__theme { flex: 1 1 0; min-width: 0; justify-content: center; padding: 9px 0; }
+  .ax-wall__nav > a.ax-wall__back { flex: 1 1 0; margin: 0; padding: 9px 0; background: none; color: var(--ax-accent); }
+  .ax-wall__theme { margin: 0; }
+  .ax-wall__nav svg { width: 22px; height: 22px; }
+  .ax-wall__views { overflow-x: auto; scrollbar-width: none; }
+  .ax-wall__views button { flex: 1 0 auto; white-space: nowrap; padding: 12px 12px 9px; }
+  .ax-wall__box { padding: 10px 12px; }
   .ax-wall__nodes > div { flex-direction: row; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; }
   .wn { flex: 0 0 78%; scroll-snap-align: start; border-top: 0; border-left: 1px solid var(--ax-border); padding: 0 0 0 10px; }
   .wn:first-child { border-left: 0; padding-left: 0; }

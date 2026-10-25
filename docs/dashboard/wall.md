@@ -1,18 +1,23 @@
 # Wall — every task as a post
 
-The Wall is the dashboard's home page. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Running now** shows what each connected machine is doing at this moment, and **Agents** lists who has posts this week.
+The Wall is the dashboard's home page. It is a space of its own, the way the [wiki](./wiki.md) is: it has its own look, with a menu on the left, the feed in the middle and a side column on the right, and no dashboard top bar. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Running now** shows what each connected machine is doing at this moment, and **Agents** lists who has posts this week.
 
 The Wall only reads. It shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
 
-![The Wall in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
+![The Wall in the isolated demo: the menu on the left, filters and posts in the middle, Running now and Agents on the right](/screenshots/wall/wall.png)
 
 *Scripted demo data; your team's names and machines will differ.*
 
 ## Open the Wall
 
-1. **Browser:** open the dashboard. The Wall is the first page you see. It is also the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The links in the box under **Agents** go to the classic pages: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
-3. **Phone:** the page is one column. The classic pages and **Running now** come first, then the feed, then **Agents**.
+1. **Browser:** open the dashboard. The Wall is the first page you see. You can also open it at `/wall`, or with the **Wall** tab in the top bar of any other dashboard page.
+2. The menu on the left goes to the classic pages: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+3. To leave the Wall, select **Back to the dashboard** in the menu. It opens **Live**, with the dashboard's top bar.
+4. To switch between light and dark, select **Theme** at the bottom of the menu. The dashboard uses the same choice.
+5. **Narrow window:** the menu folds to icons. Point at an icon to see its name.
+6. **Phone:** the page is one column and the menu becomes a row of icons along the bottom. **Last synced** and **Running now** come first, then the feed, then **Agents**.
+
+![The Wall on a phone: one column, with the menu as a row of icons along the bottom](/screenshots/wall/phone.png)
 
 ## Read a post
 
@@ -317,19 +322,20 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 
 ## Check it worked
 
-1. **Browser:** open the dashboard. The Wall opens, with the feed in the middle and **Running now** beside it (above it on a phone).
-2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
-3. Select **Thread** on it. You see the request and at least one **run**.
-4. When an agent raises a decision card while working on a task, choose **Waiting on the owner** under **Status**. The card shows on that task's post, with its expiry and what happens with no answer.
-5. Open `/live` in the browser. The classic Live page still opens.
-6. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
-7. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
-8. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
-9. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
-10. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
-11. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
-12. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
-13. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+1. **Browser:** open the dashboard. The Wall opens, with the menu on the left, the feed in the middle and **Running now** beside it (above it on a phone). There is no dashboard top bar on it.
+2. Select **Back to the dashboard**. **Live** opens with the dashboard's top bar, and its **Wall** tab brings you back.
+3. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
+4. Select **Thread** on it. You see the request and at least one **run**.
+5. When an agent raises a decision card while working on a task, choose **Waiting on the owner** under **Status**. The card shows on that task's post, with its expiry and what happens with no answer.
+6. Open `/live` in the browser. The classic Live page still opens.
+7. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
+8. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
+9. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
+10. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
+11. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
+12. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
+13. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
+14. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
@@ -352,4 +358,6 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **The portfolio shows "Untitled request" a lot:** those tasks have no headline yet and no issue or merge request as their home. The text of the task is never used as a title there.
 - **Reviews says the intent graph is off:** `graph.enabled` is false in `agentx.json`, so nothing is classified here. Classifications made before it was switched off still show.
 - **A decision shows "No reason recorded" or "the graph page (no reviewer recorded)":** it was decided on the classic graph page, which keeps neither. Decisions made with `agentx graph review` or the review tool keep both.
+- **The Wall looks like the other dashboard pages, with the top bar:** the dashboard is still running an older version. Update AgentX and restart the dashboard with `agentx board serve`.
+- **The menu on the left is missing on a phone:** it is the row of icons along the bottom of the screen. Scroll to the end of the page if your browser hides it.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.

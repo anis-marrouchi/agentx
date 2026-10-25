@@ -16,7 +16,7 @@ import { recordTraceStart, recordTraceEnd } from "../src/storage/traces"
 import {
   a2aRoute, handleWallApi, mentionsIn, projectOf, SILENCE_WORDS, sourceIdsIn, wallFailures, wallPost, wallPosts, wallThread, type WallDeps,
 } from "../src/daemon/wall-api"
-import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
+import { renderWallPage, WALL_CLASSIC_LINKS, WALL_DASHBOARD_HREF } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 
 // The Wall (#1180): every request as a post, its runs, hand-offs and plan
@@ -364,6 +364,17 @@ describe("routes", () => {
   it("keeps every classic page one tap away", () => {
     const html = renderWallPage()
     for (const [, href] of WALL_CLASSIC_LINKS) expect(html).toContain(`href="${href}"`)
+  })
+
+  it("is its own space: no dashboard top bar, and a link back to the dashboard (#1242)", async () => {
+    for (const html of [renderWallPage(), (await get("/wall")).body, (await get("/")).body]) {
+      expect(html).not.toContain("ax-topbar")
+      expect(html).not.toContain("fonts.googleapis.com")
+      expect(html).toContain('class="ax-wall__nav"')
+      expect(html).toContain(`href="${WALL_DASHBOARD_HREF}" class="ax-wall__back"`)
+    }
+    // The dashboard keeps its Wall tab.
+    expect((await get("/live")).body).toContain('href="/wall"')
   })
 
   it("answers the Wall API, the thread from a run id, and the fleet view", async () => {

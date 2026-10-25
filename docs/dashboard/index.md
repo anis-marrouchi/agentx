@@ -19,9 +19,9 @@ If nothing loads, start the dashboard yourself:
    ```
 2. Keep that terminal open, and open the address again.
 
-![The top bar and the Wall](/screenshots/wall/wall.png)
+![The Wall, the page the dashboard opens on](/screenshots/wall/wall.png)
 
-The dashboard opens on the [Wall](./wall.md): every task as a post, with its thread, and what each machine is running now.
+The dashboard opens on the [Wall](./wall.md): every task as a post, with its thread, and what each machine is running now. The Wall is a space of its own, with its own menu; its **Back to the dashboard** link opens the pages below.
 
 The top bar has nine tabs:
 

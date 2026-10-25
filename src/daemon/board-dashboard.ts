@@ -310,7 +310,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       return
     }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
+    res.end(renderWallPage({ localToken: ctx.token }))
     return
   }
   if (method === "GET" && path === "/boards") {
@@ -320,7 +320,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/wall") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: ctx.token }))
+    res.end(renderWallPage({ localToken: ctx.token }))
     return
   }
   if (method === "GET" && path === "/live") {
