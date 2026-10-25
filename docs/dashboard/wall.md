@@ -214,17 +214,30 @@ When a machine does not answer, the page names it at the top: agents that run on
 
 ## Live sessions
 
-The **Live** page lists every live session on your machines, like Spaces on X: what is live now on top, with **Join**, then what comes up next.
+The **Live** page lists everything live on your machines: Spaces and lessons on top, then the sessions and jobs running now (the same runs the classic `/live` page shows), then what comes up next. While the page is open it updates every two seconds.
 
-1. **Browser:** in the nav, select **Live** (in **More** on a phone). The number next to it counts the live sessions.
-2. Under **Live now**:
+1. **Browser:** in the nav, select **Live** (in **More** on a phone). The number next to it counts the live sessions and runs.
+2. Under **Spaces and lessons**, when there are any:
    - a **Space** (two agents talking out loud) comes first, with its topic, who talks and since when. On this computer, select **Join**: its transcript opens under the list, with **Say something into the Space** and **End**. A Space on another machine says **Plays on** and that machine's name, since its voices play there.
    - a **Lesson** on a machine's screen shows whose it is.
-   - an agent **Working** shows what it works on; select **Join** to open its live task.
-3. **Coming up** lists the next five scheduled jobs, with their agent, machine and when they run.
-4. To start a Space, pick two agents under **Start a Space**, write what they should talk about, and select **Start**. It plays on this computer, and its transcript opens on the page.
+3. Under **Running now**, each card is one run: **Session** for a chat, mail or other message, **Job** for a scheduled job (with the job's name). It shows the agent, what it is working on, how long it has run and, under **Latest**, the last thing it did, such as **Using Bash** or a line of its reply. Select a card to open its [Task page](#watch-and-steer-a-run).
+4. **Coming up** lists the next five scheduled jobs, with their agent, machine and when they run.
+5. To start a Space, pick two agents under **Start a Space**, write what they should talk about, and select **Start**. It plays on this computer, and its transcript opens on the page.
 
-![The Live page in the isolated demo, with nothing live yet: Live now, Coming up, and the form to start a Space](/screenshots/wall/live.png)
+![The Live page with three runs: two sessions and a scheduled job, each with its agent, what it is on, how long it has run and its latest line, then Coming up and the form to start a Space](/screenshots/wall/live.png)
+
+## Watch and steer a run
+
+The **Task** page is one run on its own, with its own link: what it was asked, its conversation as it happens, and a box to steer it. It is the classic task page, on the Wall.
+
+1. **Browser:** open it from a card under **Running now** on the **Live** page, or select **● Join live** on an open post or an agent's page. Every other run link on the Wall opens it too: **Task record and trace**, **run …** next to an answer, a run in a post's thread, **last run** and **full log** on Failures and Jobs, and the runs listed on a machine's card.
+2. At the top: the agent, the channel, **live** while it runs, and how long it has run. **Classic page** opens the same run on the classic dashboard.
+3. **request** shows what the run was asked. When the run belongs to a tracked request, its box follows: the status strip (**Asked**, **Working**, **Waits**, **Done**), the **Plan** if it has one, and the facts. **Open the post** opens the post.
+4. **Conversation** streams what the agent does: tool calls, results, its thinking and its reply.
+5. To steer it, write in the box under the conversation and select **Send** (or press ⌘/Ctrl+Enter). The current turn keeps running; your message goes in as the next turn. **Stop** ends the current turn.
+6. A finished run shows its stored record. A finished scheduled job can be continued: **Send** starts a new turn in the same job session, and the page moves to it. A finished run from any other channel only reads: its chat goes on where it came from.
+
+![A run's Task page: the request, the tracked request's status strip, plan and facts, the conversation, and the steer box with Stop and Send](/screenshots/wall/run.png)
 
 ## Use the list to sort through many tasks
 
@@ -489,13 +502,19 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 19. Select the **Done** tab: only finished posts are listed. Select the search button: the search box and the filters open.
 20. Select **Jobs**. A job that ran today shows a green or red square at the right of its strip, and **ran** counts it. Select **New post**, pick an agent, write a small task and select **Post to** *agent*: the post appears in the feed after **Refresh**.
 21. Open a post that is done and comment on it with `@` and another agent's name. The post shows **in progress** again after **Refresh**, and the other agent has a new post that quotes your comment.
-22. Select **Live**. Start a Space with two agents: it is listed first under **Live now**, and its transcript fills in under the list. Select **Agents**, then **Call** on an agent: your voice widget rings.
+22. Select **Live**. Start a Space with two agents: it is listed first under **Spaces and lessons**, and its transcript fills in under the list. Select **Agents**, then **Call** on an agent: your voice widget rings.
 23. Open a post whose request has a plan. Under its title, **Working** is marked while it runs, and **Plan** lists the steps the agent wrote, each with its owner and done check (see [Follow a request of several steps](../jobs/tracked-plans.md)).
+24. Give an agent a task that takes a minute, then select **Live**. Its card is under **Running now**, with the time going up and **Latest** changing as it works. Select the card: the **Task** page opens with **live**, the request and the conversation filling in. Write "Also say which files you read" and select **Send**: the hint says **queued — dispatches as the next turn**, and the agent answers it after the current turn. Give it another task and select **Stop** on its Task page: the conversation ends and its card leaves **Live**.
+25. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
+26. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
 
 ## If something is wrong
 
 - **A comment on a closed post says requests are off:** the machine that keeps the post has `requests.enabled` off, so the post cannot open again. Turn requests on there, or post a new task instead.
 - **An opened post shows no Plan:** its request has no tracked plan, or the machine that keeps it runs a daemon from before this change. Restart that daemon to send the plan with the thread.
+- **A Task page says "disconnected":** the run's machine stopped answering, or the run ended while the page was closed. Reload the page; a finished run then shows on its post's **Task record and trace**.
+- **Send says "failed: …":** the run's machine refused the message. "not found" means the run ended; open it again from the post to continue a scheduled job, or write to the agent in its chat.
+- **A Live card shows "Starting…" for a long time:** the run has written nothing yet, or its machine runs a daemon from before this change, which does not send the latest line. Restart that daemon.
 - **Live says a Space plays on another machine:** a Space plays where it was started. Open the Wall on that machine to join it.
 - **Post says requests are off:** the agent's machine has `requests.enabled` off, so nothing would give it the task. Turn requests on in **Settings** on that machine, or ask the agent in a channel instead.
 - **Post says to pick who it is for:** the post has no `@` name of an agent the machines report. Check the name on the **Agents** page.

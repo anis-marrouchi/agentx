@@ -1919,6 +1919,7 @@ interface NodeLive {
       chatId?: string
       sender?: string
       startedAt: string
+      lastActivity?: string
     }>
   }>
   /** Today's per-agent usage rollup pulled from /health. */

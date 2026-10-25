@@ -26,6 +26,7 @@ import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
+import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
@@ -186,9 +187,25 @@ export interface RunningTask {
    *  the run a task is wrapped in under workflows.required. `step` and
    *  `title` are filled in when the agent list is read. */
   workflow?: { runId: string; workflowId?: string; step?: string; title?: string }
+  /** The last line the run wrote to its live output (#1381): a tool
+   *  call, a result or a line of its reply. Filled in when the agent list
+   *  is read, never stored. */
+  lastActivity?: string
 }
 
 type TaskOutputSubscriber = (chunk: string) => void
+
+/** The last non-empty line of a run's output, secrets redacted, then cut
+ *  to 160 characters. It goes out on /health, so redact before clamping
+ *  (#1383). */
+export function lastActivityLine(buffer: string): string | undefined {
+  const lines = buffer.split("\n")
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = redactSecrets(lines[i].trim())
+    if (line) return line.length > 160 ? line.slice(0, 159) + "…" : line
+  }
+  return undefined
+}
 
 interface TaskOutput {
   agentId: string
@@ -3672,10 +3689,20 @@ export class AgentRegistry {
         total: s.totalTasks,
         errors: s.errors,
         lastActive: s.lastActive,
-        runningTasks: this.withWorkflowSteps(s.runningTasks),
+        runningTasks: this.withLastActivity(this.withWorkflowSteps(s.runningTasks)),
         lastSummary: summary ? { text: summary.text, at: summary.at.toISOString(), ok: summary.ok } : undefined,
         hourlyTasks: this.getHourlySparkline(s.id, 24),
       }
+    })
+  }
+
+  /** Running tasks with the last line each wrote (#1381); the stored list
+   *  is not touched. */
+  private withLastActivity(tasks: RunningTask[]): RunningTask[] {
+    return tasks.map((t) => {
+      const out = this.taskOutputs.get(t.id)
+      const line = out ? lastActivityLine(out.buffer.slice(-2000)) : undefined
+      return line ? { ...t, lastActivity: line } : t
     })
   }
 
