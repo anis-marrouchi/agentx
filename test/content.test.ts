@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "os"
 import { join } from "path"
 import { CALENDAR_TEMPLATE, parseCalendar, readCalendar, setCalendarStatus, upcoming } from "../src/content/calendar"
-import { createContentDraft, decideContentDraft, listContentDrafts, readContentDraft, type ContentDraft, type PublishContent } from "../src/content/drafts"
+import { contentTextHash, createContentDraft, decideContentDraft, listContentDrafts, readContentDraft, type ContentDraft, type PublishContent } from "../src/content/drafts"
 import { publishDraft } from "../src/content/publish"
 import { pickSamples } from "../src/content/voice"
 import { handleContentApi } from "../src/content/daemon-api"
@@ -117,6 +117,46 @@ describe("every draft waits for approval before it is published", () => {
     ])
     expect(both.filter((b) => b.ok)).toHaveLength(1)
     expect(calls).toBe(1)
+  })
+
+  it("yes is refused when the draft changed since it was shown", async () => {
+    const publish = vi.fn<PublishContent>(async () => ({ ok: true, posted: true }))
+    const r = draft()
+    const id = r.ok ? r.draft.id : ""
+    const [item] = listInbox({ root, publishContent: publish }, { kinds: ["content"] }).items
+    expect(item.text_hash).toBe(contentTextHash("Three things our booking page taught us about pricing."))
+
+    // The file is rewritten behind the owner's back after the page loaded.
+    const file = join(root, ".agentx", "content", "drafts", `${id}.json`)
+    writeFileSync(file, JSON.stringify({ ...readContentDraft(root, id), text: "Something else." }))
+    const out = await decide({ root, publishContent: publish }, item.key, "yes", { seen: item.text_hash })
+    expect(out).toMatchObject({ ok: false, error: expect.stringContaining("changed since it was shown") })
+    expect(publish).not.toHaveBeenCalled()
+    expect(readContentDraft(root, id)?.status).toBe("pending")
+
+    const fresh = listInbox({ root, publishContent: publish }, { kinds: ["content"] }).items[0]
+    expect(await decide({ root, publishContent: publish }, fresh.key, "yes", { seen: fresh.text_hash })).toMatchObject({ ok: true })
+    expect(publish.mock.calls[0][0].text).toBe("Something else.")
+  })
+
+  it("a yes from the CLI reads the connector token from the .env next to agentx.json", async () => {
+    const config = { agents: { content: { workspace: ws, integrations: [{ kind: "x", label: "me", enabled: true, credentials: { tokenEnv: "AGENTX_TEST_CONTENT_X" }, metadata: {} }] } } }
+    writeFileSync(join(root, "agentx.json"), JSON.stringify(config))
+    writeFileSync(join(root, ".env"), "AGENTX_TEST_CONTENT_X=from-dotenv\n")
+    delete process.env.AGENTX_TEST_CONTENT_X
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ data: { id: "7" } }), { status: 201 }))
+    vi.stubGlobal("fetch", fetch)
+    try {
+      const r = draft({ platform: "x", text: "Short post." })
+      const id = r.ok ? r.draft.id : ""
+      expect(listInbox({ root }, { kinds: ["content"] }).items[0].yes).toBe("post it on X")
+      const out = await decide({ root }, `content:${id}`, "yes")
+      expect(out).toMatchObject({ ok: true, message: expect.stringContaining("posted on X") })
+      const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer from-dotenv")
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it("agents cannot publish through the daemon", () => {

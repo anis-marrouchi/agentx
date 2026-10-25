@@ -1,11 +1,11 @@
 import { existsSync, readdirSync, readFileSync } from "fs"
-import { resolve } from "path"
+import { dirname, resolve } from "path"
 import { MemoryStore } from "@/agents/memory-store"
 import { approveSchedule, formatFireTime, humanizeCron, nextFireTime, rejectSchedule } from "@/crons/schedule-ops"
 import { listProposals, readProposal, type PromotionProposal } from "@/wiki/proposals"
 import { approveProposal, rejectProposal } from "@/wiki/promote"
 import { decideDraft, listDrafts, readDraft, type SendReply } from "@/whatsapp-triage/drafts"
-import { decideContentDraft, listContentDrafts, readContentDraft, PLATFORM_LABEL, type PublishContent } from "@/content/drafts"
+import { contentTextHash, decideContentDraft, listContentDrafts, readContentDraft, PLATFORM_LABEL, type PublishContent } from "@/content/drafts"
 import { hasConnector, publisher } from "@/content/publish"
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
@@ -14,6 +14,7 @@ import { RequestStore, hasRequestTables } from "@/requests/store"
 import { PlanStore, hasPlanTables } from "@/requests/plan-store"
 import { readRequestSettings } from "@/requests/settings"
 import { cardWords } from "@/requests/card-view"
+import { parseDotEnv } from "@/utils/workspace-env"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -71,6 +72,9 @@ export interface InboxItem {
   /** Cards: the suggested message, `{choice}` not yet filled in. The
    *  operator may edit it before saying yes. Bounded by CHOICE_LIMITS. */
   draft?: string
+  /** Content drafts: contentTextHash of the post shown in `ask`. Sent
+   *  back as `seen` with a yes, so a changed draft is not published. */
+  text_hash?: string
   snoozed_until?: string
 }
 
@@ -250,10 +254,21 @@ function readConfigJson(ctx: InboxContext): Record<string, unknown> {
   try { return JSON.parse(readFileSync(configPathFor(ctx), "utf-8")) } catch { return {} }
 }
 
+/** The environment a publish reads connector tokens from: the process's
+ *  own, over the .env next to agentx.json. The daemon loads that .env at
+ *  start; the CLI does not, so without this a CLI yes would save the post
+ *  to paste although the token is set where the docs say. */
+function publishEnv(ctx: InboxContext): NodeJS.ProcessEnv {
+  let dotenv: Record<string, string> = {}
+  try { dotenv = Object.fromEntries(parseDotEnv(readFileSync(resolve(dirname(configPathFor(ctx)), ".env"), "utf-8"))) } catch { /* no .env */ }
+  return { ...dotenv, ...process.env }
+}
+
 function contentItems(ctx: InboxContext): InboxItem[] {
   const drafts = listContentDrafts(ctx.root, "pending")
   if (drafts.length === 0) return []
   const config = readConfigJson(ctx)
+  const env = publishEnv(ctx)
   return drafts.map((d) => {
     const where = PLATFORM_LABEL[d.platform] ?? d.platform
     return {
@@ -262,12 +277,13 @@ function contentItems(ctx: InboxContext): InboxItem[] {
       title: `${where} post${d.topic ? `: ${d.topic}` : ""}${d.date ? ` (for ${d.date})` : ""}`,
       // The whole post: the owner approves exactly what will be published.
       ask: `Publish this on ${where}? "${d.text}"`,
-      yes: hasConnector({ config }, d.agent, d.platform) ? `post it on ${where}` : "save it ready to paste (no connector is set)",
+      yes: hasConnector({ config, env }, d.agent, d.platform) ? `post it on ${where}` : "save it ready to paste (no connector is set)",
       no: "drop the draft",
       raised_by: d.agent,
       created_at: d.created_at,
       detail: clip(`Follows your past posts: ${d.samples.join(", ")}`),
       more: `agentx content show ${d.id}`,
+      text_hash: contentTextHash(d.text),
     }
   })
 }
@@ -387,6 +403,8 @@ export interface DecideOptions {
   choice?: string | number
   /** Cards with a draft, and content drafts: the message as the operator edited it. */
   text?: string
+  /** Content drafts: the `text_hash` of the post the operator was shown. */
+  seen?: string
 }
 
 export type DecideResult = { ok: true; message: string } | { ok: false; error: string }
@@ -466,8 +484,8 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
       return { ok: true, message: yes ? `${key}: sent to ${r.draft.chat_name || r.draft.to}` : `${key}: dropped, nothing sent` }
     }
     case "content": {
-      const publish = ctx.publishContent ?? publisher({ config: readConfigJson(ctx) })
-      const r = await decideContentDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, text: opts.text, publish })
+      const publish = ctx.publishContent ?? publisher({ config: readConfigJson(ctx), env: publishEnv(ctx) })
+      const r = await decideContentDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, text: opts.text, seen: opts.seen, publish })
       if (!r.ok) return r
       if (!yes) return { ok: true, message: `${key}: dropped, nothing published` }
       const where = PLATFORM_LABEL[r.draft.platform]

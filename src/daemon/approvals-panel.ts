@@ -20,7 +20,7 @@ import type { TopbarPeer } from "./topbar"
 //   GET  /api/admin/approvals[?all=1]      inbox + settings, and `desk`: the
 //                                          owner's one list with its count
 //                                          (desk/owner-list.ts, #1138 step C)
-//   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force?, choice?, text? }
+//   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force?, choice?, text?, seen? }
 //   POST /api/admin/approvals/popup        { key }: show the card on the Mac again
 //   POST /api/admin/approvals/settings     settings form
 
@@ -48,11 +48,12 @@ async function readJson(req: IncomingMessage, limit = 64 * 1024): Promise<Record
 
 /** A card's pick and edited message, as the dashboard and the phone app
  *  send them. resolveAnswer (choices.ts) checks them against the card. */
-export function choiceAnswer(body: Record<string, unknown>): { choice?: string | number; text?: string } {
+export function choiceAnswer(body: Record<string, unknown>): { choice?: string | number; text?: string; seen?: string } {
   const c = body.choice
   return {
     ...(typeof c === "number" || (typeof c === "string" && c.trim()) ? { choice: typeof c === "string" ? c.trim() : c } : {}),
     ...(typeof body.text === "string" && body.text.trim() ? { text: body.text } : {}),
+    ...(typeof body.seen === "string" && body.seen ? { seen: body.seen } : {}),
   }
 }
 

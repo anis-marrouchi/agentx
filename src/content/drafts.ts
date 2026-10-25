@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto"
+import { createHash, randomBytes } from "crypto"
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { setCalendarStatus } from "./calendar"
@@ -88,6 +88,12 @@ export interface ContentDraftInput {
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "")
 
+/** A short fingerprint of a post's text. The Approvals page sends back the
+ *  one it showed, so a yes never publishes text the owner did not see. */
+export function contentTextHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex").slice(0, 16)
+}
+
 /** Check and save a new draft. Every refusal says what to fix. */
 export function createContentDraft(
   root: string,
@@ -148,16 +154,21 @@ export function listContentDrafts(root: string, status?: ContentDraftStatus): Co
 
 /**
  * The owner's answer. Yes publishes the draft (as edited with `text`, when
- * given), no drops it. Operator surfaces only: never reachable by an agent.
+ * given), no drops it. With `seen` (the contentTextHash of the text the
+ * owner was shown), a yes is refused when the draft changed since.
+ * Operator surfaces only: never reachable by an agent.
  */
 export async function decideContentDraft(
   root: string,
   id: string,
   verdict: "yes" | "no",
-  opts: { by?: string; now?: number; text?: string; publish: PublishContent },
+  opts: { by?: string; now?: number; text?: string; seen?: string; publish: PublishContent },
 ): Promise<{ ok: true; draft: ContentDraft } | { ok: false; error: string }> {
   const draft = readContentDraft(root, id)
   if (!draft || draft.status !== "pending") return { ok: false, error: `no content draft "${id}" is waiting` }
+  if (verdict === "yes" && opts.seen !== undefined && opts.seen !== contentTextHash(draft.text)) {
+    return { ok: false, error: `content draft "${id}" changed since it was shown: reload and read it again before saying yes` }
+  }
   const edited = opts.text?.trim()
   if (verdict === "yes" && edited !== undefined) {
     if (!edited) return { ok: false, error: "the edited post is empty" }
