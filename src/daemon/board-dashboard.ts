@@ -78,6 +78,7 @@ import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 import { decide, listInbox, planStoreFor, requestStoreFor, type InboxItem } from "@/approvals/inbox"
 import { readRequestSettings } from "@/requests/settings"
 import { handleWallApi, WALL_PREFIX, type WallDeps } from "./wall-api"
+import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
@@ -1866,6 +1867,32 @@ interface NodeLive {
 interface LiveSnapshot {
   ts: string
   nodes: NodeLive[]
+  /** Runs going now on one chat or in one worktree at the same time (#1187). */
+  concurrent?: RunOverlap[]
+}
+
+/** Each live node's agent → worktree key, kept off the snapshot so a
+ *  workspace path never leaves the dashboard host. */
+const nodeWorktrees = new WeakMap<NodeLive, Map<string, string | null>>()
+
+/** Runs going now that share a chat (across the mesh) or a worktree (on
+ *  one node). Unreachable and stale nodes are left out: their runs are
+ *  not known to be going. */
+export function liveOverlaps(nodes: NodeLive[], now: number = Date.now()): RunOverlap[] {
+  const spans: RunSpan[] = []
+  for (const n of nodes) {
+    if (!n.reachable || n.error || n.stale) continue
+    const trees = nodeWorktrees.get(n)
+    for (const a of n.agents) {
+      const tree = trees?.get(a.id)
+      for (const t of a.runningTasks ?? []) {
+        const startedAt = Date.parse(t.startedAt)
+        if (!Number.isFinite(startedAt)) continue
+        spans.push({ runId: t.traceId || t.id, agentId: a.id, chat: chatKey(t.channel, t.chatId), worktree: tree ? `${n.url}|${tree}` : null, startedAt, endedAt: null })
+      }
+    }
+  }
+  return findOverlaps(spans, now)
 }
 
 /** How long an optional snapshot endpoint may take before it's skipped. */
@@ -1930,6 +1957,7 @@ export async function fetchDaemonAgents(
       hourlyTasks: Array.isArray(a.hourlyTasks) ? a.hourlyTasks : undefined,
       runningTasks: Array.isArray(a.runningTasks) ? a.runningTasks : [],
     }))
+    nodeWorktrees.set(base, new Map(agents.map((a) => [String(a.id), worktreeKey(typeof a.workspace === "string" ? a.workspace : null)] as const)))
     if (healthRes && healthRes.ok) {
       const h: any = await healthRes.json().catch(() => ({}))
       base.uptimeSec = h.uptime
@@ -2108,7 +2136,7 @@ function buildLiveSnapshot(
       const node = await fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS), day)
       return day ? node : withLastGood(d.url, node)
     }))
-    return { ts: new Date().toISOString(), nodes }
+    return { ts: new Date().toISOString(), nodes, concurrent: liveOverlaps(nodes) }
   })().finally(() => inflightSnapshots.delete(key))
   inflightSnapshots.set(key, build)
   return build
@@ -3012,6 +3040,7 @@ function wallDeps(config: DaemonConfig): WallDeps | null {
     now: Date.now(),
     staleAfterHours: readRequestSettings().staleAfterHours,
     isAgent: (id) => Object.prototype.hasOwnProperty.call(agents, id),
+    workspaceOf: (id) => agents[id]?.workspace ?? null,
   }
 }
 

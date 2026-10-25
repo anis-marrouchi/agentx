@@ -194,7 +194,8 @@ db.transaction(() => {
 })()
 
 // The Wall (#1180): a few more fictional requests, so the home page shows a
-// hand-off with its thread, a question for the owner and a closed task.
+// hand-off with its thread, a question for the owner (with a concurrent run
+// on its chat, #1187) and a closed task.
 db.transaction(() => {
   const ids = ["req-docs-wall-handoff", "req-docs-wall-question", "req-docs-wall-done"]
   for (const id of ids) db.prepare("DELETE FROM requests WHERE id = ?").run(id)
@@ -219,6 +220,8 @@ db.transaction(() => {
   trace.run("docs-wall-3", "cx", "telegram", "demo-office", "error", ago(170), ago(169), 60000, "Send the newsletter", null, "mail provider answered 503")
   trace.run("docs-wall-4", "cx", "telegram", "demo-office", "ok", ago(51), ago(50), 70000, "Send the newsletter", "The draft is ready. Which day should it go out?", null)
   trace.run("docs-wall-5", "cx", "dashboard", "demo", "ok", ago(40), ago(21), 19 * 60000, "Check the links", "All 14 links work; fixed two in https://example.com/demo/office/pull/12.", null)
+  // #1187: the newsletter ask also reached the reviewer, on the same chat at the same time.
+  trace.run("docs-wall-6", "reviewer", "telegram", "demo-office", "ok", ago(51) + 20000, ago(50) + 20000, 60000, "Send the newsletter", "I can send it today.", null)
   link.run(ids[0], "run", "docs-wall-1", ago(69))
   link.run(ids[0], "issue", "https://example.com/demo/shop/issues/47", ago(68))
   link.run(ids[0], "delegation", "dlg-docs-1", ago(36))
