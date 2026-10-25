@@ -191,6 +191,16 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (t.unknown) return 'unknown' + (why ? ' (' + t.unknown + ')' : '');
     return hm(t.loggedMinutes) + ' logged' + (t.estimateMinutes ? ' of ' + hm(t.estimateMinutes) : ', no estimate');
   }
+  // Forge home (#1184): its live state, who closed it, when that was checked.
+  function forgeName(f) { return f.provider === 'github' ? 'GitHub' : 'GitLab'; }
+  function forgeStateHtml(f) {
+    var checked = f.checkedAt ? ' <small>checked ' + ago(f.checkedAt) + '</small>' : '';
+    if (f.unknown) return forgeName(f) + ' <b title="' + esc(f.unknown) + '">state unknown</b>' + checked;
+    return forgeName(f) + ' <b>' + esc(f.state) + '</b>' + (f.closedBy ? ' by <b>' + esc(f.closedBy) + '</b>' : '') +
+      (f.closedAt && f.state !== 'open' ? ' ' + when(f.closedAt) : '') + checked;
+  }
+  // Closed on the forge while the post is still open: nobody should pick it up.
+  function forgeClosedOpen(p) { return p.forgeState && !p.forgeState.unknown && p.forgeState.state !== 'open' && isOpen(p); }
   function uniq(xs) { return xs.filter(function (x, i) { return x && xs.indexOf(x) === i; }).sort(); }
 
   // --- Concurrent sessions (#1187): two runs at once on one chat or worktree ---
@@ -239,6 +249,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       'Last move ' + when(p.lastMoveAt),
       p.closedAt ? 'Closed ' + when(p.closedAt) : '',
       p.estimateMinutes ? 'Estimate <b>' + p.estimateMinutes + ' min</b>' : '',
+      p.forgeState ? forgeStateHtml(p.forgeState) : '',
       p.forgeTime ? 'GitLab time <b' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>' + esc(forgeTimeText(p.forgeTime, true)) + '</b>' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
     // Action row: thread, runs, minutes, then the links out.
@@ -253,6 +264,9 @@ export const WALL_PAGE_SCRIPT = String.raw`
     if (p.evidence) acts.push(/^https?:\/\//.test(p.evidence)
       ? '<a href="' + esc(p.evidence) + '" target="_blank" rel="noopener">' + ICON.proof + 'Proof</a>'
       : '<span>' + ICON.proof + 'Proof: ' + esc(p.evidence) + '</span>');
+    (p.comments || []).slice(0, 3).forEach(function (c) {
+      if (/^https?:\/\//.test(c.url)) acts.push('<a href="' + esc(c.url) + '" target="_blank" rel="noopener" title="Comment posted ' + esc(stamp(c.at)) + '">' + ICON.reply + 'Comment' + (c.agentId ? ' by ' + esc(c.agentId) : '') + ' ' + shortTime(c.at) + '</a>');
+    });
     if (p.lastRun) {
       acts.push('<a href="' + esc(taskHref(p.lastRun.taskId, p.lastRun.agentId, p.node, !isOpen(p))) + '">' + ICON.trace + 'Task record and trace</a>');
       acts.push('<a href="/agents/' + encodeURIComponent(p.lastRun.agentId) + '/history">Agent history</a>');
@@ -263,6 +277,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
       '<p class="wp__title">' + esc(p.headline) + '</p>' +
       (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
+      (forgeClosedOpen(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '') + ', but this post is still open. Do not pick it up.</div>' : '') +
       (forgeFlags(p).length ? '<div class="wp__flag">GitLab time: ' + esc(forgeFlags(p).join('; ')) + '</div>' : '') +
       conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
       cardsOf(p).map(cardHtml).join('') +
@@ -388,7 +403,9 @@ export const WALL_PAGE_SCRIPT = String.raw`
     return '<table class="wl"><thead><tr>' + COLS.map(function (c) {
       return '<th data-sort="' + c[0] + '" aria-sort="' + (k === c[0] ? (dir > 0 ? 'ascending' : 'descending') : 'none') + '">' + c[1] + (k === c[0] ? (dir > 0 ? ' ▲' : ' ▼') : '') + '</th>';
     }).join('') + '</tr></thead><tbody>' + posts.map(function (p) {
-      return '<tr><td>' + stateBadge(p.state) + '</td>' +
+      return '<tr><td>' + stateBadge(p.state) +
+          (p.forgeState ? '<br><small' + (p.forgeState.unknown ? ' title="' + esc(p.forgeState.unknown) + '">' + esc(forgeName(p.forgeState)) + ' unknown' : '>' + esc(forgeName(p.forgeState)) + ' ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '')) + '</small>' +
+            (forgeClosedOpen(p) ? ' <small title="Closed on the forge, still open here">⚠</small>' : '') : '') + '</td>' +
         '<td><a href="#" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a></td>' +
         '<td>' + esc(p.owner) + '</td><td>' + esc(p.project || '—') + '</td><td>' + esc(p.node.name) + '</td>' +
         '<td class="num">' + idleDays(p) + '</td>' +

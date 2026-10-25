@@ -17,6 +17,9 @@ export interface ForgeItem {
   url: string
   /** Its label names (status drift, #1138 step F). */
   labels?: string[]
+  /** Who closed or merged it, and when (ISO), as the forge says (#1184). */
+  closedBy?: string | null
+  closedAt?: string | null
 }
 
 /** Reads one item, or says why it could not (unknown, not visible, down). */
@@ -92,6 +95,9 @@ export async function checkIssue(spec: IssueSpec, ctx: Pick<CheckContext, "forge
   return { verdict: "not_met", detail: `${item.url} is ${item.state}${spec.notePattern ? `, no note has "${spec.notePattern}"` : ""}` }
 }
 
+/** A forge user name or time string; null when absent. */
+const login = (v: unknown): string | null => (typeof v === "string" && v ? v.slice(0, 120) : null)
+
 /** Label names: GitLab sends strings, GitHub objects with a name. */
 function labelNames(v: unknown): string[] {
   if (!Array.isArray(v)) return []
@@ -127,16 +133,21 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
       const issue = await get(`${base}/issues/${ref.number}`, headers)
       if (!issue.ok) return { error: issue.error }
       let state: IssueState = issue.body?.state === "closed" ? "closed" : "open"
+      let closer = { closedBy: login(issue.body?.closed_by?.login), closedAt: login(issue.body?.closed_at) }
       if (issue.body?.pull_request && state === "closed") {
         const pr = await get(`${base}/pulls/${ref.number}`, headers)
-        if (pr.ok && pr.body?.merged) state = "merged"
+        if (pr.ok && pr.body?.merged) {
+          state = "merged"
+          closer = { closedBy: login(pr.body?.merged_by?.login) ?? closer.closedBy, closedAt: login(pr.body?.merged_at) ?? closer.closedAt }
+        }
       }
+      if (state === "open") closer = { closedBy: null, closedAt: null }
       const url = String(issue.body?.html_url ?? `${ref.project}#${ref.number}`)
       const labels = labelNames(issue.body?.labels)
-      if (!opts.notes) return { state, url, labels }
+      if (!opts.notes) return { state, url, labels, ...closer }
       const notes = await get(`${base}/issues/${ref.number}/comments?per_page=100`, headers)
       if (!notes.ok) return { error: `its notes: ${notes.error}` }
-      return { state, url, labels, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
+      return { state, url, labels, ...closer, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
     }
     const c = connectors.gitlab
     if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }
@@ -148,9 +159,13 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
     const state: IssueState = raw === "merged" ? "merged" : raw === "closed" ? "closed" : "open"
     const url = String(item.body?.web_url ?? `${ref.project}${ref.mr ? "!" : "#"}${ref.number}`)
     const labels = labelNames(item.body?.labels)
-    if (!opts.notes) return { state, url, labels }
+    const b = item.body
+    const closer = state === "merged"
+      ? { closedBy: login((b?.merge_user ?? b?.merged_by)?.username), closedAt: login(b?.merged_at) }
+      : state === "closed" ? { closedBy: login(b?.closed_by?.username), closedAt: login(b?.closed_at) } : { closedBy: null, closedAt: null }
+    if (!opts.notes) return { state, url, labels, ...closer }
     const notes = await get(`${base}/notes?per_page=100&sort=desc&order_by=created_at`, headers)
     if (!notes.ok) return { error: `its notes: ${notes.error}` }
-    return { state, url, labels, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")).reverse() }
+    return { state, url, labels, ...closer, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")).reverse() }
   }
 }

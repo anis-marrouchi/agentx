@@ -3,6 +3,7 @@ import { createRequire } from "module"
 import { existsSync, mkdirSync } from "fs"
 import { dirname, resolve } from "path"
 import { ensureQueuedMessagesTable } from "./queued-messages"
+import { ensureForgeCommentsTable } from "./forge-comments"
 
 // --- SQLite storage layer ---
 //
@@ -436,6 +437,8 @@ function runMigrations(db: Database.Database): void {
   // Messages waiting behind a busy agent, with who sent them (#443). By
   // name, not by version number, for the same reason as the columns above.
   ensureQueuedMessagesTable(db)
+  // Agent comment ids on GitHub and GitLab (#1184), by name too.
+  ensureForgeCommentsTable(db)
 }
 
 /** Schema version check for tests. */

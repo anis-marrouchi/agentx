@@ -62,6 +62,16 @@ export interface AgentXEvents {
     at: string
   }
 
+  /** An agent's comment landed on a GitHub or GitLab issue, pull request
+   *  or merge request, with the id the forge gave it (#1184). */
+  "forge:commented": {
+    channel: string
+    chatId: string
+    commentId: string
+    agentId?: string
+    at: string
+  }
+
   /** A message waits behind a turn the agent is already running in the
    *  same chat. It runs later as its own turn (request status, #383). */
   "task:queued": {
@@ -438,6 +448,8 @@ function lifecycleEnvelope<E extends EventName>(event: E, payload: AgentXEvents[
       return { ...base, kind: "message", ref: p.msgId, summary: `${p.channel} ${p.chatId} → ${p.agentId} (${p.decidingStage})` }
     case "message:dropped":
       return { ...base, kind: "message", ref: p.msgId, summary: `${p.channel} ${p.chatId} dropped at ${p.decidingStage}: ${p.reason}` }
+    case "forge:commented":
+      return { ...base, kind: "message", ref: p.commentId, summary: `comment ${p.commentId} on ${p.channel} ${p.chatId}` }
     case "task:queued":
       return { ...base, kind: "agent", summary: `queued on ${p.channel} ${p.chatId}` }
     case "task:queue-flushed":

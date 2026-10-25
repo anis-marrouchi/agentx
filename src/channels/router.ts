@@ -531,6 +531,8 @@ export class MessageRouter {
       throw e
     }
 
+    this.noteForgeComment(msg.channel, msg.chatId, messageId, msg.agentId)
+
     // Record into dedupe table after the send so a future repeat within the
     // window returns the same id even when the first send produced a void.
     if (dedupeKey) {
@@ -1268,6 +1270,7 @@ export class MessageRouter {
           agentId,
           ...(ui ? uiToOutgoing(ui) : {}),
         })
+        this.noteForgeComment(msg.channel, chatId, sentResponseId, agentId)
       }
     } else if (ui && streaming?.started) {
       // Text was suppressed (autoReplyLegacy) but a directive still stands.
@@ -1485,6 +1488,13 @@ export class MessageRouter {
       }
     }
     this.sendDedupeMap.set(key, { postedAt: Date.now(), messageId })
+  }
+
+  /** An agent's comment on GitHub or GitLab keeps the id the forge gave
+   *  it, so the Wall can link to that exact comment (#1184). */
+  private noteForgeComment(channel: string, chatId: string, id: string | void | undefined, agentId?: string): void {
+    if ((channel !== "github" && channel !== "gitlab") || typeof id !== "string" || !id) return
+    getEventBus().emit("forge:commented", { channel, chatId, commentId: id, agentId, at: new Date().toISOString() })
   }
 
   // --- Adapter helpers that pass accountId for Telegram ---

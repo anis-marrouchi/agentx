@@ -49,6 +49,20 @@ The Wall only reads this from GitLab. It never logs time or changes the estimate
 
 The machine that keeps the task reads its GitLab time with its own GitLab connection: the `channels.gitlab` channel or `requests.checkers.gitlab`. A machine with neither shows no GitLab time.
 
+### Issue state, who closed it, and the agent's comments
+
+When a task's home is an issue, pull request or merge request on GitHub or GitLab, the post shows its state there right now: **open**, **closed** or **merged**, who closed or merged it, when, and how long ago the Wall checked. When a person closed the issue while the task is still open on the Wall, the post says so in amber: **GitHub says closed by …, but this post is still open. Do not pick it up.**
+
+Each comment an agent posted on that issue through AgentX gets its own **Comment by …** link. It opens that exact comment, not the top of the issue.
+
+![Three posts: one closed on GitHub while still open here, one merged on GitLab, one whose state is unknown](/screenshots/wall/forge-state.png)
+
+*Fictional data; your projects and agents will differ.*
+
+The Wall reads the state with this machine's own GitHub or GitLab connection (`channels.github` or `requests.checkers.github`, `channels.gitlab` or `requests.checkers.gitlab`). It never changes the issue. The answer is kept for 5 minutes, so the **checked** time can be a few minutes old. When the forge cannot be read, the post says **state unknown**, never a guessed state. Point at **state unknown** to see the reason.
+
+Comment links start with comments posted after this version. Older comments are not linked.
+
 ## See what waits on you
 
 When an agent asks you a yes/no question (a **decision card**) while working on a task, the card shows on that task's post. You see the question where the work is, so nobody asks you the same thing twice.
@@ -107,7 +121,7 @@ The profile is the **Owner** filter, so its address can be shared like any other
 ## Use the list to sort through many tasks
 
 1. Select **List** above the posts.
-2. Each task is one row: status, title, owner, project, machine, **days since its last move**, what it waits on, run time against the estimate (with GitLab time under it), and runs.
+2. Each task is one row: status (with the GitHub or GitLab state under it), title, owner, project, machine, **days since its last move**, what it waits on, run time against the estimate (with GitLab time under it), and runs.
 3. Select a column heading to sort by it. Select it again to reverse the order.
 4. Select a title to open that post and its thread.
 
@@ -198,7 +212,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 5. Open `/live` in the browser. The classic Live page still opens.
 6. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 7. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
-8. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+8. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
+9. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
@@ -209,6 +224,9 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **Two runs overlapped but no Concurrent line shows:** the flag compares runs on the same chat, or runs by two different agents in the same folder, that started within a day of each other, on machines that answer. A run on a machine marked **unreachable** is left out until it answers again.
 - **A post says "GitLab time unknown":** this machine could not read the issue's time tracking. The reason follows in brackets. "not found" usually means the GitLab token cannot see that project; check `channels.gitlab.token` or `requests.checkers.gitlab.token`. "did not answer in time" clears on the next refresh.
 - **No GitLab time on a GitLab task:** the machine that keeps the task has no GitLab connection, or the home link is on a different GitLab address than the one configured.
+- **A post says "state unknown":** this machine could not read the issue on GitHub or GitLab. Point at it for the reason. "not found" usually means the token cannot see that project; "did not answer in time" clears on the next refresh.
+- **No state on a GitHub or GitLab task:** the machine that keeps the task has no connection to that forge, or the home link is on another GitLab address than the one configured.
+- **No "Comment by" link:** the comment was posted before this version, by a person, or outside AgentX. Only comments AgentX posted, with the id the forge returned, are linked.
 - **A card is on the Approvals page but not on the Wall:** it was raised outside a task, or it was already answered or expired. Only pending cards that belong to a task show on a post.
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
 - **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.

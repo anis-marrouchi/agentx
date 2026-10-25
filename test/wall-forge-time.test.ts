@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   forgeTimeFlags, gitlabRefOf, gitlabTimeReader, hm, wallForgeTime, type ForgeTimeReader,
 } from "../src/daemon/wall-forge-time"
-import { withForgeTime, type WallPost } from "../src/daemon/wall-api"
+import { withForge, type WallPost } from "../src/daemon/wall-api"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 
 // The Wall's forge time (#1189): GitLab time logged vs estimate per post,
@@ -132,11 +132,11 @@ describe("posts with forge time", () => {
   it("fills a Wall reply's posts and a thread's post, and leaves them without a source", async () => {
     const deps = { now: NOW, staleAfterHours: 24 } as any
     const source = wallForgeTime(GL, async () => stats(0, 30))
-    const list = await withForgeTime({ status: 200, body: { posts: [post()] } }, deps, source) as any
+    const list = await withForge({ status: 200, body: { posts: [post()] } }, deps, [source]) as any
     expect(list.body.posts[0].forgeTime.flags).toEqual(["no time logged on active work"])
-    const thread = await withForgeTime({ status: 200, body: { post: post(), events: [] } }, deps, source) as any
+    const thread = await withForge({ status: 200, body: { post: post(), events: [] } }, deps, [source]) as any
     expect(thread.body.post.forgeTime.loggedMinutes).toBe(0)
-    const none = await withForgeTime({ status: 200, body: { posts: [post()] } }, deps, null) as any
+    const none = await withForge({ status: 200, body: { posts: [post()] } }, deps, [null]) as any
     expect(none.body.posts[0].forgeTime).toBeNull()
   })
 })
