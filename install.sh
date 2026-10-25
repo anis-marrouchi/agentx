@@ -73,17 +73,21 @@ install_node() {
   ok "Node $(node -v) installed in ${AGENTX_NODE_DIR}"
 
   # Keep it on PATH for new terminals, so `agentx` works there too.
-  local rc line
+  # Linux bash also gets ~/.profile: login shells (ssh, some terminals) read
+  # it instead of ~/.bashrc, which returns early when not interactive.
+  local rc rcs line
   case "${SHELL:-}" in
-    */zsh) rc="${HOME}/.zshrc" ;;
-    */bash) [[ "$(uname -s)" == "Darwin" ]] && rc="${HOME}/.bash_profile" || rc="${HOME}/.bashrc" ;;
-    *) rc="${HOME}/.profile" ;;
+    */zsh) rcs=("${HOME}/.zshrc") ;;
+    */bash) [[ "$(uname -s)" == "Darwin" ]] && rcs=("${HOME}/.bash_profile") || rcs=("${HOME}/.bashrc" "${HOME}/.profile") ;;
+    *) rcs=("${HOME}/.profile") ;;
   esac
   line='export PATH="$HOME/.agentx/node/bin:$PATH"  # added by the AgentX installer'
-  if ! grep -qsF '.agentx/node/bin' "${rc}"; then
-    printf '\n%s\n' "${line}" >> "${rc}"
-    ok "Added ~/.agentx/node/bin to PATH in ${rc}"
-  fi
+  for rc in "${rcs[@]}"; do
+    if ! grep -qsF '.agentx/node/bin' "${rc}"; then
+      printf '\n%s\n' "${line}" >> "${rc}"
+      ok "Added ~/.agentx/node/bin to PATH in ${rc}"
+    fi
+  done
 }
 
 # 1. Node check
