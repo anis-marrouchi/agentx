@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.164.0](https://github.com/anis-marrouchi/agentx/compare/v0.163.0...v0.164.0) (2026-10-25)
+
+
+### Features
+
+* **install:** one command to a working agent in the browser ([#1163](https://github.com/anis-marrouchi/agentx/issues/1163)) ([#1247](https://github.com/anis-marrouchi/agentx/issues/1247)) ([beee947](https://github.com/anis-marrouchi/agentx/commit/beee9470d7bf3993aa44a01064ec9ce6ab400096))
+* **wall:** capacity per owner with threshold flag ([#1191](https://github.com/anis-marrouchi/agentx/issues/1191)) ([#1243](https://github.com/anis-marrouchi/agentx/issues/1243)) ([40775a0](https://github.com/anis-marrouchi/agentx/commit/40775a0f9c7394717174a220255e68d8c9fd02e6))
+
 ## [0.163.0](https://github.com/anis-marrouchi/agentx/compare/v0.162.0...v0.163.0) (2026-10-25)
 
 

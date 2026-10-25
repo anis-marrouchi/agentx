@@ -1,6 +1,6 @@
 {
   "name": "agentix-cli",
-  "version": "0.163.0",
+  "version": "0.164.0",
   "description": "AI agents that answer your clients, send your reports and fix your code, on a machine you own. Runs a team of AI agents across Telegram, WhatsApp, GitLab, GitHub, crons, webhooks and mesh tasks, on Claude Code, Codex, OpenCode or any LLM API. Web wizard for operators, CLI for engineers.",
   "license": "MIT",
   "author": {
