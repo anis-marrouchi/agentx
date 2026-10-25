@@ -7,6 +7,8 @@ import { approveProposal, rejectProposal } from "@/wiki/promote"
 import { decideDraft, listDrafts, readDraft, type SendReply } from "@/whatsapp-triage/drafts"
 import { contentTextHash, decideContentDraft, listContentDrafts, readContentDraft, PLATFORM_LABEL, type PublishContent } from "@/content/drafts"
 import { hasConnector, publisher } from "@/content/publish"
+import { decideEmailDraft, listEmailDrafts, readEmailDraft, type SendEmailDraft } from "@/channels/email/store"
+import { draftSender } from "@/channels/email/smtp"
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
 import { openDb } from "@/storage/sqlite"
@@ -28,6 +30,8 @@ import { parseDotEnv } from "@/utils/workspace-env"
 //   wiki      lessons proposed for the shared wiki (wiki/proposals, wiki/promote)
 //   whatsapp  replies an agent drafted for a watched WhatsApp chat
 //             (whatsapp-triage/drafts); yes sends it through wacli
+//   email     replies an agent wrote to a customer's email (channels/email);
+//             yes sends it into the customer's thread, as edited
 //   content   posts an agent drafted for LinkedIn or X (content/drafts);
 //             yes posts it through the agent's connector, or saves it
 //             ready to paste when there is none
@@ -39,8 +43,8 @@ import { parseDotEnv } from "@/utils/workspace-env"
 // dashboard's /api/admin/approvals. The daemon's agent-facing API and the
 // MCP tool can create cards and read, never decide.
 
-export type ApprovalKind = "card" | "schedule" | "memory" | "wiki" | "whatsapp" | "content" | "request"
-export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki", "whatsapp", "content", "request"]
+export type ApprovalKind = "card" | "schedule" | "memory" | "wiki" | "whatsapp" | "email" | "content" | "request"
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki", "whatsapp", "email", "content", "request"]
 
 export type InboxAction = "yes" | "no" | "later"
 
@@ -69,8 +73,8 @@ export interface InboxItem {
   more?: string
   /** Cards: the ready-made answers on offer; yes must pick one. */
   choices?: string[]
-  /** Cards: the suggested message, `{choice}` not yet filled in. The
-   *  operator may edit it before saying yes. Bounded by CHOICE_LIMITS. */
+  /** Cards: the suggested message, `{choice}` not yet filled in. Email
+   *  replies: the reply. The operator may edit it before saying yes. */
   draft?: string
   /** Content drafts: contentTextHash of the post shown in `ask`. Sent
    *  back as `seen` with a yes, so a changed draft is not published. */
@@ -88,6 +92,8 @@ export interface InboxContext {
   now?: number
   /** Sends an approved WhatsApp reply. Default: wacli. Tests swap it. */
   sendWhatsApp?: SendReply
+  /** Sends an approved email reply. Default: the account's SMTP server. */
+  sendEmail?: SendEmailDraft
   /** Publishes an approved content draft. Default: the agent's LinkedIn
    *  or X connector, else a ready-to-paste file. Tests swap it. */
   publishContent?: PublishContent
@@ -250,6 +256,22 @@ function whatsappItems(ctx: InboxContext): InboxItem[] {
   }))
 }
 
+function emailItems(ctx: InboxContext): InboxItem[] {
+  return listEmailDrafts(ctx.root, "pending").map((d) => ({
+    key: `email:${d.id}`,
+    kind: "email" as const,
+    title: `Email reply to ${d.to_name ? `${d.to_name} <${d.to}>` : d.to}`,
+    ask: `Send this reply to ${d.to}, subject "${d.subject}"?`,
+    yes: "send the email",
+    no: "drop the reply",
+    raised_by: d.agent,
+    created_at: d.created_at,
+    // The whole reply, editable: the owner approves exactly what is sent.
+    draft: d.text,
+    ...(d.error ? { detail: clip(`Last try not sent: ${d.error}`) } : {}),
+  }))
+}
+
 function readConfigJson(ctx: InboxContext): Record<string, unknown> {
   try { return JSON.parse(readFileSync(configPathFor(ctx), "utf-8")) } catch { return {} }
 }
@@ -342,6 +364,7 @@ const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
   memory: memoryItems,
   wiki: wikiItems,
   whatsapp: whatsappItems,
+  email: emailItems,
   content: contentItems,
   request: requestItems,
 }
@@ -401,7 +424,7 @@ export interface DecideOptions {
   by?: string
   /** Cards with choices: which one (1-based number or the label). */
   choice?: string | number
-  /** Cards with a draft, and content drafts: the message as the operator edited it. */
+  /** Cards with a draft, content drafts and email replies: the message as the operator edited it. */
   text?: string
   /** Content drafts: the `text_hash` of the post the operator was shown. */
   seen?: string
@@ -424,6 +447,7 @@ function stillPending(ctx: InboxContext, kind: ApprovalKind, ref: string): boole
     case "card": return readCard(ctx.root, ref)?.status === "pending"
     case "wiki": return readProposal(wikiDirFor(ctx), ref)?.status === "pending"
     case "whatsapp": return readDraft(ctx.root, ref)?.status === "pending"
+    case "email": return readEmailDraft(ctx.root, ref)?.status === "pending"
     case "content": return readContentDraft(ctx.root, ref)?.status === "pending"
     default: return SOURCES[kind](ctx).some((i) => i.key === `${kind}:${ref}`)
   }
@@ -482,6 +506,12 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
       const r = await decideDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, send: ctx.sendWhatsApp })
       if (!r.ok) return r
       return { ok: true, message: yes ? `${key}: sent to ${r.draft.chat_name || r.draft.to}` : `${key}: dropped, nothing sent` }
+    }
+    case "email": {
+      const send = ctx.sendEmail ?? draftSender(readConfigJson(ctx), publishEnv(ctx))
+      const r = await decideEmailDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, text: opts.text, send })
+      if (!r.ok) return r
+      return { ok: true, message: yes ? `${key}: sent to ${r.draft.to}${r.draft.edited ? " (as you edited it)" : ""}` : `${key}: dropped, nothing sent` }
     }
     case "content": {
       const publish = ctx.publishContent ?? publisher({ config: readConfigJson(ctx), env: publishEnv(ctx) })

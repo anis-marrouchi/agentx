@@ -925,7 +925,7 @@ export class AgentXDaemon {
     //      routing alongside built-in adapters.
     try {
       const builtInChannelNames = new Set([
-        "telegram", "whatsapp", "discord", "slack", "gitlab", "github",
+        "telegram", "whatsapp", "discord", "slack", "gitlab", "github", "email",
       ])
       this.loadedPlugins = await loadPlugins({
         config: this.config,
@@ -3311,6 +3311,32 @@ export class AgentXDaemon {
             `  Telegram: public — anyone can message ${openAccts.join(", ")} (allowFrom contains "${TELEGRAM_ALLOW_EVERYONE}")`,
           )
         }
+      }
+    }
+
+    // Email (#1287)
+    const email = this.config.channels.email
+    if (email.enabled && Object.keys(email.accounts).length > 0) {
+      const { EmailAdapter } = await import("@/channels/email/adapter")
+      const adapter = new EmailAdapter({
+        accounts: email.accounts,
+        root: process.cwd(),
+        agentName: (id) => this.config.agents[id]?.name || id,
+        onDraft: (d) => {
+          void this.tellOwner({
+            title: `Email reply to ${d.to_name || d.to} waits for you`,
+            message: `${d.agent} wrote a reply to "${d.subject}". Read it and send it in Approvals, or run: agentx approvals approve email:${d.id}`,
+            from: d.agent,
+            kind: "notice",
+            key: `email-draft:${d.id}`,
+          }).catch((e: any) => this.log(`[email] draft notice failed: ${e?.message ?? e}`))
+        },
+      }, this.log)
+      this.router.addChannel(adapter)
+      await adapter.start()
+      for (const [id, acc] of Object.entries(email.accounts)) {
+        const who = !acc.allowFrom?.length ? "WARNING: no allowFrom, all mail is DROPPED" : acc.allowFrom.includes("*") ? "anyone may write" : `${acc.allowFrom.length} allowFrom entries`
+        this.log(`  Email: ${id} <${acc.address}> → ${acc.agent}, replies ${acc.send === "auto" ? "sent at once" : "held for approval"}; ${who}`)
       }
     }
 

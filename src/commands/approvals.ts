@@ -14,7 +14,7 @@ import { parseDestination, readApprovalSettings, updateApprovalSettings, type Ap
 // `agentx wiki proposals approve` keep working and stay in step.
 
 export const approvals = new Command("approvals")
-  .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, WhatsApp replies, posts)")
+  .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, WhatsApp and email replies, posts)")
 
 const KIND_LABEL: Record<InboxItem["kind"], string> = {
   card: "card",
@@ -22,6 +22,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   memory: "memory",
   wiki: "wiki",
   whatsapp: "whatsapp",
+  email: "email",
   content: "post",
   request: "request",
 }
@@ -84,7 +85,7 @@ approvals
   .option("--force", "wiki: approve even if the article changed since the proposal")
   .option("--note <text>", "cards: a note passed to the agent with your answer")
   .option("--choice <n>", "cards with choices: which one, by number or label")
-  .option("--text <message>", "cards with a suggested message, and posts: the text as you want it sent or published")
+  .option("--text <message>", "cards with a suggested message, posts and email replies: the text as you want it sent or published")
   .action((key: string, opts) => answer(key, "yes", opts))
 
 approvals

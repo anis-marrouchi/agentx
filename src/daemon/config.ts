@@ -2860,6 +2860,11 @@ export function validateWorkspaces(config: DaemonConfig): string[] {
       }
     }
   }
+  if (config.channels.email.enabled) {
+    for (const [name, account] of Object.entries(config.channels.email.accounts)) {
+      if (!config.agents[account.agent]) warnings.push(`Email account "${name}": references unknown agent "${account.agent}"`)
+    }
+  }
 
   return warnings
 }

@@ -47,7 +47,7 @@ export interface InitiatorContext {
 
 /** Channels a person writes or speaks on. */
 export const HUMAN_CHANNELS: ReadonlySet<string> = new Set([
-  "telegram", "whatsapp", "slack", "discord",
+  "telegram", "whatsapp", "slack", "discord", "email",
   "gitlab", "github",
   "app", "voice", "dashboard", "webrtc",
 ])

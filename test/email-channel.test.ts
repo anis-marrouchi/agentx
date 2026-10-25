@@ -6,6 +6,7 @@ import { agentText, parseMail, replyHeaders, senderAllowed, stripQuoted, threadA
 import { createEmailDraft, decideEmailDraft, emailDir, listEmailDrafts, readEmailDraft } from "../src/channels/email/store"
 import { mailServers } from "../src/channels/email/smtp"
 import { emailAccountSchema } from "../src/daemon/config"
+import { decide, listInbox } from "../src/approvals/inbox"
 
 // Email channel (#1287): parsing, threading, who may write, and the drafts
 // the owner approves. The round trip on a real server is in
@@ -130,5 +131,27 @@ describe("reply drafts", () => {
   it("refuses an empty reply and an unknown id", async () => {
     expect(() => createEmailDraft(root, { ...input, text: "  " })).toThrow(/empty/)
     expect(await decideEmailDraft(root, "../../etc", "yes", { send: async () => ({ ok: true as const }) })).toMatchObject({ ok: false })
+  })
+})
+
+describe("the Approvals inbox", () => {
+  it("lists each waiting reply with its text to edit, and sends it on yes", async () => {
+    const d = createEmailDraft(root, { agent: "inbox", account: "shop", to: "s@c.test", to_name: "Sam", subject: "Re: Invoice", text: "Sent again." })
+    const { items } = listInbox({ root }, { kinds: ["email"] })
+    expect(items).toEqual([expect.objectContaining({ key: `email:${d.id}`, kind: "email", title: "Email reply to Sam <s@c.test>", draft: "Sent again.", raised_by: "inbox" })])
+
+    const sent: any[] = []
+    const r = await decide({ root, sendEmail: async (x) => { sent.push(x); return { ok: true } } }, `email:${d.id}`, "yes", { text: "Sent again today." })
+    expect(r).toEqual({ ok: true, message: `email:${d.id}: sent to s@c.test (as you edited it)` })
+    expect(sent.map((x) => x.text)).toEqual(["Sent again today."])
+    expect(listInbox({ root }, { kinds: ["email"] }).items).toEqual([])
+  })
+
+  it("says why a reply was not sent, and keeps it", async () => {
+    const d = createEmailDraft(root, { agent: "inbox", account: "missing", to: "s@c.test", subject: "Re: x", text: "Hi" })
+    // No agentx.json: the account is unknown, so nothing is sent.
+    const r = await decide({ root }, `email:${d.id}`, "yes")
+    expect(r).toEqual({ ok: false, error: 'not sent: no email account "missing" in agentx.json' })
+    expect(listInbox({ root }, { kinds: ["email"] }).items[0]).toMatchObject({ detail: expect.stringContaining("no email account") })
   })
 })
