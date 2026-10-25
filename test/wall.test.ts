@@ -16,7 +16,7 @@ import { recordTraceStart, recordTraceEnd } from "../src/storage/traces"
 import {
   a2aRoute, handleWallApi, mentionsIn, projectOf, SILENCE_WORDS, sourceIdsIn, wallFailures, wallPost, wallPosts, wallThread, type WallDeps,
 } from "../src/daemon/wall-api"
-import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
+import { renderWallPage, WALL_CLASSIC_LINKS, WALL_DASHBOARD_HREF } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 
 // The Wall (#1180): every request as a post, its runs, hand-offs and plan
@@ -153,6 +153,22 @@ describe("posts", () => {
     const thread = wallThread(store.get("r1")!, deps())
     expect(thread[0].text).toContain("[redacted]")
     expect(JSON.stringify(thread)).not.toContain("supersecretvalue123")
+  })
+
+  it("leads with the result: its own last ok reply, else the close, else none (#1242)", () => {
+    const posts = wallPosts(deps(), 7)
+    const r1 = posts.find((p) => p.id === "r1")!
+    expect(r1.result).toMatchObject({ from: "reply", taskId: "t1", agentId: "coder" })
+    expect(r1.result!.text).toContain("Asked @pm to check")
+    // r2's runs all failed: no result, and nothing guessed from the hand-off or the chat.
+    expect(posts.find((p) => p.id === "r2")!.result).toBeNull()
+    expect(posts.find((p) => p.id === "r3")!.result).toMatchObject({ from: "reply", text: "Done", taskId: "t5" })
+    // Closed with no run recorded: the proof it was closed with.
+    const closedOnly = wallPost({ ...store.get("r3")!, id: "r-no-run" }, deps())
+    expect(closedOnly.result).toMatchObject({ from: "close", taskId: null, at: T0 + 9000 })
+    expect(closedOnly.result!.text).toContain("merge_requests/9")
+    // Runs' raw replies never ride along on the post.
+    expect(JSON.stringify(posts)).not.toContain("unrelated chat-A turn")
   })
 
   it("redacts the proof and keeps a link a link", () => {
@@ -364,6 +380,24 @@ describe("routes", () => {
   it("keeps every classic page one tap away", () => {
     const html = renderWallPage()
     for (const [, href] of WALL_CLASSIC_LINKS) expect(html).toContain(`href="${href}"`)
+  })
+
+  it("is its own space: no dashboard top bar or styles, a link back to the dashboard (#1242)", () => {
+    const html = renderWallPage()
+    expect(html).not.toContain("ax-topbar")
+    expect(html).not.toContain("fonts.googleapis.com")
+    expect(html).not.toContain("ax-as-dock")
+    expect(html).toContain('class="ax-wall__nav"')
+    expect(html).toContain(`href="${WALL_DASHBOARD_HREF}"`)
+    expect(html).toContain("ax-wall-theme")
+    // The ids the Wall's script paints into are all still there.
+    for (const id of ["wall-feed", "wall-nodes", "wall-agents", "wall-synced", "wall-refresh", "wall-count", "f-toggle", "f-q"]) {
+      expect(html).toContain(`id="${id}"`)
+    }
+  })
+
+  it("the dashboard keeps its Wall link (#1242)", async () => {
+    expect((await get("/live")).body).toContain('href="/wall"')
   })
 
   it("answers the Wall API, the thread from a run id, and the fleet view", async () => {

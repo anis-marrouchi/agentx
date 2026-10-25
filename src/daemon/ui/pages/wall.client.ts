@@ -189,7 +189,7 @@ ${WALL_CAPACITY_SCRIPT}
     if (f.conc && !(p.concurrent && p.concurrent.length)) return false;
     if (f.qa && !p.awaitingQa) return false;
     if (f.q) {
-      var hay = [p.headline, p.owner, p.id, p.project, p.home && p.home.link, p.askedBy]
+      var hay = [p.result && p.result.text, p.headline, p.owner, p.id, p.project, p.home && p.home.link, p.askedBy]
         .concat(cardsOf(p).map(function (c) { return c.title + ' ' + c.ask; })).join(' ').toLowerCase();
       if (hay.indexOf(f.q.toLowerCase()) < 0) return false;
     }
@@ -258,6 +258,21 @@ ${WALL_CAPACITY_SCRIPT}
   }
 
   // --- Feed ---
+  // A post leads with its result (#1242); the request it answers opens
+  // from under it with one tap. No result recorded: the request alone.
+  function leadHtml(p, via) {
+    var r = p.result;
+    if (!r) return '<div class="wp__via">' + via + '</div>' +
+      '<p class="wp__title">' + esc(p.headline) + ' <span class="chip chip--ghost">No result yet</span></p>';
+    var from = r.from === 'reply'
+      ? 'Answered ' + shortTime(r.at) + (r.taskId && r.agentId ? ' · <a href="' + esc(taskHref(r.taskId, r.agentId, p.node, !isOpen(p))) + '">run ' + esc(r.taskId) + '</a>' : '')
+      : 'Closed with ' + shortTime(r.at);
+    return '<p class="wp__result">' + esc(r.text) + '</p>' +
+      '<div class="wp__from">' + from + '</div>' +
+      '<details class="wp__ask"><summary><span class="k">Request</span> ' + esc(p.headline) + '</summary>' +
+        '<div class="wp__via">' + via + ' · <span title="Request id">' + esc(p.id) + '</span> · ' + when(p.createdAt) + '</div>' +
+      '</details>';
+  }
   function postHtml(p) {
     var multi = S.data && S.data.nodes && S.data.nodes.length > 1;
     var conc = p.concurrent || [];
@@ -300,8 +315,7 @@ ${WALL_CAPACITY_SCRIPT}
     }
     return '<article class="' + cls + '" id="post-' + esc(p.id) + '">' + avatar(p.owner) + '<div class="wp__b">' +
       '<div class="wp__by">' + by + '</div>' +
-      '<div class="wp__via">' + via + '</div>' +
-      '<p class="wp__title">' + esc(p.headline) + '</p>' +
+      leadHtml(p, via) +
       (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
       (forgeClosedOpen(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '') + ', but this post is still open. Do not pick it up.</div>' : '') +

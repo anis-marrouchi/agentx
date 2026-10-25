@@ -127,6 +127,24 @@ describe("Wall as a social feed (#1207)", () => {
     expect(w.el("wall-profile").hidden).toBe(true)
   })
 
+  it("leads with the result and opens the request under it with one tap (#1242)", async () => {
+    const w = openWall({ data: { ...WALL, posts: [
+      post("r1", "cx", "in_progress", { result: { text: "Refund <sent>: order 47", at: NOW - 300e3, from: "reply", taskId: "t-r1", agentId: "cx" } }),
+      post("r2", "cx", "in_progress", { result: null }),
+    ] } })
+    await w.settle()
+    const feed = w.el("wall-feed").innerHTML
+    const r1 = feed.split('id="post-r1"')[1].split('id="post-r2"')[0]
+    expect(r1.indexOf('<p class="wp__result">Refund &lt;sent&gt;: order 47</p>')).toBeGreaterThan(-1)
+    expect(r1.indexOf("wp__result")).toBeLessThan(r1.indexOf('<details class="wp__ask"><summary><span class="k">Request</span> Post r1</summary>'))
+    expect(r1).toContain('href="/tasks/t-r1?agent=cx">run t-r1</a>')
+    expect(r1).not.toContain('<p class="wp__title">')
+    // No result recorded: the request alone, said plainly.
+    const r2 = feed.split('id="post-r2"')[1]
+    expect(r2).toContain('<p class="wp__title">Post r2 <span class="chip chip--ghost">No result yet</span></p>')
+    expect(r2).not.toContain("wp__ask")
+  })
+
   it("only reads: every request is a plain GET", async () => {
     const w = openWall()
     await w.settle()
