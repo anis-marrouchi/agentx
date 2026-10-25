@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.177.0](https://github.com/anis-marrouchi/agentx/compare/v0.176.0...v0.177.0) (2026-10-25)
+
+
+### Features
+
+* **wall:** v2 task view: an opened post reads as a task ([#1355](https://github.com/anis-marrouchi/agentx/issues/1355)) ([#1377](https://github.com/anis-marrouchi/agentx/issues/1377)) ([3cf1949](https://github.com/anis-marrouchi/agentx/commit/3cf194931e349482e6da3a66a14b158d6a743370))
+
+
+### Bug Fixes
+
+* **wall:** redact proof text before clamping it ([#1377](https://github.com/anis-marrouchi/agentx/issues/1377)) ([#1383](https://github.com/anis-marrouchi/agentx/issues/1383)) ([e26577a](https://github.com/anis-marrouchi/agentx/commit/e26577a15c2a01426b6911e19e6e659098b05a6c))
+* **wall:** redact secrets before clamping text ([#1380](https://github.com/anis-marrouchi/agentx/issues/1380)) ([#1382](https://github.com/anis-marrouchi/agentx/issues/1382)) ([d9da293](https://github.com/anis-marrouchi/agentx/commit/d9da29381de4fa93cb8be4e12e085e19ea1a41a2))
+* **wall:** task view review notes from [#1377](https://github.com/anis-marrouchi/agentx/issues/1377) ([#1380](https://github.com/anis-marrouchi/agentx/issues/1380)) ([7f5ef47](https://github.com/anis-marrouchi/agentx/commit/7f5ef47ba5b2c980e061ba9fec5eecf5141bbd7c))
+
 ## [0.176.0](https://github.com/anis-marrouchi/agentx/compare/v0.175.0...v0.176.0) (2026-10-25)
 
 
