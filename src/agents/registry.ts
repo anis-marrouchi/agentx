@@ -3763,6 +3763,9 @@ export class AgentRegistry {
     const channel = ctx?.channel
     const chatId = ctx?.chatId
     if (!channel || !chatId) return
+    // No adapter to post on: the reply stays on the task and its session.
+    // `requests` pick-ups land here, their reply read by the tracker (#1263).
+    if (!router.getChannel(channel)) return
     // Operator-cancelled / queued-marker — nothing to deliver
     if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted" || resp.errorKind === "stopped") return
     if (isQueued(resp.error)) return
