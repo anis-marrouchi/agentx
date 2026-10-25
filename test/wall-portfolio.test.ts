@@ -195,6 +195,12 @@ describe("what it shows", () => {
     expect(renderPortfolioPage()).not.toMatch(/innerHTML/)
   })
 
+  it("never hands the dashboard token to the page, not even to a local client", async () => {
+    const r = await get("/portfolio")
+    expect(r.body).not.toContain("AX_LOCAL_TOKEN")
+    expect(r.body).not.toContain(OWNER)
+  })
+
   it("lets the owner mint a portfolio key", () => {
     expect(() => new TokenStore().create({ name: "Ops lead", scopes: [PORTFOLIO_SCOPE] })).not.toThrow()
   })
