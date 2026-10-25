@@ -191,7 +191,11 @@ The flag is off until you set a threshold in `agentx.json`:
 { "dashboard": { "wall": { "capacity": { "threshold": 3 } } } }
 ```
 
-Select an agent's name to open the **List** of the tasks it is counted for, so the list matches its numbers: tasks it owns, tasks where it runs the current plan step, and tasks waiting on it. The filter is **Counted for** in the filters. The table puts an agent with the same name on two machines in one row, as the projects table does. The Wall only counts; nobody is notified when an agent goes over.
+Select an agent's name to open the **List** of the tasks it is counted for, so the list matches its numbers: the tasks it works on now (its own, or another agent's task whose current plan step it runs) and the tasks waiting on it. The filter is **Counted for** in the filters.
+
+![The List with Counted for set to ops: two tasks in progress and one waiting on it](/screenshots/wall/counted-for.png)
+
+The table puts an agent with the same name on two machines in one row, as the projects table does. The Wall only counts; nobody is notified when an agent goes over.
 
 ### Closed per week
 
