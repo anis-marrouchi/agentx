@@ -6,6 +6,7 @@ A channel receives a message from another tool and routes it to an agent, then c
 |---|---|---|
 | Telegram | Chats with a bot, in private messages or in groups when the bot is tagged | **Settings › Channels › Telegram**, the setup wizard, or `agentx connect telegram`. See [Connect Telegram](../connect-telegram.md) |
 | WhatsApp | Answers from a WhatsApp account that AgentX pairs with by QR code. See [Answer customers on WhatsApp](../jobs/answer-whatsapp.md) | **Settings › Channels › WhatsApp**, or `agentx connect whatsapp` |
+| Email | Answers mail sent to a mailbox, in the same thread, over IMAP and SMTP. Each reply waits for your approval unless you turn on auto-send. See [Answer customer email](../jobs/answer-email.md) | **Settings › Channels › Email**, or `agentx connect email` |
 | GitLab | Reacts to issues, merge requests and comments sent by a GitLab webhook | **Settings › Channels › GitLab**. See [Watch GitLab](../jobs/watch-gitlab.md) |
 | GitHub | Reacts to GitHub webhook events, such as pull requests | **Settings › Channels › GitHub** |
 | Webhooks | Starts workflows from other services (for example Sentry, Stripe, Vercel, or your own) | **Settings › Webhooks**, or `agentx webhook add`. `agentx webhook sources` lists the known sources |
@@ -16,6 +17,8 @@ A channel receives a message from another tool and routes it to an agent, then c
 **Telegram ignores everyone until you allow them.** A new Telegram bot drops every message unless the sender is on an allow list: `channels.telegram.policy.allowFrom` for all bots, or `allowFrom` on one bot's account. Each entry is a Telegram user ID, a chat ID, or an `@username`. To run a public bot that answers anyone, such as customers, use the entry `"*"` on that bot's account: see [Let anyone talk to the bot](../connect-telegram.md#let-anyone-talk-to-the-bot-a-public-bot). A dropped message shows in `agentx daemon logs` as `not in allowlist`.
 
 **WhatsApp also ignores everyone until you allow them.** With `channels.whatsapp.allowFrom` unset or empty, the agent answers no one. List each phone number (with or without `+`) or chat ID the agent may answer. Once the list has an entry, your own "message yourself" chat on the paired phone is answered too. `"*"` answers every chat on the account; use it only on a dedicated number. A dropped message shows in `agentx daemon logs` as `not in allowlist`. Read [Before you pair WhatsApp](#before-you-pair-whatsapp) first; for a customer-facing number, follow [Answer customers on WhatsApp](../jobs/answer-whatsapp.md).
+
+**Email also ignores everyone until you allow them.** With an account's `allowFrom` unset or empty, every mail is ignored. `agentx connect email` sets `["*"]`, so anyone may write, and each reply still waits for your yes. Entries can be addresses or `@domain`. A dropped mail shows in `agentx daemon logs` as `not in allowFrom, dropped`.
 
 **Slack and Discord are not supported as live channel adapters in this build.** Do not paste their tokens into a stale prompt or example. A connection record alone does not make an adapter run.
 
@@ -51,6 +54,7 @@ Both WhatsApp routes, the WhatsApp channel above and [Watch a WhatsApp chat](../
 
 - **A channel shows off or not set up:** open it in **Settings › Channels** and check it is enabled and bound to an agent.
 - **Telegram stays silent:** check the allow list above, then look for `not in allowlist` in `agentx daemon logs`.
+- **Email stays silent:** check the account's `allowFrom`, then look for `[email]` lines in `agentx daemon logs`. Only mail that arrives after the first read is answered. See [Answer customer email](../jobs/answer-email.md#if-something-is-wrong).
 - **WhatsApp stays silent:** check `channels.whatsapp.allowFrom` (see [Before you pair WhatsApp](#before-you-pair-whatsapp)), then look for `not in allowlist` in `agentx daemon logs`.
 - **A webhook event never arrives:** first check that the other tool sent it (its webhook delivery log), then open `/admin/health` on the dashboard and [Activity](../dashboard/activity.md).
 - **Still stuck:** run `agentx doctor` and follow [It's not answering](../help/its-not-answering.md).

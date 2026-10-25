@@ -481,6 +481,7 @@ const ADMIN_PAGE_BODY = `
     <div id="ch-panes" style="margin-top:22px">
       <div id="ch-telegram" hidden><div id="tg-section" class="section-block"></div></div>
       <div id="ch-whatsapp" hidden></div>
+      <div id="ch-email" hidden></div>
       <div id="ch-slack" hidden><div id="slack-section" class="section-block"></div></div>
       <div id="ch-discord" hidden></div>
       <div id="ch-gitlab" hidden></div>
@@ -2589,6 +2590,7 @@ function renderChannels() {
 const CHANNEL_DEFS = [
   { id: 'telegram', icon: 'TG', label: 'Telegram' },
   { id: 'whatsapp', icon: 'WA', label: 'WhatsApp' },
+  { id: 'email',    icon: '@',  label: 'Email' },
   { id: 'gitlab',   icon: 'GL', label: 'GitLab' },
   { id: 'github',   icon: 'GH', label: 'GitHub' },
   { id: 'webrtc',   icon: '☎',  label: 'Calls (WebRTC)' },
@@ -2599,6 +2601,7 @@ const CHANNEL_DEFS = [
 const CONNECTOR_META = {
   telegram: { group: 'chat', brand: '#229ED9', desc: 'Replies in Telegram DMs and groups when tagged. Paste your BotFather token; we keep the value in .env.' },
   whatsapp: { group: 'chat', brand: '#25D366', desc: 'Answer on WhatsApp via a local session. Scan a QR once; AgentX pairs as an extra device.' },
+  email:    { group: 'chat', brand: '#6366F1', desc: 'Answers customer email over IMAP and SMTP, in the same thread. Each reply waits in Approvals unless you turn on auto-send.' },
   slack:    { group: 'chat', brand: '#4A154B', desc: 'Agents can DM or be mentioned in channels. Uses the Events API with socket mode.' },
   discord:  { group: 'chat', brand: '#5865F2', desc: 'Works in servers, threads, and DMs. Create a Discord bot, grant Read/Send Messages, paste the token.' },
   gitlab:   { group: 'dev',  brand: '#FC6D26', desc: 'Pings your agent on MRs, issues, and pipeline events. Works with self-hosted too.' },
@@ -2664,6 +2667,10 @@ function channelSubtext(id, status) {
     const s = state.slack || {};
     return s.botTokenRef ? (s.workspace ? 'Workspace: ' + s.workspace : 'Token set') : 'Not set up';
   }
+  if (id === 'email') {
+    const n = ((state.email || {}).accounts || []).length;
+    return n ? n + ' mailbox' + (n === 1 ? '' : 'es') : 'Not set up';
+  }
   if (id === 'discord') return status === 'none' ? 'Not set up' : 'Token set';
   if (id === 'gitlab') return status === 'none' ? 'Not set up' : 'Token set';
   if (id === 'github') {
@@ -2677,7 +2684,7 @@ function channelSubtext(id, status) {
  *  the matching connector card. */
 function showChannelPane(id) {
   state.__activeChannel = id;
-  const panes = ['telegram','whatsapp','slack','discord','gitlab','github','webrtc'];
+  const panes = ['telegram','whatsapp','email','slack','discord','gitlab','github','webrtc'];
   for (const p of panes) {
     const el = document.getElementById('ch-' + p);
     if (el) el.hidden = (p !== id);
@@ -2700,6 +2707,7 @@ function showChannelPane(id) {
   else if (id === 'gitlab') renderGitLabPane();
   else if (id === 'github') renderGitHubPane();
   else if (id === 'whatsapp') renderWhatsAppPane();
+  else if (id === 'email') renderEmailPane();
   else if (id === 'webrtc') renderWebRtcPane();
 }
 
@@ -2714,6 +2722,11 @@ function channelStatus(id) {
     const w = state.whatsapp || {};
     if (!w.routeCount) return 'none';
     return w.enabled ? 'on' : 'off';
+  }
+  if (id === 'email') {
+    const e = state.email || {};
+    if (!(e.accounts || []).length) return 'none';
+    return e.enabled ? 'on' : 'off';
   }
   if (id === 'slack') {
     const s = state.slack || {};
@@ -2774,6 +2787,72 @@ function selectChannel(id, keep) {
   else if (id === 'gitlab') renderGitLabPane();
   else if (id === 'github') renderGitHubPane();
   else if (id === 'whatsapp') renderWhatsAppPane();
+  else if (id === 'email') renderEmailPane();
+}
+
+function renderEmailPane() {
+  const e = state.email || { enabled: false, accounts: [] };
+  const agentOptions = state.agents.map((a) => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
+  const rows = (e.accounts || []).length === 0
+    ? '<div class="empty">No mailbox yet.</div>'
+    : e.accounts.map((acc) =>
+      '<div class="row-card"><div class="info"><h3>' + escapeHtml(acc.address) + '</h3>' +
+      '<div class="meta">' +
+        '<span class="chip ' + (e.enabled ? '' : 'off') + '">' + (e.enabled ? 'enabled' : 'disabled') + '</span>' +
+        'agent: <b>' + escapeHtml(acc.agent) + '</b> · IMAP <b>' + escapeHtml(acc.imap) + '</b> · SMTP <b>' + escapeHtml(acc.smtp) + '</b>' +
+      '</div><div class="meta">' +
+        'who may write: <b>' + escapeHtml(acc.allowFrom.length ? acc.allowFrom.join(', ') : 'nobody') + '</b>' +
+        ' · replies: <b>' + (acc.send === 'auto' ? 'sent at once' : 'wait for your approval') + '</b>' +
+        ' · password: <code>' + escapeHtml(acc.passwordRef || 'not set') + '</code>' +
+      '</div></div>' +
+      '<button class="danger" data-email-del="' + escapeHtml(acc.id) + '">Delete</button></div>').join('');
+  $('ch-email').innerHTML =
+    '<div class="section-block">' +
+    ((e.accounts || []).length ? '<div class="toggle-switch"><input type="checkbox" id="em-toggle"' + (e.enabled ? ' checked' : '') + ' /><label for="em-toggle" style="color:var(--text);margin:0">Email connector enabled</label></div>' : '') +
+    '<div class="list">' + rows + '</div>' +
+    '<div class="add-form"><h3>Add a mailbox</h3>' +
+      '<div class="rowf"><div><label>Account id<span class="hint">(e.g. support)</span></label><input id="em-id" /></div>' +
+      '<div><label>Answered by agent</label><select id="em-agent">' + agentOptions + '</select></div></div>' +
+      '<label>Address customers write to</label><input id="em-address" placeholder="hello@yourshop.com" />' +
+      '<div class="rowf"><div><label>IMAP server<span class="hint">(incoming)</span></label><input id="em-imap" placeholder="imap.gmail.com" /></div>' +
+      '<div><label>Port</label><input id="em-imap-port" value="993" /></div></div>' +
+      '<div class="rowf"><div><label>SMTP server<span class="hint">(outgoing)</span></label><input id="em-smtp" placeholder="smtp.gmail.com" /></div>' +
+      '<div><label>Port</label><input id="em-smtp-port" value="465" /></div></div>' +
+      '<label>Password env-var<span class="hint">(name of the <code>.env</code> variable holding the password; for Gmail, an app password)</span></label><input id="em-env" placeholder="EMAIL_SUPPORT_PASSWORD" />' +
+      '<label>Who may write<span class="hint">(addresses, @domain, or * for anyone)</span></label><input id="em-allow" value="*" />' +
+      '<label class="toggle-switch" style="margin-top:8px"><input type="checkbox" id="em-auto" /> <span>Send replies at once, without my approval</span></label>' +
+      '<div class="actions"><button class="primary" onclick="addEmail()">Add mailbox</button><div id="em-msg" class="msg"></div></div>' +
+      '<div class="hint-block">Only mail that arrives after the daemon starts reading the mailbox is answered, and the mailbox is never changed. Each reply waits in <a href="/approvals">Approvals</a> until you send it, unless you tick the box above. To check the login before saving, use <code>agentx connect email</code>.</div>' +
+    '</div></div>';
+  const t = $('em-toggle');
+  if (t) t.addEventListener('change', async (ev) => {
+    try { await req('POST', '/api/admin/channels/email/toggle', { enabled: ev.target.checked }); refresh(); }
+    catch (err) { showMsg($('global-msg'), 'err', err.message); ev.target.checked = !ev.target.checked; }
+  });
+  for (const btn of document.querySelectorAll('#ch-email button[data-email-del]')) {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove the mailbox ' + btn.dataset.emailDel + '? Its password stays in .env.')) return;
+      try { await req('DELETE', '/api/admin/channels/email', { id: btn.dataset.emailDel }); refresh(); }
+      catch (err) { showMsg($('global-msg'), 'err', err.message); }
+    });
+  }
+  const addr = $('em-address');
+  addr.addEventListener('change', () => {
+    if (/@g(oogle)?mail[.]com$/i.test(addr.value.trim())) {
+      if (!$('em-imap').value) $('em-imap').value = 'imap.gmail.com';
+      if (!$('em-smtp').value) $('em-smtp').value = 'smtp.gmail.com';
+    }
+  });
+}
+async function addEmail() {
+  const body = {
+    id: $('em-id').value.trim(), agent: $('em-agent').value, address: $('em-address').value.trim(),
+    imapHost: $('em-imap').value.trim(), imapPort: $('em-imap-port').value.trim(),
+    smtpHost: $('em-smtp').value.trim(), smtpPort: $('em-smtp-port').value.trim(),
+    passwordEnv: $('em-env').value.trim(), allowFrom: $('em-allow').value, send: $('em-auto').checked ? 'auto' : 'approve',
+  };
+  try { const r = await req('POST', '/api/admin/channels/email', body); showMsg($('em-msg'), 'ok', (r.summary || 'Saved.') + (r.hint ? ' — ' + r.hint : '')); refresh(); }
+  catch (err) { showMsg($('em-msg'), 'err', err.message); }
 }
 
 function renderDiscordPane() {

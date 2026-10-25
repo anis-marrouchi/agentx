@@ -66,6 +66,26 @@ Pair WhatsApp via QR (prints in terminal), then writes channels.whatsapp config.
 | `--skip-pair` | — | Skip QR pairing (use when session already exists). |
 | `-c, --config <path>` | — | Path to agentx.json. |
 
+### `agentx connect email`
+
+Bind a mailbox to an agent: IMAP in, SMTP out. Tries both logins before saving, keeps the password in .env, and holds each reply for your approval. See [Answer customer email](../jobs/answer-email.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | Agent that answers the mailbox (skips the prompt). |
+| `--address <email>` | — | The address customers write to. |
+| `--account <name>` | the agent id | Account label in channels.email.accounts. |
+| `--imap-host <host>` | Gmail's, for a Gmail address | IMAP server. |
+| `--imap-port <n>` | — | IMAP port (993: TLS; 143: STARTTLS). |
+| `--smtp-host <host>` | Gmail's, for a Gmail address | SMTP server. |
+| `--smtp-port <n>` | — | SMTP port (465: TLS; 587: STARTTLS). |
+| `--user <login>` | the address | Login name, when it is not the address. |
+| `--password-env <VAR>` | — | Read the password from this environment variable instead of asking. |
+| `--allow-from <entries...>` | `*` | Who may write: addresses, `@domain`, or `*`. |
+| `--auto` | — | Send replies as soon as the agent writes them, without your approval. |
+| `--skip-check` | — | Don't try the IMAP and SMTP logins first. |
+| `-c, --config <path>` | — | Path to agentx.json. |
+
 ### `agentx connect mesh`
 
 Mesh invite + join — replaces manual MESH_TOKEN copy-paste.

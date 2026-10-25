@@ -12,7 +12,7 @@ export const clientInbox: TeamPackageInput = {
       mentions: ["@inbox", "inbox"],
       maxConcurrent: 2,
       systemPrompt: [
-        "You answer the business's clients on WhatsApp.",
+        "You answer the business's clients on WhatsApp and, when it is connected, by email.",
         "Be brief, warm and precise. Answer in the language the client wrote in.",
         "Answer only what you know from the business notes and earlier messages. When you do not know, say you will check and that someone will reply.",
         "Never promise a price, a discount, a refund or a date that is not written down. Hand those to the owner.",
@@ -23,7 +23,7 @@ export const clientInbox: TeamPackageInput = {
           "SKILL.md": [
             "---",
             "name: client-replies",
-            "description: How to answer a client on WhatsApp, and when to hand the message to the owner instead.",
+            "description: How to answer a client on WhatsApp or by email, and when to hand the message to the owner instead.",
             "---",
             "",
             "# Answering clients",
@@ -57,5 +57,6 @@ export const clientInbox: TeamPackageInput = {
   },
   channels: [
     { kind: "whatsapp", agent: "inbox", why: "where clients write to you" },
+    { kind: "email", agent: "inbox", why: "optional: clients who write by email; each reply waits for your approval" },
   ],
 }

@@ -64,6 +64,33 @@ Ingest reads contact and group details (and, if you choose, recent messages) int
 | `channels.whatsapp.ingest.throttle.maxChatsPerSweep` | number (≥1) | `25` | Most chats read in one pass. |
 | `channels.whatsapp.ingest.retentionDays` | number (≥0) | `0` | Delete stored raw entries older than this many days. `0` keeps them. |
 
+## Email
+
+Set up with `agentx connect email`, or **Settings › Channels › Email**. Step by step: [Answer customer email](../jobs/answer-email.md). Each mailbox is one account under `channels.email.accounts`, keyed by an ID such as `support`.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `channels.email.enabled` | boolean | `false` | Turns the email channel on. |
+| `channels.email.accounts.<id>.agent` | string | required | Agent that answers mail sent to this address. |
+| `channels.email.accounts.<id>.address` | string | required | The address customers write to. Replies come from it. |
+| `channels.email.accounts.<id>.name` | string | the agent's name | Name shown as the sender of replies. |
+| `channels.email.accounts.<id>.imap.host` | string | required | IMAP server, for example `imap.gmail.com`. |
+| `channels.email.accounts.<id>.imap.port` | number | `993` | IMAP port. |
+| `channels.email.accounts.<id>.imap.secure` | boolean | `true` | `true`: TLS from the start (port 993). `false`: plain, upgraded to TLS when the server offers it (port 143). |
+| `channels.email.accounts.<id>.imap.user` | string | the address | Login name, when it is not the address. |
+| `channels.email.accounts.<id>.imap.password` | string | — | Use `${EMAIL_<ID>_PASSWORD}` and keep the value in `.env`. For Gmail, an app password. |
+| `channels.email.accounts.<id>.smtp.host` | string | required | SMTP server, for example `smtp.gmail.com`. |
+| `channels.email.accounts.<id>.smtp.port` | number | `465` | SMTP port. |
+| `channels.email.accounts.<id>.smtp.secure` | boolean | `true` | `true`: TLS from the start (port 465). `false`: upgraded to TLS when the server offers it (port 587). |
+| `channels.email.accounts.<id>.smtp.user` | string | the IMAP login | Login name for sending. |
+| `channels.email.accounts.<id>.smtp.password` | string | the IMAP password | Password for sending. |
+| `channels.email.accounts.<id>.mailbox` | string | `"INBOX"` | Folder that is read. |
+| `channels.email.accounts.<id>.pollSeconds` | number (15–3600) | `60` | How often new mail is fetched. |
+| `channels.email.accounts.<id>.allowFrom` | list of strings | — | Who may write: an address, `@domain`, or `"*"` for anyone. Unset or empty, every mail is ignored (closed by default). `agentx connect email` sets `["*"]`. |
+| `channels.email.accounts.<id>.send` | `"approve"` \| `"auto"` | `"approve"` | `approve`: each reply waits in Approvals (`email:<id>`) until you send it. `auto`: replies are sent as soon as the agent writes them. |
+
+Only mail that arrives after the first read is answered. The mailbox is never changed: where AgentX got to is kept in `.agentx/email/`, with each customer's thread and the waiting replies.
+
 ## WhatsApp triage
 
 Watched WhatsApp chats, read by an agent that sorts each message and drafts replies for your approval. Messages come from `wacli sync --webhook` to `POST /webhook/wacli`, not from the WhatsApp channel above; the two are independent. Set up with [Watch a WhatsApp chat](../jobs/watch-whatsapp.md), the **WhatsApp triage** block in **Settings › Webhooks**, or `agentx whatsapp triage`.

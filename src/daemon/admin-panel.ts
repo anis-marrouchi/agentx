@@ -14,6 +14,7 @@ import { setWikiAbsorb } from "@/wiki/absorb-agents"
 import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
+import { emailAccountBlock, passwordEnvFor } from "@/channels/email/settings"
 import type { TopbarPeer } from "./topbar"
 import { renderAdminPage } from "./ui/pages/admin"
 
@@ -76,6 +77,9 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "PATCH /api/admin/channels/telegram": () => editTelegramAccount(body),
       "POST /api/admin/channels/slack": () => configureSlack(body),
       "POST /api/admin/channels/slack/toggle": () => toggleSlack(body),
+      "POST /api/admin/channels/email": () => addEmailAccount(body),
+      "DELETE /api/admin/channels/email": () => deleteEmailAccount(body),
+      "POST /api/admin/channels/email/toggle": () => toggleEmail(body),
       "POST /api/admin/channels/discord": () => configureDiscord(body),
       "POST /api/admin/channels/discord/toggle": () => toggleDiscord(body),
       "POST /api/admin/channels/gitlab": () => configureGitLab(body),
@@ -277,6 +281,20 @@ function getAdminState() {
     routeCount: Array.isArray(cfg.channels?.gitlab?.routes) ? cfg.channels.gitlab.routes.length : 0,
     agentMappingCount: Array.isArray(cfg.channels?.gitlab?.agentMappings) ? cfg.channels.gitlab.agentMappings.length : 0,
   }
+  const email = {
+    enabled: !!cfg.channels?.email?.enabled,
+    // Addresses and servers only: the password stays a ${VAR} reference.
+    accounts: Object.entries(cfg.channels?.email?.accounts || {}).map(([id, a]: [string, any]) => ({
+      id,
+      agent: a?.agent || "",
+      address: a?.address || "",
+      imap: `${a?.imap?.host || ""}:${a?.imap?.port ?? 993}`,
+      smtp: `${a?.smtp?.host || ""}:${a?.smtp?.port ?? 465}`,
+      passwordRef: a?.imap?.password || "",
+      allowFrom: Array.isArray(a?.allowFrom) ? a.allowFrom : [],
+      send: a?.send === "auto" ? "auto" : "approve",
+    })),
+  }
   const whatsapp = {
     enabled: !!cfg.channels?.whatsapp?.enabled,
     sessionDir: cfg.channels?.whatsapp?.sessionDir || ".agentx/whatsapp-sessions",
@@ -368,7 +386,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg) }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg) }
 }
 
 // ========================================================================
@@ -940,6 +958,60 @@ function toggleSlack(body: any) {
     cfg.channels.slack = cfg.channels.slack || { enabled: false }
     cfg.channels.slack.enabled = enabled
     return `slack ${enabled ? "enabled" : "disabled"}`
+  })
+  return { summary }
+}
+
+/** Settings › Channels › Email (#1287): add or replace one account. The
+ *  password is never sent here: only the name of its .env variable. */
+function addEmailAccount(body: any) {
+  const id = String(body?.id || "").trim()
+  const agent = String(body?.agent || "").trim()
+  const address = String(body?.address || "").trim().toLowerCase()
+  const imapHost = String(body?.imapHost || "").trim()
+  const smtpHost = String(body?.smtpHost || imapHost).trim()
+  const imapPort = Number(body?.imapPort || 993)
+  const smtpPort = Number(body?.smtpPort || 465)
+  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(id)) throw new Error("Account id: letters, numbers, - and _ (e.g. support).")
+  if (!/^\S+@\S+\.\S+$/.test(address)) throw new Error("Enter the address customers write to.")
+  if (!imapHost) throw new Error("Enter the IMAP server (imap.gmail.com for Gmail).")
+  if (!Number.isInteger(imapPort) || !Number.isInteger(smtpPort)) throw new Error("Ports must be numbers.")
+  const passwordEnv = String(body?.passwordEnv || "").trim() || passwordEnvFor(id)
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(passwordEnv)) throw new Error("Password variable: capital letters, numbers and _ (e.g. EMAIL_SUPPORT_PASSWORD).")
+  const allowFrom = String(body?.allowFrom ?? "*").split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agent]) throw new Error(`Unknown agent "${agent}".`)
+    cfg.channels = cfg.channels || {}
+    cfg.channels.email = cfg.channels.email || { enabled: false, accounts: {} }
+    cfg.channels.email.enabled = true
+    cfg.channels.email.accounts = cfg.channels.email.accounts || {}
+    cfg.channels.email.accounts[id] = emailAccountBlock({
+      agent, address, imapHost, imapPort, smtpHost, smtpPort,
+      user: String(body?.user || "").trim() || undefined,
+      passwordEnv, allowFrom, send: body?.send === "auto" ? "auto" : "approve",
+    })
+    return `email account ${id} (${address}) answered by ${agent}`
+  })
+  return { summary, hint: `Add ${passwordEnv}=<password> to your .env (for Gmail, an app password), then restart the daemon. To check the login first, use \`agentx connect email\` instead.` }
+}
+
+function deleteEmailAccount(body: any) {
+  const id = String(body?.id || "").trim()
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.channels?.email?.accounts?.[id]) throw new Error(`No email account "${id}".`)
+    delete cfg.channels.email.accounts[id]
+    return `email account ${id} removed`
+  })
+  return { summary }
+}
+
+function toggleEmail(body: any) {
+  const enabled = !!body?.enabled
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.channels = cfg.channels || {}
+    cfg.channels.email = cfg.channels.email || { enabled: false, accounts: {} }
+    cfg.channels.email.enabled = enabled
+    return `email ${enabled ? "enabled" : "disabled"}`
   })
   return { summary }
 }

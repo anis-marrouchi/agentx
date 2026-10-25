@@ -486,6 +486,40 @@ const telegramAccountSchema = z.object({
   pollInbound: z.boolean().default(true),
 })
 
+const mailServerSchema = z.object({
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  /** TLS from the first byte (993, 465). False: STARTTLS on 143 or 587. */
+  secure: z.boolean().default(true),
+  /** Login name. Default: the account's address. */
+  user: z.string().optional(),
+  /** Use `${ENV_VAR}`: the value stays in .env. */
+  password: z.string().optional(),
+})
+
+/** One mailbox an agent answers (#1287). */
+export const emailAccountSchema = z.object({
+  /** The agent that answers mail sent to this address. */
+  agent: z.string().min(1),
+  /** The address customers write to; replies come from it. */
+  address: z.string().email(),
+  /** Display name on replies. Default: the agent's name. */
+  name: z.string().optional(),
+  imap: mailServerSchema.extend({ port: z.number().int().min(1).max(65535).default(993) }),
+  /** Default: the IMAP login and password. */
+  smtp: mailServerSchema.extend({ port: z.number().int().min(1).max(65535).default(465) }),
+  mailbox: z.string().default("INBOX"),
+  /** How often new mail is fetched. */
+  pollSeconds: z.number().int().min(15).max(3600).default(60),
+  /** Who may reach the agent: addresses, `@domain`, or `*`. Unset: nobody. */
+  allowFrom: z.array(z.string()).optional(),
+  /** `approve`: each reply waits in the Approvals inbox until you say yes.
+   *  `auto`: replies are sent as soon as the agent writes them. */
+  send: z.enum(["approve", "auto"]).default("approve"),
+})
+
+export type EmailAccountConfig = z.infer<typeof emailAccountSchema>
+
 /** An agent watching the phone camera (#325 phase 2, src/camera/watch.ts). */
 export const cameraBotSchema = z.object({
   /** Seconds between frames the agent gets by itself. 0: only when asked
@@ -567,6 +601,11 @@ const channelsConfigSchema = z.object({
       /** Purge absorbed raw entries older than this many days. `0` = never. */
       retentionDays: z.number().int().min(0).default(0),
     }).default({}),
+  }).default({}),
+  /** Email (#1287): IMAP in, SMTP out, one account per mailbox. */
+  email: z.object({
+    enabled: z.boolean().default(false),
+    accounts: z.record(z.string().regex(/^[a-z0-9][a-z0-9_-]*$/i, "use letters, numbers, - and _"), emailAccountSchema).default({}),
   }).default({}),
   gitlab: z.object({
     enabled: z.boolean().default(false),
@@ -2819,6 +2858,11 @@ export function validateWorkspaces(config: DaemonConfig): string[] {
           `Telegram account "${name}": references unknown agent "${account.agentBinding}"`
         )
       }
+    }
+  }
+  if (config.channels.email.enabled) {
+    for (const [name, account] of Object.entries(config.channels.email.accounts)) {
+      if (!config.agents[account.agent]) warnings.push(`Email account "${name}": references unknown agent "${account.agent}"`)
     }
   }
 

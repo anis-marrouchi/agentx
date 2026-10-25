@@ -69,7 +69,7 @@ const teamScheduleSchema = z.object({
   requireSources: z.boolean().optional(),
 }).strict()
 
-export const TEAM_CHANNEL_KINDS = ["telegram", "whatsapp", "gitlab", "github"] as const
+export const TEAM_CHANNEL_KINDS = ["telegram", "whatsapp", "email", "gitlab", "github"] as const
 export type TeamChannelKind = typeof TEAM_CHANNEL_KINDS[number]
 
 const teamChannelSchema = z.object({
@@ -307,6 +307,7 @@ export function connectStep(kind: TeamChannelKind, agent: string): string {
   switch (kind) {
     case "telegram": return `agentx connect telegram --agent ${agent}`
     case "whatsapp": return `agentx connect whatsapp --agent ${agent}`
+    case "email": return `agentx connect email --agent ${agent}`
     case "gitlab": return `agentx channel add   (choose GitLab, route your project to ${agent})`
     case "github": return `set channels.github, with a route to ${agent} (see docs: Connect GitHub)`
   }
@@ -471,6 +472,7 @@ function channelBindings(config: any, ids: string[]): { kind: TeamChannelKind; a
   for (const acc of Object.values(ch.telegram?.accounts || {}) as any[]) add("telegram", acc?.agentBinding)
   add("whatsapp", ch.whatsapp?.defaultAgent)
   for (const r of ch.whatsapp?.routes || []) add("whatsapp", r?.agent)
+  for (const acc of Object.values(ch.email?.accounts || {}) as any[]) add("email", acc?.agent)
   for (const r of ch.gitlab?.routes || []) add("gitlab", r?.agent)
   for (const m of ch.gitlab?.agentMappings || []) add("gitlab", m?.agentId)
   for (const r of ch.github?.routes || []) add("github", r?.agent)

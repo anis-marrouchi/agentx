@@ -2,7 +2,7 @@
 //
 // One inbox for every decision waiting for the operator: decision cards
 // agents raise, schedule requests, held memory facts, wiki proposals,
-// WhatsApp reply drafts, posts drafted for LinkedIn or X. Each
+// WhatsApp and email reply drafts, posts drafted for LinkedIn or X. Each
 // item answers "what is it, what is asked, what does the agent advise, and
 // what happens if I say nothing", with Yes / No / Later. A card that offers
 // choices is answered by picking one (the agent's advice comes pre-picked),
@@ -46,6 +46,7 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
       <button type="button" class="ax-chip apv__f" data-kind="memory" aria-pressed="false">Memory <span id="n-memory"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="wiki" aria-pressed="false">Wiki <span id="n-wiki"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="whatsapp" aria-pressed="false">WhatsApp <span id="n-whatsapp"></span></button>
+      <button type="button" class="ax-chip apv__f" data-kind="email" aria-pressed="false">Email <span id="n-email"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="content" aria-pressed="false">Posts <span id="n-content"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="request" aria-pressed="false">Requests <span id="n-request"></span></button>
     </div>
@@ -154,7 +155,7 @@ const APPROVALS_CSS = `
 const APPROVALS_SCRIPT = `
 (function(){
 var state = { items: [], extra: [], desk: null, snoozed: 0, kind: '', showAll: false, popup: false };
-var LABEL = { card: 'Card', schedule: 'Schedule', memory: 'Memory fact', wiki: 'Wiki lesson', whatsapp: 'WhatsApp reply', content: 'Post', request: 'Request' };
+var LABEL = { card: 'Card', schedule: 'Schedule', memory: 'Memory fact', wiki: 'Wiki lesson', whatsapp: 'WhatsApp reply', email: 'Email reply', content: 'Post', request: 'Request' };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 function headers(json){
@@ -206,7 +207,7 @@ async function load(){
 }
 
 function counts(){
-  var c = { card: 0, schedule: 0, memory: 0, wiki: 0, whatsapp: 0, content: 0, request: 0 };
+  var c = { card: 0, schedule: 0, memory: 0, wiki: 0, whatsapp: 0, email: 0, content: 0, request: 0 };
   state.items.forEach(function(i){ c[i.kind] = (c[i.kind] || 0) + 1; });
   c.request += state.extra.length;
   $('n-all').textContent = state.items.length + state.extra.length;
@@ -253,6 +254,7 @@ function item(i){
     + '<p class="apv__ask">' + esc(i.ask) + '</p>'
     + (i.recommend ? '<p class="apv__rec"><b>Recommends:</b> ' + esc(i.recommend) + '</p>' : '')
     + (i.choices ? choices(i) : '')
+    + (i.draft ? draftBox(i) : '')
     + (i.expires ? '<p class="apv__exp' + (soon ? ' is-soon' : '') + '" title="' + esc(new Date(i.expires).toLocaleString()) + '">Expires ' + esc(rel(i.expires)) + ', then: ' + esc(i.if_silent) + '</p>' : '')
     + '<details class="apv__detail"><summary>Details</summary>' + more.join('') + '</details>'
     + '<div class="apv__acts">'
@@ -280,8 +282,12 @@ function choices(i){
     + i.choices.map(function(c, n){
       return '<label class="apv__opt"><input type="radio" name="' + name + '" value="' + (n + 1) + '"' + (n === rec ? ' checked' : '') + '><span>' + esc(c) + (n === rec ? ' <em>recommended</em>' : '') + '</span></label>';
     }).join('')
-    + '</fieldset>'
-    + (i.draft ? '<label class="apv__draft">Message the agent gets (you can edit it)<textarea rows="5" data-draft></textarea></label>' : '');
+    + '</fieldset>';
+}
+
+// The message a yes sends, editable: a card's suggested message, or an email reply.
+function draftBox(i){
+  return '<label class="apv__draft">' + (i.kind === 'email' ? 'The email that is sent (you can edit it)' : 'Message the agent gets (you can edit it)') + '<textarea rows="' + (i.kind === 'email' ? 8 : 5) + '" data-draft></textarea></label>';
 }
 
 async function act(li, action){
@@ -292,9 +298,9 @@ async function act(li, action){
     var picked = li.querySelector('input[type=radio]:checked');
     if (!picked) { say('Pick one of the choices first.', 'err'); var first = li.querySelector('input[type=radio]'); if (first) first.focus(); return; }
     body.choice = Number(picked.value);
-    var ta = li.querySelector('textarea[data-draft]');
-    if (ta && ta.value.trim()) body.text = ta.value;
   }
+  var ta = li.querySelector('textarea[data-draft]');
+  if (action === 'yes' && ta && ta.value.trim()) body.text = ta.value;
   if (action === 'yes' && it && it.text_hash) body.seen = it.text_hash;
   var btns = li.querySelectorAll('button[data-act]');
   btns.forEach(function(b){ b.disabled = true; });

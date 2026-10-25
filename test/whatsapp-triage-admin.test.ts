@@ -64,6 +64,7 @@ describe("admin page", () => {
     const html = renderAdminPage({})
     const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
     expect(html).toContain("function renderWaTriage")
+    expect(html).toContain("function renderEmailPane")
     for (const s of scripts) expect(() => new Function(s)).not.toThrow()
   })
 })

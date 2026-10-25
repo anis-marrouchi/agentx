@@ -60,6 +60,7 @@ const groups = [
     { text: "Post a weekly quality report", link: "/jobs/quality-report" },
     { text: "Watch GitLab", link: "/jobs/watch-gitlab" },
     { text: "Answer customers on WhatsApp", link: "/jobs/answer-whatsapp" },
+    { text: "Answer customer email", link: "/jobs/answer-email" },
     { text: "Watch a WhatsApp chat", link: "/jobs/watch-whatsapp" },
     { text: "Draft posts in your voice", link: "/jobs/content" },
     { text: "Get notified", link: "/jobs/notifications" },

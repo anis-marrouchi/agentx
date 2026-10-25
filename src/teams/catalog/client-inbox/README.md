@@ -8,7 +8,7 @@
 
 | Agent | What it does |
 |---|---|
-| `inbox` | Answers clients on WhatsApp from your business notes. Hands you prices, refunds, complaints and dates it cannot decide. |
+| `inbox` | Answers clients on WhatsApp, and by email if you connect a mailbox, from your business notes. Hands you prices, refunds, complaints and dates it cannot decide. |
 
 ## What runs on its own
 
@@ -20,5 +20,6 @@
 
 1. Run `agentx team add client-inbox` in the folder that holds your `agentx.json`.
 2. Run `agentx connect whatsapp --agent inbox` and scan the code with the WhatsApp phone app.
+3. Optional: run `agentx connect email --agent inbox` to answer email too. Each email reply waits in Approvals until you send it.
 
 Write your opening hours, services and prices in the agent's workspace (`agents/inbox/CLAUDE.md`, or `AGENTS.md` on other runtimes) so it can answer from them.
