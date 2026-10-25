@@ -714,6 +714,7 @@ export function wallPlan(r: RequestRecord, deps: WallDeps): WallPlanStep[] {
     state: s.state,
     doneWhen: clean(s.doneWhen, 200),
     // Clamped, not `clean`ed: markdown stripping would break a proof URL.
+    // Redacted before the cut, so a secret across the limit is still caught.
     evidence: s.evidence ? redactSecrets(s.evidence.trim()).slice(0, EVIDENCE_MAX) : null,
     note: s.note ? clean(s.note, 200) : null,
   }))
