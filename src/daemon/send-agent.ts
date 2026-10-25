@@ -58,27 +58,45 @@ export class SendAgentDedupe {
  * `a2a:<caller>:<callee>[:<dlg-id>]`; the message goes to the agent in it
  * that did not send it, as a /send/agent would. With no sender named, the
  * caller (the first agent): the callee is the one told its chat ID.
- * Null when the chat ID does not name two agents.
+ * An error when the chat ID does not name two agents, or names a sender
+ * that is neither of them.
  */
-export function a2aSendBody(body: Record<string, unknown>): Record<string, unknown> | null {
-  const m = /^a2a:([^:]+):([^:]+)(?::[^:]+)?$/.exec(String(body.chatId ?? ""))
-  if (!m) return null
+export function a2aSendBody(body: Record<string, unknown>): { body: Record<string, unknown> } | { error: string } {
+  const chatId = String(body.chatId ?? "")
+  const m = /^a2a:([^:]+):([^:]+)(?::[^:]+)?$/.exec(chatId)
+  if (!m) {
+    return { error: `"${chatId}" is not an a2a chat ID (a2a:<agent>:<agent>[:<id>]). To message an agent, POST /send/agent {agentId, text, senderAgentId}.` }
+  }
   const [, caller, callee] = m
   const sender = typeof body.senderAgentId === "string" ? body.senderAgentId
     : typeof body.agentId === "string" ? body.agentId
     : undefined
+  if (sender !== undefined && sender !== caller && sender !== callee) {
+    return { error: `"${sender}" is not in a2a chat "${chatId}" (${caller}, ${callee}). Send as one of them, or POST /send/agent {agentId, text, senderAgentId}.` }
+  }
   const to = sender === caller ? callee : caller
   return {
-    agentId: to,
-    text: body.text,
-    // The sender of a callee's note is the callee, the agent the caller asked.
-    senderAgentId: sender ?? callee,
-    // Names the sender's turn in this chat, so a callee's note reaches the
-    // caller's conversation for that delegation (#1100).
-    callerChannel: "a2a",
-    callerChatId: body.chatId,
-    ...(typeof body.callerTaskId === "string" ? { callerTaskId: body.callerTaskId } : {}),
+    body: {
+      // What /send/agent reads besides the addressing: wait for the answer
+      // (async:false), the work's home and context, its task type.
+      ...pick(body, ["async", "home", "context", "taskType"]),
+      agentId: to,
+      text: body.text,
+      // The sender of a callee's note is the callee, the agent the caller asked.
+      senderAgentId: sender ?? callee,
+      // Names the sender's turn in this chat, so a callee's note reaches the
+      // caller's conversation for that delegation (#1100).
+      callerChannel: "a2a",
+      callerChatId: chatId,
+      ...(typeof body.callerTaskId === "string" ? { callerTaskId: body.callerTaskId } : {}),
+    },
   }
+}
+
+function pick(o: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const k of keys) if (o[k] !== undefined) out[k] = o[k]
+  return out
 }
 
 /** The 202 body for a send that was queued, not waited on. */
