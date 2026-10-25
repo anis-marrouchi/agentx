@@ -196,6 +196,10 @@ const TASK_OUTPUT_TTL_MS = 5 * 60 * 1000
 const CANCEL_GRACE_MS = 30_000
 /** Default for agents.<id>.preSpawnTimeoutSec when a definition skipped the schema. */
 const PRE_SPAWN_TIMEOUT_SEC = 300
+/** How long a caller that waits for a busy agent's slot (api, a2a, mcp,
+ *  ...) waits when its task names no `slotWaitMs`: slightly under
+ *  mesh.sendTask's 30 min default cap. */
+export const DEFAULT_SLOT_WAIT_MS = 25 * 60_000
 
 /** Persisted record of a finished task, written to .agentx/task-history. */
 export interface TaskRecord {
@@ -1462,16 +1466,23 @@ export class AgentRegistry {
       // too, and has no adapter to flush a queued reply to.
       if (qChannel === "api" || qChannel === "app" || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || restricted) {
         const start = Date.now()
-        const maxWaitMs = 25 * 60_000
+        const maxWaitMs = task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
         const pollIntervalMs = 500
+        if (state.activeTasks >= state.def.maxConcurrent) {
+          this.log(`[${task.agentId}] busy, waiting for a slot (up to ${Math.round(maxWaitMs / 60000)}m) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId}`)
+        }
         while (state.activeTasks >= state.def.maxConcurrent) {
           if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
           if (Date.now() - start > maxWaitMs) {
+            this.log(`[${task.agentId}] slot wait timed out after ${Math.round(maxWaitMs / 60000)}m chat=${qChannel}:${qChatId} — message not run`)
             return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
           }
           await new Promise((r) => setTimeout(r, pollIntervalMs))
         }
         // Slot freed — fall through to normal execution path below.
+        if (Date.now() - start >= 60_000) {
+          this.log(`[${task.agentId}] slot free after ${Math.round((Date.now() - start) / 60000)}m wait chat=${qChannel}:${qChatId}`)
+        }
       } else if (qChannel === "voice") {
         // /ask waits on the answer to speak it, and "voice" has no adapter
         // to re-route a queued reply to: queued, it was answered into

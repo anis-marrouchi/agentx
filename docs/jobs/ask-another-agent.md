@@ -88,7 +88,9 @@ Otherwise (the daemon cannot tell which turn is sending, the send comes from a p
 { "accepted": true, "status": "queued", "taskId": "snd-…", "agent": "helper", "note": "Queued for helper (task snd-…). …" }
 ```
 
-Add `"async": false` to the request body to wait for the answer, as in older versions.
+If the agent on this machine is busy with other work, a queued message waits in line for it to be free, for up to 6 hours, and then runs. Nobody is holding a request open for it, so the 25-minute wait of a caller that waits does not apply. The daemon log shows `busy, waiting for a slot (up to 360m)` when the message starts waiting. Only a message still waiting after 6 hours is given up, with `slot wait timed out after 360m — message not run`. The wait is kept in memory: a daemon restart while the message waits loses it.
+
+Add `"async": false` to the request body to wait for the answer, as in older versions. Such a request waits up to 25 minutes for a busy agent to be free.
 
 Sending the same message from the same agent to the same agent again within 10 minutes is treated as a retry. The daemon does not deliver it twice; it answers with the first task id and `"duplicate": true`.
 
@@ -151,6 +153,7 @@ Some requests are refused straight away with status `409`:
 - **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask. A dashboard log line starting `[app] warning:` means the dashboard passed over some updates: it was away too long, or too many arrived at once. Ask your agent for the answer again.
 - **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
 - **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.
+- **A queued `[send/agent] snd-…` line ends in `slot wait timed out after 360m`:** the other agent was busy for 6 hours straight, so the message was not run. Raise that agent's `maxConcurrent`, or look for a run that is stuck, then send the message again.
 - **`agentx_send_agent` says "could not be reached":** the daemon on this machine is not running. Start it with `agentx daemon start --detach`, then send again.
 - **The status list is empty:** only delegations since the last restart are listed, and only on the machine that runs the asking agent.
 - **A follow-up started a new session anyway:** check that both messages named the same `home`, and went to an agent on the same machine. After a restart, or 12 hours after the last run ended, a new session starts. The daemon log line `is on … continues its session` shows when a session was continued. The line `a run on … is still going; starting a fresh session instead` means the earlier run outlasted the wait. Send the message after the earlier run ends. Raising `mesh.delegation.timeoutMinutes` (for a send, the agent's `maxExecutionMinutes`) rarely helps, because the earlier run usually has the same limit and started first.

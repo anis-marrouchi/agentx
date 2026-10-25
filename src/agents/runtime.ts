@@ -144,6 +144,12 @@ export interface AgentTask {
    *  retrying caller would otherwise have every attempt run once the slot
    *  frees (#822). A run that already started is not affected. */
   callerSignal?: AbortSignal
+  /** How long a run from a caller that waits for a slot (api, a2a, mcp,
+   *  ...) may wait for a busy agent before it is refused. Default 25 min,
+   *  under mesh.sendTask's 30 min cap for a caller holding a request
+   *  open. A queued /send/agent has no such caller and waits longer, so
+   *  its message is not dropped behind long runs (#1258). */
+  slotWaitMs?: number
   /** How to re-enter this run if a restart cuts it off (agents/resume).
    *  Absent: recorded as a direct run with this task's context. */
   origin?: import("./resume/origin").RunOrigin

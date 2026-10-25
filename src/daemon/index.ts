@@ -232,7 +232,7 @@ import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
-import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
+import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -4014,6 +4014,9 @@ export class AgentXDaemon {
           context,
           intentRef,
           onStart: waits ? track.onStart : onStart,
+          // A queued send has no caller holding a request open: it
+          // waits behind long runs instead of being dropped (#1258).
+          ...(waits ? {} : { slotWaitMs: SEND_AGENT_SLOT_WAIT_MS }),
         }).finally(() => { if (waits) track.end() })
       }
       if (wait) {

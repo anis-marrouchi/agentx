@@ -3,7 +3,7 @@ import { createServer, type Server } from "http"
 import type { AddressInfo } from "net"
 import { readFileSync } from "fs"
 import { join } from "path"
-import { a2aSendBody, duplicateBody, queueSend, queuedBody, SendAgentDedupe, sendAgentKey, SEND_AGENT_DEDUPE_MS } from "../src/daemon/send-agent"
+import { a2aSendBody, duplicateBody, queueSend, queuedBody, SendAgentDedupe, sendAgentKey, SEND_AGENT_DEDUPE_MS, SEND_AGENT_SLOT_WAIT_MS } from "../src/daemon/send-agent"
 import { _handleToolCallForTesting, _resetDaemonUrlForTesting, sendAgentFetchError } from "../src/mcp/index"
 
 // retro:01M4DJTC01FK0BVCMFKT5K4SRQ — #847: agentx_send_agent blocked for
@@ -174,6 +174,11 @@ describe("the daemon route", () => {
     expect(relay).toBeLessThan(route.indexOf("this.delegationGate("))
     expect(route).toContain("{ send: true })")
     expect(route).toContain("this.config.mesh.delegation.callbackSends")
+  })
+
+  it("lets a queued local send wait past the 25 min slot cap, and only a queued one (#1258)", () => {
+    expect(route).toContain("...(waits ? {} : { slotWaitMs: SEND_AGENT_SLOT_WAIT_MS })")
+    expect(SEND_AGENT_SLOT_WAIT_MS).toBeGreaterThan(25 * 60_000)
   })
 })
 
