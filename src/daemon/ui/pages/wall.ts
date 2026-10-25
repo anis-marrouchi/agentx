@@ -62,6 +62,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section class="ax-wall__filters" aria-label="Filters">
       <button type="button" id="f-toggle" class="ax-btn ax-btn--ghost ax-wall__ftoggle" aria-expanded="false">Filters</button>
       <label>Owner <select id="f-owner"><option value="">All</option></select></label>
+      <label>Counted for <select id="f-load"><option value="">All</option></select></label>
       <label>Status <select id="f-status">
         <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option><option value="stalled">Stalled</option>
         <option value="in_progress">In progress</option><option value="closed">Closed</option><option value="">All</option>
