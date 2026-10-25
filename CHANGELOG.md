@@ -2,6 +2,28 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.173.0](https://github.com/anis-marrouchi/agentx/compare/v0.172.0...v0.173.0) (2026-10-25)
+
+
+### Features
+
+* **review-gate:** run the project's tests before the review, post agentx/tests ([#1285](https://github.com/anis-marrouchi/agentx/issues/1285)) ([#1344](https://github.com/anis-marrouchi/agentx/issues/1344)) ([06bf0ac](https://github.com/anis-marrouchi/agentx/commit/06bf0acc418dc48a8847baf3f4d5929e5b3431c3))
+* **wall:** comment, call and Space from an open post ([#1316](https://github.com/anis-marrouchi/agentx/issues/1316)) ([#1356](https://github.com/anis-marrouchi/agentx/issues/1356)) ([98e286a](https://github.com/anis-marrouchi/agentx/commit/98e286a52ee0f21c57a7ef164e6596327e55beb6))
+
+
+### Bug Fixes
+
+* **autonomy:** let report schedules use their read-only tools and raise content drafts ([#1352](https://github.com/anis-marrouchi/agentx/issues/1352)) ([#1354](https://github.com/anis-marrouchi/agentx/issues/1354)) ([8c7780c](https://github.com/anis-marrouchi/agentx/commit/8c7780caceb9914d1e38874fca3866983671cbd4))
+* **autonomy:** report blocks a read-named MCP tool whose action changes state ([#1354](https://github.com/anis-marrouchi/agentx/issues/1354) follow-up) ([#1360](https://github.com/anis-marrouchi/agentx/issues/1360)) ([9f5d047](https://github.com/anis-marrouchi/agentx/commit/9f5d04711aa127f16d718c96136af131e0be77ca))
+* **init:** give the assistant its own folder so team add works ([#1332](https://github.com/anis-marrouchi/agentx/issues/1332)) ([#1346](https://github.com/anis-marrouchi/agentx/issues/1346)) ([fd76561](https://github.com/anis-marrouchi/agentx/commit/fd765614b39d3050aa4e03554f385a0130946e5d))
+* **review-gate:** stop background children when the test command exits ([#1285](https://github.com/anis-marrouchi/agentx/issues/1285)) ([#1351](https://github.com/anis-marrouchi/agentx/issues/1351)) ([a3a7aae](https://github.com/anis-marrouchi/agentx/commit/a3a7aae6a19876c98d8ac71d4fc889c63a297e26))
+* **review-gate:** stop running test groups when the daemon exits ([#1285](https://github.com/anis-marrouchi/agentx/issues/1285)) ([#1357](https://github.com/anis-marrouchi/agentx/issues/1357)) ([e251f2c](https://github.com/anis-marrouchi/agentx/commit/e251f2c266cad576f757e3a3d6de915ae6c5d4e1))
+* **review-gate:** stop the whole test process group, empty temp HOME ([#1285](https://github.com/anis-marrouchi/agentx/issues/1285)) ([#1348](https://github.com/anis-marrouchi/agentx/issues/1348)) ([50afd92](https://github.com/anis-marrouchi/agentx/commit/50afd9270281451b30c5de0ae8512a198f6954ce))
+* **review-gate:** stop what the test command leaves running ([#1348](https://github.com/anis-marrouchi/agentx/issues/1348)) ([#1353](https://github.com/anis-marrouchi/agentx/issues/1353)) ([2ee7017](https://github.com/anis-marrouchi/agentx/commit/2ee7017fadb4705129968b109fe18327639082a6))
+* **signals:** every builder git call ends by the stop's save deadline ([#1333](https://github.com/anis-marrouchi/agentx/issues/1333) follow-up) ([#1338](https://github.com/anis-marrouchi/agentx/issues/1338)) ([4464423](https://github.com/anis-marrouchi/agentx/commit/44644234c874763132b1374b1e056f97a8698f89))
+* **wall:** a filter change marks its hash as applied ([#1335](https://github.com/anis-marrouchi/agentx/issues/1335) follow-up) ([#1358](https://github.com/anis-marrouchi/agentx/issues/1358)) ([cff2eef](https://github.com/anis-marrouchi/agentx/commit/cff2eefc3d14d7d66bb1e319baf6a8c780072e7e))
+* **wall:** apply an opened post's hash once ([#1320](https://github.com/anis-marrouchi/agentx/issues/1320) follow-up) ([#1335](https://github.com/anis-marrouchi/agentx/issues/1335)) ([7c34d77](https://github.com/anis-marrouchi/agentx/commit/7c34d7776941e4673eb5929f249f5caa1157a14a))
+
 ## [0.172.0](https://github.com/anis-marrouchi/agentx/compare/v0.171.0...v0.172.0) (2026-10-25)
 
 
