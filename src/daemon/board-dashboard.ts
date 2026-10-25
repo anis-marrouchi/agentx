@@ -81,6 +81,7 @@ import { readRequestSettings } from "@/requests/settings"
 import { handleWallApi, WALL_PREFIX, withForge, type WallDeps } from "./wall-api"
 import { gitlabTimeReader, wallForgeTime, type WallForgeTimeSource } from "./wall-forge-time"
 import { wallForgeState, type WallForgeStateSource } from "./wall-forge-state"
+import { reportedReader, wallReported, withReported, type WallReportedSource } from "./wall-reported"
 import { forgeReader } from "@/requests/checkers/issue"
 import { handlePortfolioRequest } from "./wall-portfolio"
 import { claimPost, projectOverview, wallProjects } from "./wall-projects"
@@ -802,7 +803,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // The Wall (#1180): read-only posts and threads from this node's records.
   if (method === "GET" && (path === WALL_PREFIX || path.startsWith(`${WALL_PREFIX}/`))) {
     const deps = wallDeps(ctx.config)
-    const reply = await withForge(handleWallApi(path, url.searchParams, deps, localNodeName(ctx.config)), deps, wallForgeSources(ctx.config))
+    const reply = await withReported(await withForge(handleWallApi(path, url.searchParams, deps, localNodeName(ctx.config)), deps, wallForgeSources(ctx.config)), path, wallReportedSource(ctx.config))
     sendJson(res, reply.status, reply.body)
     return
   }
@@ -3102,13 +3103,25 @@ function wallStateSource(config: DaemonConfig): WallForgeStateSource | null {
 
 const wallForgeSources = (config: DaemonConfig) => [wallTimeSource(config), wallStateSource(config)]
 
+/** Reported failures for the Failures tab (#1186), kept like wallTime.
+ *  Null: `wall.reportedIssues` is not set, so nothing is read. */
+let wallReportedCached: { key: string; source: WallReportedSource } | null = null
+function wallReportedSource(config: DaemonConfig): WallReportedSource | null {
+  const cfg = config.wall?.reportedIssues
+  if (!cfg) return null
+  const c = forgeConnectorsOf(config)
+  const key = JSON.stringify([cfg, c])
+  if (wallReportedCached?.key !== key) wallReportedCached = { key, source: wallReported(cfg, reportedReader(c)) }
+  return wallReportedCached.source
+}
+
 /** The Wall across the mesh: this node's posts, then each configured
  *  peer's, every post tagged with the node it lives on. A peer that does
  *  not answer is listed as unreachable; the others still show (#1180). */
 async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   const days = q.get("days") ?? "7"
   const deps = wallDeps(ctx.config)
-  const local = (await withForge(handleWallApi(WALL_PREFIX, new URLSearchParams({ days }), deps, localNodeName(ctx.config)), deps, wallForgeSources(ctx.config))).body as any
+  const local = (await withReported(await withForge(handleWallApi(WALL_PREFIX, new URLSearchParams({ days }), deps, localNodeName(ctx.config)), deps, wallForgeSources(ctx.config)), WALL_PREFIX, wallReportedSource(ctx.config))).body as any
   const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string; syncedAt?: number }> = [
     { name: local.node, peer: null, ok: true, syncedAt: local.syncedAt },
   ]
@@ -3116,6 +3129,7 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
     items.map((x) => ({ ...x, node: { name, peer, daemonUrl } }))
   const posts = tag(local.posts, local.node, null, null)
   const failures = tag(local.failures, local.node, null, null)
+  const reported = local.reported ? tag([local.reported], local.node, null, null) : []
   // Projects (#1190): this node's mapping also claims the peer posts it
   // names, and every project configured here gets an overview row.
   const projects = deps?.projects ?? null
@@ -3136,12 +3150,13 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
       nodes.push({ name: body.node || name, peer: id, ok: true, syncedAt: body.syncedAt })
       posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], body.node || name, id, id).map((p) => claimPost(p, projects, now)))
       failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], body.node || name, id, id))
+      if (body.reported && Array.isArray(body.reported.groups)) reported.push(...tag([body.reported], body.node || name, id, id))
     } catch (e: any) {
       nodes.push({ name, peer: id, ok: false, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) })
     }
   }))
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
-  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, projects: projectOverview(posts, projects?.names), staleAfterHours: local.staleAfterHours }
+  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names), staleAfterHours: local.staleAfterHours }
 }
 
 /** Weekly throughput across the mesh (#1192): every node's closures,
