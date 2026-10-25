@@ -130,6 +130,8 @@ const groups = [
     { text: "Contribute to AgentX", link: "/guides/contribute" },
     { text: "Measure code quality", link: "/guides/quality-report" },
     { text: "Most requested", link: "/community/most-requested" },
+    { text: "Roadmap", link: "/roadmap" },
+    { text: "Releases, upgrades and security", link: "/reference/releases" },
   ] },
   { text: "Reference for engineers", collapsed: true, items: [
     { text: "CLI", link: "/reference/cli" },

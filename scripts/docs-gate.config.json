@@ -21,6 +21,11 @@
     "label": "no-docs-needed",
     "reasonPattern": "^\\s*Docs: not needed because \\S.*$"
   },
+  "breaking": {
+    "label": "not-breaking",
+    "reasonPattern": "^\\s*Not breaking because \\S.*$",
+    "page": "docs/reference/releases.md#upgrade-promise"
+  },
   "extract": {
     "binName": "agentx",
     "program": { "module": "src/program.ts", "export": "buildProgram" },

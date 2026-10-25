@@ -14,6 +14,7 @@
 [![CI](https://github.com/anis-marrouchi/agentx/actions/workflows/ci.yml/badge.svg)](https://github.com/anis-marrouchi/agentx/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-22.19%E2%80%9326-brightgreen)](package.json)
+[![Install matrix](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fanis-marrouchi%2Fagentx%2Finstall-matrix-status%2Fbadge.json)](https://github.com/anis-marrouchi/agentx/actions/workflows/install-matrix.yml)
 
 [Watch it](#watch-it) · [See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
 
@@ -97,7 +98,7 @@ Under the hood AgentX is a harness: the program around an AI model that gives it
 
 AgentX works and can be used today, but it is still an **experimental project, not a stable release**. There is plenty to polish and fix, especially the **Settings experience and configuration flows**. Expect rough edges and changes as people try it in real environments.
 
-Releases ship often; see the [changelog](CHANGELOG.md) for what changed. Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
+Releases ship often; see the [changelog](CHANGELOG.md) for what changed. A breaking change is always listed there with what to do, each release is installed on Linux and macOS by the install matrix (its pass rate is the badge at the top), and the [roadmap](docs/roadmap.md) says what comes next. See [Releases, upgrades and security](docs/reference/releases.md). Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
 
 **Still missing: role-based access control (RBAC) at both mesh and agent levels.** We want to define who can access shared nodes and agents, delegate work, and perform particular actions. This would open up more possibilities for shared teams and multi-user deployments. Existing mesh authentication and tool permissions do not provide this complete role model; RBAC is planned work, not an available feature.
 

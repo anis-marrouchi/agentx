@@ -1,0 +1,140 @@
+name: Install matrix
+
+# Installs a published release every supported way, on Linux and macOS, and
+# records the result on the install-matrix-status branch. The README badge
+# shows the pass rate of the last 20 runs (#1294). Runs after each release
+# (called by release.yml), every Monday against the latest release, and by
+# hand. A pull request that changes an install path runs it too, with that
+# PR's install.sh and Dockerfile, and records nothing. macOS runners have no
+# Docker, so Docker is checked on Linux only.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Release to install, e.g. v0.170.0'
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release to install, e.g. 0.170.0 (empty: the latest on npm)'
+        type: string
+        default: ''
+  schedule:
+    - cron: '20 7 * * 1'
+  pull_request:
+    paths: ['.github/workflows/install-matrix.yml', 'scripts/install-matrix-*.mjs', 'install.sh', 'Dockerfile', 'docker-compose.yml', 'docker/**']
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          WANTED: ${{ inputs.version }}
+        run: |
+          v="${WANTED#v}"
+          [ -n "$v" ] || v="$(npm view agentix-cli version)"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "Not a version: $v"; exit 1; }
+          # A release just published can take a few minutes to show on the registry.
+          for _ in $(seq 1 30); do npm view "agentix-cli@$v" version >/dev/null 2>&1 && break; sleep 20; done
+          npm view "agentix-cli@$v" version
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+  npm:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: npm install agentix-cli
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: node scripts/smoke-package.mjs "agentix-cli@$VERSION"
+
+  install-sh:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      # install.sh from main: the one the README's curl line fetches.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
+      - name: install.sh
+        env:
+          AGENTX_VERSION: ${{ needs.version.outputs.version }}
+          AGENTX_SKIP_SETUP: '1'
+        run: bash install.sh
+        shell: bash
+      - name: agentx --version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        shell: bash
+        run: |
+          export PATH="$HOME/.agentx/node/bin:$(npm prefix -g)/bin:$PATH"
+          agentx --version | tee /dev/stderr | grep -F "$VERSION"
+
+  docker:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The image is built from the release's own source, as docs/install.md does.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || format('v{0}', needs.version.outputs.version) }}
+      - name: docker compose up --build
+        run: |
+          cp .env.example .env
+          docker compose up --build -d
+      - name: The daemon and the dashboard answer
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:18800/health >/dev/null && curl -fsS -o /dev/null http://127.0.0.1:4202/setup; then echo ok; exit 0; fi
+            sleep 5
+          done
+          docker compose ps
+          docker compose logs --tail 80
+          exit 1
+      - if: always()
+        run: docker compose down
+
+  record:
+    needs: [version, npm, install-sh, docker]
+    if: ${{ always() && needs.version.result == 'success' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # One writer at a time on the status branch.
+    concurrency:
+      group: install-matrix-status
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the result and the pass rate
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          OK: ${{ needs.npm.result == 'success' && needs.install-sh.result == 'success' && needs.docker.result == 'success' }}
+          CELLS: '{"npm":"${{ needs.npm.result }}","install.sh":"${{ needs.install-sh.result }}","docker":"${{ needs.docker.result }}"}'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/install-matrix-status.mjs

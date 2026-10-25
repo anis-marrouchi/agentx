@@ -85,3 +85,15 @@ jobs:
           npm --version
       - name: Publish to npm
         run: npm publish --access public --provenance --registry https://registry.npmjs.org
+
+  # Install what was just published every supported way, and record the
+  # pass rate the README shows (#1294). A failure here does not undo the
+  # release; it shows on the badge and in the run.
+  install-matrix:
+    needs: [version, publish]
+    if: ${{ always() && needs.publish.result == 'success' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/install-matrix.yml
+    with:
+      version: ${{ inputs.tag || needs.version.outputs.tag }}
