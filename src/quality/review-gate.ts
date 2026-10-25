@@ -389,6 +389,19 @@ interface Running {
 
 const DAY_MS = 24 * 60 * 60_000
 
+const SUPERSEDED = "superseded by a newer push"
+
+/** The `onStart` of a reviewer run: once `signal` aborts (a newer push,
+ *  the PR closed, maxMinutes), the run that already started is stopped,
+ *  so its slot is freed now and not at the agent's time limit (#1364). */
+export function stopWhenAborted(signal: AbortSignal, stop: (runningTaskId: string, reason: string) => void): (runningTaskId: string) => void {
+  return (runningTaskId) => {
+    const fire = () => stop(runningTaskId, `review stopped: ${(signal.reason as any)?.message || "aborted"}`)
+    if (signal.aborted) fire()
+    else signal.addEventListener("abort", fire, { once: true })
+  }
+}
+
 /** Errors another event for the same commit would only repeat: the run
  *  went over budget, the PR hit its daily limit, or reviewer and author
  *  share a model. Any other error is retried, a review stopped by closing
@@ -445,7 +458,7 @@ export class ReviewGate {
    *  Synchronous: it must run before the first await of review(). */
   private claim(key: string, sha: string, abort: AbortController): void {
     const prev = this.running.get(key)
-    if (prev && prev.sha !== sha) prev.abort.abort()
+    if (prev && prev.sha !== sha) prev.abort.abort(new Error(SUPERSEDED))
     this.running.set(key, { sha, abort })
     this.reviewed.set(`${key}@${sha}`, { state: "running" })
   }
@@ -495,6 +508,15 @@ export class ReviewGate {
       record.unmet = outcome.unmet.length
       record.defects = outcome.defects.length
       const superseded = opts.post && this.running.get(key)?.sha !== sha
+      if (opts.post && sha && superseded) {
+        // No comment on a commit nobody merges, but a final status, or
+        // its `agentx/review` would stay `pending` for good (#1364).
+        try {
+          await gh.setStatus(repo, sha, "error", statusText(`${prefix}${SUPERSEDED}`))
+        } catch (e: any) {
+          this.log(`could not post ${REVIEW_STATUS_CONTEXT} on ${key}@${sha.slice(0, 7)}: ${e?.message || e}`)
+        }
+      }
       if (opts.post && sha && !superseded) {
         // The comment and the status are posted apart: a status left at
         // `pending` blocks a merge in required mode and says nothing, so a
@@ -583,7 +605,7 @@ export class ReviewGate {
 
       const checks = await this.waitForChecks(repo, sha, cfg.ciWaitMinutes, abort.signal)
       record.ciWaitMinutes = round((this.now() - startedAt) / 60_000)
-      if (abort.signal.aborted) return await finish("error", "superseded by a newer push")
+      if (abort.signal.aborted) return await finish("error", SUPERSEDED)
 
       const tests = opts.replay ? undefined : cfg.tests[repo]
       if (tests && this.deps.runTests) {
@@ -596,7 +618,7 @@ export class ReviewGate {
           const result = await this.runProjectTests(repo, number, sha, tests, opts.post)
           record.tests = result.passed ? "passed" : "failed"
           checks.push({ name: TESTS_STATUS_CONTEXT, state: result.passed ? "success" : "failure" })
-          if (abort.signal.aborted) return await finish("error", "superseded by a newer push")
+          if (abort.signal.aborted) return await finish("error", SUPERSEDED)
         }
       }
 
@@ -632,7 +654,7 @@ export class ReviewGate {
 
       const timedOut = run.timedOut || (abort.signal.aborted && String((abort.signal.reason as any)?.message) === "timeout") || run.durationMs > cfg.maxMinutes * 60_000
       if (timedOut) return await finish("error", `over budget: review took longer than ${cfg.maxMinutes} min (maxMinutes)`)
-      if (abort.signal.aborted) return await finish("error", "superseded by a newer push")
+      if (abort.signal.aborted) return await finish("error", SUPERSEDED)
       if (cfg.maxCostPerReview > 0 && run.costUsd !== undefined && run.costUsd > cfg.maxCostPerReview) {
         return await finish("error", `over budget: review cost more than maxCostPerReview (${cfg.maxCostPerReview})`)
       }
