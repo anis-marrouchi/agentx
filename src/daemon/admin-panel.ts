@@ -15,6 +15,8 @@ import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
 import { emailAccountBlock, passwordEnvFor } from "@/channels/email/settings"
+import { holdAgent, readHolds, releaseAgent } from "@/agents/holds"
+import { buildOrgView } from "@/business/org-view"
 import type { TopbarPeer } from "./topbar"
 import { renderAdminPage } from "./ui/pages/admin"
 
@@ -61,6 +63,8 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "PATCH /api/admin/agents": () => editAgent(body),
       "DELETE /api/admin/agents": () => deleteAgent(body),
       "POST /api/admin/agents/access": () => setAgentAccess(body),
+      "GET /api/admin/org": () => getOrg(),
+      "POST /api/admin/org/hold": () => setOrgHold(body),
       "POST /api/admin/channels/telegram": () => addTelegramAccount(body),
       "DELETE /api/admin/channels/telegram": () => deleteTelegramAccount(body),
       "POST /api/admin/channels/telegram/toggle": () => toggleTelegram(body),
@@ -208,6 +212,31 @@ function readConfigRaw(): any {
   const file = resolve(process.cwd(), "agentx.json")
   if (!existsSync(file)) return null
   return JSON.parse(readFileSync(file, "utf-8"))
+}
+
+/** The Org view (#1169): the org chart as a tree, with live status. The
+ *  daemon gives working or idle; without it the status is unknown. */
+async function getOrg() {
+  const cfg = readConfigRaw()
+  if (!cfg) return { exists: false }
+  const live = await proxyDaemonJson("/agents").catch(() => null)
+  return { exists: true, ...buildOrgView(cfg, readHolds(process.cwd()), Array.isArray(live) ? live : null) }
+}
+
+/** Pause or resume one agent from the Org view. An agent that waits for
+ *  approval is decided in Approvals, not here. */
+function setOrgHold(body: any) {
+  const id = String(body?.agent || "").trim()
+  const cfg = readConfigRaw()
+  if (!cfg?.agents?.[id]) throw new Error(`Unknown agent "${id}".`)
+  const hold = readHolds(process.cwd())[id]
+  if (hold?.kind === "approval") throw new Error(`"${id}" waits for your approval in Approvals.`)
+  if (body?.paused) {
+    holdAgent(process.cwd(), id, "paused", "the owner")
+    return { summary: `${id} paused: it starts no run until you resume it` }
+  }
+  releaseAgent(process.cwd(), id, "paused")
+  return { summary: `${id} resumed` }
 }
 
 function getAdminState() {

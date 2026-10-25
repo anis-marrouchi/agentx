@@ -36,6 +36,7 @@ import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphD
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderWallPage } from "./ui/pages/wall"
+import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
@@ -218,6 +219,7 @@ const DASHBOARD_PAGES = new Set([
   "/admin/graph",
   "/approvals",
   "/people",
+  "/org",
   "/places",
   "/admin/health",
   "/admin/observability",
@@ -882,6 +884,14 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   // People (#441): the page and its /api/admin/people data, after the token
   // gate above. The people list is read per request, like the member page.
+  // Org (#1169): the org chart, after the token gate above. Its data is
+  // /api/admin/org, in admin-panel.ts.
+  if (method === "GET" && path === "/org") {
+    if (!pageAllowed(req, res, ctx, path)) return
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
+    res.end(renderOrgPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    return
+  }
   if (method === "GET" && path === "/people" && !pageAllowed(req, res, ctx, path)) return
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
