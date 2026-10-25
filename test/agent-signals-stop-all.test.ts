@@ -7,6 +7,8 @@ import { SignalService, stopAllReport, type RunningRef, type SignalServiceDeps }
 import { StoppedTaskStore } from "../src/agents/signals/store"
 import { handleSignalsHttp } from "../src/daemon/signals-api"
 import { isControlPost } from "../src/daemon/mesh-auth"
+import { DEFAULT_RESUME_SETTINGS, planResume } from "../src/agents/resume/policy"
+import type { InterruptedRun } from "../src/storage/traces"
 
 // Fleet stop-all (#1271). What must hold:
 //   - one owner order stops every running task, and each writes its plan;
@@ -130,12 +132,45 @@ describe("resume after the restart", () => {
     expect(record.stopAll?.attemptedAt).toBeTruthy()
     expect(record.stopAll?.error).toMatch(/channel down/)
 
+    // Reported once: later boots neither try it nor list it again.
     const boot2 = harness({ runs: [] })
-    const second = await boot2.service.resumeStopAll()
-    expect(second).toMatchObject([{ id: "run-1", decision: "skipped" }])
+    expect(await boot2.service.resumeStopAll()).toEqual([])
     expect(boot2.resumed).toEqual([])
     // The owner can still resume it by hand.
     expect((await boot2.service.resume({ kind: "owner" }, "run-1")).ok).toBe(true)
+  })
+
+  it("reports an attempt a restart cut off as skipped, on one boot only", async () => {
+    const h = harness({ runs: [run(1)] })
+    const r = await h.service.stopAll({ kind: "owner" })
+    if (!r.ok) throw new Error(r.error)
+    await r.done
+    const record = h.service.get("run-1")!
+    new StoppedTaskStore(dir).save({ ...record, stopAll: { ...record.stopAll!, attemptedAt: "2026-01-01T00:00:00.000Z" } })
+    expect(await harness({ runs: [] }).service.resumeStopAll()).toMatchObject([{ id: "run-1", decision: "skipped" }])
+    expect(await harness({ runs: [] }).service.resumeStopAll()).toEqual([])
+  })
+
+  it("keeps the interrupted-run resume off a stop-all task whose trace was still open", async () => {
+    // --no-wait and a quick restart: the wind-down never finished.
+    const h = harness({ runs: [run(1), run(2)], whenRunEnds: () => new Promise(() => {}) })
+    const r = await h.service.stopAll({ kind: "owner" })
+    if (!r.ok) throw new Error(r.error)
+    const boot = harness({ runs: [] })
+    boot.service.recover()
+    const cutOff = (taskId: string): InterruptedRun => ({
+      taskId, agentId: "agent-1", channel: "telegram", chatId: "1", workflowRunId: null, startedAt: Date.now(),
+      originalMessage: "Task", resumeOrigin: JSON.stringify(run(1).origin), resumeAttempt: 0, toolCalls: [],
+    })
+    const plans = planResume([cutOff("trace-1"), cutOff("run-2"), cutOff("trace-9")], DEFAULT_RESUME_SETTINGS, {
+      now: Date.now(), boots: [],
+      handledElsewhere: (x) => { const o = boot.service.stopAllOwner(x.taskId); return o ? `stopped by ${o}` : null },
+    })
+    expect(plans.map((p) => p.action)).toEqual(["skip", "skip", "resume"])
+    expect(plans[0].reason).toBe(`stopped by ${r.orderId}`)
+    // Stop-all resumes each of them, once.
+    const outcomes = await boot.service.resumeStopAll()
+    expect(outcomes.map((o) => [o.id, o.decision])).toEqual([["run-1", "resumed"], ["run-2", "resumed"]])
   })
 
   it("skips a task with no record of how to re-enter it", async () => {
@@ -197,6 +232,16 @@ describe("HTTP surface", () => {
       forward: async () => ({ status: 200, body: { tasks: [], safeToRestart: true } }),
     })
     expect(r.body.safeToRestart).toBe(true)
+  })
+
+  it("is not safe to restart while a task it could not stop still runs", async () => {
+    const h = harness({ runs: [run(1, { workflowRunId: "wf-1" }), run(2)] })
+    const r = await handleSignalsHttp("POST", "/api/signals/stop-all", new URLSearchParams(), { wait: true }, {
+      service: h.service, selfNode: "mac", sender: { kind: "owner" }, forward: async () => null,
+    })
+    expect((r.body.tasks as any[])[0]).toMatchObject({ id: "run-1", state: "refused" })
+    expect(r.body.safeToRestart).toBe(false)
+    expect(r.body.message).toMatch(/run-1 could not be stopped/)
   })
 
   it("never sends a peer's order on, and answers at once without wait", async () => {

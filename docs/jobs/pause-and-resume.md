@@ -88,12 +88,12 @@ Before you restart AgentX, for example to install an update, you can pause every
 
 1. **Terminal:** run `agentx signal stop --all --reason "update"`. Add `--mesh` to stop every task on all your connected machines too.
 2. Wait. The command lists each task, grouped by machine, and says **plan by the agent** or **plan by AgentX** once its plan is saved. It waits at most `signals.windDownSeconds` plus about a minute.
-3. Read the last line. **safe to restart** means every plan is saved. **not every plan is confirmed saved** means a task or machine needs a look first: its line says why.
+3. Read the last line. **safe to restart** means every plan is saved. **not safe to restart** means a task could not be stopped and is still running: wait for it to finish, or accept that the restart cuts it off. **not every plan is confirmed saved** means a task or machine needs a look first: its line says why.
 4. **Terminal:** restart AgentX on each machine, for example with `agentx daemon restart`.
 5. Wait a few seconds after AgentX starts. Each stopped task resumes from its plan, in the chat it came from.
 6. Read the report AgentX sends to your notification chat (`notifications.destination`): how many tasks resumed, failed or were skipped, with one line per task, grouped by agent. Each machine sends its own report. Without a notification chat, the report is in the AgentX log.
 
-Each task gets one try after the restart, however long the restart took. A task that fails to resume is listed in the report and is not tried again by later restarts. Resume it yourself with `agentx signal resume <taskId>` once the cause is fixed.
+Each task gets one try after the restart, however long the restart took. A task that fails to resume is listed in one report and is not tried again, or listed again, by later restarts. Resume it yourself with `agentx signal resume <taskId>` once the cause is fixed. A task that was still running when AgentX stopped (for example after `--no-wait` and a quick restart) is resumed once, from its plan, not twice.
 
 Some tasks are not stopped:
 
@@ -101,6 +101,8 @@ Some tasks are not stopped:
 - Tasks that start after the order, before you restart. They are cut off by the restart and picked up the same way.
 
 `--no-wait` answers at once without waiting for the plans. Check them with `agentx signal list`.
+
+**Who counts as "you".** AgentX treats any request that reaches it from the same machine (`127.0.0.1`), or that carries the shared mesh token without naming a machine it was sent on from, as coming from you. So a shell command an agent runs on the same machine, or a machine that holds the shared mesh token, can give a stop-all order too, and with `--mesh` it reaches every connected machine. The same is true today for stopping one task. Keep the shared mesh token private, and give each machine its own peer token where you can.
 
 From another program, send `POST /api/signals/stop-all` with `{ "reason": "…", "mesh": true, "wait": true }`. The answer lists each task, each machine under `peers`, and `safeToRestart`.
 

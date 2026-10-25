@@ -201,7 +201,9 @@ async function stopAllHttp(body: Record<string, unknown>, deps: SignalsHttpDeps)
     : Promise.resolve(undefined)
   const tasks = wait ? await r.done : r.tasks
   const peers = await peerReplies
-  const allSaved = tasks.every((t) => t.state !== "winding-down")
+  // A refused task is still running: a restart would cut it off.
+  const allSaved = tasks.every((t) => t.state !== "winding-down" && t.state !== "refused")
+  const refused = tasks.filter((t) => t.state === "refused").map((t) => t.id)
   const peersSafe = !peers || peers.every((p: any) => p.ok && p.safeToRestart === true)
   return {
     status: wait ? 200 : 202,
@@ -210,7 +212,9 @@ async function stopAllHttp(body: Record<string, unknown>, deps: SignalsHttpDeps)
       ...(peers ? { peers } : {}),
       ...(wait ? { safeToRestart: allSaved && peersSafe } : {}),
       message: wait
-        ? (allSaved && peersSafe ? "Every task stopped and its plan is saved. Safe to restart; each task resumes from its plan on start." : "Not every plan is confirmed saved; see tasks and peers.")
+        ? (allSaved && peersSafe ? "Every task stopped and its plan is saved. Safe to restart; each task resumes from its plan on start."
+          : refused.length ? `Not safe to restart: ${refused.join(", ")} could not be stopped and is still running; see tasks and peers.`
+          : "Not every plan is confirmed saved; see tasks and peers.")
         : "Stopping. Each agent is writing its resume plan; GET /api/signals/stopped shows them once saved.",
     },
   }

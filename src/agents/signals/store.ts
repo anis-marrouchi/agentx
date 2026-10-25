@@ -38,8 +38,9 @@ export interface StoppedTask {
   resumedBy?: string
   /** Stopped by a stop-all order (#1271): the next boot resumes it from its
    *  plan on its own. `attemptedAt` is set before that one attempt, so a
-   *  failed or cut-off attempt is reported and never tried again by a boot. */
-  stopAll?: { orderId: string; attemptedAt?: string; error?: string }
+   *  failed or cut-off attempt is reported and never tried again by a boot.
+   *  `reported`: a boot's report listed it; later reports leave it out. */
+  stopAll?: { orderId: string; attemptedAt?: string; error?: string; reported?: boolean }
 }
 
 /** Records kept this long after they were resumed. Stopped ones stay until

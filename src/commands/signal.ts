@@ -119,6 +119,8 @@ async function stopAll(opts: any): Promise<void> {
     console.log(chalk.dim("  see the plans: agentx signal list"))
   } else if (data.safeToRestart) {
     console.log(chalk.green("  safe to restart: every task resumes from its plan when AgentX starts again"))
+  } else if ([data, ...(data.peers || [])].some((n: any) => (n.tasks || []).some((t: any) => t.state === "refused"))) {
+    console.log(chalk.yellow("  not safe to restart: a task marked \"not stopped\" is still running, and a restart would cut it off"))
   } else {
     console.log(chalk.yellow("  not every plan is confirmed saved; check the lines above before you restart"))
   }
