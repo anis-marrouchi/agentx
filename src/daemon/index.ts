@@ -1705,14 +1705,18 @@ export class AgentXDaemon {
         boots: this.bootTimes,
         log: this.log,
         staggerMs: 2_000,
-        // A delegation result's relay turn is re-run by the delegation
-        // manager (#846); resuming it here too would answer twice.
-        handledElsewhere: (run) => this.config.mesh.delegation.requeueRelayOnRestart && isDelegationRelay(run.originalMessage)
-          ? "delegation result relay: the delegation manager runs it again"
+        handledElsewhere: (run) => {
+          // A delegation result's relay turn is re-run by the delegation
+          // manager (#846); resuming it here too would answer twice.
+          if (this.config.mesh.delegation.requeueRelayOnRestart && isDelegationRelay(run.originalMessage)) return "delegation result relay: the delegation manager runs it again"
           // A pause's plan-writing turn: signals.recover() above gave its
           // task a plan from the trace; running it again would answer nobody.
-          : run.channel === WIND_DOWN_CHANNEL ? "stop signal wind-down: its task got a plan from the trace"
-          : null,
+          if (run.channel === WIND_DOWN_CHANNEL) return "stop signal wind-down: its task got a plan from the trace"
+          // A task a stop-all stopped whose trace was still open (#1271):
+          // resumeStopAll() resumes it from its plan.
+          const order = this.signals.stopAllOwner(run.taskId)
+          return order ? `stopped by ${order}: it resumes from its plan` : null
+        },
         notifyOperator: dest
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
           : undefined,

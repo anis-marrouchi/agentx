@@ -250,11 +250,22 @@ export class SignalService {
     return { ok: true, orderId, tasks, done }
   }
 
+  /** The stop-all order that owns a run the last restart cut off, or null
+   *  (#1271). Its trace can still be `in-flight` (a `--no-wait` order and a
+   *  quick restart, or a run that ignored the abort): resumeStopAll()
+   *  resumes it from its plan, so the interrupted-run resume must not run
+   *  it a second time. Matched by trace id or task id. */
+  stopAllOwner(runId: string): string | null {
+    const record = this.deps.store.list({ limit: 200, now: this.now() })
+      .find((r) => r.stopAll && (r.traceId === runId || r.id === runId))
+    return record?.stopAll?.orderId ?? null
+  }
+
   /** At boot, after recover(): resume every task a stop-all stopped, from
    *  its plan, one attempt each (#1271). No age limit: the order said it
-   *  would come back. A task already tried by an earlier boot is reported
-   *  as skipped, never tried again; `agentx signal resume` still works on
-   *  it. Never throws. */
+   *  would come back. A task already tried by an earlier boot is never
+   *  tried again, and is reported as skipped once; `agentx signal resume`
+   *  still works on it. Never throws. */
   async resumeStopAll(opts: { staggerMs?: number } = {}): Promise<StopAllOutcome[]> {
     const outcomes: StopAllOutcome[] = []
     const records = this.deps.store.list({ state: "stopped", limit: 200, now: this.now() })
@@ -262,11 +273,15 @@ export class SignalService {
       .sort((a, b) => a.stoppedAt.localeCompare(b.stoppedAt))
     for (const record of records) {
       const order = record.stopAll!
+      // Each task is in one report only; later boots leave it out.
+      if (order.reported) continue
       if (order.attemptedAt) {
+        this.save({ ...record, stopAll: { ...order, reported: true } })
         outcomes.push({ id: record.id, agentId: record.agentId, decision: "skipped", reason: `already tried at ${order.attemptedAt}${order.error ? `: ${order.error}` : ""}` })
         continue
       }
       if (!record.origin && !record.workflow) {
+        this.save({ ...record, stopAll: { ...order, reported: true } })
         outcomes.push({ id: record.id, agentId: record.agentId, decision: "skipped", reason: "no record of how to re-enter it" })
         continue
       }
@@ -285,7 +300,7 @@ export class SignalService {
         outcomes.push({ id: record.id, agentId: record.agentId, decision: "resumed", reason: `answer goes to ${r.delivery ?? "its origin"}` })
       } else {
         const latest = this.deps.store.get(record.id)
-        if (latest?.state === "stopped") this.save({ ...latest, stopAll: { ...order, attemptedAt, error: r.error.slice(0, 300) } })
+        if (latest?.state === "stopped") this.save({ ...latest, stopAll: { ...order, attemptedAt, error: r.error.slice(0, 300), reported: true } })
         outcomes.push({ id: record.id, agentId: record.agentId, decision: "resume-failed", reason: r.error })
       }
     }
