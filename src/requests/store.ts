@@ -3,6 +3,7 @@ import { ensureColumns, PERSON_COLUMNS } from "@/storage/sqlite"
 import { readCloseWhen, type CloseWhen } from "./checkers"
 import type { Proof } from "./promise"
 import type { QaFilter, QaRecord, QaVerdict } from "./qa"
+import type { GoalRequest, GoalSummary, RequestGoal } from "./goals"
 
 // --- Open requests: what a person asked for that is not finished (#356) ---
 //
@@ -133,6 +134,9 @@ export interface RequestRecord {
   qaRequestedAt: number | null
   /** The latest verdict, with who gave it and when. */
   qa: QaRecord | null
+  // --- Goal (#1168). Null: the request names none. ---
+  /** The goal the agent said it serves when it accepted. */
+  goal: RequestGoal | null
 }
 
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
@@ -217,7 +221,8 @@ export function ensureRequestTables(db: Database.Database): void {
     ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"],
     ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"], ["headline_tried_at", "INTEGER"],
     ["owed_by", "TEXT"], ["proof", "TEXT"], ["fact_id", "TEXT"],
-    ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"]]) {
+    ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"],
+    ["goal_id", "TEXT"], ["goal_title", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -252,8 +257,15 @@ function toRecord(r: any): RequestRecord {
     owedBy: r.owed_by ?? null, proof: readProof(r.proof), factId: r.fact_id ?? null,
     qaRequestedAt: r.qa_requested_at ?? null,
     qa: r.qa_verdict && r.qa_by && typeof r.qa_at === "number" ? { verdict: r.qa_verdict, by: r.qa_by, at: r.qa_at, note: r.qa_note ?? null } : null,
+    goal: r.goal_id && r.goal_title ? { id: r.goal_id, title: r.goal_title } : null,
   }
 }
+
+/** Goals shown, and requests read for them (#1168). */
+export const GOALS_MAX = 50
+const GOAL_REQUESTS_MAX = 2000
+/** Requests listed under one goal. */
+const GOAL_LIST_MAX = 50
 
 const placeholders = (n: number) => Array(n).fill("?").join(",")
 
@@ -376,6 +388,63 @@ export class RequestStore {
    *  passes working from older copies never both pay for it. */
   markHeadlineTried(id: string, now: number): boolean {
     return this.db.prepare("UPDATE requests SET headline_tried_at = ? WHERE id = ? AND headline_tried_at IS NULL").run(now, id).changes > 0
+  }
+
+  /** The goal the request serves (#1168), from accept. A later accept
+   *  with another goal moves it. Not a touch: naming a goal is not progress. */
+  setGoal(id: string, goal: RequestGoal): void {
+    this.db.prepare("UPDATE requests SET goal_id = ?, goal_title = ? WHERE id = ?").run(goal.id, goal.title, id)
+  }
+
+  /** Every goal a request names (#1168), most recently active first: its
+   *  requests open and closed alike (closed ones until they age out), and
+   *  the cost of the runs linked to them. Cost needs the task traces; a
+   *  database without them sums nothing. */
+  goals(limit = GOALS_MAX): GoalSummary[] {
+    const rows = this.db.prepare(
+      `SELECT * FROM requests WHERE goal_id IS NOT NULL AND state != 'candidate' ORDER BY updated_at DESC, rowid DESC LIMIT ?`,
+    ).all(GOAL_REQUESTS_MAX).map(toRecord)
+    const cost = new Map<string, { usd: number | null; runs: number; unpriced: number }>()
+    try {
+      const priced = this.db.prepare(
+        `SELECT l.request_id AS id, SUM(t.cost_usd) AS usd, COUNT(*) AS runs, SUM(CASE WHEN t.cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced
+         FROM request_links l JOIN requests r ON r.id = l.request_id JOIN task_traces t ON t.task_id = l.ref
+         WHERE l.kind = 'run' AND r.goal_id IS NOT NULL GROUP BY l.request_id`,
+      ).all() as Array<{ id: string; usd: number | null; runs: number; unpriced: number }>
+      for (const p of priced) cost.set(p.id, p)
+    } catch {
+      // No task traces in this database: no cost to show.
+    }
+    const byGoal = new Map<string, GoalSummary>()
+    for (const r of rows) {
+      const goal = r.goal!
+      let g = byGoal.get(goal.id)
+      // Rows come newest first: the first one names the goal.
+      if (!g) byGoal.set(goal.id, g = { id: goal.id, title: goal.title, open: 0, done: 0, dropped: 0, progress: null, costUsd: 0, runs: 0, unpriced: 0, lastAt: r.updatedAt, requests: [] })
+      if (r.state === "done") g.done++
+      else if ((CLOSED_STATES as readonly string[]).includes(r.state)) g.dropped++
+      else g.open++
+      const c = cost.get(r.id)
+      if (c) {
+        g.costUsd += c.usd ?? 0
+        g.runs += c.runs
+        g.unpriced += c.unpriced
+      }
+      const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+      // The counts and the cost take every request; the list, the newest.
+      if (g.requests.length >= GOAL_LIST_MAX) continue
+      const item: GoalRequest = {
+        id: r.id, state: r.state, agentId: r.agentId, title: words.length > 120 ? `${words.slice(0, 119)}…` : words,
+        createdAt: r.createdAt, closedAt: r.closedAt, costUsd: c?.usd ?? null,
+      }
+      g.requests.push(item)
+    }
+    const out = [...byGoal.values()].slice(0, limit)
+    for (const g of out) {
+      g.progress = g.open + g.done ? g.done / (g.open + g.done) : null
+      g.costUsd = Math.round(g.costUsd * 10_000) / 10_000
+    }
+    return out
   }
 
   /** What the checker said. `met` is written by closeVerified, not here.

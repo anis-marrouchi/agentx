@@ -11,7 +11,8 @@ import { findConfigPath } from "./config-mutator"
 // Lives under the Approvals admin prefix, so it sits behind the same token
 // gate and the same X-Requested-With check (approvals-panel.ts):
 //   GET  /api/admin/approvals/requests           open requests as cards, oldest first, this node's agents, the
-//                                                settings, and the stalled ones counted by what they wait on (#1039)
+//                                                settings, the stalled ones counted by what they wait on (#1039),
+//                                                and every goal requests name, with progress and cost (#1168)
 //   POST /api/admin/approvals/requests/close     { id, action: done | drop, evidence?, reason? }: done by the
 //                                                owner skips a loop's check, with the reason
 //   POST /api/admin/approvals/requests/reply     { id, text }: the agent that has it gets the reply and goes on
@@ -64,7 +65,7 @@ async function route(
     const items = store ? store.listOpen().map((r) => requestCard(r, store, planStoreFor(ctx), look)) : []
     const stalled = Object.fromEntries(STALL_GROUPS.map((g) => [g, 0])) as Record<StallGroup, number>
     for (const c of items) if (c.stall) stalled[c.stall.group]++
-    return { status: 200, body: { items, agents, settings, stalled } }
+    return { status: 200, body: { items, agents, settings, stalled, goals: store ? store.goals() : [] } }
   }
 
   const act = path === `${REQUESTS_PANEL_PREFIX}/reply` ? "reply" : path === `${REQUESTS_PANEL_PREFIX}/handoff` ? "handoff" : null
