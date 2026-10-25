@@ -238,5 +238,7 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 - **The report says a machine sent "no report":** that machine had not restarted, or could not reach this one, within 10 minutes. Run `agentx signal list --peer <machine>`. Once it restarts, its part arrives as a late message.
 - **You got a report from each machine after `--mesh`:** a machine could not reach the one you gave the order on. Its report says so on the last line. On that machine, run `agentx mesh list` and check the other machine shows as healthy.
 - **A builder's folder says "NOT saved":** AgentX could not commit its changes (the reason follows). Nothing was lost: the changes are still in the folder. Commit them yourself, or let the resumed task do it.
+  - **"a branch named agentx exists"** (or **agentx/wip**): git can't hold a branch `agentx/wip` and a branch `agentx/wip/<taskId>` side by side. In that folder, rename the old branch, for example `git branch -m agentx/wip old-agentx-wip`. AgentX does not try other names in this case.
+  - **Any other reason** is git's own message, for example a `.lock` file another git command left behind, or a folder you can't write to. Fix that, then save the changes yourself.
 - **A stop-all task is "skipped (already tried …)" in the report:** an earlier restart tried it once. Run `agentx signal resume <taskId>` when you're ready.
 - **Resume does nothing in a chat:** the chat's channel isn't running on this machine any more. Check it in [Settings](/dashboard/settings).

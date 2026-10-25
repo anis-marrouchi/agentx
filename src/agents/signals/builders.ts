@@ -80,14 +80,29 @@ export async function saveWip(root: string, branch: string, message: string, git
     await git(root, ["add", "-A", "."], env)
     const tree = (await git(root, ["write-tree"], env)).trim()
     const commit = (await git(root, ["commit-tree", tree, ...(head ? ["-p", head] : []), "-m", message], env)).trim()
+    const exists = (ref: string) => git(root, ["rev-parse", "--verify", "-q", ref]).then(() => true, () => false)
+    // A branch named `agentx` or `agentx/wip` blocks every suffix alike:
+    // say so at once rather than trying them all.
+    const parts = branch.split("/")
+    for (let i = 1; i < parts.length; i++) {
+      const prefix = parts.slice(0, i).join("/")
+      if (await exists(`refs/heads/${prefix}`)) throw new Error(`couldn't create branch ${branch}: a branch named ${prefix} exists`)
+    }
     // A branch of that name already (an earlier stop of the same task):
-    // the next free suffix, never an overwrite.
+    // the next free suffix, never an overwrite. Any other failure (a
+    // locked ref, a read-only repo) stops here with git's own words.
     for (let i = 1; i <= 20; i++) {
       const name = i === 1 ? branch : `${branch}-${i}`
-      const made = await git(root, ["update-ref", `refs/heads/${name}`, commit, ""]).then(() => true, () => false)
-      if (made) return { branch: name, commit }
+      try {
+        await git(root, ["update-ref", `refs/heads/${name}`, commit, ""])
+        return { branch: name, commit }
+      } catch (e: any) {
+        if (await exists(`refs/heads/${name}`)) continue
+        const said = String(e?.stderr ?? "").trim() || String(e?.message ?? e)
+        throw new Error(`couldn't create branch ${name}: ${said.split("\n")[0]}`)
+      }
     }
-    throw new Error(`couldn't create branch ${branch} (nor -2 to -20): taken, or a branch named ${branch.split("/").slice(0, -1).join("/")} exists`)
+    throw new Error(`couldn't create branch ${branch}: it and -2 to -20 are all taken`)
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
@@ -121,7 +136,7 @@ export async function windDownBuilders(input: {
         folder.wipBranch = saved.branch
         folder.wipCommit = saved.commit
       } catch (e: any) {
-        folder.error = String(e?.message ?? e).split("\n")[0].slice(0, 200)
+        folder.error = String(e?.message ?? e).split("\n")[0].slice(0, 300)
       }
     }
     folders.push(folder)

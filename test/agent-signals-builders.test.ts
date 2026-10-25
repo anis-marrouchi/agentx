@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { execFileSync } from "child_process"
+import { execFile, execFileSync } from "child_process"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -74,6 +74,45 @@ describe("saveWip", () => {
     expect(git(dir, "show", `${second.branch}:b.ts`)).toBe("b3")
   })
 
+  // #1341: a conflict no suffix can fix fails at once, and a failure that
+  // is not a name clash keeps git's own words.
+  const counting = () => {
+    const calls: string[][] = []
+    const run = (cwd: string, args: string[], env?: Record<string, string>) => {
+      calls.push(args)
+      return new Promise<string>((resolve, reject) => {
+        execFile("git", ["-C", cwd, ...args], { env: { ...process.env, ...env } }, (err, stdout, stderr) =>
+          err ? reject(Object.assign(err, { stderr })) : resolve(stdout))
+      })
+    }
+    return { run, updates: () => calls.filter((a) => a[0] === "update-ref").length }
+  }
+
+  it("fails at once, naming it, when a branch named agentx/wip exists", async () => {
+    const dir = dirtyClone()
+    git(dir, "branch", "agentx/wip")
+    const g = counting()
+    await expect(saveWip(dir, "agentx/wip/run-1", "WIP", g.run)).rejects.toThrow("couldn't create branch agentx/wip/run-1: a branch named agentx/wip exists")
+    expect(g.updates()).toBe(0)
+  })
+
+  it("fails at once, naming it, when a branch named agentx exists", async () => {
+    const dir = dirtyClone()
+    git(dir, "branch", "agentx")
+    await expect(saveWip(dir, "agentx/wip/run-1", "WIP")).rejects.toThrow("a branch named agentx exists")
+  })
+
+  it("keeps git's error for a locked ref and tries no other name", async () => {
+    const dir = dirtyClone()
+    mkdirSync(path.join(dir, ".git", "refs", "heads", "agentx", "wip"), { recursive: true })
+    writeFileSync(path.join(dir, ".git", "refs", "heads", "agentx", "wip", "run-1.lock"), "")
+    const g = counting()
+    const err = await saveWip(dir, "agentx/wip/run-1", "WIP", g.run).catch((e) => e)
+    expect(err.message).toMatch(/^couldn't create branch agentx\/wip\/run-1: fatal: .*run-1\.lock/)
+    expect(err.message).not.toContain("\n")
+    expect(g.updates()).toBe(1)
+  })
+
   it("makes a branch name git accepts from any task id", () => {
     expect(wipBranchName("abc:12/..x y.lock")).toBe("agentx/wip/abc-12-.x-y.lock-x")
     expect(() => execFileSync("git", ["check-ref-format", "--branch", wipBranchName("abc:12/..x y.lock")])).not.toThrow()
@@ -123,7 +162,11 @@ describe("windDownBuilders", () => {
       taskId: "t1", reason: "stop", toolCalls: [builderCall("Build")],
       findLeftWork: async () => ["/a", "/b"].map((p) => ({ path: p, branch: "main", changedFiles: 1, unpushedCommits: 0 })),
       // Each folder's save takes the whole budget.
-      git: async (cwd, args) => { if (args[0] === "update-ref") { saved.push(cwd); t += BUILDER_SAVE_MS } return "x" },
+      git: async (cwd, args) => {
+        if (args.some((a) => a.startsWith("refs/heads/")) && args[0] === "rev-parse") throw new Error("no such ref")
+        if (args[0] === "update-ref") { saved.push(cwd); t += BUILDER_SAVE_MS }
+        return "x"
+      },
       now: () => t,
     })
     expect(saved).toEqual(["/a"])
