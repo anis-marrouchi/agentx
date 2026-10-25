@@ -613,12 +613,12 @@ describe("Wall post actions (#1316)", () => {
     expect(page).not.toContain('<option value="cx">')
   })
 
-  it("a closed post takes no comment, but can still be talked about", async () => {
+  it("a closed post takes a comment that opens it again, and can still be talked about (#1355)", async () => {
     const w = openWall({ hash: "#post=r3" })
     await w.settle()
     const page = w.el("wall-post").innerHTML
-    expect(page).not.toContain('data-act="comment"')
-    expect(page).toContain("comments reach an agent only while a post is open")
+    expect(page).toContain('data-act="comment"')
+    expect(page).toContain("this post is done, so a comment opens it again")
     expect(page).toContain('data-act="call"')
   })
 
@@ -889,5 +889,78 @@ describe("Wall v2 pages (#1355)", () => {
     expect(card).toContain('<span class="wpc__s is-blocked">blocked</span>')
     expect(card.match(/<span style="height:\d+px" title="\d closed">/g)).toHaveLength(4)
     expect(card).toContain('title="4 closed"')
+  })
+})
+
+describe("Wall v2 live sessions, comments and calls (#1355)", () => {
+  const LIVE3 = { nodes: [
+    { name: "node-a", url: "http://node-a", reachable: true, space: { agents: ["cx", "reviewer"], topic: "Release notes", startedAt: new Date(NOW - 300e3).toISOString() },
+      crons: [{ id: "digest", agent: "cx", schedule: "0 9 * * *", enabled: true, consecutiveErrors: 0, nextRun: new Date(NOW + 1800e3).toISOString() }],
+      agents: [
+        { id: "cx", name: "Customer Desk", runningTasks: [{ id: "t9", startedAt: new Date(NOW - 60e3).toISOString(), messagePreview: "Answering a refund" }] },
+        { id: "reviewer", name: "Reviewer", runningTasks: [] },
+      ] },
+    { name: "node-b", url: "http://node-b", reachable: true, space: { agents: ["far"], topic: "Far talk", startedAt: new Date(NOW).toISOString() },
+      agents: [{ id: "far", name: "Far Agent", runningTasks: [] }] },
+  ] }
+
+  it("lists live sessions with Spaces first, joins a Space here, names one elsewhere, and shows what comes up", async () => {
+    const w = openWall({ live: LIVE3, hash: "#page=live" })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("Live")
+    expect(w.el("nav-n-live").textContent).toBe("3")
+    const html = w.el("wall-live").innerHTML
+    const order = [...html.matchAll(/<article class="wls is-(\w+)"/g)].map((m) => m[1])
+    expect(order).toEqual(["space", "space", "work"])
+    expect(html).toContain("Release notes")
+    expect(html).toContain("data-join-space")
+    expect(html).toContain("Plays on node-b")
+    expect(html).toContain('href="/tasks/t9?agent=cx&amp;node=http%3A%2F%2Fnode-a"')
+    expect(html).toContain("<b>digest</b>")
+    w.click({ "data-join-space": "" })
+    await w.settle()
+    expect(w.calls.some((c) => c.url === "/api/admin/wall/space" && !c.init?.method)).toBe(false)
+    expect(w.calls.filter((c) => c.url === "/api/admin/wall/space").map((c) => c.init.method)).toEqual(["GET"])
+  })
+
+  it("starts a Space from the Live page with two agents and a topic", async () => {
+    const w = openWall({ live: LIVE3, hash: "#page=live" })
+    await w.settle()
+    w.el("lv-a").value = "cx"
+    w.el("lv-b").value = "reviewer"
+    w.el("lv-topic").value = "What to ship Friday"
+    w.click({ "data-live-start": "" })
+    await w.settle()
+    const sent = w.calls.filter((c) => c.url === "/api/admin/wall/space" && c.init.method === "POST").map((c) => JSON.parse(c.init.body))
+    expect(sent).toEqual([{ agent: "cx", with: "reviewer", topic: "What to ship Friday" }])
+  })
+
+  it("sends a comment's @mentions to those agents as posts on their own machines", async () => {
+    const w = openWall({ live: LIVE3, hash: "#status=open&post=r1" })
+    await w.settle()
+    w.el("wdo-text").value = "Please check with @reviewer and @far, not @nobody"
+    w.click({ "data-act": "comment" })
+    await w.settle()
+    const posts = w.calls.filter((c) => c.url === "/api/admin/wall/post")
+    expect(posts.map((c) => JSON.parse(c.init.body).agent)).toEqual(["reviewer", "far"])
+    expect(JSON.parse(posts[0].init.body).text).toMatch(/^The owner mentioned you in a comment on Wall post r1 by @cx/)
+    expect(posts[0].init.headers["X-Agentx-Peer"]).toBeUndefined()
+    expect(posts[1].init.headers["X-Agentx-Peer"]).toBe("http://node-b")
+    expect(w.el("wdo-note").textContent).toMatch(/Also posted to @reviewer, @far\./)
+  })
+
+  it("calls an agent and joins its live work from the Agents page", async () => {
+    const w = openWall({ live: LIVE3, hash: "#page=agents" })
+    await w.settle()
+    const html = w.el("wall-agents-page").innerHTML
+    const cx = html.split('id="agent-cx"')[1].split('id="agent-')[0]
+    expect(cx).toContain('data-call-agent="cx"')
+    expect(cx).toContain("● Join live</a>")
+    expect(html.split('id="agent-reviewer"')[1].split('id="agent-')[0]).not.toContain("Join live")
+    w.click({ "data-call-agent": "far" })
+    await w.settle()
+    const call = w.calls.find((c) => c.url === "/api/admin/wall/call")!
+    expect(JSON.parse(call.init.body)).toEqual({ agent: "far" })
+    expect(call.init.headers["X-Agentx-Peer"]).toBe("http://node-b")
   })
 })

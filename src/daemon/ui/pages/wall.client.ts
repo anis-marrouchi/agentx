@@ -33,6 +33,7 @@ import { injectFns } from "../inject"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
+import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -43,7 +44,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator'];
+  var PAGES = ['running', 'agents', 'creator', 'live'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null };
   var $ = function (id) { return document.getElementById(id); };
@@ -51,6 +52,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
+${WALL_LIVE_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -501,6 +503,7 @@ ${WALL_PAGES_SCRIPT}
       '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
+      (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
       '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(id) + '/history">History</a></div></div>';
   }
   function showAgent(id) {
@@ -553,12 +556,13 @@ ${WALL_PAGES_SCRIPT}
     var others = allAgents().filter(function (a) { return a.id !== p.owner; });
     var draft = S.drafts[p.id] || '';
     return '<div class="wdo" data-for="' + esc(p.id) + '">' +
-      (isOpen(p)
-        ? '<label class="wdo__l" for="wdo-text">Comment to @' + esc(p.owner) + '</label>' +
-          '<textarea id="wdo-text" class="wdo__t" rows="2" maxlength="4000" placeholder="It reaches ' + esc(nameOf(p.owner)) + ' like a message on any channel">' + esc(draft) + '</textarea>'
-        : '<p class="wdo__n">This post is ' + esc(p.state) + ': comments reach an agent only while a post is open.</p>') +
+      // Any post takes a comment (#1355): on a closed one it opens the post
+      // again; an @name in it brings that agent in with a post of its own.
+      '<label class="wdo__l" for="wdo-text">Comment to @' + esc(p.owner) + (isOpen(p) ? '' : ': this post is ' + esc(p.state) + ', so a comment opens it again') + '</label>' +
+      '<textarea id="wdo-text" class="wdo__t" rows="2" maxlength="4000" placeholder="It reaches ' + esc(nameOf(p.owner)) + ' like a message on any channel. Use @name to bring in another agent.">' + esc(draft) + '</textarea>' +
       '<div class="wdo__row">' +
-        (isOpen(p) ? '<button type="button" class="ax-btn" data-act="comment">Comment</button>' : '') +
+        '<button type="button" class="ax-btn" data-act="comment">Comment</button>' +
+        (liveTaskOf(p.owner) ? '<a class="ax-btn ax-btn--ghost" href="' + esc(taskHref(liveTaskOf(p.owner).t.id, p.owner, { daemonUrl: liveTaskOf(p.owner).n.url }, false)) + '" title="' + esc(nameOf(p.owner)) + ' is working now">● Join live</a>' : '') +
         '<button type="button" class="ax-btn ax-btn--ghost" data-act="call" title="' + esc(nameOf(p.owner)) + ' calls you on AgentX Voice about this post">Call ' + esc(nameOf(p.owner)) + '</button>' +
         (others.length
           ? '<span class="wdo__sp"><select id="wdo-with" aria-label="Talks with">' + others.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') + '</select>' +
@@ -593,6 +597,9 @@ ${WALL_PAGES_SCRIPT}
       if ($('wdo-text')) $('wdo-text').value = '';
       note(r.body.message || 'Sent.');
       loadThread(p.id);
+      var told = await tellMentioned(p, text);
+      if (told.length) note((r.body.message || 'Sent.') + ' Also posted to ' + told.join(', ') + '.');
+      if (r.body.reopened) load();
     } else if (kind === 'call') {
       note('Calling…');
       var c = await act('POST', '/api/admin/wall/call', { id: p.id }, peer);
@@ -634,9 +641,10 @@ ${WALL_PAGES_SCRIPT}
   }
   /** Repaint only the Space, so what the owner types stays where it is. */
   function paintSpace() {
-    var el = $('wdo-space');
-    if (!el) return;
     var typed = $('wdo-say') && $('wdo-say').value;
+    // On an open post, or on the Live page (#1355): whichever is shown.
+    var el = S.page === 'live' && !S.post ? $('live-space') : $('wdo-space');
+    if (!el) return;
     el.innerHTML = spaceHtml();
     if (typed && $('wdo-say')) $('wdo-say').value = typed;
   }
@@ -705,7 +713,8 @@ ${WALL_PAGES_SCRIPT}
     var down = ((S.live && S.live.nodes) || []).filter(function (n) { return !n.reachable || n.error; });
     var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
-    return note + list.map(function (a) {
+    var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
+    return note + called + list.map(function (a) {
       var s = a.stats || { open: 0, owner: 0, done: 0, runs: 0, posts: 0 };
       var meta = [
         a.nodes.length ? 'on ' + a.nodes.map(esc).join(', ') : 'no node answering',
@@ -722,6 +731,7 @@ ${WALL_PAGES_SCRIPT}
           '<span><b>' + s.done + '</b> done in 7 days</span><span><b>' + s.runs + '</b> runs</span>' +
           (a.errors ? '<span class="is-err"><b>' + a.errors + '</b> errors</span>' : '') + '</div>' +
         (a.summary && a.summary.text ? '<details class="wp__ask"><summary><span class="k">Last summary</span> ' + esc(a.summary.text) + '</summary><div class="ax-md">' + md(a.summary.text) + '</div></details>' : '') +
+        (a.nodes.length ? '<div class="wag__acts">' + agentActsHtml(a.id) + '</div>' : '') +
         '<div class="wpf__links">' + (s.posts ? '<button type="button" class="wa-more" data-agent="' + esc(a.id) + '">' + s.posts + (s.posts === 1 ? ' post' : ' posts') + '</button>' : '<span class="ax-wall__count">No posts in 7 days</span>') +
           '<a href="/admin/agents/' + encodeURIComponent(a.id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(a.id) + '/history">History</a></div>' +
         '</div></article>';
@@ -755,8 +765,9 @@ ${WALL_PAGES_SCRIPT}
       agents: S.live || posts ? allAgents().length : null,
       projects: S.data && S.data.projects ? S.data.projects.length : null,
       jobs: S.live ? jobCount() : null,
+      live: liveCount(),
     };
-    var title = { wall: 'open posts', needs: 'posts waiting on you', running: 'tasks running now', agents: 'agents', projects: 'projects with open work', jobs: 'recurring jobs' };
+    var title = { wall: 'open posts', needs: 'posts waiting on you', running: 'tasks running now', agents: 'agents', projects: 'projects with open work', jobs: 'recurring jobs', live: 'live sessions' };
     Object.keys(counts).forEach(function (k) {
       var el = $('nav-n-' + k), n = counts[k];
       el.textContent = n == null ? '' : String(n);
@@ -764,7 +775,7 @@ ${WALL_PAGES_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -990,6 +1001,12 @@ ${WALL_PAGES_SCRIPT}
     $('wall-nodes').parentNode.hidden = page === 'running';
     $('wall-agents-page').hidden = page !== 'agents';
     $('wall-creator').hidden = page !== 'creator';
+    $('wall-live').hidden = page !== 'live';
+    // Live repaints with the snapshot, but not over a field in use.
+    if (page === 'live') {
+      var busy = document.activeElement && document.activeElement.id && /^(lv-|wdo-say)/.test(document.activeElement.id);
+      if (!busy) $('wall-live').innerHTML = livePageHtml();
+    }
     // The Creator keeps what is typed: a refresh does not repaint a field in use.
     if (page === 'creator') {
       var typing = document.activeElement && document.activeElement.id && /^cr-/.test(document.activeElement.id);

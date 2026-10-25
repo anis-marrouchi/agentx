@@ -820,6 +820,17 @@ export class RequestStore {
     })()
   }
 
+  /** The owner commented on a closed post (#1355): it opens again, in
+   *  progress, with the comment as the owner's note, for its agent to pick
+   *  up at the next check. How it was closed is kept until it closes again. */
+  reopen(id: string, note: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET ${STATE_CHANGED}, state = 'in_progress', closed_at = NULL, updated_at = ?, attention_reason = NULL, notified_at = NULL,
+         question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL
+       WHERE id = ? AND state IN (${placeholders(CLOSED_STATES.length)})`,
+    ).run("in_progress", now, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...CLOSED_STATES).changes > 0
+  }
+
   /** This note of the owner is given to the agent in a pick-up, or (false)
    *  was not after all. Only while it is still the note on the request: a
    *  reply written since has its own pick-up and its own mark. */

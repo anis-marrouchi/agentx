@@ -1968,6 +1968,8 @@ interface NodeLive {
   /** Schedules and cron/hook workflows with staleness flags (GET /routines).
    *  Undefined when the node predates the endpoint. */
   routines?: Routine[]
+  /** A Space on this node (GET /talk, #1355), while one runs. */
+  space?: { agents: string[]; topic: string; startedAt: string }
   /** A live lesson on this node's screen (GET /talk), while one runs. It
    *  holds the listener's screen and voice, so it is shown with a stop. */
   lesson?: {
@@ -2129,6 +2131,15 @@ export async function fetchDaemonAgents(
     }
     if (talkRes && talkRes.ok) {
       const t: any = await talkRes.json().catch(() => null)
+      // A Space (#1355): who talks and about what, for the Wall's live
+      // sessions. What they say stays on the node.
+      if (t?.active && t.kind === "talk") {
+        base.space = {
+          agents: Array.isArray(t.agents) ? t.agents.map(String).slice(0, 4) : [],
+          topic: String(t.topic || "").slice(0, 200),
+          startedAt: typeof t.startedAt === "number" ? new Date(t.startedAt).toISOString() : String(t.startedAt || ""),
+        }
+      }
       if (t?.active && t.kind === "lesson") {
         base.lesson = {
           agentId: t.agentId ?? null, mode: String(t.mode || "teach"), goal: String(t.goal || ""),

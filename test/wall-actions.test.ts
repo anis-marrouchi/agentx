@@ -55,11 +55,28 @@ describe("comment", () => {
     expect(thread.find((e) => e.kind === "comment")).toMatchObject({ who: "owner", text: "Use the staging token" })
   })
 
-  it("refuses an empty, unknown or closed post", async () => {
+  it("refuses an empty or unknown post", async () => {
     expect((await post("/comment", { id: "r1", text: " " }))!.status).toBe(400)
     expect((await post("/comment", { id: "nope", text: "hi" }))!.status).toBe(404)
+  })
+
+  it("opens a closed post again for its agent, with the comment as the owner's note (#1355)", async () => {
     store.close("r1", "done", "shipped", T0 + 2000)
+    store.takePickups()
+    const r = await post("/comment", { id: "r1", text: "The footer link is still broken" })
+    expect(r).toMatchObject({ status: 200, body: { ok: true, reopened: true, agentId: "coder" } })
+    expect(store.get("r1")).toMatchObject({ state: "in_progress", closedAt: null, ownerNote: "The footer link is still broken" })
+    const [picked] = store.takePickups()
+    expect(picked.id).toBe("r1")
+    const thread = wallThread(store.get("r1")!, { store, db: (store as any).db, now: T0 + 6000, staleAfterHours: 24 } as any)
+    expect(thread.find((e) => e.kind === "comment")).toMatchObject({ text: "The footer link is still broken" })
+  })
+
+  it("keeps a closed post closed when requests are off", async () => {
+    store.close("r1", "done", "shipped", T0 + 2000)
+    writeFileSync(deps.inbox.configPath!, JSON.stringify({ agents: { coder: { name: "Coder" } }, requests: { enabled: false } }))
     expect((await post("/comment", { id: "r1", text: "hi" }))!.status).toBe(409)
+    expect(store.get("r1")!.state).toBe("done")
   })
 })
 
@@ -90,6 +107,13 @@ describe("call", () => {
     const r = await post("/call", { id: "r1" })
     expect(r!.status).toBe(201)
     expect(calls).toEqual([{ method: "POST", path: "/calls/owner", body: { agentId: "coder", reason: expect.stringMatching(/^Wall post r1: /) } }])
+  })
+
+  it("has an agent of this computer call the owner from its agent page (#1355)", async () => {
+    expect((await post("/call", { agent: "coder" }))!.status).toBe(201)
+    expect(calls).toEqual([{ method: "POST", path: "/calls/owner", body: { agentId: "coder", reason: "The owner called from the Wall" } }])
+    expect((await post("/call", { agent: "ghost" }))!.status).toBe(404)
+    expect((await post("/call", {}))!.status).toBe(400)
   })
 })
 

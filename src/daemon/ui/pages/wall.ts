@@ -25,6 +25,7 @@ import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
+import { WALL_LIVE_CSS } from "./wall-live.client"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -56,6 +57,7 @@ const NAV_ICON = {
   reviews: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 10l2.5 2.5L16 8"/></svg>',
   failures: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+  space: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
 }
@@ -70,6 +72,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <a class="ax-wall__logo" href="/wall">AX<small>wall</small></a>
     <a class="ax-wall__item is-on" data-nav="wall" href="#status=open&amp;view=feed" title="Wall">${NAV_ICON.wall}<span>Wall</span><b class="ax-wall__n" id="nav-n-wall"></b></a>
     <a class="ax-wall__item" data-nav="needs" href="#status=waiting_owner&amp;view=feed" title="Needs you">${NAV_ICON.needs}<span>Needs you</span><b class="ax-wall__n" id="nav-n-needs"></b></a>
+    <a class="ax-wall__item" data-nav="live" href="#page=live" title="Live">${NAV_ICON.space}<span>Live</span><b class="ax-wall__n" id="nav-n-live"></b></a>
     <a class="ax-wall__item" data-nav="running" href="#page=running" title="Running now">${NAV_ICON.live}<span>Running now</span><b class="ax-wall__n" id="nav-n-running"></b></a>
     <a class="ax-wall__item" data-nav="projects" href="#status=open&amp;view=projects" title="Projects">${NAV_ICON.projects}<span>Projects</span><b class="ax-wall__n" id="nav-n-projects"></b></a>
     <a class="ax-wall__item" data-nav="jobs" href="#status=open&amp;view=jobs" title="Jobs">${NAV_ICON.jobs}<span>Jobs</span><b class="ax-wall__n" id="nav-n-jobs"></b></a>
@@ -134,6 +137,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
+    <section id="wall-live" aria-label="Live sessions" hidden></section>
   </div>
   <aside class="ax-wall__aside">
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
@@ -155,7 +159,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

@@ -17,14 +17,17 @@ import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests
 //        Approvals page or the Desk does (requests-panel.ts "reply"): the
 //        request is handed back to it with the words, and the daemon's
 //        requests check starts its turn within a minute. The comment is
-//        also kept on the request, so it shows in the post's thread.
+//        also kept on the request, so it shows in the post's thread. On a
+//        closed post (#1355) the comment opens it again, in progress, and
+//        the agent picks it up the same way.
 //   POST /api/admin/wall/post         {agent, text}  a new post (#1355): the
 //        owner gives an agent of this node a task from the Wall's composer.
 //        It opens as a request owed to the owner, and the requests check
 //        gives it to the agent as a new turn within a minute.
 //   POST /api/admin/wall/call         {id}  the agent that has the task now
 //        calls the owner on AgentX Voice about it (the daemon's
-//        POST /calls/owner, with the operator key).
+//        POST /calls/owner, with the operator key). Or {agent} (#1355): that
+//        agent of this node calls, from its agent page.
 //   GET  /api/admin/wall/space        the talk running on this computer,
 //        its transcript redacted
 //   POST /api/admin/wall/space        {id, agent, with, topic, context?}
@@ -94,8 +97,14 @@ export async function handleWallAction(method: string, path: string, body: Recor
     const store = requestStoreFor(deps.inbox)
     const r = store?.get(id)
     if (!store || !r || r.state === "candidate") return { status: 404, body: { error: `no post "${id}" on this computer` } }
+    // A comment on a closed post opens it again for its agent (#1355).
     if (!(OPEN_STATES as readonly string[]).includes(r.state)) {
-      return { status: 409, body: { error: `This post is ${r.state}. A comment reaches its agent only while the post is open.` } }
+      if (!readRequestSettings(deps.inbox.configPath).enabled) {
+        return { status: 409, body: { error: "Requests are off on this computer, so nothing would give the agent the comment." } }
+      }
+      if (!store.reopen(id, text, now)) return { status: 409, body: { error: `${id} changed while sending; try again` } }
+      store.comment(id, `wc-${now}-${randomUUID().slice(0, 8)}`, text, now)
+      return { status: 200, body: { ok: true, agentId: r.agentId, reopened: true, message: `Sent to ${r.agentId}: the post was ${r.state}, so it opens again, and its answer shows in the thread.` } }
     }
     // The same reply the Approvals page and the Desk send.
     const sent = await handleRequestsPanel("POST", `${REQUESTS_PANEL_PREFIX}/reply`, { id, text }, { ...deps.inbox, now })
@@ -126,7 +135,13 @@ export async function handleWallAction(method: string, path: string, body: Recor
   if (path === WALL_CALL_PATH) {
     if (method !== "POST") return { status: 405, body: { error: "POST" } }
     const id = str(body.id)
-    if (!id) return { status: 400, body: { error: "send { id }" } }
+    const agentId = str(body.agent)
+    if (!id && agentId) {
+      const agent = AGENT_RE.test(agentId) ? agentsOf(deps.inbox.configPath).find((a) => a.id === agentId) : null
+      if (!agent) return { status: 404, body: { error: `"${agentId}" is not an agent on this computer` } }
+      return deps.daemon("POST", "/calls/owner", { agentId, reason: "The owner called from the Wall" })
+    }
+    if (!id) return { status: 400, body: { error: "send { id } or { agent }" } }
     const store = requestStoreFor(deps.inbox)
     const r = store?.get(id)
     if (!store || !r || r.state === "candidate") return { status: 404, body: { error: `no post "${id}" on this computer` } }
