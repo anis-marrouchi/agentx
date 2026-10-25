@@ -38,6 +38,8 @@ const shots = [
   // The portfolio (#1194), opened with the demo-only key seed-demo.mjs made.
   { name: "wall/portfolio", path: "/portfolio", wait: "#key-form", steps: [{ type: "#key", text: "agx_live_" + "demo".repeat(16) }, { click: "#key-form button" }, { wait: "#projects table" }], full: true },
   { name: "wall/portfolio-phone", path: "/portfolio", wait: "#projects table", phone: true },
+  // An agent's profile over its own posts (#1207).
+  { name: "wall/profile", path: "/wall#owner=cx&status=", wait: ".wpf" },
   { name: "live", path: "/live", wait: ".ax-agent__name" },
   { name: "operations", path: "/mesh", wait: "body" },
   { name: "operations/routines", path: "/mesh", wait: "body", steps: [{ clickText: "Operations" }, { wait: "#mx-routines .mx-flags" }, { scroll: "#mx-routines-title" }] },
@@ -231,7 +233,12 @@ try {
     }
     // Only one element, with a little room around it.
     if (shot.clipTo) {
-      const r = await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(shot.clipTo)}).getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height } })()`)
+      // In page coordinates, captured beyond the viewport: an element below
+      // the fold would otherwise come out blank.
+      const r = await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(shot.clipTo)}).getBoundingClientRect(); return { x: b.left + scrollX, y: b.top + scrollY, width: b.width, height: b.height } })()`)
+      params.captureBeyondViewport = true
+      // The fixed Ask bar would land over the element.
+      await evaluate("(() => { const s=document.createElement('style'); s.textContent='#ax-as-dock,#ax-as-handle{display:none!important}';document.head.append(s) })()")
       params.clip = { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 8), width: r.width + 24, height: r.height + 16, scale: 1 }
     }
     const screenshot = await cdp("Page.captureScreenshot", params)
