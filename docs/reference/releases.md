@@ -6,6 +6,8 @@ What you can rely on when you install and upgrade AgentX: how often it is releas
 
 AgentX is released from `main` whenever a fix or a feature lands there, often several times a day: 35 releases from 18 to 25 October 2026. Each release is a new version on npm (`agentix-cli`) with a GitHub release and an entry in [CHANGELOG.md](https://github.com/anis-marrouchi/agentx/blob/main/CHANGELOG.md). The version number follows [semantic versioning](https://semver.org): `MAJOR.MINOR.PATCH`.
 
+AgentX is in 0.x: it works and is used every day, but there is still work to do before 1.0, and 1.0 has no date yet. The [upgrade promise](#upgrade-promise) applies now.
+
 There is one supported line: the latest release. There are no long-term branches; you get a fix by upgrading.
 
 ## Upgrade promise

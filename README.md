@@ -157,7 +157,7 @@ What it costs depends on your model account (a Claude subscription, or an API ke
 - you need roles and permissions for many users (not built yet);
 - you want a hosted service with nothing to install: there is none;
 - you run Windows only (untested; WSL may work);
-- you need a 1.0 release: AgentX is still 0.x. The [upgrade promise](docs/reference/releases.md#upgrade-promise) already holds, and 1.0 is tracked in [#1294](https://github.com/anis-marrouchi/agentx/issues/1294).
+- you need a 1.0 release: AgentX is still 0.x because there is still work to do. The [upgrade promise](docs/reference/releases.md#upgrade-promise) already holds.
 
 ## See it without an account
 
@@ -284,7 +284,7 @@ Start a new Claude Code session and ask it to check your AgentX node. [Step-by-s
 
 ### Release status
 
-AgentX is used every day and releases ship often; see the [changelog](CHANGELOG.md) for what changed. It has no 1.0 release yet. A breaking change is always listed in the changelog with what to do, each release is installed on Linux and macOS by the install matrix (its pass rate is the badge at the top), and the [roadmap](docs/roadmap.md) says what comes next. See [Releases, upgrades and security](docs/reference/releases.md). The 1.0 release is tracked in [#1294](https://github.com/anis-marrouchi/agentx/issues/1294).
+AgentX is used every day and releases ship often; see the [changelog](CHANGELOG.md) for what changed. It works, but it stays on 0.x for now because there is still work to do; there is no date for 1.0 yet. A breaking change is always listed in the changelog with what to do, each release is installed on Linux and macOS by the install matrix (its pass rate is the badge at the top), and the [roadmap](docs/roadmap.md) says what comes next. See [Releases, upgrades and security](docs/reference/releases.md).
 
 **Not built yet: roles and permissions (RBAC) for shared machines and agents.** Mesh authentication and tool permissions exist, but there is no full role model for who may use which node or agent. It is planned, not available.
 

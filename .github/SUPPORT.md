@@ -1,6 +1,6 @@
 # Getting help with AgentX
 
-AgentX is usable but experimental. Settings and configuration flows still need polish. Community support is best effort; there is no response-time or production-availability guarantee.
+AgentX works, but it is still before version 1.0 (0.x) and there is still work to do. Settings and configuration flows still need polish. Community support is best effort; there is no response-time or production-availability guarantee.
 
 ## Choose the right place
 
