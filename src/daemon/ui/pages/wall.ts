@@ -246,6 +246,37 @@ const WALL_PAGE_CSS = `
 .wp--open:hover { background: none; }
 .wp--open .wp__result { display: block; font-size: 17px; line-height: 1.5; overflow: visible; }
 .wp__th { font-size: var(--ax-fs); font-weight: 800; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--ax-border); }
+
+/* The opened task (#1355): title, where it stands, plan, result, facts. */
+.wtk__title { font-size: 21px; line-height: 1.3; font-weight: 800; margin: 6px 0 12px; }
+.wtk__prog { display: flex; list-style: none; margin: 0 0 12px; padding: 0; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); overflow: hidden; }
+.wtk__prog li { flex: 1; min-width: 0; padding: 8px 10px; border-left: 1px solid var(--ax-border); border-top: 3px solid var(--ax-border); font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.wtk__prog li:first-child { border-left: 0; }
+.wtk__prog b { display: block; font-size: var(--ax-fs-sm, 13px); color: var(--ax-text-2); }
+.wtk__prog span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wtk__prog .is-done { border-top-color: var(--ax-green); }
+.wtk__prog .is-now { border-top-color: var(--ax-accent); }
+.wtk__prog .is-now b { color: var(--ax-accent); }
+.wtk__prog .is-wait { border-top-color: var(--ax-amber, var(--ax-warn)); }
+.wtk__prog .is-wait b { color: var(--ax-amber-ink, var(--ax-warn)); }
+.wtk__prog .is-end { border-top-color: var(--ax-muted); }
+.wtk__sec { margin: 14px 0 0; }
+.wtk__sec h2 { font-size: var(--ax-fs); font-weight: 800; margin: 0 0 6px; }
+.wtk__sec h2 .k { font-weight: 400; margin-left: 6px; }
+.wtk__plan { list-style: none; margin: 0; padding: 0; }
+.wtk__plan li { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--ax-border); }
+.wtk__plan li > div { min-width: 0; }
+.wtk__plan .av { vertical-align: middle; margin: 0 2px 0 6px; }
+.wtk__mark { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ax-border-2); display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--ax-muted); }
+.wtk__plan .is-done .wtk__mark { border-color: var(--ax-green); color: var(--ax-green); }
+.wtk__plan .is-active .wtk__mark { border-color: var(--ax-accent); color: var(--ax-accent); }
+.wtk__plan .is-blocked .wtk__mark { border-color: var(--ax-amber, var(--ax-warn)); color: var(--ax-amber-ink, var(--ax-warn)); }
+.wtk__note { font-size: var(--ax-fs-xs); color: var(--ax-amber-ink, var(--ax-warn)); margin-top: 2px; }
+.wtk__facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 14px 0 0; padding: 10px 12px; background: var(--ax-surface); border-radius: var(--ax-radius); font-size: var(--ax-fs-xs); }
+.wtk__facts dt { color: var(--ax-muted); }
+.wtk__facts dd { margin: 0; color: var(--ax-text-2); min-width: 0; overflow-wrap: anywhere; }
+.wtk__facts .is-warn { color: var(--ax-amber-ink, var(--ax-warn)); }
+@media (max-width: 640px) { .wtk__prog { flex-wrap: wrap; } .wtk__prog li { flex: 1 1 45%; } }
 .ax-wall__back { font: inherit; font-size: 20px; line-height: 1; background: none; border: 0; border-radius: var(--ax-radius-pill); color: var(--ax-text); padding: 6px 10px; margin: 0 8px 0 -10px; cursor: pointer; }
 .ax-wall__back:hover { background: var(--ax-surface); }
 .ax-wall__titlebar { display: flex; align-items: center; }

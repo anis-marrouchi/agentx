@@ -36,6 +36,7 @@ const shots = [
   { name: "wall/list", path: "/wall#status=&grp=owner&view=list", wait: ".wl__g" },
   // #1316: a post on its own with its thread, and the nav's own pages.
   { name: "wall/post", path: "/wall#status=&post=req-docs-wall-done", wait: "#open-req-docs-wall-done .wt li" },
+  { name: "wall/task", path: "/wall#status=&post=req-docs-plan", wait: "#open-req-docs-plan .wtk__plan", clipTo: "#open-req-docs-plan" },
   { name: "wall/agents", path: "/wall#page=agents", wait: ".wag" },
   { name: "wall/running", path: "/wall#page=running", wait: "#wall-running .wn" },
   // #1355: the feed keeps posts compact; these flags show on the opened post.

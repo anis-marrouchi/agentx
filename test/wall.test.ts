@@ -360,6 +360,12 @@ describe("helpers", () => {
     expect(redactSecrets("key glpat-abcdefghijklmnopqrstuv end")).toBe("key [redacted] end")
     expect(redactSecrets("nothing to hide")).toBe("nothing to hide")
   })
+  it("sends the post's plan steps with its thread, none without a plan (#1355)", () => {
+    const plan = (handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "r1" }), deps(), "n").body as any).plan
+    expect(plan.map((s: any) => [s.idx, s.name, s.agentId, s.doneWhen])).toEqual([[1, "Write the fix", "coder", "PR open"], [2, "Review", "pm", "approved"]])
+    expect(plan[0]).toHaveProperty("state")
+    expect((handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "r2" }), deps(), "n").body as any).plan).toEqual([])
+  })
   it("answers 404 for an unknown post and an empty wall with no request store", () => {
     expect(handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "nope" }), deps(), "n").status).toBe(404)
     expect((handleWallApi("/api/admin/wall", new URLSearchParams(), null, "n").body as any).posts).toEqual([])

@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown> } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -79,7 +79,8 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.post && url === "/api/admin/wall/post") return opts.post
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
-      : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {}) : { runs: [] }
+      : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {})
+      : opts.thread && url.startsWith("/api/admin/wall/thread?") ? opts.thread : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
   }
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", script)(
@@ -129,7 +130,7 @@ describe("Wall as a social feed (#1207)", () => {
     const page = open.el("wall-post").innerHTML
     expect(page).toContain('href="https://example.com/demo/shop/issues/47"')
     expect(page).toContain("Task record and trace</a>")
-    expect(page).toContain('class="wp__meta"')
+    expect(page).toContain('class="wtk__facts"')
   })
 
   it("lists the agents with their open posts, most open first", async () => {
@@ -202,7 +203,7 @@ describe("Wall v2 pages (#1316)", () => {
     expect(w.el("wall-back").hidden).toBe(false)
     expect(w.el("wall-title").textContent).toBe("Post")
     const page = w.el("wall-post").innerHTML
-    expect(page).toContain('<article class="wp wp--open" id="open-r1">')
+    expect(page).toContain('<article class="wp wp--open wtk" id="open-r1">')
     expect(page).toContain('<h2 class="wp__th">Thread</h2>')
     expect(page).not.toContain("data-thread=")
     expect(w.calls.map((c) => c.url)).toContain("/api/admin/wall/thread?id=r1")
@@ -1145,5 +1146,47 @@ describe("Wall v2 live sessions, comments and calls (#1355)", () => {
     const call = w.calls.find((c) => c.url === "/api/admin/wall/call")!
     expect(JSON.parse(call.init.body)).toEqual({ agent: "far" })
     expect(call.init.headers["X-Agentx-Peer"]).toBe("http://node-b")
+  })
+})
+
+// #1355 Task design: an opened post reads as a task.
+describe("Wall v2 task view (#1355)", () => {
+  const PLAN = [
+    { idx: 1, name: "Build the fix", agentId: "cx", state: "done", doneWhen: "PR merged", evidence: "https://example.com/pr/9", note: null },
+    { idx: 2, name: "Deploy", agentId: "reviewer", state: "blocked", doneWhen: "release live", evidence: null, note: "waits on the <deploy> window" },
+    { idx: 3, name: "Tell the client", agentId: "cx", state: "pending", doneWhen: "", evidence: null, note: null },
+  ]
+
+  it("leads with the request as its title, where it stands, then the plan and the facts", async () => {
+    const w = openWall({ hash: "#post=r1", thread: { events: [], plan: PLAN } })
+    await w.settle()
+    const page = w.el("wall-post").innerHTML
+    expect(page).toContain('<h1 class="wtk__title">Post r1</h1>')
+    const prog = /<ol class="wtk__prog"[^>]*>(.*?)<\/ol>/.exec(page)![1]
+    expect(prog).toContain('<li class="is-done"><b>Asked</b>')
+    expect(prog).toContain('<li class="is-now" aria-current="step"><b>Working</b><span>1 run, 2 min</span>')
+    expect(page).toContain("Plan <span class=\"k\">1 of 3 done</span>")
+    expect(page).toContain('<li class="is-blocked">')
+    expect(page).toContain("Done when: PR merged")
+    expect(page).toContain('<a href="https://example.com/pr/9" target="_blank" rel="noopener">Proof</a>')
+    expect(page).toContain("waits on the &lt;deploy&gt; window")
+    expect(page).toContain("<dt>Asked by</dt><dd>Demo operator</dd>")
+    expect(page).toContain("<dt>Time</dt><dd>2 min of runs</dd>")
+    expect(page.indexOf("wtk__prog")).toBeLessThan(page.indexOf("wtk__plan"))
+    expect(page.indexOf("wtk__plan")).toBeLessThan(page.indexOf("wtk__facts"))
+  })
+
+  it("marks a waiting task's step amber, and a done one closed", async () => {
+    const w = openWall({ hash: "#post=r2" })
+    await w.settle()
+    const wait = /<ol class="wtk__prog"[^>]*>(.*?)<\/ol>/.exec(w.el("wall-post").innerHTML)![1]
+    expect(wait).toContain('<li class="is-wait" aria-current="step"><b>Waits</b><span>on you</span>')
+    expect(w.el("wall-post").innerHTML).not.toContain("wtk__plan")
+    const d = openWall({ hash: "#post=r3", data: { ...WALL, posts: [post("r3", "reviewer", "done", { closedAt: NOW - 60e3 })] } })
+    await d.settle()
+    const done = /<ol class="wtk__prog"[^>]*>(.*?)<\/ol>/.exec(d.el("wall-post").innerHTML)![1]
+    expect(done).toContain('<li class="is-done"><b>Working</b>')
+    expect(done).toMatch(/<li class="is-done"><b>Done<\/b><span>\d+s ago<\/span>/)
+    expect(d.el("wall-post").innerHTML).toContain("<dt>Closed</dt>")
   })
 })
