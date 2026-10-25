@@ -43,16 +43,20 @@ export interface BuilderWindDown {
   folders: BuilderFolder[]
 }
 
-type Git = (cwd: string, args: string[], env?: Record<string, string>) => Promise<string>
+type Git = (cwd: string, args: string[], env?: Record<string, string>, timeoutMs?: number) => Promise<string>
 
 const GIT_TIMEOUT_MS = 15_000
-/** How long a stop spends saving builders' folders. A folder not started
- *  by then is listed as not saved; the stop's wait counts this time. */
+const SCAN_TIMEOUT_MS = 5_000
+/** All the time a stop gives the builders' folders to be saved. The stop's
+ *  wind-down budget counts it (SignalService.windDownMs), so a waiting
+ *  stop-all does not give up on a peer that is still saving (#1333). A
+ *  folder not reached in time is listed as not saved. */
 export const BUILDER_SAVE_MS = 60_000
+const OUT_OF_TIME = "the stop's time to save builder work ran out"
 const execFileP = promisify(execFile)
-const runGit: Git = async (cwd, args, env) =>
+const runGit: Git = async (cwd, args, env, timeoutMs) =>
   (await execFileP("git", ["-C", cwd, ...args], {
-    timeout: GIT_TIMEOUT_MS,
+    timeout: timeoutMs ?? GIT_TIMEOUT_MS,
     maxBuffer: 4 * 1024 * 1024,
     ...(env ? { env: { ...process.env, ...env } } : {}),
   })).stdout
@@ -84,13 +88,34 @@ export async function saveWip(root: string, branch: string, message: string, git
     // the next free suffix, never an overwrite.
     for (let i = 1; i <= 20; i++) {
       const name = i === 1 ? branch : `${branch}-${i}`
-      const made = await git(root, ["update-ref", `refs/heads/${name}`, commit, ""]).then(() => true, () => false)
-      if (made) return { branch: name, commit }
+      const failed = await git(root, ["update-ref", `refs/heads/${name}`, commit, ""]).then(() => null, (e: any) => e)
+      if (!failed) return { branch: name, commit }
+      // Only a branch of that very name sends it on to the next suffix.
+      // Anything else (a branch named like a parent folder of it, such as
+      // agentx/wip, or git itself failing) fails the same for every suffix.
+      if (await refExists(root, `refs/heads/${name}`, git)) continue
+      const blocker = await refBlocking(root, name, git)
+      if (blocker) throw new Error(`a branch named ${blocker} is in the way: git cannot also have ${name}. Rename that branch to let AgentX save work here`)
+      throw new Error(String(failed?.message ?? failed).split("\n")[0])
     }
-    throw new Error(`couldn't create branch ${branch} (nor -2 to -20): taken, or a branch named ${branch.split("/").slice(0, -1).join("/")} exists`)
+    throw new Error(`branches ${branch} to ${branch}-20 exist already`)
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
+}
+
+const refExists = (root: string, ref: string, git: Git) =>
+  git(root, ["rev-parse", "--verify", "-q", ref]).then(() => true, () => false)
+
+/** A branch named like a parent folder of `name` (git keeps refs as files,
+ *  so agentx/wip and agentx/wip/x cannot both exist); null when none. */
+async function refBlocking(root: string, name: string, git: Git): Promise<string | null> {
+  const parts = name.split("/")
+  for (let i = 1; i < parts.length; i++) {
+    const parent = parts.slice(0, i).join("/")
+    if (await refExists(root, `refs/heads/${parent}`, git)) return parent
+  }
+  return null
 }
 
 /** Wind down the builders a stopped run had started: undefined when it
@@ -101,23 +126,34 @@ export async function windDownBuilders(input: {
   reason: string
   findLeftWork?: (run: { toolCalls: ToolCallRef[] }) => Promise<LeftWork[]>
   git?: Git
+  /** Overridable in tests. */
+  budgetMs?: number
   now?: () => number
 }): Promise<BuilderWindDown | undefined> {
   const helpers = backgroundHelpers(input)
   if (!helpers.length) return undefined
   const now = input.now ?? Date.now
-  const deadline = now() + BUILDER_SAVE_MS
-  const find = input.findLeftWork ?? ((run) => findLeftWork(run))
+  const deadline = now() + (input.budgetMs ?? BUILDER_SAVE_MS)
+  // Every git call ends by the deadline, however many folders there are.
+  const base = input.git ?? runGit
+  const timed = (capMs: number): Git => (cwd, args, env) => {
+    const left = deadline - now()
+    if (left <= 0) return Promise.reject(new Error(OUT_OF_TIME))
+    return base(cwd, args, env, Math.min(capMs, left))
+  }
+  const git = timed(GIT_TIMEOUT_MS)
+  // The scan of the folders is in the same budget, at its own 5 s a call.
+  const find = input.findLeftWork ?? ((run) => findLeftWork(run, timed(SCAN_TIMEOUT_MS)))
   let left: LeftWork[] = []
   try { left = await find(input) } catch { /* no folders known: the helpers are still listed */ }
   const folders: BuilderFolder[] = []
   for (const w of left) {
     const folder: BuilderFolder = { path: w.path, branch: w.branch, changedFiles: w.changedFiles, unpushedCommits: w.unpushedCommits }
     if (w.changedFiles > 0 && now() >= deadline) {
-      folder.error = `not saved: the stop's ${BUILDER_SAVE_MS / 1000}s for saving builders ran out`
+      folder.error = OUT_OF_TIME
     } else if (w.changedFiles > 0) {
       try {
-        const saved = await saveWip(w.path, wipBranchName(input.taskId), `WIP: saved by AgentX when ${input.reason}\n\nTask ${input.taskId}, on ${w.branch ?? "a detached HEAD"}.`, input.git)
+        const saved = await saveWip(w.path, wipBranchName(input.taskId), `WIP: saved by AgentX when ${input.reason}\n\nTask ${input.taskId}, on ${w.branch ?? "a detached HEAD"}.`, git)
         folder.wipBranch = saved.branch
         folder.wipCommit = saved.commit
       } catch (e: any) {

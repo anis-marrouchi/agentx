@@ -74,6 +74,13 @@ describe("saveWip", () => {
     expect(git(dir, "show", `${second.branch}:b.ts`)).toBe("b3")
   })
 
+  it("names the branch in the way when one is called agentx/wip", async () => {
+    const dir = dirtyClone()
+    git(dir, "branch", "agentx/wip")
+    await expect(saveWip(dir, "agentx/wip/run-1", "WIP")).rejects.toThrow(/a branch named agentx\/wip is in the way: git cannot also have agentx\/wip\/run-1/)
+    expect(git(dir, "branch", "--list", "agentx/wip/*")).toBe("")
+  })
+
   it("makes a branch name git accepts from any task id", () => {
     expect(wipBranchName("abc:12/..x y.lock")).toBe("agentx/wip/abc-12-.x-y.lock-x")
     expect(() => execFileSync("git", ["check-ref-format", "--branch", wipBranchName("abc:12/..x y.lock")])).not.toThrow()
@@ -128,7 +135,38 @@ describe("windDownBuilders", () => {
     })
     expect(saved).toEqual(["/a"])
     expect(b?.folders[0].wipBranch).toBe("agentx/wip/t1")
-    expect(b?.folders[1].error).toMatch(/not saved: the stop's 60s for saving builders ran out/)
+    expect(b?.folders[1].error).toBe("the stop's time to save builder work ran out")
+  })
+})
+
+describe("the time to save builder work", () => {
+  it("lists a folder it had no time left for as not saved, and makes no git call for it", async () => {
+    let t = 0
+    const calls: string[] = []
+    const b = await windDownBuilders({
+      taskId: "t1", reason: "stop", toolCalls: [builderCall("Build")], budgetMs: 1_000, now: () => t,
+      findLeftWork: async () => [
+        { path: "/a", branch: "main", changedFiles: 1, unpushedCommits: 0 },
+        { path: "/b", branch: "main", changedFiles: 1, unpushedCommits: 0 },
+      ],
+      // The first folder's save uses up all the time.
+      git: async (cwd, args, _env, timeoutMs) => { calls.push(`${cwd} ${args[0]} ${timeoutMs}`); t += 2_000; throw new Error("fatal: slow") },
+    })
+    expect(b?.folders.map((f) => f.error)).toEqual(["the stop's time to save builder work ran out", "the stop's time to save builder work ran out"])
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatch(/^\/a rev-parse /)
+    expect(Number(calls[0].split(" ")[2])).toBeLessThanOrEqual(1_000)
+  })
+
+  it("is counted in the time a stop waits for its plan", () => {
+    const deps = (withBuilders: boolean) => new SignalService({
+      settings: () => DEFAULT_SIGNAL_SETTINGS,
+      store: new StoppedTaskStore(path.join(tmp, `s-${withBuilders}`)),
+      findRunning: () => null, listRunning: () => [], stopRun: () => false, whenRunEnds: async () => {},
+      toolCalls: () => [], windDown: async () => ({}), resume: async () => {}, publish: () => {}, log: () => {},
+      ...(withBuilders ? { windDownBuilders: async () => undefined } : {}),
+    })
+    expect(deps(true).windDownMs() - deps(false).windDownMs()).toBe(60_000)
   })
 })
 
