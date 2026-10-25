@@ -40,6 +40,18 @@ describe("the Live page and lessons", () => {
     expect(svc.handle("GET", "/talk", {}).body).toEqual({ active: false })
   })
 
+  it("GET /talk names a Space's topic and who talks, for the Wall's live sessions (#1355)", async () => {
+    const two: any = { ...agents, "reviewer": { name: "Reviewer", systemPrompt: "You review." } }
+    const svc = new VoiceTalkService(() => two, new VoiceIntroTracker(), () => {}, {
+      speech: { get busy() { return false }, say: async () => true, view: () => ({ paused: false, playing: null, waiting: [], recent: [] }), pause: () => {}, resume: () => {}, cancel: () => {}, events: {}, stop: () => {} } as any,
+      model: () => new Lines(), stopSpeakers: () => {},
+    } as any)
+    const started = svc.handle("POST", "/talk", { agents: ["secretary-agent", "reviewer"], topic: "Release notes", maxTurns: 1 })
+    expect(started.status).toBeLessThan(300)
+    expect(svc.handle("GET", "/talk", {}).body).toMatchObject({ kind: "talk", topic: "Release notes", agents: ["secretary-agent", "reviewer"] })
+    svc.handle("POST", "/talk/stop", {})
+  })
+
   it("ships a script that parses, with the lesson row and its stop", () => {
     const html = renderLivePage()
     const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])

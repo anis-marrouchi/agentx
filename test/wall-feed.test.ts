@@ -613,12 +613,12 @@ describe("Wall post actions (#1316)", () => {
     expect(page).not.toContain('<option value="cx">')
   })
 
-  it("a closed post takes no comment, but can still be talked about", async () => {
+  it("a closed post takes a comment that opens it again, and can still be talked about (#1355)", async () => {
     const w = openWall({ hash: "#post=r3" })
     await w.settle()
     const page = w.el("wall-post").innerHTML
-    expect(page).not.toContain('data-act="comment"')
-    expect(page).toContain("comments reach an agent only while a post is open")
+    expect(page).toContain('data-act="comment"')
+    expect(page).toContain("this post is done, so a comment opens it again")
     expect(page).toContain('data-act="call"')
   })
 
@@ -901,5 +901,238 @@ describe("Wall v2 pages (#1355)", () => {
     expect(card).toContain('<span class="wpc__s is-blocked">blocked</span>')
     expect(card.match(/<span style="height:\d+px" title="\d closed">/g)).toHaveLength(4)
     expect(card).toContain('title="4 closed"')
+  })
+})
+
+describe("Wall v2 pages (#1355)", () => {
+  const PAGES = {
+    ...WALL,
+    posts: [
+      post("a", "cx", "in_progress", { project: "shop", lastMoveAt: NOW - 4 * 864e5, estimateMinutes: 1, runMs: 300e3 }),
+      post("b", "cx", "waiting_other", { project: "shop", blocked: { who: "reviewer", since: NOW - 5 * 864e5, why: "review" }, blockedBy: { kind: "agent", who: "reviewer", project: null } }),
+      post("c", "reviewer", "in_progress", { project: null }),
+    ],
+    projects: [{ project: "shop", open: 2, inProgress: 1, blocked: 1, stalled: 0 }, { project: null, open: 1, inProgress: 1, blocked: 0, stalled: 0 }],
+    capacity: { threshold: 1, owners: [{ owner: "cx", inProgress: 1, waiting: 1, over: true }] },
+  }
+  const runs = (statuses: string[]) => statuses.map((status, i) => ({ at: new Date(NOW - i * 3600e3).toISOString(), status }))
+  const JOBS_LIVE = { nodes: [{
+    ...LIVE.nodes[0], url: "http://node-a",
+    crons: [
+      { id: "digest", agent: "cx", schedule: "0 9 * * *", enabled: true, consecutiveErrors: 0, nextRun: new Date(NOW + 3600e3).toISOString(), value: { why: "the owner reads it", metric: "opened daily" } },
+      { id: "sync", agent: "reviewer", schedule: "*/30 * * * *", enabled: true, consecutiveErrors: 3 },
+    ],
+    cronRuns: [
+      { jobId: "digest", startedAt: new Date(NOW - 60e3).toISOString(), status: "success", taskId: "t-digest" },
+      { jobId: "sync", startedAt: new Date(NOW - 120e3).toISOString(), status: "failed", errorSummary: "token expired" },
+      { jobId: "sync", startedAt: new Date(NOW - 180e3).toISOString(), status: "success", quiet: true },
+    ],
+    routines: [
+      { id: "cron:digest", recent: runs(["success", "success"]), consecutiveFailures: 0, flags: [], lastRun: { at: new Date(NOW - 60e3).toISOString(), status: "success" } },
+      { id: "cron:sync", recent: runs(["failed", "failed", "failed", "success", "success", "success", "success"]), consecutiveFailures: 3, flags: [], lastRun: { at: new Date(NOW - 120e3).toISOString(), status: "failed", summary: "token expired" } },
+    ],
+  }] }
+
+  it("draws the List with seven columns, quick views and amber old waits; Columns adds the rest", async () => {
+    const w = openWall({ data: PAGES, hash: "#status=open&view=list" })
+    await w.settle()
+    const html = w.el("wall-list").innerHTML
+    expect(html).toContain('data-tab="blocked">Blocked</button>')
+    expect(html).toContain('data-quick="cols"')
+    expect(html.match(/<th data-sort=/g)).toHaveLength(7)
+    expect(html).toContain('<td class="num is-amber">4</td>')
+    expect(html).toMatch(/<td class="is-amber">5 \/ 1 min/)
+    w.click({ "data-quick": "cols" })
+    expect(w.el("wall-list").innerHTML.match(/<th data-sort=/g)).toHaveLength(10)
+  })
+
+  it("groups the List by owner, project or blocker, each group with its count and oldest wait", async () => {
+    const w = openWall({ data: PAGES, hash: "#status=open&grp=owner&view=list" })
+    await w.settle()
+    let html = w.el("wall-list").innerHTML
+    expect(html).toMatch(/<tr class="wl__g"><th colspan="7">@cx <small>2 posts · oldest wait 5 d<\/small>/)
+    expect(html).toContain("@reviewer <small>1 post")
+    const b = openWall({ data: PAGES, hash: "#status=open&grp=blocked&view=list" })
+    await b.settle()
+    html = b.el("wall-list").innerHTML
+    expect(html).toContain("@reviewer <small>1 post")
+    expect(html).toContain("No blocker recorded <small>2 posts")
+  })
+
+  it("lists jobs per machine with today's totals, seven squares and look stale", async () => {
+    const w = openWall({ data: PAGES, live: JOBS_LIVE, hash: "#status=open&view=jobs" })
+    await w.settle()
+    const html = w.el("wall-jobs").innerHTML
+    expect(html).toContain("<dt>ran</dt><dd>3</dd>")
+    expect(html).toContain("<dt>worked</dt><dd>1</dd>")
+    expect(html).toContain("<dt>failed</dt><dd>1</dd>")
+    expect(html).toContain("<dt>quiet</dt><dd>1</dd>")
+    expect(html).toContain("<dt>look stale</dt><dd>1</dd>")
+    const sync = html.split("<b>sync</b>")[1]
+    expect(sync).toContain('title="failed 3 times in a row; no value line">look stale</span>')
+    expect(sync.split('class="wjb__sq"')[1].match(/class="is-(ok|err)"/g)).toHaveLength(7)
+    expect(sync).toContain("token expired")
+    expect(sync).toContain('disabled title="Phase 2, not built">Pause</button>')
+    const digest = html.split("<b>digest</b>")[1].split("<b>sync</b>")[0]
+    expect(digest).toContain('<span class="chip chip--done">on</span>')
+    expect(digest.match(/class="is-none"/g)).toHaveLength(5)
+    expect(digest).toContain("t-digest")
+  })
+
+  it("posts a task from the Creator, with Done when, project and estimate", async () => {
+    const w = openWall({ data: PAGES, live: JOBS_LIVE, hash: "#page=creator" })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("New post")
+    let html = w.el("wall-creator").innerHTML
+    expect(html).toContain("This page sends a message")
+    expect(html).toContain('data-creator-agent="cx"')
+    expect(html).toMatch(/data-creator-agent="cx"[^>]*>.*?over capacity/)
+    expect(html).toContain("data-creator-post disabled")
+    w.click({ "data-creator-agent": "reviewer" })
+    w.el("cr-text").value = "Check the release notes"
+    w.el("cr-done").value = "a merged PR"
+    w.el("cr-project").value = "shop"
+    w.el("cr-estimate").value = "30"
+    w.click({ "data-creator-post": "" })
+    await w.settle()
+    const posted = w.calls.filter((c) => c.url === "/api/admin/wall/post").map((c) => JSON.parse(c.init.body))
+    expect(posted).toEqual([{ agent: "reviewer", text: "Check the release notes\nDone when: a merged PR\nProject: shop\nEstimate: 30 min" }])
+    html = w.el("wall-creator").innerHTML
+    expect(html).toContain("Post to Reviewer")
+  })
+
+  it("keeps the List's warnings in its cells: forge, card, time and concurrent", async () => {
+    const data = { ...WALL, posts: [
+      post("w1", "cx", "in_progress", {
+        forgeState: { provider: "gitlab", state: "closed", closedBy: "a-person", mismatch: "forge-closed" },
+        timeFlag: "Ran past its estimate", estimateMinutes: 10, runMs: 30 * 60e3,
+        forgeTime: { loggedMinutes: 5, estimateMinutes: 60, flags: ["Logged less than it ran"] },
+        concurrent: [{ on: ["chat"], runs: ["t1", "t2"] }],
+      }),
+      post("w2", "cx", "waiting_owner", { forgeState: { provider: "github", unknown: "token expired" },
+        ownerCards: [{ title: "Ship it?", ask: "Ship it?", expiresAt: NOW + 3600e3, raisedBy: "cx", createdAt: NOW }] }),
+      post("w3", "reviewer", "done", { forgeState: { provider: "github", state: "open", mismatch: "forge-open" } }),
+    ] }
+    const w = openWall({ data, hash: "#status=&view=list" })
+    await w.settle()
+    const rows = w.el("wall-list").innerHTML.split("<tr>").slice(2)
+    const row = (id: string) => rows.find((r: string) => r.includes(`data-open="${id}"`)) ?? ""
+    expect(row("w1")).toContain("GitLab closed by a-person")
+    expect(row("w1")).toContain('title="Closed on the forge, still open here">⚠')
+    expect(row("w1")).toContain('title="Ran past its estimate">⚠')
+    expect(row("w1")).toContain('title="Logged less than it ran">⚠')
+    expect(row("w1")).toContain('title="Concurrent runs: t1 + t2">⚠ concurrent')
+    expect(row("w2")).toContain('title="token expired">GitHub unknown')
+    expect(row("w2")).toContain("card expires")
+    expect(row("w3")).toContain('title="Open on the forge, closed here">⚠')
+  })
+
+  it("empties the Creator after a post, so a second click sends nothing", async () => {
+    let answer: (v: unknown) => void = () => {}
+    const pending = new Promise((r) => { answer = r })
+    const w = openWall({ data: PAGES, live: JOBS_LIVE, hash: "#page=creator", post: pending })
+    await w.settle()
+    w.click({ "data-creator-agent": "reviewer" })
+    w.el("cr-text").value = "Check the release notes"
+    w.el("cr-done").value = "a merged PR"
+    w.click({ "data-creator-post": "" })
+    // In flight: the button is off and a second click sends nothing.
+    expect(w.el("wall-creator").innerHTML).toContain("data-creator-post disabled")
+    w.click({ "data-creator-post": "" })
+    answer({ ok: true, status: 200, json: async () => ({ message: "Posted." }) })
+    await w.settle()
+    const posts = () => w.calls.filter((c) => c.url === "/api/admin/wall/post")
+    expect(posts()).toHaveLength(1)
+    expect(w.el("cr-text").value).toBe("")
+    expect(w.el("cr-done").value).toBe("")
+    expect(w.el("wall-creator").innerHTML).toContain('<textarea id="cr-text" rows="4" maxlength="3500" placeholder="What should be done? Markdown works."></textarea>')
+    w.click({ "data-creator-post": "" })
+    await w.settle()
+    expect(posts()).toHaveLength(1)
+    expect(w.el("cr-note").textContent + w.el("wall-creator").innerHTML).toContain("Write the request first.")
+  })
+
+  it("shows Projects as cards with the worst state and closed per week", async () => {
+    const tp = { throughput: { weeks: [], projects: [{ project: "shop", weeks: [0, 2, 1, 4], total: 7 }], owners: [] } }
+    const w = openWall({ data: PAGES, throughput: tp, hash: "#status=open&view=projects" })
+    await w.settle()
+    await w.settle()
+    const card = w.el("wall-projects").innerHTML.split('<article class="wpc">')[1]
+    expect(card).toContain('<span class="wpc__s is-blocked">blocked</span>')
+    expect(card.match(/<span style="height:\d+px" title="\d closed">/g)).toHaveLength(4)
+    expect(card).toContain('title="4 closed"')
+  })
+})
+
+describe("Wall v2 live sessions, comments and calls (#1355)", () => {
+  const LIVE3 = { nodes: [
+    { name: "node-a", url: "http://node-a", reachable: true, space: { agents: ["cx", "reviewer"], topic: "Release notes", startedAt: new Date(NOW - 300e3).toISOString() },
+      crons: [{ id: "digest", agent: "cx", schedule: "0 9 * * *", enabled: true, consecutiveErrors: 0, nextRun: new Date(NOW + 1800e3).toISOString() }],
+      agents: [
+        { id: "cx", name: "Customer Desk", runningTasks: [{ id: "t9", startedAt: new Date(NOW - 60e3).toISOString(), messagePreview: "Answering a refund" }] },
+        { id: "reviewer", name: "Reviewer", runningTasks: [] },
+      ] },
+    { name: "node-b", url: "http://node-b", reachable: true, space: { agents: ["far"], topic: "Far talk", startedAt: new Date(NOW).toISOString() },
+      agents: [{ id: "far", name: "Far Agent", runningTasks: [] }] },
+  ] }
+
+  it("lists live sessions with Spaces first, joins a Space here, names one elsewhere, and shows what comes up", async () => {
+    const w = openWall({ live: LIVE3, hash: "#page=live" })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("Live")
+    expect(w.el("nav-n-live").textContent).toBe("3")
+    const html = w.el("wall-live").innerHTML
+    const order = [...html.matchAll(/<article class="wls is-(\w+)"/g)].map((m) => m[1])
+    expect(order).toEqual(["space", "space", "work"])
+    expect(html).toContain("Release notes")
+    expect(html).toContain("data-join-space")
+    expect(html).toContain("Plays on node-b")
+    expect(html).toContain('href="/tasks/t9?agent=cx&amp;node=http%3A%2F%2Fnode-a"')
+    expect(html).toContain("<b>digest</b>")
+    w.click({ "data-join-space": "" })
+    await w.settle()
+    expect(w.calls.some((c) => c.url === "/api/admin/wall/space" && !c.init?.method)).toBe(false)
+    expect(w.calls.filter((c) => c.url === "/api/admin/wall/space").map((c) => c.init.method)).toEqual(["GET"])
+  })
+
+  it("starts a Space from the Live page with two agents and a topic", async () => {
+    const w = openWall({ live: LIVE3, hash: "#page=live" })
+    await w.settle()
+    w.el("lv-a").value = "cx"
+    w.el("lv-b").value = "reviewer"
+    w.el("lv-topic").value = "What to ship Friday"
+    w.click({ "data-live-start": "" })
+    await w.settle()
+    const sent = w.calls.filter((c) => c.url === "/api/admin/wall/space" && c.init.method === "POST").map((c) => JSON.parse(c.init.body))
+    expect(sent).toEqual([{ agent: "cx", with: "reviewer", topic: "What to ship Friday" }])
+  })
+
+  it("sends a comment's @mentions to those agents as posts on their own machines", async () => {
+    const w = openWall({ live: LIVE3, hash: "#status=open&post=r1" })
+    await w.settle()
+    w.el("wdo-text").value = "Please check with @reviewer and @far, not @nobody"
+    w.click({ "data-act": "comment" })
+    await w.settle()
+    const posts = w.calls.filter((c) => c.url === "/api/admin/wall/post")
+    expect(posts.map((c) => JSON.parse(c.init.body).agent)).toEqual(["reviewer", "far"])
+    expect(JSON.parse(posts[0].init.body).text).toMatch(/^The owner mentioned you in a comment on Wall post r1 by @cx/)
+    expect(posts[0].init.headers["X-Agentx-Peer"]).toBeUndefined()
+    expect(posts[1].init.headers["X-Agentx-Peer"]).toBe("http://node-b")
+    expect(w.el("wdo-note").textContent).toMatch(/Also posted to @reviewer, @far\./)
+  })
+
+  it("calls an agent and joins its live work from the Agents page", async () => {
+    const w = openWall({ live: LIVE3, hash: "#page=agents" })
+    await w.settle()
+    const html = w.el("wall-agents-page").innerHTML
+    const cx = html.split('id="agent-cx"')[1].split('id="agent-')[0]
+    expect(cx).toContain('data-call-agent="cx"')
+    expect(cx).toContain("● Join live</a>")
+    expect(html.split('id="agent-reviewer"')[1].split('id="agent-')[0]).not.toContain("Join live")
+    w.click({ "data-call-agent": "far" })
+    await w.settle()
+    const call = w.calls.find((c) => c.url === "/api/admin/wall/call")!
+    expect(JSON.parse(call.init.body)).toEqual({ agent: "far" })
+    expect(call.init.headers["X-Agentx-Peer"]).toBe("http://node-b")
   })
 })

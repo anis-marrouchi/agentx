@@ -111,6 +111,11 @@ export class Talk {
   private playing: Turn | null = null
   private listeners: Array<(e: TalkEvent) => void> = []
 
+  /** What the two talk about, for the Wall's live sessions (#1355). */
+  get topic(): string { return this.opts.topic }
+  /** Who talks, by agent id. */
+  get speakerIds(): string[] { return this.opts.speakers.map((s) => s.agentId) }
+
   constructor(private opts: TalkOpts) {
     this.listener = opts.listener ?? DEFAULT_LISTENER
     this.models = opts.speakers.map((s) => opts.model(s, talkSystemPrompt(s, this.listener)))

@@ -338,6 +338,10 @@ export class VoiceTalkService {
         agentId: t.agentId, mode: t.mode, goal: t.goal.slice(0, 160), startedAt: t.startedAt,
       }
     }
-    return { active: t.state !== "ended", kind: "talk", id: t.id, state: t.state, startedAt: t.startedAt, transcript: t.transcript, gaps: t.gaps }
+    const talk = t as { topic?: string; speakerIds?: string[] }
+    return {
+      active: t.state !== "ended", kind: "talk", id: t.id, state: t.state, startedAt: t.startedAt, transcript: t.transcript, gaps: t.gaps,
+      topic: String(talk.topic ?? "").slice(0, 200), agents: talk.speakerIds ?? [],
+    }
   }
 }

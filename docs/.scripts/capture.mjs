@@ -50,6 +50,8 @@ const shots = [
   { name: "wall/projects", path: "/wall#status=open&view=projects", wait: ".wpc" },
   { name: "wall/jobs", path: "/wall#status=open&view=jobs", wait: ".wjb" },
   { name: "wall/creator", path: "/wall#page=creator", wait: ".wcr__a", steps: [{ click: ".wcr__a" }, { wait: ".wcr__a.is-on" }, { type: "#cr-text", text: "Summarise the open support tickets by topic" }, { type: "#cr-done", text: "A short list in the post" }] },
+  { name: "wall/live", path: "/wall#page=live", wait: ".wlv" },
+  { name: "wall/comment", path: "/wall#status=&post=req-docs-wall-done", wait: "#wdo-text", steps: [{ type: "#wdo-text", text: "Thanks. @builder please add the delivery times to the shop page too" }], clipTo: ".wdo" },
   { name: "wall/phone-dark", path: "/wall", wait: ".wp", phone: true, dark: true },
   // #1355: the status tabs with the filters open, and the composer.
   { name: "wall/filters", path: "/wall#status=waiting", wait: ".wp", steps: [{ click: "#wall-search" }, { wait: "#wall-filters.is-open" }] },
