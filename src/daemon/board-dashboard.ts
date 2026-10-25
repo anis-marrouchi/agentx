@@ -79,6 +79,7 @@ import { decide, listInbox, planStoreFor, requestStoreFor, type InboxItem } from
 import { readRequestSettings } from "@/requests/settings"
 import { handleWallApi, WALL_PREFIX, withForgeTime, type WallDeps } from "./wall-api"
 import { gitlabTimeReader, wallForgeTime, type WallForgeTimeSource } from "./wall-forge-time"
+import { handlePortfolioRequest } from "./wall-portfolio"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
@@ -258,6 +259,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     nodeName: ctx.config.node?.name, root: process.cwd(), people: () => currentPeople(ctx.config.people),
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
+  })) return
+  // The Wall's portfolio summary (#1194): a `wall:portfolio` key or the
+  // dashboard key, nothing else; counts and titles only (wall-portfolio.ts).
+  if (await handlePortfolioRequest(req, res, path, method, {
+    node: localNodeName(ctx.config), dashboardToken: ctx.token,
+    posts: (days) => buildWallFleet(new URLSearchParams({ days: String(days) }), ctx) as Promise<any>,
   })) return
   if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
 
@@ -675,7 +682,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
 
   if (method === "GET" && path.startsWith("/api/admin/observability/")) {
-    if (await handleObservabilityApi(req, res, path)) return
+    if (await handleObservabilityApi(req, res, path, ctx.config)) return
   }
   // /api/admin/logs/stream — SSE tail of the daemon's stdout. Mirrors
   // `agentx daemon logs -f`. On systemd-managed nodes this calls

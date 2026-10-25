@@ -63,10 +63,60 @@ export const WALL_PAGE_SCRIPT = String.raw`
   function groupKey(p) { return p.group.channel + ' · ' + p.group.chatId; }
   function idleDays(p) { return Math.floor((Date.now() - p.lastMoveAt) / DAY); }
   function stateBadge(state) {
-    var cls = state === 'needs_attention' ? 'ax-badge--err' : state === 'waiting_owner' ? 'ax-badge--warn'
-      : state === 'done' ? 'ax-badge--live' : OPEN.indexOf(state) >= 0 ? 'ax-badge--accent' : 'ax-badge--ghost';
-    return '<span class="ax-badge ' + cls + '">' + esc(state.replace(/_/g, ' ')) + '</span>';
+    var cls = state === 'needs_attention' ? 'chip--err' : state === 'waiting_owner' ? 'chip--warn'
+      : state === 'done' ? 'chip--done' : OPEN.indexOf(state) >= 0 ? '' : 'chip--ghost';
+    return '<span class="chip state ' + cls + '">' + esc(state.replace(/_/g, ' ')) + '</span>';
   }
+
+  // --- Agents as feed authors (#1207): name, @handle, avatar ---
+  /** Display names and who runs now, from the live snapshot of every node. */
+  function agentInfo() {
+    var info = {};
+    ((S.live && S.live.nodes) || []).forEach(function (n) {
+      (n.agents || []).forEach(function (a) {
+        var i = info[a.id] || (info[a.id] = { name: a.name || a.id, live: false });
+        if (a.runningTasks && a.runningTasks.length) i.live = true;
+      });
+    });
+    return info;
+  }
+  function nameOf(id) { var i = agentInfo()[id]; return i ? i.name : id; }
+  function isAgent(id) {
+    return !!agentInfo()[id] || ((S.data && S.data.posts) || []).some(function (p) { return p.owner === id; });
+  }
+  function hue(id) {
+    var h = 0;
+    for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+    return h;
+  }
+  function initials(name) {
+    var words = String(name).replace(/[-_.@]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return '?';
+    return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
+  }
+  /** A round avatar. Agents open their profile; people get a plain grey one. */
+  function avatar(id, size, person) {
+    var cls = 'av' + (size ? ' av--' + size : '') + (person ? ' av--person' : '') + (!person && agentInfo()[id] && agentInfo()[id].live ? ' is-live' : '');
+    var face = esc(initials(person ? id : nameOf(id)));
+    if (person || size) return '<span class="' + cls + '" style="--av-h:' + hue(id) + '" aria-hidden="true">' + face + '</span>';
+    return '<button type="button" class="' + cls + '" style="--av-h:' + hue(id) + '" data-agent="' + esc(id) + '" title="' + esc(nameOf(id)) + ': profile and posts">' + face + '</button>';
+  }
+  /** Short relative time, as on a social feed: 45s, 12m, 3h, 2d. */
+  function short(ms) {
+    var s = Math.max(0, (Date.now() - ms) / 1000);
+    return s < 60 ? Math.round(s) + 's' : s < 3600 ? Math.round(s / 60) + 'm' : s < 86400 ? Math.round(s / 3600) + 'h' : Math.round(s / 86400) + 'd';
+  }
+  function shortTime(ms) {
+    return '<time datetime="' + esc(new Date(ms).toISOString()) + '" title="' + esc(stamp(ms)) + '">' + short(ms) + '</time>';
+  }
+  var ICON = {
+    reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12a8 8 0 0 1 8-8h1a7 7 0 0 1 0 14H9l-5 3v-9z"/></svg>',
+    runs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 9h13l-3-3M20 15H7l3 3"/></svg>',
+    time: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></svg>',
+    proof: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>',
+    trace: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l4-4 3 3 5-6"/></svg>',
+  };
   function taskHref(taskId, agentId, node, done) {
     var q = '?agent=' + encodeURIComponent(agentId);
     if (node && node.daemonUrl) q += '&node=' + encodeURIComponent(node.daemonUrl);
@@ -175,38 +225,51 @@ export const WALL_PAGE_SCRIPT = String.raw`
     var multi = S.data && S.data.nodes && S.data.nodes.length > 1;
     var conc = p.concurrent || [];
     var cls = 'wp' + (p.blocked ? ' is-blocked' : '') + (p.failedRuns ? ' is-failed' : '') + (conc.length ? ' is-concurrent' : '');
-    var meta = [
-      'Owner <b><a href="/admin/agents/' + encodeURIComponent(p.owner) + '">' + esc(p.owner) + '</a></b>',
+    // Author line: name, @handle, time, as on a social feed; the status as a chip.
+    var by = '<button type="button" class="name" data-agent="' + esc(p.owner) + '">' + esc(nameOf(p.owner)) + '</button>' +
+      '<span class="h">@' + esc(p.owner) + '</span><span aria-hidden="true">·</span>' + shortTime(p.lastMoveAt) +
+      (multi ? '<span aria-hidden="true">·</span><span>' + esc(p.node.name) + '</span>' : '') + stateBadge(p.state);
+    var via = [
       p.askedBy ? 'Asked by <b>' + esc(p.askedBy) + '</b>' : '',
-      'Group <b>' + esc(groupKey(p)) + '</b>',
-      p.project ? 'Project <b>' + esc(p.project) + '</b>' : '',
-      multi ? 'Node <b>' + esc(p.node.name) + '</b>' : '',
+      'in <b>' + esc(groupKey(p)) + '</b>',
+      p.project ? 'project <b>' + esc(p.project) + '</b>' : '',
+    ].filter(Boolean).join(' · ');
+    var meta = [
       'Opened ' + when(p.createdAt),
       'Last move ' + when(p.lastMoveAt),
       p.closedAt ? 'Closed ' + when(p.closedAt) : '',
-      'Runs <b>' + p.runs + '</b>' + (p.failedRuns ? ' (' + p.failedRuns + ' failed)' : '') + (p.runMs ? ', ' + mins(p.runMs) + ' min' : ''),
       p.estimateMinutes ? 'Estimate <b>' + p.estimateMinutes + ' min</b>' : '',
       p.forgeTime ? 'GitLab time <b' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>' + esc(forgeTimeText(p.forgeTime, true)) + '</b>' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
-    var links = [];
-    if (p.home) links.push('Home: ' + linkOrText(p.home.link));
-    if (p.evidence) links.push('Proof: ' + linkOrText(p.evidence));
+    // Action row: thread, runs, minutes, then the links out.
+    var acts = [
+      '<button type="button" data-thread="' + esc(p.id) + '" aria-expanded="' + (S.threads[p.id] ? 'true' : 'false') + '">' + ICON.reply + (S.threads[p.id] ? 'Hide thread' : 'Thread') + '</button>',
+      '<span title="Runs that worked on it"' + (p.failedRuns ? ' class="is-err"' : '') + '>' + ICON.runs + p.runs + (p.runs === 1 ? ' run' : ' runs') + (p.failedRuns ? ', ' + p.failedRuns + ' failed' : '') + '</span>',
+      p.runMs ? '<span title="Minutes the runs took">' + ICON.time + mins(p.runMs) + ' min</span>' : '',
+    ];
+    if (p.home) acts.push(/^https?:\/\//.test(p.home.link)
+      ? '<a href="' + esc(p.home.link) + '" target="_blank" rel="noopener" title="Home: ' + esc(p.home.link) + '">' + ICON.link + '<span class="home">Home: ' + esc(p.home.link.replace(/^https?:\/\//, '')) + '</span></a>'
+      : '<span title="Home">' + ICON.link + 'Home: ' + esc(p.home.link) + '</span>');
+    if (p.evidence) acts.push(/^https?:\/\//.test(p.evidence)
+      ? '<a href="' + esc(p.evidence) + '" target="_blank" rel="noopener">' + ICON.proof + 'Proof</a>'
+      : '<span>' + ICON.proof + 'Proof: ' + esc(p.evidence) + '</span>');
     if (p.lastRun) {
-      links.push('<a href="' + esc(taskHref(p.lastRun.taskId, p.lastRun.agentId, p.node, !isOpen(p))) + '">Task record and trace</a>');
-      links.push('<a href="/agents/' + encodeURIComponent(p.lastRun.agentId) + '/history">Agent history</a>');
+      acts.push('<a href="' + esc(taskHref(p.lastRun.taskId, p.lastRun.agentId, p.node, !isOpen(p))) + '">' + ICON.trace + 'Task record and trace</a>');
+      acts.push('<a href="/agents/' + encodeURIComponent(p.lastRun.agentId) + '/history">Agent history</a>');
     }
-    links.push('<button type="button" data-thread="' + esc(p.id) + '" aria-expanded="' + (S.threads[p.id] ? 'true' : 'false') + '">' + (S.threads[p.id] ? 'Hide thread' : 'Thread') + '</button>');
-    return '<article class="' + cls + '" id="post-' + esc(p.id) + '">' +
-      '<div class="wp__head">' + stateBadge(p.state) + '<span class="wp__title">' + esc(p.headline) + '</span></div>' +
+    return '<article class="' + cls + '" id="post-' + esc(p.id) + '">' + avatar(p.owner) + '<div class="wp__b">' +
+      '<div class="wp__by">' + by + '</div>' +
+      '<div class="wp__via">' + via + '</div>' +
+      '<p class="wp__title">' + esc(p.headline) + '</p>' +
       (p.blocked ? '<div class="wp__block">Waits on <b>' + esc(p.blocked.who) + '</b> since ' + when(p.blocked.since) + ' — ' + esc(p.blocked.why) + '</div>' : '') +
       (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
       (forgeFlags(p).length ? '<div class="wp__flag">GitLab time: ' + esc(forgeFlags(p).join('; ')) + '</div>' : '') +
       conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
       cardsOf(p).map(cardHtml).join('') +
       '<div class="wp__meta">' + meta + '</div>' +
-      '<div class="wp__links">' + links.join('') + '</div>' +
+      '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
       '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
-      '</article>';
+      '</div></article>';
   }
 
   // Repeats in a row (same kind, author, status and words) fold into one
@@ -234,18 +297,66 @@ export const WALL_PAGE_SCRIPT = String.raw`
       (e.text ? '<div class="txt">' + esc(e.text) + '</div>' : '') +
       (ids.length ? '<div class="ids">' + ids.join('') + '</div>' : '');
   }
+  /** One reply in the thread: a small avatar of who acted, then the line. */
+  function replyHtml(e, p, extra) {
+    var who = (e.route && e.route.from) || e.who || '';
+    var err = e.status === 'error' || e.status === 'timeout' || e.status === 'failed';
+    return '<li class="' + (err ? 'is-err' : '') + '">' + avatar(who || '?', 'sm', !isAgent(who)) +
+      '<div class="wr">' + eventHtml(e, p) + (extra || '') + '</div></li>';
+  }
   function threadHtml(t, p) {
     if (t.loading) return '<p class="ax-wall__empty">Loading thread…</p>';
     if (t.error) return '<p class="ax-wall__empty">Thread not available: ' + esc(t.error) + '</p>';
     var groups = collapse(t.events);
     return '<ol class="wt">' + groups.map(function (g, gi) {
-      var e = g.items[0], err = e.status === 'error' || e.status === 'timeout';
       var more = g.items.length > 1
         ? ' <button type="button" class="more" data-more="' + gi + '">×' + g.items.length + ' — show all</button><ol class="wt" hidden data-more-list="' + gi + '">' +
-          g.items.map(function (x) { return '<li>' + eventHtml(x, p) + '</li>'; }).join('') + '</ol>'
+          g.items.map(function (x) { return replyHtml(x, p); }).join('') + '</ol>'
         : '';
-      return '<li class="' + (err ? 'is-err' : '') + '">' + eventHtml(e, p) + more + '</li>';
+      return replyHtml(g.items[0], p, more);
     }).join('') + '</ol>';
+  }
+
+  // --- Agents box and agent profile (#1207) ---
+  function agentStats() {
+    var by = {};
+    ((S.data && S.data.posts) || []).forEach(function (p) {
+      var a = by[p.owner] || (by[p.owner] = { id: p.owner, posts: 0, open: 0, owner: 0, done: 0, runs: 0, last: 0 });
+      a.posts++; a.runs += p.runs || 0;
+      if (isOpen(p)) a.open++;
+      if (waitsOnOwner(p)) a.owner++;
+      if (p.state === 'done') a.done++;
+      a.last = Math.max(a.last, p.lastMoveAt || 0);
+    });
+    return Object.keys(by).map(function (k) { return by[k]; })
+      .sort(function (x, y) { return y.open - x.open || y.last - x.last; });
+  }
+  function agentsHtml() {
+    var list = agentStats(), sel = $('f-owner').value;
+    if (!list.length) return '<p class="ax-wall__empty">No agent has a post on the Wall.</p>';
+    var shown = S.allAgents ? list : list.slice(0, 6);
+    return shown.map(function (a) {
+      return '<button type="button" class="wa' + (a.id === sel ? ' is-on' : '') + '" data-agent="' + esc(a.id) + '">' + avatar(a.id, 'side') +
+        '<span class="wa__n"><b>' + esc(nameOf(a.id)) + '</b><small>@' + esc(a.id) + ' · ' + a.open + ' open · ' + a.posts + (a.posts === 1 ? ' post' : ' posts') + '</small></span></button>';
+    }).join('') + (list.length > 6 ? '<button type="button" class="wa-more" data-agents-more>' + (S.allAgents ? 'Show fewer' : 'Show all ' + list.length) + '</button>' : '');
+  }
+  function profileHtml(id) {
+    var a = agentStats().find(function (x) { return x.id === id; }) || { open: 0, owner: 0, done: 0, runs: 0, posts: 0 };
+    var live = agentInfo()[id] && agentInfo()[id].live;
+    return '<div class="wpf__banner" style="--av-h:' + hue(id) + '"></div><div class="wpf">' +
+      '<div class="wpf__top">' + avatar(id, 'lg') + '<button type="button" class="ax-btn ax-btn--ghost" data-profile-clear>All posts</button></div>' +
+      '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' +
+      '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
+        '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
+      '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(id) + '/history">History</a></div></div>';
+  }
+  function showAgent(id) {
+    $('f-owner').value = $('f-owner').value === id ? '' : id;
+    if ($('f-owner').value === id) $('f-status').value = '';
+    writeHash();
+    render();
+    var el = document.querySelector('.ax-wall__main');
+    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' });
   }
   async function toggleThread(id) {
     if (S.threads[id]) { delete S.threads[id]; render(); return; }
@@ -378,6 +489,10 @@ export const WALL_PAGE_SCRIPT = String.raw`
     var f = current();
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
+    document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list');
+    $('wall-profile').hidden = !f.owner || S.view === 'failures';
+    if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
+    $('wall-agents').innerHTML = agentsHtml();
     $('wall-feed').hidden = S.view !== 'feed';
     $('wall-list').hidden = S.view !== 'list';
     $('wall-failures').hidden = S.view !== 'failures';
@@ -422,9 +537,12 @@ export const WALL_PAGE_SCRIPT = String.raw`
   }
 
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-view],[data-thread],[data-more],[data-sort],[data-open]');
+    var t = ev.target.closest('[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear]');
     if (!t) return;
-    if (t.hasAttribute('data-view')) setView(t.getAttribute('data-view'));
+    if (t.hasAttribute('data-agent')) showAgent(t.getAttribute('data-agent'));
+    else if (t.hasAttribute('data-agents-more')) { S.allAgents = !S.allAgents; render(); }
+    else if (t.hasAttribute('data-profile-clear')) { $('f-owner').value = ''; writeHash(); render(); }
+    else if (t.hasAttribute('data-view')) setView(t.getAttribute('data-view'));
     else if (t.hasAttribute('data-thread')) toggleThread(t.getAttribute('data-thread'));
     else if (t.hasAttribute('data-more')) {
       var list = t.parentNode.querySelector('[data-more-list="' + t.getAttribute('data-more') + '"]');
