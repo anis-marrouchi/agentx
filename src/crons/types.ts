@@ -1,3 +1,4 @@
+import type { CronValue } from "./value-line"
 import type { AutonomyLevel } from "@/guard/autonomy"
 import type { AutonomyBlock } from "@/guard/autonomy-enforce"
 
@@ -25,6 +26,8 @@ export interface CronJobState {
   /** Routine autonomy level; unset = act (full agent permissions). */
   autonomy?: AutonomyLevel
   onError: Array<"log" | "notify" | "disable">
+  /** Why it runs and the number that proves it (#1183). */
+  value?: CronValue
   /** Send each successful run's answer to the job's `notify` target.
    *  True whenever the job has `notify`, unless `deliverResult: false`. */
   deliverResult?: boolean

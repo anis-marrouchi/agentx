@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { cronValueSchema } from "@/crons/value-line"
 import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
@@ -756,6 +757,9 @@ const channelsConfigSchema = z.object({
 
 const cronJobSchema = z.object({
   enabled: z.boolean().default(true),
+  /** Why the job runs and the number that proves it (#1183). Optional;
+   *  shown as written on the Wall and Settings › Schedules. */
+  value: cronValueSchema.optional(),
   schedule: z.string(),
   timezone: z.string().default("UTC"),
   agent: z.string(),

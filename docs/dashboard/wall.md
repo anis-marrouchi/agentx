@@ -209,6 +209,15 @@ The Wall only shows the verdict. Giving one is done by the QA agent, and nobody 
    - **Cron runs**: failed scheduled jobs on every machine, with their error and a **full log** link.
    - **Workflow runs**: failed workflow runs, with the step that failed and its error.
 
+## See recurring jobs and their value line
+
+1. Select **Jobs**. Every scheduled job on every machine is listed, with its schedule and the agent it runs.
+2. Under each job is its value line: why it runs and the number that proves it, from [`crons.<id>.value`](/reference/config-automation#crons). A job without one says **no value line** in amber, so the gap shows.
+
+Settings › Schedules shows the same line under each job.
+
+![The Jobs tab: four jobs on two machines, two with a value line and two marked no value line](/screenshots/wall/jobs.png)
+
 ## Running now
 
 Each connected machine has a card:

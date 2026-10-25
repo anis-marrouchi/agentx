@@ -23,6 +23,7 @@ import {
   type TopbarPeer,
 } from ".."
 import { getTopbarFeatures } from "../../topbar"
+import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 
 /** Feather-style stroked icons for each section head. Kept together at the
  *  top so we can swap the icon set in one place if/when the design calls
@@ -74,8 +75,8 @@ export function renderAdminPage(opts: AdminPageOpts = {}): string {
     currentPeerId: opts.currentPeerId,
     noMain: true,
     body: chrome + adminPageBody() + TOAST_HTML,
-    css: ADMIN_PAGE_CSS,
-    scripts: `${tokenScript}<script>${TOAST_SCRIPT}\n${ROW_CARD_SCRIPT}\n${ADMIN_HEALTH_SCRIPT}\n${ADMIN_PAGE_SCRIPT}</script>`,
+    css: ADMIN_PAGE_CSS + CRON_VALUE_CSS,
+    scripts: `${tokenScript}<script>${TOAST_SCRIPT}\n${ROW_CARD_SCRIPT}\n${ADMIN_HEALTH_SCRIPT}\n${CRON_VALUE_SCRIPT}\n${ADMIN_PAGE_SCRIPT}</script>`,
   })
 }
 
@@ -3200,6 +3201,7 @@ function renderCrons() {
             ' runs <b>' + escapeHtml(c.agent) + '</b>' +
             (c.prompt ? ' · ' + escapeHtml(c.prompt.slice(0, 80) + (c.prompt.length > 80 ? '…' : '')) : '') +
           '</div>' +
+          '<div class="ax-sub">' + axCronValueHtml(c.value, escapeHtml) + '</div>' +
         '</div>' +
         '<div class="ax-row-card__actions">' +
           '<button class="ax-btn ax-btn--danger" data-id="' + escapeHtml(c.id) + '">Delete</button>' +
