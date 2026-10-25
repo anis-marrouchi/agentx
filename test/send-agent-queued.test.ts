@@ -154,7 +154,7 @@ describe("the daemon route", () => {
     const a2a = send.indexOf('if (body.channel === "a2a")')
     expect(a2a).toBeGreaterThan(-1)
     expect(a2a).toBeLessThan(send.indexOf("this.router.sendOutbound("))
-    expect(send).toContain("await this.sendToAgent(req, res, a2a)")
+    expect(send).toContain("await this.sendToAgent(req, res, a2a.body)")
   })
 
   it("queues local and mesh sends unless the caller asked to wait", () => {
@@ -180,27 +180,52 @@ describe("the daemon route", () => {
 // #1251 — POST /send on an a2a chat was refused as "Unknown channel"; a
 // script that discarded the answer lost its status message.
 describe("a2aSendBody", () => {
+  const ok = (b: Record<string, unknown>) => {
+    const r = a2aSendBody(b)
+    if (!("body" in r)) throw new Error(r.error)
+    return r.body
+  }
+  const err = (b: Record<string, unknown>) => {
+    const r = a2aSendBody(b)
+    return "error" in r ? r.error : null
+  }
+
   it("sends a callee's note to the caller, naming the callee's turn in that chat", () => {
     const chatId = "a2a:asker:helper:dlg-abc-123"
-    expect(a2aSendBody({ channel: "a2a", chatId, text: "probe", agentId: "helper" })).toEqual({
+    expect(ok({ channel: "a2a", chatId, text: "probe", agentId: "helper" })).toEqual({
       agentId: "asker", text: "probe", senderAgentId: "helper", callerChannel: "a2a", callerChatId: chatId,
     })
   })
 
   it("sends the caller's message to the callee", () => {
-    expect(a2aSendBody({ chatId: "a2a:asker:helper", text: "go", senderAgentId: "asker" })?.agentId).toBe("helper")
+    expect(ok({ chatId: "a2a:asker:helper", text: "go", senderAgentId: "asker" }).agentId).toBe("helper")
   })
 
   it("with no sender named, goes to the caller from the callee", () => {
-    const b = a2aSendBody({ chatId: "a2a:asker:helper:dlg-1", text: "x" })
-    expect(b?.agentId).toBe("asker")
-    expect(b?.senderAgentId).toBe("helper")
+    const b = ok({ chatId: "a2a:asker:helper:dlg-1", text: "x" })
+    expect(b.agentId).toBe("asker")
+    expect(b.senderAgentId).toBe("helper")
   })
 
   it("keeps a caller task id, and refuses a chat ID that names no two agents", () => {
-    expect(a2aSendBody({ chatId: "a2a:asker:helper", text: "x", agentId: "helper", callerTaskId: "t1" })?.callerTaskId).toBe("t1")
+    expect(ok({ chatId: "a2a:asker:helper", text: "x", agentId: "helper", callerTaskId: "t1" }).callerTaskId).toBe("t1")
     for (const chatId of ["a2a", "a2a:asker", "helper", "a2a::helper", "a2a:a:b:c:d"]) {
-      expect(a2aSendBody({ chatId, text: "x" })).toBeNull()
+      expect(err({ chatId, text: "x" })).toContain("is not an a2a chat ID")
     }
+  })
+
+  it("refuses a sender that is neither agent in the chat", () => {
+    expect(err({ chatId: "a2a:asker:helper", text: "x", agentId: "other" })).toContain('"other" is not in a2a chat')
+    expect(err({ chatId: "a2a:asker:helper", text: "x", senderAgentId: "other", agentId: "helper" })).toContain('"other"')
+  })
+
+  it("passes async, home, context and taskType through to /send/agent", () => {
+    const b = ok({
+      chatId: "a2a:asker:helper", text: "x", agentId: "helper",
+      async: false, home: "repo-a", context: { k: 1 }, taskType: "review", told: { kind: "notice" },
+    })
+    expect(b).toMatchObject({ async: false, home: "repo-a", context: { k: 1 }, taskType: "review" })
+    // The told-the-owner gate is for owner addresses; an a2a chat is not one.
+    expect(b).not.toHaveProperty("told")
   })
 })

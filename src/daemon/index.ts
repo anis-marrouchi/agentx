@@ -7276,8 +7276,8 @@ export class AgentXDaemon {
           // goes to the other agent in it, the way /send/agent sends it.
           if (body.channel === "a2a") {
             const a2a = a2aSendBody(body)
-            if (a2a) await this.sendToAgent(req, res, a2a)
-            else this.json(res, 400, { error: `"${String(body.chatId)}" is not an a2a chat ID (a2a:<agent>:<agent>[:<id>]). To message an agent, POST /send/agent {agentId, text, senderAgentId}.` })
+            if ("body" in a2a) await this.sendToAgent(req, res, a2a.body)
+            else this.json(res, 400, { error: a2a.error })
             break
           }
           try {
