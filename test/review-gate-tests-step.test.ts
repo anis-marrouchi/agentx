@@ -139,6 +139,19 @@ describe("runTestStep", () => {
     }
   })
 
+  it("runs the command with an empty temporary HOME, removed afterwards", async () => {
+    const r = repo()
+    try {
+      const out = await runTestStep({ checkout: r.dir, command: `echo "home=$HOME"; test "$HOME" != "${process.env.HOME}" && test -d "$HOME" && test -z "$(ls -A "$HOME")"`, sha: r.sha, ref: "pull/1/head", timeoutMinutes: 1 })
+      expect(out.passed).toBe(true)
+      const home = out.output.match(/home=(\S+)/)?.[1]
+      expect(home).toBeTruthy()
+      expect(existsSync(home!)).toBe(false)
+    } finally {
+      rmSync(r.dir, { recursive: true, force: true })
+    }
+  })
+
   it("fails with a reason when the commit cannot be fetched", async () => {
     const r = repo()
     try {
@@ -153,7 +166,7 @@ describe("runTestStep", () => {
   })
 
   it("passes no daemon secrets to the command", () => {
-    const env = bareEnv({ PATH: "/bin", HOME: "/h", GITHUB_TOKEN: "x", ANTHROPIC_API_KEY: "y" })
-    expect(env).toEqual({ CI: "true", PATH: "/bin", HOME: "/h" })
+    const env = bareEnv("/tmp/home", { PATH: "/bin", HOME: "/Users/daemon", GITHUB_TOKEN: "x", ANTHROPIC_API_KEY: "y" })
+    expect(env).toEqual({ CI: "true", PATH: "/bin", HOME: "/tmp/home" })
   })
 })

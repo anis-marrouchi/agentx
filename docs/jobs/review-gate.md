@@ -95,7 +95,8 @@ A merge request counts as an agent's when it was opened or pushed by an account 
 The reviewer cannot run anything: it reads the result of the other checks. When the repository has no CI of its own, the gate can run the tests itself. It checks out the pull request's latest commit in a temporary folder, runs your test command there, and posts the result on the pull request as the status `agentx/tests` before the review starts. On a failure it also comments the end of the output. The reviewer is given the result with the other checks.
 
 - **Only agent pull requests opened by an account AgentX posts with** run the tests. A pull request whose description only carries an agent's signature is reviewed, but its code is not run: anyone can write a signature.
-- The command runs on the computer that runs the daemon, with only `PATH`, `HOME`, the locale and `CI=true` set. None of the daemon's tokens or keys reach it.
+- The command runs on the computer that runs the daemon, with only `PATH`, the locale and `CI=true` set. No token or key from the daemon's environment reaches it, and `HOME` is an empty temporary folder, so credentials saved in the daemon user's home (`~/.npmrc`, `~/.config/gh`) are not found there. It still runs as that user: files outside `HOME` that the user can read stay readable. If your tests need a package cache or a registry login, set it up in the command.
+- When the run is stopped, the command and every process it started are stopped together.
 - The temporary folder is a git worktree of your clone. It is removed when the run ends; the clone itself is not switched or changed.
 - A run longer than `timeoutMinutes` is stopped and counts as a failure.
 

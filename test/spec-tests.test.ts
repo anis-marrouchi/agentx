@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs"
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { homedir, tmpdir } from "os"
 import { join } from "path"
 import { execFileSync } from "child_process"
@@ -246,6 +246,15 @@ describe("helpers", () => {
     const r = await spawnWithTimeout(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { cwd: tmpdir(), timeoutMs: 200, killGraceMs: 200 })
     expect(r.timedOut).toBe(true)
     expect(Date.now() - started).toBeLessThan(3_000)
+  })
+
+  it("a time-out with killGroup also stops the shell's children", async () => {
+    const pidFile = join(mkdtempSync(join(tmpdir(), "agentx-killgroup-")), "pid")
+    const r = await spawnWithTimeout("sh", ["-c", `sleep 30 & echo $! > ${pidFile}; wait`], { cwd: tmpdir(), timeoutMs: 300, killGraceMs: 200, killGroup: true })
+    expect(r.timedOut).toBe(true)
+    const pid = Number(readFileSync(pidFile, "utf-8").trim())
+    await new Promise((ok) => setTimeout(ok, 100))
+    expect(() => process.kill(pid, 0)).toThrow()
   })
 
   it("reads the CLI result, budget stop included", () => {

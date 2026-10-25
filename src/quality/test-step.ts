@@ -14,7 +14,9 @@ import { execProcess, spawnWithTimeout, type ExecFn } from "@/agents/spec-tests"
 //
 // The command runs PR code on this machine, so the gate only runs it for
 // PRs opened by an account AgentX posts with, and with a bare environment:
-// none of the daemon's tokens are passed down.
+// none of the daemon's tokens are passed down, and HOME is an empty
+// temporary folder so on-disk credentials (~/.config/gh, ~/.npmrc, the
+// daemon's own files) are not where the tests look.
 
 export const TESTS_STATUS_CONTEXT = "agentx/tests"
 
@@ -49,11 +51,11 @@ export interface TestStepDeps {
   now?: () => number
 }
 
-/** PATH, HOME, locale and temp folder only: tests need a shell, not the
- *  daemon's tokens. */
-export function bareEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const keep = ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SHELL", "USER"]
-  const out: NodeJS.ProcessEnv = { CI: "true" }
+/** PATH, locale and temp folder only, with `home` as HOME: tests need a
+ *  shell, not the daemon's tokens or its home folder. */
+export function bareEnv(home: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const keep = ["PATH", "LANG", "LC_ALL", "TMPDIR", "SHELL", "USER"]
+  const out: NodeJS.ProcessEnv = { CI: "true", HOME: home }
   for (const k of keep) if (env[k] !== undefined) out[k] = env[k]
   return out
 }
@@ -65,8 +67,13 @@ export function tail(text: string, bytes = OUTPUT_TAIL_BYTES): string {
 }
 
 const realRunCommand: NonNullable<TestStepDeps["runCommand"]> = async (command, cwd, timeoutMs) => {
-  const r = await spawnWithTimeout("sh", ["-c", command], { cwd, env: bareEnv(), timeoutMs })
-  return { code: r.code, output: `${r.stdout}${r.stderr ? `\n${r.stderr}` : ""}`, timedOut: r.timedOut }
+  const home = mkdtempSync(join(tmpdir(), "agentx-tests-home-"))
+  try {
+    const r = await spawnWithTimeout("sh", ["-c", command], { cwd, env: bareEnv(home), timeoutMs, killGroup: true })
+    return { code: r.code, output: `${r.stdout}${r.stderr ? `\n${r.stderr}` : ""}`, timedOut: r.timedOut }
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 export async function runTestStep(req: TestStepRequest, deps: TestStepDeps = {}): Promise<TestStepResult> {
