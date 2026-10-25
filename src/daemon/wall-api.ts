@@ -11,6 +11,7 @@ import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
 import { forgeCommentsOf, type WallForgeComment, type WallForgeState, type WallForgeStateSource } from "./wall-forge-state"
 import { isStalled, projectOverview, type WallProjects } from "./wall-projects"
 import { wallClosures, wallThroughput } from "./wall-throughput"
+import { blockerOf, type WallBlocker } from "./wall-blocks"
 
 // --- The Wall's data (#1180) ---
 //
@@ -117,6 +118,9 @@ export interface WallPost {
   closeReason: string | null
   /** Who or what it waits on, and since when. Null: moving. */
   blocked: { who: string; why: string; since: number } | null
+  /** What a record says it waits on, with that agent's project (#1193).
+   *  Null when blocked with no record of a blocker, or not blocked. */
+  blockedBy: WallBlocker | null
   estimateMinutes: number | null
   runMs: number
   runs: number
@@ -338,18 +342,22 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
   const stall = stalledWhy(r, deps.staleAfterHours, deps.now)
   const waiting = r.state === "waiting_owner" || r.state === "waiting_other" || r.state === "needs_attention"
   const lastMoveAt = r.stateChangedAt ?? r.updatedAt
+  const repo = projectOf(r)
+  const project = deps.projects ? deps.projects.of(r, repo) : { name: repo, rhythmHours: deps.staleAfterHours }
   let blocked: WallPost["blocked"] = null
+  let blockedBy: WallBlocker | null = null
   if (waiting || stall) {
     const handedTo = r.state === "waiting_other" ? openHandoffTo(deps.db, r.id) : null
-    const on = handedTo ? { who: handedTo } : waitsOn(r, { isAgent: deps.isAgent, activeStepAgent: activeStepAgentOf(deps.plans) })
+    const stepAgent = activeStepAgentOf(deps.plans)(r.id)
+    const look = waitsOn(r, { isAgent: deps.isAgent, activeStepAgent: () => stepAgent })
+    const on = handedTo ? { who: handedTo } : look
     const why = r.state === "waiting_owner" ? (r.question ?? "waiting on the owner")
       : r.state === "needs_attention" ? (r.attentionReason ?? "needs attention")
       : stall ?? "waiting on another agent"
     blocked = { who: on.who, why: clean(why, 200), since: lastMoveAt }
+    blockedBy = blockerOf({ owner: r.askedAgent ?? r.agentId, project: project.name, handedTo, stepAgent, waitsOn: look }, deps.projects)
   }
   const last = [...runs].reverse().find((x) => x.agentId)
-  const repo = projectOf(r)
-  const project = deps.projects ? deps.projects.of(r, repo) : { name: repo, rhythmHours: deps.staleAfterHours }
   return {
     id: r.id,
     state: r.state,
@@ -372,6 +380,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps): WallPost {
     evidence: r.evidence ? redactSecrets(r.evidence) : null,
     closeReason: r.closeReason ? clean(r.closeReason, 200) : null,
     blocked,
+    blockedBy,
     estimateMinutes: r.estimateMinutes,
     runMs,
     runs: runs.length,

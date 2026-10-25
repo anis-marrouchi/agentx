@@ -70,6 +70,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <label>Project <select id="f-project"><option value="">All</option></select></label>
       <label>Node <select id="f-node"><option value="">All</option></select></label>
       <label>Group <select id="f-group"><option value="">All</option></select></label>
+      <label>Group blocked by <select id="f-by"><option value="">nothing</option><option value="project">project</option><option value="agent">agent</option></select></label>
       <label class="ax-wall__check"><input type="checkbox" id="f-time"> Time flags only</label>
       <label class="ax-wall__check"><input type="checkbox" id="f-conc"> Concurrent only</label>
       <label class="ax-wall__check"><input type="checkbox" id="f-qa"> Awaiting QA only</label>

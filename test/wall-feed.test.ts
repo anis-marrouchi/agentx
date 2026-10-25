@@ -275,3 +275,46 @@ describe("Weekly throughput on the Wall (#1192)", () => {
     expect(w.el("wall-projects").innerHTML).toContain("Throughput is not available.")
   })
 })
+
+// #1193: the Blocked list grouped by the blocking project or agent, with
+// how long each post has been blocked; posts with no recorded blocker last.
+describe("Blocked view grouped by blocker (#1193)", () => {
+  const since = (h: number) => NOW - h * 3600e3
+  const agentBy = (who: string, project: string | null, cross: boolean) => ({ kind: "agent", who, source: "handoff", project, crossProject: cross })
+  const BLK = {
+    ...WALL,
+    posts: [
+      post("b1", "coder", "waiting_other", { project: "Web", blocked: { who: "ops", why: "x", since: since(5) }, blockedBy: agentBy("ops", "Ops", true) }),
+      post("b2", "coder", "waiting_other", { project: "Web", blocked: { who: "reviewer", why: "x", since: since(2) }, blockedBy: agentBy("reviewer", "Web", false) }),
+      post("b3", "coder", "in_progress", { project: "Web", blocked: { who: "coder", why: "quiet", since: since(30) }, blockedBy: null }),
+      post("b4", "pm", "waiting_owner", { project: "Ops", blocked: { who: "owner", why: "?", since: since(1) }, blockedBy: { kind: "owner", who: "owner", source: "owner", project: null, crossProject: false } }),
+      post("b5", "pm", "waiting_other", { project: "Ops", blocked: { who: "ops", why: "x", since: since(8) }, blockedBy: agentBy("ops", "Ops", false) }),
+    ],
+  }
+  const heads = (html: string) => [...html.matchAll(/<h3>([^<]*) <small>\((\d+)\)<\/small><\/h3>/g)].map((m) => `${m[1]} (${m[2]})`)
+
+  it("groups by the blocking project, oldest block first, with no recorded blocker last", async () => {
+    const w = openWall({ data: BLK, hash: "#status=blocked&by=project&view=list" })
+    await w.settle()
+    const html = w.el("wall-list").innerHTML
+    expect(heads(html)).toEqual(["Ops (2)", "Web (1)", "The owner (1)", "No blocker recorded (1)"])
+    expect(html).toContain('@ops <small class="chip chip--warn">other project</small>')
+    expect(html).toContain("<td>@reviewer</td>")
+    expect(html).toContain("5 h ago")
+  })
+
+  it("groups by the blocking agent", async () => {
+    const w = openWall({ data: BLK, hash: "#status=blocked&by=agent&view=list" })
+    await w.settle()
+    expect(heads(w.el("wall-list").innerHTML)).toEqual(["@ops (2)", "@reviewer (1)", "The owner (1)", "No blocker recorded (1)"])
+  })
+
+  it("keeps the plain list when no grouping is picked, or the status is not Blocked", async () => {
+    const plain = openWall({ data: BLK, hash: "#status=blocked&view=list" })
+    await plain.settle()
+    expect(plain.el("wall-list").innerHTML).not.toContain("<h3>")
+    const open = openWall({ data: BLK, hash: "#status=open&by=agent&view=list" })
+    await open.settle()
+    expect(open.el("wall-list").innerHTML).not.toContain("<h3>")
+  })
+})

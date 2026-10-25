@@ -21,7 +21,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
   var OPEN = ['in_progress', 'waiting_owner', 'waiting_other', 'needs_attention'];
   var DAY = 864e5;
-  var FILTERS = ['owner', 'status', 'idle', 'project', 'node', 'group', 'time', 'conc', 'qa', 'q'];
+  var FILTERS = ['owner', 'status', 'idle', 'project', 'node', 'group', 'by', 'time', 'conc', 'qa', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
@@ -447,6 +447,47 @@ ${WALL_REVIEWS_SCRIPT}
     }).join('') + '</tbody></table>';
   }
 
+  // --- Blocked, grouped by what blocks it (#1193) ---
+  // Only blockers a record names (a hand-off, another agent's plan step,
+  // the owner, an outside person) are grouped; the rest are "No blocker
+  // recorded". By project, an agent blocker goes under its own project.
+  function blockKey(p, by) {
+    var b = p.blockedBy;
+    if (!b) return { key: '~none', label: 'No blocker recorded' };
+    if (b.kind === 'owner') return { key: '~owner', label: 'The owner' };
+    if (b.kind === 'person') return { key: 'person:' + b.who, label: b.who + ' (outside person)' };
+    if (by === 'agent') return { key: 'agent:' + b.who, label: '@' + b.who };
+    return b.project ? { key: 'project:' + b.project, label: b.project } : { key: '~noproject', label: 'Agents with no project' };
+  }
+  function blocksHtml(posts, by) {
+    var groups = {}, order = [];
+    posts.forEach(function (p) {
+      var k = blockKey(p, by);
+      if (!groups[k.key]) { groups[k.key] = { label: k.label, posts: [] }; order.push(k.key); }
+      groups[k.key].posts.push(p);
+    });
+    // Named blockers first, oldest block first; then the owner, agents
+    // with no project, and last the posts with no recorded blocker.
+    var LAST = ['~owner', '~noproject', '~none'];
+    function oldest(g) { return Math.min.apply(null, g.posts.map(function (p) { return p.blocked.since; })); }
+    order.sort(function (a, b) {
+      var x = LAST.indexOf(a), y = LAST.indexOf(b);
+      return x !== y ? x - y : oldest(groups[a]) - oldest(groups[b]);
+    });
+    return order.map(function (k) {
+      var g = groups[k];
+      g.posts.sort(function (a, b) { return a.blocked.since - b.blocked.since; });
+      return '<h3>' + esc(g.label) + ' <small>(' + g.posts.length + ')</small></h3>' +
+        '<table class="wl"><thead><tr><th>Post</th><th>Owner</th><th>Project</th><th>Blocked by</th><th>Since</th></tr></thead><tbody>' +
+        g.posts.map(function (p) {
+          var b = p.blockedBy;
+          return '<tr><td><a href="#" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a></td><td>' + esc(p.owner) + '</td><td>' + esc(p.project || '—') + '</td>' +
+            '<td>' + (b ? esc(b.kind === 'agent' ? '@' + b.who : b.kind === 'owner' ? 'the owner' : b.who) + (b.crossProject ? ' <small class="chip chip--warn">other project</small>' : '') : '—') + '</td>' +
+            '<td>' + ago(p.blocked.since) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }).join('');
+  }
+
   // --- Projects (#1190): one row per project, each count a link to the list ---
   function projectHref(project, status) {
     var q = new URLSearchParams();
@@ -617,7 +658,8 @@ ${WALL_REVIEWS_SCRIPT}
     $('wall-jobs').hidden = S.view !== 'jobs';
     $('wall-count').hidden = side;
     if (S.view === 'feed') $('wall-feed').innerHTML = posts.length ? posts.map(postHtml).join('') : '<p class="ax-wall__empty">No posts match these filters.</p>';
-    if (S.view === 'list') $('wall-list').innerHTML = posts.length ? listHtml(posts) : '<p class="ax-wall__empty">No posts match these filters.</p>';
+    if (S.view === 'list') $('wall-list').innerHTML = !posts.length ? '<p class="ax-wall__empty">No posts match these filters.</p>'
+      : f.status === 'blocked' && f.by ? blocksHtml(posts, f.by) : listHtml(posts);
     if (S.view === 'failures') $('wall-failures').innerHTML = failuresHtml();
     if (S.view === 'projects') $('wall-projects').innerHTML = projectsHtml();
     // Recurring jobs with their value line (#1183): cron-value.ts.

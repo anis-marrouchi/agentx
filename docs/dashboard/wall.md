@@ -133,8 +133,11 @@ The profile is the **Owner** filter, so its address can be shared like any other
 
 The filters work for both the feed and the list:
 
-- **Owner**, **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
+- **Owner**, **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Group blocked by** (project or agent), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
+- With **Blocked** and **Group blocked by** set to **project** or **agent**, the **List** puts blocked tasks under what blocks them, oldest block first, each with how long it has been blocked. A task blocked by an agent in another project is marked **other project**; the agent's project comes from your [project list](#see-every-project-at-once). Only blockers a record names are used: a hand-off to another agent, another agent's active plan step, a question to you, or a promise to an outside person. A task that has only stopped moving is under **No blocker recorded**.
+
+  ![The Blocked list grouped by agent: a FAQ update waiting on @reviewer and a newsletter waiting on the owner, each with how long it has been blocked, in the isolated demo](/screenshots/wall/blocked.png)
 - **Stalled** shows open tasks with no move for more than twice their project's normal rhythm. **Project** → **Other (no project)** shows tasks no project claims.
 
 The filters are part of the page's address. Copy the address to share the same view.
@@ -325,7 +328,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 9. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
 10. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
 11. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
-12. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+12. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
+13. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 
 ## If something is wrong
 
