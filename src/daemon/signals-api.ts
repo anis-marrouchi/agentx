@@ -1,3 +1,4 @@
+import type { OrderPeer } from "@/agents/signals/orders"
 import type { SignalSender } from "@/agents/signals/policy"
 import type { SignalService } from "@/agents/signals/service"
 import { summarizeStopped } from "@/agents/signals/store"
@@ -10,12 +11,16 @@ import { summarizeStopped } from "@/agents/signals/store"
 //   POST /api/signals/resume  { id, reason?, node? }
 //   POST /api/signals/drop    { id, node? }            forget a stopped task (#871)
 //   POST /api/signals/stop-all { reason?, mesh?, wait? } stop every task (#1271)
+//   POST /api/signals/stop-all/report { orderId, outcomes } a peer's part of
+//        a mesh stop-all, after its restart (#1328)
 //
 // stop-all is the owner's order (or a peer's that signals.allowPeers
 // names), never an agent's. With `mesh`, the owner's order also goes to
 // every healthy mesh peer, one hop, each deciding by its own allowPeers.
 // With `wait`, the answer comes once every plan is saved, here and on the
-// peers, and says whether it is safe to restart.
+// peers, and says whether it is safe to restart. A mesh order carries
+// this node's order id and name, so after the restart every peer reports
+// here and the owner gets one report for every node (orders.ts).
 //
 // `node` names a mesh peer: the signal is forwarded there with this node's
 // peer token, and the peer decides by its own signals.allowPeers. The
@@ -87,12 +92,19 @@ export interface SignalsHttpDeps {
   forward(node: string, method: "GET" | "POST", path: string, body?: Record<string, unknown>, timeoutMs?: number): Promise<SignalsReply | null>
   /** Names of the healthy mesh peers, for a stop-all with `mesh`. */
   peers?(): string[]
+  /** One report for a mesh stop-all (#1328). Absent: each node reports
+   *  on its own. */
+  reporter?: {
+    begin(orderId: string, peers: OrderPeer[]): void
+    join(orderId: string, coordinator: string): void
+    receive(peer: string, body: Record<string, unknown>): Promise<{ status: number; error?: string }>
+  }
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined)
 
 export function isSignalsPath(path: string): boolean {
-  return path === "/api/signals/stop" || path === "/api/signals/stop-all" || path === "/api/signals/resume" || path === "/api/signals/drop" || path === "/api/signals/stopped" ||
+  return path === "/api/signals/stop" || path === "/api/signals/stop-all" || path === "/api/signals/stop-all/report" || path === "/api/signals/resume" || path === "/api/signals/drop" || path === "/api/signals/stopped" ||
     /^\/api\/signals\/stopped\/[^/]+$/.test(path)
 }
 
@@ -157,6 +169,13 @@ export async function handleSignalsHttp(
     }
   }
   if (path === "/api/signals/stop-all") return stopAllHttp(body, deps)
+  if (path === "/api/signals/stop-all/report") {
+    // Only a peer that took this node's order reports to it.
+    if (deps.sender.kind !== "peer") return { status: 403, body: { error: "only a mesh peer reports its part of a stop-all" } }
+    if (!deps.reporter) return { status: 404, body: { error: "no mesh stop-all on this node" } }
+    const r = await deps.reporter.receive(deps.sender.peer, body)
+    return r.error ? { status: r.status, body: { error: r.error } } : { status: 200, body: { ok: true, node: deps.selfNode } }
+  }
   if (path === "/api/signals/resume") {
     const id = str(body.id)
     if (!id) return { status: 400, body: { error: "send { id } of a stopped task" } }
@@ -182,18 +201,26 @@ async function stopAllHttp(body: Record<string, unknown>, deps: SignalsHttpDeps)
   const sender = deps.sender as SignalSender
   const wait = body.wait === true
   const reason = str(body.reason)
-  const r = await deps.service.stopAll(sender, reason)
+  // A peer's order names the node to report to after the restart.
+  const reportTo = sender.kind === "peer" ? sender.peer : undefined
+  const r = await deps.service.stopAll(sender, reason, { orderId: str(body.orderId) })
   if (!r.ok) return { status: r.status, body: { error: r.error } }
+  if (reportTo && deps.reporter && body.reportTo === true) deps.reporter.join(r.orderId, reportTo)
   // Only the owner's own order fans out; a peer's never goes on.
   const fanOut = body.mesh === true && sender.kind === "owner"
   const timeoutMs = deps.service.windDownMs() + STOP_ALL_PEER_SLACK_MS
   const peerReplies = fanOut
     ? Promise.all((deps.peers?.() ?? []).map(async (peer) => {
       try {
-        const reply = await deps.forward(peer, "POST", "/api/signals/stop-all", { reason, wait, via: { node: deps.selfNode } }, wait ? timeoutMs : undefined)
+        const reply = await deps.forward(peer, "POST", "/api/signals/stop-all", {
+          reason, wait, via: { node: deps.selfNode },
+          ...(deps.reporter ? { orderId: r.orderId, reportTo: true } : {}),
+        }, wait ? timeoutMs : undefined)
         if (!reply) return { node: peer, ok: false, error: "not reachable" }
         if (reply.status >= 400) return { node: peer, ok: false, error: String(reply.body.error ?? `HTTP ${reply.status}`) }
-        return { node: peer, ok: true, ...reply.body }
+        // `peer`: the name this node knows it by; `node`: its own name, as
+        // it answered. Its report after the restart may use either.
+        return { node: peer, ok: true, ...reply.body, peer }
       } catch (e: any) {
         return { node: peer, ok: false, error: /abort|timeout/i.test(String(e?.name ?? e)) ? "no answer in time; its plans may still be saving" : String(e?.message ?? e) }
       }
@@ -201,6 +228,11 @@ async function stopAllHttp(body: Record<string, unknown>, deps: SignalsHttpDeps)
     : Promise.resolve(undefined)
   const tasks = wait ? await r.done : r.tasks
   const peers = await peerReplies
+  // The peers that took the order report here after the restart.
+  const took = (peers ?? []).filter((p: any) => p.ok).map((p: any): OrderPeer => ({
+    name: p.peer, ...(typeof p.node === "string" && p.node !== p.peer ? { node: p.node } : {}),
+  }))
+  if (deps.reporter && took.length) deps.reporter.begin(r.orderId, took)
   // A refused task is still running: a restart would cut it off.
   const allSaved = tasks.every((t) => t.state !== "winding-down" && t.state !== "refused")
   const refused = tasks.filter((t) => t.state === "refused").map((t) => t.id)

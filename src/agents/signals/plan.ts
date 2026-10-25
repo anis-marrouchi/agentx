@@ -51,6 +51,8 @@ export function windDownMessage(input: {
   reason?: string
   originalMessage: string
   toolCalls: ToolCallRef[]
+  /** About the background builders the stop also stopped (#1328). */
+  builders?: string[]
 }): string {
   const lines = [
     `[Stop signal] ${input.by} asked you to stop this task${input.reason ? ` (${oneLine(input.reason, 200)})` : ""}. It has been stopped.`,
@@ -69,6 +71,7 @@ export function windDownMessage(input: {
     // The stop aborted the turn mid-way: whatever ran last may not have finished.
     lines.push(`The stop cut your turn off: the last tool call (${lastCall(input.toolCalls)}) may not have finished. Name it under Half-applied unless you know it completed.`)
   }
+  if (input.builders?.length) lines.push("", ...input.builders)
   return lines.join("\n")
 }
 
@@ -98,7 +101,7 @@ export function machinePlan(input: { toolCalls: ToolCallRef[]; note: string }): 
 }
 
 /** Prepended to the original request when a stopped task is resumed. */
-export function resumeNote(input: { stoppedAt: string; stoppedBy: string; reason?: string; plan: ResumePlan; resumedBy: string }): string {
+export function resumeNote(input: { stoppedAt: string; stoppedBy: string; reason?: string; plan: ResumePlan; resumedBy: string; builders?: string[] }): string {
   const at = input.stoppedAt.slice(11, 16)
   const who = input.plan.author === "agent" ? "Your resume plan" : "A resume plan AgentX built from your trace (you did not write one)"
   return [
@@ -106,6 +109,7 @@ export function resumeNote(input: { stoppedAt: string; stoppedBy: string; reason
     `${who}:`,
     input.plan.text,
     "",
+    ...(input.builders?.length ? [...input.builders, ""] : []),
     "Before repeating anything that changes the outside world (posting, pushing, merging, deploying, sending), check whether it already happened.",
     "Then finish the request below.",
     "",

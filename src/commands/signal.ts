@@ -97,7 +97,11 @@ function printStopAllTasks(tasks: any[], indent: string): void {
   for (const t of tasks) {
     const plan = t.plan === "agent" ? chalk.green("plan by the agent") : t.plan === "machine" ? chalk.yellow("plan by AgentX") : ""
     const state = t.state === "refused" ? chalk.red(`not stopped: ${t.error}`) : t.state === "winding-down" ? chalk.cyan("writing its plan") : plan || t.state
-    console.log(`${indent}${chalk.bold(t.agentId)} ${chalk.dim(t.id)} ${state}`)
+    const b = t.builders
+    const builders = b
+      ? chalk.dim(` · ${b.count} builder(s) stopped${b.saved ? `, ${b.saved} folder(s) saved on a WIP branch` : ""}`) + (b.notSaved ? chalk.red(`, ${b.notSaved} folder(s) not saved`) : "")
+      : ""
+    console.log(`${indent}${chalk.bold(t.agentId)} ${chalk.dim(t.id)} ${state}${builders}`)
   }
 }
 
@@ -144,6 +148,7 @@ common(signalCmd
       if (t.workflow) console.log(`    ${chalk.dim("workflow run:")} ${t.workflow.runId} (${t.workflow.workflowId}) paused at step ${t.workflow.nodeId}`)
       console.log(`    ${chalk.dim("asked:")} ${t.request}`)
       if (t.plan) console.log(`    ${chalk.dim(`plan (${t.plan.author}):`)} ${String(t.plan.text).split("\n")[0]}`)
+      if (t.builders) console.log(`    ${chalk.dim("builders:")} ${t.builders.helpers} stopped${t.builders.folders.length ? `; ${t.builders.folders.map((f: any) => f.wipBranch ? `${f.path} → ${f.wipBranch}` : f.error ? `${f.path} not saved` : f.path).join(", ")}` : ""}`)
     }
   })
 
@@ -161,6 +166,14 @@ common(signalCmd
     console.log(`  ${t.originalMessage}`)
     console.log(chalk.dim(`\n  Resume plan${t.plan ? ` (${t.plan.author === "agent" ? "written by the agent" : `written by AgentX: ${t.plan.note}`})` : ""}:`))
     console.log(t.plan ? t.plan.text.split("\n").map((l: string) => `  ${l}`).join("\n") : "  not written yet")
+    if (t.builders) {
+      console.log(chalk.dim(`\n  Background builders it had started (${t.builders.helpers.length}), stopped with it:`))
+      t.builders.helpers.forEach((h: string, i: number) => console.log(`  ${i + 1}. ${h}`))
+      for (const f of t.builders.folders) {
+        const where = f.wipBranch ? chalk.green(`saved on ${f.wipBranch} (${String(f.wipCommit).slice(0, 12)})`) : f.error ? chalk.red(`not saved: ${f.error}`) : chalk.dim("nothing to save: its commits are in the clone")
+        console.log(`  - ${f.path} (${f.branch ?? "no branch"}): ${where}`)
+      }
+    }
   })
 
 common(signalCmd

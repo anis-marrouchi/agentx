@@ -3297,7 +3297,7 @@ Stop a running task; the agent writes a resume plan.
 | `--channel <channel>` | — | The task's channel. |
 | `--chat <chatId>` | — | The task's chat id. |
 | `--all` | — | Stop every running task on this machine. Each writes its plan and resumes from it the next time AgentX starts. See [Stop everything before a restart](/jobs/pause-and-resume#stop-everything-before-a-restart). |
-| `--mesh` | — | With `--all`: on every connected mesh machine too. |
+| `--mesh` | — | With `--all`: on every connected mesh machine too. After the restart you get one report for all of them, from this machine. |
 | `--no-wait` | — | With `--all`: answer at once instead of waiting for the plans. |
 | `-r, --reason <reason>` | — | Why: shown to the agent and on the Live page. |
 
@@ -3312,7 +3312,7 @@ Stopped tasks and their resume plans.
 
 ### `agentx signal show <id>`
 
-One stopped task with its whole resume plan. For a step of a workflow run, it also names the step and the run.
+One stopped task with its whole resume plan. For a step of a workflow run, it also names the step and the run. For a task that had started background builders, it lists them and the WIP branch each folder's unsaved work was saved on. See [Background builders](/jobs/pause-and-resume#background-builders).
 
 ### `agentx signal resume <id>`
 

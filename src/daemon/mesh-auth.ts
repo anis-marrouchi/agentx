@@ -122,6 +122,8 @@ export function isControlPost(path: string): boolean {
     path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" ||
     // Stopping every task on this node, ahead of a restart (#1271).
     path === "/api/signals/stop-all" ||
+    // A peer's part of the one report for a mesh stop-all (#1328).
+    path === "/api/signals/stop-all/report" ||
     // Replaying past PRs through the review gate spends model budget (#990).
     path === "/api/review-gate/replay"
 }
