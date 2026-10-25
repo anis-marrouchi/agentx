@@ -37,6 +37,8 @@ export interface ReviewRecord {
   sincePushMinutes?: number
   statusPostedAt?: string
   diffTruncated?: boolean
+  /** The project's tests before the review (#1285), when configured. */
+  tests?: "passed" | "failed" | "skipped"
   /** Run by `agentx review-gate replay`: nothing was posted. */
   replay?: boolean
   /** Set for a GitLab merge request; unset means GitHub. */

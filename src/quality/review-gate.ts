@@ -3,6 +3,7 @@ import type { reviewGateConfigSchema } from "@/daemon/config"
 import { detectAgentxMarker } from "@/channels/outbound-marker"
 import { firstJsonObject } from "@/wiki/model-call"
 import type { ReviewLedger, ReviewRecord } from "./review-ledger"
+import { TESTS_STATUS_CONTEXT, testFailureComment, type TestStepRequest, type TestStepResult } from "./test-step"
 
 // --- Pre-merge review gate (#990) ---
 //
@@ -95,7 +96,8 @@ export interface ReviewGateGitHub {
   getChangedFiles(repo: string, number: number): Promise<string[]>
   getIssue(repo: string, number: number): Promise<IssueInfo | null>
   getChecks(repo: string, sha: string): Promise<CiCheck[]>
-  setStatus(repo: string, sha: string, state: ReviewState | "pending", description: string): Promise<void>
+  /** `context` defaults to REVIEW_STATUS_CONTEXT. */
+  setStatus(repo: string, sha: string, state: ReviewState | "pending", description: string, context?: string): Promise<void>
   /** Posts a PR comment; returns its URL when known. */
   comment(repo: string, number: number, body: string, agentId: string): Promise<string | undefined>
 }
@@ -138,6 +140,8 @@ export interface ReviewGateDeps {
   forge?: "github" | "gitlab"
   /** Linear and Jira, for PRs that link an issue by key. */
   trackers?: ReviewGateTrackers
+  /** Runs the project's tests on a commit (#1285). Unset: never run. */
+  runTests?: (req: TestStepRequest) => Promise<TestStepResult>
   log?: (msg: string) => void
   now?: () => number
   sleep?: (ms: number) => Promise<void>
@@ -581,6 +585,21 @@ export class ReviewGate {
       record.ciWaitMinutes = round((this.now() - startedAt) / 60_000)
       if (abort.signal.aborted) return await finish("error", "superseded by a newer push")
 
+      const tests = opts.replay ? undefined : cfg.tests[repo]
+      if (tests && this.deps.runTests) {
+        // PR code runs on this machine: a signature in the body is not
+        // enough, only an account AgentX itself posts with.
+        if (!this.deps.isAgentLogin(pr.authorLogin)) {
+          record.tests = "skipped"
+          this.log(`${key}: tests not run, ${pr.authorLogin} is not an account AgentX posts with`)
+        } else {
+          const result = await this.runProjectTests(repo, number, sha, tests, opts.post)
+          record.tests = result.passed ? "passed" : "failed"
+          checks.push({ name: TESTS_STATUS_CONTEXT, state: result.passed ? "success" : "failure" })
+          if (abort.signal.aborted) return await finish("error", "superseded by a newer push")
+        }
+      }
+
       let diff = await gh.getDiff(repo, number)
       const maxBytes = cfg.maxDiffKb * 1024
       const diffTruncated = Buffer.byteLength(diff) > maxBytes
@@ -634,12 +653,32 @@ export class ReviewGate {
     }
   }
 
+  /** Runs the project's tests on the commit and, when posting, puts
+   *  pass/fail on the PR as `agentx/tests`, with the output's end in a
+   *  comment on failure. A failed post never stops the review. */
+  private async runProjectTests(repo: string, number: number, sha: string, tests: ReviewGateConfig["tests"][string], post: boolean): Promise<TestStepResult> {
+    const gh = this.deps.github
+    const key = `${repo}#${number}`
+    const tryPost = async (what: string, fn: () => Promise<unknown>) => {
+      try { await fn() } catch (e: any) { this.log(`could not post ${what} on ${key}@${sha.slice(0, 7)}: ${e?.message || e}`) }
+    }
+    if (post) await tryPost(TESTS_STATUS_CONTEXT, () => gh.setStatus(repo, sha, "pending", "tests running", TESTS_STATUS_CONTEXT))
+    const ref = this.deps.forge === "gitlab" ? `merge-requests/${number}/head` : `pull/${number}/head`
+    const result = await this.deps.runTests!({ checkout: tests.checkout, command: tests.command, sha, ref, timeoutMinutes: tests.timeoutMinutes })
+    this.log(`${key}@${sha.slice(0, 7)}: tests ${result.passed ? "passed" : "failed"}: ${result.summary}`)
+    if (post) {
+      if (!result.passed) await tryPost("the test comment", () => gh.comment(repo, number, testFailureComment(sha, tests.command, result), REVIEW_CHANNEL))
+      await tryPost(TESTS_STATUS_CONTEXT, () => gh.setStatus(repo, sha, result.passed ? "success" : "failure", statusText(result.summary), TESTS_STATUS_CONTEXT))
+    }
+    return result
+  }
+
   /** CI checks on the commit, waiting up to `minutes` for pending ones.
-   *  Our own status is left out. */
+   *  Our own statuses are left out. */
   private async waitForChecks(repo: string, sha: string, minutes: number, signal: AbortSignal): Promise<CiCheck[]> {
     const deadline = this.now() + minutes * 60_000
     for (;;) {
-      const checks = (await this.deps.github.getChecks(repo, sha)).filter((c) => c.name !== REVIEW_STATUS_CONTEXT)
+      const checks = (await this.deps.github.getChecks(repo, sha)).filter((c) => c.name !== REVIEW_STATUS_CONTEXT && c.name !== TESTS_STATUS_CONTEXT)
       const pending = checks.some((c) => c.state === "pending" || c.state === "queued" || c.state === "in_progress")
       if (!pending || this.now() >= deadline || signal.aborted) return checks
       await this.sleep(Math.min(30_000, Math.max(0, deadline - this.now())))

@@ -126,12 +126,12 @@ export function createReviewGateGitLab(
       return out
     },
 
-    async setStatus(repo, sha, state, description) {
+    async setStatus(repo, sha, state, description, context = REVIEW_STATUS_CONTEXT) {
       await call(`${project(repo)}/statuses/${sha}`, {
         method: "POST",
         body: JSON.stringify({
           state: gitlabStatusState(state),
-          name: REVIEW_STATUS_CONTEXT,
+          name: context,
           description: state === "error" ? `error: ${description}` : description,
         }),
       })

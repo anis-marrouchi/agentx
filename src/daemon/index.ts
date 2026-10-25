@@ -257,6 +257,7 @@ import { findHelper } from "@/notify/local"
 import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
 import { createMergePolicyGitHub, createReviewGateGitHub } from "@/quality/review-gate-github"
 import { createReviewGateGitLab } from "@/quality/review-gate-gitlab"
+import { runTestStep } from "@/quality/test-step"
 import { TrackerDispatcher, reviewGateTrackers, type TrackerName } from "@/trackers"
 import { TRACKER_WEBHOOK_PATHS, handleTrackerWebhook, trackerClients } from "@/trackers/http"
 import { approvalCardInput, cardVerdict, MergePolicy } from "@/quality/merge-policy"
@@ -1437,6 +1438,7 @@ export class AgentXDaemon {
       ledger: this.reviewLedger,
       forge: name,
       trackers,
+      runTests: (req) => runTestStep(req),
       log: (m) => this.log(`[review-gate${isGitLab ? ":gitlab" : ""}] ${m}`),
       runReviewer: async (req) => {
         const started = Date.now()
