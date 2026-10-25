@@ -62,7 +62,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <a class="ax-wall__item" data-nav="agents" href="#page=agents" title="Agents">${NAV_ICON.agents}<span>Agents</span><b class="ax-wall__n" id="nav-n-agents"></b></a>
     <a class="ax-wall__item" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
     <div class="ax-wall__navfoot">
-      <span>Read-only. The Wall shows the work; it sends nothing.</span>
+      <span>The Wall shows the work. It sends something only when you comment, call or start a Space from a post.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button">Light / dark</button>
     </div>
   </nav>
@@ -124,7 +124,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section class="ax-wall__box ax-wall__about" aria-labelledby="wall-about-h">
       <h2 id="wall-about-h">Dashboard</h2>
       <nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav>
-      <p>The Wall is something you open, not something that pings you. Nothing here sends a message or a push.</p>
+      <p>The Wall is something you open, not something that pings you. It never pings you on its own.</p>
     </section>
   </aside>
 </div>`
