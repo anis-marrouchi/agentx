@@ -159,11 +159,9 @@ ${WALL_TASK_SCRIPT}
     proof: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>',
     trace: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l4-4 3 3 5-6"/></svg>',
   };
+  /** A run's link: the Wall's own Task page (#1381), which links on to the classic one. */
   function taskHref(taskId, agentId, node, done) {
-    var q = '?agent=' + encodeURIComponent(agentId);
-    if (node && node.daemonUrl) q += '&node=' + encodeURIComponent(node.daemonUrl);
-    if (done) q += '&archived=1';
-    return '/tasks/' + encodeURIComponent(taskId) + q;
+    return wallTaskHref({ id: taskId }, agentId, node && node.daemonUrl, done);
   }
   /** Markdown from an agent, escaped first; links only to web, mail or this site. */
   function md(text) {
@@ -1038,7 +1036,7 @@ ${WALL_TASK_SCRIPT}
         (running.length ? '<ul>' + running.map(function (x) {
           var rid = x.t.traceId || x.t.id;
           var conc = ((S.live && S.live.concurrent) || []).filter(function (o) { return o.runs.indexOf(rid) >= 0; });
-          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(taskHref(x.t.id, x.a.id, { daemonUrl: n.url }, false)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc((x.t.messagePreview || '').slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
+          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc((x.t.messagePreview || '').slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
             conc.map(function (o) { return concHtml(o, function (id) { return esc(id); }); }).join('') + '</li>';
         }).join('') + '</ul>' : '<div class="idle">' + (down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
         (ops.length ? '<details><summary>Ops details</summary>' + ops.map(esc).join(' · ') + '</details>' : '') + '</div>';

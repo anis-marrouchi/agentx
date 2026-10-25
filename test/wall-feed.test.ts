@@ -171,7 +171,8 @@ describe("Wall as a social feed (#1207)", () => {
     const r1 = feed.split('id="post-r1"')[1].split('id="post-r2"')[0]
     expect(r1.indexOf('<div class="wp__result ax-md"><p>Refund &lt;sent&gt;: order 47</p></div>')).toBeGreaterThan(-1)
     expect(r1.indexOf("wp__result")).toBeLessThan(r1.indexOf('<details class="wp__ask"><summary><span class="k">Request</span> Post r1</summary>'))
-    expect(r1).toContain('href="/tasks/t-r1?agent=cx">run t-r1</a>')
+    // A run link opens the Wall's Task page (#1381).
+    expect(r1).toContain('href="#page=task&amp;task=t-r1&amp;agent=cx">run t-r1</a>')
     expect(r1).not.toContain('<p class="wp__title">')
     // No result recorded: the request alone, said plainly.
     const r2 = feed.split('id="post-r2"')[1]
