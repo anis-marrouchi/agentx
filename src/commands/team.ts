@@ -5,7 +5,7 @@ import { dirname, resolve } from "path"
 import { fileURLToPath } from "url"
 import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
 import { shippedTeam, shippedTeams } from "@/teams/catalog"
-import { holdIfAgentCreated } from "@/agents/holds"
+import { holdIfAgentCreated, holdsRoot } from "@/agents/holds"
 import {
   applyTeam,
   buildTeamPackage,
@@ -96,7 +96,7 @@ export async function install(pkg: TeamPackage, opts: AddOpts): Promise<void> {
     kept = writeTeamSkills(pkg, plan).kept
   }
   // Added by an agent from its own shell: the new agents wait for the owner (#1169).
-  const heldBy = opts.dryRun ? undefined : holdIfAgentCreated(dirname(path), plan.agents.map((a) => a.id))
+  const heldBy = opts.dryRun ? undefined : holdIfAgentCreated(holdsRoot(), plan.agents.map((a) => a.id))
 
   for (const a of plan.agents) {
     const skills = a.skills.length ? chalk.dim(`  skills: ${a.skills.join(", ")}`) : ""

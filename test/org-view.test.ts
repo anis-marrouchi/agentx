@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { Readable } from "stream"
@@ -7,7 +7,9 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { businessConfigSchema } from "../src/business/config"
-import { holdAgent, holdIfAgentCreated, holdMessage, readHolds, releaseAgent } from "../src/agents/holds"
+import { holdAgent, holdIfAgentCreated, holdMessage, holdsRoot, readHolds, releaseAgent } from "../src/agents/holds"
+import { install } from "../src/commands/team"
+import { shippedTeams } from "../src/teams/catalog"
 import { buildOrgView, firstLine } from "../src/business/org-view"
 import { decide, listInbox } from "../src/approvals/inbox"
 import { handleAdminApi } from "../src/daemon/admin-panel"
@@ -112,6 +114,28 @@ describe("holds", () => {
     const out = await r.execute({ message: "hi", agentId: "dev" })
     expect(out).toMatchObject({ errorKind: "agent_held" })
     expect(out.error).toContain("waits for the owner's approval")
+  })
+})
+
+describe("every holds caller uses one root", () => {
+  const prevAgent = process.env.AGENTX_AGENT_ID
+  afterEach(() => { process.env.AGENTX_AGENT_ID = prevAgent })
+
+  it("team add from an agent's shell, with .agentx/config.json, holds where the daemon looks", async () => {
+    mkdirSync(join(dir, ".agentx"))
+    writeFileSync(join(dir, ".agentx", "config.json"), JSON.stringify({ node: { id: "n", name: "n" }, agents: {} }))
+    process.chdir(dir)
+    expect(holdsRoot()).toBe(process.cwd())
+    process.env.AGENTX_AGENT_ID = "ceo"
+    const pkg = shippedTeams()[0]
+    await install(pkg, {})
+
+    expect(existsSync(join(dir, ".agentx", ".agentx", "agent-holds.json"))).toBe(false)
+    const id = Object.keys(pkg.agents)[0]
+    expect(readHolds(dir)[id]).toMatchObject({ kind: "approval", by: "ceo" })
+    const r = new AgentRegistry(daemonConfigSchema.parse({ node: { id: "n", name: "n" }, agents: { [id]: { name: id, workspace: dir } } }), () => {})
+    const out = await r.execute({ message: "hi", agentId: id })
+    expect(out).toMatchObject({ errorKind: "agent_held" })
   })
 })
 
