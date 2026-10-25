@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.175.0](https://github.com/anis-marrouchi/agentx/compare/v0.174.0...v0.175.0) (2026-10-25)
+
+
+### Features
+
+* **wall:** v2 feed: nav pages with counts, status tabs, composer, compact posts ([#1355](https://github.com/anis-marrouchi/agentx/issues/1355)) ([#1369](https://github.com/anis-marrouchi/agentx/issues/1369)) ([672a447](https://github.com/anis-marrouchi/agentx/commit/672a4479e096c26270426fdeafe01b6d16b80916))
+* **wall:** v2 pages, with the [#1371](https://github.com/anis-marrouchi/agentx/issues/1371) review fixes ([#1355](https://github.com/anis-marrouchi/agentx/issues/1355)) ([#1374](https://github.com/anis-marrouchi/agentx/issues/1374)) ([872879e](https://github.com/anis-marrouchi/agentx/commit/872879eed2937ce264aa5a74b932e1c9ec93f20f))
+
+
+### Bug Fixes
+
+* **cloud-sessions:** close a session that is gone and run locally ([#1367](https://github.com/anis-marrouchi/agentx/issues/1367)) ([#1368](https://github.com/anis-marrouchi/agentx/issues/1368)) ([6014c81](https://github.com/anis-marrouchi/agentx/commit/6014c81fa6b47a4e2d087ed9a27cd7b172729927))
+* **review-gate:** stop a superseded review that has started, post a final status ([#1364](https://github.com/anis-marrouchi/agentx/issues/1364)) ([#1365](https://github.com/anis-marrouchi/agentx/issues/1365)) ([7041575](https://github.com/anis-marrouchi/agentx/commit/7041575be0f50196aca8fd9c31489f1267a9d48d))
+* **wall:** send a composer post once when Post is pressed twice ([#1355](https://github.com/anis-marrouchi/agentx/issues/1355)) ([#1370](https://github.com/anis-marrouchi/agentx/issues/1370)) ([0bfb46c](https://github.com/anis-marrouchi/agentx/commit/0bfb46cdfb735f7a200f3763c1f0ce3cfe329d9b))
+
 ## [0.174.0](https://github.com/anis-marrouchi/agentx/compare/v0.173.0...v0.174.0) (2026-10-25)
 
 
