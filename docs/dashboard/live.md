@@ -19,7 +19,7 @@ A busy agent shows a **running** card with the channel the task came from, how l
 5. To stop the task, select **✕ stop**, then confirm.
 6. To pause the task so it can be picked up later, select **❚❚ pause**. The agent writes a resume plan, and the task appears under **Stopped tasks** with a **▶ resume** button. See [Pause a task and resume it later](../jobs/pause-and-resume.md).
 
-When an agent is idle, its card shows its **last reply**. Select **history →** to see its recent tasks.
+When an agent is idle, its card shrinks to a compact card so busy agents stand out. It shows the agent's name, its AI engine, an **idle** badge, a small **last 24h** chart of how many tasks it ran (only if it ran any), and when it was **last active** (or **not used yet** for an agent that has never run). To read its last reply, select **history →**. The agent's history page opens with its recent tasks and replies.
 
 If the agent is running an on-screen lesson through [AgentX Voice](./voice.md), the card shows **on screen** with the step number. Select **✕ stop** on that line to end the lesson and give the screen back.
 
@@ -43,7 +43,7 @@ If a machine is slow to answer, Live keeps showing its last known agents for up 
 
 1. **Browser:** open **Live**. Every agent you configured appears, grouped by machine.
 2. Send an agent a small task from a channel or [in-page chat](./chat.md).
-3. Within a few seconds, that agent's card shows **running**, then its **last reply** when it finishes.
+3. Within a few seconds, that agent's card shows **running**. When it finishes, the card shrinks back to the compact idle card with **idle** and a fresh **last active** time. Select **history →** to read the reply.
 4. **Terminal:** in a Claude Code session, run `agentx attach as <agent>`, then type anything in that session. Within a few seconds, Live lists the session under **Claude Code sessions** and the agent's card shows **attached**.
 
 ## If something is wrong
