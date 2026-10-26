@@ -293,7 +293,7 @@ How the numbers are counted:
 
 A closed request is kept for `retentionDays` (90 days by default). After that it leaves its goal's numbers too.
 
-Agents can read the same list with `{action:"goals"}`. From a script, `GET /requests/goals` on the daemon gives it as JSON.
+On the Wall, select **Goal:** on a post to see every post for that goal under the same numbers: see [Follow one goal](../dashboard/wall.md#follow-one-goal). Agents can read the same list with `{action:"goals"}`. From a script, `GET /requests/goals` on the daemon gives it as JSON.
 
 ## Where a request landed
 

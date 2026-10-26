@@ -88,6 +88,7 @@ import { reportedReader, wallReported, withReported, type WallReportedSource } f
 import { forgeReader } from "@/requests/checkers/issue"
 import { handlePortfolioRequest } from "./wall-portfolio"
 import { claimPost, projectOverview, wallProjects } from "./wall-projects"
+import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
 import { handleWallAction, isWallActionPath, type Reply as WallReply } from "./wall-actions"
@@ -3282,6 +3283,8 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   const posts = tag(local.posts, local.node, null, null)
   const failures = tag(local.failures, local.node, null, null)
   const reported = local.reported ? tag([local.reported], local.node, null, null) : []
+  // Goals (#1392): rows with the same id add up across nodes.
+  const goalLists: unknown[][] = [Array.isArray(local.goals) ? local.goals : []]
   // Keyed by peer address: two peers can report the same node name.
   const peerTimingsOf: Record<string, unknown> = {}
   for (const { name, id, body, error, answeredMs } of await peerReplies as Array<{ name: string; id: string; body?: any; error?: string; answeredMs?: number }>) {
@@ -3290,11 +3293,13 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
     nodes.push({ name: node, peer: id, ok: true, syncedAt: body.syncedAt })
     posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], node, id, id).map((p) => claimBlocker(claimPost(p, projects, now), projects)))
     failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], node, id, id))
+    if (Array.isArray(body.goals)) goalLists.push(body.goals)
     if (body.reported && Array.isArray(body.reported.groups)) reported.push(...tag([body.reported], node, id, id))
     if (withTimings) peerTimingsOf[id] = { node, answeredMs, ...(body.timings ? { build: body.timings } : {}) }
   }
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
   return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names),
+    goals: mergeGoals(goalLists),
     // Capacity (#1191): counted here over every node's posts, with this node's threshold.
     capacity: wallCapacity(posts, deps?.capacityThreshold), staleAfterHours: local.staleAfterHours,
     ...(withTimings ? { timings: { totalMs: ms(), local: { doneMs: localMs, ...local.timings }, peers: peerTimingsOf } } : {}) }

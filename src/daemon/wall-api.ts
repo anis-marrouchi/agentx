@@ -13,6 +13,8 @@ import { isStalled, projectOverview, repoOfChat, type WallProjects } from "./wal
 import { wallClosures, wallThroughput } from "./wall-throughput"
 import { blockerOf, type WallBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
+import { mergeGoals, wallGoalOf } from "./wall-goals"
+import type { RequestGoal } from "@/requests/goals"
 
 // --- The Wall's data (#1180) ---
 //
@@ -43,6 +45,9 @@ import { wallCapacity } from "./wall-capacity"
 // A post leads with its result (#1242): what its own last run answered,
 // else what it was closed with. The request it answers is the post's own
 // record, opened from the result. No result recorded: the request alone.
+//
+// Goals (#1392, ./wall-goals): a post carries the goal its request serves,
+// and the list reply one row per goal with its progress and cost.
 
 export const WALL_PREFIX = "/api/admin/wall"
 const HOUR = 3_600_000
@@ -52,7 +57,7 @@ const TEXT_MAX = 600
 const FAILED_LIMIT = 200
 
 export interface WallDeps {
-  store: Pick<RequestStore, "listOpen" | "listClosedSince" | "get" | "byLink">
+  store: Pick<RequestStore, "listOpen" | "listClosedSince" | "get" | "byLink"> & Partial<Pick<RequestStore, "goals">>
   plans?: Pick<PlanStore, "get" | "steps" | "events"> | null
   db: Database.Database | null
   now: number
@@ -130,6 +135,8 @@ export interface WallPost {
   repo: string | null
   /** Its project's normal rhythm, in hours (#1190). */
   rhythmHours: number
+  /** The goal its request serves (#1168, #1392). Null: none named. */
+  goal: RequestGoal | null
   /** Open, with no move for more than twice the rhythm. */
   stalled: boolean
   home: { kind: string; link: string } | null
@@ -584,6 +591,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     project: project.name,
     repo,
     rhythmHours: project.rhythmHours,
+    goal: r.goal ? { id: r.goal.id, title: redactSecrets(r.goal.title) } : null,
     stalled: isStalled({ state: r.state, lastMoveAt, rhythmHours: project.rhythmHours }, deps.now),
     home: r.home,
     createdAt: r.createdAt,
@@ -765,18 +773,27 @@ function safe<T>(fn: () => T, fallback: T): T {
   try { return fn() } catch { return fallback }
 }
 
+/** This node's goal rows (#1392), as the fleet merge shapes them. A store
+ *  without goals, or a failed read, gives none. */
+export function wallGoals(deps: WallDeps): ReturnType<typeof mergeGoals> {
+  const read = deps.store.goals
+  if (!read) return []
+  return mergeGoals([safe(() => read.call(deps.store).map((g) => ({ ...wallGoalOf(g), title: redactSecrets(g.title) })), [])])
+}
+
 export function handleWallApi(path: string, q: URLSearchParams, deps: WallDeps | null, node: string): { status: number; body: unknown } {
   const syncedAt = deps?.now ?? Date.now()
   if (path === WALL_PREFIX) {
     const days = Math.max(0, Math.min(WALL_DAYS_MAX, Number(q.get("days") ?? 7) || 0))
-    if (!deps) return { status: 200, body: { node, syncedAt, posts: [], failures: [], projects: [], capacity: wallCapacity([]), staleAfterHours: null } }
+    if (!deps) return { status: 200, body: { node, syncedAt, posts: [], failures: [], projects: [], goals: [], capacity: wallCapacity([]), staleAfterHours: null } }
     const timings: WallTimings | undefined = q.get("timings") === "1" ? {} : undefined
     const t0 = performance.now()
     const posts = wallPosts(deps, days, timings)
     const failures = timed(timings, "failures", () => wallFailures(deps.db, deps.now))
+    const goals = timed(timings, "goals", () => wallGoals(deps))
     if (timings) timings.totalMs = Math.round((performance.now() - t0) * 10) / 10
     return { status: 200, body: {
-      node, syncedAt, posts, failures, projects: projectOverview(posts, deps.projects?.names),
+      node, syncedAt, posts, failures, projects: projectOverview(posts, deps.projects?.names), goals,
       capacity: wallCapacity(posts, deps.capacityThreshold), staleAfterHours: deps.staleAfterHours,
       ...(timings ? { timings } : {}),
     } }
