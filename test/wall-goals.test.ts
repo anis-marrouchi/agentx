@@ -65,6 +65,7 @@ describe("Wall goals", () => {
     const launch = body.goals.find((g: any) => g.id === "launch")
     expect(launch).toMatchObject({ title: "Launch the site", open: 1, done: 1, dropped: 0, progress: 0.5, costUsd: 0.75, runs: 3, unpriced: 1 })
     expect(launch.requests).toBeUndefined()
+    expect(store.goalCounts()).toEqual(store.goals().map(({ requests: _, ...g }) => g))
     expect(body.goals.map((g: any) => g.id).sort()).toEqual(["hire", "launch"])
   })
 

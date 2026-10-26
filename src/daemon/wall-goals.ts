@@ -4,9 +4,9 @@ import type { GoalSummary } from "@/requests/goals"
 //
 // The Wall filters its posts by the goal their request serves (#1168). Over
 // the filtered posts it shows the goal's progress and cost, read from the
-// same per-goal summary the Approvals page shows (RequestStore.goals()), so
-// both pages agree. The summary covers every request kept for the goal, not
-// only the posts of the Wall's last days.
+// same per-goal summary the Approvals page shows (RequestStore.goals(), read
+// counts-only through goalCounts()), so both pages agree. The summary covers
+// every request kept for the goal, not only the posts of the Wall's last days.
 //
 // The list reply carries one bounded row per goal, without its request list:
 // the posts are already the requests. Across the mesh, rows with the same id
@@ -28,7 +28,7 @@ export interface WallGoal {
 }
 
 /** A goal summary without its request list, for the Wall's reply. */
-export function wallGoalOf(g: GoalSummary): WallGoal {
+export function wallGoalOf(g: Omit<GoalSummary, "requests">): WallGoal {
   return { id: g.id, title: g.title, open: g.open, done: g.done, dropped: g.dropped, progress: g.progress, costUsd: g.costUsd, runs: g.runs, unpriced: g.unpriced, lastAt: g.lastAt }
 }
 

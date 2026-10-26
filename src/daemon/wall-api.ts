@@ -57,7 +57,7 @@ const TEXT_MAX = 600
 const FAILED_LIMIT = 200
 
 export interface WallDeps {
-  store: Pick<RequestStore, "listOpen" | "listClosedSince" | "get" | "byLink"> & Partial<Pick<RequestStore, "goals">>
+  store: Pick<RequestStore, "listOpen" | "listClosedSince" | "get" | "byLink"> & Partial<Pick<RequestStore, "goalCounts">>
   plans?: Pick<PlanStore, "get" | "steps" | "events"> | null
   db: Database.Database | null
   now: number
@@ -776,7 +776,7 @@ function safe<T>(fn: () => T, fallback: T): T {
 /** This node's goal rows (#1392), as the fleet merge shapes them. A store
  *  without goals, or a failed read, gives none. */
 export function wallGoals(deps: WallDeps): ReturnType<typeof mergeGoals> {
-  const read = deps.store.goals
+  const read = deps.store.goalCounts
   if (!read) return []
   return mergeGoals([safe(() => read.call(deps.store).map((g) => ({ ...wallGoalOf(g), title: redactSecrets(g.title) })), [])])
 }

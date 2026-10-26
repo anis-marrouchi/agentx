@@ -463,6 +463,46 @@ export class RequestStore {
     return out
   }
 
+  /** goals() without each goal's request list, counted in SQL (#1396): the
+   *  Wall reads it on every load. It reads the same requests goals() does,
+   *  and prices only their runs, so both give the same numbers. */
+  goalCounts(limit = GOALS_MAX): Array<Omit<GoalSummary, "requests">> {
+    const kept = `WITH kept AS (
+        SELECT id, goal_id, goal_title, state, updated_at, rowid AS rid FROM requests
+        WHERE goal_id IS NOT NULL AND goal_title IS NOT NULL AND state != 'candidate' ORDER BY updated_at DESC, rowid DESC LIMIT ?)`
+    const rows = this.db.prepare(
+      `${kept}, ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY goal_id ORDER BY updated_at DESC, rid DESC) AS n FROM kept)
+       SELECT k.goal_id AS id, f.goal_title AS title, f.updated_at AS lastAt,
+         SUM(CASE WHEN k.state = 'done' THEN 1 ELSE 0 END) AS done,
+         SUM(CASE WHEN k.state IN (${placeholders(CLOSED_STATES.length)}) AND k.state != 'done' THEN 1 ELSE 0 END) AS dropped,
+         SUM(CASE WHEN k.state NOT IN (${placeholders(CLOSED_STATES.length)}) THEN 1 ELSE 0 END) AS open
+       FROM kept k JOIN ranked f ON f.goal_id = k.goal_id AND f.n = 1
+       GROUP BY k.goal_id ORDER BY f.updated_at DESC, f.rid DESC LIMIT ?`,
+    ).all(GOAL_REQUESTS_MAX, ...CLOSED_STATES, ...CLOSED_STATES, limit) as Array<{ id: string; title: string; lastAt: number; open: number; done: number; dropped: number }>
+    if (!rows.length) return []
+    const cost = new Map<string, { usd: number | null; runs: number; unpriced: number }>()
+    try {
+      const priced = this.db.prepare(
+        `${kept}
+         SELECT k.goal_id AS id, SUM(t.cost_usd) AS usd, COUNT(*) AS runs, SUM(CASE WHEN t.cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced
+         FROM kept k JOIN request_links l ON l.request_id = k.id JOIN task_traces t ON t.task_id = l.ref
+         WHERE l.kind IN ('run', 'step_run') GROUP BY k.goal_id`,
+      ).all(GOAL_REQUESTS_MAX) as Array<{ id: string; usd: number | null; runs: number; unpriced: number }>
+      for (const p of priced) cost.set(p.id, p)
+    } catch {
+      // No task traces in this database: no cost to show.
+    }
+    return rows.map((r) => {
+      const c = cost.get(r.id)
+      return {
+        id: r.id, title: r.title, open: r.open, done: r.done, dropped: r.dropped,
+        progress: r.open + r.done ? r.done / (r.open + r.done) : null,
+        costUsd: Math.round((c?.usd ?? 0) * 10_000) / 10_000, runs: c?.runs ?? 0, unpriced: c?.unpriced ?? 0, lastAt: r.lastAt,
+      }
+    })
+  }
+
   /** What the checker said. `met` is written by closeVerified, not here.
    *  Not a touch: a check is not activity on the loop. */
   markChecked(id: string, state: VerifyState | null, detail: string, now: number): void {
