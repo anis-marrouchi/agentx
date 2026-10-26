@@ -79,6 +79,7 @@
     "docs:seed": "node docs/.scripts/seed-demo.mjs",
     "docs:shots": "node docs/.scripts/capture.mjs",
     "docs:shots:mobile": "node docs/.scripts/capture-mobile.mjs",
+    "docs:social-preview": "node docs/.scripts/social-preview.mjs",
     "docs:preview": "vitepress preview docs",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.mjs"
