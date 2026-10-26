@@ -205,4 +205,10 @@ describe("the Org page and its API", () => {
     expect(html).toContain('id="org-tree"')
     for (const s of scripts) expect(() => new Function(s)).not.toThrow()
   })
+  it("keeps Pause and Resume on /org while the Wall only reads the org (#1398)", () => {
+    const html = renderOrgPage({})
+    expect(html).toContain("/api/admin/org/hold")
+    expect(html).toContain('data-paused="1">Pause</button>')
+    expect(html).toContain('data-paused="0">Resume</button>')
+  })
 })

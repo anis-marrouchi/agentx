@@ -3,7 +3,8 @@
 // Reads only: /api/admin/wall?peer=fleet (posts across the mesh),
 // /api/admin/wall/thread (one post's timeline, sent to the node that owns
 // it), /api/live (what runs on each node now, with its ops details) and
-// /api/workflows/runs (failed workflow runs). Pending owner decision
+// /api/workflows/runs (failed workflow runs), and /api/admin/org once, for
+// each agent's role and boss (#1398, wall-org.client.ts). Pending owner decision
 // cards (#1185) come with their post and are shown without buttons:
 // answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
@@ -35,6 +36,7 @@ import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
+import { WALL_ORG_SCRIPT } from "./wall-org.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -47,7 +49,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The pages the nav opens besides the Wall itself (#1316). */
   var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null };
+  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, org: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml })}
 ${WALL_REVIEWS_SCRIPT}
@@ -55,6 +57,7 @@ ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
 ${WALL_TASK_SCRIPT}
+${WALL_ORG_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -566,7 +569,7 @@ ${WALL_TASK_SCRIPT}
     var live = agentInfo()[id] && agentInfo()[id].live;
     return '<div class="wpf__banner" style="--av-h:' + hue(id) + '"></div><div class="wpf">' +
       '<div class="wpf__top">' + avatar(id, 'lg') + '<button type="button" class="ax-btn ax-btn--ghost" data-profile-clear>All posts</button></div>' +
-      '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' +
+      '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' + orgHtml(id) +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
@@ -796,7 +799,7 @@ ${WALL_TASK_SCRIPT}
       ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
       return '<article class="wag" id="agent-' + esc(a.id) + '">' + avatar(a.id) + '<div class="wag__b">' +
         '<div class="wp__by"><button type="button" class="name" data-agent="' + esc(a.id) + '">' + esc(a.name) + '</button><span class="h">@' + esc(a.id) + '</span>' +
-          (a.running ? '<span class="chip state">running ' + a.running + '</span>' : '') + '</div>' +
+          (a.running ? '<span class="chip state">running ' + a.running + '</span>' : '') + '</div>' + orgHtml(a.id) +
         '<div class="wp__meta">' + meta + '</div>' +
         '<div class="wpf__stats"><span><b>' + s.open + '</b> open</span><span><b>' + s.owner + '</b> waiting on the owner</span>' +
           '<span><b>' + s.done + '</b> done in 7 days</span><span><b>' + s.runs + '</b> runs</span>' +
@@ -1223,6 +1226,8 @@ ${WALL_TASK_SCRIPT}
 
   // A link from the classic task page: /wall?task=<id> opens that post's thread.
   var fromTask = new URLSearchParams(location.search).get('task');
+  // The org changes rarely: read once, not on every refresh (#1398).
+  loadOrg();
   load().then(function () {
     if (!fromTask || !S.data) return;
     fetch('/api/admin/wall/thread?task=' + encodeURIComponent(fromTask), { headers: headers() }).then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {

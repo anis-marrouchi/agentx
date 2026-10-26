@@ -35,6 +35,9 @@ cfg.business = {
     office: { name: "Demo Office", kind: "client", respondWithin: "4h" },
   },
   contactMap: [{ channel: "telegram", chatId: "demo-office", client: "office", project: "demo/office" }],
+  // The Wall shows the agent's role from the org chart (#1398).
+  roles: { support: { title: "Support lead", responsibilities: ["Answers the demo shop's customers."] } },
+  orgChart: { cx: { role: "support", schedule: { start: "09:00", end: "17:00" } } },
 }
 cfg.channels = { telegram: { enabled: false, accounts: { demo: { token: "123456:demo-bot-token", agentBinding: "cx" } } }, whatsapp: { enabled: false } }
 cfg.crons = Object.fromEntries([

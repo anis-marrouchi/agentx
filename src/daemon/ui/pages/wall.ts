@@ -17,7 +17,8 @@
 // Wall links back to the dashboard and every classic page.
 //
 // The HTML is a skeleton; WALL_PAGE_SCRIPT paints it from
-// /api/admin/wall?peer=fleet, /api/live and /api/workflows/runs.
+// /api/admin/wall?peer=fleet, /api/live, /api/workflows/runs and, once,
+// /api/admin/org (each agent's role and boss, #1398).
 
 import type { TopbarPeer } from ".."
 import { WALL_PAGE_SCRIPT } from "./wall.client"
@@ -27,6 +28,7 @@ import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_TASK_CSS } from "./wall-task.client"
+import { WALL_ORG_CSS } from "./wall-org.client"
 import { TASK_PAGE_CSS } from "./task"
 
 export interface WallPageOpts {
@@ -38,7 +40,7 @@ export interface WallPageOpts {
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
   ["Live", "/live"], ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
-  ["People", "/people"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
+  ["People", "/people"], ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
 /** The status tabs over the feed and the list (#1355): filter value, label. */
@@ -162,7 +164,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ORG_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }
