@@ -15,6 +15,9 @@
 // Under it, weekly throughput (#1192): closures per week per project and
 // per owner over four weeks, read once when the tab first opens.
 // Between them, capacity per owner (#1191, wall-capacity.client.ts).
+// Goals (#1392): the Goal filter shows the posts whose request serves a
+// goal, under one line with the goal's progress and cost from the reply's
+// goal rows (every node's, added up).
 //
 // The Reviews view (#1182) lives in wall-reviews.client.ts.
 //
@@ -43,7 +46,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
   var OPEN = ['in_progress', 'waiting_owner', 'waiting_other', 'needs_attention'];
   var DAY = 864e5;
-  var FILTERS = ['owner', 'load', 'status', 'idle', 'project', 'node', 'group', 'by', 'grp', 'time', 'conc', 'qa', 'q'];
+  var FILTERS = ['owner', 'load', 'status', 'idle', 'project', 'goal', 'node', 'group', 'by', 'grp', 'time', 'conc', 'qa', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
@@ -256,13 +259,14 @@ ${WALL_TASK_SCRIPT}
     if (f.status && ['open', 'closed', 'blocked', 'waiting_owner', 'stalled', 'waiting', 'failed'].indexOf(f.status) < 0 && p.state !== f.status) return false;
     if (+f.idle && idleDays(p) < +f.idle) return false;
     if (f.project && (f.project === OTHER ? p.project : p.project !== f.project)) return false;
+    if (f.goal && !(p.goal && p.goal.id === f.goal)) return false;
     if (f.node && p.node.name !== f.node) return false;
     if (f.group && groupKey(p) !== f.group) return false;
     if (f.time && !p.timeFlag && !forgeFlags(p).length) return false;
     if (f.conc && !(p.concurrent && p.concurrent.length)) return false;
     if (f.qa && !p.awaitingQa) return false;
     if (f.q) {
-      var hay = [p.result && p.result.text, p.headline, p.owner, p.id, p.project, p.home && p.home.link, p.askedBy]
+      var hay = [p.result && p.result.text, p.headline, p.owner, p.id, p.project, p.goal && p.goal.title, p.home && p.home.link, p.askedBy]
         .concat(cardsOf(p).map(function (c) { return c.title + ' ' + c.ask; })).join(' ').toLowerCase();
       if (hay.indexOf(f.q.toLowerCase()) < 0) return false;
     }
@@ -360,6 +364,7 @@ ${WALL_TASK_SCRIPT}
       p.askedBy ? 'Asked by <b>' + esc(p.askedBy) + '</b>' : '',
       'in <b>' + esc(groupKey(p)) + '</b>',
       p.project ? 'project <b>' + esc(p.project) + '</b>' : '',
+      p.goal ? 'goal <b>' + esc(p.goal.title) + '</b>' : '',
     ].filter(Boolean).join(' · ');
     // Action row: thread, runs, minutes, then the links out.
     var shown = full || S.shown[p.id];
@@ -374,6 +379,7 @@ ${WALL_TASK_SCRIPT}
     // opened post.
     if (!full) {
       if (p.project) acts.push('<span title="Project">' + ICON.link + esc(p.project) + '</span>');
+      if (p.goal) acts.push('<button type="button" data-goal="' + esc(p.goal.id) + '" title="Show every post for this goal">Goal: ' + esc(p.goal.title) + '</button>');
       return '<article class="' + cls + '" id="post-' + esc(p.id) + '" data-post="' + esc(p.id) + '" tabindex="0">' + avatar(p.owner) + '<div class="wp__b">' +
         '<div class="wp__by">' + by + '</div>' +
         leadHtml(p, via, false) +
@@ -474,6 +480,7 @@ ${WALL_TASK_SCRIPT}
       ['Asked by', p.askedBy ? esc(p.askedBy) : ''],
       ['In', esc(groupKey(p))],
       ['Project', p.project ? esc(p.project) : ''],
+      ['Goal', p.goal ? '<a href="#" data-goal="' + esc(p.goal.id) + '">' + esc(p.goal.title) + '</a>' : ''],
       ['Opened', when(p.createdAt)],
       ['Last move', when(p.lastMoveAt)],
       ['Closed', p.closedAt ? when(p.closedAt) : ''],
@@ -575,6 +582,39 @@ ${WALL_TASK_SCRIPT}
       profileSpendHtml(S.budgets, id) +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
       '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(id) + '/history">History</a></div></div>';
+  }
+  // --- Goals (#1392): the filter's line, with progress and cost ---
+  function goalRow(id) { return ((S.data && S.data.goals) || []).find(function (g) { return g.id === id; }) || null; }
+  function goalTitle(id) {
+    var g = goalRow(id);
+    if (g) return g.title;
+    var p = ((S.data && S.data.posts) || []).find(function (x) { return x.goal && x.goal.id === id; });
+    return p ? p.goal.title : id;
+  }
+  function money(n) { return '$' + (n > 0 && n < 0.01 ? n.toFixed(3) : n.toFixed(2)); }
+  function goalHtml(id, shown) {
+    var g = goalRow(id), title = goalTitle(id);
+    var clear = '<button type="button" class="ax-btn ax-btn--ghost" data-goal-clear>All goals</button>';
+    // A node older than #1392, or one that does not answer, sends no row.
+    if (!g) return '<div class="wgl"><h2 dir="auto">' + esc(title) + '</h2><span class="wgl__n">' + shown + (shown === 1 ? ' post' : ' posts') + ' shown</span>' + clear + '</div>' +
+      '<p class="wgl__note">No progress or cost for this goal: the machine that keeps it did not send them.</p>';
+    var pct = g.progress == null ? null : Math.round(g.progress * 100);
+    var cost = money(g.costUsd || 0) + (g.unpriced ? ' (' + g.unpriced + ' of ' + g.runs + ' runs without a cost)' : '');
+    return '<div class="wgl"><h2 dir="auto">' + esc(title) + '</h2>' +
+      (pct == null ? '' : '<span class="wgl__bar" role="progressbar" aria-label="' + esc(title) + ' progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></span>') +
+      '<span class="wgl__n">' + g.done + ' of ' + (g.open + g.done) + ' done' + (pct == null ? '' : ' (' + pct + '%)') + ' · ' + g.open + ' open' + (g.dropped ? ' · ' + g.dropped + ' dropped' : '') + '</span>' +
+      '<span class="wgl__n" title="What the runs of its requests cost">' + esc(cost) + '</span>' + clear + '</div>' +
+      '<p class="wgl__note">Counts and cost cover every request kept for this goal on every machine that answered, not only the posts below.</p>';
+  }
+  /** Show the posts of one goal, open and closed alike. */
+  function showGoal(id) {
+    S.page = 'wall'; S.post = ''; S.pushed = false;
+    if (S.view !== 'feed' && S.view !== 'list') S.view = 'feed';
+    $('f-goal').value = id;
+    if ($('f-goal').value !== id) { var o = document.createElement('option'); o.value = id; o.textContent = goalTitle(id); $('f-goal').appendChild(o); $('f-goal').value = id; }
+    $('f-status').value = '';
+    writeHash();
+    setView(S.view, true);
   }
   function showAgent(id) {
     // From a post or another page, an agent opens its profile; on the feed it toggles.
@@ -1094,7 +1134,7 @@ ${WALL_TASK_SCRIPT}
     if (page === 'post') $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
     if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
-    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-profile', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
+    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     if (!S.data) return;
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
@@ -1111,6 +1151,8 @@ ${WALL_TASK_SCRIPT}
     var side = S.view === 'failures' || S.view === 'projects' || S.view === 'jobs';
     $('wall-profile').hidden = !f.owner || side;
     if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
+    $('wall-goal').hidden = !f.goal || side;
+    if (f.goal) $('wall-goal').innerHTML = goalHtml(f.goal, posts.length);
     $('wall-feed').hidden = S.view !== 'feed';
     $('wall-list').hidden = S.view !== 'list';
     $('wall-failures').hidden = S.view !== 'failures';
@@ -1154,6 +1196,8 @@ ${WALL_TASK_SCRIPT}
       fillSelect('f-load', uniq(((S.data.capacity && S.data.capacity.owners) || []).map(function (r) { return r.owner; })));
       var other = posts.some(function (p) { return !p.project; }) ? [OTHER] : [];
       fillSelect('f-project', uniq(posts.map(function (p) { return p.project; })).concat(other), function (v) { return v === OTHER ? 'Other (no project)' : v; });
+      var goalIds = uniq(((S.data.goals || []).map(function (g) { return g.id; })).concat(posts.map(function (p) { return p.goal && p.goal.id; })));
+      fillSelect('f-goal', goalIds, goalTitle);
       fillSelect('f-node', uniq(posts.map(function (p) { return p.node.name; })));
       fillSelect('f-group', uniq(posts.map(groupKey)));
       applyHash();
@@ -1163,7 +1207,7 @@ ${WALL_TASK_SCRIPT}
   }
 
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-act],[data-tab],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-back],[data-post]');
+    var t = ev.target.closest('[data-act],[data-tab],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-goal],[data-goal-clear],[data-back],[data-post]');
     if (!t) return;
     if (t.hasAttribute('data-act')) { doAct(t.getAttribute('data-act')); return; }
     if (t.hasAttribute('data-tab')) { $('f-status').value = t.getAttribute('data-tab'); writeHash(); render(); return; }
@@ -1179,6 +1223,8 @@ ${WALL_TASK_SCRIPT}
     else if (t.hasAttribute('data-agent')) showAgent(t.getAttribute('data-agent'));
     else if (t.hasAttribute('data-agents-more')) { S.allAgents = !S.allAgents; render(); }
     else if (t.hasAttribute('data-profile-clear')) { $('f-owner').value = ''; writeHash(); render(); }
+    else if (t.hasAttribute('data-goal')) { ev.preventDefault(); showGoal(t.getAttribute('data-goal')); }
+    else if (t.hasAttribute('data-goal-clear')) { $('f-goal').value = ''; writeHash(); render(); }
     else if (t.hasAttribute('data-view')) setView(t.getAttribute('data-view'));
     else if (t.hasAttribute('data-thread')) toggleThread(t.getAttribute('data-thread'));
     else if (t.hasAttribute('data-more')) {

@@ -36,6 +36,7 @@ A post shows:
 - who asked for it,
 - its **group**: the chat it came from. A post only shows what was recorded for its own task, never work from another chat,
 - its **project**: the one your [project list](#see-every-project-at-once) names for it (none, so **Other**, when the list names nothing for it); with no list, its home repo when its home is an issue or merge request,
+- its **goal**, when the agent named one: the larger aim the task serves (see [Follow one goal](#follow-one-goal)),
 - when it was opened, its **last move** and when it closed, as exact times with your time zone (for example `2026-10-24 21:05 UTC+01:00`), plus how long ago,
 - how many runs worked on it, how many failed, and how many minutes they took,
 - a row under it, as under a post on a social feed: **Thread**, the runs and minutes, and the links to its **home** (the issue, merge request or other record where the work lives), its **proof** once it is done, its **task record and trace**, and the agent's history.
@@ -117,7 +118,7 @@ A card that was raised outside any task stays on the Approvals page and the Desk
     - where it stands: **Asked**, **Working**, **Waits** (only while it waits on someone) and **Done**, each with when or how long. The current step has a blue bar over it, or an amber one while it waits. A task no agent has picked up yet stands at **Asked**. **Waits** names who it waits on: you, the agent that blocks it, the agent that owns the plan's current step, or **another agent** when the Wall does not know which. Under it, one amber line says why it waits;
     - its **Plan**, when it has one: each step, the agent that owns it, its state, what proves it done, and its proof;
     - its **Result**;
-    - the facts: who asked, in which chat, the project, the times, and the run time against the estimate;
+    - the facts: who asked, in which chat, the project, the goal, the times, and the run time against the estimate;
     - its links, the actions and its **Thread**.
 3. To go back to the feed, select **←** next to **Post**, press Escape, or use the browser's Back button. The feed opens where you left it, with the same filters.
 
@@ -268,7 +269,7 @@ Select the search button at the end of the tabs to open the search box and the r
 ![The Waiting tab with the filters open, in the isolated demo](/screenshots/wall/filters.png)
 
 
-- **Owner**, **Counted for** (the tasks an agent's [capacity](#capacity-per-owner) counts: the ones it works on now and the ones waiting on it), **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Waiting, Done, Failed, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Node** (the machine), **Group** (the chat), **Group blocked by** (project or agent), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
+- **Owner**, **Counted for** (the tasks an agent's [capacity](#capacity-per-owner) counts: the ones it works on now and the ones waiting on it), **Status** (Open, **Blocked**, Waiting on the owner, **Stalled**, In progress, Waiting, Done, Failed, Closed, All), **No move for** (1, 3 or 7 days or more), **Project**, **Goal** (see [Follow one goal](#follow-one-goal)), **Node** (the machine), **Group** (the chat), **Group blocked by** (project or agent), **Time flags only** (run time and GitLab time mismatches), **Concurrent only**, **Awaiting QA only**, and a search box.
 - **Blocked** shows every task that waits on someone or has stopped moving.
 - With **Blocked** and **Group blocked by** set to **project** or **agent**, the **List** puts blocked tasks under what blocks them, oldest block first, each with how long it has been blocked. A task blocked by an agent in another project is marked **other project**; the agent's project comes from your [project list](#see-every-project-at-once). Only blockers a record names are used: a hand-off to another agent, another agent's active plan step, a question to you, or a promise to an outside person. A task that has only stopped moving is under **No blocker recorded**.
 
@@ -284,6 +285,21 @@ The filters are part of the page's address. Copy the address to share the same v
 3. Next time, select **My view**.
 
 The view is kept in this browser only. Nothing is stored in AgentX and nobody is notified.
+
+## Follow one goal
+
+A **goal** is the larger aim a task serves, such as "Relaunch the shop". The agent names it when it takes the task on; see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal). A task without a goal is not affected.
+
+1. **Browser:** on the Wall, find a post with **Goal:** and its title in the row under it.
+2. **Browser:** select **Goal:** on that post. The feed now shows every post for that goal, open and closed.
+3. **Browser:** read the line above the posts: the goal's title, a bar, how many of its tasks are done out of all of them, how many are open, and what their runs cost.
+4. **Browser:** to go back to every post, select **All goals**.
+
+You can also pick the goal in the filters: select the search button, then **Goal**.
+
+![The Wall filtered to one goal: its title, how many tasks are done, how many are open and what they cost, above its posts, in the isolated demo](/screenshots/wall/goal.png)
+
+The counts and the cost are the same as on the **Goals** list of the Approvals page. They cover every task kept for the goal on every machine that answered, including tasks closed more than seven days ago, so they can count more tasks than the posts below them. When the same goal is used on several machines, its numbers are added up. Point at the cost to read what it covers; when some runs reported no cost, it says how many.
 
 ## See every project at once
 
@@ -514,8 +530,9 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 23. Open a post whose request has a plan. Under its title, **Working** is marked while it runs, and **Plan** lists the steps the agent wrote, each with its owner and done check (see [Follow a request of several steps](../jobs/tracked-plans.md)).
 24. Give an agent a task that takes a minute, then select **Live**. Its card is under **Running now**, with the time going up and **Latest** changing as it works. Select the card: the **Task** page opens with **live**, the request and the conversation filling in. Write "Also say which files you read" and select **Send**: the hint says **queued — dispatches as the next turn**, and the agent answers it after the current turn. Give it another task and select **Stop** on its Task page: the conversation ends and its card leaves **Live**.
 25. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
-26. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
-27. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
+26. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
+27. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
+28. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
 
 ## If something is wrong
 
@@ -556,4 +573,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **The portfolio shows "Untitled request" a lot:** those tasks have no headline yet and no issue or merge request as their home. The text of the task is never used as a title there.
 - **Reviews says the intent graph is off:** `graph.enabled` is false in `agentx.json`, so nothing is classified here. Classifications made before it was switched off still show.
 - **A decision shows "No reason recorded" or "the graph page (no reviewer recorded)":** it was decided on the classic graph page, which keeps neither. Decisions made with `agentx graph review` or the review tool keep both.
+- **No Goal filter, or no goal on a post:** no task names a goal yet. The agent names it when it accepts the task; see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal).
+- **"No progress or cost for this goal":** the machine that keeps the goal's tasks did not answer, or runs a daemon from before this change. Its posts still show. Restart that daemon, then select **Refresh**.
+- **A goal counts more tasks than the posts shown:** the Wall lists closed posts of the last seven days only, while the goal counts every task kept for it. Pick the **All** tab to see every post the Wall has.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.

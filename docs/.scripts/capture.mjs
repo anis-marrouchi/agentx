@@ -60,6 +60,8 @@ const shots = [
   // The portfolio (#1194), opened with the demo-only key seed-demo.mjs made.
   { name: "wall/portfolio", path: "/portfolio", wait: "#key-form", steps: [{ type: "#key", text: "agx_live_" + "demo".repeat(16) }, { click: "#key-form button" }, { wait: "#projects table" }], full: true },
   { name: "wall/portfolio-phone", path: "/portfolio", wait: "#projects table", phone: true },
+  // The posts of one goal under its progress and cost (#1392).
+  { name: "wall/goal", path: "/wall#status=&goal=shop-relaunch", wait: ".wgl__bar" },
   // An agent's profile over its own posts (#1207).
   { name: "wall/profile", path: "/wall#owner=cx&status=", wait: ".wpf" },
   // Blocked tasks grouped by the agent that blocks them (#1193).

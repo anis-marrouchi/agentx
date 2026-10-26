@@ -1,6 +1,6 @@
 {
   "name": "agentix-cli",
-  "version": "0.178.0",
+  "version": "0.179.0",
   "description": "AI staff for a small company: they find sales, answer clients, write your posts and watch the money, on a machine you own. You approve what matters. Runs a team of AI agents across Telegram, WhatsApp, GitLab, GitHub, crons, webhooks and mesh tasks, on Claude Code, Codex, OpenCode or any LLM API. Web wizard for operators, CLI for engineers.",
   "license": "MIT",
   "author": {
@@ -64,6 +64,7 @@
     "bench:required": "tsx bench/workflow-required.ts",
     "bench:catch": "tsx bench/catch-promise.ts",
     "bench:browser": "tsx bench/browser-drive.ts",
+    "bench:leann": "tsx bench/leann-1390/cli.ts",
     "test": "vitest run",
     "clean": "rimraf dist",
     "format:write": "prettier --write \"src/**/*.{ts,tsx,mdx}\" --cache",
@@ -79,6 +80,7 @@
     "docs:seed": "node docs/.scripts/seed-demo.mjs",
     "docs:shots": "node docs/.scripts/capture.mjs",
     "docs:shots:mobile": "node docs/.scripts/capture-mobile.mjs",
+    "docs:social-preview": "node docs/.scripts/social-preview.mjs",
     "docs:preview": "vitepress preview docs",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.mjs"

@@ -11,6 +11,7 @@ against the cheap ones; use the expensive ones to confirm.
 | 1 | `pnpm bench:browser` | cents per run on Haiku and Sonnet; free with `--backend oracle` | Where does the time go when an agent drives the browser? |
 | 1 | `bench/wiki-absorb.sh <wiki snapshot>` | one absorb backlog per variant | Is a wiki absorb change faster, cheaper or worse? |
 | 1 | `pnpm bench:catch <labelled.jsonl>` | about $0.002 per reply on Haiku | How well does the promise catch read replies? |
+| 1 | `pnpm bench:leann run <state-dir> --arm A\|B`, LEANN arm in Python | free (A, B); CPU time on the DO box (LEANN) | Does LEANN find Arabic, French and English notes better than BM25? |
 | 2+ | `harbor run` directly, see [harbor/README.md](harbor/README.md) | $60 to $1,300+ | Publishable numbers on the full Terminal-Bench 2.0 |
 
 ## Level 0: context size
@@ -441,3 +442,18 @@ agent's report. The rule that a promise needs the reply's own sentence, in
 the first person and the future, with no "if", removed them. The misses
 left are on `waiting_owner`: a closing offer ("Do you want me to…?") read
 as a question the work waits on.
+
+## Level 1, small: LEANN vs BM25 recall (#1390)
+
+`pnpm bench:leann` compares memory and wiki search across three arms:
+
+- A: BM25 as shipped.
+- B: the same BM25 with a Unicode tokenizer.
+- C: LEANN with a multilingual model, run only on the DO box.
+
+All three run over a frozen, labelled snapshot kept outside the repo. Each run writes per-question ids, scores and timings (never text) to `results-<run_id>.jsonl`, and its exact command to `COMMANDS.md`. `record.sh` also records it with asciinema. Formats, steps and what may go on screen: [leann-1390/README.md](leann-1390/README.md).
+
+```bash
+bench/leann-1390/record.sh <state-dir> B                              # arm B, recorded
+pnpm bench:leann grade <state-dir> --by lang                          # every finished run, by language
+```

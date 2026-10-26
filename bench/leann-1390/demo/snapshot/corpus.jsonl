@@ -1,0 +1,12 @@
+{"id":"mem-001","kind":"memory","text":"invoice payment Client Example Corp paid invoice INV-2041 on Monday by bank transfer."}
+{"id":"mem-002","kind":"memory","text":"réunion équipe La réunion d'équipe hebdomadaire est déplacée au mardi à 10h."}
+{"id":"mem-003","kind":"memory","text":"فاتورة دفع العميل شركة المثال دفع الفاتورة رقم 2041 يوم الإثنين."}
+{"id":"mem-004","kind":"memory","text":"اجتماع الفريق اجتماع الفريق الأسبوعي يوم الثلاثاء الساعة العاشرة صباحاً."}
+{"id":"mem-005","kind":"memory","text":"fournisseur livraison Le fournisseur Demo Supplies livre les cartons jeudi prochain."}
+{"id":"mem-006","kind":"memory","text":"deploy staging The staging deploy runs every night at 02:00 UTC from the main branch."}
+{"id":"mem-007","kind":"memory","text":"عطلة مكتب المكتب مغلق يوم الجمعة بسبب العطلة الرسمية."}
+{"id":"mem-008","kind":"memory","text":"préférence client Le client préfère recevoir les devis par courriel, jamais par téléphone."}
+{"id":"wiki-001","kind":"wiki","text":"Onboarding checklist New staff get a laptop, an email account and a badge on day one."}
+{"id":"wiki-002","kind":"wiki","text":"Procédure de remboursement Les notes de frais sont remboursées sous 15 jours après validation du responsable."}
+{"id":"wiki-003","kind":"wiki","text":"سياسة الإجازات يحق لكل موظف واحد وعشرون يوماً من الإجازة السنوية المدفوعة."}
+{"id":"wiki-004","kind":"wiki","text":"Backup policy Databases are backed up every six hours and kept for thirty days."}
