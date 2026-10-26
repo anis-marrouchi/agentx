@@ -17,7 +17,8 @@ import { listInbox, type InboxContext } from "./inbox"
 //                          call proves (X-AgentX-Task, or channel + chat),
 //                          never the body's `raised_by` alone: loopback is
 //                          not an identity. A `node` in the body is believed
-//                          only with that peer's own mesh token.
+//                          only from a peer hop: that peer's own mesh token,
+//                          or a mesh token sent from off this machine (#1405).
 // Deciding is refused here on purpose. The operator decides with the
 // `agentx approvals` CLI or the dashboard's Approvals page.
 //
@@ -49,6 +50,11 @@ export interface ApprovalsApiDeps {
    *  `node` names, so it may close a card forwarded from there. Unset:
    *  never. */
   tokenPeerIs?: (node: string) => boolean
+  /** True when the request carries one of this node's mesh tokens and
+   *  does not come from loopback, where this node's own agents are: a
+   *  hop from a peer on a mesh that shares one MESH_TOKEN (#1405). Unset:
+   *  never. */
+  fromMeshPeer?: () => boolean
   /** Start a check-in pass in the background (checkin.ts). */
   runCheckin?: (kind: "daily" | "check") => void
 }
@@ -120,9 +126,13 @@ export function handleApprovalsApi(
     let node: string | undefined
     if (from) {
       // A card forwarded here from another node (forward.ts): that node
-      // checked its agent's turn; here the request must come from it.
-      if (!deps.tokenPeerIs?.(from)) {
-        return { status: 403, body: { error: `closing a card in the name of node "${from}" needs that peer's own mesh token` } }
+      // checked its agent's turn; here the request must come from it. Its
+      // own token proves that best. Most meshes share one MESH_TOKEN, so a
+      // mesh token from off this machine names a known peer too (#1405);
+      // the card must still carry that node and agent (resolveCard).
+      const fromPeer = deps.tokenPeerIs?.(from) || (!!deps.hasPeer?.(from) && !!deps.fromMeshPeer?.())
+      if (!fromPeer) {
+        return { status: 403, body: { error: `closing a card in the name of node "${from}" needs a request from that peer: its own mesh token, or the mesh token from its address` } }
       }
       if (!claimed) return { status: 400, body: { error: "raised_by must be the agent that raised the card" } }
       by = claimed

@@ -466,10 +466,12 @@ describe("an agent closes its own card once the owner answered in chat (#909)", 
   // `proven`: the agent whose running turn the call proves (the daemon reads
   // it from X-AgentX-Task, or channel + chat). `tokenPeer`: the node whose
   // own mesh token the call carries.
-  const deps = (o: { proven?: string | null; tokenPeer?: string; hasPeer?: (n: string) => boolean } = {}) => ({
+  // `meshHop`: the call carries a mesh token and comes from off this machine.
+  const deps = (o: { proven?: string | null; tokenPeer?: string; hasPeer?: (n: string) => boolean; meshHop?: boolean } = {}) => ({
     ctx: ctx(), settings: DEFAULT_CARD_SETTINGS, hasAgent: (id: string) => id === "alpha" || id === "beta", hasPeer: o.hasPeer,
     provenAgent: () => (o.proven === undefined ? "alpha" : o.proven),
     tokenPeerIs: (n: string) => !!o.tokenPeer && n === o.tokenPeer,
+    fromMeshPeer: () => !!o.meshHop,
   })
   const raise = (extra: Record<string, unknown> = {}) => {
     const r = createCard(root, card(extra), { now: NOW })
@@ -545,6 +547,34 @@ describe("an agent closes its own card once the owner answered in chat (#909)", 
     expect(readCard(root, r.card.id)?.status).toBe("pending")
     expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "far" }, deps({ tokenPeer: "far" })).status).toBe(200)
     expect(resolveCard(root, r.card.id, { by: "remote-agent", node: "far", reason: "again" })).toMatchObject({ ok: false })
+  })
+
+  it("a peer on a shared MESH_TOKEN closes its own forwarded card (#1405)", () => {
+    const r = createCard(root, card({ raised_by: "remote-agent" }), { now: NOW, node: "far" })
+    if (!r.ok) throw new Error(r.error)
+    const peers = (n: string) => n === "far" || n === "other"
+    // A mesh token from loopback is one of this node's own agents: refused.
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "far" }, deps({ hasPeer: peers, meshHop: false })).status).toBe(403)
+    // A mesh hop naming a node that is no peer: refused.
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "far" }, deps({ hasPeer: () => false, meshHop: true })).status).toBe(403)
+    // A mesh hop in another peer's name, or for another agent: not its card.
+    const other = close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "other" }, deps({ hasPeer: peers, meshHop: true }))
+    expect(other.status).toBe(403)
+    expect((other.body as any).error).toMatch(/remote-agent on node "far"/)
+    expect(close(r.card.id, { raised_by: "someone", reason: "done", node: "far" }, deps({ hasPeer: peers, meshHop: true })).status).toBe(403)
+    expect(readCard(root, r.card.id)?.status).toBe("pending")
+    // The peer's hop, in the raising agent's name: closed.
+    const ok = close(r.card.id, { raised_by: "remote-agent", reason: "answered in chat", node: "far" }, deps({ hasPeer: peers, meshHop: true }))
+    expect(ok.status).toBe(200)
+    expect(readCard(root, r.card.id)).toMatchObject({ status: "resolved", decided_by: "remote-agent", node: "far" })
+  })
+
+  it("tells a local agent whose card a forwarded one is (#1405)", () => {
+    const r = createCard(root, card({ raised_by: "remote-agent" }), { now: NOW, node: "far" })
+    if (!r.ok) throw new Error(r.error)
+    const res = close(r.card.id, { reason: "done" })
+    expect(res.status).toBe(403)
+    expect((res.body as any).error).toMatch(/remote-agent on node "far".*operator answers it/)
   })
 
   it("the tool closes the card and says how in its create reply", async () => {

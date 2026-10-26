@@ -5221,6 +5221,7 @@ export class AgentXDaemon {
             const peer = peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN)
             return !!peer && this.approvalsPeer(node)?.name === peer
           },
+          fromMeshPeer: () => !isLoopback(req.socket?.remoteAddress || "") && this.carriesMeshToken(req),
           ...(this.native.tasks ? {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
