@@ -3,7 +3,8 @@
 // Reads only: /api/admin/wall?peer=fleet (posts across the mesh),
 // /api/admin/wall/thread (one post's timeline, sent to the node that owns
 // it), /api/live (what runs on each node now, with its ops details) and
-// /api/workflows/runs (failed workflow runs). Pending owner decision
+// /api/workflows/runs (failed workflow runs) and /api/admin/org (each
+// agent's role and who it reports to, #1398). Pending owner decision
 // cards (#1185) come with their post and are shown without buttons:
 // answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
@@ -50,7 +51,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The pages the nav opens besides the Wall itself (#1316). */
   var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null };
+  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml })}
 ${WALL_REVIEWS_SCRIPT}
@@ -126,6 +127,31 @@ ${WALL_TASK_SCRIPT}
     return info;
   }
   function nameOf(id) { var i = agentInfo()[id]; return i ? i.name : id; }
+
+  // --- The org on the Wall (#1398): role and who each agent reports to ---
+  /** Each agent's place in this node's org chart, from /api/admin/org. */
+  function orgInfo() {
+    var info = {};
+    function walk(list) {
+      (list || []).forEach(function (n) {
+        info[n.id] = { title: n.title, reportsTo: n.reportsTo, reports: (n.reports || []).length };
+        walk(n.reports);
+      });
+    }
+    walk(S.org && S.org.roots);
+    return info;
+  }
+  /** Role, boss and reports, read-only: Pause and Resume stay on /org. */
+  function orgLineHtml(id) {
+    var o = orgInfo()[id];
+    if (!o || (!o.title && !o.reportsTo && !o.reports)) return '';
+    var bits = [
+      o.title ? '<b>' + esc(o.title) + '</b>' : '',
+      o.reportsTo ? 'reports to <button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>' : '',
+      o.reports ? o.reports + (o.reports === 1 ? ' reports' : ' report') + ' to it' : '',
+    ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
+    return '<div class="wp__meta wpf__org">' + bits + '<a href="/org">Org chart</a></div>';
+  }
   function isAgent(id) {
     return !!agentInfo()[id] || ((S.data && S.data.posts) || []).some(function (p) { return p.owner === id; });
   }
@@ -573,7 +599,7 @@ ${WALL_TASK_SCRIPT}
     var live = agentInfo()[id] && agentInfo()[id].live;
     return '<div class="wpf__banner" style="--av-h:' + hue(id) + '"></div><div class="wpf">' +
       '<div class="wpf__top">' + avatar(id, 'lg') + '<button type="button" class="ax-btn ax-btn--ghost" data-profile-clear>All posts</button></div>' +
-      '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' +
+      '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' + orgLineHtml(id) +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
@@ -837,7 +863,7 @@ ${WALL_TASK_SCRIPT}
       return '<article class="wag" id="agent-' + esc(a.id) + '">' + avatar(a.id) + '<div class="wag__b">' +
         '<div class="wp__by"><button type="button" class="name" data-agent="' + esc(a.id) + '">' + esc(a.name) + '</button><span class="h">@' + esc(a.id) + '</span>' +
           (a.running ? '<span class="chip state">running ' + a.running + '</span>' : '') + '</div>' +
-        '<div class="wp__meta">' + meta + '</div>' +
+        orgLineHtml(a.id) + '<div class="wp__meta">' + meta + '</div>' +
         '<div class="wpf__stats"><span><b>' + s.open + '</b> open</span><span><b>' + s.owner + '</b> waiting on the owner</span>' +
           '<span><b>' + s.done + '</b> done in 7 days</span><span><b>' + s.runs + '</b> runs</span>' +
           (a.errors ? '<span class="is-err"><b>' + a.errors + '</b> errors</span>' : '') + '</div>' +
@@ -1182,6 +1208,7 @@ ${WALL_TASK_SCRIPT}
     // the slow one and keeps its own "Loading…" (#1252).
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
     refreshReviews();
+    getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
     try {
       S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
