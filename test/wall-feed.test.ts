@@ -1222,3 +1222,83 @@ describe("Wall v2 task view (#1355)", () => {
     expect(s).toContain('<li class=""><b>Working</b><span>not picked up yet</span>')
   })
 })
+
+// #1392: the Goal filter shows only that goal's posts, under a line with its
+// progress and cost; with no goal picked the Wall is as before.
+describe("Goal filter on the Wall (#1392)", () => {
+  const launch = { id: "launch", title: "Launch the site" }
+  const GOALS = {
+    ...WALL,
+    posts: [
+      post("g1", "cx", "in_progress", { goal: launch }),
+      post("g2", "cx", "done", { goal: launch }),
+      post("g3", "reviewer", "in_progress", { goal: { id: "hire", title: "Hire a designer" } }),
+      post("n1", "reviewer", "in_progress", { goal: null }),
+    ],
+    goals: [
+      { id: "launch", title: "Launch the site", open: 1, done: 1, dropped: 1, progress: 0.5, costUsd: 0.75, runs: 3, unpriced: 1, lastAt: NOW },
+      { id: "hire", title: "Hire a designer", open: 1, done: 0, dropped: 0, progress: 0, costUsd: 0, runs: 0, unpriced: 0, lastAt: NOW - 1 },
+    ],
+  }
+
+  it("with no goal picked, lists every post and shows no goal line", async () => {
+    const w = openWall({ data: GOALS, hash: "#status=" })
+    await w.settle()
+    expect(w.el("wall-count").textContent).toBe("4 of 4 posts")
+    expect(w.el("wall-goal").hidden).toBe(true)
+    expect(w.el("f-goal").innerHTML).toContain('<option value="launch">Launch the site</option>')
+    expect(w.el("f-goal").innerHTML).toContain('<option value="hire">Hire a designer</option>')
+    // The post without a goal is listed, without a goal chip.
+    const feed = w.el("wall-feed").innerHTML
+    expect(feed).toContain('data-post="n1"')
+    expect(/id="post-n1"[^]*?<\/article>/.exec(feed)![0]).not.toContain("data-goal")
+  })
+
+  it("lists the same posts as a Wall reply with no goals at all", async () => {
+    const plain = openWall({ data: WALL, hash: "#status=" })
+    await plain.settle()
+    expect(plain.el("wall-count").textContent).toBe("3 of 3 posts")
+    expect(plain.el("wall-goal").hidden).toBe(true)
+    expect(plain.el("wall-feed").innerHTML).not.toContain("data-goal")
+  })
+
+  it("picking a goal shows only its posts, open and closed, with progress and cost", async () => {
+    const w = openWall({ data: GOALS, hash: "#status=&goal=launch" })
+    await w.settle()
+    expect(w.el("wall-count").textContent).toBe("2 of 4 posts")
+    const feed = w.el("wall-feed").innerHTML
+    expect(feed).toContain('data-post="g1"')
+    expect(feed).toContain('data-post="g2"')
+    expect(feed).not.toContain('data-post="g3"')
+    expect(feed).not.toContain('data-post="n1"')
+    const line = w.el("wall-goal")
+    expect(line.hidden).toBe(false)
+    expect(line.innerHTML).toContain("Launch the site")
+    expect(line.innerHTML).toContain('role="progressbar"')
+    expect(line.innerHTML).toContain('aria-valuenow="50"')
+    expect(line.innerHTML).toContain("1 of 2 done (50%) · 1 open · 1 dropped")
+    expect(line.innerHTML).toContain("$0.75 (1 of 3 runs without a cost)")
+  })
+
+  it("a post's goal chip opens the filter; All goals clears it", async () => {
+    const w = openWall({ data: GOALS, hash: "#status=open" })
+    await w.settle()
+    expect(w.el("wall-feed").innerHTML).toContain('data-goal="hire"')
+    w.click({ "data-goal": "hire" })
+    await w.settle()
+    expect(w.loc.hash).toContain("goal=hire")
+    expect(w.el("wall-count").textContent).toBe("1 of 4 posts")
+    w.click({ "data-goal-clear": "" })
+    await w.settle()
+    expect(w.loc.hash).not.toContain("goal=")
+    expect(w.el("wall-goal").hidden).toBe(true)
+    expect(w.el("wall-count").textContent).toBe("4 of 4 posts")
+  })
+
+  it("says so when no machine sent a row for the goal, and still shows its posts", async () => {
+    const w = openWall({ data: { ...GOALS, goals: [] }, hash: "#status=&goal=launch" })
+    await w.settle()
+    expect(w.el("wall-count").textContent).toBe("2 of 4 posts")
+    expect(w.el("wall-goal").innerHTML).toContain("No progress or cost for this goal")
+  })
+})
