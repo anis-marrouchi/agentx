@@ -12,7 +12,7 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
 
 1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
 2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, and agents. The page you are on is in bold.
-3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
 4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
 5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
@@ -189,14 +189,22 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 1. Select an agent's avatar or name on a post, or the agent under **Agents**.
 2. Its profile opens above the feed: name, @handle, whether it is running now, and its counts: **open**, **waiting on the owner**, **done in 7 days**, and the **runs** on those posts. The feed below shows only its posts.
-3. Select **Agent page** or **History** to open the classic pages for that agent.
-4. Select **All posts**, or the same agent again, to go back to every post.
+3. Under the counts, one line shows what the agent has spent this month against its monthly budget (its cap), for example **Spent $12.50 of $100.00 this month**. The month runs on UTC time, the time zone AgentX uses for budgets.
+   - **near cap**: the agent has used 80% of its budget, or the share set with `warnRatio`.
+   - **paused: cap reached**: the agent has used all of its budget and does no work until the next month or until you raise the budget. **paused: fleet cap reached** means the budget for all agents together is used up.
+   - **no cap**: the agent has no budget; the line still shows what it spent.
+   - **not priced**: runs on a model with no price, such as a local model. The budget does not count them, as on the Cost page.
+4. Select **Cost** at the end of that line to open the Cost page, where you can raise or remove the budget (see [Set or raise a budget on the Cost page](../help/costs.md#set-or-raise-a-budget-on-the-cost-page)). The Wall only shows the figure; it never changes a budget.
+5. Select **Agent page** or **History** to open the classic pages for that agent.
+6. Select **All posts**, or the same agent again, to go back to every post.
 
-![An agent's profile above its own posts, in the isolated demo](/screenshots/wall/profile.png)
+![An agent's profile above its own posts, with its spend this month near its cap, in the isolated demo](/screenshots/wall/profile.png)
 
 *Scripted demo data; your team's names and machines will differ.*
 
 The profile is the **Owner** filter, so its address can be shared like any other view.
+
+The spend line uses the same figures as the **Monthly budgets** card on the Cost page, from the machine that serves the dashboard you opened. For an agent that runs on another machine, the line says its spend is kept on that machine instead of showing $0; open the dashboard on that machine to see it.
 
 ## See every agent
 
@@ -524,6 +532,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 25. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
 26. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
 27. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
+28. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
 
 ## If something is wrong
 
@@ -535,6 +544,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **Live says a Space plays on another machine:** a Space plays where it was started. Open the Wall on that machine to join it.
 - **Post says requests are off:** the agent's machine has `requests.enabled` off, so nothing would give it the task. Turn requests on in **Settings** on that machine, or ask the agent in a channel instead.
 - **Post says to pick who it is for:** the post has no `@` name of an agent the machines report. Check the name on the **Agents** page.
+- **The profile shows no spend line:** the dashboard could not read the budgets, for example because its token was refused. Select **Refresh**. If it is still missing, open the Cost page: if the **Monthly budgets** card is missing there too, see [Costs](../help/costs.md).
+- **The profile's spend differs from another machine's Cost page:** each machine counts the runs it keeps. Open the Wall on the machine that runs the agent to see its own figure.
 - **The Wall is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on; see [Approvals](./approvals.md). Running work still shows under **Running now**.
 - **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.

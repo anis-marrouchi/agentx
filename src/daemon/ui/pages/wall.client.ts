@@ -3,7 +3,9 @@
 // Reads only: /api/admin/wall?peer=fleet (posts across the mesh),
 // /api/admin/wall/thread (one post's timeline, sent to the node that owns
 // it), /api/live (what runs on each node now, with its ops details) and
-// /api/workflows/runs (failed workflow runs). Pending owner decision
+// /api/workflows/runs (failed workflow runs) and
+// /api/admin/observability/budgets (an agent's month spend vs its cap on
+// its profile, #1393, wall-spend.ts). Pending owner decision
 // cards (#1185) come with their post and are shown without buttons:
 // answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
@@ -38,6 +40,7 @@ import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
+import { profileSpendHtml } from "./wall-spend"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -50,9 +53,9 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The pages the nav opens besides the Wall itself (#1316). */
   var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null };
+  var S = { data: null, live: null, wf: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml })}
+  ${injectFns({ markdownToHtml, profileSpendHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
@@ -576,6 +579,7 @@ ${WALL_TASK_SCRIPT}
       '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
+      profileSpendHtml(S.budgets, id) +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
       '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(id) + '/history">History</a></div></div>';
   }
@@ -1182,6 +1186,8 @@ ${WALL_TASK_SCRIPT}
     // the slow one and keeps its own "Loading…" (#1252).
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
     refreshReviews();
+    // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
+    getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
     try {
       S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
