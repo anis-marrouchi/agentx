@@ -2,6 +2,25 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.180.0](https://github.com/anis-marrouchi/agentx/compare/v0.179.0...v0.180.0) (2026-10-26)
+
+
+### Features
+
+* **wall:** show an agent's month spend against its cap on its profile ([#1395](https://github.com/anis-marrouchi/agentx/issues/1395)) ([0d18e38](https://github.com/anis-marrouchi/agentx/commit/0d18e382ccda10bec62a72d31481c88ccabcf0e5))
+
+## [0.179.0](https://github.com/anis-marrouchi/agentx/compare/v0.178.0...v0.179.0) (2026-10-26)
+
+
+### Features
+
+* **wall:** filter by goal with progress and cost ([#1392](https://github.com/anis-marrouchi/agentx/issues/1392)) ([#1396](https://github.com/anis-marrouchi/agentx/issues/1396)) ([72a40a5](https://github.com/anis-marrouchi/agentx/commit/72a40a564c2df465a783ac4d6c23bb681f8d1ee0))
+
+
+### Bug Fixes
+
+* **wiki:** key ontology cache on mtime and size ([#1401](https://github.com/anis-marrouchi/agentx/issues/1401)) ([ce593fd](https://github.com/anis-marrouchi/agentx/commit/ce593fdee4da61a97ffa8ac2951218c235160245)), closes [#1397](https://github.com/anis-marrouchi/agentx/issues/1397)
+
 ## [0.178.0](https://github.com/anis-marrouchi/agentx/compare/v0.177.0...v0.178.0) (2026-10-25)
 
 
