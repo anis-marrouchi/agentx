@@ -22,15 +22,17 @@ export interface LoadedOntology {
   file: string | null
 }
 
-const cache = new Map<string, { mtimeMs: number; loaded: LoadedOntology }>()
+// Keyed on mtime and size: on coarse-timestamp filesystems two writes in one
+// tick share an mtime, and the size change is what reveals the rewrite (#1397).
+const cache = new Map<string, { mtimeMs: number; size: number; loaded: LoadedOntology }>()
 
 export function loadOntology(wikiDir: string): LoadedOntology {
   const file = resolve(wikiDir, ONTOLOGY_FILE)
   if (!existsSync(file)) return { ontology: DEFAULT_ONTOLOGY, errors: [], file: null }
 
-  const mtimeMs = statSync(file).mtimeMs
+  const { mtimeMs, size } = statSync(file)
   const hit = cache.get(file)
-  if (hit && hit.mtimeMs === mtimeMs) return hit.loaded
+  if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.loaded
 
   let raw: unknown
   const errors: string[] = []
@@ -43,7 +45,7 @@ export function loadOntology(wikiDir: string): LoadedOntology {
   const ontology = mergeOntology(DEFAULT_ONTOLOGY, isObject(raw) ? raw : {}, errors)
   errors.push(...checkOntology(ontology))
   const loaded = { ontology, errors, file }
-  cache.set(file, { mtimeMs, loaded })
+  cache.set(file, { mtimeMs, size, loaded })
   return loaded
 }
 

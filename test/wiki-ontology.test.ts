@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { WikiHub } from "../src/wiki/hub"
@@ -65,6 +65,18 @@ describe("ontology loading", () => {
 
     writeFileSync(join(dir, "ontology.yaml"), "types: [unclosed\n")
     expect(loadOntology(dir).errors[0]).toMatch(/not valid YAML/)
+  })
+
+  it("re-reads a rewrite that keeps the same mtime (#1397)", () => {
+    const file = join(dir, "ontology.yaml")
+    const tick = new Date("2026-01-01T00:00:00Z")
+    writeFileSync(file, "fallback_type: note\n")
+    utimesSync(file, tick, tick)
+    expect(loadOntology(dir).ontology.fallback_type).toBe("note")
+
+    writeFileSync(file, "fallback_type: person\n")
+    utimesSync(file, tick, tick)
+    expect(loadOntology(dir).ontology.fallback_type).toBe("person")
   })
 
   it("replaces classify as a whole list", () => {
