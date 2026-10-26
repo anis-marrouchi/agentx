@@ -1,6 +1,6 @@
 # Org: who reports to whom, and what each agent is doing
 
-**Org** draws your agents as an org chart: each agent with its role, who it reports to, its job in one line, and what it is doing now. From an agent's card you open its activity, or pause it until you resume it.
+**Org** draws your agents as an org chart: each agent with its role, who it reports to, its job in one line, and what it is doing now. From an agent's card you open its activity, or pause it until you resume it. The [Wall](./wall.md) links here under its classic pages, and shows each agent's role and boss on its profile, read-only.
 
 When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
 
