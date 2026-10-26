@@ -51,7 +51,12 @@ function turn(taskId: string) {
 
 const accept = (taskId: string, extra: Record<string, unknown> = {}) =>
   api("POST", "/requests", { action: "accept", agentId: "coder", work: "research", ...extra }, taskId)
-const goals = () => (api("GET", "/requests/goals").body as any).goals as any[]
+const goals = () => {
+  const list = (api("GET", "/requests/goals").body as any).goals as any[]
+  // The Wall's counts-only read (#1396) gives the same rows, without the request lists.
+  expect(store.goalCounts()).toEqual(list.map(({ requests: _, ...g }) => g))
+  return list
+}
 
 function traces(rows: Array<[string, number | null]>) {
   db.exec("CREATE TABLE IF NOT EXISTS task_traces (task_id TEXT PRIMARY KEY, cost_usd REAL)")
