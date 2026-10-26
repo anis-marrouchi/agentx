@@ -229,6 +229,7 @@ On a Claude subscription the figures are what the work would cost with an API ke
 3. Optional: to be warned at another share of the budget, add `"warnRatio"`, for example `"warnRatio": 0.5` for 50%.
 4. Save the file. The budget applies at once; no restart is needed.
 5. **Browser:** open `/admin/cost`. The **Monthly budgets** card shows the fleet, each project and each agent with its spend this month against its budget, with **On track**, **Near cap**, **Paused** or **No cap**.
+6. **Browser:** on the Wall, select the agent. Its profile shows the same figure in one line, such as **Spent $12.50 of $100.00 this month** (see [See one agent's profile](../dashboard/wall.md#see-one-agent-s-profile)).
 
 ![The Monthly budgets card on the Cost page: the fleet, a project near its cap, a paused agent, runs not priced, and the form to set a budget](/screenshots/costs/budgets.png)
 
