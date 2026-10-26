@@ -203,7 +203,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 The profile is the **Owner** filter, so its address can be shared like any other view.
 
-The spend line uses the same figures as the **Monthly budgets** card on the Cost page, from the machine that serves the dashboard you opened.
+The spend line uses the same figures as the **Monthly budgets** card on the Cost page, from the machine that serves the dashboard you opened. For an agent that runs on another machine, the line says its spend is kept on that machine instead of showing $0; open the dashboard on that machine to see it.
 
 ## See every agent
 

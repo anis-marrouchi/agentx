@@ -51,6 +51,16 @@ describe("profileSpendHtml", () => {
     expect(profileSpendHtml(view(1, 100, { unpriced: 2 }), "coder")).toContain("· 2 not priced")
   })
 
+  it("does not show $0 for an agent that runs on another machine", () => {
+    const remote = { ...view(3.2, 100), agentIds: ["coder"] }
+    const html = profileSpendHtml(remote, "peer-agent")
+    expect(html).toContain("kept on the machine this agent runs on")
+    expect(html).not.toContain("Spent")
+    expect(html).not.toContain("no cap")
+    // A local agent with no row yet still shows $0.
+    expect(profileSpendHtml({ ...view(0), agentIds: ["coder"] }, "coder")).toContain("Spent <b>$0</b> this month · no cap")
+  })
+
   it("shows nothing until the budgets are read", () => {
     expect(profileSpendHtml(null, "coder")).toBe("")
   })
