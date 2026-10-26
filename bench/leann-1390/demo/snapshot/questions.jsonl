@@ -1,0 +1,12 @@
+{"qid":"en-01","lang":"en","type":"same-lang-exact","kind":"memory","query":"did Example Corp pay invoice INV-2041","expected":["mem-001","mem-003"]}
+{"qid":"en-02","lang":"en","type":"same-lang-paraphrase","kind":"wiki","query":"how long do we keep database copies","expected":["wiki-004"]}
+{"qid":"fr-01","lang":"fr","type":"same-lang-exact","kind":"memory","query":"quand est la réunion d'équipe","expected":["mem-002","mem-004"]}
+{"qid":"fr-02","lang":"fr","type":"same-lang-paraphrase","kind":"wiki","query":"délai pour rembourser une note de frais","expected":["wiki-002"]}
+{"qid":"fr-03","lang":"fr","type":"cross-lang","kind":"memory","query":"quand le déploiement de staging a-t-il lieu","expected":["mem-006"]}
+{"qid":"ar-01","lang":"ar","type":"same-lang-exact","kind":"memory","query":"متى اجتماع الفريق","expected":["mem-004","mem-002"]}
+{"qid":"ar-02","lang":"ar","type":"morphology","kind":"memory","query":"هل دفع العميل فاتورة 2041","expected":["mem-003","mem-001"]}
+{"qid":"ar-03","lang":"ar","type":"same-lang-exact","kind":"wiki","query":"كم يوماً من الإجازة السنوية","expected":["wiki-003"]}
+{"qid":"ar-04","lang":"ar","type":"cross-lang","kind":"memory","query":"متى يصل المورد بالكرتون","expected":["mem-005"]}
+{"qid":"mx-01","lang":"mixed","type":"arabizi","kind":"memory","query":"el bureau msaker nhar el jem3a?","expected":["mem-007"]}
+{"qid":"mx-02","lang":"mixed","type":"cross-lang","kind":"memory","query":"le client préfère les devis par email ou phone?","expected":["mem-008"]}
+{"qid":"mx-03","lang":"mixed","type":"identifier","kind":"memory","query":"INV-2041 status","expected":["mem-001","mem-003"]}

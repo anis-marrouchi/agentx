@@ -54,6 +54,7 @@ notes/architecture/*
 !notes/architecture/three-tier.md
 !notes/architecture/surface-reduction.md
 !notes/architecture/design-system.md
+!notes/architecture/leann-vs-bm25-spike.md
 notes/prd
 
 # Harbor benchmark output (trial logs can contain task content)
