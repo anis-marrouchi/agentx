@@ -2,22 +2,18 @@
 
 What is being built now, what comes next, and what was done recently. The live list is on GitHub: the [milestones](https://github.com/anis-marrouchi/agentx/milestones) and the issues labelled `priority: p1` and `priority: p2`. This page follows them; the weekly maintainer review checks the two match.
 
-Last checked: 25 October 2026.
+Last checked: 26 October 2026.
 
 ## Now
 
-The goal is to score 5 out of 5 on every row of the comparison in [#1285](https://github.com/anis-marrouchi/agentx/issues/1285), in three phases.
-
-**Phase 3, due 22 November 2026** ([milestone](https://github.com/anis-marrouchi/agentx/milestone/3)):
-
-- Email as a channel, and a support queue that drafts replies from your documents ([#1287](https://github.com/anis-marrouchi/agentx/issues/1287)).
-
-Also in progress: an org chart in the dashboard, and owner approval before an agent-created agent starts ([#1169](https://github.com/anis-marrouchi/agentx/issues/1169)).
-
-## Next
+The three phases of the comparison in [#1285](https://github.com/anis-marrouchi/agentx/issues/1285) are done; no milestone is open. The open `priority: p1` issues:
 
 - Require the CI checks before anything merges into `main` ([#989](https://github.com/anis-marrouchi/agentx/issues/989)).
 - Fewer same-day fixes on agent pull requests ([#987](https://github.com/anis-marrouchi/agentx/issues/987)).
+
+## Next
+
+- Build on native apps and existing conventions ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062)).
 - A wiki with typed pages and links ([#811](https://github.com/anis-marrouchi/agentx/issues/811)).
 - Place reminders checked on a real Android phone ([#681](https://github.com/anis-marrouchi/agentx/issues/681)).
 
@@ -34,6 +30,11 @@ Also in progress: an org chart in the dashboard, and owner approval before an ag
 
 - Sales: lead research with a source for every fact, a daily brief and a competitor watch ([#1288](https://github.com/anis-marrouchi/agentx/issues/1288)).
 - Content: drafts in your voice, a weekly calendar, and approval before posting ([#1291](https://github.com/anis-marrouchi/agentx/issues/1291)).
+
+**Phase 3** ([milestone](https://github.com/anis-marrouchi/agentx/milestone/3)):
+
+- Email as a channel, and a support queue that drafts replies from your documents ([#1287](https://github.com/anis-marrouchi/agentx/issues/1287)).
+- An org chart in the dashboard, and owner approval before an agent-created agent starts ([#1169](https://github.com/anis-marrouchi/agentx/issues/1169)).
 
 **Also done:** an [upgrade promise](reference/releases.md#upgrade-promise), an install matrix with its pass rate, and this roadmap; AgentX stays on 0.x for now, and 1.0 will get its own issue ([#1294](https://github.com/anis-marrouchi/agentx/issues/1294)); a worktree per coding task, a review gate on GitLab, and Linear and Jira ([#1292](https://github.com/anis-marrouchi/agentx/issues/1292)); the Wall view of every project; monthly budgets per agent; and stop-all with resume after a restart.
 
