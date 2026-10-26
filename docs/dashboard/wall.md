@@ -203,7 +203,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 The profile is the **Owner** filter, so its address can be shared like any other view.
 
-The spend line uses the same figures as the **Monthly budgets** card on the Cost page, from the machine that serves the dashboard you opened.
+The spend line uses the same figures as the **Monthly budgets** card on the Cost page, from the machine that serves the dashboard you opened. For an agent that runs on another machine, the line says **Spend and cap are kept on another machine** instead of a figure: open the Wall on that machine to see it.
 
 ## See every agent
 
@@ -528,6 +528,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **Post says requests are off:** the agent's machine has `requests.enabled` off, so nothing would give it the task. Turn requests on in **Settings** on that machine, or ask the agent in a channel instead.
 - **Post says to pick who it is for:** the post has no `@` name of an agent the machines report. Check the name on the **Agents** page.
 - **The profile shows no spend line:** the dashboard could not read the budgets, for example because its token was refused. Select **Refresh**. If it is still missing, open the Cost page: if the **Monthly budgets** card is missing there too, see [Costs](../help/costs.md).
+- **The profile says "Spend and cap are kept on another machine":** the agent runs on a different machine, which keeps its spend and cap. Open the Wall or the Cost page on that machine.
 - **The profile's spend differs from another machine's Cost page:** each machine counts the runs it keeps. Open the Wall on the machine that runs the agent to see its own figure.
 - **The Wall is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on; see [Approvals](./approvals.md). Running work still shows under **Running now**.
 - **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.

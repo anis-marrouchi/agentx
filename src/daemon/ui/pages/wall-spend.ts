@@ -20,11 +20,17 @@ export interface SpendRow {
 /**
  * The profile's spend line. `row` is the agent's budgets row (missing when
  * it has no spend and no cap this month); `fleet` is the fleet row, whose
- * cap pauses every agent. `null` budgets (not loaded, or the read failed)
- * show nothing.
+ * cap pauses every agent; `agentIds` are the agents in this node's config.
+ * `null` budgets (not loaded, or the read failed) show nothing. An agent
+ * with no row that this node does not configure runs on a peer: its spend
+ * and cap live there, so the line says so rather than "$0 · no cap".
  */
-export function profileSpendHtml(budgets: { agents?: Array<SpendRow & { agentId: string }>; fleet?: SpendRow } | null, id: string): string {
+export function profileSpendHtml(budgets: { agents?: Array<SpendRow & { agentId: string }>; fleet?: SpendRow; agentIds?: string[] } | null, id: string): string {
   if (!budgets) return ""
+  const found = (budgets.agents || []).find((r) => r.agentId === id)
+  if (!found && (budgets.agentIds || []).indexOf(id) < 0) {
+    return '<div class="wpf__spend">Spend and cap are kept on another machine</div>'
+  }
   // fmtCost on /cost (src/daemon/ui/pages/cost.ts), kept the same.
   const usd = (v: number): string => {
     let n = Number(v)
@@ -34,7 +40,7 @@ export function profileSpendHtml(budgets: { agents?: Array<SpendRow & { agentId:
     if (Math.abs(n) < 0.01) return "$" + n.toFixed(4)
     return "$" + n.toFixed(2)
   }
-  const row: SpendRow = (budgets.agents || []).find((r) => r.agentId === id) || { spentUsd: 0, state: "uncapped" }
+  const row: SpendRow = found || { spentUsd: 0, state: "uncapped" }
   const text = row.capUsd
     ? "Spent <b>" + usd(row.spentUsd) + "</b> of " + usd(row.capUsd) + " this month"
     : "Spent <b>" + usd(row.spentUsd) + "</b> this month · no cap"

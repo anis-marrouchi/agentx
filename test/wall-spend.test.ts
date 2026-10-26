@@ -7,14 +7,17 @@ import { injectFns } from "../src/daemon/ui/inject"
 // Month spend against the cap on the Wall agent profile (#1393), from the
 // same rows /cost's "Monthly budgets" card reads.
 
-const view = (spent: number, cap?: number, extra: { unpriced?: number; fleetCap?: number } = {}) =>
-  buildBudgetView(
+// The endpoint adds `agentIds` (this node's configured agents) to the view.
+const view = (spent: number, cap?: number, extra: { unpriced?: number; fleetCap?: number } = {}) => ({
+  ...buildBudgetView(
     { agents: cap ? { coder: { monthlyUsd: cap } } : {}, ...(extra.fleetCap ? { fleet: { monthlyUsd: extra.fleetCap } } : {}) },
     spent ? { coder: spent } : {},
     "2026-10",
     {},
     extra.unpriced ? { coder: extra.unpriced } : {},
-  )
+  ),
+  agentIds: ["coder"],
+})
 
 describe("profileSpendHtml", () => {
   it("shows spend against the cap while under it, with no state chip", () => {
@@ -49,6 +52,15 @@ describe("profileSpendHtml", () => {
 
   it("labels runs with no price as /cost does", () => {
     expect(profileSpendHtml(view(1, 100, { unpriced: 2 }), "coder")).toContain("· 2 not priced")
+  })
+
+  it("says the spend is kept elsewhere for an agent this node does not run", () => {
+    // A peer's agent: no row here and not in this node's agentx.json.
+    const html = profileSpendHtml(view(12.5, 100), "peer-agent")
+    expect(html).toContain("Spend and cap are kept on another machine")
+    expect(html).not.toContain("$0")
+    expect(html).not.toContain("no cap")
+    expect(html).not.toContain('href="/admin/cost"')
   })
 
   it("shows nothing until the budgets are read", () => {
