@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.181.0](https://github.com/anis-marrouchi/agentx/compare/v0.180.0...v0.181.0) (2026-10-26)
+
+
+### Features
+
+* **wall:** show the org read-only on the Wall ([#1398](https://github.com/anis-marrouchi/agentx/issues/1398)) ([#1400](https://github.com/anis-marrouchi/agentx/issues/1400)) ([4bfad57](https://github.com/anis-marrouchi/agentx/commit/4bfad57030938dae95c92531f10950273a4d0a14))
+
+
+### Performance Improvements
+
+* **wall:** read goals counts-only on every Wall load ([#1396](https://github.com/anis-marrouchi/agentx/issues/1396)) ([#1407](https://github.com/anis-marrouchi/agentx/issues/1407)) ([df92ec7](https://github.com/anis-marrouchi/agentx/commit/df92ec7dccfe54bba26c2ffa8bc7880266118fba))
+
 ## [0.180.0](https://github.com/anis-marrouchi/agentx/compare/v0.179.0...v0.180.0) (2026-10-26)
 
 
