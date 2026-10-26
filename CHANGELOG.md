@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.180.0](https://github.com/anis-marrouchi/agentx/compare/v0.179.0...v0.180.0) (2026-10-26)
+
+
+### Features
+
+* **wall:** show an agent's month spend against its cap on its profile ([#1395](https://github.com/anis-marrouchi/agentx/issues/1395)) ([0d18e38](https://github.com/anis-marrouchi/agentx/commit/0d18e382ccda10bec62a72d31481c88ccabcf0e5))
+
 ## [0.179.0](https://github.com/anis-marrouchi/agentx/compare/v0.178.0...v0.179.0) (2026-10-26)
 
 
