@@ -38,7 +38,7 @@ export interface WallPageOpts {
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
   ["Live", "/live"], ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
-  ["People", "/people"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Cost", "/admin/cost"], ["Settings", "/admin"],
+  ["People", "/people"], ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Cost", "/admin/cost"], ["Settings", "/admin"],
 ]
 
 /** The status tabs over the feed and the list (#1355): filter value, label. */
@@ -390,6 +390,7 @@ const WALL_PAGE_CSS = `
 .wpf .h { color: var(--ax-muted); font-size: var(--ax-fs-sm); }
 .wpf__stats { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 0; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
 .wpf__stats b { color: var(--ax-text); }
+.wpf__org button { padding: 0; border: 0; background: none; color: var(--ax-accent, inherit); font: inherit; cursor: pointer; }
 .wpf__spend { margin: 6px 0 0; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
 .wpf__spend b { color: var(--ax-text); }
 .wpf__spend a { color: var(--ax-accent); text-decoration: none; margin-left: 4px; }

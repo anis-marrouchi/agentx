@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { renderWallPage } from "../src/daemon/ui/pages/wall"
+import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { CRON_VALUE_SCRIPT } from "../src/daemon/ui/cron-value"
 import { wallCapacity } from "../src/daemon/wall-capacity"
@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -78,7 +78,9 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     calls.push({ url, init })
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.post && url === "/api/admin/wall/post") return opts.post
+    if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
+      : url === "/api/admin/org" ? (opts.org ?? { exists: false })
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {})
       : opts.thread && url.startsWith("/api/admin/wall/thread?") ? opts.thread : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
@@ -1300,5 +1302,67 @@ describe("Goal filter on the Wall (#1392)", () => {
     await w.settle()
     expect(w.el("wall-count").textContent).toBe("2 of 4 posts")
     expect(w.el("wall-goal").innerHTML).toContain("No progress or cost for this goal")
+  })
+})
+
+describe("The org on the Wall (#1398)", () => {
+  const ORG = { exists: true, live: true, outside: [], roots: [
+    { id: "reviewer", name: "Reviewer", title: "Head of Quality", status: "idle", reports: [
+      { id: "cx", name: "Customer Desk", title: "Support Lead", reportsTo: "reviewer", status: "working", reports: [] },
+    ] },
+  ] }
+
+  it("links to /org from the Wall's classic pages", () => {
+    expect(WALL_CLASSIC_LINKS).toContainEqual(["Org", "/org"])
+    expect(renderWallPage()).toContain('<a href="/org">Org</a>')
+  })
+
+  it("shows an agent's role and who it reports to on its profile", async () => {
+    const w = openWall({ org: ORG })
+    await w.settle()
+    w.click({ "data-agent": "cx" })
+    await w.settle()
+    const prof = w.el("wall-profile").innerHTML
+    expect(prof).toContain('<div class="wp__meta wpf__org"><span><b>Support Lead</b></span>')
+    expect(prof).toContain('reports to <button type="button" data-agent="reviewer">Reviewer</button>')
+    expect(prof).toContain('<a href="/org">Org chart</a>')
+    w.click({ "data-agent": "reviewer" })
+    await w.settle()
+    const boss = w.el("wall-profile").innerHTML
+    expect(boss).toContain("<b>Head of Quality</b>")
+    expect(boss).toContain("1 reports to it")
+    expect(boss).not.toContain("reports to <button")
+  })
+
+  it("shows the role and boss on each Agents page card", async () => {
+    const w = openWall({ org: ORG, hash: "#page=agents" })
+    await w.settle()
+    const page = w.el("wall-agents-page").innerHTML
+    expect(page).toMatch(/id="agent-cx"[\s\S]*<b>Support Lead<\/b>[\s\S]*reports to <button type="button" data-agent="reviewer">Reviewer<\/button>/)
+  })
+
+  it("only reads the org: no hold, Pause or Resume from the Wall", async () => {
+    const w = openWall({ org: ORG, hash: "#page=agents" })
+    await w.settle()
+    w.click({ "data-agent": "cx" })
+    await w.settle()
+    const org = w.calls.filter((c) => c.url.startsWith("/api/admin/org"))
+    expect(org.map((c) => c.url)).toEqual(["/api/admin/org"])
+    expect(org[0].init?.method ?? "GET").toBe("GET")
+    const html = w.el("wall-profile").innerHTML + w.el("wall-agents-page").innerHTML
+    expect(html).not.toContain("data-hold")
+    expect(html).not.toMatch(/>(Pause|Resume)</)
+  })
+
+  it("draws the profile as before when the org is missing or fails", async () => {
+    for (const org of [undefined, "fail"]) {
+      const w = openWall({ org })
+      await w.settle()
+      w.click({ "data-agent": "cx" })
+      await w.settle()
+      const prof = w.el("wall-profile").innerHTML
+      expect(prof).toContain("<h2>Customer Desk</h2>")
+      expect(prof).not.toContain("wpf__org")
+    }
   })
 })
