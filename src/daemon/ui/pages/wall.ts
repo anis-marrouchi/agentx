@@ -108,6 +108,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       </select></label>
       <label>No move for <select id="f-idle"><option value="">any time</option><option value="1">1+ day</option><option value="3">3+ days</option><option value="7">7+ days</option></select></label>
       <label>Project <select id="f-project"><option value="">All</option></select></label>
+      <label>Goal <select id="f-goal"><option value="">All</option></select></label>
       <label>Node <select id="f-node"><option value="">All</option></select></label>
       <label>Group <select id="f-group"><option value="">All</option></select></label>
       <label>Group the list by <select id="f-grp"><option value="">nothing</option><option value="owner">owner</option><option value="project">project</option><option value="blocked">blocked by</option></select></label>
@@ -129,6 +130,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       </div>
     </form>
     <section id="wall-profile" class="ax-wall__profile" aria-label="Agent profile" hidden></section>
+    <section id="wall-goal" class="ax-wall__goal" aria-label="Goal" hidden></section>
     <section id="wall-feed" class="ax-wall__feed" aria-label="Posts"></section>
     <section id="wall-list" class="ax-wall__list" aria-label="Posts as a list" hidden></section>
     <section id="wall-projects" class="ax-wall__list" aria-label="Projects" hidden></section>
@@ -252,6 +254,15 @@ const WALL_PAGE_CSS = `
 
 /* The opened task (#1355): title, where it stands, plan, result, facts. */
 .wtk__title { font-size: 21px; line-height: 1.3; font-weight: 800; margin: 6px 0 12px; }
+/* The goal filter's line (#1392): its progress and cost over the posts. */
+.ax-wall__goal { padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
+.wgl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: var(--ax-fs-sm, 13px); }
+.wgl h2 { margin: 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; flex: 1 1 100%; }
+.wgl__bar { flex: 0 0 120px; height: 6px; border-radius: 3px; background: var(--ax-border); overflow: hidden; }
+.wgl__bar i { display: block; height: 100%; background: var(--ax-green); }
+.wgl__n { color: var(--ax-text-2); font-family: var(--ax-mono); font-size: 12px; }
+.wgl .ax-btn { margin-left: auto; }
+.wgl__note { margin: 6px 0 0; color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wtk__prog { display: flex; list-style: none; margin: 0 0 12px; padding: 0; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); overflow: hidden; }
 .wtk__prog li { flex: 1; min-width: 0; padding: 8px 10px; border-left: 1px solid var(--ax-border); border-top: 3px solid var(--ax-border); font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wtk__prog li:first-child { border-left: 0; }
