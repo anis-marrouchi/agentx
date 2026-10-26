@@ -58,7 +58,7 @@ chrome.on("error", e => { launchError = e })
 let ws
 try {
   const portFile = join(profile, "DevToolsActivePort")
-  for (let i = 0; !existsSync(portFile) && i < 100; i++) { if (launchError) throw launchError; await sleep(100) }
+  for (let i = 0; !existsSync(portFile) && i < 300; i++) { if (launchError) throw launchError; await sleep(100) }
   if (!existsSync(portFile)) throw new Error("Chrome did not start; check local process permissions")
   const port = readFileSync(portFile, "utf8").split("\n")[0]
   const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()
@@ -87,8 +87,11 @@ try {
     const ratio = contrast(text, ink)
     if (ratio < 4.5) throw new Error(`${text} on ${ink} has contrast ${ratio.toFixed(2)}:1; WCAG AA needs 4.5:1`)
   }
-  const overflow = await evaluate(`[...document.querySelectorAll(".brand, h1, p")].filter(e => { const r = e.getBoundingClientRect(); return r.right > ${WIDTH} || r.bottom > ${HEIGHT} }).map(e => e.tagName).join(",")`)
-  if (overflow) throw new Error(`Text leaves the card: ${overflow}`)
+  if (!await evaluate(`[...document.querySelectorAll("img")].every(i => i.complete && i.naturalWidth > 0)`)) throw new Error("The AgentX mark did not load; check the image path in the template")
+  // Text stays inside a 72px margin, so a site that crops the card to 1.91:1 does not cut it.
+  const MARGIN = 72
+  const overflow = await evaluate(`[...document.querySelectorAll(".brand, h1, p")].filter(e => { const r = e.getBoundingClientRect(); return r.left < ${MARGIN} || r.right > ${WIDTH - MARGIN} || r.bottom > ${HEIGHT - MARGIN} }).map(e => e.tagName).join(",")`)
+  if (overflow) throw new Error(`Text leaves the ${MARGIN}px margin: ${overflow}`)
 
   const { data } = await cdp("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: WIDTH, height: HEIGHT, scale: 1 } })
   const png = Buffer.from(data, "base64")

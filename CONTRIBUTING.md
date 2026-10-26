@@ -310,7 +310,7 @@ To change the words or the look (in a terminal, from the repo root, with Chrome 
 1. Edit `docs/.scripts/social-preview/template.html`.
 2. Run `pnpm docs:social-preview`. It writes `docs/public/social-preview.png`, and stops with a message if a text colour falls under the WCAG AA contrast ratio (4.5:1) or if text leaves the card. Set `CHROME_PATH` if your browser is elsewhere.
 3. Open the PNG and read it at a small size, as it will appear in a chat.
-4. Commit the template and the PNG together. `pnpm docs:social-preview --check` fails when they no longer match.
+4. Commit the template and the PNG together. `pnpm docs:social-preview --check` fails when they no longer match. The comparison is byte for byte, so another Chrome version or OS can fail it with an unchanged template; rebuild and look at the result before you commit it.
 
 To put it on the repository (in the browser, as the repository owner):
 
@@ -327,7 +327,7 @@ To put it on the repository (in the browser, as the repository owner):
 #### If something is wrong
 
 - **The old card still shows.** Link previews are cached. Try again after a few hours, or use the site's own cache refresh (for example the X or LinkedIn post inspector).
-- **The image looks cropped.** Some sites crop the card to 1.91:1. The template keeps text inside a 72px margin; keep it there when you edit.
+- **The image looks cropped.** Some sites crop the card to 1.91:1. The script stops when text comes within 72px of the left, right or bottom edge; keep it inside that margin when you edit.
 - **The script says a font did not load.** The font files are missing from `docs/.scripts/social-preview/fonts/`; restore them from git.
 - **The script says Chrome did not start.** Set `CHROME_PATH` to the Chrome or Chromium binary.
 
