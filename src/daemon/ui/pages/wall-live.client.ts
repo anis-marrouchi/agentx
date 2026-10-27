@@ -2,7 +2,8 @@
 //
 // Spliced into WALL_PAGE_SCRIPT's closure, so it uses that script's S, $,
 // esc(), when(), until(), stamp(), avatar(), nameOf(), allAgents(),
-// wallTaskHref(), act(), note(), paintSpace() and pollSpace().
+// wallTaskHref(), act(), note(), paintSpace(), pollSpace() and
+// plainMarkerText().
 //
 // The Live page (#page=live) lists every live session on every machine,
 // as Spaces do on X: the live ones on top (a Space, a lesson on a
@@ -30,7 +31,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
       if (n.lesson) out.push({ kind: 'lesson', node: n, here: here, agents: n.lesson.agentId ? [n.lesson.agentId] : [], title: n.lesson.goal || 'A lesson', at: Date.parse(n.lesson.startedAt) || 0 });
       (n.agents || []).forEach(function (a) {
         (a.runningTasks || []).forEach(function (t) {
-          out.push({ kind: 'work', node: n, here: here, agents: [a.id], title: t.messagePreview || 'Working', at: Date.parse(t.startedAt) || 0, task: t, agent: a });
+          out.push({ kind: 'work', node: n, here: here, agents: [a.id], title: plainMarkerText(t.messagePreview) || 'Working', at: Date.parse(t.startedAt) || 0, task: t, agent: a });
         });
       });
     });
@@ -41,17 +42,17 @@ export const WALL_LIVE_SCRIPT = String.raw`
     var m = Math.floor(Math.max(0, ms) / 60000);
     return m < 1 ? Math.floor(Math.max(0, ms) / 1000) + ' s' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
   }
-  /** The last line a run wrote, said plainly (task.ts's stream sigils). */
+  /** The last line a run wrote, said plainly (task.ts's stream sigils), without markers (#1443). */
   function activityText(t) {
-    var l = t.lastActivity || '';
+    var l = t.lastActivity || '', say = plainMarkerText;
     if (!l) return t.workflow && t.workflow.step ? 'Workflow step: ' + t.workflow.step : t.step ? 'Step: ' + t.step : 'Starting…';
     if (l.indexOf('→ ') === 0) return 'Using ' + l.slice(2).split('(')[0];
-    if (l.indexOf('← [error] ') === 0) return 'Tool error: ' + l.slice(10);
-    if (l.indexOf('← ') === 0) return 'Tool result: ' + l.slice(2);
-    if (l.indexOf('💭 ') === 0) return 'Thinking: ' + l.slice(2).trim();
-    if (l.indexOf('· ') === 0) return l.slice(2);
-    if (l.indexOf('[error] ') === 0) return 'Error: ' + l.slice(8);
-    return 'Writing: ' + l;
+    if (l.indexOf('← [error] ') === 0) return 'Tool error: ' + say(l.slice(10));
+    if (l.indexOf('← ') === 0) return 'Tool result: ' + say(l.slice(2));
+    if (l.indexOf('💭 ') === 0) return 'Thinking: ' + say(l.slice(2).trim());
+    if (l.indexOf('· ') === 0) return say(l.slice(2));
+    if (l.indexOf('[error] ') === 0) return 'Error: ' + say(l.slice(8));
+    return 'Writing: ' + say(l);
   }
   /** A session or job at work: the whole card opens its Task page. */
   function workHtml(s) {

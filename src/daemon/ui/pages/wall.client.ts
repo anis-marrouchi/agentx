@@ -40,6 +40,7 @@
 
 import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
+import { plainMarkerText } from "../marker-text"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
@@ -64,7 +65,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange })}
+  ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
@@ -209,9 +210,15 @@ ${WALL_BUILD_SCRIPT}
   /** Markdown from an agent, escaped first; links only to web, mail or this site. */
   function md(text) {
     var html;
-    try { html = markdownToHtml(String(text == null ? '' : text)); } catch (e) { return '<p>' + esc(text) + '</p>'; }
+    text = plainMarkerText(text);
+    try { html = markdownToHtml(text); } catch (e) { return '<p>' + esc(text) + '</p>'; }
     // "/" but not "//host" or "/\host": those open another site.
     return html.replace(/href="([^"]*)"/g, function (m, u) { return /^(https?:|mailto:|\/(?![\/\\])|#)/i.test(u) ? m : 'href="#"'; });
+  }
+  /** A post as the Wall shows it: its headline without internal markers (#1443). */
+  function plainPost(p) {
+    if (p) p.headline = plainMarkerText(p.headline);
+    return p;
   }
   function linkOrText(ref) {
     return /^https?:\/\//.test(ref) ? '<a href="' + esc(ref) + '" target="_blank" rel="noopener">' + esc(ref) + '</a>' : esc(ref);
@@ -899,7 +906,7 @@ ${WALL_BUILD_SCRIPT}
         '<div class="wpf__stats"><span><b>' + s.open + '</b> open</span><span><b>' + s.owner + '</b> waiting on the owner</span>' +
           '<span><b>' + s.done + '</b> done in 7 days</span><span><b>' + s.runs + '</b> runs</span>' +
           (a.errors ? '<span class="is-err"><b>' + a.errors + '</b> errors</span>' : '') + '</div>' +
-        (a.summary && a.summary.text ? '<details class="wp__ask"><summary><span class="k">Last summary</span> ' + esc(a.summary.text) + '</summary><div class="ax-md">' + md(a.summary.text) + '</div></details>' : '') +
+        (a.summary && a.summary.text ? '<details class="wp__ask"><summary><span class="k">Last summary</span> ' + esc(plainMarkerText(a.summary.text)) + '</summary><div class="ax-md">' + md(a.summary.text) + '</div></details>' : '') +
         (a.nodes.length ? '<div class="wag__acts">' + agentActsHtml(a.id) + '</div>' : '') +
         '<div class="wpf__links">' + (s.posts ? '<button type="button" class="wa-more" data-agent="' + esc(a.id) + '">' + s.posts + (s.posts === 1 ? ' post' : ' posts') + '</button>' : '<span class="ax-wall__count">No posts in 7 days</span>') +
           '<a href="/admin/agents/' + encodeURIComponent(a.id) + '">Agent page</a><a href="' + esc(activityHref(a.id)) + '">Activity</a></div>' +
@@ -1106,7 +1113,7 @@ ${WALL_BUILD_SCRIPT}
     if (!live.length) return '<p class="ax-wall__empty">' + (S.liveError ? 'Could not reach the machines just now; trying again.' : 'Loading…') + '</p>';
     return live.map(function (n) {
       var down = nodeDown(n), running = [];
-      (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + (t.messagePreview || '').slice(0, 60)); }); });
+      (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + plainMarkerText(t.messagePreview).slice(0, 60)); }); });
       var what = nodeChecking(n) ? 'checking…' : down ? 'does not answer' : running.length ? running[0] + (running.length > 1 ? ' · +' + (running.length - 1) + ' more' : '') : 'nothing running';
       return '<div class="wh' + (down ? ' is-down' : '') + '"><b>' + esc(n.name) + '</b><span title="' + esc(running.join('\n')) + '">' + esc(what) + '</span></div>';
     }).join('') + '<a class="wa-more" href="#page=running">See all running</a>';
@@ -1139,7 +1146,7 @@ ${WALL_BUILD_SCRIPT}
         (running.length ? '<ul>' + running.map(function (x) {
           var rid = x.t.traceId || x.t.id;
           var conc = ((S.live && S.live.concurrent) || []).filter(function (o) { return o.runs.indexOf(rid) >= 0; });
-          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc((x.t.messagePreview || '').slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
+          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc(plainMarkerText(x.t.messagePreview).slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
             conc.map(function (o) { return concHtml(o, function (id) { return esc(id); }); }).join('') + '</li>';
         }).join('') + '</ul>' : '<div class="idle">' + (checking ? 'Slow to answer; asking again.' : down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
         (ops.length ? '<details><summary>Ops details</summary>' + ops.map(esc).join(' · ') + '</details>' : '') + '</div>';
@@ -1284,7 +1291,7 @@ ${WALL_BUILD_SCRIPT}
     // A quick read (#1442): what the peers and the forge have ready now;
     // the reply says when more is on its way, and the Wall asks again.
     S.data = await getJson('/api/admin/wall?peer=fleet&days=7&quick=1');
-    var posts = S.data.posts || [];
+    var posts = (S.data.posts || []).map(plainPost);
     fillSelect('f-owner', uniq(posts.map(function (p) { return p.owner; })));
     fillSelect('f-load', uniq(((S.data.capacity && S.data.capacity.owners) || []).map(function (r) { return r.owner; })));
     var other = posts.some(function (p) { return !p.project; }) ? [OTHER] : [];
@@ -1381,6 +1388,7 @@ ${WALL_BUILD_SCRIPT}
     if (!fromTask || !S.data) return;
     fetch('/api/admin/wall/thread?task=' + encodeURIComponent(fromTask), { headers: headers() }).then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
       if (!b || !b.post) return;
+      plainPost(b.post);
       S.threads[b.post.id] = { events: b.events || [] };
       // Kept aside too, so a refresh that no longer lists it still shows it.
       if (!findPost(b.post.id)) S.extra = Object.assign({}, b.post, { node: { name: S.data.node, peer: null, daemonUrl: null } });
