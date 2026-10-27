@@ -112,7 +112,7 @@ What it costs depends on your model account (a Claude subscription, or an API ke
 
 **What it costs.** Nothing: counting and caps run on your machine.
 
-**First result you can see.** **Browser:** open your dashboard and select **Cost** in the Wall's nav. Each agent's row shows its spend against its cap, with **Set a cap** or **Change cap** beside it, and **Monthly budgets** lists every cap.
+**First result you can see.** **Browser:** open your dashboard and select **Cost** in the Wall's nav. Each agent's row shows its spend against its cap, and **Monthly budgets** shows all agents, each project and each capped agent.
 
 ![Monthly budgets on the Wall's Cost page](docs/public/screenshots/costs/budgets.png)
 

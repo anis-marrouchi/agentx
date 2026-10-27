@@ -98,15 +98,16 @@ describe("Wall Cost page numbers (#1423)", () => {
     expect(html).toContain('<button type="button" class="wc__who" data-cagent="coder"')
     expect(html).toContain("$85.00 of $100.00 this month")
     expect(html).toContain('class="wc__bar is-warn"')
+    // Each row links to the budgets form for that agent; none when the budgets were not read.
+    expect(html).toContain('data-ccap="pm" title="Set the monthly cap of Planner">Change cap</button>')
+    expect(html).toContain('data-ccap="local" title="Set the monthly cap of local">Set a cap</button>')
+    expect(costPageHtml(costPageModel(buildCost(db!, 60), null, 30), {})).not.toContain("data-ccap")
     expect(html).toContain("Biggest movers this week")
     // Everything the classic page did is here (#1449): CSV, budgets, details.
     expect(html).not.toContain("/admin/cost")
     expect(html).toContain("data-ccsv>Export CSV</button>")
     expect(html).toContain('href="#wall-cost-budgets"')
     expect(html).toContain("Show details: tokens, cache and every day")
-    // Each row opens the budgets form on its agent.
-    expect(html).toContain('data-ccap="coder" title="Set the monthly cap of Coder">Change cap</button>')
-    expect(html).toContain('data-ccap="cx" title="Set the monthly cap of cx">Set a cap</button>')
     // The budgets form comes only from costBudgetsHtml.
     expect(html).not.toMatch(/<form|<input|method=/)
   })
@@ -115,8 +116,6 @@ describe("Wall Cost page numbers (#1423)", () => {
     const m = costPageModel(buildCost(db!, 60), null, 30)
     const html = costPageHtml(m, {})
     expect(html).toContain("This month's total is not available")
-    // No budgets read, so no form for a row's cap link to open.
-    expect(html).not.toContain("data-ccap")
     expect(html).toContain("over 30 days")
   })
 
@@ -222,7 +221,8 @@ describe("Everything /admin/cost did, on the Wall (#1423, #1449)", () => {
     expect(html).toContain("Monthly budgets")
     expect(html).toContain("<li><span>All agents</span><b>$97.50 of $500.00</b>")
     expect(html).toContain("<li><span>Project shop</span><b>$4.00 of $50.00</b>")
-    expect(html).toContain('<span class="chip chip--warn">near cap</span>')
+    expect(html).toContain('<span class="chip chip--warn">Near cap</span>')
+    expect(html).toContain('<b>$4.00 of $50.00</b><small><span class="chip chip--done">On track</span>')
     expect(html).toContain('<option value="agent:pm" selected>Agent @pm</option>')
     expect(html).toContain('<option value="agent:writer">Agent @writer</option>')
     expect(html).toContain('value="100"')

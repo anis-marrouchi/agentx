@@ -2,7 +2,7 @@ import { redactSecrets } from "@/agents/memory-trust"
 import { summarize } from "@/requests/card-view"
 import { forgeHeaders, parseRef, type ForgeConnectors } from "@/requests/checkers/issue"
 import { failureSignature, WALL_PREFIX } from "./wall-api"
-import { forgeCache, isForgeError, type ForgeAnswer, type ForgeCacheOptions } from "./wall-forge-cache"
+import { forgeCache, isForgeError, LATE_QUICK, type ForgeAnswer, type ForgeCacheOptions } from "./wall-forge-cache"
 
 // --- The Wall's reported failures (#1186) ---
 //
@@ -121,7 +121,10 @@ export function groupReported(issues: ReportedIssue[], pattern: RegExp | null): 
 }
 
 export interface WallReportedSource {
-  read(): Promise<WallReported>
+  /** A quick read waits only briefly (#1442). */
+  read(quick?: boolean): Promise<WallReported>
+  /** True while a read started earlier has not answered yet. */
+  busy(): boolean
 }
 
 /** The cached, time-boxed source of reported failures for the Wall. */
@@ -129,16 +132,17 @@ export function wallReported(cfg: ReportedIssuesConfig, read: ReportedReader, op
   const pattern = cfg.titleSignature ? new RegExp(cfg.titleSignature) : null
   const cache = forgeCache<ReportedSource, ReportedPage>((s) => read(s, cfg.label), opts)
   return {
-    async read() {
+    busy: cache.busy,
+    async read(quick) {
       const refs = new Map(cfg.sources.map((s) => [`${s.forge}:${s.project}`, s] as const))
-      const reads = await cache.readAll(refs)
+      const reads = await cache.readAll(refs, quick)
       const issues: ReportedIssue[] = []
       const unread: WallReported["unread"] = []
       const truncated: ReportedSource[] = []
       for (const [key, s] of refs) {
         const got = reads.get(key)
         const source = { forge: s.forge, project: s.project }
-        if (!got || got.kind !== "answer") { unread.push({ ...source, why: got?.kind === "late" ? "did not answer in time" : "not read yet" }); continue }
+        if (!got || got.kind !== "answer") { unread.push({ ...source, why: got?.kind === "late" ? (quick ? LATE_QUICK : "did not answer in time") : "not read yet" }); continue }
         if (isForgeError(got.answer)) { unread.push({ ...source, why: got.answer.error }); continue }
         issues.push(...got.answer.issues)
         if (got.answer.truncated) truncated.push(source)
@@ -151,8 +155,8 @@ export function wallReported(cfg: ReportedIssuesConfig, read: ReportedReader, op
 /** The Wall's list reply with `reported` set, when the source is configured.
  *  Threads and other paths, and a node without the setting, are unchanged. */
 export async function withReported(
-  reply: { status: number; body: unknown }, path: string, source: WallReportedSource | null,
+  reply: { status: number; body: unknown }, path: string, source: WallReportedSource | null, quick?: boolean,
 ): Promise<{ status: number; body: unknown }> {
   if (!source || reply.status !== 200 || path !== WALL_PREFIX || !reply.body || typeof reply.body !== "object") return reply
-  return { ...reply, body: { ...reply.body, reported: await source.read() } }
+  return { ...reply, body: { ...reply.body, reported: await source.read(quick) } }
 }

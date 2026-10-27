@@ -13,9 +13,9 @@
 //
 // renderCost(view) is the one call the Wall's render() makes; refreshCost()
 // is called from the Wall's own load(). The nav count is this month's total
-// on every machine read. The only write is a budget: POST /api/admin/budgets
-// on the machine picked, which the dashboard lets only its owner do (its
-// token gate); a refusal is shown as such.
+// on every machine read. The only write is a budget: POST /api/admin/wall/budget
+// on the machine picked, which the dashboard lets only its owner do (the
+// Wall's owner-only guard); a refusal is shown as such.
 
 export const WALL_COST_SCRIPT = String.raw`
   var C = { range: 30, key: '', loading: '', data: null, error: '', failed: [], peerBudgets: {}, form: {}, filter: 'all', details: false };
@@ -131,7 +131,7 @@ export const WALL_COST_SCRIPT = String.raw`
     if (cut >= 0) body.id = key.slice(cut + 1);
     C.form.scope = key; C.form.saving = true; C.form.note = 'Saving…';
     render();
-    var r = await act('POST', '/api/admin/budgets', body, m.peer);
+    var r = await act('POST', '/api/admin/wall/budget', body, m.peer);
     C.form.saving = false;
     C.form.usd = null;
     C.form.note = r.ok ? (body.monthlyUsd ? 'Saved. It applies now; paused work resumes if the new cap allows it.' : 'Saved: no cap.')
@@ -142,18 +142,6 @@ export const WALL_COST_SCRIPT = String.raw`
     }
     render();
   }
-  /** A row's "Set a cap": the form on the machine that runs the agent, with the agent picked. */
-  function pickCap(id) {
-    var ms = costBudgetMachines().filter(function (m) { return m.budgets && m.budgets.fleet; });
-    var runs = function (m) { return (m.budgets.agentIds || []).indexOf(id) >= 0; };
-    var lists = function (m) { return (m.budgets.agents || []).some(function (a) { return a.agentId === id; }); };
-    var m = ms.find(runs) || ms.find(lists) || ms[0];
-    if (!m) return;
-    C.form = { machine: m.name, scope: 'agent:' + id, usd: null, note: '' };
-    render();
-    var box = $('cb-usd');
-    if (box) { if (box.scrollIntoView) box.scrollIntoView({ block: 'center' }); if (box.focus) box.focus(); }
-  }
   document.addEventListener('click', function (ev) {
     var t = ev.target.closest('[data-crange],[data-cagent],[data-ccap],[data-ccsv],[data-cfilter],[data-cdetails],[data-cbudgets]');
     if (!t) return;
@@ -162,10 +150,20 @@ export const WALL_COST_SCRIPT = String.raw`
       C.range = r > 0 ? r : 0; C.data = null; C.error = ''; C.key = '';
       writeHash(); render(); return;
     }
-    if (t.hasAttribute('data-ccap')) { pickCap(t.getAttribute('data-ccap')); return; }
     if (t.hasAttribute('data-ccsv')) { exportCostCsv(); return; }
     if (t.hasAttribute('data-cfilter')) { C.filter = t.getAttribute('data-cfilter'); C.details = true; render(); return; }
     if (t.hasAttribute('data-cdetails')) { C.details = !C.details; render(); return; }
+    if (t.hasAttribute('data-ccap')) {
+      // An agent row's "Set a cap": pick that agent in the form, on the machine that runs it.
+      var id = t.getAttribute('data-ccap');
+      var on = costBudgetMachines().find(function (x) { var b = x.budgets; return !!b && (((b.agentIds || []).indexOf(id) >= 0) || (b.agents || []).some(function (a) { return a.agentId === id; })); });
+      if (on) C.form.machine = on.name;
+      C.form.scope = 'agent:' + id; C.form.usd = null; C.form.note = '';
+      render();
+      var box = $('cb-usd');
+      if (box) { if (box.scrollIntoView) box.scrollIntoView({ block: 'center' }); if (box.focus) box.focus(); }
+      return;
+    }
     if (t.hasAttribute('data-cbudgets')) { if (ev.preventDefault) ev.preventDefault(); var b = $('wall-cost-budgets'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'start' }); return; }
     // A row opens the agent's Wall profile over its posts.
     S.view = 'feed';
@@ -214,9 +212,7 @@ export const WALL_COST_CSS = `
 .wc__who span { display: flex; flex-direction: column; min-width: 0; }
 .wc__who small, .wc__runs, .wc__cap small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wc__who:hover b { text-decoration: underline; }
-.wc__link { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; background: none; border: 0; padding: 0; color: var(--ax-accent); cursor: pointer; white-space: nowrap; }
-.wc__link:hover { text-decoration: underline; }
-.wc__who:focus-visible, .wc__toggle:focus-visible, .wc__chips button:focus-visible, .wc__link:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.wc__who:focus-visible, .wc__toggle:focus-visible, .wc__chips button:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wc__amt { text-align: right; }
 .wc__cap { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; min-width: 0; }
 .wc__bar { flex: 0 1 120px; min-width: 40px; height: 6px; border-radius: 3px; background: var(--ax-surface); overflow: hidden; }
@@ -262,6 +258,9 @@ export const WALL_COST_CSS = `
 .wc__caps { list-style: none; margin: 6px 0; padding: 0; font-size: var(--ax-fs-sm); }
 .wc__caps li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--ax-border); align-items: baseline; }
 .wc__caps small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.wc__link { font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-accent); background: none; border: 0; padding: 2px 0; cursor: pointer; }
+.wc__link:hover { text-decoration: underline; }
+.wc__link:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wc__form { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin: 10px 0 4px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wc__form label { display: flex; flex-direction: column; gap: 2px; }
 .wc__form select, .wc__form input { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 6px 8px; min-width: 0; }

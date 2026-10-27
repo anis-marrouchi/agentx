@@ -239,15 +239,22 @@ over to the next build.
 
 - Push-to-talk only; no wake word. To cut a voice off, press ⌥Space (and
   talk) or ⌘⌥. (just stop), or use *Stop speaking* in the right-click menu.
-- One question per agent at a time. Several agents can think at once: start
-  with another agent's name ("Writer, …") while one thinks and both run; the
-  answers take turns in the daemon's speaking queue. Words for the agent
-  already thinking replace its question; a second question for an agent
-  answering a by-name question waits for that answer.
+- One question per agent at a time. Outside a call, a request no longer
+  holds the pill (#1455): it runs on its own and the pill is free at once,
+  so several agents think in parallel. A second request for an agent that
+  is still thinking waits behind the first. Answers wait as "not heard" in
+  the open-requests list (`OpenRequests.swift`, `RequestsWindow.swift`,
+  tested in `Tests/OpenRequests`) until picked, with one soft sound; "Play
+  answers at once" in the menu (UserDefaults `playAnswersAtOnce`) plays
+  them as they come, as before. The list is kept by the app for now: it
+  does not survive a restart, and the phone does not see it yet. Closing a
+  row is not built yet; the eight newest heard rows are kept. During a call
+  the turn works as before.
 - ⌥Space is the default talk key (`⌃Space` is commonly bound to
   input-source switching). Talk, stop, paste and per-agent shortcuts are
   set in Settings… and stored in agentx.json (`voice.hotkeys`,
-  `agents[].voice.hotkey`); ⌘⌥A, which opens the menu, is fixed.
+  `agents[].voice.hotkey`); ⌘⌥A, which opens the menu, and ⌘⌥O, which opens
+  the open-requests list, are fixed.
 
 ## Settings window
 

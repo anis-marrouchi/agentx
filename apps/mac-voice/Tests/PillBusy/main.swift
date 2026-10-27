@@ -41,6 +41,27 @@ both.playing = "writer"
 let w = PillBusy.items(both, order: [])[0]
 check(w.activity == .speaking && w.queued == 1, "speaking one answer while the next is asked: speaking, one queued")
 
+// --- Answers waiting to be heard (#1455) ---
+
+var heard = Snap()
+heard.inFlight = ["writer": 1, "ops-agent": 1]
+heard.ready = ["ops-agent", "researcher-agent"]
+heard.failed = ["planner-agent"]
+let h = Dictionary(uniqueKeysWithValues: PillBusy.items(heard, order: []).map { ($0.agentID, $0) })
+check(h["researcher-agent"]?.activity == .ready, "an answer waiting to be heard: ready")
+check(h["ops-agent"]?.activity == .ready, "an answer to hear beats the next request still thinking")
+check(h["planner-agent"]?.activity == .failed, "a failure not seen yet: failed")
+check(h["writer"]?.activity == .thinking, "the others still think")
+var spoken = heard
+spoken.playing = "ops-agent"
+check(PillBusy.items(spoken, order: []).first { $0.agentID == "ops-agent" }?.activity == .speaking,
+      "playing beats ready")
+let readyOnly = [PillBusy.Item(agentID: "writer", activity: .ready, queued: 0)]
+check(PillBusy.showsRow(readyOnly, mainAgent: "writer", mainActive: true), "one answer to hear: the row shows")
+let failedOnly = [PillBusy.Item(agentID: "writer", activity: .failed, queued: 0)]
+check(PillBusy.showsRow(failedOnly, mainAgent: "writer", mainActive: false), "one failure to see: the row shows")
+check(PillBusy.tooltip(name: "Ops", node: nil, item: readyOnly[0]) == "Ops · answer ready, not heard", "its tooltip")
+
 // --- Order is stable ---
 
 let first = PillBusy.items(two, order: ["writer"])

@@ -1,0 +1,68 @@
+name: Wall pages
+
+# The shared Wall page check (#1454): every view in
+# scripts/wall-page-check.json opened at 390 px and at desktop width on the
+# seeded demo, failing on any console error or failed request. Screenshots
+# are uploaded as the "wall-pages" artifact for the PR.
+on:
+  pull_request:
+    paths:
+      - "src/daemon/ui/**"
+      - "src/daemon/wall*.ts"
+      - "src/daemon/board-dashboard.ts"
+      - "scripts/wall-page-check.*"
+      - ".github/workflows/wall-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wall-pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pages:
+    name: Wall page check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Rewrite git+ssh deps to https
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # The isolated demo (three loopback daemons and the dashboard on
+      # 18931), seeded with the docs fixtures so the views have posts.
+      - name: Start and seed the demo
+        run: |
+          nohup node dist/cli.js demo --no-open --keep --dashboard-token ci-demo-only-token < /dev/null > demo.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf -o /dev/null http://127.0.0.1:18931/wall && break; sleep 2; done
+          curl -sf -o /dev/null http://127.0.0.1:18931/wall || { cat demo.log; exit 1; }
+          node docs/.scripts/seed-demo.mjs
+
+      - name: Open every Wall view at 390 px and desktop
+        env:
+          WALL_CHECK_TOKEN: ci-demo-only-token
+        run: node scripts/wall-page-check.mjs --out wall-pages
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wall-pages
+          path: |
+            wall-pages/
+            demo.log
+          if-no-files-found: ignore

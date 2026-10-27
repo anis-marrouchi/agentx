@@ -1,8 +1,8 @@
 // --- Wall v2 Task page, browser side (#1381) ---
 //
 // Spliced into WALL_PAGE_SCRIPT's closure, so it uses that script's S, $,
-// esc(), avatar(), nameOf(), headers(), progressHtml(), planHtml() and
-// factsHtml().
+// esc(), avatar(), nameOf(), headers(), progressHtml(), planHtml(),
+// factsHtml(), plainPost() and plainMarkerText().
 //
 // The classic task page (task.ts) on the Wall: one run, at its own link
 // (#page=task&task=<id>&agent=<id>&node=<url>). On top, the request and,
@@ -14,6 +14,10 @@
 // steer box and Stop are task.ts's own code (TASK_MOUNT_FN), with its
 // rules: a finished cron run can be continued, other finished runs are
 // read-only.
+//
+// Under the head (#1439): a run a stop paused shows its plan with Resume
+// and Drop, as on Live; a live run has Pause, which stops it with a resume
+// plan (Stop only ends the turn). Both use wall-live.client.ts's controls.
 //
 // While Live or a Task is open, the Wall follows /api/live/stream (a
 // snapshot every two seconds) instead of its one-minute refresh.
@@ -34,7 +38,7 @@ export const WALL_TASK_SCRIPT = String.raw`
     if (t.traceId) q.set('trace', t.traceId);
     if (t.channel) q.set('ch', t.channel);
     // A live run's stream never replays what was asked: carry it, capped.
-    var ask = String(t.message || t.messagePreview || '').slice(0, 400);
+    var ask = plainMarkerText(t.message || t.messagePreview || '').slice(0, 400);
     if (ask) q.set('ask', ask);
     if (t.startedAt) q.set('at', t.startedAt);
     if (done) q.set('done', '1');
@@ -63,6 +67,7 @@ export const WALL_TASK_SCRIPT = String.raw`
         '<span id="wtask-where"></span></div></div>' +
         '<a class="wtask__classic" href="/tasks/' + encodeURIComponent(t.task) + '?agent=' + encodeURIComponent(t.agent) + (t.node ? '&node=' + encodeURIComponent(t.node) : '') + (t.done ? '&archived=1' : '') + '" title="This run on the classic dashboard">Classic page</a>' +
       '</header>' +
+      '<div id="wtask-ops"></div>' +
       '<section class="ax-task-page__ask" id="task-ask" hidden><div class="ax-task-page__ask-head"><span class="ax-ev__label ax-ev__label--soft">request</span>' +
         '<span class="ax-task-page__ask-who" id="task-ask-who"></span><span class="ax-task-page__ask-when" id="task-ask-when"></span></div>' +
         '<div class="ax-task-page__ask-body" id="task-ask-body"></div></section>' +
@@ -100,6 +105,7 @@ export const WALL_TASK_SCRIPT = String.raw`
         var b = r.ok ? await r.json() : null;
         if (b && b.post) {
           if (taskKey(S.task) !== taskKey(t)) return;
+          plainPost(b.post);
           b.post.node = b.post.node || { name: at.n ? at.n.name : '', peer: peer, daemonUrl: t.node };
           S.taskDetail = { post: b.post, plan: b.plan || [] };
           render();
@@ -108,6 +114,24 @@ export const WALL_TASK_SCRIPT = String.raw`
       } catch (e) { /* not tracked, or the node did not answer: the run alone */ }
     }
     if (taskKey(S.task) === taskKey(t)) S.taskDetail = { none: true };
+  }
+
+  /** Is this run working now, by the live snapshot? */
+  function runsNow(t) {
+    var n = taskNode(t).n;
+    return !!n && (n.agents || []).some(function (a) {
+      return a.id === t.agent && (a.runningTasks || []).some(function (r) { return r.id === t.task; });
+    });
+  }
+  /** Paused: its plan, Resume and Drop. Running: Pause. */
+  function taskOpsHtml(t) {
+    var x = stoppedOf(t.task, t.node), inner = '';
+    if (x) inner = stoppedHtml(x, true);
+    else if (runsNow(t)) {
+      inner = '<div class="wtask__pause">' + lvBtn('pause', t.node, t.task, 'Pause', 'Pause it?', 'Stop this task and keep a resume plan, so it can be resumed later', true) +
+        '<span class="wls__k">Pause keeps a plan to resume from; Stop below only ends the turn.</span></div>';
+    }
+    return inner || lvState().msg ? '<div class="wlv wtask__ops">' + lvNoteHtml() + inner + '</div>' : '';
   }
 
   /** Open, keep or close the mounted run as the page changes. */
@@ -121,6 +145,7 @@ export const WALL_TASK_SCRIPT = String.raw`
       $('wall-task').innerHTML = taskSkeleton(want);
       S.taskClose = mountTaskPage($('wtask-root'), {
         href: function (id, channel) { return wallTaskHref({ id: id, channel: channel }, want.agent, want.node, false); },
+        plain: plainMarkerText,
       });
     }
     if (!want) return;
@@ -129,6 +154,7 @@ export const WALL_TASK_SCRIPT = String.raw`
     $('wtask-name').textContent = nameOf(want.agent);
     $('wtask-where').textContent = at.n && S.live.nodes.length > 1 ? 'on ' + at.n.name : '';
     $('wtask-details').innerHTML = taskDetailsHtml();
+    $('wtask-ops').innerHTML = taskOpsHtml(want);
   }
 
   /** While Live or a Task is open, follow the live snapshot stream. */
@@ -166,6 +192,9 @@ export const WALL_TASK_CSS = `
 .wtask__out { box-shadow: none; min-height: 260px; max-height: 62vh; }
 /* A chat box right under the conversation, which scrolls on its own. */
 .wtask__stop { color: var(--ax-err); border-color: color-mix(in srgb, var(--ax-err) 45%, var(--ax-border)); }
+.wtask__ops.wlv { padding: 0; }
+.wtask__ops .wls { margin: 0; }
+.wtask__pause { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .wtask__ro { margin: 0; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
 .ax-task-page__compose:not([hidden]) ~ .wtask__ro { display: none; }
 @media (max-width: 640px) { .wtask { padding: 10px 12px 18px; } .wtask__out { max-height: none; } }
