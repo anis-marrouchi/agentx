@@ -2,7 +2,7 @@
 
 Design proposals for review. Nothing here is built. Per #1451 (epic #1449), a page gets built only after Anis accepts its design.
 
-Canvas with all screens: https://claude.ai/artifact/JUeGggfTkuKnqZd5rKGMbn (comment on any screen there, or on #1451).
+Every screen is in this note as an image (under `img/wall-v2-round-2/`), so it opens on GitHub for anyone with access to the repo. Comment here or on #1451. The same screens are also on a canvas (https://claude.ai/artifact/JUeGggfTkuKnqZd5rKGMbn), but this note does not need it: the canvas is not shared, so most people cannot open it.
 
 All data on the screens is made up: agents (Forge, Quill, Scout, Atlas, Relay, Pulse, Harbor), people (Dana, Lee, Kim, Ari, "Client A contact"), machines (studio, mini, cloud-1) and amounts. The look is the Wall space as it ships: its tokens in `src/daemon/ui/pages/wall-space.ts`, system font, white or black page, blue accent.
 
@@ -12,20 +12,24 @@ Each page has a desktop screen (1280 px) and a phone screen (390 px), in light. 
 
 | # | Page | Build issue | Desktop | Phone |
 |---|---|---|---|---|
-| 0 | Nav and build line | #1444 | The Wall feed with the new nav and the build line, hover text open | More open, build line, restart pending |
-| 1 | Decisions and inbox | #1440 | Owner answering a card in place, confirm open | Anyone else, read only |
-| 2 | Settings | #1428 | Owner editing one agent, confirm open | Health and the section list; Guests with End confirm |
-| 3 | Activity | #1429 | Runs across the fleet, one run open | One agent's history (profile tab) |
-| 4 | Cost | #1423 | Per project, period switch, budget line | Per agent, dark |
-| 5 | Org | #1419, #1420, #1421 | Chart with the owner's setup panel, a move being confirmed | Indented list, read only |
-| 6 | People | #1441, #1425 | The list and Dana's page | Dana's page |
-| 7 | Workflows | #1445 | A failed run open, Start confirm open | Read only |
-| – | Live | #1439 | Restart when idle (confirm open), restart waiting, Resume, attached sessions | Restart waiting, Drop confirm |
-| – | States | all | Empty, loading and error for each page, and for the build line | |
+| 0 | Nav and build line | #1444 | The Wall feed with the new nav and the build line, hover text open<br>[<img src="img/wall-v2-round-2/00-nav-and-build-line.png" width="240" alt="Wall feed with the new nav and build line">](img/wall-v2-round-2/00-nav-and-build-line.png) | More open, build line, restart pending<br>[<img src="img/wall-v2-round-2/00-nav-phone-more-open.png" width="110" alt="Phone with More open">](img/wall-v2-round-2/00-nav-phone-more-open.png) |
+| 1 | Decisions and inbox | #1440 | Owner answering a card in place, confirm open<br>[<img src="img/wall-v2-round-2/01-decisions.png" width="240" alt="Decisions, owner answering a card">](img/wall-v2-round-2/01-decisions.png) | Anyone else, read only<br>[<img src="img/wall-v2-round-2/01-decisions-phone.png" width="110" alt="Decisions on a phone, read only">](img/wall-v2-round-2/01-decisions-phone.png) |
+| 2 | Settings | #1428 | Owner editing one agent, confirm open<br>[<img src="img/wall-v2-round-2/02-settings.png" width="240" alt="Settings, editing one agent">](img/wall-v2-round-2/02-settings.png) | Health and the section list; Guests with End confirm<br>[<img src="img/wall-v2-round-2/02-settings-phone-health.png" width="110" alt="Settings on a phone, Health">](img/wall-v2-round-2/02-settings-phone-health.png) [<img src="img/wall-v2-round-2/02-settings-phone-guests.png" width="110" alt="Settings on a phone, Guests">](img/wall-v2-round-2/02-settings-phone-guests.png) |
+| 3 | Activity | #1429 | Runs across the fleet, one run open<br>[<img src="img/wall-v2-round-2/03-activity.png" width="240" alt="Activity, one run open">](img/wall-v2-round-2/03-activity.png) | One agent's history (profile tab)<br>[<img src="img/wall-v2-round-2/03-activity-phone.png" width="110" alt="One agent history on a phone">](img/wall-v2-round-2/03-activity-phone.png) |
+| 4 | Cost | #1423 | Per project, period switch, budget line<br>[<img src="img/wall-v2-round-2/04-cost.png" width="240" alt="Cost per project">](img/wall-v2-round-2/04-cost.png) | Per agent, dark<br>[<img src="img/wall-v2-round-2/04-cost-phone-dark.png" width="110" alt="Cost on a phone, dark">](img/wall-v2-round-2/04-cost-phone-dark.png) |
+| 5 | Org | #1419, #1420, #1421 | Chart with the owner's setup panel, a move being confirmed<br>[<img src="img/wall-v2-round-2/05-org.png" width="240" alt="Org chart with the setup panel">](img/wall-v2-round-2/05-org.png) | Indented list, read only<br>[<img src="img/wall-v2-round-2/05-org-phone.png" width="110" alt="Org on a phone, read only">](img/wall-v2-round-2/05-org-phone.png) |
+| 6 | People | #1441, #1425 | The list and Dana's page<br>[<img src="img/wall-v2-round-2/06-people.png" width="240" alt="People list and a person page">](img/wall-v2-round-2/06-people.png) | Dana's page<br>[<img src="img/wall-v2-round-2/06-people-phone.png" width="110" alt="A person page on a phone">](img/wall-v2-round-2/06-people-phone.png) |
+| 7 | Workflows | #1445 | A failed run open, Start confirm open<br>[<img src="img/wall-v2-round-2/07-workflows.png" width="240" alt="Workflows, a failed run open">](img/wall-v2-round-2/07-workflows.png) | Read only<br>[<img src="img/wall-v2-round-2/07-workflows-phone.png" width="110" alt="Workflows on a phone, read only">](img/wall-v2-round-2/07-workflows-phone.png) |
+| – | Live | #1439 | Restart when idle (confirm open), restart waiting, Resume, attached sessions<br>[<img src="img/wall-v2-round-2/08-live.png" width="240" alt="Live, Machines tab">](img/wall-v2-round-2/08-live.png) | Restart waiting, Drop confirm<br>[<img src="img/wall-v2-round-2/08-live-phone.png" width="110" alt="Live on a phone">](img/wall-v2-round-2/08-live-phone.png) |
+| – | States | all | Empty, loading and error for each page, and for the build line<br>[<img src="img/wall-v2-round-2/09-states.png" width="240" alt="Empty, loading and error states">](img/wall-v2-round-2/09-states.png) | |
 
 Two parts are drawn once and reused on every screen: **Nav** (desktop) and **PBar** (phone bar).
 
 ## 0. Nav and the build line (#1444)
+
+![Desktop: the Wall feed with the new nav and the build line, hover text open](img/wall-v2-round-2/00-nav-and-build-line.png)
+
+<img src="img/wall-v2-round-2/00-nav-phone-more-open.png" width="390" alt="Phone: More open, build line, restart pending">
 
 **Nav.** Seven new destinations do not fit as one flat list (it would be 16 items). The proposal groups them under small labels, keeps the item height a little lower (42 px instead of 50 px), and keeps the counts:
 
@@ -47,6 +51,10 @@ Decisions does not get its own item: **Needs you** becomes the Decisions and inb
 
 ## 1. Decisions and inbox (#1440)
 
+![Desktop: the owner answering a card in place, confirm open](img/wall-v2-round-2/01-decisions.png)
+
+<img src="img/wall-v2-round-2/01-decisions-phone.png" width="390" alt="Phone: anyone else, read only">
+
 - **Needs you** opens this page. Tabs: **Waiting**, **Put off** (Later) and **Answered** (the history). The count under the title matches the Desk and the digest.
 - Chips by kind: Decisions, Schedules, Memory, Wiki, Drafts, Requests and Reviews. Classifier reviews (`/admin/graph`) show here too, so the Wall total equals `/approvals`.
 - **Answer in place.** Each card has its buttons on the card: Yes / No / Later, the choices when there are some (the advice is marked), and **Reply instead**. Memory facts get Keep / Drop. Requests get a reply box, Hand to…, Done and Drop.
@@ -57,6 +65,10 @@ Decisions does not get its own item: **Needs you** becomes the Decisions and inb
 - **Anyone else** sees the same cards with no buttons, under "Only the owner can answer these" (the phone screen). The title reads "Needs the owner".
 
 ## 2. Settings (#1428)
+
+![Desktop: the owner editing one agent, confirm open](img/wall-v2-round-2/02-settings.png)
+
+<img src="img/wall-v2-round-2/02-settings-phone-health.png" width="390" alt="Phone: Health and the section list"> <img src="img/wall-v2-round-2/02-settings-phone-guests.png" width="390" alt="Phone: Guests, ending a grant">
 
 - Owner only. Others get no nav item. Opening the address anyway shows "Settings are for the owner" (see Questions).
 - Two columns inside the page: the section list, then the chosen section. The sections are grouped: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox), **Access** (Guests, People, Tokens) and **Machines** (Health, Advanced). A section that needs attention has an amber count.
@@ -69,6 +81,10 @@ Decisions does not get its own item: **Needs you** becomes the Decisions and inb
 
 ## 3. Activity (#1429)
 
+![Desktop: runs across the fleet, one run open](img/wall-v2-round-2/03-activity.png)
+
+<img src="img/wall-v2-round-2/03-activity-phone.png" width="390" alt="Phone: one agent's history">
+
 - A feed of runs, newest first. Each row has the agent, machine and time, what it worked on, the outcome, **what started it** (a message on the Wall, a job, a request by a person, a workflow), how long it took, its cost and its project. A run with no cost shows "–".
 - Tabs by outcome (All, Done, Failed, Waiting, Stopped). Filters: agent, project and source, and a period switch of 24 h / 7 d / 30 d. All of them are kept in the URL.
 - **Opening a run** expands it in place. It shows the result (or the error), what was asked, the steps, where it ran, the review findings, and links: **Open the run** (the Wall Task page), **The job**, **Full log**. The full output stays on the log page, so the list holds only short summaries.
@@ -77,6 +93,10 @@ Decisions does not get its own item: **Needs you** becomes the Decisions and inb
 - A machine that does not answer keeps its runs, under an amber line "shown as of 09:12".
 
 ## 4. Cost (#1423, already built)
+
+![Desktop: per project, period switch, budget line](img/wall-v2-round-2/04-cost.png)
+
+<img src="img/wall-v2-round-2/04-cost-phone-dark.png" width="390" alt="Phone: per agent, dark theme">
 
 The Wall Cost page is built (#1434). The design shows what to add so that classic `/admin/cost` can go:
 
@@ -88,6 +108,10 @@ The Wall Cost page is built (#1434). The design shows what to add so that classi
 
 ## 5. Org (#1419, #1420, #1421)
 
+![Desktop: the chart with the owner's setup panel, a move being confirmed](img/wall-v2-round-2/05-org.png)
+
+<img src="img/wall-v2-round-2/05-org-phone.png" width="390" alt="Phone: indented list, read only">
+
 - A top-down chart built from **reports to**. Cards show the picture, name, role and status. People have a grey card and a "person" chip.
 - **Dotted line** is a dashed blue line, behind **Show dotted lines**. **Acts for** is a chip on the agent's card ("acts for Dana"), not a line. The legend sits above the chart, with zoom buttons.
 - **Setup on the same page (owner).** The owner sees an **Edit the org** panel in the side column. Pick a member (or drag its card), then set Reports to, Dotted line to and Acts for (agents only). Also **Add a person**, **Add an agent**, and **Place** for anyone not in the chart yet.
@@ -95,6 +119,10 @@ The Wall Cost page is built (#1434). The design shows what to add so that classi
 - **Anyone else** (phone): an indented list with thread lines, collapsible branches, no panel, and "Only the owner can change the org".
 
 ## 6. People (#1441, #1425)
+
+![Desktop: the list and Dana's page](img/wall-v2-round-2/06-people.png)
+
+<img src="img/wall-v2-round-2/06-people-phone.png" width="390" alt="Phone: Dana's page">
 
 - The list: picture (initials until #1425 lands), name, role (Owner, Member, Client, Guest), machines, and how many requests each person **owns** and **waits on**. Tabs by role.
 - **A person's page:** picture, role, who they report to, channels and which agents they may use. Then:
@@ -107,6 +135,10 @@ The Wall Cost page is built (#1434). The design shows what to add so that classi
 
 ## 7. Workflows (#1445)
 
+![Desktop: a failed run open, Start confirm open](img/wall-v2-round-2/07-workflows.png)
+
+<img src="img/wall-v2-round-2/07-workflows-phone.png" width="390" alt="Phone: read only">
+
 - One row per workflow: name, what starts it (in words), its agents and project, the last runs as squares, its state, and an on/off switch (owner).
 - Tabs: All, Running, Failed, Off. A filter box and a project filter.
 - A workflow that is off and has not run for 30 days is marked **looks stale**, as Jobs does in round 1.
@@ -117,6 +149,10 @@ The Wall Cost page is built (#1434). The design shows what to add so that classi
 
 ## Live: resume and restart when idle (#1439)
 
+![Desktop: restart when idle, stopped tasks and attached sessions](img/wall-v2-round-2/08-live.png)
+
+<img src="img/wall-v2-round-2/08-live-phone.png" width="390" alt="Phone: restart waiting, Drop confirm">
+
 Drawn on the Live page, in a **Machines** tab next to Spaces and Next jobs:
 
 - One block per machine: version, uptime, and **Restart when idle**. Pressing it opens a confirm: what runs now, and that new runs wait. After that the chip reads **Restart waiting · 1 running · until 10:05**, with **Cancel restart**.
@@ -124,6 +160,12 @@ Drawn on the Live page, in a **Machines** tab next to Spaces and Next jobs:
 - **Stopped tasks:** what stopped and when, with **Resume** and **Drop…** (Drop opens a confirm sheet).
 - **Attached code sessions:** session, agent, machine, start time, and **Connect a CLI session**.
 - Anyone else sees the blocks, tasks and sessions without the buttons.
+
+## Empty, loading and error states
+
+One board covers the empty, loading and error state of every page, and of the build line.
+
+![Empty, loading and error states for every page](img/wall-v2-round-2/09-states.png)
 
 ## Questions for Anis
 
