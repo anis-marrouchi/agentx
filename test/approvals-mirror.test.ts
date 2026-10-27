@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { createCard, decideCard, expireCards, listCards, type DecisionCard } from "../src/approvals/cards"
-import { MAX_ADD_FAILURES, mirrorTally, readMirror, runMirror, tallyLine, type MirrorSettings } from "../src/approvals/mirror"
-import { nextCardToPop } from "../src/approvals/popup-runner"
+import { MAX_ADD_FAILURES, mirrorCovers, mirrorTally, readMirror, runMirror, tallyLine, type MirrorSettings } from "../src/approvals/mirror"
+import { nextCardToPop, popNext, type PopupRunnerSettings } from "../src/approvals/popup-runner"
 import { crossFieldProblems, daemonConfigSchema } from "../src/daemon/config"
 import { macosTasks } from "../src/native/macos/tasks"
 import { isMirrorTrailer, parseTrailer } from "../src/reminders/trailer"
@@ -215,6 +215,71 @@ describe("Reminders mirror (#1062)", () => {
     })
     expect(r).toEqual({ created: 0, completed: 0, dismissed: 0, failed: 0 })
     expect(output.items.every((i) => !i.isCompleted)).toBe(true)
+  })
+})
+
+describe("when a Reminders add fails (#1062 trial)", () => {
+  const POPUP: PopupRunnerSettings = { enabled: true, speak: false, sound: "", volume: 0, timeoutSeconds: 60 }
+  const off = () => ({ active: false, mode: null, reason: "test" })
+  // Shows on the popup, records which card, and leaves it waiting.
+  const popup = (now: number) => {
+    const shown: string[] = []
+    const run = () => popNext({
+      ctx: { root, now }, settings: POPUP, log: () => {}, platform: "darwin", focus: off,
+      show: async (card) => { shown.push(card.id); return { action: "dismiss" as const } },
+    })
+    return { shown, run }
+  }
+  // remindctl that refuses to add a task with this title, and does the rest.
+  const refusing = (title: string) => {
+    const real = fakeRemindctl()
+    return Object.assign(async (file: string, args: string[]) => {
+      if (args[0] === "add" && args[args.indexOf("--title") + 1] === title) throw new Error("Reminders access denied")
+      return real(file, args)
+    }, { items: real.items, lists: real.lists }) as unknown as ReturnType<typeof fakeRemindctl>
+  }
+
+  it("keeps a card whose add fails on the Desk, logs each try once, and tells the owner after three", async () => {
+    const ok = raise({ title: "Mirrored" })
+    const failed = raise({ title: "Refused" })
+    const { notify, logs, pass } = setup({ output: refusing("Refused") })
+    const failLines = () => logs.filter((l) => l.includes(`card:${failed.id}: could not add`))
+
+    for (let i = 1; i <= MAX_ADD_FAILURES; i++) {
+      expect(await pass(NOW + (i - 1) * 60_000)).toMatchObject({ failed: 1 })
+      expect(failLines()).toHaveLength(i)
+      expect(failLines()[i - 1]).toContain(`(${i}/${MAX_ADD_FAILURES}): Reminders access denied`)
+      // Still pending on the Desk, and not counted as covered.
+      expect(listCards(root, "pending").map((c) => c.id)).toContain(failed.id)
+      expect(mirrorCovers(root, failed.id, NOW + (i - 1) * 60_000)).toBe(false)
+      expect(notify).toHaveBeenCalledTimes(i < MAX_ADD_FAILURES ? 0 : 1)
+    }
+    expect(notify.mock.calls[0]).toEqual(["Could not add to Reminders", expect.stringMatching(/^Refused: .*access denied.*Still on the Desk\.$/)])
+    expect(readMirror(root).items[`card:${failed.id}`]).toMatchObject({ state: "failed", failures: MAX_ADD_FAILURES })
+    expect(mirrorCovers(root, ok.id, NOW)).toBe(true)
+
+    // Not tried again, not logged again, not told again.
+    await pass(NOW + 10 * 60_000)
+    expect(failLines()).toHaveLength(MAX_ADD_FAILURES)
+    expect(notify).toHaveBeenCalledOnce()
+    expect(listCards(root, "pending").map((c) => c.id)).toContain(failed.id)
+  })
+
+  it("on a new install, holds a card no longer than the first add attempt, and shows it if that fails", async () => {
+    const card = raise()
+    // No mirror pass yet: nothing covers the card, the popup is not held.
+    expect(readMirror(root).checkedAt).toBeUndefined()
+    expect(mirrorCovers(root, card.id, NOW)).toBe(false)
+    expect(nextCardToPop({ root, now: NOW })?.id).toBe(card.id)
+
+    // The first pass tries the add and it fails: still not covered, shown.
+    const { pass } = setup({ output: refusing("New meeting date") })
+    expect(await pass()).toMatchObject({ created: 0, failed: 1 })
+    expect(readMirror(root).checkedAt).toBe(new Date(NOW).toISOString())
+    expect(mirrorCovers(root, card.id, NOW)).toBe(false)
+    const { shown, run } = popup(NOW)
+    expect(await run()).toBe("shown")
+    expect(shown).toEqual([card.id])
   })
 })
 
