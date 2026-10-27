@@ -1403,7 +1403,7 @@ describe("The org on the Wall (#1398)", () => {
     const prof = w.el("wall-profile").innerHTML
     expect(prof).toContain('<div class="wp__meta wpf__org"><span><b>Support Lead</b></span>')
     expect(prof).toContain('reports to <button type="button" data-agent="reviewer">Reviewer</button>')
-    expect(prof).toContain('<a href="/org">Org chart</a>')
+    expect(prof).toContain('<a href="#page=org">Org chart</a>')
     w.click({ "data-agent": "reviewer" })
     await w.settle()
     const boss = w.el("wall-profile").innerHTML
@@ -1512,10 +1512,10 @@ describe("People and relation types on the Wall (#1421)", () => {
     expect(page).toMatch(/id="agent-cx"[\s\S]*<span>dotted line to Sam Lee<\/span>[\s\S]*<span>acts for The Owner<\/span>/)
   })
 
-  it("opens /org from the Wall's Org link and writes nothing", async () => {
+  it("opens the Wall's Org page from the profile's Org link and writes nothing", async () => {
     expect(renderWallPage()).toContain('<a href="/org">Org</a>')
     const w = await profile(ORG, "cx")
-    expect(w.el("wall-profile").innerHTML).toContain('<a href="/org">Org chart</a>')
+    expect(w.el("wall-profile").innerHTML).toContain('<a href="#page=org">Org chart</a>')
     const org = w.calls.filter((c) => c.url.startsWith("/api/admin/org"))
     expect(org.map((c) => c.url)).toEqual(["/api/admin/org"])
     expect(org[0].init?.method ?? "GET").toBe("GET")
@@ -1590,6 +1590,132 @@ describe("The Cost page on the Wall (#1423)", () => {
     await w.settle()
     expect(w.el("wall-cost").hidden).toBe(true)
     expect(w.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+})
+
+describe("The Org page on the Wall (#1419)", () => {
+  // The reply /api/admin/org gives, built by the real view from a demo config.
+  const ORG = { exists: true, ...buildOrgView({
+    agents: { cx: { name: "Customer Desk" }, reviewer: { name: "Reviewer" }, scout: { name: "Scout" }, intern: { name: "Intern" } },
+    people: [{ id: "sam", name: "Sam Demo", role: "owner" }, { id: "alex", name: "Alex Client", role: "client" }],
+    business: {
+      orgChart: { reviewer: { role: "Head of Quality", reportsTo: "person:sam" }, cx: { role: "Support Lead", reportsTo: "reviewer" }, intern: { role: "Helper", reportsTo: "cx" } },
+      relations: [{ from: "cx", to: "person:sam", type: "dotted-line" }, { from: "cx", to: "person:alex", type: "acts-for" }],
+    },
+  }, {}, [{ id: "cx", active: 1 }, { id: "reviewer", active: 0 }]) }
+
+  it("is a page in the Wall's nav, with the chart's member count", async () => {
+    const page = renderWallPage()
+    expect(page).toContain('data-nav="org" href="#page=org"')
+    // The classic page stays one tap away under Dashboard pages.
+    expect(page).toContain('<a href="/org">Org</a>')
+    const w = openWall({ org: ORG })
+    await w.settle()
+    expect(w.el("nav-n-org").textContent).toBe("4")
+    expect(w.el("wall-org").hidden).toBe(true)
+  })
+
+  it("draws a card per member with name, @handle, role and status; a person has a person chip and no status dot", async () => {
+    const w = openWall({ org: ORG, hash: "#page=org" })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("Org")
+    expect(w.el("wall-org").hidden).toBe(false)
+    expect(w.wall.classList.contains("is-wide")).toBe(true)
+    const html = w.el("wall-org").innerHTML
+    const card = (key: string) => new RegExp(`<article class="wog__card[^"]*" data-org-key="${key}"[\\s\\S]*?</article>`).exec(html)?.[0] ?? ""
+    // The phone shows this line (CSS); the chart itself stays read-only.
+    expect(html).toContain('<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>')
+    expect(card("person:sam")).toContain("is-person is-top")
+    expect(card("person:sam")).toContain('<span class="wog__chip is-person">person</span>')
+    expect(card("person:sam")).toContain("<small class=\"wog__title\">Owner</small>")
+    expect(card("person:sam")).not.toContain("wog__dot")
+    expect(card("person:sam")).not.toContain("data-agent")
+    expect(card("agent:cx")).toContain('data-agent="cx"')
+    expect(card("agent:cx")).toContain('<b>Customer Desk<span class="wog__dot is-working" title="Working"></span></b><small>@cx</small><small class="wog__title">Support Lead</small>')
+    expect(card("agent:reviewer")).toContain("grid-row: 2")
+    expect(card("agent:intern")).toContain("grid-row: 4")
+    // acts-for is a chip, not a line; the dotted line waits for its toggle.
+    expect(card("agent:cx")).toContain('<span class="wog__chip is-acts">acts for Alex Client</span>')
+    expect(card("agent:cx")).toContain('is-dotted is-quiet">dotted line to Sam Demo</span>')
+    expect(html).toContain('data-org-dotted aria-pressed="false"')
+    // A legend, and the edit link for the owner.
+    expect(html).toContain("Reports to</li>")
+    expect(html).toContain('<a class="ax-btn ax-btn--ghost wog__edit" href="/org">Edit org</a>')
+    // No raw member keys in what a reader sees.
+    expect(html.replace(/<[^>]*>/g, " ")).not.toMatch(/(agent|person):/)
+  })
+
+  it("shows dotted lines on request, and folds a branch", async () => {
+    const w = openWall({ org: ORG, hash: "#page=org" })
+    await w.settle()
+    w.click({ "data-org-dotted": "" })
+    await w.settle()
+    expect(w.el("wall-org").innerHTML).toContain('data-org-dotted aria-pressed="true"')
+    expect(w.el("wall-org").innerHTML).not.toContain("is-quiet")
+    expect(w.el("wall-org").innerHTML).toContain('data-org-fold="agent:reviewer" aria-expanded="true">Hide 1 report')
+    w.click({ "data-org-fold": "agent:reviewer" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    expect(html).toContain('aria-expanded="false">Show 2 under')
+    expect(html).not.toContain('data-org-key="agent:cx"')
+    expect(html).not.toContain('data-org-key="agent:intern"')
+    w.click({ "data-org-fold": "agent:reviewer" })
+    await w.settle()
+    expect(w.el("wall-org").innerHTML).toContain('data-org-key="agent:intern"')
+  })
+
+  it("lists counts and the agents outside the chart in the side rail", async () => {
+    const w = openWall({ org: ORG, hash: "#page=org" })
+    await w.settle()
+    expect(w.el("wall-org-rail").hidden).toBe(false)
+    const rail = w.el("wall-org-rail-body").innerHTML
+    expect(rail).toContain("<dt>People</dt><dd>1</dd>")
+    expect(rail).toContain("<dt>Agents</dt><dd>3</dd>")
+    expect(rail).toContain("<dt>Levels</dt><dd>4</dd>")
+    expect(rail).toMatch(/Not in the org chart[\s\S]*data-agent="scout"/)
+  })
+
+  it("opens the agent's Wall profile, with its org line (#1424)", async () => {
+    const w = openWall({ org: ORG, hash: "#page=org" })
+    await w.settle()
+    w.click({ "data-agent": "cx" })
+    await w.settle()
+    expect(w.el("wall-org").hidden).toBe(true)
+    const prof = w.el("wall-profile").innerHTML
+    expect(prof).toContain('<span>reports to <button type="button" data-agent="reviewer">Reviewer</button></span>')
+    expect(prof).toContain("<span>1 reports to it</span>")
+    expect(prof).toContain('<a href="#page=org">Org chart</a>')
+    w.click({ "data-agent": "reviewer" })
+    await w.settle()
+    expect(w.el("wall-profile").innerHTML).toContain("<span>reports to Sam Demo</span>")
+  })
+
+  it("only reads: no write from the Org page", async () => {
+    const w = openWall({ org: ORG, hash: "#page=org" })
+    await w.settle()
+    w.click({ "data-org-fold": "agent:reviewer" })
+    w.click({ "data-org-zoom": "1" })
+    await w.settle()
+    expect(w.calls.filter((c) => c.init?.method && c.init.method !== "GET")).toEqual([])
+    expect(w.el("wall-org").innerHTML).toContain(">110%<")
+  })
+
+  it("says so when the org cannot be read, and the rest of the Wall still works", async () => {
+    const w = openWall({ org: "fail", hash: "#page=org" })
+    await w.settle()
+    expect(w.el("wall-org").innerHTML).toContain("Could not load the org chart: HTTP 500. The rest of the Wall still works.")
+    expect(w.el("nav-n-org").textContent).toBe("")
+    w.click({ "data-view": "feed" })
+    await w.settle()
+    expect(w.el("wall-org").hidden).toBe(true)
+    expect(w.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+
+  it("explains an empty chart and links to the setup", async () => {
+    const w = openWall({ org: { exists: true, ...buildOrgView({ agents: { cx: { name: "Customer Desk" } } }, {}, null) }, hash: "#page=org" })
+    await w.settle()
+    expect(w.el("wall-org").innerHTML).toContain("<h2>No org chart yet</h2>")
+    expect(w.el("wall-org").innerHTML).toContain('href="/org">Edit org</a>')
   })
 })
 

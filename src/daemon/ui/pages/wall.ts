@@ -4,6 +4,7 @@
 // runs, hand-offs and plan steps recorded against it are its thread.
 // Selecting a post opens it on its own, with its thread, as on X; the nav's
 // Running now and Agents open pages of their own, each with a count (#1316).
+// Org draws the org chart from the top down (#1419, wall-org.client.ts).
 //
 // Read-only over records the daemon already keeps (requests, plan events,
 // task traces, the live fleet snapshot). Nothing here writes or notifies.
@@ -25,6 +26,7 @@ import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 import { WALL_COST_CSS } from "./wall-cost.client"
+import { WALL_ORG_CSS } from "./wall-org.client"
 import { WALL_PEOPLE_CSS } from "./wall-people.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
@@ -85,7 +87,7 @@ interface NavItem { key: string; label: string; href: string; icon: NavIcon; cou
 
 /**
  * The nav, grouped (#1451 frame 0): one list for the left nav and the
- * phone's More sheet. Pages not on the Wall yet (Workflows, Org, Settings)
+ * phone's More sheet. Pages not on the Wall yet (Workflows, Settings)
  * open their classic page until they are built. The Wall is
  * the owner's dashboard (members have /member), so Settings is listed.
  */
@@ -109,7 +111,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "Fleet", items: [
     { key: "agents", label: "Agents", href: "#page=agents", icon: "agents", count: "nav-n-agents" },
     { key: "people", label: "People", href: "#page=people", icon: "people", count: "nav-n-people" },
-    { key: "org", label: "Org", href: "/org", icon: "org" },
+    { key: "org", label: "Org", href: "#page=org", icon: "org", count: "nav-n-org" },
     { key: "cost", label: "Cost", href: "#status=open&amp;view=cost", icon: "cost", count: "wall-cost-n" },
   ] },
   { label: "Owner", items: [
@@ -219,12 +221,17 @@ ${navItems}
     <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
     <section id="wall-people" class="ax-wall__people" aria-label="People who talk to the agents" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
+    <section id="wall-org" class="ax-wall__org" aria-label="Org chart" hidden></section>
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
     <section id="wall-task" aria-label="A run: its request, conversation and steer box" hidden></section>
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
   </div>
   <aside class="ax-wall__aside" id="wall-aside">
+    <section id="wall-org-rail" class="ax-wall__box ax-wall__orgrail" aria-labelledby="wall-org-rail-h" hidden>
+      <h2 id="wall-org-rail-h">In the org</h2>
+      <div id="wall-org-rail-body"></div>
+    </section>
     <div class="wac__side" id="wall-act-side" aria-label="Activity in numbers"></div>
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
       <h2 id="wall-nodes-h">Happening now</h2>
@@ -245,7 +252,7 @@ ${navItems}
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

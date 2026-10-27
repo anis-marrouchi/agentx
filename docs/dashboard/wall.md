@@ -17,7 +17,7 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
    - **Owner:** **Settings**.
 
-   Under them, **Dashboard** opens the classic pages at **Operations**. **Workflows**, **Org** and **Settings** open their classic page until they are built on the Wall. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, people listed, and agents. The page you are on is in bold.
+   Under them, **Dashboard** opens the classic pages at **Operations**. **Workflows** and **Settings** open their classic page until they are built on the Wall. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
 3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Wall's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Wall's title row: Wall, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
@@ -209,7 +209,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
      ![The same profile on a phone in dark mode, the relations wrapping onto a second line](/screenshots/wall/org-relations-phone.png)
 
      *Fictional data; your org will differ.*
-   - **Org chart** opens the diagram at `/org`. The Wall only shows the org: setting up members and relations, pausing and resuming an agent stay on the **Org** page.
+   - **Org chart** opens the Wall's [Org page](#see-the-org-chart). The Wall only shows the org: setting up members and relations, pausing and resuming an agent stay on the classic **Org** page at `/org`.
 3. Under the counts, one line shows what the agent has spent this month against its monthly budget (its cap), for example **Spent $12.50 of $100.00 this month**. The month runs on UTC time, the time zone AgentX uses for budgets.
    - **near cap**: the agent has used 80% of its budget, or the share set with `warnRatio`.
    - **paused: cap reached**: the agent has used all of its budget and does no work until the next month or until you raise the budget. **paused: fleet cap reached** means the budget for all agents together is used up.
@@ -567,6 +567,31 @@ Only the owner can save a budget: the dashboard checks its key, and a refusal sa
 
 The page reads the machines listed under `dashboard.daemons` in `agentx.json`, as the posts do. A machine in your mesh that this dashboard has no address for is named at the top with the reason, and its spend is not in the numbers; see [Add a second machine](../jobs/second-machine.md).
 
+## See the org chart
+
+The **Org** page draws your org chart from the top down: whoever reports to no one sits at the top, usually you, and each member sits one row under their boss. Members are people and agents. To set the chart up, see [Org](./org.md#draw-your-org-chart).
+
+1. Select **Org** in the nav. The number next to it counts the people and agents in the chart.
+2. Read the cards. An agent's card shows its picture, name, @handle and role, with a dot for what it is doing: green when it works on something, grey when it is idle, amber when it is paused or waits for your approval, and an empty ring when the dashboard cannot tell. A person's card has a dashed blue border and a **person** chip, with no dot.
+3. Read the lines. A solid line joins each member to their boss (**reports to**).
+4. Two other links show as words on the card:
+   - **acts for** *name*: the agent works on behalf of that person.
+   - **dotted line to** *name*: a second boss for one topic.
+5. Select **Show dotted lines** to draw the dotted lines too, as dashed arrows. Select it again to hide them. The legend at the top explains each line.
+6. Select **Hide … reports** on a card to fold that branch. **Show … under** opens it again.
+7. Select **−** and **+** to zoom out and in, or the percentage to go back to 100%. On a laptop trackpad, pinch over the chart.
+8. Select an agent's card to open its [profile](#see-one-agent-s-profile).
+9. The box on the right, **In the org**, counts the people, agents and levels, and lists the agents that are not in the chart. Select one to open its profile.
+10. **Phone:** the chart becomes a list. Each card is indented under its boss, on a line like a thread's, and shows its dotted lines as words. The page says **Only the owner can change the org** and has no **Edit org**.
+
+A person has a grey card with a **person** chip. The page only reads. **Edit org** opens the classic Org page, where the chart is set up.
+
+![The Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager; dotted lines are shown](/screenshots/wall/org.png)
+
+![The Org page on a phone: the same members as an indented list](/screenshots/wall/org-phone.png)
+
+*Demo data; your team's names will differ.*
+
 ## Running now
 
 Running now sits in the side column on every page. Select **Running now** in the nav to open it as a page of its own, in the middle column.
@@ -665,6 +690,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 35. Phone: open the Wall at 390 px wide (or on a phone) and select **More**. The sheet lists **Work**, **Automation** and **Fleet**. Select **Activity**: the sheet closes and the Activity page opens.
 36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Wall** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
+38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
 
 ## If something is wrong
 
@@ -721,4 +747,9 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **No Goal filter, or no goal on a post:** no task names a goal yet. The agent names it when it accepts the task; see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal).
 - **"No progress or cost for this goal":** the machine that keeps the goal's tasks did not answer, or runs a daemon from before this change. Its posts still show. Restart that daemon, then select **Refresh**.
 - **A goal counts more tasks than the posts shown:** the Wall lists closed posts of the last seven days only, while the goal counts every task kept for it. Pick the **All** tab to see every post the Wall has.
+- **The Org page says "No org chart yet":** no agent has a role in `business.orgChart`. Select **Edit org**, or see [Draw your org chart](./org.md#draw-your-org-chart).
+- **"Could not load the org chart":** the dashboard could not read `agentx.json`. The rest of the Wall still works. Select **Refresh**; if it stays, run `agentx doctor` on the machine that serves the dashboard.
+- **The Org page says "Something in the org chart does not hold":** a relation names someone unknown, loops back, or gives a member two bosses. The message names it. Fix it in `agentx.json`; see [Org relations](../reference/config-operations.md).
+- **A person is missing from the Org page:** a person gets a card only when a **reports to** or **dotted line** names them. A person an agent only acts for shows on that agent's card as **acts for** *name*.
+- **The org chart is cut off on the right:** it is wider than the screen. Scroll it sideways, or select **−** to zoom out.
 - **A link from the old home page stopped working:** only `/` changed. Every other address works as before; `/live` opens the Wall's **Live** page.

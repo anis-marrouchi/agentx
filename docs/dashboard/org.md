@@ -1,10 +1,10 @@
 # Org: who reports to whom, and what each agent is doing
 
-**Org** draws your agents as an org chart: each agent with its role, who it reports to, its job in one line, and what it is doing now. People (the humans listed under `people` in `agentx.json`) can sit in the chart too, as a boss or next to an agent. From an agent's card you open its activity, or pause it until you resume it. The [Wall](./wall.md) links here under its classic pages, and shows each agent's role and boss on its profile, read-only.
+Your org chart lists who reports to whom: you and other people, and your agents. The [Wall](./wall.md)'s **Org** page draws it from the top down, with what each agent is doing now. Select **Org** in the Wall's nav to open it; [See the org chart](./wall.md#see-the-org-chart) explains each part.
 
-When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
+![The Wall's Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager](/screenshots/wall/org.png)
 
-![The Org tab: the assistant at the top, a content writer waiting for approval and a project manager under it, and under the project manager a paused engineer and an idle support desk](/screenshots/org/tree.png)
+Pausing an agent, and approving an agent that another agent created, are still done on the classic **Org** page at `/org`. Open it from the Wall's **Edit org** button, or under **Dashboard pages**. When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
 
 ## Draw your org chart
 
@@ -20,7 +20,7 @@ The chart comes from `business.orgChart` in `agentx.json`. Until you fill it in,
 
 2. **Browser:** open the dashboard and click the **Org** tab (or go to `/org`).
 
-The role shows under the agent's name. The line under it is the first sentence of the role's first responsibility in `business.roles`, or else of the agent's instructions. An org chart needs nothing else: `business.enabled` can stay off.
+The role shows under the agent's name. On the classic page, the line under it is the first sentence of the role's first responsibility in `business.roles`, or else of the agent's instructions. An org chart needs nothing else: `business.enabled` can stay off.
 
 ## People and kinds of relation
 
@@ -52,13 +52,14 @@ The `--reports-to` of `agentx business orgchart add` is a `reports-to` relation,
 
 4. **Terminal:** list every relation with `agentx business relation list`, and remove one with `agentx business relation remove <from> <type> <to>`.
 5. **Terminal:** run `agentx daemon restart` if the business layer is on, so it reads the new chart.
-6. **Browser:** open **Org**. A person's card says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
+6. **Browser:** on the Wall, select **Org**, then **Refresh**. A person sits in the chart with the agents that report to them under them. A **dotted-line** shows as **dotted line to** *name* on the card, and as a dashed arrow with **Show dotted lines**. An **acts-for** shows as **acts for** *name* on the agent's card.
+7. **Browser:** on the classic page at `/org`, a person's card says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
 
    ![The Org tab with a person at the top; the assistant under them acts for them, and an engineer further down has a dotted line to a second person](/screenshots/org/people.png)
 
 The relations are saved under `business.relations` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
 
-## What each card shows
+## What each card shows on the classic page
 
 | Status | What it means |
 |---|---|
@@ -93,12 +94,13 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 
 ## Check it worked
 
-1. **Browser:** open **Org**. Each agent in `business.orgChart`, and each person a relation names, is a card under its boss.
+1. **Browser:** on the Wall, select **Org**. Each member of `business.orgChart`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On the classic page at `/org`, each agent is a card under its boss.
 2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
 3. Click **Resume**. The card says **Idle** again.
 
 ## If something is wrong
 
+- **The Wall's Org page says "Something in the org chart does not hold":** a link names someone who is not in `people` or `business.orgChart`, a member has two bosses, or the bosses loop. The message names the member. Fix it in `agentx.json`.
 - **Every agent is under "Not in the org chart":** `business.orgChart` is empty. Run `agentx business orgchart add` for each agent (see above).
 - **An agent sits at the top although it has a boss:** its boss is not an agent or person here, or the two report to each other. Check with `agentx business relation list`.
 - **A yellow box above the chart says "Problem in the org relations":** a relation names someone who is not in `people` or `business.orgChart`, or breaks a rule. `agentx business relation list` shows the same problem; fix it with `remove`. With the business layer on, the daemon starts without it until it is fixed, and its log says `[business] initialization failed:` with the same problem.
