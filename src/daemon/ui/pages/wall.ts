@@ -41,7 +41,7 @@ export interface WallPageOpts {
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
   ["Live", "/live"], ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
-  ["People", "/people"], ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Cost", "/admin/cost"], ["Settings", "/admin"],
+  ["People", "/people"], ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
 /** The status tabs over the feed and the list (#1355): filter value, label. */
