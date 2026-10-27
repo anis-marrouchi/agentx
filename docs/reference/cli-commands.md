@@ -2850,6 +2850,30 @@ Remove an orgChart entry.
 
 No flags.
 
+### `agentx business relation`
+
+Manage business.relations — typed links between people and agents (reports-to, dotted-line, acts-for). See [Org › People and kinds of relation](../dashboard/org.md#people-and-kinds-of-relation).
+
+### `agentx business relation list`
+
+List every relation, orgChart reportsTo included, and any problem with them.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--json` | — | JSON output. |
+
+### `agentx business relation add <from> <type> <to>`
+
+Link two members, e.g. `agentx business relation add agent:pm reports-to person:sam`. A member is `agent:<id>` or `person:<id>`; a bare id is an agent. Refused, and nothing saved, when a member is unknown or the link breaks a rule.
+
+No flags.
+
+### `agentx business relation remove <from> <type> <to>`
+
+Remove one relation from business.relations. Alias: `rm`. A reportsTo in orgChart is changed with `agentx business orgchart add`.
+
+No flags.
+
 ### `agentx business project`
 
 Manage business.projects — id, pm, client.
