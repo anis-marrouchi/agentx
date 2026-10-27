@@ -85,15 +85,21 @@ function onEvent(method, p) {
 }
 
 const profile = mkdtempSync(join(tmpdir(), "agentx-wall-check-"))
-const chrome = spawn(chromePath, ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" })
+// GitHub's ubuntu-26.04 image from 20261025 refuses Chrome's sandbox, so
+// Chrome exits at once there. CI only: on a desktop the sandbox stays on.
+const ciFlags = process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : []
+const chrome = spawn(chromePath, ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0", ...ciFlags, `--user-data-dir=${profile}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] })
 let launchError
 chrome.on("error", (e) => { launchError = e })
+// Chrome's last words, for when it does not start.
+let chromeErr = ""
+chrome.stderr.on("data", (d) => { chromeErr = (chromeErr + d).slice(-2000) })
 let ws
 const report = []
 try {
   const portFile = join(profile, "DevToolsActivePort")
   for (let i = 0; !existsSync(portFile) && i < 150; i++) { if (launchError) throw launchError; await sleep(100) }
-  if (!existsSync(portFile)) throw new Error("Chrome did not start")
+  if (!existsSync(portFile)) throw new Error(`Chrome did not start${chromeErr ? `:\n${chromeErr}` : ""}`)
   const port = readFileSync(portFile, "utf8").split("\n")[0]
   const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()
   ws = new WebSocket(pages.find((p) => p.type === "page").webSocketDebuggerUrl)
