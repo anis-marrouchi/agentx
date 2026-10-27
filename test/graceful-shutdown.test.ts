@@ -16,11 +16,13 @@ function fakeProcess() {
 }
 
 describe("installCliSignalExit", () => {
-  it("exits at once when no command handles the signal", () => {
+  it("exits at once with 128 + signo when no command handles the signal", () => {
     const p = fakeProcess()
     installCliSignalExit(p as any)
     p.emit("SIGTERM")
-    expect(p.exit).toHaveBeenCalledWith(0)
+    expect(p.exit).toHaveBeenCalledWith(143)
+    p.emit("SIGINT")
+    expect(p.exit).toHaveBeenCalledWith(130)
   })
 
   it("leaves the stop to a command that handles it (the daemon's drain)", () => {
@@ -40,7 +42,7 @@ describe("installCliSignalExit", () => {
     p.emit("SIGINT")
     expect(p.exit).not.toHaveBeenCalled()
     p.emit("SIGINT")
-    expect(p.exit).toHaveBeenCalledWith(0)
+    expect(p.exit).toHaveBeenCalledWith(130)
   })
 })
 
@@ -67,6 +69,25 @@ describe("SIGTERM on a real process", () => {
     const code = await new Promise<number | null>((r) => child.on("exit", (c) => r(c)))
     expect(code).toBe(0)
     expect(existsSync(done)).toBe(true)
+  }, 20_000)
+
+  it("a stopped short command exits 143 and says so (#1388)", async () => {
+    const script = resolve(dir, "short.ts")
+    writeFileSync(script, `
+      import { installCliSignalExit } from ${JSON.stringify(resolve(__dirname, "../src/utils/signal-exit.ts"))}
+      installCliSignalExit()
+      console.log("ready")
+      setInterval(() => {}, 1000)
+    `)
+    const tsx = resolve(__dirname, "../node_modules/.bin/tsx")
+    const child = spawn(tsx, [script], { stdio: ["ignore", "pipe", "pipe"] })
+    let err = ""
+    child.stderr!.on("data", (d) => { err += d })
+    await new Promise<void>((r) => child.stdout!.on("data", (d) => { if (String(d).includes("ready")) r() }))
+    child.kill("SIGTERM")
+    const code = await new Promise<number | null>((r) => child.on("exit", (c) => r(c)))
+    expect(code).toBe(143)
+    expect(err).toContain("Stopped by SIGTERM.")
   }, 20_000)
 })
 
