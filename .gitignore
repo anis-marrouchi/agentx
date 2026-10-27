@@ -57,6 +57,7 @@ notes/architecture/*
 !notes/architecture/leann-vs-bm25-spike.md
 !notes/architecture/wall-default-readiness-spike.md
 !notes/architecture/wall-default-readiness/
+!notes/architecture/wall-every-mesh.md
 notes/prd
 
 # Harbor benchmark output (trial logs can contain task content)
