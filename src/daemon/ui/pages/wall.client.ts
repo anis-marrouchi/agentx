@@ -158,13 +158,20 @@ ${WALL_BUILD_SCRIPT}
     walk(S.org && S.org.roots);
     return info;
   }
+  /** The boss: an agent opens its profile; a person (#1418) is plain text. */
+  function bossHtml(ref) {
+    if (ref.indexOf('person:') !== 0) return '<button type="button" data-agent="' + esc(ref) + '">' + esc(nameOf(ref)) + '</button>';
+    var id = ref.slice(7);
+    var p = ((S.org && S.org.people) || []).filter(function (x) { return x.id === id; })[0];
+    return esc(p ? p.name : id);
+  }
   /** Role, boss and reports, read-only: Pause and Resume stay on /org. */
   function orgLineHtml(id) {
     var o = orgInfo()[id];
     if (!o || (!o.title && !o.reportsTo && !o.reports)) return '';
     var bits = [
       o.title ? '<b>' + esc(o.title) + '</b>' : '',
-      o.reportsTo ? 'reports to <button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>' : '',
+      o.reportsTo ? 'reports to ' + bossHtml(o.reportsTo) : '',
       o.reports ? o.reports + (o.reports === 1 ? ' reports' : ' report') + ' to it' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
     return '<div class="wp__meta wpf__org">' + bits + '<a href="/org">Org chart</a></div>';

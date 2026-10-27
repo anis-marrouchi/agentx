@@ -2838,7 +2838,7 @@ Add or update an orgChart entry for an agent.
 | Flag | Default | What it does |
 |---|---|---|
 | `--role <role>` | required | Role title (e.g. 'PM', 'Coder', 'DevOps'). |
-| `--reports-to <agentId>` | — | Manager's agentId. |
+| `--reports-to <member>` | — | The manager: an agent id, or a person from `people` written as `person:<id>`. An id that is not in the org chart or in `people` is refused, and nothing is saved. |
 | `--start <hh:mm>` | `09:00` | Schedule start. |
 | `--end <hh:mm>` | `17:00` | Schedule end. |
 | `--days <csv>` | `mon,tue,wed,thu,fri` | Working days (mon,tue,wed,thu,fri). |
