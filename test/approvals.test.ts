@@ -549,7 +549,7 @@ describe("an agent closes its own card once the owner answered in chat (#909)", 
     expect(resolveCard(root, r.card.id, { by: "remote-agent", node: "far", reason: "again" })).toMatchObject({ ok: false })
   })
 
-  it("a peer on a shared MESH_TOKEN closes its own forwarded card (#1405)", () => {
+  it("a peer on a shared MESH_TOKEN closes its own forwarded card (#1405)", async () => {
     const r = createCard(root, card({ raised_by: "remote-agent" }), { now: NOW, node: "far" })
     if (!r.ok) throw new Error(r.error)
     const peers = (n: string) => n === "far" || n === "other"
@@ -566,7 +566,21 @@ describe("an agent closes its own card once the owner answered in chat (#909)", 
     // The peer's hop, in the raising agent's name: closed.
     const ok = close(r.card.id, { raised_by: "remote-agent", reason: "answered in chat", node: "far" }, deps({ hasPeer: peers, meshHop: true }))
     expect(ok.status).toBe(200)
-    expect(readCard(root, r.card.id)).toMatchObject({ status: "resolved", decided_by: "remote-agent", node: "far" })
+    const closed = readCard(root, r.card.id)!
+    expect(closed).toMatchObject({ status: "resolved", decided_by: "remote-agent", node: "far", resolution: "answered in chat" })
+    // Closing is no verdict: nothing approved, and a repeat changes nothing.
+    expect(closed.verdict).toBeUndefined()
+    const again = close(r.card.id, { raised_by: "remote-agent", reason: "again", node: "far" }, deps({ hasPeer: peers, meshHop: true }))
+    expect(again.status).toBe(409)
+    expect(readCard(root, r.card.id)).toEqual(closed)
+    // A late answer cannot land on it, and no result goes back to the peer.
+    expect(await decide(ctx(), `card:${r.card.id}`, "yes")).toMatchObject({ ok: false })
+    const tellPeer = vi.fn(async () => {})
+    const tellAgent = vi.fn(async () => {})
+    await runApprovalsSweep({ ctx: ctx(), settings: SETTINGS, tellAgent, tellPeer, hasAgent: () => false, log: () => {} } as any)
+    expect(tellPeer).not.toHaveBeenCalled()
+    expect(tellAgent).not.toHaveBeenCalled()
+    expect(readCard(root, r.card.id)).toEqual(closed)
   })
 
   it("tells a local agent whose card a forwarded one is (#1405)", () => {
