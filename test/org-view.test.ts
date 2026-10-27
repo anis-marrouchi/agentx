@@ -87,6 +87,21 @@ describe("the org tree", () => {
     expect(bad.problem).toMatch(/"owner", which is not a person/)
   })
 
+  it("nests an agent: ref and a reports-to from business.relations in the tree (#1418)", () => {
+    const typed = {
+      ...config,
+      business: {
+        ...config.business,
+        orgChart: { ...config.business.orgChart, pm: { role: "pm", reportsTo: "agent:ceo" }, dev: { role: "eng" } },
+        relations: [{ from: "dev", to: "agent:pm", type: "reports-to" }],
+      },
+    }
+    const view = buildOrgView(typed, {}, null)
+    const ceo = view.roots.find((n) => n.id === "ceo")!
+    expect(ceo.reports.map((n) => [n.id, n.reportsTo])).toEqual([["pm", "ceo"]])
+    expect(ceo.reports[0].reports.map((n) => [n.id, n.reportsTo])).toEqual([["dev", "pm"], ["qa", "pm"]])
+  })
+
   it("cuts a long job to one short line", () => {
     expect(firstLine("  Many\n spaces.  Second.")).toBe("Many spaces.")
     expect(firstLine("x".repeat(300))!.length).toBe(140)
