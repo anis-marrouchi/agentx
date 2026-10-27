@@ -12,13 +12,13 @@ import { runArm } from "../../bench/leann-1390/run"
 const DEMO = join(__dirname, "../../bench/leann-1390/demo/snapshot")
 
 describe("leann-1390 arm B tokenizer", () => {
-  it("keeps Arabic, which the shipped tokenizer drops", () => {
-    expect(tokenize("اجتماع الفريق يوم الاثنين")).toEqual([])
+  it("keeps Arabic, as the shipped tokenizer now does too", () => {
+    expect(tokenize("اجتماع الفريق يوم الاثنين")).toEqual(["اجتماع", "فريق", "يوم", "اثنين"])
     expect(tokenizeUnicode("اجتماع الفريق يوم الاثنين")).toEqual(["اجتماع", "الفريق", "يوم", "الاثنين"])
   })
 
   it("matches French words with and without accents", () => {
-    expect(tokenize("Réunion d'équipe")).toEqual(["union", "quipe"])
+    expect(tokenize("Réunion d'équipe")).toEqual(["reunion", "equipe"])
     expect(tokenizeUnicode("Réunion d'équipe")).toEqual(["reunion", "equipe"])
     expect(tokenizeUnicode("reunion equipe")).toEqual(tokenizeUnicode("RÉUNION ÉQUIPE"))
   })

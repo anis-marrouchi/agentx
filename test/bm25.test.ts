@@ -25,6 +25,30 @@ describe("BM25", () => {
     it("handles empty string", () => {
       expect(tokenize("")).toEqual([])
     })
+
+    it("keeps Arabic words and normalises them", () => {
+      // tashkeel and tatweel go, أ → ا, ة → ه, ال is stripped
+      expect(tokenize("المُــدِيرة")).toEqual(["مديره"])
+      expect(tokenize("أحمد")).toEqual(["احمد"])
+      expect(tokenize("الفاتورة")).toEqual(tokenize("فاتورة"))
+      // short words keep their first letter: ال only goes if 3+ letters remain
+      expect(tokenize("الله")).toEqual(["الله"])
+      expect(tokenize("فاتورة ٢٠٤١")).toEqual(["فاتوره", "2041"])
+    })
+
+    it("matches an Arabic query against an Arabic note", () => {
+      const index = buildIndex(["تم إرسال الفاتورة إلى العميل", "deploy staging server"])
+      const results = scoreAll("فاتورة العميل", index)
+      expect(results.map((r) => r.docIndex)).toEqual([0])
+    })
+
+    it("keeps accented Latin words whole and folds the accents", () => {
+      expect(tokenize("Réunion déployée")).toEqual(["reunion", "deployee"])
+    })
+
+    it("still splits English on punctuation and underscores", () => {
+      expect(tokenize("deploy_staging-server.ts")).toEqual(["deploy", "staging", "server"])
+    })
   })
 
   describe("buildIndex", () => {
