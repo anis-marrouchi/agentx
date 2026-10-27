@@ -301,7 +301,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
     if (kind === 'find') {
       st.busy[key] = 'Looking…';
       render();
-      var f = await act('GET', '/api/monitor/discover' + q);
+      var f = await act('GET', '/api/admin/wall/live/discover' + q);
       delete st.busy[key];
       st.cli[node] = f.ok ? { items: cliItems(f.body || {}) } : { error: f.error };
       render();

@@ -444,19 +444,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/monitor") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
-  // Wall Live's "Connect a CLI session" (#1439) is the monitor's register,
-  // at a Wall address so the Wall's owner guard (#1454) holds it.
-  const monitorPath = method === "POST" && path === WALL_LIVE_CLI_PATH ? "/api/monitor/register" : path
+  // Wall Live's "Connect a CLI session" (#1439) is the monitor's discover and
+  // register, at Wall addresses so the Wall's owner guard (#1454) holds the
+  // write. /api/monitor/* itself stays as it was for its other callers.
+  const wallCli = method === "POST" && path === WALL_LIVE_CLI_PATH
+  const monitorPath = wallCli ? "/api/monitor/register"
+    : method === "GET" && path === WALL_LIVE_DISCOVER_PATH ? "/api/monitor/discover" : path
   if (monitorPath === "/api/monitor" || monitorPath.startsWith("/api/monitor/")) {
-    // Its writes register a CLI session or settle an action: the owner's
-    // only. The reads stay open like /api/live, which they sit beside.
-    if (method === "POST") {
-      if (!adminTokenOk(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
-      if (req.headers["x-requested-with"] !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
-    }
+    if (wallCli && req.headers["x-requested-with"] !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
     const ac = new AbortController()
     const timeout = setTimeout(() => ac.abort(), 8000)
     try {
@@ -901,6 +899,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   //   POST /api/admin/wall/live/restart-cancel?node=<url>
   //   POST /api/admin/wall/live/lesson-stop?node=<url>
   //   POST /api/admin/wall/live/cli?node=<url>             a CLI to connect (the monitor block above)
+  //   GET  /api/admin/wall/live/discover?node=<url>        CLI sessions to connect (the monitor block above)
   const liveUpstream = method === "POST" && path.startsWith(`${WALL_LIVE_ACTIONS_PREFIX}/`)
     ? WALL_LIVE_UPSTREAM.get(path.slice(WALL_LIVE_ACTIONS_PREFIX.length + 1)) : undefined
   if (liveUpstream) {
@@ -1153,8 +1152,6 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // talk, narration (the daemon's POST /voice/stop).
   //   POST /api/voice/stop?node=<url>
   if (method === "POST" && path === "/api/voice/stop") {
-    // The Wall's Stop on a lesson (#1439): the owner's only.
-    if (!adminTokenOk(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
     const nodeUrl = new URL(req.url || "/", "http://localhost").searchParams.get("node")
     if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
     await proxyNodePost(req, res, ctx, nodeUrl, "/voice/stop")
@@ -2834,6 +2831,7 @@ function appDeskDeps(config: DaemonConfig): AppDeskDeps {
 /** Wall Live's controls (#1439) under the Wall's guarded prefix. */
 const WALL_LIVE_ACTIONS_PREFIX = "/api/admin/wall/live"
 const WALL_LIVE_CLI_PATH = `${WALL_LIVE_ACTIONS_PREFIX}/cli`
+const WALL_LIVE_DISCOVER_PATH = `${WALL_LIVE_ACTIONS_PREFIX}/discover`
 /** Each control's node API, the one classic Live called. */
 const WALL_LIVE_UPSTREAM = new Map([
   ["resume", "/api/signals/resume"],

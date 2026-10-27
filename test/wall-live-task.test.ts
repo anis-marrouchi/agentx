@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
+import { WALL_LIVE_SCRIPT } from "../src/daemon/ui/pages/wall-live.client"
 import { CRON_VALUE_SCRIPT } from "../src/daemon/ui/cron-value"
 import { lastActivityLine } from "../src/agents/registry"
 
@@ -374,13 +375,13 @@ describe("Wall Live: machines (#1439)", () => {
 
   it("finds CLI sessions on a machine and connects one", async () => {
     const w = openWall({ hash: "#page=live", live: OPS, replies: {
-      "/api/monitor/discover?": { sessions: [{ id: "sess-1", label: "/home/demo/demo-site", runtime: "claude" }], processes: [] },
+      "/api/admin/wall/live/discover?": { sessions: [{ id: "sess-1", label: "/home/demo/demo-site", runtime: "claude" }], processes: [] },
       "/api/admin/wall/live/cli?": { ok: true },
     } })
     await w.settle()
     w.press(w.el("wall-live").innerHTML, 'data-lv="find"')
     await w.settle()
-    expect(w.calls.some((c) => c.url === "/api/monitor/discover?node=http%3A%2F%2Fnode-a")).toBe(true)
+    expect(w.calls.some((c) => c.url === "/api/admin/wall/live/discover?node=http%3A%2F%2Fnode-a")).toBe(true)
     const html = w.el("wall-live").innerHTML
     expect(html).toContain("<b>Claude Code in demo-site</b>")
     w.press(html, 'data-lv="reg"')
@@ -398,5 +399,11 @@ describe("Wall Live: machines (#1439)", () => {
     expect(b).toContain("unreachable")
     expect(b).toContain("connect ECONNREFUSED")
     expect(b).not.toContain("data-lv=")
+  })
+
+  it("Wall Live calls only the Wall's own routes, never the old ones (#1439)", () => {
+    const paths = [...WALL_LIVE_SCRIPT.matchAll(/\/api\/[\w/-]+/g)].map((m) => m[0])
+    expect(paths.length).toBeGreaterThan(0)
+    for (const p of paths) expect(p.startsWith("/api/admin/wall/"), p).toBe(true)
   })
 })
