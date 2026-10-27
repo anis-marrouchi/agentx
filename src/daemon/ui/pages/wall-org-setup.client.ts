@@ -16,7 +16,7 @@ export const WALL_ORG_SETUP_SCRIPT = String.raw`
     $('wall-orgsetup').hidden = !on;
     if (!on) return;
     var o = S.org;
-    var key = JSON.stringify([o && o.exists, o && o.canEdit, o && o.setup, o && o.choices, OS.msg, OS.bad]);
+    var key = JSON.stringify([!!o, o && o.error, o && o.exists, o && o.canEdit, o && o.setup, o && o.choices, OS.msg, OS.bad]);
     if (key === OS.painted) return;
     OS.painted = key;
     $('wall-orgsetup').innerHTML = o && o.error

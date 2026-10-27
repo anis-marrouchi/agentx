@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
+import { WALL_LIVE_SCRIPT } from "../src/daemon/ui/pages/wall-live.client"
 import { CRON_VALUE_SCRIPT } from "../src/daemon/ui/cron-value"
 import { lastActivityLine } from "../src/agents/registry"
 
@@ -18,7 +19,7 @@ const LIVE = { nodes: [
   ] },
 ] }
 
-function openWall(opts: { hash: string; live?: unknown; history?: unknown; thread?: unknown; action?: unknown }) {
+function openWall(opts: { hash: string; live?: unknown; history?: unknown; thread?: unknown; action?: unknown; replies?: Record<string, unknown> }) {
   const page = renderWallPage()
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -70,8 +71,10 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
   const calls: Array<{ url: string; init: any }> = []
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
-    const body = url.startsWith("/api/admin/wall?") ? { node: "node-a", syncedAt: NOW, nodes: [{ name: "node-a", ok: true }], failures: [], posts: [] }
-      : url === "/api/live" ? (opts.live ?? LIVE)
+    const reply = Object.entries(opts.replies ?? {}).find(([k]) => url.startsWith(k))
+    const body = reply ? reply[1]
+      : url.startsWith("/api/admin/wall?") ? { node: "node-a", syncedAt: NOW, nodes: [{ name: "node-a", ok: true }], failures: [], posts: [] }
+      : url === "/api/live?quick=1" ? (opts.live ?? LIVE)
       : url.startsWith("/api/task/history?") ? (opts.history ?? {})
       : url.startsWith("/api/task/action?") ? (opts.action ?? { ok: true })
       : url.startsWith("/api/admin/wall/thread?") ? (opts.thread ?? null)
@@ -92,7 +95,19 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
   )
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   const go = (hash: string) => { loc.hash = hash; onWindow.hashchange?.() }
-  return { el, calls, settle, loc, streams, go }
+  /** Press the button whose tag is the first in `html` to match `attr`. */
+  const press = (html: string, attr: string) => {
+    const tag = new RegExp(`<button[^>]*${attr.replace(/[[\]]/g, "\\$&")}[^>]*>`).exec(html)
+    if (!tag) throw new Error(`no button ${attr}`)
+    const attrs = attrsOf(tag[0])
+    const t = { getAttribute: (k: string) => attrs[k] ?? null, hasAttribute: (k: string) => k in attrs }
+    const ev = {
+      preventDefault() {}, stopPropagation() {},
+      target: { closest: (sel: string) => sel.split(",").some((x) => { const m = /^\[([\w-]+)\]$/.exec(x.trim()); return !!m && m[1] in attrs }) ? t : null },
+    }
+    for (const f of onDoc.click ?? []) f(ev)
+  }
+  return { el, calls, settle, loc, streams, go, press }
 }
 
 describe("Wall Live: sessions and jobs running now (#1381)", () => {
@@ -228,6 +243,48 @@ describe("Wall Task: the run, its conversation and a steer box (#1381)", () => {
   })
 })
 
+describe("Wall: no internal marker in visible text (#1443)", () => {
+  const MARKED = { nodes: [
+    { name: "node-a", url: "http://node-a", reachable: true, agents: [
+      { id: "cx", name: "Customer Desk", runningTasks: [{ id: "t9", channel: "a2a", startedAt: iso(NOW - 60e3),
+        messagePreview: "[agentx:delegation-result task=dlg-1 from=dev-session status=done]",
+        message: "[agentx:delegation-result task=dlg-1 from=dev-session status=done]\nEarlier in this conversation you asked dev-session to help.",
+        lastActivity: "· [agentx:plan-step id=req-1 step=2]\nWorking on the refund form" }] },
+      { id: "ops", name: "Night Shift", runningTasks: [{ id: "t5", channel: "cron", sender: "cron:digest", startedAt: iso(NOW - 30e3),
+        messagePreview: "[agentx:plan-step id=req-1 step=2]\nYou own step 2 of 3", step: "agent" }] },
+    ] },
+  ] }
+
+  it("says a Live card's marker-only headline in plain words and drops markers from the rest", async () => {
+    const w = openWall({ hash: "#page=live", live: MARKED })
+    await w.settle()
+    const html = w.el("wall-live").innerHTML
+    const text = html.replace(/href="[^"]*"/g, "")
+    expect(text).not.toContain("[agentx:")
+    const cx = html.split("task=t9")[1].split("</a>")[0]
+    expect(cx).toContain('<p class="wls__t">Result from dev-session</p>')
+    expect(cx).toContain('<span class="wls__k">Latest</span> Working on the refund form</div>')
+    expect(html.split("task=t5")[1].split("</a>")[0]).toContain("You own step 2 of 3")
+    // The card's link carries what was asked, without the marker either.
+    expect(html).toContain("ask=Earlier+in+this+conversation")
+    w.go("#page=running")
+    await w.settle()
+    expect(w.el("wall-running").innerHTML.replace(/href="[^"]*"/g, "")).not.toContain("[agentx:")
+  })
+
+  it("drops markers from the Task page's request and the tracked post's headline", async () => {
+    const post = { id: "r1", owner: "cx", state: "in_progress", headline: "[agentx:request-pickup id=r1]", askedBy: "Demo operator", group: { channel: "telegram", chatId: "demo" },
+      project: null, createdAt: NOW - 7200e3, lastMoveAt: NOW - 600e3, closedAt: null, runs: 1, failedRuns: 0, runMs: 120e3, blocked: null, timeFlag: null }
+    const w = openWall({ hash: "#page=task&task=t1&agent=cx&node=http%3A%2F%2Fnode-a&ch=a2a&done=1",
+      history: { ok: true, channel: "a2a", message: "[agentx:plan-step id=r1 step=2]\nYou own step 2 of 3", transcript: "done\n" }, thread: { post, plan: [] } })
+    await w.settle()
+    expect(w.el("task-ask-body").innerHTML).toContain("You own step 2 of 3")
+    expect(w.el("task-ask-body").innerHTML).not.toContain("[agentx:")
+    expect(w.el("wtask-details").innerHTML).toContain("A request picked up again")
+    expect(w.el("wtask-details").innerHTML).not.toContain("[agentx:")
+  })
+})
+
 describe("lastActivityLine (#1381)", () => {
   it("gives the last non-empty line, cut to 160 characters", () => {
     expect(lastActivityLine("→ Read({})\n← ok\n\n")).toBe("← ok")
@@ -240,5 +297,155 @@ describe("lastActivityLine (#1381)", () => {
     expect(lastActivityLine("← export KEY=" + key)).toBe("← export KEY=[redacted]")
     const cut = lastActivityLine("y".repeat(140) + " " + key) ?? ""
     expect(cut).not.toContain("sk-ant-")
+  })
+})
+
+// #1439: what the owner did on classic /live and /monitor, on Wall Live.
+const PAUSED = { id: "t7", agentId: "cx", channel: "telegram", chatId: "demo", state: "stopped", stoppedAt: iso(NOW - 600e3), stoppedBy: "owner",
+  reason: "Waiting for the new price list", request: "Update the price list", plan: { author: "agent", text: "1. Read the new list\n2. Update the page" }, resumable: true }
+const OPS = { nodes: [
+  { ...LIVE.nodes[0], uptimeSec: 7200, inflight: 2, restart: { state: "none" }, stoppedTasks: [PAUSED],
+    attachSessions: [{ session: "abcd1234", project: "demo-site", agentIds: ["cx"], mode: "notify", lastSeenAt: NOW - 30e3, startedAt: NOW - 3600e3, pending: 0 }] },
+  { name: "node-b", url: "http://node-b", reachable: false, error: "connect ECONNREFUSED", agents: [] },
+] }
+const posts = (w: ReturnType<typeof openWall>, path: string) => w.calls.filter((c) => c.url.startsWith(path) && c.init?.method === "POST")
+
+describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
+  it("lists a paused task with who stopped it, why, its plan and Resume", async () => {
+    const w = openWall({ hash: "#page=live", live: OPS })
+    await w.settle()
+    const html = w.el("wall-live").innerHTML
+    expect(html).toContain("<h3>Paused <small>1</small></h3>")
+    const card = html.split('class="wls is-stopped"')[1].split("</article>")[0]
+    expect(card).toContain("stopped by you")
+    expect(card).toContain("Update the price list")
+    expect(card).toContain("Why: Waiting for the new price list")
+    expect(card).toContain("<summary>Resume plan, by Customer Desk</summary>")
+    expect(card).toContain('data-lv="resume"')
+    expect(card).toContain("#page=task&amp;task=t7&amp;agent=cx")
+  })
+
+  it("resumes it on its machine through the Wall's guarded route", async () => {
+    const w = openWall({ hash: "#page=live", live: OPS })
+    await w.settle()
+    w.press(w.el("wall-live").innerHTML, 'data-lv="resume"')
+    await w.settle()
+    const sent = posts(w, "/api/admin/wall/live/resume")
+    expect(sent.map((c) => c.url)).toEqual(["/api/admin/wall/live/resume?node=http%3A%2F%2Fnode-a"])
+    expect(JSON.parse(sent[0].init.body)).toEqual({ id: "t7" })
+    expect(sent[0].init.headers["X-Requested-With"]).toBe("agentx-board")
+    expect(w.el("wall-live").innerHTML).toContain("Resumed: it goes on from its plan.")
+  })
+
+  it("asks once more on the button before it drops a paused task", async () => {
+    const w = openWall({ hash: "#page=live", live: OPS })
+    await w.settle()
+    w.press(w.el("wall-live").innerHTML, 'data-lv="drop"')
+    await w.settle()
+    expect(posts(w, "/api/admin/wall/live/drop")).toHaveLength(0)
+    expect(w.el("wall-live").innerHTML).toContain("Drop it for good?")
+    w.press(w.el("wall-live").innerHTML, 'data-lv="drop"')
+    await w.settle()
+    expect(JSON.parse(posts(w, "/api/admin/wall/live/drop")[0].init.body)).toEqual({ id: "t7" })
+  })
+
+  it("shows the same task as Paused, with Resume, on its Task page", async () => {
+    const w = openWall({ hash: "#page=task&task=t7&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram&done=1", live: OPS, history: { ok: true, channel: "telegram", message: "Update the price list" } })
+    await w.settle()
+    const ops = w.el("wtask-ops").innerHTML
+    expect(ops).toContain("❚❚ Paused")
+    w.press(ops, 'data-lv="resume"')
+    await w.settle()
+    expect(posts(w, "/api/admin/wall/live/resume").map((c) => c.url)).toEqual(["/api/admin/wall/live/resume?node=http%3A%2F%2Fnode-a"])
+  })
+
+  it("offers Pause on a live run's Task page, which stops it with a resume plan", async () => {
+    const w = openWall({ hash: "#page=task&task=t9&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram", live: OPS })
+    await w.settle()
+    w.press(w.el("wtask-ops").innerHTML, 'data-lv="pause"')
+    w.press(w.el("wtask-ops").innerHTML, 'data-lv="pause"')
+    await w.settle()
+    expect(JSON.parse(posts(w, "/api/admin/wall/live/pause")[0].init.body)).toEqual({ taskId: "t9" })
+  })
+})
+
+describe("Wall Live: a run's workflow step, as classic Live had it (#1439)", () => {
+  it("names the workflow and the step a run is on", async () => {
+    const live = { nodes: [{ ...LIVE.nodes[0], agents: [
+      { id: "cx", name: "Customer Desk", runningTasks: [{ id: "t9", channel: "telegram", startedAt: iso(NOW), messagePreview: "Rename the report", workflow: { runId: "run-1", workflowId: "task", step: "Rename the report (2/3)" } }] },
+      { id: "ops", name: "Night Shift", runningTasks: [{ id: "t5", channel: "cron", startedAt: iso(NOW), messagePreview: "Digest", workflow: { runId: "run-2", workflowId: "digest", title: "Morning digest", step: "reply" } }] },
+    ] }] }
+    const w = openWall({ hash: "#page=live", live })
+    await w.settle()
+    const html = w.el("wall-live").innerHTML
+    expect(html).toContain('<div class="wls__k">Workflow step Rename the report (2/3)</div>')
+    expect(html).toContain('<div class="wls__k">Workflow Morning digest · step reply</div>')
+  })
+})
+
+describe("Wall Live: machines (#1439)", () => {
+  it("restarts a machine when idle, and shows the restart it waits on with Cancel", async () => {
+    const w = openWall({ hash: "#page=live", live: OPS })
+    await w.settle()
+    const html = w.el("wall-live").innerHTML
+    expect(html).toContain("<h3>Machines <small>2</small></h3>")
+    w.press(html, 'data-lv="restart"')
+    w.press(w.el("wall-live").innerHTML, 'data-lv="restart"')
+    await w.settle()
+    expect(posts(w, "/api/admin/wall/live/restart").map((c) => c.url)).toEqual(["/api/admin/wall/live/restart?node=http%3A%2F%2Fnode-a"])
+    const live = w.streams.find((s) => s.url === "/api/live/stream")!
+    const deadline = NOW + 1800e3
+    live.on.snapshot({ data: JSON.stringify({ nodes: [{ ...OPS.nodes[0], restart: { state: "pending", deadline: iso(deadline) } }] }) })
+    const after = w.el("wall-live").innerHTML
+    expect(after).toMatch(/Restart waiting · 2 running · until \d\d:\d\d/)
+    expect(after).not.toContain('data-lv="restart"')
+    w.press(after, 'data-lv="cancel"')
+    await w.settle()
+    expect(posts(w, "/api/admin/wall/live/restart-cancel")).toHaveLength(1)
+  })
+
+  it("lists the attached Claude Code sessions with their agent and start time", async () => {
+    const w = openWall({ hash: "#page=live", live: OPS })
+    await w.settle()
+    const s = w.el("wall-live").innerHTML.split("Claude Code sessions <small>1</small>")[1].split("</section>")[0]
+    expect(s).toContain("<b>Customer Desk</b>")
+    expect(s).toContain("<b>demo-site</b>")
+    expect(s).toMatch(/started \d\d:\d\d \(60 min ago\)/)
+    // No raw session id in what is shown.
+    expect(s).not.toContain("abcd1234")
+  })
+
+  it("finds CLI sessions on a machine and connects one", async () => {
+    const w = openWall({ hash: "#page=live", live: OPS, replies: {
+      "/api/admin/wall/live/discover?": { sessions: [{ id: "sess-1", label: "/home/demo/demo-site", runtime: "claude" }], processes: [] },
+      "/api/admin/wall/live/cli?": { ok: true },
+    } })
+    await w.settle()
+    w.press(w.el("wall-live").innerHTML, 'data-lv="find"')
+    await w.settle()
+    expect(w.calls.some((c) => c.url === "/api/admin/wall/live/discover?node=http%3A%2F%2Fnode-a")).toBe(true)
+    const html = w.el("wall-live").innerHTML
+    expect(html).toContain("<b>Claude Code in demo-site</b>")
+    w.press(html, 'data-lv="reg"')
+    await w.settle()
+    const sent = posts(w, "/api/admin/wall/live/cli")
+    expect(sent.map((c) => c.url)).toEqual(["/api/admin/wall/live/cli?node=http%3A%2F%2Fnode-a"])
+    expect(JSON.parse(sent[0].init.body)).toEqual({ id: "sess-1", runtime: "claude", label: "/home/demo/demo-site" })
+    expect(w.el("wall-live").innerHTML).toContain("Connected</span>")
+  })
+
+  it("says a machine that does not answer is unreachable, without its controls", async () => {
+    const w = openWall({ hash: "#page=live", live: OPS })
+    await w.settle()
+    const b = w.el("wall-live").innerHTML.split('aria-label="Machine node-a"')[1].split("<b>node-b</b>")[1].split("</article>")[0]
+    expect(b).toContain("unreachable")
+    expect(b).toContain("connect ECONNREFUSED")
+    expect(b).not.toContain("data-lv=")
+  })
+
+  it("Wall Live calls only the Wall's own routes, never the old ones (#1439)", () => {
+    const paths = [...WALL_LIVE_SCRIPT.matchAll(/\/api\/[\w/-]+/g)].map((m) => m[0])
+    expect(paths.length).toBeGreaterThan(0)
+    for (const p of paths) expect(p.startsWith("/api/admin/wall/"), p).toBe(true)
   })
 })

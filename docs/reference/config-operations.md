@@ -214,6 +214,8 @@ For example, an agent that reports to an agent, with a dotted line to the owner,
 
 `GET /api/admin/org` returns `people` (id and name), and `relations` with every member written in full, `orgChart` `reportsTo` included.
 
+When you add an org chart entry from the dashboard or with `agentx business orgchart add`, its `reportsTo` is checked against the rules above. A wrong value is refused with the same message the daemon would show at start, and `agentx.json` is not changed. Lists and agent prompts show a person boss by their name from `people`.
+
 Each entry in `business.projects`:
 
 | Key | Type | Default | What it does |

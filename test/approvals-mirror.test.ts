@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { createCard, decideCard, expireCards, listCards, type DecisionCard } from "../src/approvals/cards"
-import { MAX_ADD_FAILURES, readMirror, runMirror, type MirrorSettings } from "../src/approvals/mirror"
-import { nextCardToPop } from "../src/approvals/popup-runner"
+import { MAX_ADD_FAILURES, mirrorCovers, mirrorTally, readMirror, runMirror, tallyLine, type MirrorSettings } from "../src/approvals/mirror"
+import { nextCardToPop, popNext, type PopupRunnerSettings } from "../src/approvals/popup-runner"
 import { crossFieldProblems, daemonConfigSchema } from "../src/daemon/config"
 import { macosTasks } from "../src/native/macos/tasks"
 import { isMirrorTrailer, parseTrailer } from "../src/reminders/trailer"
@@ -149,6 +149,27 @@ describe("Reminders mirror (#1062)", () => {
     expect(notify).toHaveBeenCalledOnce()
   })
 
+  it("falls back to the popup, and says so, when Reminders access is denied on a new install", async () => {
+    const card = raise()
+    const denied = Object.assign(async () => { throw new Error("remindctl list: Reminders access denied") }, { items: [], lists: [] }) as any
+    const { logs, pass } = setup({ output: denied })
+    expect(await pass()).toMatchObject({ created: 0, failed: 1 })
+    expect(nextCardToPop({ root, now: NOW + 60_000 })?.id).toBe(card.id)
+    expect(logs.join("\n")).toMatch(/1 card\(s\) could not be added to Reminders; the Mac popup shows them instead/)
+  })
+
+  it("does not try each add once the list can't be made (a prompt nobody answers times out)", async () => {
+    raise()
+    raise({ title: "Another" })
+    const calls: string[] = []
+    const hung = Object.assign(async (_f: string, args: string[]) => { calls.push(args[0]); throw new Error("remindctl list: timed out") }, { items: [], lists: [] }) as any
+    const { pass } = setup({ output: hung })
+    expect(await pass()).toMatchObject({ failed: 2 })
+    expect(calls).toEqual(["list"])
+    expect(Object.values(readMirror(root).items).every((e) => e.state === "failed" && e.lastError?.includes("timed out"))).toBe(true)
+    expect(nextCardToPop({ root, now: NOW + 60_000 })).not.toBeNull()
+  })
+
   it("mirrors only what include names", async () => {
     raise()
     const { output, pass } = setup({ requests: [request()], settings: { include: ["request"] } })
@@ -194,6 +215,118 @@ describe("Reminders mirror (#1062)", () => {
     })
     expect(r).toEqual({ created: 0, completed: 0, dismissed: 0, failed: 0 })
     expect(output.items.every((i) => !i.isCompleted)).toBe(true)
+  })
+})
+
+describe("when a Reminders add fails (#1062 trial)", () => {
+  const POPUP: PopupRunnerSettings = { enabled: true, speak: false, sound: "", volume: 0, timeoutSeconds: 60 }
+  const off = () => ({ active: false, mode: null, reason: "test" })
+  // Shows on the popup, records which card, and leaves it waiting.
+  const popup = (now: number) => {
+    const shown: string[] = []
+    const run = () => popNext({
+      ctx: { root, now }, settings: POPUP, log: () => {}, platform: "darwin", focus: off,
+      show: async (card) => { shown.push(card.id); return { action: "dismiss" as const } },
+    })
+    return { shown, run }
+  }
+  // remindctl that refuses to add a task with this title, and does the rest.
+  const refusing = (title: string) => {
+    const real = fakeRemindctl()
+    return Object.assign(async (file: string, args: string[]) => {
+      if (args[0] === "add" && args[args.indexOf("--title") + 1] === title) throw new Error("Reminders access denied")
+      return real(file, args)
+    }, { items: real.items, lists: real.lists }) as unknown as ReturnType<typeof fakeRemindctl>
+  }
+
+  it("keeps a card whose add fails on the Desk, logs each try once, and tells the owner after three", async () => {
+    const ok = raise({ title: "Mirrored" })
+    const failed = raise({ title: "Refused" })
+    const { notify, logs, pass } = setup({ output: refusing("Refused") })
+    const failLines = () => logs.filter((l) => l.includes(`card:${failed.id}: could not add`))
+
+    for (let i = 1; i <= MAX_ADD_FAILURES; i++) {
+      expect(await pass(NOW + (i - 1) * 60_000)).toMatchObject({ failed: 1 })
+      expect(failLines()).toHaveLength(i)
+      expect(failLines()[i - 1]).toContain(`(${i}/${MAX_ADD_FAILURES}): Reminders access denied`)
+      // Still pending on the Desk, and not counted as covered.
+      expect(listCards(root, "pending").map((c) => c.id)).toContain(failed.id)
+      expect(mirrorCovers(root, failed.id, NOW + (i - 1) * 60_000)).toBe(false)
+      expect(notify).toHaveBeenCalledTimes(i < MAX_ADD_FAILURES ? 0 : 1)
+    }
+    expect(notify.mock.calls[0]).toEqual(["Could not add to Reminders", expect.stringMatching(/^Refused: .*access denied.*Still on the Desk\.$/)])
+    expect(readMirror(root).items[`card:${failed.id}`]).toMatchObject({ state: "failed", failures: MAX_ADD_FAILURES })
+    expect(mirrorCovers(root, ok.id, NOW)).toBe(true)
+
+    // Not tried again, not logged again, not told again.
+    await pass(NOW + 10 * 60_000)
+    expect(failLines()).toHaveLength(MAX_ADD_FAILURES)
+    expect(notify).toHaveBeenCalledOnce()
+    expect(listCards(root, "pending").map((c) => c.id)).toContain(failed.id)
+  })
+
+  it("on a new install, holds a card no longer than the first add attempt, and shows it if that fails", async () => {
+    const card = raise()
+    // No mirror pass yet: nothing covers the card, the popup is not held.
+    expect(readMirror(root).checkedAt).toBeUndefined()
+    expect(mirrorCovers(root, card.id, NOW)).toBe(false)
+    expect(nextCardToPop({ root, now: NOW })?.id).toBe(card.id)
+
+    // The first pass tries the add and it fails: still not covered, shown.
+    const { pass } = setup({ output: refusing("New meeting date") })
+    expect(await pass()).toMatchObject({ created: 0, failed: 1 })
+    expect(readMirror(root).checkedAt).toBe(new Date(NOW).toISOString())
+    expect(mirrorCovers(root, card.id, NOW)).toBe(false)
+    const { shown, run } = popup(NOW)
+    expect(await run()).toBe("shown")
+    expect(shown).toEqual([card.id])
+  })
+})
+
+describe("the trial count (#1062)", () => {
+  const DAY = 24 * 3_600_000
+
+  it("counts cards raised, Reminders created and cards missed in the window", async () => {
+    const mirrored = raise()
+    const { pass } = setup({ requests: [request()] })
+    await pass(NOW + 60_000)
+    // Closed within 5 minutes, before any pass: apart, not a miss.
+    const fast = createCard(root, { raised_by: "helper", title: "Quick", ask: "?", recommend: "Yes", if_silent: "keep" }, { now: NOW + 2 * 60_000 })
+    if (!fast.ok) throw new Error(fast.error)
+    decideCard(root, fast.card.id, "yes", { by: "owner", now: NOW + 3 * 60_000 })
+    // Still pending, never mirrored, raised long ago: a miss.
+    const lost = createCard(root, { raised_by: "helper", title: "Lost", ask: "?", recommend: "Yes", if_silent: "keep" }, { now: NOW + 4 * 60_000 })
+    if (!lost.ok) throw new Error(lost.error)
+
+    const t = mirrorTally(root, listCards(root), NOW, NOW + DAY, NOW + 2 * 3_600_000)
+    expect(t).toMatchObject({ raised: 3, created: { cards: 1, requests: 1 }, closedFast: 1, tooNew: 0 })
+    expect(t.missed.map((m) => m.id)).toEqual([lost.card.id])
+    expect(t.missed.map((m) => m.id)).not.toContain(mirrored.id)
+    expect(tallyLine(t)).toBe("cards raised 3 / Reminders created 2 (1 cards, 1 requests) / missed 1 · closed within 5 min: 1")
+  })
+
+  it("does not count a card raised in the last 5 minutes as missed", () => {
+    raise()
+    const t = mirrorTally(root, listCards(root), NOW, NOW + DAY, NOW + 60_000)
+    expect(t).toMatchObject({ raised: 1, tooNew: 1 })
+    expect(t.missed).toEqual([])
+  })
+
+  it("names why a card was missed when its add failed", async () => {
+    raise()
+    const failing = Object.assign(async (_f: string, args: string[]) => {
+      if (args[0] === "list") return "[]"
+      throw new Error("Reminders access denied")
+    }, { items: [], lists: [] }) as any
+    await setup({ output: failing }).pass()
+    const t = mirrorTally(root, listCards(root), NOW, NOW + DAY, NOW + 3_600_000)
+    expect(t.missed[0].reason).toMatch(/could not be added \(1x\).*access denied/)
+  })
+
+  it("leaves out what falls outside the window", async () => {
+    raise()
+    await setup().pass()
+    expect(mirrorTally(root, listCards(root), NOW + DAY, NOW + 2 * DAY, NOW + 2 * DAY)).toMatchObject({ raised: 0, created: { cards: 0, requests: 0 }, missed: [] })
   })
 })
 

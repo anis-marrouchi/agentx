@@ -5076,7 +5076,8 @@ export class AgentXDaemon {
           }); return
         }
       if (req.method === "GET" && path === "/monitor/activity") {
-          const hours = Math.max(1, Math.min(168, parseInt(url.searchParams.get("hours") || "24", 10) || 24))
+          // Up to 30 days: the Wall's Activity page offers 24 h, 7 d and 30 d (#1429).
+          const hours = Math.max(1, Math.min(720, parseInt(url.searchParams.get("hours") || "24", 10) || 24))
           const business = ((this.config as any).business ?? {}) as BusinessShape
           const data = this.sessionMonitor.activity(Date.now() - hours * 3600_000)
           this.json(res, 200, {

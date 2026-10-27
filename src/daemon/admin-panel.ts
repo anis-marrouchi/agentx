@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSyn
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
+import { configRelationsProblem } from "@/business/relations"
 import { cronValueOf } from "@/crons/value-line"
 import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
@@ -1265,6 +1266,9 @@ async function upsertOrgEntry(body: any) {
       schedule: { days, start, end },
       utilizationTarget: utilization,
     }
+    // Refuse a bad reportsTo now, not at the next daemon start (#1427).
+    const problem = configRelationsProblem(cfg)
+    if (problem) throw new Error(problem)
     return `orgChart "${agentId}" upserted`
   })
   return { summary }

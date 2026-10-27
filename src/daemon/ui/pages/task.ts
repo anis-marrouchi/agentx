@@ -57,7 +57,7 @@ export function renderTaskPage(opts: TaskPageOpts): string {
 
   <header class="ax-task-page__head">
     <nav class="ax-crumbs" aria-label="Breadcrumb">
-      <a href="/live">Live</a>
+      <a href="/wall#page=live">Live</a>
       <span class="ax-crumbs__sep">/</span>
       <a href="/agents/${esc(opts.agentId)}/history?node=${encodeURIComponent(opts.nodeUrl)}&name=${encodeURIComponent(who)}"><span class="ax-mention">@${esc(opts.agentId)}</span></a>
       <span class="ax-crumbs__sep">/</span>
@@ -271,6 +271,8 @@ function mountTaskPage(root, opts) {
   var stopBtn   = document.getElementById('task-stop');
   var composeEl = root.querySelector('.ax-task-page__compose');
 
+  // The Wall passes plainMarkerText (#1443): no internal marker in the text.
+  var plain = opts.plain || function (s) { return s; };
   var buffer = '';
   var raf = 0;
   // The run's clock starts when the run did, when that is known.
@@ -437,7 +439,7 @@ function mountTaskPage(root, opts) {
    *  per frame rather than per line — markdown is whole-block by nature
    *  (a fence isn't valid until it closes). */
   function renderOpenText() {
-    if (openText) openText.innerHTML = mdToHtml(openRaw);
+    if (openText) openText.innerHTML = mdToHtml(plain(openRaw));
   }
   /** Close the current reply block, rendering it on the way out. Every event
    *  that interrupts a reply must go through here — nulling openText without
@@ -490,7 +492,7 @@ function mountTaskPage(root, opts) {
   /** Render the request that started this run. Hidden until we have one —
    *  an empty labelled box is worse than no box. */
   function showAsk(message, sender, startedAt) {
-    var text = (message || '').trim();
+    var text = plain(message || '').trim();
     if (!text) return;
     document.getElementById('task-ask-body').innerHTML = mdToHtml(text);
     document.getElementById('task-ask-who').textContent = sender ? 'from ' + sender : '';
