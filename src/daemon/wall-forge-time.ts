@@ -1,7 +1,7 @@
 import type { ForgeConnectors } from "@/requests/checkers/issue"
 import { OPEN_STATES } from "@/requests/store"
 import type { WallPost } from "./wall-api"
-import { forgeCache, isForgeError, type ForgeCacheOptions } from "./wall-forge-cache"
+import { forgeCache, isForgeError, LATE_QUICK, type ForgeCacheOptions } from "./wall-forge-cache"
 
 // --- The Wall's forge time: logged vs estimate (#1189) ---
 //
@@ -109,15 +109,19 @@ export function gitlabTimeReader(gitlab: NonNullable<ForgeConnectors["gitlab"]>,
 }
 
 export interface WallForgeTimeSource {
-  /** Sets `forgeTime` on every post: null when its home has no time tracking. */
-  annotate(posts: WallPost[], now: number, staleAfterHours: number): Promise<WallPost[]>
+  /** Sets `forgeTime` on every post: null when its home has no time tracking.
+   *  A quick read waits only briefly (#1442). */
+  annotate(posts: WallPost[], now: number, staleAfterHours: number, quick?: boolean): Promise<WallPost[]>
+  /** True while a read started earlier has not answered yet. */
+  busy(): boolean
 }
 
 /** The cached, time-boxed source of forge time for the Wall. */
 export function wallForgeTime(gitlabUrl: string, read: ForgeTimeReader, opts: ForgeCacheOptions = {}): WallForgeTimeSource {
   const cache = forgeCache<GitlabRef, ForgeTimeStats>(read, opts)
   return {
-    async annotate(posts, now, staleAfterHours) {
+    busy: cache.busy,
+    async annotate(posts, now, staleAfterHours, quick) {
       const refs = new Map<string, GitlabRef>()
       const keys = posts.map((post) => {
         const ref = gitlabRefOf(post, gitlabUrl)
@@ -126,13 +130,13 @@ export function wallForgeTime(gitlabUrl: string, read: ForgeTimeReader, opts: Fo
         refs.set(key, ref)
         return key
       })
-      const reads = await cache.readAll(refs)
+      const reads = await cache.readAll(refs, quick)
       posts.forEach((post, i) => {
         const key = keys[i]
         const got = key ? reads.get(key) : undefined
         if (!key || !got) { post.forgeTime = null; return }
         if (got.kind === "skipped") { post.forgeTime = unknown(key, "not read yet (many GitLab homes); shown on a later refresh"); return }
-        if (got.kind === "late") { post.forgeTime = unknown(key, "GitLab did not answer in time"); return }
+        if (got.kind === "late") { post.forgeTime = unknown(key, quick ? LATE_QUICK : "GitLab did not answer in time"); return }
         if (isForgeError(got.answer)) { post.forgeTime = unknown(key, got.answer.error); return }
         const answer = got.answer
         post.forgeTime = {

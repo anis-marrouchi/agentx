@@ -35,20 +35,23 @@ Not sure? If you already pay for a Claude plan, start with **Claude Code (recomm
 
 ## See what your agents spent
 
-The Cost page has no tab in the top bar. You open it by its address.
+The Cost page is on the Wall, the dashboard's home.
 
-1. **Browser:** open `/admin/cost` on your dashboard (for example `http://127.0.0.1:4202/admin/cost`). The short address `/cost` takes you there too. From the **Health** page (`/admin/health`), you can also select the **Cost** link at the top.
-2. Pick a period at the top right: **7d**, **14d**, **30d**, **90d** or **All**.
-3. Read the totals, then **Top agents by spend**.
-4. To keep a copy or compare with your bill, select **Export CSV**.
+1. **Browser:** open the dashboard and select **Cost** in the Wall's nav (under **More** on a phone). The old addresses `/admin/cost` and `/cost` open it too.
+2. Pick a period: **7 days**, **14 days**, **30 days**, **90 days** or **All**.
+3. Read this month's total and the range's total, then one row per agent, highest spend first.
+4. Select **Show details** for the token mix, cache use and every day's figures.
+5. To keep a copy or compare with your bill, select **Export CSV**.
 
-![The Cost page with the period picker, the totals and Top agents by spend](/screenshots/costs/page.png)
+![The Cost page's details: daily average, token mix, cache efficiency and every day](/screenshots/costs/page.png)
+
+The page adds up every machine the Wall reads. Each step is described in [See what the fleet costs](../dashboard/wall.md#see-what-the-fleet-costs).
 
 The Cost page doesn't read your bill. It counts the tokens (small pieces of text) each agent used, and multiplies them by fixed prices for Claude models (Opus, Sonnet and Haiku) built into AgentX. So what the dollar figures mean depends on how you pay:
 
 - **Anthropic API key:** the figures are an estimate of your bill. The built-in prices can be out of date; the provider's bill is the figure you pay.
 - **Claude subscription:** the figures show what the same work would cost with an API key. You pay the plan's fixed price, not these amounts. Use them to see which agents use the most.
-- **Another provider (such as Codex, GPT or Gemini models):** the tokens are counted, but the spend shows as `$0`. Check that provider's billing page for the cost. [Monthly budgets](#set-a-monthly-budget-for-an-agent) do count these runs, at the model's list price.
+- **Another provider (such as Codex, GPT or Gemini models):** the tokens are counted, but they have no price here: the page counts these runs as **not priced** instead of adding $0. Check that provider's billing page for the cost. [Monthly budgets](#set-a-monthly-budget-for-an-agent) do count these runs, at the model's list price.
 
 Monitor's reviewer is not on the Cost page, because it runs outside the agents' own work.
 
@@ -203,7 +206,7 @@ A budget is the most an agent may spend in one calendar month. You can also cap 
 
 - **Claude models:** the same prices as the Cost page.
 - **OpenAI and Google API models** (such as `gpt-5`, `gpt-5-mini`, `gpt-4.1`, `o3`, `gemini-2.5-pro` or `gemini-2.5-flash`): their public list prices, built into AgentX. A Codex agent signed in with a ChatGPT plan is counted the same way, as if it paid by the token. Its runs also count toward the fleet cap (the one for all agents together), even if the agent has no budget of its own.
-- **Models with no price,** such as a local model or a model newer than AgentX's list: they don't count toward a budget, so a cap does not stop them. The **Monthly budgets** card counts these runs as **not priced** and says so under the list. To give a missing model a price, add it to `.agentx/pricing/custom.json` with its dollars per million tokens, for example `{ "gpt-5.5": { "input": 5, "output": 30, "cacheRead": 0.5, "cacheCreate": 5 } }`, then restart the daemon.
+- **Models with no price,** such as a local model or a model newer than AgentX's list: they don't count toward a budget, so a cap does not stop them. The Cost page counts these runs as **not priced**. To give a missing model a price, add it to `.agentx/pricing/custom.json` with its dollars per million tokens, for example `{ "gpt-5.5": { "input": 5, "output": 30, "cacheRead": 0.5, "cacheCreate": 5 } }`, then restart the daemon.
 
 - When an agent reaches 80% of its budget, you get one notice. It is not repeated that month.
 - When it reaches 100%, the agent is paused. Other agents keep working.
@@ -228,10 +231,10 @@ On a Claude subscription the figures are what the work would cost with an API ke
 
 3. Optional: to be warned at another share of the budget, add `"warnRatio"`, for example `"warnRatio": 0.5` for 50%.
 4. Save the file. The budget applies at once; no restart is needed.
-5. **Browser:** open `/admin/cost`. The **Monthly budgets** card shows the fleet, each project and each agent with its spend this month against its budget, with **On track**, **Near cap**, **Paused** or **No cap**.
+5. **Browser:** on the Wall, select **Cost**. Under **Monthly budgets**, all agents, each project and each agent with a budget show their spend this month against it, with **near cap** or **paused** when that applies.
 6. **Browser:** on the Wall, select the agent. Its profile shows the same figure in one line, such as **Spent $12.50 of $100.00 this month** (see [See one agent's profile](../dashboard/wall.md#see-one-agent-s-profile)).
 
-![The Monthly budgets card on the Cost page: the fleet, a project near its cap, a paused agent, runs not priced, and the form to set a budget](/screenshots/costs/budgets.png)
+![Monthly budgets on the Cost page: all agents and one agent against their caps, and the form to set a budget](/screenshots/costs/budgets.png)
 
 Waiting messages are saved in `.agentx/budget-holds.json`, so they are still there after the daemon restarts, and they run when the agent resumes.
 
@@ -239,12 +242,13 @@ Waiting messages are saved in `.agentx/budget-holds.json`, so they are still the
 
 You don't need to edit `agentx.json` by hand.
 
-1. **Browser:** open `/admin/cost`.
-2. On the **Monthly budgets** card, under **Budget for**, choose **All agents (fleet)**, a project or an agent. The box shows its current budget, or **No cap**.
-3. Type the most it may spend each month, in US dollars, or empty the box to remove the cap.
-4. Select **Save**. The card says `Saved`. AgentX writes the budget to `agentx.json` and applies it at once. A paused agent or project whose new budget is above its spend works again, and its waiting messages run.
+1. **Browser:** on the Wall, select **Cost**, then **Budgets** in the box on the right.
+2. With more than one machine, choose the machine where the agent runs under **Machine**.
+3. Under **Budget for**, choose **All agents**, a project or an agent. The box shows its current budget, or **No cap**.
+4. Type the most it may spend each month, in US dollars, or empty the box to remove the cap.
+5. Select **Save**. The line next to it says **Saved**. AgentX writes the budget to `agentx.json` and applies it at once. A paused agent or project whose new budget is above its spend works again, and its waiting messages run.
 
-If your dashboard has a token (`dashboard.token`), saving needs it, like the other admin pages.
+Only the owner can save. If your dashboard has a token (`dashboard.token`), saving needs it; without it the page says **Not saved: only the owner can change a budget**.
 
 ### Cap a project or the whole fleet
 
@@ -270,12 +274,12 @@ A project works like an agent: one notice at 80%, and at 100% new runs for that 
 
 ## Check it worked
 
-1. **Browser:** open `/admin/cost`. The page shows a **Last ingest** time and figures for the period you picked.
+1. **Browser:** on the Wall, select **Cost**. The page shows this month's total and figures for the range you picked.
 2. **Terminal:** `agentx usage` prints `Token Usage (last 7 days)` followed by a total.
 3. **Terminal (developers, in a source copy):** `agentx usage report` ends with `Report: .agentx/reports/token_report.md`, and that file exists.
 4. **Terminal:** `agentx usage surfaces` prints `Surface usage — last 30 days`. The commands you ran in the folder, such as `usage surfaces` itself, appear in the list.
 5. **Terminal:** `agentx usage plan` prints `Claude plan (as Claude Code last reported it)`, then a line per window once an agent has run a turn.
-6. **Browser:** `/admin/cost` shows the **Monthly budgets** card with **Budget for** and **Save**. To try the pause, choose a test agent, type `0.01`, select **Save**, and send it two messages: the first runs, the second is refused with `Monthly budget reached`.
+6. **Browser:** the Cost page shows **Monthly budgets** with **Budget for** and **Save**. To try the pause, choose a test agent, type `0.01`, select **Save**, and send it two messages: the first runs, the second is refused with `Monthly budget reached`.
 7. **Terminal:** while that agent is paused, send it a chat message, then run `agentx daemon restart`. Raise its budget on the Cost page: the message runs and its answer reaches the chat.
 
 ## If something is wrong
@@ -287,7 +291,8 @@ A project works like an agent: one notice at 80%, and at 100% new runs for that 
 - **`No tasks recorded yet`:** no agent has run yet on this machine. Send an agent a message first.
 - **The Cost page is empty:** it only counts work done since AgentX started recording on this machine. Pick **All** to see everything it has.
 - **Requests fail with `Credit balance is too low`:** the API key's account has no credits. In the provider's console, add a payment method and buy credits, then try again.
-- **The Cost page shows `$0` but your agents ran:** they use a model that isn't Claude, so AgentX has no price for it. Check that provider's billing page.
+- **The Cost page shows `$0` and "not priced" but your agents ran:** they use a model that isn't Claude, so AgentX has no price for it. Check that provider's billing page.
+- **A machine's spend is missing:** the page names it under **Not read** with the reason. See [If something is wrong](../dashboard/wall.md#if-something-is-wrong) on the Wall page.
 - **The Cost page shows dollars, but you pay a subscription:** that's expected. The figures show what the work would cost with an API key; you pay the plan's fixed price.
 - **Monitor's Reviews failed keeps going up:** the reviewer can't run Claude Code on the daemon's machine. **Terminal:** on that machine, run `claude --version`. If it's not found, install Claude Code and sign in, or accept that Monitor stays empty; this costs nothing. See [Monitor's reviewer](#monitor-s-reviewer).
 - **The numbers don't match your bill:** your bill also covers use outside AgentX, and providers may round or group charges differently. Use the provider's figure.

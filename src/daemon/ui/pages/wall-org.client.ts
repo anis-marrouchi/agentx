@@ -34,27 +34,6 @@ export const WALL_ORG_SCRIPT = String.raw`
     if (m[1] === 'person') { var p = orgPerson(m[2]); return p ? p.name : m[2]; }
     return nameOf(m[2]);
   }
-  function orgRelations() { return (S.org && S.org.relations) || []; }
-  /** Who a member reports to, and who reports to it, from the typed relations. */
-  function orgBossOf(key) { var r = orgRelations().find(function (x) { return x.type === 'reports-to' && x.from === key; }); return r ? r.to : ''; }
-  function orgReportsOf(key) { return orgRelations().filter(function (x) { return x.type === 'reports-to' && x.to === key; }).map(function (x) { return x.from; }); }
-  /** A member as a link: an agent opens its profile; a person is plain text. */
-  function orgWho(key) {
-    var m = /^agent:(.*)$/.exec(key);
-    return m ? '<button type="button" data-agent="' + esc(m[1]) + '">' + esc(orgName(key)) + '</button>' : '<span>' + esc(orgName(key)) + '</span>';
-  }
-  /** The profile's org rows (#1419): Reports to, Direct reports. */
-  function orgProfileHtml(id) {
-    if (!S.org || S.org.error) return '';
-    var key = 'agent:' + id, boss = orgBossOf(key), under = orgReportsOf(key);
-    var b = (orgDiagram() || { boxes: [] }).boxes.find(function (x) { return x.key === key; });
-    if (!b && !boss && !under.length) return '';
-    return '<dl class="wpf__orgrows">' +
-      (b && b.title ? '<div><dt>Role</dt><dd>' + esc(b.title) + '</dd></div>' : '') +
-      '<div><dt>Reports to</dt><dd>' + (boss ? orgWho(boss) : 'No one') + '</dd></div>' +
-      '<div><dt>Direct reports</dt><dd>' + (under.length ? under.map(orgWho).join(', ') : 'None') + '</dd></div>' +
-      '</dl><a class="wpf__orglink" href="#page=org">Org chart</a>';
-  }
 
   // Folded branches: their cards leave the chart, so it is laid out again.
   function orgHidden(d) {
@@ -292,12 +271,6 @@ button.wog__head:hover b { text-decoration: underline; }
 /* The rail sits in the side column on a wide screen, under the chart otherwise. */
 .wog__inrail { display: none; margin: 8px 16px 0; padding: 12px 16px; background: var(--ax-surface); border-radius: var(--ax-radius-lg); }
 /* The profile's org rows (#1419). */
-.wpf__orgrows { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0 0; font-size: var(--ax-fs-sm); }
-.wpf__orgrows div { display: contents; }
-.wpf__orgrows dt { color: var(--ax-muted); }
-.wpf__orgrows dd { margin: 0; }
-.wpf__orgrows button { padding: 0; border: 0; background: none; color: var(--ax-accent); font: inherit; cursor: pointer; }
-.wpf__orglink { display: inline-block; margin-top: 4px; font-size: var(--ax-fs-sm); color: var(--ax-accent); text-decoration: none; }
 @media (max-width: 1180px) {
   .ax-wall__orgrail { display: none; }
   .wog__inrail { display: block; }

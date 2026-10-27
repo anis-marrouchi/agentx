@@ -66,6 +66,9 @@ cfg.boards = [{
 }]
 // Open requests on, for the tracked plan seeded below (#788).
 cfg.requests = { enabled: true }
+// Monthly caps for the Wall's Cost page (#1423): one agent and the fleet.
+cfg.agents.cx.budget = { monthlyUsd: 5 }
+cfg.budget = { monthlyUsd: 20 }
 // The intent graph's files, for the Wall's review queue (#1182). The graph
 // stays off, so nothing classifies; the queue only reads these files.
 cfg.graph = { enabled: false, baseDir: ".agentx/graph" }
@@ -179,6 +182,21 @@ db.transaction(() => {
       decisions: [], friction: [], context: [], links: [], relatedTaskIds: [],
     }
     insert.run(`external:docs-${index}`, session, "cx", Date.now() - minutesAgo * 60000, JSON.stringify(result))
+  }
+})()
+
+// Daily token use for the Cost pages (#1423): three agents over 100 days,
+// one on a local model with no price. Fictional; the same every seed.
+db.transaction(() => {
+  const put = db.prepare(`INSERT OR REPLACE INTO usage_daily
+    (agent_id, model, day, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, tasks)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+  const day = (back) => new Date(Date.now() - back * 864e5).toISOString().slice(0, 10)
+  for (let back = 0; back < 100; back++) {
+    const wave = 1 + 0.5 * Math.sin(back / 3)
+    put.run("cx", "claude-sonnet-4", day(back), Math.round(60000 * wave), Math.round(9000 * wave), Math.round(400000 * wave), 20000, 3 + (back % 3))
+    if (back % 2 === 0) put.run("reviewer", "claude-haiku-4", day(back), Math.round(250000 * wave), 30000, 120000, 8000, 2)
+    if (back % 4 === 0) put.run("notes", "llama-3-8b", day(back), 40000, 6000, 0, 0, 3)
   }
 })()
 

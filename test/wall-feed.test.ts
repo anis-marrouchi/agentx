@@ -30,7 +30,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -39,7 +39,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const el = (id: string) => {
     if (!els.has(id)) {
       // The open post's action box (wdo-*) is drawn by the script itself.
-      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (id.startsWith("wdo-") ? [`<x id="${id}">`] : null)
+      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (/^(wdo|cb)-/.test(id) ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       const on: Record<string, (ev: unknown) => void> = {}
@@ -78,21 +78,37 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
+    if (opts.liveFails && url === "/api/live?quick=1") return Promise.resolve({ ok: false, status: 502, json: async () => ({}) })
     if (opts.post && url === "/api/admin/wall/post") return opts.post
+    const peer = init?.headers?.["X-Agentx-Peer"] as string | undefined
+    if (peer && opts.peerCost && url.startsWith("/api/admin/observability/")) {
+      const body = opts.peerCost(peer, url)
+      return Promise.resolve({ ok: body !== null, status: body === null ? 404 : 200, json: async () => body ?? { error: "unknown peer" } })
+    }
+    if (opts.budgetPost && url === "/api/admin/wall/budget" && init?.method === "POST") {
+      const r = opts.budgetPost(JSON.parse(init.body), peer ?? null)
+      return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    }
     if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
     if (url.startsWith("/api/admin/observability/cost?") && opts.cost === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
-    const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
+    if (url === "/api/admin/people" && opts.people === "fail") return Promise.resolve({ ok: false, status: 401, json: async () => ({}) })
+    if (url.endsWith("/end")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) })
+    const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live?quick=1" ? (opts.live ?? LIVE)
       : url === "/api/admin/org" ? (opts.org ?? { exists: false })
       : url.startsWith("/api/admin/observability/cost?") ? (opts.cost ?? { days: [] })
       : url === "/api/admin/observability/budgets" && opts.budgets ? opts.budgets
+      : url === "/api/admin/people" ? (opts.people ?? { people: [], paired: 0 })
+      : url.startsWith("/api/admin/people/") && opts.person ? opts.person[decodeURIComponent(url.slice(18))]
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {})
       : opts.thread && url.startsWith("/api/admin/wall/thread?") ? opts.thread : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
   }
-  new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", script)(
+  // With `timers`, the script's timeouts are kept for the test to run.
+  const later = opts.timers ? (f: () => void) => { opts.timers!.push(f); return 0 } : setTimeout
+  new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "setTimeout", script)(
     doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
-    { getItem: () => null, setItem: () => {} }, () => 0,
+    { getItem: () => null, setItem: () => {} }, () => 0, later,
   )
   /** A click on an element carrying these attributes. */
   const click = (attrs: Record<string, string>) => {
@@ -106,7 +122,9 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   /** The browser's hashchange, as after `location.hash = …`. */
   const hashchange = () => onWindow.hashchange?.()
-  return { el, wall, calls, click, change, settle, loc, hashchange }
+  /** A form's submit, as the Enter key or its button sends it. */
+  const submit = (attrs: Record<string, string>) => { for (const f of onDoc.submit ?? []) f({ preventDefault: () => {}, target: { hasAttribute: (k: string) => k in attrs } }) }
+  return { el, wall, calls, click, change, submit, settle, loc, hashchange }
 }
 
 describe("Wall as a social feed (#1207)", () => {
@@ -333,7 +351,7 @@ describe("Running now does not wait on the feed (#1252)", () => {
     const feed = new Promise((r) => { answer = r })
     const w = openWall({ feed })
     await w.settle()
-    expect(w.calls.map((c) => c.url)).toContain("/api/live")
+    expect(w.calls.map((c) => c.url)).toContain("/api/live?quick=1")
     const nodes = w.el("wall-nodes").innerHTML
     expect(nodes).toContain("<b>node-a</b>")
     expect(nodes).toContain("Customer Desk: x")
@@ -349,6 +367,62 @@ describe("Running now does not wait on the feed (#1252)", () => {
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain("Could not load the Wall")
     expect(w.el("wall-nodes").innerHTML).toContain("Customer Desk: x")
+  })
+})
+
+describe("Wall home first load (#1442)", () => {
+  it("asks for the machines and a quick feed first, and the rest once the posts are drawn", async () => {
+    let answer: (v: unknown) => void = () => {}
+    const w = openWall({ feed: new Promise((r) => { answer = r }) })
+    await w.settle()
+    // The build line (#1444) asks its own small route as the script starts.
+    expect(w.calls.map((c) => c.url)).toEqual(["/api/node/build", "/api/live?quick=1", "/api/admin/wall?peer=fleet&days=7&quick=1"])
+    answer({ ok: true, status: 200, json: async () => WALL })
+    await w.settle()
+    expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
+    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/workflows/runs?summary=1&limit=100"])
+  })
+
+  it("shows a machine that is slow to answer as checking, not down, and asks again", async () => {
+    const timers: Array<() => void> = []
+    const slow = { nodes: [LIVE.nodes[0], { name: "node-b", reachable: false, error: "timed out", checking: true, agents: [] }] }
+    const w = openWall({ live: slow, timers })
+    await w.settle()
+    const side = w.el("wall-nodes").innerHTML
+    expect(side).toContain('<div class="wh"><b>node-b</b><span title="">checking…</span></div>')
+    expect(side).not.toContain("does not answer")
+    const lives = () => w.calls.filter((c) => c.url === "/api/live?quick=1").length
+    expect(lives()).toBe(1)
+    timers.splice(0).forEach((f) => f())
+    await w.settle()
+    expect(lives()).toBe(2)
+  })
+
+  it("still names a machine that refuses as down", async () => {
+    const down = { nodes: [LIVE.nodes[0], { name: "node-b", reachable: false, error: "unreachable", agents: [] }] }
+    const w = openWall({ live: down, timers: [] })
+    await w.settle()
+    expect(w.el("wall-nodes").innerHTML).toContain('<div class="wh is-down"><b>node-b</b><span title="">does not answer</span></div>')
+  })
+
+  it("asks for the feed again while the reply says more is on its way, a few times at most", async () => {
+    const timers: Array<() => void> = []
+    const w = openWall({ data: { ...WALL, pending: true, nodes: [...WALL.nodes, { name: "node-b", peer: "http://b", ok: false, checking: true }] }, timers })
+    await w.settle()
+    const feeds = () => w.calls.filter((c) => c.url.startsWith("/api/admin/wall?")).length
+    expect(feeds()).toBe(1)
+    for (let i = 0; i < 8; i++) { timers.splice(0).forEach((f) => f()); await w.settle() }
+    expect(feeds()).toBe(6)
+    w.click({ "data-view": "feed" })
+    expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
+  })
+
+  it("tries the machines again when the live read fails, instead of loading forever", async () => {
+    const timers: Array<() => void> = []
+    const w = openWall({ liveFails: true, timers })
+    await w.settle()
+    expect(w.el("wall-nodes").innerHTML).toContain("Could not reach the machines just now; trying again.")
+    expect(timers.length).toBe(1)
   })
 })
 
@@ -1338,6 +1412,19 @@ describe("The org on the Wall (#1398)", () => {
     expect(boss).not.toContain("reports to <button")
   })
 
+  it("names a person boss in plain text, with no agent button (#1418)", async () => {
+    const org = { exists: true, live: true, outside: [], people: [{ id: "owner", name: "Sam Owner" }], roots: [
+      { id: "cx", name: "Customer Desk", title: "Support Lead", reportsTo: "person:owner", status: "idle", reports: [] },
+    ] }
+    const w = openWall({ org })
+    await w.settle()
+    w.click({ "data-agent": "cx" })
+    await w.settle()
+    const prof = w.el("wall-profile").innerHTML
+    expect(prof).toContain("<span>reports to Sam Owner</span>")
+    expect(prof).not.toContain('data-agent="person:owner"')
+  })
+
   it("shows the role and boss on each Agents page card", async () => {
     const w = openWall({ org: ORG, hash: "#page=agents" })
     await w.settle()
@@ -1365,6 +1452,98 @@ describe("The org on the Wall (#1398)", () => {
       w.click({ "data-agent": "cx" })
       await w.settle()
       const prof = w.el("wall-profile").innerHTML
+      expect(prof).toContain("<h2>Customer Desk</h2>")
+      expect(prof).not.toContain("wpf__org")
+    }
+  })
+})
+
+describe("People and relation types on the Wall (#1421)", () => {
+  // The /api/admin/org shape from #1418: people, and typed relations between
+  // `agent:<id>` and `person:<id>` members. The tree still nests agents only.
+  const ORG = { exists: true, live: true, outside: [],
+    people: [{ id: "owner", name: "The Owner" }, { id: "sam", name: "Sam Lee" }],
+    roots: [
+      { id: "reviewer", name: "Reviewer", title: "Head of Quality", reportsTo: "person:owner", status: "idle", reports: [
+        { id: "cx", name: "Customer Desk", title: "Support Lead", reportsTo: "reviewer", status: "working", reports: [] },
+      ] },
+    ],
+    relations: [
+      { from: "agent:reviewer", to: "person:owner", type: "reports-to" },
+      { from: "agent:cx", to: "agent:reviewer", type: "reports-to" },
+      { from: "agent:cx", to: "person:sam", type: "dotted-line" },
+      { from: "agent:cx", to: "person:owner", type: "acts-for" },
+    ],
+  }
+  async function profile(org: unknown, id: string) {
+    const w = openWall({ org })
+    await w.settle()
+    w.click({ "data-agent": id })
+    await w.settle()
+    return w
+  }
+
+  it("shows a person as the boss, as plain text with their name", async () => {
+    const prof = (await profile(ORG, "reviewer")).el("wall-profile").innerHTML
+    expect(prof).toContain("<span>reports to The Owner</span>")
+    expect(prof).not.toContain('data-agent="owner"')
+    expect(prof).toContain("1 reports to it")
+  })
+
+  it("shows dotted-line and acts-for relations next to reports-to", async () => {
+    const prof = (await profile(ORG, "cx")).el("wall-profile").innerHTML
+    expect(prof).toContain('reports to <button type="button" data-agent="reviewer">Reviewer</button>')
+    expect(prof).toContain("<span>dotted line to Sam Lee</span>")
+    expect(prof).toContain("<span>acts for The Owner</span>")
+  })
+
+  it("reads a legacy reportsTo and a person's id when people are not listed", async () => {
+    const legacy = { exists: true, live: true, outside: [], roots: [
+      { id: "cx", name: "Customer Desk", reportsTo: "person:owner", status: "idle", reports: [] },
+    ] }
+    const prof = (await profile(legacy, "cx")).el("wall-profile").innerHTML
+    expect(prof).toContain("<span>reports to owner</span>")
+  })
+
+  it("shows the relations on the Agents page card", async () => {
+    const w = openWall({ org: ORG, hash: "#page=agents" })
+    await w.settle()
+    const page = w.el("wall-agents-page").innerHTML
+    expect(page).toMatch(/id="agent-cx"[\s\S]*<span>dotted line to Sam Lee<\/span>[\s\S]*<span>acts for The Owner<\/span>/)
+  })
+
+  it("opens the Wall's Org page from the profile's Org link and writes nothing", async () => {
+    expect(renderWallPage()).toContain('<a href="/org">Org</a>')
+    const w = await profile(ORG, "cx")
+    expect(w.el("wall-profile").innerHTML).toContain('<a href="#page=org">Org chart</a>')
+    const org = w.calls.filter((c) => c.url.startsWith("/api/admin/org"))
+    expect(org.map((c) => c.url)).toEqual(["/api/admin/org"])
+    expect(org[0].init?.method ?? "GET").toBe("GET")
+    expect(w.calls.every((c) => (c.init?.method ?? "GET") === "GET" || !c.url.includes("/org"))).toBe(true)
+  })
+
+  it("reads what GET /api/admin/org returns for people and typed relations (#1418)", async () => {
+    const view = buildOrgView({
+      agents: { reviewer: { name: "Reviewer" }, cx: { name: "Customer Desk" } },
+      people: [{ id: "owner", name: "The Owner" }, { id: "sam", name: "Sam Lee" }],
+      business: {
+        orgChart: { reviewer: { role: "Head of Quality", reportsTo: "person:owner" }, cx: { role: "Support Lead", reportsTo: "reviewer" } },
+        relations: [{ from: "cx", to: "person:sam", type: "dotted-line" }, { from: "cx", to: "person:owner", type: "acts-for" }],
+      },
+    }, {}, null)
+    const org = { exists: true, ...view }
+    const boss = (await profile(org, "reviewer")).el("wall-profile").innerHTML
+    expect(boss).toContain("<span>reports to The Owner</span>")
+    expect(boss).toContain("1 reports to it")
+    const prof = (await profile(org, "cx")).el("wall-profile").innerHTML
+    expect(prof).toContain('reports to <button type="button" data-agent="reviewer">Reviewer</button>')
+    expect(prof).toContain("<span>dotted line to Sam Lee</span>")
+    expect(prof).toContain("<span>acts for The Owner</span>")
+  })
+
+  it("shows the Wall as today when the org fails or its relations are malformed", async () => {
+    for (const org of ["fail", { exists: true, roots: [], people: "x", relations: { nope: 1 } }]) {
+      const prof = (await profile(org, "cx")).el("wall-profile").innerHTML
       expect(prof).toContain("<h2>Customer Desk</h2>")
       expect(prof).not.toContain("wpf__org")
     }
@@ -1406,7 +1585,7 @@ describe("The Cost page on the Wall (#1423)", () => {
   it("says so when the cost read fails, and the rest of the Wall still works", async () => {
     const w = openWall({ hash: "#status=open&view=cost", cost: "fail" })
     await w.settle()
-    expect(w.el("wall-cost").innerHTML).toContain("Could not load the cost: HTTP 503")
+    expect(w.el("wall-cost").innerHTML).toContain("Could not read the cost: node-a answered with an error. The rest of the Wall still works.")
     w.click({ "data-view": "feed" })
     await w.settle()
     expect(w.el("wall-cost").hidden).toBe(true)
@@ -1494,19 +1673,19 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(rail).toMatch(/Not in the org chart[\s\S]*data-agent="scout"/)
   })
 
-  it("opens the agent's Wall profile, which gains Reports to and Direct reports", async () => {
+  it("opens the agent's Wall profile, with its org line (#1424)", async () => {
     const w = openWall({ org: ORG, hash: "#page=org" })
     await w.settle()
     w.click({ "data-agent": "cx" })
     await w.settle()
     expect(w.el("wall-org").hidden).toBe(true)
     const prof = w.el("wall-profile").innerHTML
-    expect(prof).toContain("<dt>Reports to</dt><dd><button type=\"button\" data-agent=\"reviewer\">Reviewer</button></dd>")
-    expect(prof).toContain("<dt>Direct reports</dt><dd><button type=\"button\" data-agent=\"intern\">Intern</button></dd>")
-    expect(prof).toContain('<a class="wpf__orglink" href="#page=org">Org chart</a>')
+    expect(prof).toContain('<span>reports to <button type="button" data-agent="reviewer">Reviewer</button></span>')
+    expect(prof).toContain("<span>1 reports to it</span>")
+    expect(prof).toContain('<a href="#page=org">Org chart</a>')
     w.click({ "data-agent": "reviewer" })
     await w.settle()
-    expect(w.el("wall-profile").innerHTML).toContain("<dt>Reports to</dt><dd><span>Sam Demo</span></dd>")
+    expect(w.el("wall-profile").innerHTML).toContain("<span>reports to Sam Demo</span>")
   })
 
   it("only reads: no write from the Org page", async () => {
@@ -1535,5 +1714,199 @@ describe("The Org page on the Wall (#1419)", () => {
     await w.settle()
     expect(w.el("wall-org").innerHTML).toContain("<h2>No org chart yet</h2>")
     expect(w.el("wall-org").innerHTML).toContain('href="/org">Edit org</a>')
+  })
+})
+
+describe("The People page on the Wall (#1441)", () => {
+  const PEOPLE = { paired: 2, people: [
+    { id: "owner", name: "Owner of this machine", role: "owner", identities: [], agents: [], builtIn: true, machines: { active: 0, pending: 0 } },
+    { id: "sara", name: "Sara B", role: "member", identities: ["gitlab:sara.b"], agents: ["cx"], machines: { active: 1, pending: 1 } },
+  ] }
+  const SARA = {
+    person: PEOPLE.people[1], database: true,
+    devices: [
+      { tokenId: "tok_laptop", personId: "sara", name: "Sara laptop", state: "active", address: "100.64.0.7", network: "sara@", createdAt: "2026-10-01T09:00:00.000Z", lastSeenAt: "2026-10-26T09:00:00.000Z" },
+      { tokenId: "tok_phone", personId: "sara", name: "Sara phone", state: "pending", createdAt: "2026-10-26T10:00:00.000Z" },
+    ],
+    requests: [
+      { id: "r9", state: "in_progress", channel: "gitlab", agentId: "cx", text: "[agentx:same-home] Fix the  checkout", createdAt: NOW - 3600e3 },
+      { id: "r8", state: "done", channel: "gitlab", agentId: "cx", text: "Old ask", createdAt: NOW - 86400e3 },
+    ],
+    runs: [{ taskId: "T1", agentId: "cx", channel: "gitlab", status: "ok", startedAt: NOW - 3600e3, messagePreview: "Fix the checkout" }],
+  }
+  const DATA = { ...WALL, posts: [...WALL.posts, post("r9", "cx", "in_progress", { askedBy: "sara" }), post("r8", "cx", "done", { askedBy: "sara" })] }
+
+  it("opens from the nav with everyone listed, their role, identities and open requests on the Wall", async () => {
+    const w = openWall({ hash: "#page=people", data: DATA, people: PEOPLE })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("People")
+    expect(w.el("nav-n-people").textContent).toBe("2")
+    expect(w.el("wall-people").hidden).toBe(false)
+    expect(w.el("wall-feed").hidden).toBe(true)
+    const html = w.el("wall-people").innerHTML
+    expect(html).toContain("Owner of this machine")
+    expect(html).toMatch(/Sara B[\s\S]*Member[\s\S]*gitlab:sara\.b[\s\S]*Customer Desk/)
+    expect(html).toContain("<b>1</b> waiting for approval")
+    expect(html).toContain('<a href="#status=open&asker=sara"><b>1</b> open request on the Wall</a>')
+    expect(html).not.toContain("Nobody has paired")
+  })
+
+  it("opens a person: machines, open requests linked to their posts, earlier ones folded, turns to the Task page", async () => {
+    const w = openWall({ hash: "#page=people", data: DATA, people: PEOPLE, person: { sara: SARA } })
+    await w.settle()
+    w.click({ "data-pp-open": "sara" })
+    await w.settle()
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/people/sara")
+    const html = w.el("wall-people").innerHTML
+    expect(html).toMatch(/Sara laptop[\s\S]*Active[\s\S]*End access[\s\S]*100\.64\.0\.7[\s\S]*as sara@/)
+    expect(html).toMatch(/Sara phone[\s\S]*Waiting for your approval/)
+    expect(html).toContain('<a href="#post=r9" class="wpp__text">Fix the checkout</a>')
+    expect(html).toContain("1 earlier request")
+    expect(html).toMatch(/href="#page=task&amp;task=T1&amp;agent=cx[^"]*"/)
+    // No raw markers or machine ids in the text.
+    expect(html).not.toContain("[agentx:")
+    expect(html.replace(/data-pp-end="[^"]*"/g, "")).not.toContain("tok_laptop")
+  })
+
+  it("ends one machine through the people API, then reads the list again", async () => {
+    const w = openWall({ hash: "#page=people", data: DATA, people: PEOPLE, person: { sara: SARA } })
+    await w.settle()
+    w.click({ "data-pp-open": "sara" })
+    await w.settle()
+    const before = w.calls.filter((c) => c.url === "/api/admin/people").length
+    w.click({ "data-pp-end": "tok_laptop", "data-pp-person": "sara", "data-pp-name": "Sara laptop" })
+    await w.settle()
+    const end = w.calls.find((c) => c.url === "/api/admin/people/sara/devices/tok_laptop/end")!
+    expect(end.init.method).toBe("POST")
+    expect(end.init.headers["X-Requested-With"]).toBe("agentx-board")
+    expect(w.calls.filter((c) => c.url === "/api/admin/people").length).toBe(before + 1)
+    expect(w.el("wall-people").innerHTML).toContain("Access ended for &quot;Sara laptop&quot;.")
+  })
+
+  it("a person's link shows only what they asked, with a way back to everyone", async () => {
+    const w = openWall({ hash: "#status=open&asker=sara", data: DATA, people: PEOPLE })
+    await w.settle()
+    expect(w.el("f-asker").value).toBe("sara")
+    const feed = w.el("wall-feed").innerHTML
+    expect(feed).toContain("Post r9")
+    expect(feed).not.toContain("Post r1")
+    expect(w.el("wall-count").innerHTML).toContain("asked by Sara B")
+    w.click({ "data-asker-clear": "" })
+    await w.settle()
+    expect(w.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+
+  it("shows how to invite someone when nobody is paired, and says so when the list cannot be read", async () => {
+    const none = openWall({ hash: "#page=people", people: { paired: 0, people: [PEOPLE.people[0]] } })
+    await none.settle()
+    expect(none.el("wall-people").innerHTML).toContain("Nobody has paired a machine yet")
+    expect(none.el("wall-people").innerHTML).toContain("agentx people invite sara")
+    const bad = openWall({ hash: "#page=people", people: "fail" })
+    await bad.settle()
+    expect(bad.el("wall-people").innerHTML).toContain("Could not read the people list: HTTP 401")
+    bad.click({ "data-view": "feed" })
+    await bad.settle()
+    expect(bad.el("wall-people").hidden).toBe(true)
+    expect(bad.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+})
+
+describe("The Cost page does all /admin/cost did (#1423, #1449)", () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const cost = (agent: string, usd: number) => ({ generatedAt: new Date().toISOString(), kpis: { spendToday: usd, spend7d: usd, spendDeltaWoW: 0 },
+    days: [{ date: today, cost: usd, tasks: 1, input: 10, output: 1, cacheRead: 0, cacheCreate: 0, unpriced: 0, agents: { [agent]: { cost: usd, tasks: 1, unpriced: 0 } } }] })
+  const BUDGETS = { month: "2026-10", fleet: { spentUsd: 4, capUsd: 50, state: "ok" }, agents: [{ agentId: "cx", spentUsd: 3, capUsd: 10, state: "ok" }], agentIds: ["cx", "reviewer"] }
+  const PEER_BUDGETS = { month: "2026-10", fleet: { spentUsd: 6, capUsd: 50, state: "ok" }, agents: [], agentIds: ["builder"] }
+  // node-b is read through the peer proxy; node-c is in the mesh but this dashboard has no address for it.
+  const DATA = { ...WALL, nodes: [{ name: "node-a", peer: null, ok: true }, { name: "node-b", peer: "http://node-b", ok: true }] }
+  const LIVE3 = { nodes: [...LIVE.nodes, { name: "node-b", url: "http://node-b", reachable: true, agents: [] }, { name: "node-c", url: "http://node-c", reachable: true, agents: [] }] }
+  const open = (extra: Record<string, unknown> = {}) => openWall({ hash: "#status=open&view=cost", data: DATA, live: LIVE3, cost: cost("cx", 4), budgets: BUDGETS,
+    peerCost: (peer, url) => (peer !== "http://node-b" ? null : url === "/api/admin/observability/budgets" ? PEER_BUDGETS : cost("builder", 6)), ...extra })
+
+  it("adds up every machine the feed reads, and asks none the dashboard cannot reach", async () => {
+    const w = open()
+    await w.settle()
+    const html = w.el("wall-cost").innerHTML
+    expect(html).toContain("$10.00 over 30 days · 2 runs · $5.00 per run · 2 machines")
+    expect(html).toContain("Not read: node-c (this dashboard has no address for it). Its spend is not in these numbers.")
+    expect(w.el("wall-cost-n").textContent).toBe("$10.00")
+    expect(w.calls.some((c) => c.init?.headers?.["X-Agentx-Peer"] === "http://node-c")).toBe(false)
+    expect(w.calls.filter((c) => c.init?.headers?.["X-Agentx-Peer"] === "http://node-b").map((c) => c.url)).toEqual(
+      expect.arrayContaining(["/api/admin/observability/cost?range=60", "/api/admin/observability/budgets"]))
+  })
+
+  it("keeps the range in the link, All included", async () => {
+    const w = open({ hash: "#status=open&view=cost&range=14" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toMatch(/data-crange="14" class="is-on"/)
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/observability/cost?range=30")
+    w.click({ "data-crange": "0" })
+    await w.settle()
+    expect(w.loc.hash).toContain("range=all")
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/observability/cost?range=all")
+    expect(w.el("wall-cost").innerHTML).toContain("over every day kept")
+  })
+
+  it("opens the details and filters the days", async () => {
+    const w = open()
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<div id="wc-details" hidden>')
+    w.click({ "data-cdetails": "" })
+    expect(w.el("wall-cost").innerHTML).toContain('<div id="wc-details">')
+    w.click({ "data-cfilter": "over10" })
+    expect(w.el("wall-cost").innerHTML).toContain('data-cfilter="over10" aria-pressed="true"')
+    expect(w.el("wall-cost").innerHTML).toContain("No days match this filter.")
+  })
+
+  it("lets the owner set a budget on the machine picked, and says when it is refused", async () => {
+    const sent: Array<{ body: any; peer: string | null }> = []
+    let status = 200
+    const w = open({ budgetPost: (body: any, peer: string | null) => { sent.push({ body, peer }); return status === 200 ? { status, body: { ok: true } } : { status, body: { error: "unauthorized" } } } })
+    await w.settle()
+    const html = w.el("wall-cost").innerHTML
+    expect(html).toContain("Monthly budgets")
+    expect(html).toContain('<form class="wc__form" data-cform')
+    expect(html).toContain('<option value="node-b">node-b</option>')
+    w.change("cb-scope", "agent:reviewer")
+    w.el("cb-usd").value = "25"
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(sent).toEqual([{ body: { scope: "agent", id: "reviewer", monthlyUsd: 25 }, peer: null }])
+    expect(w.el("wall-cost").innerHTML).toContain("Saved. It applies now")
+    // Another machine: the change goes to it, through the peer proxy.
+    w.change("cb-machine", "node-b")
+    w.el("cb-usd").value = ""
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(sent[1]).toEqual({ body: { scope: "fleet", monthlyUsd: null }, peer: "http://node-b" })
+    expect(w.el("wall-cost").innerHTML).toContain("Saved: no cap.")
+    status = 401
+    w.el("cb-usd").value = "5"
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain("Not saved: only the owner can change a budget")
+  })
+
+  it("an agent row's Set a cap picks that agent in the form, on the machine that runs it", async () => {
+    const sent: Array<{ body: any; peer: string | null }> = []
+    const w = open({ budgetPost: (body: any, peer: string | null) => { sent.push({ body, peer }); return { status: 200, body: { ok: true } } } })
+    await w.settle()
+    const html = w.el("wall-cost").innerHTML
+    expect(html).toContain('data-ccap="cx" title="Set the monthly cap of Customer Desk">Change cap</button>')
+    expect(html).toContain('data-ccap="builder" title="Set the monthly cap of builder">Set a cap</button>')
+    w.click({ "data-ccap": "builder" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="node-b" selected>node-b</option>')
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:builder" selected>Agent @builder</option>')
+    w.el("cb-usd").value = "7"
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(sent).toEqual([{ body: { scope: "agent", id: "builder", monthlyUsd: 7 }, peer: "http://node-b" }])
+    // Back to an agent on this machine.
+    w.click({ "data-ccap": "cx" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="node-a" selected>node-a</option>')
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:cx" selected>Agent @cx</option>')
+    expect(w.el("cb-usd").value).toBe("10")
   })
 })

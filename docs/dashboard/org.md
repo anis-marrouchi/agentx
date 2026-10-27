@@ -22,22 +22,42 @@ The chart comes from `business.orgChart` in `agentx.json`. Until you fill it in,
 
 The role shows under the agent's name. On the classic page, the line under it is the first sentence of the role's first responsibility in `business.roles`, or else of the agent's instructions. An org chart needs nothing else: `business.enabled` can stay off.
 
-## Add people and other links
+## People and kinds of relation
 
-A boss can be a person from the `people` list in `agentx.json`, and a member can have two more kinds of link besides **reports to**. Both are set in `agentx.json`; the full rules are in [the business section of the configuration reference](../reference/config-operations.md).
+A link between two members of the chart is a **relation**. A member is written `agent:<id>` for an agent in the org chart, or `person:<id>` for a person in `people`. There are three kinds:
 
-| Link | What it means | On the Wall's Org page |
+| Kind | What it means | Rule |
 |---|---|---|
-| `reports-to` | The member's one boss. | A solid line to the boss. |
-| `dotted-line` | A second boss for one topic or project. | **dotted line to** *name* on the card; a dashed arrow with **Show dotted lines**. |
-| `acts-for` | An agent works on behalf of a person. | **acts for** *name* on the agent's card. |
+| `reports-to` | The line manager. | One per member, and no loops. When an agent is stuck, the problem goes up this line between agents, and stops before a person. |
+| `dotted-line` | A second manager for one topic or project. | As many as you like. Never used to pass a problem up. |
+| `acts-for` | The agent works on behalf of this person. | From an agent to a person only. |
 
-1. **Terminal:** open `agentx.json` in a text editor. `sam` is an example; use your own ids.
-2. Under `people`, make sure each person has an entry, for example `{ "id": "sam", "name": "Sam", "role": "owner" }`.
-3. To make a person the boss of the top agent, set its `reportsTo` to `person:sam` under `business.orgChart`.
-4. Add the other links under `business.relations`, one per line, for example `{ "from": "pm", "to": "person:sam", "type": "dotted-line" }`.
-5. Save the file.
-6. **Browser:** on the Wall, select **Org**, then **Refresh**. The chart shows the people and links.
+The `--reports-to` of `agentx business orgchart add` is a `reports-to` relation, so charts you already have keep working.
+
+1. **Terminal:** check the person is in `people` with `agentx people list`. `sam` and `kim` are examples; use your own IDs.
+2. **Terminal:** make a person the boss of your top agent:
+
+   ```sh
+   agentx business relation add agent:assistant reports-to person:sam
+   ```
+
+3. **Terminal:** add a second manager, or say whom an agent works for:
+
+   ```sh
+   agentx business relation add agent:dev dotted-line person:kim
+   agentx business relation add agent:assistant acts-for person:sam
+   ```
+
+   A relation that names someone unknown, or breaks a rule above, is refused and nothing is saved.
+
+4. **Terminal:** list every relation with `agentx business relation list`, and remove one with `agentx business relation remove <from> <type> <to>`.
+5. **Terminal:** run `agentx daemon restart` if the business layer is on, so it reads the new chart.
+6. **Browser:** on the Wall, select **Org**, then **Refresh**. A person sits in the chart with the agents that report to them under them. A **dotted-line** shows as **dotted line to** *name* on the card, and as a dashed arrow with **Show dotted lines**. An **acts-for** shows as **acts for** *name* on the agent's card.
+7. **Browser:** on the classic page at `/org`, a person's card says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
+
+   ![The Org tab with a person at the top; the assistant under them acts for them, and an engineer further down has a dotted line to a second person](/screenshots/org/people.png)
+
+The relations are saved under `business.relations` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
 
 ## What each card shows on the classic page
 
@@ -74,7 +94,7 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 
 ## Check it worked
 
-1. **Browser:** on the Wall, select **Org**. Each member of `business.orgChart` is a card one row under its boss, joined to it by a solid line. On the classic page at `/org`, each agent is a card under its boss.
+1. **Browser:** on the Wall, select **Org**. Each member of `business.orgChart`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On the classic page at `/org`, each agent is a card under its boss.
 2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
 3. Click **Resume**. The card says **Idle** again.
 
@@ -82,7 +102,9 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 
 - **The Wall's Org page says "Something in the org chart does not hold":** a link names someone who is not in `people` or `business.orgChart`, a member has two bosses, or the bosses loop. The message names the member. Fix it in `agentx.json`.
 - **Every agent is under "Not in the org chart":** `business.orgChart` is empty. Run `agentx business orgchart add` for each agent (see above).
-- **An agent sits at the top although it has a boss:** its boss is not an agent here, or the two report to each other. Check with `agentx business orgchart list`.
+- **An agent sits at the top although it has a boss:** its boss is not an agent or person here, or the two report to each other. Check with `agentx business relation list`.
+- **A yellow box above the chart says "Problem in the org relations":** a relation names someone who is not in `people` or `business.orgChart`, or breaks a rule. `agentx business relation list` shows the same problem; fix it with `remove`. With the business layer on, the daemon starts without it until it is fixed, and its log says `[business] initialization failed:` with the same problem.
+- **A person's agents do not escalate to them:** that is by design. A problem goes up `reports-to` only between agents, and stops before a person.
 - **Every card says "Status unknown":** the daemon is not running, or the dashboard cannot reach it. Run `agentx daemon status`.
 - **`agentx business orgchart add` ran, but saving any setting now fails with `business.mainChannel: Required`:** you turned `business.enabled` on. The business layer needs a chat to post to; set `business.mainChannel`, or turn it off again.
 - **A new agent still does nothing after your yes:** it was added while the daemon was running. Run `agentx daemon restart`.
