@@ -99,6 +99,15 @@ describe("session monitor", () => {
     const person = Object.fromEntries(monitor.activity(0).runs.map(r => [r.id, r.person]))
     expect(person).toEqual({ "by-dana": "dana", "by-nobody": null })
   })
+  it("returns each run's stored cost, and none when the trace has none (#1429)", () => {
+    const { monitor, db } = fixture()
+    recordTraceStart(db, { agentId: "dev", channel: "telegram", chatId: "1" }, "priced")
+    recordTraceEnd(db, "priced", { status: "ok", costUsd: 0.42 })
+    recordTraceStart(db, { agentId: "dev", channel: "telegram", chatId: "1" }, "unpriced")
+    recordTraceEnd(db, "unpriced", { status: "error" })
+    const cost = Object.fromEntries(monitor.activity(0).runs.map(r => [r.id, r.costUsd]))
+    expect(cost).toEqual({ priced: 0.42, unpriced: null })
+  })
 })
 
 describe("cost of delay", () => {

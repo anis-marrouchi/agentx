@@ -1,10 +1,10 @@
 # AgentX Voice: parallel requests, round 1 (#1460 for #1455)
 
-Design proposals for review. Nothing here is built. Per #1455 and #1460, the widget change is built only after the owner accepts its design.
+Design accepted on 2026-10-27 (see [Verdict](#verdict)). Nothing here is built yet. Per #1455 and #1460, the widget change is built only after the owner accepts its design.
 
-Canvas with all eight screens: https://claude.ai/artifact/J1pQGfbNzc2rmL59kveutz (comment on any screen there, or on #1460).
+Each screen is shown below as an image (`img/voice-parallel-requests/`), so the note reads on GitHub without the canvas. The same screens are on the design canvas for those with access: https://claude.ai/artifact/J1pQGfbNzc2rmL59kveutz (comment on any screen there, or on #1460).
 
-All data on the screens is made up. The look is the pill as it ships: 284 × 54 pt, 18 pt corners, popover blur with a light wash (`Surface.swift`), the system font, the agents' orb colours, and the mini orbs from `MiniOrbs.swift`. Screens are at real size on a plain desktop.
+All data on the screens is made up. The look is the pill as it ships: 284 × 54 pt, 18 pt corners, popover blur with a light wash (`Surface.swift`), the system font, the agents' orb colours, and the mini orbs from `MiniOrbs.swift`. Screens are at real size on a plain desktop. The images are exported from the canvas at 2×; their text is set in Inter, a close stand-in for the system font, so a few long lines cut off a little earlier than they would on a Mac.
 
 ## The screens
 
@@ -21,6 +21,8 @@ All data on the screens is made up. The look is the pill as it ships: 284 × 54 
 
 ## 1. Pill, idle and busy
 
+![Screen 1: Pill, idle and busy](img/voice-parallel-requests/01-pill.png)
+
 - **No open request**: as today.
 - **One open, thinking**: the second line says "Sent. Ask the next one" and one mini orb turns. Today's rule for when the row of mini orbs shows (`PillBusy.showsRow`) stays.
 - **Three open, one not heard**: the mini orb of the agent that answered gets a steady ring and a blue dot, and a "1 new" capsule sits before the orbs. Nothing plays.
@@ -30,6 +32,8 @@ All data on the screens is made up. The look is the pill as it ships: 284 × 54 
 Change from today: the `answering` cue ("answer waiting to be spoken") becomes "ready, not heard". With auto-play off, nothing waits in the speaking queue until a row is picked.
 
 ## 2. Send and move on
+
+![Screen 2: Send and move on](img/voice-parallel-requests/02-send.png)
 
 Four steps on one pill: talking to Writer; ⌥Space let go, so the request is sent and the pill is free; picking Researcher while Writer thinks; both thinking.
 
@@ -42,6 +46,8 @@ The main orb takes the picked agent's colours at once, and stays on the last age
 
 ## 3. Open-requests list
 
+![Screen 3: Open-requests list](img/voice-parallel-requests/03-list.png)
+
 - **Opens** on a half-second hover over the pill (it stays while the pointer is on the pill or the list), on a click on the mini orbs or "1 new" (stays until Esc or a click elsewhere), or with **⌘⌥O** from anywhere (the keyboard lands in the list).
 - It grows up or down from the pill, whichever has more room, 360 pt wide: the same rule and width as the answer view today (`PillPlacement.swift`, `Panel.expandedWidth`).
 - **One row per request**: the agent's mini orb, its name, the state (thinking with a timer, answer ready, heard, couldn't answer), the first words of the request, and how long ago. An unheard row has a blue dot and a bold name. The × shows on hover and on the keyboard's row.
@@ -52,17 +58,23 @@ The main orb takes the picked agent's colours at once, and stays on the last age
 
 ## 4. Picked row
 
+![Screen 4: Picked row](img/voice-parallel-requests/04-picked.png)
+
 - **Unheard row**: it opens in place, its answer plays in the agent's voice, and its text shows with **Stop** and the play progress. The row is marked heard as soon as it starts playing (question 5).
 - **Heard row**: its text shows with **Listen again** (the button from #492, `ListenAgain.swift`) and **Open in History**.
 - **The picked agent is the active one**: the main orb takes its colours and the pill says "Hold ⌥Space to continue it". The next words continue that conversation, in the same thread as the phone's conversation with that agent.
 
 ## 5. Close
 
+![Screen 5: Close](img/voice-parallel-requests/05-close.png)
+
 - **Heard or failed row**: closes at once. "Closed Ops's request · Undo" stays for five seconds. The conversation itself is kept in History and on the phone; only the row goes.
 - **Thinking row**: the row turns into a confirm: "Writer is still thinking". **Close, let it finish** (default, Return), **Stop Writer** (Tab, then Space: never the default, no shortcut of its own), **Keep** (Esc). A finished answer from a closed row goes to History with no sound.
 - **Unheard row**: closes at once, like a heard one (question 4 asks whether that also marks it read on the phone).
 
 ## 6. Setting
+
+![Screen 6: Setting](img/voice-parallel-requests/06-setting.png)
 
 In Settings › General, a new **Answers** group:
 - **When an answer is ready**: "Wait until I pick it" (soft sound and a dot) or "Play it at once" (as before).
@@ -74,6 +86,8 @@ The menu gets **Open requests…** and a tick for **Play answers at once**. Like
 
 ## 7. Dark, empty, loading, error
 
+![Screen 7: Dark, empty, loading, error](img/voice-parallel-requests/07-dark.png)
+
 - **Dark**: the same list on the dark popover, with lighter blue and red for contrast.
 - **Reduced to the orb** (#457): the count of unheard answers sits on the orb; hover opens the list.
 - **Loading**: two placeholder rows, only if the daemon takes more than half a second.
@@ -82,6 +96,8 @@ The menu gets **Open requests…** and a tick for **Play answers at once**. Like
 - **A request that failed**: red ring, "Couldn't answer", the reason in one line when the row is picked, and **Ask again**.
 
 ## 8. Same requests on the phone
+
+![Screen 8: Same requests on the phone](img/voice-parallel-requests/08-phone.png)
 
 No phone change. The phone's Chat strip (`app-chat-strip.client.ts`) already shows one chip per conversation that is running or has an answer not opened yet. The mapping:
 
@@ -112,6 +128,13 @@ No phone change. The phone's Chat strip (`app-chat-strip.client.ts`) already sho
 6. **Default after the update**: "Wait until I pick it" for everyone (drawn), or keep auto-play for existing installs and make waiting the default only for new ones?
 7. **The list shortcut**: ⌘⌥O is free in the app today. Is that the key you want?
 
-## Next round
+## Verdict
 
-Comments on the canvas or on #1460 become round 2. Once the screens are accepted, #1455 links them and is built in `apps/mac-voice` with the daemon changes above, with the README's Known limits and the AgentX Voice guide updated in the same PR.
+Accepted. The owner approved all eight round 1 screens on 2026-10-27 (by voice, through Hakim, recorded on #1460). There is no round 2.
+
+- **Screens**: 1 to 8 accepted as drawn.
+- **Questions 1 to 7**: no separate answer was given, so the build starts from the option marked "drawn" for each. Anything the owner changes on #1455 wins over this note.
+
+## Next step
+
+The build goes on #1455: `apps/mac-voice` with the daemon changes above, with the README's Known limits and the AgentX Voice guide updated in the same PR.
