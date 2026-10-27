@@ -52,6 +52,8 @@ The `--reports-to` of `agentx business orgchart add` is a `reports-to` relation,
 5. **Terminal:** run `agentx daemon restart` if the business layer is on, so it reads the new chart.
 6. **Browser:** open **Org**. A person's card says **Person** and has no Pause button. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
 
+   ![The Org tab with a person, the owner, at the top; the assistant under them acts for them, and an engineer further down has a dotted line to a second person](/screenshots/org/people.png)
+
 The relations are saved under `business.relations` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
 
 ## What each card shows

@@ -89,7 +89,7 @@ const ORG_CSS = `
 .org-acts button:disabled { opacity: 0.6; cursor: default; }
 .org-card.is-person { background: var(--ax-surface-2); }
 .org-kind { font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
-.org-links { margin: 8px 0 0; padding: 0; list-style: none; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-links { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-problems { margin: 0 0 12px; padding: 10px 14px 10px 30px; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius); font-size: var(--ax-fs-sm); color: var(--ax-amber-ink); }
 `
 
@@ -112,8 +112,7 @@ const ORG_SCRIPT = `
   function links(n) {
     var rows = (n.dottedLine || []).map(function (r) { return 'Dotted line to ' + nameOf(r); })
       .concat((n.actsFor || []).map(function (r) { return 'Acts for ' + nameOf(r); }));
-    if (n.manager && n.manager.indexOf('person:') === 0) rows.unshift('Reports to ' + nameOf(n.manager));
-    return rows.length ? '<ul class="org-links">' + rows.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' : '';
+    return rows.length ? '<div class="org-links">' + rows.map(function (t) { return '<div>' + esc(t) + '</div>'; }).join('') + '</div>' : '';
   }
   function personCard(n) {
     return '<div class="org-card is-person" data-person="' + esc(n.id) + '">'
