@@ -1366,3 +1366,76 @@ describe("The org on the Wall (#1398)", () => {
     }
   })
 })
+
+describe("People and relation types on the Wall (#1421)", () => {
+  // The /api/admin/org shape from #1418: people, and typed relations between
+  // `agent:<id>` and `person:<id>` members. The tree still nests agents only.
+  const ORG = { exists: true, live: true, outside: [],
+    people: [{ id: "owner", name: "The Owner" }, { id: "sam", name: "Sam Lee" }],
+    roots: [
+      { id: "reviewer", name: "Reviewer", title: "Head of Quality", reportsTo: "person:owner", status: "idle", reports: [
+        { id: "cx", name: "Customer Desk", title: "Support Lead", reportsTo: "reviewer", status: "working", reports: [] },
+      ] },
+    ],
+    relations: [
+      { from: "agent:reviewer", to: "person:owner", type: "reports-to" },
+      { from: "agent:cx", to: "agent:reviewer", type: "reports-to" },
+      { from: "agent:cx", to: "person:sam", type: "dotted-line" },
+      { from: "agent:cx", to: "person:owner", type: "acts-for" },
+    ],
+  }
+  async function profile(org: unknown, id: string) {
+    const w = openWall({ org })
+    await w.settle()
+    w.click({ "data-agent": id })
+    await w.settle()
+    return w
+  }
+
+  it("shows a person as the boss, as plain text with their name", async () => {
+    const prof = (await profile(ORG, "reviewer")).el("wall-profile").innerHTML
+    expect(prof).toContain('reports to <span class="wpf__person">The Owner</span>')
+    expect(prof).not.toContain('data-agent="owner"')
+    expect(prof).toContain("1 reports to it")
+  })
+
+  it("shows dotted-line and acts-for relations next to reports-to", async () => {
+    const prof = (await profile(ORG, "cx")).el("wall-profile").innerHTML
+    expect(prof).toContain('reports to <button type="button" data-agent="reviewer">Reviewer</button>')
+    expect(prof).toContain('dotted line to <span class="wpf__person">Sam Lee</span>')
+    expect(prof).toContain('acts for <span class="wpf__person">The Owner</span>')
+  })
+
+  it("reads a legacy reportsTo and a person's id when people are not listed", async () => {
+    const legacy = { exists: true, live: true, outside: [], roots: [
+      { id: "cx", name: "Customer Desk", reportsTo: "person:owner", status: "idle", reports: [] },
+    ] }
+    const prof = (await profile(legacy, "cx")).el("wall-profile").innerHTML
+    expect(prof).toContain('reports to <span class="wpf__person">owner</span>')
+  })
+
+  it("shows the relations on the Agents page card", async () => {
+    const w = openWall({ org: ORG, hash: "#page=agents" })
+    await w.settle()
+    const page = w.el("wall-agents-page").innerHTML
+    expect(page).toMatch(/id="agent-cx"[\s\S]*dotted line to <span class="wpf__person">Sam Lee<\/span>[\s\S]*acts for <span class="wpf__person">The Owner<\/span>/)
+  })
+
+  it("opens /org from the Wall's Org link and writes nothing", async () => {
+    expect(renderWallPage()).toContain('<a href="/org">Org</a>')
+    const w = await profile(ORG, "cx")
+    expect(w.el("wall-profile").innerHTML).toContain('<a href="/org">Org chart</a>')
+    const org = w.calls.filter((c) => c.url.startsWith("/api/admin/org"))
+    expect(org.map((c) => c.url)).toEqual(["/api/admin/org"])
+    expect(org[0].init?.method ?? "GET").toBe("GET")
+    expect(w.calls.every((c) => (c.init?.method ?? "GET") === "GET" || !c.url.includes("/org"))).toBe(true)
+  })
+
+  it("shows the Wall as today when the org fails or its relations are malformed", async () => {
+    for (const org of ["fail", { exists: true, roots: [], people: "x", relations: { nope: 1 } }]) {
+      const prof = (await profile(org, "cx")).el("wall-profile").innerHTML
+      expect(prof).toContain("<h2>Customer Desk</h2>")
+      expect(prof).not.toContain("wpf__org")
+    }
+  })
+})

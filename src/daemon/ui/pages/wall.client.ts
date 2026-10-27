@@ -132,26 +132,65 @@ ${WALL_TASK_SCRIPT}
   function nameOf(id) { var i = agentInfo()[id]; return i ? i.name : id; }
 
   // --- The org on the Wall (#1398): role and who each agent reports to ---
+  // People and typed relations (#1421): members are agent:<id> or
+  // person:<id>, a bare id is an agent. Relations are reports-to,
+  // dotted-line and acts-for; a node's own reportsTo reads as reports-to.
+  /** { kind: 'agent' | 'person', id } for an org member reference. */
+  function orgRef(ref) {
+    var s = String(ref || '');
+    var m = s.match(/^(agent|person):(.+)$/);
+    return m ? { kind: m[1], id: m[2] } : { kind: 'agent', id: s };
+  }
+  function orgList(key) { var v = S.org && S.org[key]; return Array.isArray(v) ? v : []; }
   /** Each agent's place in this node's org chart, from /api/admin/org. */
   function orgInfo() {
     var info = {};
+    function at(id) { return info[id] || (info[id] = { reportsTo: '', dotted: [], actsFor: [], reports: [] }); }
+    function report(boss, id) { if (boss.kind === 'agent' && at(boss.id).reports.indexOf(id) < 0) at(boss.id).reports.push(id); }
     function walk(list) {
       (list || []).forEach(function (n) {
-        info[n.id] = { title: n.title, reportsTo: n.reportsTo, reports: (n.reports || []).length };
+        var o = at(n.id);
+        o.title = n.title;
+        if (n.reportsTo && !o.reportsTo) o.reportsTo = String(n.reportsTo);
+        (n.reports || []).forEach(function (r) { report({ kind: 'agent', id: n.id }, r.id); });
         walk(n.reports);
       });
     }
     walk(S.org && S.org.roots);
+    orgList('relations').forEach(function (r) {
+      if (!r) return;
+      var from = orgRef(r.from), to = r.to;
+      if (from.kind !== 'agent' || !from.id || !to) return;
+      var o = at(from.id);
+      if (r.type === 'reports-to') { o.reportsTo = String(to); report(orgRef(to), from.id); }
+      else if (r.type === 'dotted-line' && o.dotted.indexOf(to) < 0) o.dotted.push(to);
+      else if (r.type === 'acts-for' && o.actsFor.indexOf(to) < 0) o.actsFor.push(to);
+    });
     return info;
   }
-  /** Role, boss and reports, read-only: Pause and Resume stay on /org. */
+  /** A person's display name from /api/admin/org's people, else its id. */
+  function personName(id) {
+    var p = orgList('people').filter(function (x) { return x && x.id === id; })[0];
+    return (p && p.name) || id;
+  }
+  /** An org member: an agent opens its profile, a person is plain text. */
+  function orgMemberHtml(ref) {
+    var m = orgRef(ref);
+    if (m.kind === 'person') return '<span class="wpf__person">' + esc(personName(m.id)) + '</span>';
+    return '<button type="button" data-agent="' + esc(m.id) + '">' + esc(nameOf(m.id)) + '</button>';
+  }
+  function orgMembersHtml(list) { return list.map(orgMemberHtml).join(', '); }
+  /** Role, relations and reports, read-only: setup, Pause and Resume stay on /org. */
   function orgLineHtml(id) {
     var o = orgInfo()[id];
-    if (!o || (!o.title && !o.reportsTo && !o.reports)) return '';
+    if (!o || (!o.title && !o.reportsTo && !o.dotted.length && !o.actsFor.length && !o.reports.length)) return '';
+    var n = o.reports.length;
     var bits = [
       o.title ? '<b>' + esc(o.title) + '</b>' : '',
-      o.reportsTo ? 'reports to <button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>' : '',
-      o.reports ? o.reports + (o.reports === 1 ? ' reports' : ' report') + ' to it' : '',
+      o.reportsTo ? 'reports to ' + orgMemberHtml(o.reportsTo) : '',
+      o.dotted.length ? 'dotted line to ' + orgMembersHtml(o.dotted) : '',
+      o.actsFor.length ? 'acts for ' + orgMembersHtml(o.actsFor) : '',
+      n ? n + (n === 1 ? ' reports' : ' report') + ' to it' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
     return '<div class="wp__meta wpf__org">' + bits + '<a href="/org">Org chart</a></div>';
   }
