@@ -266,7 +266,8 @@ export interface CostPageView {
 /**
  * The page's markup. `names` maps agent ids to display names; `avatarOf`
  * draws an agent's avatar (the Wall passes its own). Rows carry
- * data-cagent, which opens the agent's Wall profile. The budgets section
+ * data-cagent, which opens the agent's Wall profile, and data-ccap, which
+ * picks that agent in the budgets form. The budgets section
  * (costBudgetsHtml) comes in through `view`.
  */
 export function costPageHtml(m: CostPageModel, names: Record<string, string>, avatarOf?: (id: string) => string, view?: CostPageView): string {
@@ -340,12 +341,14 @@ export function costPageHtml(m: CostPageModel, names: Record<string, string>, av
     const bar = a.cap
       ? '<span class="wc__bar' + (a.state === "paused" ? " is-err" : a.state === "warn" ? " is-warn" : "") + '" title="' + esc("Month: " + usd(a.monthSpent || 0) + " of " + usd(a.cap)) + '"><i style="width:' + Math.min(100, ((a.monthSpent || 0) / a.cap) * 100).toFixed(1) + '%"></i></span><small>' + usd(a.monthSpent || 0) + " of " + usd(a.cap) + " this month</small>"
       : "<small>no cap</small>"
+    // Only when the budgets were read: the form it opens needs them.
+    const capBtn = m.month ? ' <button type="button" class="wc__link" data-ccap="' + esc(a.id) + '" title="' + esc("Set the monthly cap of " + name(a.id)) + '">' + (a.cap ? "Change cap" : "Set a cap") + "</button>" : ""
     const np = a.unpriced ? a.unpriced + " not priced" : a.unpricedMonth ? a.unpricedMonth + " not priced this month" : ""
     return '<li class="wc__row"><button type="button" class="wc__who" data-cagent="' + esc(a.id) + '" title="' + esc(name(a.id)) + ': profile and posts">' +
         (avatarOf ? avatarOf(a.id) : "") + "<span><b>" + esc(name(a.id)) + "</b><small>@" + esc(a.id) + "</small></span></button>" +
       '<span class="wc__amt"><b>' + usd(a.spend) + "</b>" +
         (a.change == null ? (a.spend && m.range > 0 ? '<i class="new">new</i>' : "") : '<i class="' + (a.change > 0 ? "up" : a.change < 0 ? "down" : "") + '">' + pct(a.change) + "</i>") + "</span>" +
-      '<span class="wc__cap">' + bar + "</span>" +
+      '<span class="wc__cap">' + bar + capBtn + "</span>" +
       '<span class="wc__runs">' + a.runs + " run" + (a.runs === 1 ? "" : "s") + (a.perRun != null ? " · " + usd(a.perRun) + " per run" : "") +
         (np ? ' · <b class="wc__np">' + np + "</b>" : "") + "</span></li>"
   }).join("") + "</ol>" : '<p class="ax-wall__empty">No spend in ' + span + ".</p>"

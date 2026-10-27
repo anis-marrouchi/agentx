@@ -104,6 +104,9 @@ describe("Wall Cost page numbers (#1423)", () => {
     expect(html).toContain("data-ccsv>Export CSV</button>")
     expect(html).toContain('href="#wall-cost-budgets"')
     expect(html).toContain("Show details: tokens, cache and every day")
+    // Each row opens the budgets form on its agent.
+    expect(html).toContain('data-ccap="coder" title="Set the monthly cap of Coder">Change cap</button>')
+    expect(html).toContain('data-ccap="cx" title="Set the monthly cap of cx">Set a cap</button>')
     // The budgets form comes only from costBudgetsHtml.
     expect(html).not.toMatch(/<form|<input|method=/)
   })
@@ -112,6 +115,8 @@ describe("Wall Cost page numbers (#1423)", () => {
     const m = costPageModel(buildCost(db!, 60), null, 30)
     const html = costPageHtml(m, {})
     expect(html).toContain("This month's total is not available")
+    // No budgets read, so no form for a row's cap link to open.
+    expect(html).not.toContain("data-ccap")
     expect(html).toContain("over 30 days")
   })
 

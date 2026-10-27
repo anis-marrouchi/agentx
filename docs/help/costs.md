@@ -242,7 +242,7 @@ Waiting messages are saved in `.agentx/budget-holds.json`, so they are still the
 
 You don't need to edit `agentx.json` by hand.
 
-1. **Browser:** on the Wall, select **Cost**, then **Budgets** in the box on the right.
+1. **Browser:** on the Wall, select **Cost**, then **Budgets** in the box on the right. For one agent, select **Set a cap** (or **Change cap**) on its row instead: the form opens with that agent and its machine chosen, so go to step 4.
 2. With more than one machine, choose the machine where the agent runs under **Machine**.
 3. Under **Budget for**, choose **All agents**, a project or an agent. The box shows its current budget, or **No cap**.
 4. Type the most it may spend each month, in US dollars, or empty the box to remove the cap.

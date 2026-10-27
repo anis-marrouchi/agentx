@@ -142,14 +142,27 @@ export const WALL_COST_SCRIPT = String.raw`
     }
     render();
   }
+  /** A row's "Set a cap": the form on the machine that runs the agent, with the agent picked. */
+  function pickCap(id) {
+    var ms = costBudgetMachines().filter(function (m) { return m.budgets && m.budgets.fleet; });
+    var runs = function (m) { return (m.budgets.agentIds || []).indexOf(id) >= 0; };
+    var lists = function (m) { return (m.budgets.agents || []).some(function (a) { return a.agentId === id; }); };
+    var m = ms.find(runs) || ms.find(lists) || ms[0];
+    if (!m) return;
+    C.form = { machine: m.name, scope: 'agent:' + id, usd: null, note: '' };
+    render();
+    var box = $('cb-usd');
+    if (box) { if (box.scrollIntoView) box.scrollIntoView({ block: 'center' }); if (box.focus) box.focus(); }
+  }
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-crange],[data-cagent],[data-ccsv],[data-cfilter],[data-cdetails],[data-cbudgets]');
+    var t = ev.target.closest('[data-crange],[data-cagent],[data-ccap],[data-ccsv],[data-cfilter],[data-cdetails],[data-cbudgets]');
     if (!t) return;
     if (t.hasAttribute('data-crange')) {
       var r = Number(t.getAttribute('data-crange'));
       C.range = r > 0 ? r : 0; C.data = null; C.error = ''; C.key = '';
       writeHash(); render(); return;
     }
+    if (t.hasAttribute('data-ccap')) { pickCap(t.getAttribute('data-ccap')); return; }
     if (t.hasAttribute('data-ccsv')) { exportCostCsv(); return; }
     if (t.hasAttribute('data-cfilter')) { C.filter = t.getAttribute('data-cfilter'); C.details = true; render(); return; }
     if (t.hasAttribute('data-cdetails')) { C.details = !C.details; render(); return; }
@@ -201,7 +214,9 @@ export const WALL_COST_CSS = `
 .wc__who span { display: flex; flex-direction: column; min-width: 0; }
 .wc__who small, .wc__runs, .wc__cap small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wc__who:hover b { text-decoration: underline; }
-.wc__who:focus-visible, .wc__toggle:focus-visible, .wc__chips button:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.wc__link { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; background: none; border: 0; padding: 0; color: var(--ax-accent); cursor: pointer; white-space: nowrap; }
+.wc__link:hover { text-decoration: underline; }
+.wc__who:focus-visible, .wc__toggle:focus-visible, .wc__chips button:focus-visible, .wc__link:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wc__amt { text-align: right; }
 .wc__cap { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; min-width: 0; }
 .wc__bar { flex: 0 1 120px; min-width: 40px; height: 6px; border-radius: 3px; background: var(--ax-surface); overflow: hidden; }

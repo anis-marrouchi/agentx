@@ -466,7 +466,7 @@ The **Cost** page shows what your agents spent, in total and per agent, on every
 2. The top line shows this month's total, against the budget for all agents when one is set, with **near cap** or **fleet cap reached** when that applies. Under it: today, the last 7 days and the change against the 7 days before. The small line on the right is the spend per day over the last 30 days.
 3. Pick a range: **7 days**, **14 days**, **30 days**, **90 days** or **All**. The range is kept in the page's address, so you can share the view. The line under the tabs gives the total, the runs, the cost per run and, with more than one machine, how many were read.
 4. The chart stacks each day's spend by agent: the five agents that spent most each have their own shade, and the rest are **others**. Point at a bar to read its agent and amount.
-5. Each agent has one row, highest spend first: its spend in the range with the change against the period before (**new** when it spent nothing then), a bar for this month's spend against its cap (or **no cap**), its runs and its cost per run. Select an agent to open its [profile](#see-one-agent-s-profile).
+5. Each agent has one row, highest spend first: its spend in the range with the change against the period before (**new** when it spent nothing then), a bar for this month's spend against its cap (or **no cap**) with **Set a cap** or **Change cap** beside it, its runs and its cost per run. Select an agent to open its [profile](#see-one-agent-s-profile).
 6. The box on the right lists the three agents whose spend moved most this week, the share of input read from the cache with what it saved, and the runs that had no price.
 7. Select **Export CSV** in that box to save the range's days as a spreadsheet file (one line per day: runs, tokens, cost and the top agent).
 8. Select **Show details** under the list to see the daily average, the token mix, cache efficiency and a table of every day. Pick **Weekdays** or **Over $10** to narrow the table.
@@ -484,7 +484,7 @@ A run on a model with no price, such as a local model, is not counted as $0. The
 
 Only the owner can save a budget: the dashboard checks its key, and a refusal says so. Every other part of the page only reads.
 
-1. **Browser:** on the Cost page, scroll to **Monthly budgets**, or select **Budgets** in the box on the right. It lists all agents together, each project and each agent with a cap, with this month's spend against it.
+1. **Browser:** on the Cost page, scroll to **Monthly budgets**, or select **Budgets** in the box on the right. It lists all agents together, each project and each agent with a cap, with this month's spend against it. To set one agent's cap, select **Set a cap** (or **Change cap**) on its row instead: the form opens with that agent and its machine already chosen, so go to step 4.
 2. With more than one machine, choose the machine under **Machine**. A budget belongs to the machine where the agent runs.
 3. Under **Budget for**, choose **All agents**, a project or an agent. The box shows its current cap, or **No cap**.
 4. Type the most it may spend each month, in US dollars, or empty the box to remove the cap.
