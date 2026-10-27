@@ -122,10 +122,9 @@ usage
     }
   })
 
-// `agentx usage serve` was removed — the same data now lives at
-// /admin/cost on the dashboard, so there's no second port to keep
-// running. Anyone with a stale `usage serve` bookmark gets a redirect
-// from the dashboard root pointing to /admin/cost.
+// `agentx usage serve` was removed — the same data now lives on the
+// Wall's Cost page, so there's no second port to keep running. The old
+// /admin/cost and /cost addresses redirect there (#1449).
 
 // agentx usage report — run Python analyzer
 usage

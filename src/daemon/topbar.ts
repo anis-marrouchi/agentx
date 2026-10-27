@@ -436,7 +436,7 @@ export function renderTopbar(opts: TopbarOpts): string {
   // set once per process via setTopbarFeatures().
   //
   // Deliberately NOT in the nav (all still routable by URL):
-  //   /admin/ledger  /admin/cost         what happened, what it cost
+  //   /admin/ledger                     what happened (cost is on the Wall)
   //   /workflows  /inbox              BPM surfaces
   //   /  (boards)                       Kanban
   //   /admin/health  /admin/graph  /admin/projects

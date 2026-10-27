@@ -123,7 +123,6 @@ const shots = [
   ] },
   { name: "setup/engine", path: "/setup", wait: "#wizard", steps: [{ select: '[name="tier"]', value: "sdk" }, { scroll: '[name="triggerWords"]' }] },
   { name: "places/page", path: "/places", wait: ".pl-item" },
-  { name: "costs/page", path: "/admin/cost", wait: "body" },
   // Only the first check group: the others describe this machine's desktop
   // app and home folder, which a screenshot must not publish.
   { name: "doctor/tab", path: "/admin/health", wait: '[data-tab="doctor"]', steps: [{ click: '[data-tab="doctor"]' }, { wait: ".ax-obs__doctor-group" }], clipBefore: ".ax-obs__doctor-group + .ax-obs__doctor-group" },

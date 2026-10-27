@@ -28,7 +28,6 @@ import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-pan
 import { handlePeoplePanel } from "./people-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
-import { renderCostPage } from "./ui/pages/cost"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
 import { recordSurfaceUse } from "@/observability/surface-usage"
@@ -199,6 +198,9 @@ export function startBoardDashboard(config: DaemonConfig): void {
   })
 }
 
+/** The Wall's Cost page, where /admin/cost and /cost now go (#1449). */
+export const WALL_COST_HREF = "/wall#status=open&view=cost"
+
 /** Every page a human can land on. Kept explicit rather than inferred from
  *  "has no file extension" so assets, redirects and API routes can never
  *  drift into the numbers the reduction decisions are made from. */
@@ -226,7 +228,6 @@ const DASHBOARD_PAGES = new Set([
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
-  "/admin/cost",
   "/admin/projects",
   "/admin/wiki",
 ])
@@ -721,12 +722,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderLedgerPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
-  // /admin/cost — token-spend page. Replaces the standalone
-  // `agentx usage serve` (port 4201) and the Cost tab inside Health.
+  // /admin/cost — the classic Cost page is gone: the Wall's Cost page does
+  // everything it did, caps and CSV export included (#1449). Old bookmarks
+  // and links land there; the Wall itself asks an off-box caller to sign in.
   if (method === "GET" && path === "/admin/cost") {
-    if (!pageAllowed(req, res, ctx, path)) return
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.writeHead(302, { Location: WALL_COST_HREF })
+    res.end()
     return
   }
   // /admin/projects — aggregated per-project view. Data via
@@ -1664,7 +1665,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const SLUG_TO_ADMIN: Record<string, string> = {
       health: "/admin/health",
       ledger: "/admin/ledger",
-      cost: "/admin/cost",
+      cost: WALL_COST_HREF,
       projects: "/admin/projects",
       graph: "/admin/graph",
       wiki: "/admin/wiki/",

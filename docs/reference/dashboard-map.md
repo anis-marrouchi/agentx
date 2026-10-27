@@ -23,7 +23,7 @@ The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 | Edit one agent's instructions and skills | `/admin/agents/<agent-id>` |
 | Watch or reopen one task | `/tasks/<task-id>` |
 | Trace an inbound message, errors, and daemon health | `/admin/health` (the old `/admin/observability` redirects here) |
-| See token spend | `/admin/cost` |
+| See token spend and set monthly caps ([Cost page](../dashboard/wall.md#see-what-the-fleet-costs)) | The Wall, **Cost** in the nav (`/admin/cost` and `/cost` open it) |
 | Browse the shared wiki by pillar and type ([Wiki](../dashboard/wiki.md)) | `/admin/wiki/` |
 | Browse each agent's own wiki pages | `/admin/wiki/agents` |
 | Set the wiki notes inbox, the schedules and absorb pass that read it, and see recent notes ([Wiki notes](../jobs/wiki-notes.md)) | `/admin`, **Schedules** tab, **Wiki notes inbox** |

@@ -12,7 +12,7 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
 
 1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
 2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, and agents. The page you are on is in bold.
-3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. Cost is no longer among them: it is a page of the Wall (see [See what the fleet costs](#see-what-the-fleet-costs)). **Live** is still at `/live`.
 4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
 5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
@@ -195,7 +195,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
    - **paused: cap reached**: the agent has used all of its budget and does no work until the next month or until you raise the budget. **paused: fleet cap reached** means the budget for all agents together is used up.
    - **no cap**: the agent has no budget; the line still shows what it spent.
    - **not priced**: runs on a model with no price, such as a local model. The budget does not count them, as on the Cost page.
-4. Select **Cost** at the end of that line to open the Cost page, where you can raise or remove the budget (see [Set or raise a budget on the Cost page](../help/costs.md#set-or-raise-a-budget-on-the-cost-page)). The Wall only shows the figure; it never changes a budget.
+4. Select **Cost** at the end of that line to open the Wall's [Cost page](#see-what-the-fleet-costs), where you can raise or remove the budget (see [Set or raise a cap](#set-or-raise-a-cap)).
 5. Select **Agent page** or **History** to open the classic pages for that agent.
 6. Select **All posts**, or the same agent again, to go back to every post.
 
@@ -205,7 +205,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 The profile is the **Owner** filter, so its address can be shared like any other view.
 
-The spend line uses the same figures as the **Monthly budgets** card on the Cost page, from the machine that serves the dashboard you opened. For an agent that runs on another machine, the line says its spend is kept on that machine instead of showing $0; open the dashboard on that machine to see it.
+The spend line uses the same figures as the agent's row on the Cost page, from the machine that serves the dashboard you opened. For an agent that runs on another machine, the line says its spend is kept on that machine instead of showing $0; open the dashboard on that machine to see it.
 
 ## See every agent
 
@@ -460,21 +460,53 @@ A skipped classification stays pending: a skip is not recorded. The wiki searche
 
 ## See what the fleet costs
 
-The **Cost** page shows what this machine's agents spent, in total and per agent. It reads the same figures as the classic Cost page at `/admin/cost` (see [Costs](../help/costs.md)), so the two agree for the same range. It only reads: caps, the CSV export and the full breakdown stay on `/admin/cost`.
+The **Cost** page shows what this machine's agents spent, in total and per agent, and lets you set the monthly caps (the most an agent, a project or all agents together may spend in a month). It is the only Cost page: the old address `/admin/cost`, and the short `/cost`, open it. How the figures are counted, and what a cap does when it is reached, is in [Understand model costs](../help/costs.md).
 
 1. Select **Cost** in the nav. The number next to it is what this machine spent this month.
-2. The top line shows this month's total, against the fleet budget when one is set, with **near cap** or **fleet cap reached** when that applies. Under it: what was spent today, the last 7 days and the change against the 7 days before. The small line on the right is the spend per day over the last 30 days.
-3. Pick **7 days**, **30 days** or **90 days**. The line under the tabs gives the total, the runs and the cost per run over that range.
+2. The top line shows this month's total, against the fleet cap when one is set, with **near cap** or **fleet cap reached** when that applies. Under it: what was spent today, the last 7 days and the change against the 7 days before. The small line on the right is the spend per day over the last 30 days.
+3. Pick **7 days**, **14 days**, **30 days**, **90 days** or **All** (everything recorded on this machine). The line under the tabs gives the total, the runs and the cost per run over that range.
 4. The chart stacks each day's spend by agent: the five agents that spent most in the range each have their own shade, and the rest are **others**. Point at a bar to read its agent and amount.
-5. Each agent has one row, highest spend first: its spend in the range with the change against the period before (**new** when it spent nothing then), a bar for this month's spend against its cap (or **no cap**), its runs and its cost per run. Select an agent to open its [profile](#see-one-agent-s-profile).
+5. Each agent has one row, highest spend first: its spend in the range with the change against the period before (**new** when it spent nothing then; no change is shown for **All**), a bar for this month's spend against its cap (or **no cap**), its runs and its cost per run. Select an agent's name to open its [profile](#see-one-agent-s-profile).
 6. The box on the right lists the three agents whose spend moved most this week, the share of input read from the cache, and the runs this month that had no price.
-7. **Phone:** the chart becomes a single line of the spend per day, and the box on the right moves under the list.
+7. **Phone:** the chart becomes a single line of the spend per day, **Export CSV** moves above the tabs, and the box on the right moves under the list.
 
-A run on a model with no price, such as a local model, is not counted as $0. The page says how many runs had no price this month, on the agent's row and in the box on the right; they are not in the totals.
+   ![The Cost page on a phone in dark mode: the month's total, Export CSV, the tabs, the spend line and the agents' rows](/screenshots/wall/cost-phone.png)
 
-![The Cost page: this month's total, the 30-day range, the stacked chart and one row per agent](/screenshots/wall/cost.png)
+A run on a model with no price, such as a local model, is not counted as $0. The page says how many runs had no price this month, on the agent's row and in the box on the right; they are not in the totals, and a cap does not stop them.
+
+![The Cost page: this month's total, the range tabs with Export CSV, the stacked chart and one row per agent](/screenshots/wall/cost.png)
 
 *Fictional data; your figures will differ.*
+
+### Set or raise a cap
+
+Only the owner can change a cap. When the dashboard has a token (`dashboard.token`), saving needs it, like every other change on the dashboard.
+
+1. **Browser:** open the Wall and select **Cost** in the nav.
+2. Scroll to **Monthly caps**. It lists **All agents (fleet)** and each project with a cap or spend this month: what it spent, its cap, and **On track**, **Near cap**, **Paused** or **No cap**. Each agent's cap is on its own row above.
+3. Select **Change** or **Set** next to the fleet or a project, or **Change cap** or **Set a cap** on an agent's row. You can also pick it under **Cap for**.
+4. Type the most it may spend each month in **Dollars a month**, in US dollars. To remove the cap, empty the box.
+5. Select **Save**. The line under the form says `Saved. It applies now…`, or `Saved: no cap.` AgentX writes the cap to `agentx.json` and applies it at once. A paused agent or project whose new cap is above its spend works again, and the messages that waited for it run.
+
+![Monthly caps on the Cost page: the fleet, a project near its cap, and the form with Cap for, Dollars a month and Save](/screenshots/wall/cost-caps.png)
+
+*Fictional data; your figures will differ.*
+
+### Export the figures or see every day
+
+1. **Browser:** on the Cost page, pick a range.
+2. Select **Export CSV**. Your browser saves a spreadsheet file (CSV) with one line per day of that range: runs, tokens by kind, cost and the agent that spent most.
+3. Select **Token mix and daily detail** under the caps. It opens:
+   - **Token mix:** how many tokens (small pieces of text, roughly three quarters of a word) were input, output, read from the cache and written to it, with each one's share.
+   - **Cache:** the hit rate, and an estimate of what the cache saved.
+   - **Each day:** one row per day, newest first, with its runs, tokens, cost and top three agents. **Weekdays** and **Over $10** narrow the list.
+4. Select **Token mix and daily detail** again to close it.
+
+![Token mix and daily detail open: the token mix, the cache, and one row per day with the Weekdays and Over $10 filters](/screenshots/wall/cost-detail.png)
+
+*Fictional data; your figures will differ.*
+
+On a phone, slide the daily table sideways to see every column.
 
 ## Running now
 
@@ -551,8 +583,11 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 25. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
 26. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
 27. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
-28. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
-29. Cost page: select **Cost** in the nav, then **30 days**. The total under the tabs and each agent's spend match the classic Cost page at `/admin/cost` with **30d** picked. Select an agent: its profile opens.
+28. Spend: select an agent to open its profile. Its spend line shows the same amount and cap as that agent's row on the Wall's Cost page. Select **Cost** on that line: the Cost page opens.
+29. Cost page: select **Cost** in the nav, then **30 days**. The line under the tabs gives a total, runs and cost per run. Select an agent: its profile opens.
+30. Old address: open `/admin/cost`. The Wall opens on its Cost page.
+31. Caps: on the Cost page, select **Set a cap** on a test agent's row, type `5`, select **Save**. The line says `Saved`, and the row shows `of $5.00 this month`. Empty the box and save again to remove it.
+32. Export: select **Export CSV**. A file named like `agentx-cost-30d-….csv` is saved.
 
 ## If something is wrong
 
@@ -564,8 +599,12 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **Live says a Space plays on another machine:** a Space plays where it was started. Open the Wall on that machine to join it.
 - **Post says requests are off:** the agent's machine has `requests.enabled` off, so nothing would give it the task. Turn requests on in **Settings** on that machine, or ask the agent in a channel instead.
 - **Post says to pick who it is for:** the post has no `@` name of an agent the machines report. Check the name on the **Agents** page.
-- **The profile shows no spend line:** the dashboard could not read the budgets, for example because its token was refused. Select **Refresh**. If it is still missing, open the Cost page: if the **Monthly budgets** card is missing there too, see [Costs](../help/costs.md).
+- **The profile shows no spend line:** the dashboard could not read the budgets, for example because its token was refused. Select **Refresh**. If it is still missing, open the Cost page: if it says the budgets read failed there too, see [Costs](../help/costs.md).
 - **The profile's spend differs from another machine's Cost page:** each machine counts the runs it keeps. Open the Wall on the machine that runs the agent to see its own figure.
+- **The Cost page says `Could not load the cost: …`:** the dashboard could not read this machine's records. The rest of the Wall keeps working. Pick a range to try again; if it still fails, see [Costs](../help/costs.md#if-something-is-wrong).
+- **Save says `Not saved: only the owner can change a cap`:** the dashboard has a token and this browser has not signed in with it. Open the dashboard on the machine itself, or sign in with the token, then save again.
+- **Save says `Not saved: …` with another reason:** the value or the name was refused, and nothing was written. Type a number of dollars, and check the agent or project still exists in `agentx.json`.
+- **Export CSV says `Export failed: …`:** the file could not be read. Select **Refresh**, then try again.
 - **The Wall is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on; see [Approvals](./approvals.md). Running work still shows under **Running now**.
 - **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.

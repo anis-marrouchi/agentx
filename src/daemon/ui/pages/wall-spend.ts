@@ -2,12 +2,12 @@
 //
 // One line under the profile's stats: what the agent spent this month (UTC)
 // against its cap, from the row GET /api/admin/observability/budgets
-// already returns for the Cost page's "Monthly budgets" card. No second sum.
+// already returns for the Wall's Cost page. No second sum.
 //
 // Shipped to the browser through injectFns, so it is self-contained: it
-// formats on its own, with the same money format as /cost so the two
-// figures match. It prints only numbers and fixed text, so nothing needs
-// escaping. Read-only: raising a cap stays on the Cost page (/admin/cost).
+// formats on its own, with the same money format as the Cost page
+// (wall-cost.ts) so the two figures match. It prints only numbers and fixed text, so nothing needs
+// escaping. Read-only: a cap is raised on the Wall's Cost page.
 
 /** The part of a budgets row the line reads (BudgetRow in src/agents/agent-budget.ts). */
 export interface SpendRow {
@@ -27,7 +27,7 @@ export interface SpendRow {
  */
 export function profileSpendHtml(budgets: { agents?: Array<SpendRow & { agentId: string }>; fleet?: SpendRow; agentIds?: string[] } | null, id: string): string {
   if (!budgets) return ""
-  // fmtCost on /cost (src/daemon/ui/pages/cost.ts), kept the same.
+  // The Cost page's money format (wall-cost.ts), kept the same.
   const usd = (v: number): string => {
     let n = Number(v)
     if (!isFinite(n)) n = 0
@@ -52,5 +52,5 @@ export function profileSpendHtml(budgets: { agents?: Array<SpendRow & { agentId:
     ? ' <span title="Runs on a model with no price, such as a local model. The cap does not count them.">· ' + Number(row.unpricedRuns) + " not priced</span>"
     : ""
   return '<div class="wpf__spend">' + text + unpriced + (chip ? " " + chip : "") +
-    ' <a href="/admin/cost" title="Spend and caps for every agent; raise a cap there">Cost</a></div>'
+    ' <a href="#status=open&amp;view=cost" title="Spend and caps for every agent; raise a cap there">Cost</a></div>'
 }

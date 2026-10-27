@@ -87,11 +87,11 @@ describe("admin token gate (#1302)", () => {
     }
   })
 
-  it("gives the Health, Cost and Ledger pages the token for their reads", async () => {
+  it("gives the Health and Ledger pages the token for their reads", async () => {
     const page = (path: string) => new Promise<string>((resolve, reject) => {
       request(base + path, (res) => { let b = ""; res.on("data", (c) => (b += c)); res.on("end", () => resolve(b)) }).on("error", reject).end()
     })
-    for (const path of ["/admin/health", "/admin/cost", "/admin/ledger", "/activity?view=map"]) {
+    for (const path of ["/admin/health", "/admin/ledger", "/activity?view=map"]) {
       expect(await page(path), path).toContain('window.AX_LOCAL_TOKEN = "tok-123"')
     }
   })

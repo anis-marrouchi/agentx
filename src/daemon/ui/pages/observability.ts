@@ -22,7 +22,7 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
   const body = `<div class="ax-obs">
   <header class="ax-obs__head">
     <h1>Health</h1>
-    <p class="ax-obs__sub">Platform-health view: what each agent ran, what failed, and how the router decided. <span class="ax-obs__sub-link">Spend lives on the <a href="/admin/cost">Cost</a> page.</span></p>
+    <p class="ax-obs__sub">Platform-health view: what each agent ran, what failed, and how the router decided. <span class="ax-obs__sub-link">Spend lives on the <a href="/wall#status=open&amp;view=cost">Cost</a> page on the Wall.</span></p>
     <nav class="ax-obs__tabs" role="tablist">
       <button class="ax-obs__tab is-active" data-tab="overview" role="tab">Overview</button>
       <button class="ax-obs__tab" data-tab="activity" role="tab">Activity</button>

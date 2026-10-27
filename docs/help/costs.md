@@ -35,14 +35,17 @@ Not sure? If you already pay for a Claude plan, start with **Claude Code (recomm
 
 ## See what your agents spent
 
-The Cost page has no tab in the top bar. You open it by its address.
+The Cost page is a page of the Wall, the dashboard's home page.
 
-1. **Browser:** open `/admin/cost` on your dashboard (for example `http://127.0.0.1:4202/admin/cost`). The short address `/cost` takes you there too. From the **Health** page (`/admin/health`), you can also select the **Cost** link at the top.
-2. Pick a period at the top right: **7d**, **14d**, **30d**, **90d** or **All**.
-3. Read the totals, then **Top agents by spend**.
-4. To keep a copy or compare with your bill, select **Export CSV**.
+1. **Browser:** open your dashboard (for example `http://127.0.0.1:4202`). The Wall opens.
+2. Select **Cost** in the nav on the left. On a phone, select **More**, then **Cost**. The old addresses `/admin/cost` and `/cost` open the same page.
+3. Pick a period: **7 days**, **14 days**, **30 days**, **90 days** or **All**.
+4. Read the totals, then one row per agent, highest spend first.
+5. To keep a copy or compare with your bill, select **Export CSV**.
 
-![The Cost page with the period picker, the totals and Top agents by spend](/screenshots/costs/page.png)
+![The Cost page on the Wall: this month's total, the range tabs with Export CSV, the stacked chart and one row per agent](/screenshots/wall/cost.png)
+
+What each part of the page shows is in [See what the fleet costs](../dashboard/wall.md#see-what-the-fleet-costs).
 
 The Cost page doesn't read your bill. It counts the tokens (small pieces of text) each agent used, and multiplies them by fixed prices for Claude models (Opus, Sonnet and Haiku) built into AgentX. So what the dollar figures mean depends on how you pay:
 
@@ -203,7 +206,7 @@ A budget is the most an agent may spend in one calendar month. You can also cap 
 
 - **Claude models:** the same prices as the Cost page.
 - **OpenAI and Google API models** (such as `gpt-5`, `gpt-5-mini`, `gpt-4.1`, `o3`, `gemini-2.5-pro` or `gemini-2.5-flash`): their public list prices, built into AgentX. A Codex agent signed in with a ChatGPT plan is counted the same way, as if it paid by the token. Its runs also count toward the fleet cap (the one for all agents together), even if the agent has no budget of its own.
-- **Models with no price,** such as a local model or a model newer than AgentX's list: they don't count toward a budget, so a cap does not stop them. The **Monthly budgets** card counts these runs as **not priced** and says so under the list. To give a missing model a price, add it to `.agentx/pricing/custom.json` with its dollars per million tokens, for example `{ "gpt-5.5": { "input": 5, "output": 30, "cacheRead": 0.5, "cacheCreate": 5 } }`, then restart the daemon.
+- **Models with no price,** such as a local model or a model newer than AgentX's list: they don't count toward a budget, so a cap does not stop them. The Cost page counts these runs as **not priced**, on the agent's row and under **Monthly caps**. To give a missing model a price, add it to `.agentx/pricing/custom.json` with its dollars per million tokens, for example `{ "gpt-5.5": { "input": 5, "output": 30, "cacheRead": 0.5, "cacheCreate": 5 } }`, then restart the daemon.
 
 - When an agent reaches 80% of its budget, you get one notice. It is not repeated that month.
 - When it reaches 100%, the agent is paused. Other agents keep working.
@@ -228,10 +231,10 @@ On a Claude subscription the figures are what the work would cost with an API ke
 
 3. Optional: to be warned at another share of the budget, add `"warnRatio"`, for example `"warnRatio": 0.5` for 50%.
 4. Save the file. The budget applies at once; no restart is needed.
-5. **Browser:** open `/admin/cost`. The **Monthly budgets** card shows the fleet, each project and each agent with its spend this month against its budget, with **On track**, **Near cap**, **Paused** or **No cap**.
+5. **Browser:** on the Wall, select **Cost**. Each agent's row shows its spend this month against its budget, and **Monthly caps** shows the fleet and each project, with **On track**, **Near cap**, **Paused** or **No cap**.
 6. **Browser:** on the Wall, select the agent. Its profile shows the same figure in one line, such as **Spent $12.50 of $100.00 this month** (see [See one agent's profile](../dashboard/wall.md#see-one-agent-s-profile)).
 
-![The Monthly budgets card on the Cost page: the fleet, a project near its cap, a paused agent, runs not priced, and the form to set a budget](/screenshots/costs/budgets.png)
+![Monthly caps on the Cost page: the fleet, a project near its cap, and the form with Cap for, Dollars a month and Save](/screenshots/wall/cost-caps.png)
 
 Waiting messages are saved in `.agentx/budget-holds.json`, so they are still there after the daemon restarts, and they run when the agent resumes.
 
@@ -239,12 +242,12 @@ Waiting messages are saved in `.agentx/budget-holds.json`, so they are still the
 
 You don't need to edit `agentx.json` by hand.
 
-1. **Browser:** open `/admin/cost`.
-2. On the **Monthly budgets** card, under **Budget for**, choose **All agents (fleet)**, a project or an agent. The box shows its current budget, or **No cap**.
+1. **Browser:** open the Wall and select **Cost**.
+2. Under **Monthly caps**, pick **All agents (fleet)**, a project or an agent in **Cap for**. You can also select **Set a cap** or **Change cap** on an agent's row. The box shows its current budget, or **No cap**.
 3. Type the most it may spend each month, in US dollars, or empty the box to remove the cap.
-4. Select **Save**. The card says `Saved`. AgentX writes the budget to `agentx.json` and applies it at once. A paused agent or project whose new budget is above its spend works again, and its waiting messages run.
+4. Select **Save**. The page says `Saved`. AgentX writes the budget to `agentx.json` and applies it at once. A paused agent or project whose new budget is above its spend works again, and its waiting messages run.
 
-If your dashboard has a token (`dashboard.token`), saving needs it, like the other admin pages.
+Only the owner can save: if your dashboard has a token (`dashboard.token`), saving needs it. The steps with screenshots are in [Set or raise a cap](../dashboard/wall.md#set-or-raise-a-cap).
 
 ### Cap a project or the whole fleet
 
@@ -270,12 +273,12 @@ A project works like an agent: one notice at 80%, and at 100% new runs for that 
 
 ## Check it worked
 
-1. **Browser:** open `/admin/cost`. The page shows a **Last ingest** time and figures for the period you picked.
+1. **Browser:** open the Wall and select **Cost**. The page shows this month's total and figures for the period you picked. Opening `/admin/cost` lands on the same page.
 2. **Terminal:** `agentx usage` prints `Token Usage (last 7 days)` followed by a total.
 3. **Terminal (developers, in a source copy):** `agentx usage report` ends with `Report: .agentx/reports/token_report.md`, and that file exists.
 4. **Terminal:** `agentx usage surfaces` prints `Surface usage — last 30 days`. The commands you ran in the folder, such as `usage surfaces` itself, appear in the list.
 5. **Terminal:** `agentx usage plan` prints `Claude plan (as Claude Code last reported it)`, then a line per window once an agent has run a turn.
-6. **Browser:** `/admin/cost` shows the **Monthly budgets** card with **Budget for** and **Save**. To try the pause, choose a test agent, type `0.01`, select **Save**, and send it two messages: the first runs, the second is refused with `Monthly budget reached`.
+6. **Browser:** the Cost page shows **Monthly caps** with **Cap for**, **Dollars a month** and **Save**. To try the pause, choose a test agent, type `0.01`, select **Save**, and send it two messages: the first runs, the second is refused with `Monthly budget reached`.
 7. **Terminal:** while that agent is paused, send it a chat message, then run `agentx daemon restart`. Raise its budget on the Cost page: the message runs and its answer reaches the chat.
 
 ## If something is wrong
@@ -297,8 +300,9 @@ A project works like an agent: one notice at 80%, and at 100% new runs for that 
 - **`Monthly budget reached: agent … has spent …`:** the agent used its budget for this month. Raise it on the Cost page, or `agents.<id>.budget.monthlyUsd` in `agentx.json`, or wait for the next month.
 - **`Monthly project budget reached: project … has spent …`:** the project used its budget for this month. Its agents still work on other projects. Raise it on the Cost page or under `dashboard.wall.projects`, or wait for the next month.
 - **`Monthly fleet budget reached: …`:** all agents together reached the top-level `budget.monthlyUsd`. Raise it on the Cost page or in `agentx.json`, or wait for the next month.
-- **The Monthly budgets card is missing:** the dashboard can't read `.agentx/db.sqlite` yet. Let an agent run once, then reload the page.
-- **Save says `Validation failed` or `no agent …`:** the value or the name was refused, and nothing was written. Check the agent or project still exists in `agentx.json`, and type a number of dollars.
-- **An agent's spend stays at `$0` with a budget set, and the card says `not priced`:** the agent runs on a model with no price in AgentX (a local model, or one newer than the built-in list), so the budget never pauses it. Add the model's price to `.agentx/pricing/custom.json` (see [Set a monthly budget](#set-a-monthly-budget-for-an-agent)) and restart the daemon, or check that provider's billing page.
+- **The Cost page says `Caps are not available: the budgets read failed`:** the dashboard can't read `.agentx/db.sqlite` yet. Let an agent run once, then select **Refresh**.
+- **Save says `Not saved: only the owner can change a cap`:** the dashboard has a token and this browser has not signed in with it. Sign in with the token, then save again.
+- **Save says `Not saved: Validation failed` or `Not saved: no agent …`:** the value or the name was refused, and nothing was written. Check the agent or project still exists in `agentx.json`, and type a number of dollars.
+- **An agent's spend stays at `$0` with a budget set, and its row says `not priced`:** the agent runs on a model with no price in AgentX (a local model, or one newer than the built-in list), so the budget never pauses it. Add the model's price to `.agentx/pricing/custom.json` (see [Set a monthly budget](#set-a-monthly-budget-for-an-agent)) and restart the daemon, or check that provider's billing page.
 - **A chat got `This message is kept and runs when the agent resumes` and no answer came:** the agent or its project is still over its budget. Raise it on the Cost page; the waiting messages run at once. They are kept across a restart in `.agentx/budget-holds.json`; if the daemon log says `couldn't read held messages`, that file was damaged and the messages in it must be sent again.
 - **Spending is higher than expected:** check **Settings** › **Schedules** for jobs that run very often, and lower their frequency.

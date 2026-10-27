@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; respond?: (url: string, init: any) => Promise<unknown> | undefined } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -38,7 +38,11 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const el = (id: string) => {
     if (!els.has(id)) {
       // The open post's action box (wdo-*) is drawn by the script itself.
-      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (id.startsWith("wdo-") ? [`<x id="${id}">`] : null)
+      const find = (html: string) => new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(html)
+      // Or one the script drew, such as the Cost page's caps form (wcost-cap-*).
+      const drawn = id.startsWith("wcost-cap-") ? [...els.values()].map((e) => find(e.innerHTML)).find(Boolean) ?? null : null
+      if (id.startsWith("wcost-cap-") && !drawn) return null
+      const tag = find(page) ?? drawn ?? (id.startsWith("wdo-") ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       const on: Record<string, (ev: unknown) => void> = {}
@@ -55,7 +59,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
             els.get(m[2]).value = m[1] === "textarea" ? m[3] : (/\bvalue="([^"]*)"/.exec(m[0])?.[1] ?? "")
           }
         },
-        id, hidden: /\shidden[\s>]/.test(tag[0]), textContent: "", value: id === "f-status" ? "open" : "", checked: false,
+        id, hidden: /\shidden[\s>]/.test(tag[0]), textContent: "", focus: () => {}, value: id === "f-status" ? "open" : "", checked: false,
         type: /type="checkbox"/.test(tag[0]) ? "checkbox" : /type="search"/.test(tag[0]) ? "search" : "select",
         classList: classes(), parentNode: { classList: classes() },
         addEventListener: (t: string, f: (ev: unknown) => void) => { on[t] = f }, setAttribute: (k: string, v: string) => { attrs[k] = v },
@@ -66,8 +70,12 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const wall = { classList: classes() }
   const onDoc: Record<string, Array<(ev: any) => void>> = {}
   const onWindow: Record<string, () => void> = {}
+  const saved: Array<{ download: string }> = []
   const doc = {
     getElementById: el, hidden: false,
+    // The CSV export's download link.
+    createElement: () => ({ href: "", download: "", click() { saved.push(this) }, remove() {} }),
+    body: { appendChild: () => {} },
     querySelector: (sel: string) => (sel === ".ax-wall" ? wall : null),
     querySelectorAll: () => [],
     addEventListener: (t: string, f: (ev: any) => void) => { (onDoc[t] ??= []).push(f) },
@@ -76,6 +84,8 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const calls: Array<{ url: string; init: any }> = []
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
+    const own = opts.respond?.(url, init)
+    if (own) return own
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.post && url === "/api/admin/wall/post") return opts.post
     if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
@@ -105,7 +115,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   /** The browser's hashchange, as after `location.hash = …`. */
   const hashchange = () => onWindow.hashchange?.()
-  return { el, wall, calls, click, change, settle, loc, hashchange }
+  return { el, wall, calls, click, change, settle, loc, hashchange, saved }
 }
 
 describe("Wall as a social feed (#1207)", () => {
@@ -1410,5 +1420,97 @@ describe("The Cost page on the Wall (#1423)", () => {
     await w.settle()
     expect(w.el("wall-cost").hidden).toBe(true)
     expect(w.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+})
+
+describe("Caps and CSV on the Wall's Cost page (#1449)", () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const COST = { generatedAt: new Date().toISOString(), kpis: { spendToday: 1.5, spend7d: 4, spendDeltaWoW: 0.25 },
+    days: [{ date: today, cost: 4, tasks: 3, input: 100, output: 20, cacheRead: 300, cacheCreate: 10, agents: { cx: { cost: 3, tasks: 2 }, reviewer: { cost: 1, tasks: 1 } } }] }
+  const BUDGETS = { month: "2026-10", agentIds: ["cx", "reviewer"], projects: [], agents: [{ agentId: "cx", spentUsd: 3, capUsd: 10, state: "ok" }], fleet: { spentUsd: 4, state: "uncapped" } }
+  const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => body })
+
+  it("an agent row picks that agent in the form, and Save posts the cap with the token, then reads the budgets again", async () => {
+    let budgets: any = BUDGETS
+    const w = openWall({
+      hash: "#status=open&view=cost", cost: COST,
+      respond: (url, init) => url === "/api/admin/budgets" ? ok({ ok: true })
+        : url === "/api/admin/observability/budgets" ? ok(budgets) : undefined,
+    })
+    await w.settle()
+    w.click({ "data-ccap": "agent:cx" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:cx" selected>Agent Customer Desk</option>')
+    expect(w.el("wcost-cap-usd").value).toBe("10")
+    w.el("wcost-cap-usd").value = "25"
+    budgets = { ...BUDGETS, agents: [{ agentId: "cx", spentUsd: 3, capUsd: 25, state: "ok" }] }
+    w.click({ "data-ccapsave": "" })
+    await w.settle()
+    const post = w.calls.find((c) => c.url === "/api/admin/budgets")!
+    expect(post.init.method).toBe("POST")
+    expect(JSON.parse(post.init.body)).toEqual({ scope: "agent", id: "cx", monthlyUsd: 25 })
+    expect(w.calls.filter((c) => c.url === "/api/admin/observability/budgets").length).toBe(2)
+    const html = w.el("wall-cost").innerHTML
+    expect(html).toContain("Saved. It applies now")
+    expect(html).toContain("$3.00 of $25.00 this month")
+  })
+
+  it("the fleet with an empty box removes the cap", async () => {
+    const w = openWall({ hash: "#status=open&view=cost", cost: COST, budgets: BUDGETS,
+      respond: (url) => url === "/api/admin/budgets" ? ok({ ok: true }) : undefined })
+    await w.settle()
+    w.el("wcost-cap-usd").value = ""
+    w.click({ "data-ccapsave": "" })
+    await w.settle()
+    expect(JSON.parse(w.calls.find((c) => c.url === "/api/admin/budgets")!.init.body)).toEqual({ scope: "fleet", monthlyUsd: null })
+    expect(w.el("wall-cost").innerHTML).toContain("Saved: no cap.")
+  })
+
+  it("says only the owner can change a cap when the server refuses it", async () => {
+    const w = openWall({ hash: "#status=open&view=cost", cost: COST, budgets: BUDGETS,
+      respond: (url) => url === "/api/admin/budgets" ? Promise.resolve({ ok: false, status: 401, json: async () => ({ error: "unauthorized" }) }) : undefined })
+    await w.settle()
+    w.el("wcost-cap-usd").value = "50"
+    w.click({ "data-ccapsave": "" })
+    await w.settle()
+    expect(w.el("wcost-cap-msg").textContent).toBe("Not saved: only the owner can change a cap. Sign in with the dashboard token.")
+  })
+
+  it("Export CSV downloads the range picked, and All reads everything", async () => {
+    const csv = { ok: true, status: 200, headers: { get: () => 'attachment; filename="agentx-cost-all-1.csv"' }, blob: async () => new Blob(["date\n"]) }
+    const w = openWall({ hash: "#status=open&view=cost", cost: COST, budgets: BUDGETS,
+      respond: (url) => url.startsWith("/api/admin/observability/cost.csv") ? Promise.resolve(csv) : undefined })
+    await w.settle()
+    w.click({ "data-crange": "0" })
+    await w.settle()
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/observability/cost?range=all")
+    w.click({ "data-ccsv": "" })
+    await w.settle()
+    const get = w.calls.find((c) => c.url.startsWith("/api/admin/observability/cost.csv"))!
+    expect(get.url).toBe("/api/admin/observability/cost.csv?range=all")
+    expect(get.init.headers["X-Requested-With"]).toBe("agentx-board")
+    expect(w.saved.map((a) => a.download)).toEqual(["agentx-cost-all-1.csv"])
+  })
+
+  it("says so when the CSV export fails", async () => {
+    const w = openWall({ hash: "#status=open&view=cost", cost: COST, budgets: BUDGETS,
+      respond: (url) => url.startsWith("/api/admin/observability/cost.csv") ? Promise.resolve({ ok: false, status: 500 }) : undefined })
+    await w.settle()
+    w.click({ "data-ccsv": "" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<p class="wc__warn" role="alert">Export failed: HTTP 500.</p>')
+    expect(w.saved).toEqual([])
+  })
+
+  it("the token mix and daily detail open on demand", async () => {
+    const w = openWall({ hash: "#status=open&view=cost", cost: COST, budgets: BUDGETS })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).not.toContain("<table")
+    w.click({ "data-cmore": "" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain(`<tr><td>${today}</td><td class="num">3</td>`)
+    w.click({ "data-cfilter": "over10" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain("No days match this filter.")
   })
 })
