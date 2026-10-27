@@ -4189,6 +4189,31 @@ An agent's content calendar (`calendar.md` in its workspace).
 | `--agent <id>` | required | The content agent, such as `content`. |
 | `--days <n>` | `14` | How many days ahead. |
 
+## tv (advanced)
+
+`agentx tv`: AgentX TV (experimental): the Wall as a news channel. **Advanced.** See [AgentX TV](../dashboard/tv.md).
+
+### `agentx tv make`
+
+Make one episode of a show from a day's public activity. Without a render flag, it writes the script only and the TV page reads it live.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--show <id>` | `the-build` | The show to make. Only `the-build` is on air. |
+| `--repo <owner/name>` | — | The public GitHub repository it covers. Unset: the current folder's Git origin. |
+| `--day <YYYY-MM-DD>` | — | The day it covers. Unset: today. |
+| `--render-on <host>` | — | Make the voice-over and the video on this render server, over SSH. |
+| `--render-here` | — | Make the voice-over and the video on this machine. Refused on a Mac. |
+
+### `agentx tv list`
+
+A day's line-up, and the other days that have one.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--day <YYYY-MM-DD>` | — | The day. Unset: today. |
+| `--json` | — | Machine-readable output. |
+
 ## demo (advanced)
 
 `agentx demo`: Zero-key demo: three daemons, a real A2A mesh, a scripted scenario. **Advanced.**

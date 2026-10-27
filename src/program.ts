@@ -38,6 +38,7 @@ import { backlog } from "@/commands/backlog"
 import { schedule } from "@/commands/schedule"
 import { team } from "@/commands/team"
 import { sales } from "@/commands/sales"
+import { tv } from "@/commands/tv"
 import { approvals } from "@/commands/approvals"
 import { people } from "@/commands/people"
 import { requests } from "@/commands/requests"
@@ -181,6 +182,8 @@ const ADVANCED = [
   whatsapp, demo,
   // Posts drafted in your voice (the content team)
   content,
+  // AgentX TV, the Wall as a news channel (experimental, #1471)
+  tv,
   // One-shot task for scripts and benchmarks
   execCmd,
   // Deprecated — superseded by `agentx attach`

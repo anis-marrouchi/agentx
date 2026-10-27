@@ -30,3 +30,9 @@ export function loadNativeAdapter(
   const make = (opts.factories ?? FACTORIES)[platform]
   return make ? make(cfg, opts.io ?? {}) : noneAdapter(`AgentX has no native adapter for ${platform} yet.`)
 }
+
+/** Whether this is a Mac. Heavy work, such as rendering AgentX TV's video
+ *  (#1471), runs on another machine when it is. */
+export function isMac(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "darwin"
+}

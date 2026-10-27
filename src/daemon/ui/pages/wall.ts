@@ -60,6 +60,7 @@ const NAV_ICON = {
   reviews: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 10l2.5 2.5L16 8"/></svg>',
   failures: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
   cost: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2"/></svg>',
+  tv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="m8 2 4 4 4-4"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   space: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
@@ -83,6 +84,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <a class="ax-wall__item" data-nav="reviews" href="#status=open&amp;view=reviews" title="Reviews">${NAV_ICON.reviews}<span>Reviews</span><b class="ax-wall__n" id="wall-rev-n"></b></a>
     <a class="ax-wall__item" data-nav="failures" href="#status=open&amp;view=failures" title="Failures">${NAV_ICON.failures}<span>Failures</span><b class="ax-wall__n" id="wall-fail-n"></b></a>
     <a class="ax-wall__item" data-nav="cost" href="#status=open&amp;view=cost" title="Cost">${NAV_ICON.cost}<span>Cost</span><b class="ax-wall__n" id="wall-cost-n"></b></a>
+    <a class="ax-wall__item" data-nav="tv" href="/wall/tv" title="AgentX TV: today's line-up">${NAV_ICON.tv}<span>TV</span></a>
     <a class="ax-wall__item" data-nav="agents" href="#page=agents" title="Agents">${NAV_ICON.agents}<span>Agents</span><b class="ax-wall__n" id="nav-n-agents"></b></a>
     <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages">${NAV_ICON.more}<span>More</span></button>

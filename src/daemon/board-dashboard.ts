@@ -36,6 +36,8 @@ import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphD
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderWallPage } from "./ui/pages/wall"
+import { renderWallTvPage } from "./ui/pages/wall-tv"
+import { isTvMediaPath, serveTvVideo, tvLineupReply, TV_API_PATH, TV_PAGE_PATH } from "./wall-tv"
 import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
@@ -206,6 +208,7 @@ const DASHBOARD_PAGES = new Set([
   "/",
   "/live",
   "/wall",
+  "/wall/tv",
   "/mesh",
   "/monitor",
   "/activity",
@@ -334,6 +337,19 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    return
+  }
+  // AgentX TV (#1471): the page, and each episode's video, gated like the
+  // page because a <video> cannot send the token (wall-tv.ts).
+  if (method === "GET" && path === TV_PAGE_PATH) {
+    if (!pageAllowed(req, res, ctx, path)) return
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
+    res.end(renderWallTvPage({ localToken: pageToken(req, ctx.token) }))
+    return
+  }
+  if (method === "GET" && isTvMediaPath(path)) {
+    if (!pageAllowed(req, res, ctx, path)) return
+    serveTvVideo(req, res, path)
     return
   }
   if (method === "GET" && path === "/live") {
@@ -879,6 +895,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const body = method === "POST" ? await readJson(req) : {}
     const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config) })
     sendJson(res, reply!.status, reply!.body)
+    return
+  }
+  // AgentX TV's line-up (#1471): read-only, after the token gate above.
+  if (method === "GET" && path === TV_API_PATH) {
+    const reply = tvLineupReply(url.searchParams)
+    sendJson(res, reply.status, reply.body)
     return
   }
   // The Wall (#1180): read-only posts and threads from this node's records.
