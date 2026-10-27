@@ -16,6 +16,10 @@ import AppKit
 ///   {"cmd":"park"}    return beside the person's own pointer, no highlight
 ///   {"cmd":"ping"}    nothing; keeps an idle overlay alive
 ///
+/// and reports on stdout what the person did to it, one JSON object per line:
+///
+///   {"event":"dismiss"}  the × on the name tag was clicked; it then fades out
+///
 /// Coordinates are accessibility coordinates (top-left origin, global),
 /// the same as `read`, `ocr` and `point`.
 ///
@@ -279,6 +283,11 @@ enum Presence {
             quitting = true
             ctl.fadeOut { exit(0) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+        }
+        // The × on the tag: tell the owner, then go, whether or not it listens.
+        ctl.tag.onClose = {
+            FileHandle.standardOutput.write("{\"event\":\"dismiss\"}\n".data(using: .utf8)!)
+            quit()
         }
         DispatchQueue(label: "tn.acme.agentx.presence.stdin").async {
             while let line = readLine(strippingNewline: true) {

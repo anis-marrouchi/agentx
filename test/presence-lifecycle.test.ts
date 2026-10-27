@@ -171,4 +171,33 @@ describe("PresenceOverlay process", () => {
     expect(args[args.indexOf("--pos-file") + 1]).toBe(join(dir, "team_secretary.pos"))
     overlay.close()
   })
+
+  it.skipIf(process.platform === "win32")("the × on the tag reaches the owner as a dismiss, once (#1493)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "presence-"))
+    const helper = join(dir, "agentx-mac-helper")
+    // A helper whose person clicks × at once: noise, then the event split across writes.
+    writeFileSync(helper, `#!/bin/sh\nprintf 'not json\\n{"event":"dis'\nsleep 0.1\nprintf 'miss"}\\n{"event":"dismiss"}\\n'\ncat >/dev/null\n`)
+    chmodSync(helper, 0o755)
+    const overlay = new PresenceOverlay(presenceLook("secretary-agent", agents["secretary-agent"]), helper, "secretary-agent", dir)
+    let n = 0
+    overlay.onDismiss(() => n++)
+    for (let i = 0; i < 100 && n === 0; i++) await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 100))
+    expect(n).toBe(1)
+    overlay.close()
+  })
+
+  it("a lesson whose overlay is closed on screen ends (#1493)", () => {
+    let dismiss = () => {}
+    const host = new PresenceHost(() => agents, () => {}, {
+      overlay: () => ({ moveTo() {}, say() {}, clear() {}, park() {}, close() {}, onDismiss: (fn: () => void) => { dismiss = fn } }),
+    })
+    const l = host.lesson("secretary-agent", "open the pulls page", "teach", speech(), () => new IdleModel())
+    const ended: string[] = []
+    l.on((e) => { if (e.type === "end") ended.push(e.reason) })
+    dismiss()
+    expect(l.state).toBe("ended")
+    expect(ended).toEqual(["dismissed on screen"])
+    expect(host.onScreen).toEqual([])
+  })
 })

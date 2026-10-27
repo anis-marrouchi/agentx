@@ -8140,7 +8140,8 @@ export class AgentXDaemon {
             const started = this.voiceTalk.startLesson(agentId, message, presence.mode, presence.app ?? undefined)
             if (started.status === 201) {
               this.voiceIntros.spoke(session, agentId)
-              const text = presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen."
+              // The way out is said up front: a lesson is never a surprise to end (#1493).
+              const text = (presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen.") + " Say stop when you're done."
               this.json(res, 200, { agentId, voice, presence, text, full: text, ui: null })
               break
             }

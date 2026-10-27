@@ -129,6 +129,10 @@ export class PresenceHost {
       clear: () => slot.presence.clear(),
       park: () => slot.presence.park(),
       close: () => { if (this.slots.get(agentId) === slot) this.hide(agentId) },
+      onDismiss: (fn) => slot.presence.onDismiss?.(() => {
+        this.log(`[presence] ${agentId} closed on screen`)
+        fn()
+      }),
     }
   }
 
