@@ -1479,8 +1479,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
-  // /api/actions/builtin — proxy GET to the daemon. The /procedures page
-  // reads the live built-in catalog from this endpoint; daemon owns the
+  // /api/actions/builtin — proxy GET to the daemon. Callers read the
+  // live built-in catalog from this endpoint; daemon owns the
   // typed registry, dashboard runs in a separate process.
   if (method === "GET" && path === "/api/actions/builtin") {
     try {

@@ -478,8 +478,8 @@ export class AgentXDaemon {
     // Empty file (or missing file) is fine — operators populate it later.
     this.contacts = new ContactDirectory(process.cwd(), this.log)
 
-    // The daemon renders a few shell pages itself (/inbox, /processes) —
-    // give their topbar the same feature flags the 4202 dashboard uses.
+    // Any page the daemon renders itself gets the same topbar feature
+    // flags the 4202 dashboard uses.
     setTopbarFeatures({
       business: this.config.business?.enabled === true,
     })
@@ -6650,9 +6650,8 @@ export class AgentXDaemon {
 
       // Persistent-process registry — operator surface (improvement plan #5,
       // persistent flavor). Returns 503 when no agent has persistentProcess
-      // enabled (registry singleton not initialized). The path lives under
-      // /api/processes so it doesn't collide with the existing /processes
-      // HTML dashboard route registered earlier in this dispatcher.
+      // enabled (registry singleton not initialized). The old /processes
+      // HTML page is retired; the dashboard redirects it to the Wall.
       //   GET  /api/processes
       //   POST /api/processes/kill   { agentId, channel, chatId, reason? }
       if (req.method === "GET" && path === "/api/processes") {
