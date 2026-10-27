@@ -965,6 +965,21 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_picture",
+    description:
+      "Set or remove your own profile picture, shown on the Wall, the Org page and Settings instead of your initials. " +
+      "Use it when the owner asks you to pick or make a picture for yourself: save the image as a file first, then set it. " +
+      "PNG, JPEG or WebP, 1 MB at most; it is cut to a square and its metadata is dropped. Only your own picture: another agent's is refused. " +
+      "Example: {action:'set', file:'avatar.png'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["set", "remove"], description: "set (default) or remove: remove brings your initials back." },
+        file: { type: "string", description: "set: path to the picture, absolute or relative to your workspace." },
+      },
+    },
+  },
+  {
     name: "agentx_note",
     description:
       "Put an idea for the owner into their notes app (Apple Notes, folder AgentX), instead of sending it in chat. " +
@@ -1952,6 +1967,15 @@ async function handleToolCall(
       const { runContentTool } = await import("@/content/tool")
       const text = await runContentTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_picture": {
+      const { setOwnPicture } = await import("@/pictures/self")
+      const remove = String(args.action || "set").toLowerCase() === "remove"
+      const file = typeof args.file === "string" ? args.file.trim() : ""
+      if (!remove && !file) return { content: [{ type: "text", text: "Error: `file` is required to set your picture." }] }
+      const r = await setOwnPicture(remove ? null : file, undefined, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text: r.ok ? r.message : `Error: ${r.message}` }] }
     }
 
     case "agentx_note": {

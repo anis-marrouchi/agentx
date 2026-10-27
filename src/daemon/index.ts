@@ -164,6 +164,8 @@ import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOri
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
+import { AGENT_PICTURE_PATH } from "@/pictures/pictures"
+import { handleAgentPicture } from "@/daemon/pictures-panel"
 import { INTERRUPT_SETTLE_MS, describeShutdown, drainLimitMs, interruptionReason, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest, type ShutdownRequest } from "@/daemon/shutdown"
 import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type ServiceInfo } from "@/daemon/restart"
 import { detectService, readRespawn } from "@/daemon/restart-host"
@@ -5808,6 +5810,12 @@ export class AgentXDaemon {
       // Routes, versions and conditional writes: memory-api.ts.
       if (isMeshGatedPath(path)) {
         if (await this.handleMemoryApi(req, res, path, url)) return
+      }
+      // An agent sets or removes its own picture (#1425), from its own run:
+      // the task or chat it names must be a running turn of that agent.
+      if (path === AGENT_PICTURE_PATH) {
+        await handleAgentPicture(req, res, url, { root: process.cwd(), provenAgent: (claimed) => this.provenAgent(this.callerProof(req), claimed) })
+        return
       }
 
         // GET /api/n8n/workflows — the operator's own n8n workflows, so the

@@ -25,6 +25,8 @@ export default defineConfig({
   clean: true,
   dts: true,
   entry: ["src/index.ts", "src/cli.ts"],
+  // Optional and native (#1425): loaded at run time, when a picture is set.
+  external: ["sharp"],
   format: ["esm"],
   sourcemap: true,
   minify: true,
