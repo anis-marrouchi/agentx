@@ -17,12 +17,12 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
    - **Owner:** **Settings**.
 
-   Under them, **Dashboard** opens the classic pages at **Operations**. **Workflows**, **People**, **Org** and **Settings** open their classic page until they are built on the Wall. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, and agents. The page you are on is in bold.
+   Under them, **Dashboard** opens the classic pages at **Operations**. **Workflows**, **Org** and **Settings** open their classic page until they are built on the Wall. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, people listed, and agents. The page you are on is in bold.
 3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Wall's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Wall's title row: Wall, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
-4. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. Cost is a Wall page now (see [See what the fleet costs](#see-what-the-fleet-costs)), and so is Live: `/live` opens [Live](#live-sessions).
+4. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Operations**, **Monitor**, **Approvals**, **Org**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. Cost is a Wall page now (see [See what the fleet costs](#see-what-the-fleet-costs)), and so is Live: `/live` opens [Live](#live-sessions). People moved to the Wall: `/people` opens the Wall's [People](./people.md) page.
 5. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
 6. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
@@ -516,6 +516,14 @@ When the intent graph (`graph.enabled` in `agentx.json`) is not sure where a mes
 
 A skipped classification stays pending: a skip is not recorded. The wiki searches a reviewer ran are not recorded either, so the link searches the path's names instead. Classifications the graph approved by itself never went to review; the count line says how many.
 
+## See who talks to the agents
+
+The **People** page lists everyone who talks to your agents: you, your teammates, your clients and guests, with the machines each paired and what each asked for. Select **People** in the nav. Each person links to their open requests on the Wall, which opens the feed with only their posts. The full page is described in [People](./people.md).
+
+![The People page: one row per person with their role, identities, machines and open requests](/screenshots/wall/people.png)
+
+*Fictional data; your people will differ.*
+
 ## See what the fleet costs
 
 The **Cost** page shows what your agents spent, in total and per agent, on every machine the Wall reads. It also holds everything the old Cost page had: the token mix, cache use, every day's figures, the CSV export and the monthly budgets. The old addresses `/admin/cost` and `/cost` now open this page. For what the dollar figures mean, see [Costs](../help/costs.md).
@@ -648,6 +656,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 33. Select **Activity** in the nav. The run of the task you sent in step 2 is at the top, with its agent and **Done** (or **Running** if it is still working). Select the **Failed** tab: only failed runs are left, and the address now has `a-result=failed`. Select a row: it opens in place with what it was asked.
 34. Build line: the right of the Wall's title shows the same version as the first line of `agentx daemon status` in a terminal.
 35. Phone: open the Wall at 390 px wide (or on a phone) and select **More**. The sheet lists **Work**, **Automation** and **Fleet**. Select **Activity**: the sheet closes and the Activity page opens.
+36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Wall** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 
 ## If something is wrong
 

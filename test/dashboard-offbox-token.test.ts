@@ -12,7 +12,7 @@ import { isOffBox, pageToken, sessionValue } from "../src/daemon/dashboard-sessi
 
 const TOKEN = "dash-secret"
 const OFF = { "X-Forwarded-For": "100.64.0.9" }
-const PAGES = ["/wall", "/admin", "/approvals", "/admin/graph", "/people", "/admin/agents/ops", "/admin/health", "/admin/ledger"]
+const PAGES = ["/wall", "/admin", "/approvals", "/admin/graph", "/admin/agents/ops", "/admin/health", "/admin/ledger"]
 
 let server: Server | undefined
 
@@ -52,6 +52,9 @@ describe("dashboard pages off-box (#1306)", () => {
     }
     const r = await fetch(base + "/admin", { headers: OFF, redirect: "manual" })
     expect(r.headers.get("location")).toBe("/login?next=%2Fadmin")
+    // /people moved to the Wall (#1441): off-box it still signs in first.
+    const people = await fetch(base + "/people", { headers: OFF, redirect: "manual" })
+    expect(people.headers.get("location")).toBe("/login?next=%2Fpeople")
   })
 
   it("refuses off-box /api/admin/* without a token or session", async () => {

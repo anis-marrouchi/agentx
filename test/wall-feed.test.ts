@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -90,10 +90,14 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     }
     if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
     if (url.startsWith("/api/admin/observability/cost?") && opts.cost === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
+    if (url === "/api/admin/people" && opts.people === "fail") return Promise.resolve({ ok: false, status: 401, json: async () => ({}) })
+    if (url.endsWith("/end")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) })
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live?quick=1" ? (opts.live ?? LIVE)
       : url === "/api/admin/org" ? (opts.org ?? { exists: false })
       : url.startsWith("/api/admin/observability/cost?") ? (opts.cost ?? { days: [] })
       : url === "/api/admin/observability/budgets" && opts.budgets ? opts.budgets
+      : url === "/api/admin/people" ? (opts.people ?? { people: [], paired: 0 })
+      : url.startsWith("/api/admin/people/") && opts.person ? opts.person[decodeURIComponent(url.slice(18))]
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {})
       : opts.thread && url.startsWith("/api/admin/wall/thread?") ? opts.thread : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
@@ -375,7 +379,7 @@ describe("Wall home first load (#1442)", () => {
     answer({ ok: true, status: 200, json: async () => WALL })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
-    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/observability/budgets", "/api/admin/org", "/api/workflows/runs?summary=1&limit=100"])
+    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/workflows/runs?summary=1&limit=100"])
   })
 
   it("shows a machine that is slow to answer as checking, not down, and asks again", async () => {
@@ -1480,6 +1484,100 @@ describe("The Cost page on the Wall (#1423)", () => {
     await w.settle()
     expect(w.el("wall-cost").hidden).toBe(true)
     expect(w.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+})
+
+describe("The People page on the Wall (#1441)", () => {
+  const PEOPLE = { paired: 2, people: [
+    { id: "owner", name: "Owner of this machine", role: "owner", identities: [], agents: [], builtIn: true, machines: { active: 0, pending: 0 } },
+    { id: "sara", name: "Sara B", role: "member", identities: ["gitlab:sara.b"], agents: ["cx"], machines: { active: 1, pending: 1 } },
+  ] }
+  const SARA = {
+    person: PEOPLE.people[1], database: true,
+    devices: [
+      { tokenId: "tok_laptop", personId: "sara", name: "Sara laptop", state: "active", address: "100.64.0.7", network: "sara@", createdAt: "2026-10-01T09:00:00.000Z", lastSeenAt: "2026-10-26T09:00:00.000Z" },
+      { tokenId: "tok_phone", personId: "sara", name: "Sara phone", state: "pending", createdAt: "2026-10-26T10:00:00.000Z" },
+    ],
+    requests: [
+      { id: "r9", state: "in_progress", channel: "gitlab", agentId: "cx", text: "[agentx:same-home] Fix the  checkout", createdAt: NOW - 3600e3 },
+      { id: "r8", state: "done", channel: "gitlab", agentId: "cx", text: "Old ask", createdAt: NOW - 86400e3 },
+    ],
+    runs: [{ taskId: "T1", agentId: "cx", channel: "gitlab", status: "ok", startedAt: NOW - 3600e3, messagePreview: "Fix the checkout" }],
+  }
+  const DATA = { ...WALL, posts: [...WALL.posts, post("r9", "cx", "in_progress", { askedBy: "sara" }), post("r8", "cx", "done", { askedBy: "sara" })] }
+
+  it("opens from the nav with everyone listed, their role, identities and open requests on the Wall", async () => {
+    const w = openWall({ hash: "#page=people", data: DATA, people: PEOPLE })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("People")
+    expect(w.el("nav-n-people").textContent).toBe("2")
+    expect(w.el("wall-people").hidden).toBe(false)
+    expect(w.el("wall-feed").hidden).toBe(true)
+    const html = w.el("wall-people").innerHTML
+    expect(html).toContain("Owner of this machine")
+    expect(html).toMatch(/Sara B[\s\S]*Member[\s\S]*gitlab:sara\.b[\s\S]*Customer Desk/)
+    expect(html).toContain("<b>1</b> waiting for approval")
+    expect(html).toContain('<a href="#status=open&asker=sara"><b>1</b> open request on the Wall</a>')
+    expect(html).not.toContain("Nobody has paired")
+  })
+
+  it("opens a person: machines, open requests linked to their posts, earlier ones folded, turns to the Task page", async () => {
+    const w = openWall({ hash: "#page=people", data: DATA, people: PEOPLE, person: { sara: SARA } })
+    await w.settle()
+    w.click({ "data-pp-open": "sara" })
+    await w.settle()
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/people/sara")
+    const html = w.el("wall-people").innerHTML
+    expect(html).toMatch(/Sara laptop[\s\S]*Active[\s\S]*End access[\s\S]*100\.64\.0\.7[\s\S]*as sara@/)
+    expect(html).toMatch(/Sara phone[\s\S]*Waiting for your approval/)
+    expect(html).toContain('<a href="#post=r9" class="wpp__text">Fix the checkout</a>')
+    expect(html).toContain("1 earlier request")
+    expect(html).toMatch(/href="#page=task&amp;task=T1&amp;agent=cx[^"]*"/)
+    // No raw markers or machine ids in the text.
+    expect(html).not.toContain("[agentx:")
+    expect(html.replace(/data-pp-end="[^"]*"/g, "")).not.toContain("tok_laptop")
+  })
+
+  it("ends one machine through the people API, then reads the list again", async () => {
+    const w = openWall({ hash: "#page=people", data: DATA, people: PEOPLE, person: { sara: SARA } })
+    await w.settle()
+    w.click({ "data-pp-open": "sara" })
+    await w.settle()
+    const before = w.calls.filter((c) => c.url === "/api/admin/people").length
+    w.click({ "data-pp-end": "tok_laptop", "data-pp-person": "sara", "data-pp-name": "Sara laptop" })
+    await w.settle()
+    const end = w.calls.find((c) => c.url === "/api/admin/people/sara/devices/tok_laptop/end")!
+    expect(end.init.method).toBe("POST")
+    expect(end.init.headers["X-Requested-With"]).toBe("agentx-board")
+    expect(w.calls.filter((c) => c.url === "/api/admin/people").length).toBe(before + 1)
+    expect(w.el("wall-people").innerHTML).toContain("Access ended for &quot;Sara laptop&quot;.")
+  })
+
+  it("a person's link shows only what they asked, with a way back to everyone", async () => {
+    const w = openWall({ hash: "#status=open&asker=sara", data: DATA, people: PEOPLE })
+    await w.settle()
+    expect(w.el("f-asker").value).toBe("sara")
+    const feed = w.el("wall-feed").innerHTML
+    expect(feed).toContain("Post r9")
+    expect(feed).not.toContain("Post r1")
+    expect(w.el("wall-count").innerHTML).toContain("asked by Sara B")
+    w.click({ "data-asker-clear": "" })
+    await w.settle()
+    expect(w.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+
+  it("shows how to invite someone when nobody is paired, and says so when the list cannot be read", async () => {
+    const none = openWall({ hash: "#page=people", people: { paired: 0, people: [PEOPLE.people[0]] } })
+    await none.settle()
+    expect(none.el("wall-people").innerHTML).toContain("Nobody has paired a machine yet")
+    expect(none.el("wall-people").innerHTML).toContain("agentx people invite sara")
+    const bad = openWall({ hash: "#page=people", people: "fail" })
+    await bad.settle()
+    expect(bad.el("wall-people").innerHTML).toContain("Could not read the people list: HTTP 401")
+    bad.click({ "data-view": "feed" })
+    await bad.settle()
+    expect(bad.el("wall-people").hidden).toBe(true)
+    expect(bad.el("wall-feed").innerHTML).toContain("Post r1")
   })
 })
 

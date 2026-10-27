@@ -25,6 +25,7 @@ import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 import { WALL_COST_CSS } from "./wall-cost.client"
+import { WALL_PEOPLE_CSS } from "./wall-people.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_TASK_CSS } from "./wall-task.client"
@@ -41,7 +42,7 @@ export interface WallPageOpts {
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
   ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
-  ["People", "/people"], ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
+  ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
 /** The status tabs over the feed and the list (#1355): filter value, label. */
@@ -84,8 +85,8 @@ interface NavItem { key: string; label: string; href: string; icon: NavIcon; cou
 
 /**
  * The nav, grouped (#1451 frame 0): one list for the left nav and the
- * phone's More sheet. Pages not on the Wall yet (Workflows, People, Org,
- * Settings) open their classic page until they are built. The Wall is
+ * phone's More sheet. Pages not on the Wall yet (Workflows, Org, Settings)
+ * open their classic page until they are built. The Wall is
  * the owner's dashboard (members have /member), so Settings is listed.
  */
 export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
@@ -107,7 +108,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   ] },
   { label: "Fleet", items: [
     { key: "agents", label: "Agents", href: "#page=agents", icon: "agents", count: "nav-n-agents" },
-    { key: "people", label: "People", href: "/people", icon: "people" },
+    { key: "people", label: "People", href: "#page=people", icon: "people", count: "nav-n-people" },
     { key: "org", label: "Org", href: "/org", icon: "org" },
     { key: "cost", label: "Cost", href: "#status=open&amp;view=cost", icon: "cost", count: "wall-cost-n" },
   ] },
@@ -176,6 +177,7 @@ ${navItems}
     </header>
     <section class="ax-wall__filters" id="wall-filters" aria-label="Filters">
       <label>Owner <select id="f-owner"><option value="">All</option></select></label>
+      <label>Asked by <select id="f-asker"><option value="">All</option></select></label>
       <label>Counted for <select id="f-load"><option value="">All</option></select></label>
       <label>Status <select id="f-status">
         <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option><option value="stalled">Stalled</option>
@@ -215,6 +217,7 @@ ${navItems}
     <section id="wall-cost" class="ax-wall__cost" aria-label="Cost: global and per agent" hidden></section>
     <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
     <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
+    <section id="wall-people" class="ax-wall__people" aria-label="People who talk to the agents" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
@@ -242,7 +245,7 @@ ${navItems}
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

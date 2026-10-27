@@ -931,8 +931,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     })
     return
   }
-  // People (#441): the page and its /api/admin/people data, after the token
-  // gate above. The people list is read per request, like the member page.
+  // People (#441): /api/admin/people, after the token gate above; /people
+  // itself goes to the Wall's People page (#1441). The people list is read
+  // per request, like the member page.
   // Org (#1169): the org chart, after the token gate above. Its data is
   // /api/admin/org, in admin-panel.ts.
   if (method === "GET" && path === "/org") {
@@ -944,7 +945,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/people" && !pageAllowed(req, res, ctx, path)) return
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
-    root: process.cwd(), db: () => dashboardDb(), peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token),
+    root: process.cwd(), db: () => dashboardDb(),
   })) return
   if (path.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, path)

@@ -341,8 +341,9 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
       "Fleet", "agents", "people", "org", "cost", "Owner", "settings", "dashboard", "creator"])
     // Not on the Wall yet: they open their classic page until built.
     expect(nav).toContain('data-nav="workflows" href="/workflows"')
-    expect(nav).toContain('data-nav="people" href="/people"')
     expect(nav).toContain('data-nav="org" href="/org"')
+    // People is on the Wall (#1441).
+    expect(nav).toContain('data-nav="people" href="#page=people"')
     expect(nav).toContain('data-nav="settings" href="/admin"')
   })
 
