@@ -10,7 +10,8 @@ import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests
 // --- What the owner does from a Wall post (#1316) ---
 //
 // The Wall reads; these are its only writes, each one the owner's, each
-// after the dashboard token gate (board-dashboard.ts mounts them below it):
+// behind the owner-only guard (isWallWrite below, #1454) and the dashboard
+// token gate (board-dashboard.ts mounts them below both):
 //
 //   POST /api/admin/wall/comment      {id, text}  a comment on a post. It goes
 //        to the agent that has the task now exactly as a reply from the
@@ -62,6 +63,16 @@ export interface WallActionDeps {
    *  operator key. */
   daemon: (method: "GET" | "POST", path: string, body?: unknown) => Promise<Reply>
   now?: () => number
+}
+
+/** A write on the Wall (#1454): any method but a read under its prefix.
+ *  Every one is the owner's, so board-dashboard.ts refuses it without the
+ *  owner's token (wallOwnerOk) before any route or the peer proxy sees it.
+ *  A new Wall write goes under this prefix and is guarded by that alone;
+ *  test/wall-owner-guard.test.ts fails for one that does not. */
+export function isWallWrite(method: string, path: string): boolean {
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false
+  return path === WALL_ACTIONS_PREFIX || path.startsWith(`${WALL_ACTIONS_PREFIX}/`)
 }
 
 /** Is this one of the Wall's write routes, or the Space read? */
