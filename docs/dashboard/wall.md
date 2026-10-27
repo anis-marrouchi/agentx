@@ -194,8 +194,6 @@ A comment and a call go to the machine that keeps the post. All of these need th
    - Issue and merge request numbers, commit ids and links are shown in small boxes so you can check them.
 3. When the same line repeats several times in a row, it is folded into one line with a count, such as **×4 — show all**. Select it to see every original line.
 
-The classic task page links back: on a task's page, select **Wall thread**.
-
 Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**.
 
 ## See one agent's profile
@@ -265,10 +263,10 @@ Here and everywhere else on the Wall (cards, a run's Task page, a post's thread,
 
 ## Watch and steer a run
 
-The **Task** page is one run on its own, with its own link: what it was asked, its conversation as it happens, and a box to steer it. It is the classic task page, on the Wall.
+The **Task** page is one run on its own, with its own link: what it was asked, its conversation as it happens, and a box to steer it. It replaces the classic task page: an old task address (`/tasks/<task-id>?agent=…`, from a chat message, a voice reply or a classic page) opens this page.
 
 1. **Browser:** open it from a card under **Running now** on the **Live** page, or select **● Join live** on an open post or an agent's page. Every other run link on the Wall opens it too: **Task record and trace**, **run …** next to an answer, a run in a post's thread, **last run** and **full log** on Failures and Jobs, and the runs listed on a machine's card.
-2. At the top: the agent, the channel, **live** while it runs, and how long it has run. **Classic page** opens the same run on the classic dashboard.
+2. At the top: the agent, the channel, **live** while it runs, and how long it has run.
 3. **request** shows what the run was asked. When the run belongs to a tracked request, its box follows: the status strip (**Asked**, **Working**, **Waits**, **Done**), the **Plan** if it has one, and the facts. **Open the post** opens the post.
 4. **Conversation** streams what the agent does: tool calls, results, its thinking and its reply.
 5. To steer it, write in the box under the conversation and select **Send** (or press ⌘/Ctrl+Enter). The current turn keeps running; your message goes in as the next turn. **Stop** ends the current turn. **Pause**, at the top, stops the task with a resume plan so it can go on later (select **Pause it?** to confirm). A paused run's page shows its plan with **Resume** and **Drop**, as on Live.
@@ -560,6 +558,9 @@ A run on a model with no price, such as a local model, is not counted as $0. The
 Only the owner can save a budget: the dashboard checks its key, and a refusal says so. Every other part of the page only reads.
 
 1. **Browser:** on the Cost page, scroll to **Monthly budgets**, or select **Budgets** in the box on the right. It lists all agents together, each project and each agent with a cap, with this month's spend against it and **On track**, **Near cap**, **Paused** or **No cap**. To go straight to one agent, select **Set a cap** (or **Change cap**) on its row: the form picks that agent, on the machine that runs it.
+
+   ![One agent's row on the Cost page: its spend this month against its cap, with Change cap on the right](/screenshots/wall/cost-set-cap.png)
+
 2. With more than one machine, choose the machine under **Machine**. A budget belongs to the machine where the agent runs.
 3. Under **Budget for**, choose **All agents**, a project or an agent. The box shows its current cap, or **No cap**.
 4. Type the most it may spend each month, in US dollars, or empty the box to remove the cap.
@@ -682,7 +683,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 25. Give an agent a task that takes a minute, then select **Live**. Its card is under **Running now**, with the time going up and **Latest** changing as it works. Select the card: the **Task** page opens with **live**, the request and the conversation filling in. Write "Also say which files you read" and select **Send**: the hint says **queued — dispatches as the next turn**, and the agent answers it after the current turn. Give it another task and select **Stop** on its Task page: the conversation ends and its card leaves **Live**.
 26. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
 27. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
-28. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
+28. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page. Copy the task id from the address (after `task=`) and the agent (after `agent=`), then open `/tasks/<task-id>?agent=<agent>`: the same **Task** page opens on the Wall.
 29. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's line under **Monthly budgets** on the Cost page. Select **Cost** on that line: the Wall's Cost page opens.
 30. Cost page: select **Cost** in the nav, then **7 days**. The address ends with `range=7` and the total changes. Select an agent: its profile opens. Open `/admin/cost` in the browser: the same Cost page opens.
 31. Budget: on the Cost page, select **Set a cap** on a test agent's row. Under **Monthly budgets**, the form shows that agent. Type `5` and select **Save**. The line says **Saved**, and the agent's row shows **of $5.00 this month**. Empty the box and select **Save** again to remove the cap.
@@ -704,6 +705,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **30 d shows fewer days than expected:** that machine keeps run records for fewer days, or runs an older AgentX version (7 days at most). Update it to see 30 days.
 - **A comment on a closed post says requests are off:** the machine that keeps the post has `requests.enabled` off, so the post cannot open again. Turn requests on there, or post a new task instead.
 - **An opened post shows no Plan:** its request has no tracked plan, or the machine that keeps it runs a daemon from before this change. Restart that daemon to send the plan with the thread.
+- **An old task link answers "Missing ?agent=":** the address names the task but not its agent. Open the run from **Live** or from its post instead.
 - **A Task page says "disconnected":** the run's machine stopped answering, or the run ended while the page was closed. Reload the page; a finished run then shows on its post's **Task record and trace**.
 - **Send says "failed: …":** the run's machine refused the message. "not found" means the run ended; open it again from the post to continue a scheduled job, or write to the agent in its chat.
 - **A Live card shows "Starting…" for a long time:** the run has written nothing yet, or its machine runs a daemon from before this change, which does not send the latest line. Restart that daemon.
@@ -722,7 +724,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.
 - **A machine stays on "checking…":** it answers, but slower than the Wall waits (about six seconds for what runs on it). Its line fills in on a later refresh. If it stays like this, see what keeps it busy with `agentx daemon status` on that machine, and use the timings command above to see how long it takes.
 - **A machine says "posts not shown":** its dashboard is not reachable from this one. Check the machine with `agentx daemon status`, then see [Add a second machine](../jobs/second-machine.md).
-- **"This post is not on the Wall":** the link names a task older than seven days, or one on a machine that did not answer. Open it from the classic task page, or try again when that machine's card says **up**.
+- **"This post is not on the Wall":** the link names a task older than seven days, or one on a machine that did not answer. **Terminal:** run `agentx requests` on the machine that keeps it, or try again when that machine's card says **up**.
 - **A post shows `**` or `#` signs instead of formatting:** the agent wrote them in a way Markdown does not read as formatting, for example `** bold**` with a space. The words are all there.
 - **A count in the nav looks wrong:** counts cover the posts the Wall loaded, as the feed does, and ignore your filters. Select **Refresh** to read them again.
 - **"Not sent: Requests are off":** comments travel as task replies, which need open-request tracking. Turn it on in [Approvals](./approvals.md).

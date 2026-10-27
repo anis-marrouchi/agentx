@@ -65,7 +65,6 @@ export const WALL_TASK_SCRIPT = String.raw`
         '<div class="wtask__meta">' + (t.ch ? '<span class="chip chip--ghost">' + esc(t.ch) + '</span>' : '') +
         '<span class="ax-badge ax-badge--mono" id="task-status">connecting…</span><span class="ax-mono" id="task-elapsed"></span>' +
         '<span id="wtask-where"></span></div></div>' +
-        '<a class="wtask__classic" href="/tasks/' + encodeURIComponent(t.task) + '?agent=' + encodeURIComponent(t.agent) + (t.node ? '&node=' + encodeURIComponent(t.node) : '') + (t.done ? '&archived=1' : '') + '" title="This run on the classic dashboard">Classic page</a>' +
       '</header>' +
       '<div id="wtask-ops"></div>' +
       '<section class="ax-task-page__ask" id="task-ask" hidden><div class="ax-task-page__ask-head"><span class="ax-ev__label ax-ev__label--soft">request</span>' +
@@ -184,7 +183,6 @@ export const WALL_TASK_CSS = `
 .wtask__who { flex: 1; min-width: 0; }
 .wtask__who .h { color: var(--ax-muted); }
 .wtask__meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
-.wtask__classic { font-size: var(--ax-fs-xs); white-space: nowrap; }
 .wtask__h { font-size: var(--ax-fs); font-weight: 800; margin: 4px 0 0; }
 .wtask__open { font-size: var(--ax-fs-xs); font-weight: 400; margin-left: 6px; }
 .wtask__req { border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); padding: 12px 14px; }

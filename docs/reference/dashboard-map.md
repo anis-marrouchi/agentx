@@ -21,7 +21,7 @@ The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 |---|---|
 | Run setup again, or add another agent | `/setup` |
 | Edit one agent's instructions and skills | `/admin/agents/<agent-id>` |
-| Watch or reopen one task | `/tasks/<task-id>` |
+| Watch or reopen one task | `/tasks/<task-id>?agent=<agent-id>` opens the run on the Wall's **Task** page ([Watch and steer a run](../dashboard/wall.md#watch-and-steer-a-run)) |
 | Trace an inbound message, errors, and daemon health | `/admin/health` (the old `/admin/observability` redirects here) |
 | See token spend and set monthly budgets ([Wall › Cost](../dashboard/wall.md#see-what-the-fleet-costs)) | `/wall`, **Cost** (`/admin/cost` opens it) |
 | Browse the shared wiki by pillar and type ([Wiki](../dashboard/wiki.md)) | `/admin/wiki/` |
@@ -31,11 +31,18 @@ The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 | See work grouped by project | `/admin/projects` |
 | Review the intent ledger (the record of incoming work and which agent it was sent to) | `/admin/ledger` |
 | Review the intent graph | `/admin/graph` (also `/graph`) |
-| Kanban boards, when configured | `/boards` |
-| Procedures learned from activity | `/procedures` |
-| Running agent processes | `/processes` |
-| Words used on screen | `/glossary` |
-| Places for the phone's place reminders | `/places` |
+
+## Retired pages
+
+These pages were removed because nobody opened them. Their old addresses still work and open the closest view on the Wall (the main page, `/wall`).
+
+| Old page | Old path | Opens now |
+|---|---|---|
+| Kanban boards | `/boards` | Wall, **Projects** |
+| Words used on screen | `/glossary` | Wall. The words are explained in the [glossary](./glossary.md). |
+| Procedures (actions, templates and skills) | `/procedures` | Wall, **Agents** |
+| Workflow runs | `/processes` | Wall, **Jobs** |
+| Places for the phone's place reminders | `/places` | Wall. Add places in the [phone app](../dashboard/mobile-places.md). |
 
 The browser call page, `/call`, is served by the daemon (default `http://127.0.0.1:18800/call`), not the dashboard.
 
@@ -45,9 +52,11 @@ The route list is a navigation aid, not a list of separate products. A view may 
 
 1. **Browser:** open `/mesh` on your dashboard. The top bar shows the eight tabs. Select **Live**: the Wall's Live page opens.
 2. Open `/admin/health`. It loads, or redirects there from `/admin/observability`.
+3. Open `/boards`. The Wall opens on **Projects**.
 
 ## If something is wrong
 
 - **A page doesn't load at all:** the dashboard is a separate service from the daemon. **Terminal:** check it is running, then run `agentx daemon status` for the daemon.
 - **A page is empty:** the feature behind it may not be set up yet, such as boards or the wiki.
+- **An old address opens the Wall instead of a page:** that page was retired; see [Retired pages](#retired-pages).
 - **A page looks out of date after an update:** restart the dashboard service as well as the daemon.

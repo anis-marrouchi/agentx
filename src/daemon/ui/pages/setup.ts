@@ -28,7 +28,6 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
     </div>
   </div>
   <div class="ax-topbar__right">
-    <a href="/glossary" class="ax-skip">? Glossary</a>
     <a href="/wall#page=live" class="ax-skip">Skip — open dashboard</a>
     <div class="ax-theme-switch" role="tablist" aria-label="Theme">
       <button data-theme-opt="dark">Dark</button>
