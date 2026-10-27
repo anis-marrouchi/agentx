@@ -40,8 +40,7 @@ For commands and accepted configuration, see the [CLI](./cli.md) and [configurat
 
 ## Check it worked
 
-1. **Browser:** open `/glossary` on your dashboard. It has its own in-app glossary for the words shown on screen.
-2. Every term used on a docs page links here or is explained where it first appears.
+1. Every term used on a docs page links here or is explained where it first appears.
 
 ## If something is wrong
 

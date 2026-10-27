@@ -6322,13 +6322,6 @@ export class AgentXDaemon {
         this.json(res, 200, { ok: true, emission })
         return
       }
-      // /processes — composition-tree + SLA view of runs.
-      if (req.method === "GET" && path === "/processes") {
-        const { renderProcessesPage } = await import("./ui/pages/processes")
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-        res.end(renderProcessesPage({}))
-        return
-      }
       // Static browser call page.
       if (req.method === "GET" && path === "/call") {
         this.serveCallPage(res)
