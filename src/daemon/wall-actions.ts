@@ -10,7 +10,8 @@ import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests
 // --- What the owner does from a Wall post (#1316) ---
 //
 // The Wall reads; these are its only writes, each one the owner's, each
-// after the dashboard token gate (board-dashboard.ts mounts them below it):
+// behind the owner-only guard (isWallWrite below, #1454) and the dashboard
+// token gate (board-dashboard.ts mounts them below both):
 //
 //   POST /api/admin/wall/comment      {id, text}  a comment on a post. It goes
 //        to the agent that has the task now exactly as a reply from the
@@ -35,6 +36,10 @@ import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests
 //        computer's speakers (the daemon's talk mode, POST /talk)
 //   POST /api/admin/wall/space/say    {text}  the owner's words into it
 //   POST /api/admin/wall/space/stop   end it
+//   POST /api/admin/wall/budget       {scope, id?, monthlyUsd, warnRatio?}
+//        a monthly budget from the Cost page (#1423): the same handler as
+//        POST /api/admin/budgets in board-dashboard.ts, here so the guard
+//        keeps it the owner's
 //
 // A comment and a call go to the node that keeps the post (the client
 // sends the post's peer, and the dashboard proxy forwards). A Space always
@@ -46,6 +51,7 @@ export const WALL_COMMENT_PATH = `${WALL_ACTIONS_PREFIX}/comment`
 export const WALL_CALL_PATH = `${WALL_ACTIONS_PREFIX}/call`
 export const WALL_POST_PATH = `${WALL_ACTIONS_PREFIX}/post`
 export const WALL_SPACE_PATH = `${WALL_ACTIONS_PREFIX}/space`
+export const WALL_BUDGET_PATH = `${WALL_ACTIONS_PREFIX}/budget`
 
 const AGENT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
 const TOPIC_MAX = 200
@@ -62,6 +68,16 @@ export interface WallActionDeps {
    *  operator key. */
   daemon: (method: "GET" | "POST", path: string, body?: unknown) => Promise<Reply>
   now?: () => number
+}
+
+/** A write on the Wall (#1454): any method but a read under its prefix.
+ *  Every one is the owner's, so board-dashboard.ts refuses it without the
+ *  owner's token (wallOwnerOk) before any route or the peer proxy sees it.
+ *  A new Wall write goes under this prefix and is guarded by that alone;
+ *  test/wall-owner-guard.test.ts fails for one that does not. */
+export function isWallWrite(method: string, path: string): boolean {
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false
+  return path === WALL_ACTIONS_PREFIX || path.startsWith(`${WALL_ACTIONS_PREFIX}/`)
 }
 
 /** Is this one of the Wall's write routes, or the Space read? */

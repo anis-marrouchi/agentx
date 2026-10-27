@@ -255,5 +255,22 @@ check(run(&motion, from: &clock, for: 0.2, moving: true, holds: true).allSatisfy
 check(run(&motion, from: &clock, for: 0.1, moving: true).first! < 0.2 && run(&motion, from: &clock, for: 0.5, moving: true).last == 1,
       "used and gone, and still moving: reduced again, eased")
 
+// --- The open-requests list (#1455) ---
+
+let lowPill = CGRect(x: 1200, y: 104, width: 284, height: 54)
+let listUp = PillPlacement.list(width: 360, height: 300, pill: lowPill, visible: laptop)
+check(listUp.above, "a pill low on the screen: the list opens above it")
+check(listUp.frame == CGRect(x: 1484 - 360, y: 158 + PillPlacement.listGap, width: 360, height: 300),
+      "right edges lined up, a gap clear of the pill (\(listUp.frame))")
+let highPill = CGRect(x: 1200, y: 800, width: 284, height: 54)
+let listDown = PillPlacement.list(width: 360, height: 300, pill: highPill, visible: laptop)
+check(!listDown.above && listDown.frame.maxY == 800 - PillPlacement.listGap, "a pill high up: the list opens below it")
+let leftPill = CGRect(x: 10, y: 104, width: 284, height: 54)
+check(PillPlacement.list(width: 360, height: 200, pill: leftPill, visible: laptop).frame.minX == 10,
+      "against the left edge: left edges lined up instead")
+let tallList = PillPlacement.list(width: 360, height: 2000, pill: lowPill, visible: laptop)
+check(tallList.frame.maxY <= laptop.maxY && tallList.frame.minY == 158 + PillPlacement.listGap,
+      "a long list stops at the screen's edge and keeps clear of the pill")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

@@ -41,31 +41,32 @@ In AgentX, a stop or resume request is called a **signal**. These are not the wo
 
 ## Pause a task from the dashboard
 
-1. **Browser:** open the dashboard and select the **Live** tab.
-2. Find the agent's **running** card.
-3. Select **❚❚ pause**.
-4. Type a reason if you want one, for example `deploy at 15:00`, then select **OK**. The reason is shown to the agent and kept with the plan.
-5. Wait a few seconds. Under the machine's name, **Stopped tasks** lists the task, who stopped it and when.
-6. Select the line under the task (**plan by the agent** or **plan by AgentX**) to read the resume plan.
+1. **Browser:** open the dashboard and select **Live** in the Wall's nav (under **More** on a phone).
+2. Under **Running now**, select the agent's card. The run's **Task** page opens.
+3. Select **Pause** at the top, then **Pause it?** to confirm.
+4. Wait a few seconds. Back on **Live**, the task is under **Paused**, with who stopped it and when.
+5. Select **Resume plan, by …** on the card to read the resume plan.
 
-![A Live agent card with a running task and its ❚❚ pause button](/screenshots/live/pause-task.png)
+![A running task's page with the Pause button at the top](/screenshots/wall/task-pause.png)
 
 ## Resume a task from the dashboard
 
-1. **Browser:** open the **Live** tab.
-2. Under the machine's name, find the task in **Stopped tasks**.
-3. Select **▶ resume**. The button changes to **resumed**.
-4. The agent's card shows **running** again. Its answer goes to the chat the task came from, as it would have the first time.
+1. **Browser:** open **Live** on the Wall.
+2. Find the task under **Paused**.
+3. Select **Resume**. The note at the top says **Resumed: it goes on from its plan.**
+4. The task shows under **Running now** again. Its answer goes to the chat the task came from, as it would have the first time.
 
-![Stopped tasks on the Live page, with a resume plan opened and the ▶ resume button](/screenshots/live/stopped-task.png)
+The task's own page has the same **Resume**: select **Open the run** on its card.
+
+![A paused task on Live: who stopped it, why, the request, its resume plan, and the Resume and Drop buttons](/screenshots/wall/live-paused.png)
 
 ## Drop a task you won't resume
 
-A paused task stays in **Stopped tasks** until it is resumed. A resumed task is removed by itself after 7 days. To remove one you will never resume:
+A paused task stays under **Paused** until it is resumed. A resumed task is removed by itself after 7 days. To remove one you will never resume:
 
-1. **Browser:** open the **Live** tab.
-2. Under the machine's name, find the task in **Stopped tasks**.
-3. Select **✕ drop**, then select **OK** to confirm. The task and its plan are deleted, and it can no longer be resumed.
+1. **Browser:** open **Live** on the Wall.
+2. Find the task under **Paused**.
+3. Select **Drop**, then select **Drop it for good?** within a few seconds to confirm. The task and its plan are deleted, and it can no longer be resumed.
 
 From the terminal, `agentx signal drop <taskId>` does the same.
 
@@ -166,11 +167,11 @@ A workflow can resume a task with the built-in action `signal.resume`. Give it t
 
 A *workflow* is a saved series of steps; each run of it is a *workflow run*. When the task you pause is an agent's step in a workflow run, the whole run pauses at that step. It is not marked failed.
 
-1. **Browser:** on the **Live** tab, select **❚❚ pause** on the agent's running card, as for any task.
-2. Wait a few seconds. In **Stopped tasks**, the task has a line `workflow run <run id> (<workflow>) paused at step <step>`.
+1. **Browser:** on the Wall's **Live** page, open the agent's running card and select **Pause**, as for any task.
+2. Wait a few seconds. Under **Paused**, the task says **A workflow step: its run waits here until this resumes.**
 3. **Terminal (optional):** run `agentx workflow runs <workflow>`. The run shows `paused`, and its `last` line names the step with `(paused)`.
 4. **Terminal (optional):** run `agentx signal show <taskId>`. It names the step and the workflow run, and shows the resume plan.
-5. **Browser:** when you're ready, select **▶ resume** on the task. In a terminal, `agentx signal resume <taskId>` does the same.
+5. **Browser:** when you're ready, select **Resume** on the task. In a terminal, `agentx signal resume <taskId>` does the same.
 
 `agentx workflow resume <run id>` does not work on such a run: it says to use `agentx signal resume` instead, which brings back the plan.
 
@@ -178,7 +179,6 @@ The step runs again with its resume plan placed before the step's prompt, so the
 
 If you cancel the workflow run while it is paused, the stopped task can no longer be resumed. The resume is refused and says the run was canceled.
 
-![Stopped tasks on the Live page: a workflow step, with the run it paused and the ▶ resume button](/screenshots/live/stopped-workflow-step.png)
 
 ### Tasks every agent runs inside a workflow
 
@@ -224,14 +224,14 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 
 ## Check it worked
 
-1. **Browser:** send an agent a task that takes a while, then select **❚❚ pause** on its card on the **Live** tab.
-2. Within the time limit, **Stopped tasks** shows the task with **plan by the agent**.
+1. **Browser:** send an agent a task that takes a while, open its card on the Wall's **Live** page and select **Pause**, then **Pause it?**.
+2. Within the time limit, **Paused** on Live shows the task with **Resume plan, by** *agent*.
 3. **Terminal:** run `agentx trace list --agent <agent>`. The task's status is `stopped`, not `error`.
-4. **Browser:** select **▶ resume**. The agent's card shows **running**, and the answer reaches the original chat.
+4. **Browser:** select **Resume**. The task shows under **Running now** again, and the answer reaches the original chat.
 5. **Terminal:** run `curl 'http://127.0.0.1:18800/events/recent?kind=signal'`. You see `signal:stop`, `signal:stopped` and `signal:resume` with the same `rootId`.
 6. For a stop-all: **Terminal:** run `agentx signal stop --all`, restart AgentX, then run `agentx signal list --all`. Every task of the order shows `resumed`, and your notification chat got one report. With `--mesh`, that one report covers every machine.
 7. For background builders: **Terminal:** run `agentx signal show <taskId>` for a task that had one. Each folder says **saved on agentx/wip/…**, and `git branch --list 'agentx/wip/*'` in that folder lists the branch.
-8. For a workflow step: after **▶ resume**, **Terminal:** run `agentx workflow runs <workflow>`. The run is `running` again, then `completed` once its last step is done.
+8. For a workflow step: after **Resume**, **Terminal:** run `agentx workflow runs <workflow>`. The run is `running` again, then `completed` once its last step is done.
 
 ## If something is wrong
 
