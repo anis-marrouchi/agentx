@@ -8,7 +8,7 @@
     { "name": "reviews", "path": "/wall#status=&view=reviews", "ready": "#wall-reviews > *" },
     { "name": "agents", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" },
     { "name": "org", "path": "/wall#page=org", "ready": "#wall-org > *" },
-    { "name": "org-page", "path": "/org", "ready": "#org-tree .org-card" },
+    { "name": "org-page", "path": "/org", "ready": ".org-card" },
     { "name": "cost", "path": "/wall#status=open&view=cost", "ready": "#wall-cost > *" }
   ]
 }
