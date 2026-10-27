@@ -1,7 +1,8 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { callingAgent } from "@/agents/holds"
-import { createCard, IF_SILENT_VALUES, type DecisionCard } from "@/approvals/cards"
+import { createCard, IF_SILENT_VALUES, listCards, type DecisionCard } from "@/approvals/cards"
+import { mirrorTally, tallyLine } from "@/approvals/mirror"
 import { registerCardCommands } from "./approvals-card"
 import { decide, listInbox, type InboxAction, type InboxItem } from "@/approvals/inbox"
 import { parseDestination, readApprovalSettings, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
@@ -156,6 +157,31 @@ export async function raiseThroughDaemon(input: Record<string, unknown>): Promis
 }
 
 registerCardCommands(approvals)
+
+approvals
+  .command("mirror-report")
+  .description("the Reminders mirror's count: cards raised, Reminders created, cards missed, one line per day")
+  .option("--start <time>", "when the first day starts (ISO time); default: 24 hours ago times --days")
+  .option("--days <n>", "how many 24-hour days", "1")
+  .option("--json", "machine-readable output")
+  .action((opts: { start?: string; days: string; json?: boolean }) => {
+    const days = Number(opts.days)
+    if (!Number.isInteger(days) || days < 1) { console.error(chalk.red("  --days must be a whole number, 1 or more")); process.exitCode = 1; return }
+    const now = Date.now()
+    const DAY = 24 * 3_600_000
+    const start = opts.start !== undefined ? Date.parse(opts.start) : now - days * DAY
+    if (!Number.isFinite(start)) { console.error(chalk.red("  --start takes an ISO time, for example 2030-03-01T08:00:00Z")); process.exitCode = 1; return }
+    const root = ctx().root
+    const cards = listCards(root)
+    const tallies = Array.from({ length: days }, (_, i) => start + i * DAY)
+      .filter((from) => from < now)
+      .map((from) => mirrorTally(root, cards, from, Math.min(from + DAY, now), now))
+    if (opts.json) { console.log(JSON.stringify(tallies, null, 2)); return }
+    tallies.forEach((t, i) => {
+      console.log(`  day ${i} (${when(t.from)} to ${when(t.to)}): ${tallyLine(t)}`)
+      for (const m of t.missed) console.log(chalk.yellow(`    missed ${m.id} "${m.title}": ${m.reason}`))
+    })
+  })
 
 approvals
   .command("settings")
