@@ -122,7 +122,6 @@ const shots = [
     { scroll: '[name="agentName"]' },
   ] },
   { name: "setup/engine", path: "/setup", wait: "#wizard", steps: [{ select: '[name="tier"]', value: "sdk" }, { scroll: '[name="triggerWords"]' }] },
-  { name: "places/page", path: "/places", wait: ".pl-item" },
   // The Wall's Cost page (#1423), which /admin/cost now opens: the page, a
   // phone, the details it folds, and the monthly budgets with their form.
   { name: "wall/cost", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row" },

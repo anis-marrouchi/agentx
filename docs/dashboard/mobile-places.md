@@ -161,18 +161,13 @@ On the phone:
 6. **Phone:** tap **Save place**.
    ![The Add a place form with a name and coordinates filled in](/screenshots/mobile-app/places-add.png)
 
-On the computer:
-
-1. **Browser (computer):** open the dashboard's Places page: `http://127.0.0.1:4202/places`.
-2. **Browser (computer):** under **Add a place**, type a **Name** and the **Coordinates** (latitude, then longitude, separated by a comma).
-3. **Browser (computer):** optionally type a **Radius in metres**, then click **Add place**.
-   ![The dashboard's Places page with two places and their reminders](/screenshots/places/page.png)
+Places are added and changed in the phone app only. The dashboard's old Places page (`/places`) now opens the Wall.
 
 The Android app picks up a new place the next time it checks: within the hour by default (`app.places.syncMinutes`), or at once when you tap **Check for new places now** on its **Place reminders** screen or open the app.
 
 ## Add a reminder to a place
 
-1. **Phone:** on the **Places** card, under the place, tap **Add a reminder or remove**. (**Browser (computer):** on the Places page, use the row under the place.)
+1. **Phone:** on the **Places** card, under the place, tap **Add a reminder or remove**.
 2. **Phone:** in **When**, choose **When I arrive** or **When I leave**.
 3. **Phone:** in **Remind me to**, type the reminder, such as `Pick up the parcel`.
 4. **Phone:** in **Who**, keep **Just remind me** to get exactly that text. Or pick **Ask** and an agent: the agent gets the text as a task at that moment, and its answer is what reaches your phone. For example, "What is left on today's list?" when you leave the office.
@@ -187,7 +182,6 @@ A reminder set to fire every time fires at most once every 10 minutes (`app.plac
 ## Remove a place or a reminder
 
 1. **Phone:** on the **Places** card, tap **Remove** next to a reminder, or open **Add a reminder or remove** under a place and tap **Remove place**. Removing a place removes its reminders too.
-2. **Browser (computer):** or, on the Places page, click **Remove**, **Pause** or **Remove place**.
 
 ## Turn location off
 
