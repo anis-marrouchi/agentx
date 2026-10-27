@@ -32,7 +32,7 @@ export interface ClassicRoute {
 
 export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/tasks/<id>", label: "One task's run", status: "wall", wall: "/#page=task", note: "Wall Task page (#1381): stream, steer, Stop." },
-  { path: "/live", label: "Live", status: "pending", blockedBy: [1439], note: "Resume, Restart when idle, attached sessions." },
+  { path: "/live", label: "Live", status: "wall", wall: "/wall#page=live", note: "Redirected in board-dashboard.ts (#1439)." },
   { path: "/monitor", label: "Monitor", status: "pending", blockedBy: [1439, 1440], note: "Connect a CLI session; open actions of CLI sessions." },
   { path: "/mesh", label: "Operations", status: "pending", blockedBy: [1429, 1439, 1446] },
   { path: "/activity", label: "Activity", status: "pending", blockedBy: [1429], note: "Timeline and map." },
@@ -42,9 +42,9 @@ export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/admin/agents/<id>", label: "Agent settings", status: "pending", blockedBy: [1428] },
   { path: "/admin/health", label: "Observability", status: "pending", blockedBy: [1428], note: "Also /admin/observability." },
   { path: "/guests", label: "Guests", status: "pending", blockedBy: [1428] },
-  { path: "/admin/cost", label: "Cost", status: "pending", blockedBy: [1428], note: "Wall Cost (#1423) is read-only: caps and CSV export." },
+  { path: "/admin/cost", label: "Cost", status: "wall", wall: "/wall#status=open&view=cost", note: "Redirected in board-dashboard.ts (#1423, #1466)." },
   { path: "/org", label: "Org", status: "pending", blockedBy: [1419, 1420, 1421] },
-  { path: "/people", label: "People", status: "pending", blockedBy: [1441] },
+  { path: "/people", label: "People", status: "wall", wall: "/wall#page=people", note: "Redirected in people-panel.ts (#1441)." },
   { path: "/workflows", label: "Workflows", status: "pending", blockedBy: [1445] },
   { path: "/admin/graph", label: "Reviews", status: "pending", blockedBy: [1440], note: "Approve or reject a classification. Also /graph." },
   { path: "/admin/projects", label: "Projects", status: "pending", blockedBy: [1449], note: "Creating and editing projects; no child issue yet." },

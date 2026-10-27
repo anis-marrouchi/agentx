@@ -3,8 +3,8 @@ import { mkdtempSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import { closeDb, openDb } from "../src/storage/sqlite"
-import { buildCost } from "../src/daemon/observability-panel"
-import { costPageHtml, costPageModel } from "../src/daemon/ui/pages/wall-cost"
+import { buildCost, toCostCsv } from "../src/daemon/observability-panel"
+import { costBudgetsHtml, costCsv, costFetchRange, costPageHtml, costPageModel, mergeBudgets, mergeCost } from "../src/daemon/ui/pages/wall-cost"
 import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
 import { WALL_COST_CSS } from "../src/daemon/ui/pages/wall-cost.client"
 
@@ -81,7 +81,7 @@ describe("Wall Cost page numbers (#1423)", () => {
     const m = costPageModel(buildCost(db!, 60), BUDGETS, 30)
     expect(m.unpriced).toBe(6)
     const local = m.agents.find((r) => r.id === "local")!
-    expect(local).toMatchObject({ spend: 0, unpriced: 4 })
+    expect(local).toMatchObject({ spend: 0, unpriced: 0, unpricedMonth: 4 })
     const html = costPageHtml(m, { coder: "Coder" })
     expect(html).toContain("6 runs this month had no price")
     expect(html).toContain("4 not priced this month")
@@ -98,9 +98,17 @@ describe("Wall Cost page numbers (#1423)", () => {
     expect(html).toContain('<button type="button" class="wc__who" data-cagent="coder"')
     expect(html).toContain("$85.00 of $100.00 this month")
     expect(html).toContain('class="wc__bar is-warn"')
+    // Each row links to the budgets form for that agent; none when the budgets were not read.
+    expect(html).toContain('data-ccap="pm" title="Set the monthly cap of Planner">Change cap</button>')
+    expect(html).toContain('data-ccap="local" title="Set the monthly cap of local">Set a cap</button>')
+    expect(costPageHtml(costPageModel(buildCost(db!, 60), null, 30), {})).not.toContain("data-ccap")
     expect(html).toContain("Biggest movers this week")
-    expect(html).toContain('<a href="/admin/cost">classic Cost page</a>')
-    // Read-only: no form, no cap setting, no POST.
+    // Everything the classic page did is here (#1449): CSV, budgets, details.
+    expect(html).not.toContain("/admin/cost")
+    expect(html).toContain("data-ccsv>Export CSV</button>")
+    expect(html).toContain('href="#wall-cost-budgets"')
+    expect(html).toContain("Show details: tokens, cache and every day")
+    // The budgets form comes only from costBudgetsHtml.
     expect(html).not.toMatch(/<form|<input|method=/)
   })
 
@@ -121,11 +129,109 @@ describe("Wall Cost page numbers (#1423)", () => {
 })
 
 describe("Cost in the Wall space (#1423)", () => {
-  it("is in the Wall's nav, and the classic /admin/cost page stays", () => {
+  it("is in the Wall's nav, and no Wall link leads to the classic page", () => {
     const page = renderWallPage()
     expect(page).toContain('data-nav="cost" href="#status=open&amp;view=cost"')
     expect(page).toContain('id="wall-cost-n"')
     expect(page).toContain('<section id="wall-cost"')
-    expect(WALL_CLASSIC_LINKS).toContainEqual(["Cost", "/admin/cost"])
+    expect(WALL_CLASSIC_LINKS.map(([label]) => label)).not.toContain("Cost")
+    expect(page).not.toContain("/admin/cost")
+  })
+})
+
+describe("Everything /admin/cost did, on the Wall (#1423, #1449)", () => {
+  const external = () => {
+    const ins = db!.prepare(`INSERT INTO usage_daily (agent_id, model, day, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, tasks) VALUES (?, 'llama-3-8b', ?, 5000, 500, 0, 0, ?)`)
+    for (const n of [0, 2, 40]) ins.run("local", day(n), 4)
+  }
+
+  it("matches the API for 14 days and for every day kept", () => {
+    for (const range of [14, 0]) {
+      const api = buildCost(db!, range)
+      const m = costPageModel(buildCost(db!, range ? 30 : 0), BUDGETS, range)
+      expect(m.total, String(range)).toBeCloseTo(api.kpis.spendRange, 10)
+      expect(m.runs).toBe(api.kpis.tasksRange)
+      expect(m.avgDaily).toBeCloseTo(api.kpis.avgDailyRange, 10)
+    }
+    expect(costFetchRange(0)).toBe("all")
+    expect(costFetchRange(14)).toBe("30")
+    expect(costFetchRange(90)).toBe("180")
+  })
+
+  it("counts runs on a model with no price in the range, per agent, from the API", () => {
+    external()
+    const api = buildCost(db!, 7)
+    expect(api.kpis.unpricedRange).toBe(8)
+    const m = costPageModel(buildCost(db!, 30), BUDGETS, 7)
+    expect(m.unpricedRange).toBe(8)
+    expect(m.agents.find((r) => r.id === "local")).toMatchObject({ spend: 0, runs: 8, unpriced: 8, perRun: null })
+    const html = costPageHtml(m, {})
+    expect(html).toContain("8 runs in the last 7 days had no price")
+    expect(html).toContain("8 not priced</b>")
+  })
+
+  it("has the classic page's details: KPIs, token mix, cache efficiency and every day", () => {
+    const api = buildCost(db!, 30)
+    const m = costPageModel(buildCost(db!, 60), BUDGETS, 30)
+    const t = m.tokens
+    expect(t.input + t.output + t.cacheRead + t.cacheCreate).toBe(api.kpis.tokensRange)
+    expect(m.daily.map((d) => d.date)).toEqual(api.days.map((d) => d.date).reverse())
+    const shut = costPageHtml(m, {})
+    expect(shut).toContain('aria-expanded="false" aria-controls="wc-details"')
+    expect(shut).toContain('<div id="wc-details" hidden>')
+    const open = costPageHtml(m, {}, undefined, { details: true, filter: "over10" })
+    expect(open).toContain('<div id="wc-details">')
+    for (const label of ["Daily average", "Token mix", "Cache efficiency", "Hit rate", "Cache reads", "Cache writes", "Every day"]) expect(open).toContain(label)
+    // Over $10: no day here costs that much.
+    expect(open).toContain("No days match this filter.")
+    expect(costPageHtml(m, {}, undefined, { details: true })).toContain("<td>" + day(0) + "</td>")
+  })
+
+  it("exports the same CSV the classic page did", () => {
+    const m = costPageModel(buildCost(db!, 60), BUDGETS, 30)
+    expect(costCsv(m.daily)).toBe(toCostCsv(buildCost(db!, 30).days))
+  })
+
+  it("adds every machine up, and keeps one machine's figures as its API's", () => {
+    const one = buildCost(db!, 60)
+    expect(mergeCost([one])).toBe(one)
+    const both = costPageModel(mergeCost([one, one]), BUDGETS, 30)
+    expect(both.total).toBeCloseTo(2 * buildCost(db!, 30).kpis.spendRange, 10)
+    expect(both.agents.find((r) => r.id === "coder")!.runs).toBe(2 * buildCost(db!, 30).perAgent.find((a) => a.agent_id === "coder")!.tasks)
+    // Today and the week's change, worked out again from the days.
+    const merged = mergeCost([one, one])
+    expect(merged.kpis!.spendToday).toBeCloseTo(2 * one.kpis.spendToday, 10)
+    expect(merged.kpis!.spendDeltaWoW).toBeCloseTo(one.kpis.spendDeltaWoW, 10)
+  })
+
+  it("adds the month up across machines, with each agent's cap from where it runs", () => {
+    const a = { ...BUDGETS, agentIds: ["coder", "pm"] }
+    const b = { month: "2026-10", fleet: { spentUsd: 2.5, capUsd: 100, state: "ok" }, agents: [{ agentId: "builder", spentUsd: 2.5, capUsd: 20, state: "ok" }], agentIds: ["builder"] }
+    const m = mergeBudgets([a, b])!
+    expect(m.fleet).toMatchObject({ spentUsd: 100, capUsd: 600, state: "ok", unpricedRuns: 6 })
+    expect(m.agents!.find((x) => x.agentId === "builder")).toMatchObject({ spentUsd: 2.5, capUsd: 20 })
+    expect(mergeBudgets([a, { ...b, fleet: { spentUsd: 2.5, state: "uncapped" } }])!.fleet!.capUsd).toBeUndefined()
+    expect(mergeBudgets([null, undefined])).toBeNull()
+    expect(mergeBudgets([a])).toBe(a)
+  })
+
+  it("lists each cap and offers the fleet, every project and every agent to set", () => {
+    const budgets = { ...BUDGETS, projects: [{ name: "shop", spentUsd: 4, capUsd: 50, state: "ok" }], agentIds: ["coder", "pm", "writer"] }
+    const html = costBudgetsHtml([{ name: "node-a", peer: null, budgets }], { scope: "agent:pm" })
+    expect(html).toContain("Monthly budgets")
+    expect(html).toContain("<li><span>All agents</span><b>$97.50 of $500.00</b>")
+    expect(html).toContain("<li><span>Project shop</span><b>$4.00 of $50.00</b>")
+    expect(html).toContain('<span class="chip chip--warn">Near cap</span>')
+    expect(html).toContain('<b>$4.00 of $50.00</b><small><span class="chip chip--done">On track</span>')
+    expect(html).toContain('<option value="agent:pm" selected>Agent @pm</option>')
+    expect(html).toContain('<option value="agent:writer">Agent @writer</option>')
+    expect(html).toContain('value="100"')
+    expect(html).not.toContain('id="cb-machine"')
+    // Two machines: pick one; its own choices.
+    const two = costBudgetsHtml([{ name: "node-a", peer: null, budgets }, { name: "node-b", peer: "http://node-b", budgets: { fleet: { spentUsd: 1, state: "uncapped" }, agents: [], agentIds: ["builder"] } }], { machine: "node-b" })
+    expect(two).toContain('<option value="node-b" selected>node-b</option>')
+    expect(two).toContain('<option value="agent:builder">Agent @builder</option>')
+    expect(two).not.toContain('value="agent:pm"')
+    expect(costBudgetsHtml([{ name: "node-a", peer: null, budgets: null }], {})).toContain("The budgets could not be read.")
   })
 })

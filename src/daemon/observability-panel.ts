@@ -403,12 +403,15 @@ interface CostAgentDay {
   tasks: number; cost: number;
   input: number; output: number; cacheRead: number; cacheCreate: number;
   tier2: number; model?: string;
+  /** Of `tasks`, the runs on a model with no price here (#1423). */
+  unpriced: number;
 }
 interface CostDay {
   date: string;
   tasks: number;
   input: number; output: number; cacheRead: number; cacheCreate: number;
   cost: number; tier2: number;
+  unpriced: number;
   agents: Record<string, CostAgentDay>;
 }
 
@@ -459,6 +462,9 @@ export function buildCost(db: Database.Database, range: number) {
     const outTok = (r.output_tokens || 0)        + (r.tier2_output_tokens || 0)
     const crTok  = (r.cache_read_tokens || 0)    + (r.tier2_cache_read_tokens || 0)
     const cwTok  = (r.cache_create_tokens || 0)  + (r.tier2_cache_create_tokens || 0)
+    // Runs that used tokens on a model priced at $0 here (external), so
+    // the Wall's Cost page can count them instead of showing $0 (#1423).
+    const unpriced = family === "external" && inTok + outTok + crTok + cwTok > 0 ? (r.tasks || 0) : 0
 
     spend30d += c
     if (r.day >= last7Cutoff) { spend7d += c; tasks7d += r.tasks || 0 }
@@ -473,27 +479,27 @@ export function buildCost(db: Database.Database, range: number) {
 
     const d = dayMap[r.day] || (dayMap[r.day] = {
       date: r.day, tasks: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0,
-      cost: 0, tier2: 0, agents: {},
+      cost: 0, tier2: 0, unpriced: 0, agents: {},
     })
     d.tasks += r.tasks || 0
     d.input += inTok; d.output += outTok
     d.cacheRead += crTok; d.cacheCreate += cwTok
-    d.cost += c; d.tier2 += tier2Surcharge
+    d.cost += c; d.tier2 += tier2Surcharge; d.unpriced += unpriced
 
     const a = d.agents[r.agent_id] || (d.agents[r.agent_id] = {
-      tasks: 0, cost: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, tier2: 0, model: r.model,
+      tasks: 0, cost: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, tier2: 0, unpriced: 0, model: r.model,
     })
     a.tasks += r.tasks || 0
-    a.cost += c; a.tier2 += tier2Surcharge
+    a.cost += c; a.tier2 += tier2Surcharge; a.unpriced += unpriced
     a.input += inTok; a.output += outTok
     a.cacheRead += crTok; a.cacheCreate += cwTok
     if (r.model) a.model = r.model
 
     const agg = byAgentRange[r.agent_id] || (byAgentRange[r.agent_id] = {
-      tasks: 0, cost: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, tier2: 0, model: r.model,
+      tasks: 0, cost: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, tier2: 0, unpriced: 0, model: r.model,
     })
     agg.tasks += r.tasks || 0
-    agg.cost += c; agg.tier2 += tier2Surcharge
+    agg.cost += c; agg.tier2 += tier2Surcharge; agg.unpriced += unpriced
     agg.input += inTok; agg.output += outTok
     agg.cacheRead += crTok; agg.cacheCreate += cwTok
     if (r.model) agg.model = r.model
@@ -502,9 +508,10 @@ export function buildCost(db: Database.Database, range: number) {
   const days: CostDay[] = Object.values(dayMap).sort((a, b) => (a.date < b.date ? -1 : 1))
 
   // Range-wide totals for KPIs that follow the user's range pick.
-  let tasksRange = 0, inputRange = 0, outputRange = 0, cacheReadRange = 0, cacheCreateRange = 0, costRange = 0
+  let tasksRange = 0, inputRange = 0, outputRange = 0, cacheReadRange = 0, cacheCreateRange = 0, costRange = 0, unpricedRange = 0
   for (const d of days) {
     tasksRange += d.tasks
+    unpricedRange += d.unpriced
     inputRange += d.input; outputRange += d.output
     cacheReadRange += d.cacheRead; cacheCreateRange += d.cacheCreate
     costRange += d.cost
@@ -528,6 +535,7 @@ export function buildCost(db: Database.Database, range: number) {
       spendRange: costRange,
       avgDailyRange: days.length ? costRange / days.length : 0,
       tasksRange,
+      unpricedRange,
       tokensRange: inputRange + outputRange + cacheReadRange + cacheCreateRange,
       cacheHitRange: (cacheReadRange + inputRange) > 0
         ? cacheReadRange / (cacheReadRange + inputRange)
@@ -544,7 +552,7 @@ export function buildCost(db: Database.Database, range: number) {
 
 /** CSV export for `/api/admin/observability/cost.csv` — same column order as
  *  the legacy `/api/usage.csv`, picking the top-spend agent of each day. */
-function toCostCsv(days: CostDay[]): string {
+export function toCostCsv(days: CostDay[]): string {
   const header = "date,tasks,input,output,cache_read,cache_create,cost_usd,top_agent"
   const rows = days.map((d) => {
     const top = Object.entries(d.agents).sort(([, a], [, b]) => b.cost - a.cost)[0]

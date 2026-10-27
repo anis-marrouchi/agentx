@@ -28,7 +28,7 @@ describe("classic routes registry", () => {
   it("gives every pending page an issue to wait on, and every Wall page a target", () => {
     for (const r of CLASSIC_ROUTES) {
       if (r.status === "pending") expect(r.blockedBy?.length, r.path).toBeGreaterThan(0)
-      if (r.status === "wall") expect(r.wall, r.path).toMatch(/^\/#/)
+      if (r.status === "wall") expect(r.wall, r.path).toMatch(/^\/(wall)?#/)
     }
     expect(new Set(CLASSIC_ROUTES.map((r) => r.path)).size).toBe(CLASSIC_ROUTES.length)
   })
@@ -66,8 +66,8 @@ describe("the Wall's links (link crawl)", () => {
     const linked = new Set(wallHrefs().map((h) => classicRouteFor(h)).filter((r) => r?.status === "pending").map((r) => r!.path))
     // Shrinks as each child of #1449 lands; empty once #1447 is done.
     expect([...linked].sort()).toEqual([
-      "/activity", "/admin", "/admin/agents/<id>", "/admin/cost", "/agents/<id>/history", "/approvals",
-      "/live", "/mesh", "/monitor", "/org", "/people", "/workflows",
+      "/activity", "/admin", "/admin/agents/<id>", "/approvals",
+      "/mesh", "/monitor", "/org", "/workflows",
     ])
   })
 })
