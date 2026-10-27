@@ -1,6 +1,6 @@
 # AgentX Voice: parallel requests, round 1 (#1460 for #1455)
 
-Design proposals for review. Nothing here is built. Per #1455 and #1460, the widget change is built only after the owner accepts its design.
+Design accepted on 2026-10-27 (see [Verdict](#verdict)). Nothing here is built yet. Per #1455 and #1460, the widget change is built only after the owner accepts its design.
 
 Canvas with all eight screens: https://claude.ai/artifact/J1pQGfbNzc2rmL59kveutz (comment on any screen there, or on #1460).
 
@@ -112,6 +112,13 @@ No phone change. The phone's Chat strip (`app-chat-strip.client.ts`) already sho
 6. **Default after the update**: "Wait until I pick it" for everyone (drawn), or keep auto-play for existing installs and make waiting the default only for new ones?
 7. **The list shortcut**: ⌘⌥O is free in the app today. Is that the key you want?
 
-## Next round
+## Verdict
 
-Comments on the canvas or on #1460 become round 2. Once the screens are accepted, #1455 links them and is built in `apps/mac-voice` with the daemon changes above, with the README's Known limits and the AgentX Voice guide updated in the same PR.
+Accepted. The owner approved all eight round 1 screens on 2026-10-27 (by voice, through Hakim, recorded on #1460). There is no round 2.
+
+- **Screens**: 1 to 8 accepted as drawn.
+- **Questions 1 to 7**: no separate answer was given, so the build starts from the option marked "drawn" for each. Anything the owner changes on #1455 wins over this note.
+
+## Next step
+
+The build goes on #1455: `apps/mac-voice` with the daemon changes above, with the README's Known limits and the AgentX Voice guide updated in the same PR.
