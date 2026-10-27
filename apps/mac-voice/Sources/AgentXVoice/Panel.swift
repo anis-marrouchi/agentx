@@ -25,6 +25,10 @@ final class Panel: NSPanel {
     let miniOrbs = MiniOrbsHost()
     /// Busy agents shown in the mini row; 0 hides it.
     private(set) var busyCount = 0
+    /// "1 new": answers not heard yet (#1455), before the mini orbs.
+    private let newBadge = NSTextField(labelWithString: "")
+    /// Answers not heard yet; 0 hides the badge.
+    private(set) var newCount = 0
     private let closeButton = NSButton()
     /// Answer, Later and Decline while an agent rings; Hang up during the call.
     let callBar = CallBar(frame: NSRect(x: 0, y: 15, width: 0, height: 24))
@@ -160,11 +164,23 @@ final class Panel: NSPanel {
             let moved = hypot(now.x - start.x, now.y - start.y)
             let onRow = convertToScreen(row.convert(row.bounds, to: nil)).contains(start)
             // Reduced, a click opens the pill; it does not start talking.
+            // On the mini orbs or "1 new", it opens the open-requests list.
             if moved < 4 && onRow {
-                if reduced { MainActor.assumeIsolated { open(clicked: true) } } else { onClick?() }
+                if reduced { MainActor.assumeIsolated { open(clicked: true) } }
+                else if onListPart(start) { onOpenList?() }
+                else { onClick?() }
             }
         }
         super.mouseUp(with: event)
+    }
+
+    /// The mini orbs and "1 new", where a click opens the list rather
+    /// than talking.
+    private func onListPart(_ point: NSPoint) -> Bool {
+        let parts: [NSView] = [miniOrbs, newBadge]
+        return parts.contains { part in
+            !part.isHidden && convertToScreen(part.convert(part.bounds, to: nil)).insetBy(dx: -3, dy: -6).contains(point)
+        }
     }
 
     enum State {
@@ -182,6 +198,9 @@ final class Panel: NSPanel {
         case error(String)
         /// An agent is calling: the words already name it and its reason.
         case ringing(String)
+        /// A passing line at rest that already names who (#1455): "Writer ·
+        /// Sent. Ask the next one", "Ops answered · hover or ⌘⌥O to hear it".
+        case note(String)
         /// In a call, between turns: a click talks.
         case onCall
 
@@ -196,6 +215,7 @@ final class Panel: NSPanel {
             case .working(let what, let secs): return "\(what)  ·  \(secs)s"
             case .error(let m): return m
             case .ringing(let text): return text
+            case .note(let text): return text
             case .onCall: return "On call · click to talk"
             }
         }
@@ -212,13 +232,14 @@ final class Panel: NSPanel {
             case .error: return Brand.alert
             case .ringing: return Brand.accent
             case .onCall: return Brand.accentDeep
+            case .note: return Brand.primaryBright
             }
         }
 
         /// What the character shows. A call between turns waits for you.
         var activity: CharacterMath.Activity {
             switch self {
-            case .idle, .error: return .idle
+            case .idle, .error, .note: return .idle
             case .listening: return .listening
             case .thinking, .working: return .thinking
             case .speaking, .saying: return .speaking
@@ -243,7 +264,7 @@ final class Panel: NSPanel {
         /// Idle and errors hold it still.
         var orbPhase: OrbModel.Phase {
             switch self {
-            case .idle, .error, .onCall: return .idle
+            case .idle, .error, .onCall, .note: return .idle
             case .listening: return .listening
             case .thinking, .working: return .thinking
             // Ringing pulses, so the pill is seen as well as heard.
@@ -251,6 +272,14 @@ final class Panel: NSPanel {
             }
         }
     }
+
+    /// A click on the mini orbs or on "1 new": open the open-requests
+    /// list (#1455). Set by the app.
+    var onOpenList: (() -> Void)?
+
+    /// The pointer came onto the pill (true) or left it. Set by the app,
+    /// which opens the open-requests list after a moment's hover.
+    var onHover: ((Bool) -> Void)?
 
     /// Called when the pill is clicked. Set by the app.
     ///
@@ -322,6 +351,16 @@ final class Panel: NSPanel {
         row.addSubview(closeButton)
         miniOrbs.isHidden = true
         row.addSubview(miniOrbs)
+        newBadge.font = .systemFont(ofSize: 11, weight: .bold)
+        newBadge.textColor = .white
+        newBadge.alignment = .center
+        newBadge.wantsLayer = true
+        newBadge.drawsBackground = false
+        newBadge.layer?.backgroundColor = Brand.primaryBright.cgColor
+        newBadge.layer?.cornerRadius = 8
+        newBadge.isHidden = true
+        newBadge.toolTip = "Open requests (⌘⌥O)"
+        row.addSubview(newBadge)
         row.addSubview(callBar)
         surface.layoutContent = { [weak self] bounds in self?.layoutContent(bounds) }
         MainActor.assumeIsolated { layoutContent(surface.bounds) }
@@ -357,8 +396,14 @@ final class Panel: NSPanel {
         closeButton.frame.origin.x = bounds.width - 28
         // The mini orbs sit between the words and the close button, and
         // the words give up that room while they show.
-        let miniWidth = busyCount > 0 ? MiniOrbsHost.width(busyCount) : 0
+        var miniWidth = busyCount > 0 ? MiniOrbsHost.width(busyCount) : 0
         miniOrbs.frame = NSRect(x: bounds.width - 28 - miniWidth, y: (h - 24) / 2, width: miniWidth, height: 24)
+        // "1 new" sits just before the mini orbs, and takes its room from the words.
+        if newCount > 0 {
+            let badge = Self.badgeWidth(newBadge.stringValue)
+            newBadge.frame = NSRect(x: miniOrbs.frame.minX - (miniWidth > 0 ? 4 : 0) - badge, y: (h - 16) / 2, width: badge, height: 16)
+            miniWidth += badge + (miniWidth > 0 ? 4 : 0)
+        }
         // The call buttons sit left of those, and the words give way again.
         let callWidth = CallBar.width(callBar.mode)
         let callX = bounds.width - 28 - (miniWidth > 0 ? miniWidth + 4 : 0) - callWidth
@@ -443,6 +488,7 @@ final class Panel: NSPanel {
         clip?.isHidden = circle
         closeButton.isHidden = true
         miniOrbs.isHidden = circle || busyCount == 0
+        newBadge.isHidden = circle || newCount == 0
         // Shrunk to its dots, the bubble's shape and size are the
         // character's to set (`attach`), and the full bubble comes back at
         // once for what opens it.
@@ -576,11 +622,13 @@ final class Panel: NSPanel {
         closeButton.isHidden = reduced
         hovering = true
         MainActor.assumeIsolated { armCollapse() }
+        onHover?(true)
     }
     override func mouseExited(with event: NSEvent) {
         closeButton.isHidden = true
         hovering = false
         MainActor.assumeIsolated { armCollapse() }
+        onHover?(false)
     }
 
     /// Esc, once the pill has been clicked and so holds the keyboard.
@@ -651,7 +699,7 @@ final class Panel: NSPanel {
         // Reduced, the orb is the assistant's place on screen: it stays, idle or not.
         // Reduced with the character, the bubble is gone: the character shows the state.
         // A caption shows like any words; away with none, the hint does not.
-        let quiet = state.isMeta && !expanded && busyCount == 0
+        let quiet = state.isMeta && !expanded && busyCount == 0 && newCount == 0
         let gone = reduced && !showsOrb
         if dismissed || concealed || gone || (quiet && idle == .nothing) || (quiet && idle == .hint && !alwaysVisible && !reduced) { hide() } else { show() }
         // After showing or hiding: a still character draws its bubble's
@@ -703,6 +751,24 @@ final class Panel: NSPanel {
         }
     }
 
+    /// "1 new" on the pill (#1455): answers not heard yet, or none to
+    /// hide it. The pill stays on screen while it shows.
+    @MainActor
+    func showNew(_ count: Int) {
+        guard count != newCount else { return }
+        newCount = count
+        newBadge.stringValue = OpenRequests.newBadge(count)
+        newBadge.setAccessibilityLabel("\(count) answer\(count == 1 ? "" : "s") not heard. Open requests")
+        newBadge.isHidden = count == 0 || reduced
+        if let content = contentView { layoutContent(content.bounds) }
+        render(current)
+    }
+
+    /// The badge's width for its words: the text and room either side.
+    private static func badgeWidth(_ text: String) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .bold)]).width) + 14
+    }
+
     /// "Nadia · Listening": who is listening or answering. Errors are the
     /// widget's own, so they carry no name.
     @MainActor
@@ -711,6 +777,7 @@ final class Panel: NSPanel {
         if name.isEmpty { return state.text }
         if case .error = state { return state.text }
         if case .ringing = state { return state.text }
+        if case .note = state { return state.text }
         return "\(name) · \(state.text)"
     }
 

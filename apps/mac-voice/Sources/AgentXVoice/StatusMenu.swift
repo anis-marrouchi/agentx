@@ -37,6 +37,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         didSet { rebuild(); watchQueue(force: true); onActivity?() }
     }
 
+    /// Agents with an answer waiting to be heard (#1455). Set by the app.
+    var ready: [String] = [] {
+        didSet { if ready != oldValue { rebuild() } }
+    }
+    /// An agent's own shortcut as shown ("⌃⌥2"), or nil. Set by the app.
+    var shortcut: (String) -> String? = { _ in nil }
+    /// "Open requests…": the list, with the keyboard in it.
+    var onOpenRequests: (() -> Void)?
+
     /// Set by the app.
     var onStop: (() -> Void)?
     /// Who holds the floor (#924): a row says so, with a way to take it back.
@@ -139,6 +148,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         case .error: ("exclamationmark.triangle", "Error")
         case .ringing: ("phone.arrow.down.left.fill", "Incoming call")
         case .onCall: ("phone.fill", "On a call")
+        case .note: ("waveform", "Idle")
         }
         guard item.button?.toolTip != "AgentX Voice — \(label)" else { return }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "AgentX Voice: \(label)")
@@ -188,6 +198,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             // More than one: the rest wait for the answer in flight.
             parts.append(asked > 1 ? "thinking (+\(asked - 1) asked)" : "thinking")
         }
+        if ready.contains(id) { parts.append("answer ready") }
         if parts.isEmpty && active > 0 { parts.append("working") }
         let queued = queue?.waiting.filter { $0.agentId == id }.count ?? 0
         if queued > 0 { parts.append("queued \(queued)") }
@@ -221,7 +232,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             if agents.isEmpty { menu.addItem(disabled("No agents configured")) }
             for (i, agent) in agents.enumerated() {
                 // Digits pick an agent while the menu is open.
-                let row = action(agent.label + "  · " + state(of: agent), #selector(pick(_:)),
+                // Its own shortcut, when it has one: hold it to ask this agent.
+                let keys = shortcut(agent.id).map { "   \($0)" } ?? ""
+                let row = action(agent.label + "  · " + state(of: agent) + keys, #selector(pick(_:)),
                                  key: i < 9 ? "\(i + 1)" : "", modifiers: [])
                 row.representedObject = agent.id
                 row.state = agent.id == target ? .on : .off
@@ -248,6 +261,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         recent.addItems(to: menu, name: name(of:))
 
         menu.addItem(.separator())
+        menu.addItem(action("Open requests…", #selector(openRequests), key: "o", modifiers: [.command, .option]))
+        // Answers wait as "not heard" until picked (#1455); ticked, they play
+        // as soon as they are back, as before.
+        let atOnce = action("Play answers at once", #selector(togglePlayAtOnce), key: "")
+        atOnce.state = Config.playAnswersAtOnce ? .on : .off
+        menu.addItem(atOnce)
         if let held = floor.menuTitle(now: Date().timeIntervalSince1970) {
             menu.addItem(disabled(held))
             menu.addItem(action("Take the floor back", #selector(takeFloorBack), key: ""))
@@ -323,6 +342,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func stop() { onStop?() }
+    @objc private func openRequests() { onOpenRequests?() }
+    @objc private func togglePlayAtOnce() { Config.playAnswersAtOnce.toggle(); rebuild() }
     @objc private func takeFloorBack() { onTakeFloorBack?() }
 
     @objc private func toggleHold() {
