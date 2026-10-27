@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.183.0](https://github.com/anis-marrouchi/agentx/compare/v0.182.0...v0.183.0) (2026-10-27)
+
+
+### Features
+
+* **dashboard:** retire unused classic pages, redirect to the Wall ([#1446](https://github.com/anis-marrouchi/agentx/issues/1446)) ([#1453](https://github.com/anis-marrouchi/agentx/issues/1453)) ([11ea7eb](https://github.com/anis-marrouchi/agentx/commit/11ea7eb61759593c874a8fc1359bedd9c8e9f5a1))
+* **org:** profile pictures for agents and people ([#1425](https://github.com/anis-marrouchi/agentx/issues/1425)) ([#1450](https://github.com/anis-marrouchi/agentx/issues/1450)) ([8c2d058](https://github.com/anis-marrouchi/agentx/commit/8c2d0582a06dec9aafd8aad15d183f4a9b01618f))
+* **wall:** classic page registry, /tasks redirect and Wall link crawl ([#1447](https://github.com/anis-marrouchi/agentx/issues/1447), part 1) ([#1456](https://github.com/anis-marrouchi/agentx/issues/1456)) ([c22a569](https://github.com/anis-marrouchi/agentx/commit/c22a569abb14863a274f6b11a3be71ba801ac7c8))
+* **wall:** port [#1465](https://github.com/anis-marrouchi/agentx/issues/1465)'s extras into [#1466](https://github.com/anis-marrouchi/agentx/issues/1466): a row's "Set a cap", README and notes ([#1423](https://github.com/anis-marrouchi/agentx/issues/1423)) ([#1474](https://github.com/anis-marrouchi/agentx/issues/1474)) ([6031c19](https://github.com/anis-marrouchi/agentx/commit/6031c19361ae190d59dc1eb1a67b2625fc22fcbc))
+
+
+### Bug Fixes
+
+* **cli:** exit 128 + signo when stopped by a signal ([#1388](https://github.com/anis-marrouchi/agentx/issues/1388)) ([#1477](https://github.com/anis-marrouchi/agentx/issues/1477)) ([6ea3bd1](https://github.com/anis-marrouchi/agentx/commit/6ea3bd10b1c2c890635fecad19d5bb42e14d8e28))
+* **dashboard:** keep a chat task link through off-box sign-in ([#1447](https://github.com/anis-marrouchi/agentx/issues/1447)) ([#1490](https://github.com/anis-marrouchi/agentx/issues/1490)) ([4ac6873](https://github.com/anis-marrouchi/agentx/commit/4ac68737a8f6abfa08e560fe6a5a66453451d07d))
+
 ## [0.182.0](https://github.com/anis-marrouchi/agentx/compare/v0.181.1...v0.182.0) (2026-10-27)
 
 
