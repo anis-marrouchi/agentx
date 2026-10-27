@@ -34,11 +34,7 @@
 // Results and thread lines render their Markdown through the shared
 // renderer; links in them go to web, mail or same-site addresses only.
 //
-// Set up the org (#1420, #page=orgsetup, wall-org-setup.client.ts): the
-// owner's page for who is in the org chart and who reports to whom; its
-// writes go to POST /api/admin/org/chart, which refuses anyone else.
-//
-// The only other writes (#1316, wall-actions.ts), from an open post: a comment
+// The only writes (#1316, wall-actions.ts), from an open post: a comment
 // that reaches the agent on the post (sent to the node that keeps it), a
 // voice call from that agent, and a Space: two agents talk about the post
 // out loud on this computer, with the owner's words going into it.
@@ -60,8 +56,6 @@ import { WALL_COST_SCRIPT } from "./wall-cost.client"
 import { WALL_ORG_SCRIPT } from "./wall-org.client"
 import { layoutOrg } from "@/business/org-layout"
 import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
-import { orgChangeLine, orgSetupHtml } from "./wall-org-setup"
-import { WALL_ORG_SETUP_SCRIPT } from "./wall-org-setup.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -72,16 +66,15 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'people', 'org', 'orgsetup', 'creator', 'live', 'task', 'activity'];
+  var PAGES = ['running', 'agents', 'people', 'org', 'creator', 'live', 'task', 'activity'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgSetupHtml, orgChangeLine })}
+  ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
 ${WALL_ORG_SCRIPT}
-${WALL_ORG_SETUP_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
@@ -220,11 +213,7 @@ ${WALL_BUILD_SCRIPT}
       o.actsFor.length ? 'acts for ' + orgMembersHtml(o.actsFor) : '',
       n ? n + (n === 1 ? ' reports' : ' report') + ' to it' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
-    return '<div class="wp__meta wpf__org">' + bits + '<a href="#page=org">Org chart</a>' + orgSetupLink() + '</div>';
-  }
-  /** The owner's way to the org setup page (#1420); no one else sees it. */
-  function orgSetupLink() {
-    return S.org && S.org.canEdit ? '<a href="#page=orgsetup">Set up the org</a>' : '';
+    return '<div class="wp__meta wpf__org">' + bits + '<a href="#page=org">Org chart</a></div>';
   }
   function isAgent(id) {
     return !!agentInfo()[id] || ((S.data && S.data.posts) || []).some(function (p) { return p.owner === id; });
@@ -959,7 +948,8 @@ ${WALL_BUILD_SCRIPT}
     var list = allAgents();
     var down = ((S.live && S.live.nodes) || []).filter(nodeDown);
     var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
-    if (S.org && S.org.canEdit) note += '<p class="ax-wall__count wag__note"><a href="#page=orgsetup">Set up the org</a>: who reports to whom.</p>';
+    // Read-only: the org chart is edited on /org (#1420).
+    note += '<p class="ax-wall__count wag__note"><a href="/org">Open the org chart</a></p>';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
     var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
     return note + called + list.map(function (a) {
@@ -1023,7 +1013,7 @@ ${WALL_BUILD_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'orgsetup' ? 'Set up the org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1263,8 +1253,6 @@ ${WALL_BUILD_SCRIPT}
     $('wall-aside').classList.toggle('is-act', page === 'activity');
     if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
     paintTask(page);
-    // Set up the org (#1420): wall-org-setup.client.ts.
-    renderOrgSetup(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.
     if (page === 'live') {

@@ -9,7 +9,7 @@ import { businessConfigSchema } from "../src/business/config"
 import { Organization } from "../src/business/organization"
 import { handleAdminApi } from "../src/daemon/admin-panel"
 
-// Setting up the org chart from the Wall (#1420): members, roles and typed
+// Editing the org chart from /org (#1420): members, roles and typed
 // relations (#1418's model), checked before saving, owner only.
 
 const schedule = { days: ["mon"], start: "08:00", end: "12:00" }

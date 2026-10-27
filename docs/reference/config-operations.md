@@ -159,7 +159,7 @@ An experimental layer that runs agents like a team, with roles, working hours an
 | `business.roles` | map of objects | `{}` | Job roles, keyed by role id. |
 | `business.orgChart` | map of objects | `{}` | Which agent holds which role and when it works, keyed by agent id. |
 | `business.relations` | list of objects | `[]` | Typed links between org members, people included. See below. |
-| `business.orgPeople` | map of objects | `{}` | People placed in the org chart, keyed by an id from `people`, each with an optional `role` (a role id from `business.roles`). A person named in `business.relations` is in the chart without an entry here. Set from [Set up the org](../dashboard/wall.md#set-up-the-org) on the Wall. |
+| `business.orgPeople` | map of objects | `{}` | People placed in the org chart, keyed by an id from `people`, each with an optional `role` (a role id from `business.roles`). A person named in `business.relations` is in the chart without an entry here. Set from [Edit the org chart](../dashboard/org.md#edit-the-org-chart) on `/org`. |
 | `business.projects` | list of objects | `[]` | Projects, with an optional project manager and client. |
 | `business.contactMap` | list of objects | `[]` | Maps a chat or sender to a client and project, so the activity view credits the right client. |
 | `business.clients` | map of objects | `{}` | Per-client overrides, keyed by client id. Clients are otherwise worked out from `projects` and `contactMap`. |

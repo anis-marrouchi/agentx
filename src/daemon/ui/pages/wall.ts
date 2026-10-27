@@ -26,7 +26,6 @@ import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 import { WALL_COST_CSS } from "./wall-cost.client"
-import { WALL_ORG_SETUP_CSS } from "./wall-org-setup.client"
 import { WALL_ORG_CSS } from "./wall-org.client"
 import { WALL_PEOPLE_CSS } from "./wall-people.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
@@ -224,7 +223,6 @@ ${navItems}
     <section id="wall-people" class="ax-wall__people" aria-label="People who talk to the agents" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
     <section id="wall-org" class="ax-wall__org" aria-label="Org chart" hidden></section>
-    <section id="wall-orgsetup" class="ax-wall__orgsetup" aria-label="Set up the org" hidden></section>
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
     <section id="wall-task" aria-label="A run: its request, conversation and steer box" hidden></section>
@@ -255,7 +253,7 @@ ${navItems}
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_ORG_SETUP_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }
