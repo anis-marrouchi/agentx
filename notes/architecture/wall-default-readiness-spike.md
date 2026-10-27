@@ -122,7 +122,9 @@ Not blocking, but needed before the matching classic page goes: Org editing
 (#1419, #1420, #1421, #1425), pausing and archiving jobs (**C**), and
 deciding on Reviews (**F**).
 
-## Proposed new issues (not filed)
+## Proposed new issues (demo run)
+
+Superseded: the owner filed the follow-ups from the live run under epic #1449. See [Filed follow-ups](#filed-follow-ups).
 
 - **A. Feat: Wall – resume or drop stopped tasks and restart a node from Running now.** Bring the `/live` controls (`/api/signals/{stop,resume,drop}`, `/api/node/restart` and cancel) to the node cards and the Task page.
 - **B. Feat: Wall – answer every decision card from Needs you.** List the cards raised outside a task and the open actions of CLI sessions, add Yes, No and Later on each card, and make the **Needs you** count match Approvals.
@@ -156,12 +158,12 @@ not:
 
 ### Ranked blockers on the live fleet
 
-1. Decide on the Wall: cards and every inbox item (B above, the same scope).
+1. Decide on the Wall: cards and every inbox item (#1440).
 2. Settings, including agent edit, guests and health (#1428).
 3. Activity and per-agent history (#1429).
 4. Global cost and the comparison between agents (#1423).
-5. Reliable cold load (new).
-6. Resume, restart when idle and attached sessions on Wall Live (A above).
+5. Reliable cold load (#1442).
+6. Resume, restart when idle and attached sessions on Wall Live (#1439).
 7. Org chart as a Wall page (#1419, #1421; needs #1418; edit is #1420).
 
 ### Where the two runs disagree
@@ -174,4 +176,22 @@ not:
 - **Reviews:** the live run notes that deciding stays on `/admin/graph` by
   design (`wall-reviews.client.ts`), so F is optional.
 - **Issue letters:** the two runs use the same letters for different
-  proposals. The issue comment's list is the one to file from.
+  proposals. The filed issues below follow the live run's letters.
+
+## Filed follow-ups
+
+Epic #1449 tracks the work:
+
+- #1439: Wall Live can resume stopped tasks, restart a node when idle, and list attached sessions (A).
+- #1440: answer decision cards and inbox items on the Wall (B).
+- #1441: a People page on the Wall (C).
+- #1442: a slow or empty first load of the Wall home (D).
+- #1443: internal `[agentx:…]` markers shown as Live card text (E).
+- #1444: the version line.
+- #1445: Workflows on the Wall, including the `/workflows` 502.
+- #1446: remove the classic pages nobody uses.
+- #1447: repoint the classic links. This is the last step.
+- #1448: docs.
+
+The filter button that sat off-screen at 390 px on the demo is not filed.
+Check it again on the live fleet while #1442 is being worked on.
