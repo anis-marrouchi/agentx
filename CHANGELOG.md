@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.181.1](https://github.com/anis-marrouchi/agentx/compare/v0.181.0...v0.181.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **approvals:** let a peer close its forwarded card on a shared mesh token ([#1406](https://github.com/anis-marrouchi/agentx/issues/1406)) ([62187ba](https://github.com/anis-marrouchi/agentx/commit/62187baaa2347afd6447c68ae2904acbbe78279d))
+
 ## [0.181.0](https://github.com/anis-marrouchi/agentx/compare/v0.180.0...v0.181.0) (2026-10-26)
 
 
