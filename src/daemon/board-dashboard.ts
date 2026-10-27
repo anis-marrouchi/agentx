@@ -91,7 +91,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -267,6 +267,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
+  // The Wall's owner-only guard (#1454): every write under /api/admin/wall,
+  // here or forwarded to a peer, stops here without the owner's token.
+  if (isWallWrite(method, path) && !wallOwnerOk(req, ctx)) {
+    sendJson(res, 401, { error: "Only the owner writes on the Wall: sign in, or send the dashboard token." })
+    return
+  }
   // Sign-in for a browser on another machine (#1306, dashboard-session.ts).
   if (await handleLogin(req, res, url, method, ctx.token)) return
 
@@ -3188,6 +3194,13 @@ function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
   if (got === ctx.token || hasSession(req, ctx.token)) return true
   const rec = got ? new TokenStore().verify(got) : null
   return !!rec && recordHasScope(rec, "dashboard:write")
+}
+
+/** The owner, for a Wall write (#1454): the dashboard token, its session
+ *  cookie or a dashboard:write key. With no token set, only a caller on
+ *  this machine: a board bound off loopback without one reads, never writes. */
+function wallOwnerOk(req: IncomingMessage, ctx: Ctx): boolean {
+  return adminTokenOk(req, ctx) && (!!ctx.token || !isOffBox(req))
 }
 
 const STREAM_TICKET_PATH = "/api/admin/stream-ticket"
