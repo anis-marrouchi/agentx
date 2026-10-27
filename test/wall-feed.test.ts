@@ -359,11 +359,12 @@ describe("Wall home first load (#1442)", () => {
     let answer: (v: unknown) => void = () => {}
     const w = openWall({ feed: new Promise((r) => { answer = r }) })
     await w.settle()
-    expect(w.calls.map((c) => c.url)).toEqual(["/api/live?quick=1", "/api/admin/wall?peer=fleet&days=7&quick=1"])
+    // The build line (#1444) asks its own small route as the script starts.
+    expect(w.calls.map((c) => c.url)).toEqual(["/api/node/build", "/api/live?quick=1", "/api/admin/wall?peer=fleet&days=7&quick=1"])
     answer({ ok: true, status: 200, json: async () => WALL })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
-    expect(w.calls.map((c) => c.url).slice(2).sort()).toEqual(["/api/admin/observability/budgets", "/api/admin/org", "/api/workflows/runs?summary=1&limit=100"])
+    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/observability/budgets", "/api/admin/org", "/api/workflows/runs?summary=1&limit=100"])
   })
 
   it("shows a machine that is slow to answer as checking, not down, and asks again", async () => {
