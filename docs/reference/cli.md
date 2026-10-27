@@ -219,6 +219,7 @@ One list of every decision waiting for you: [Approvals](../dashboard/approvals.m
 | `agentx approvals popup <key>` | Show one card on the Mac now and record your answer (macOS) |
 | `agentx approvals popup --sample [--theme] [--capture file.png]` | Show a sample card; nothing is recorded |
 | `agentx approvals checkin [--daily]` | Run a check-in now: waiting cards come back, open reminders get cards (daemon, macOS) |
+| `agentx approvals mirror-report [--start] [--days] [--json]` | Count, per day, cards raised, Reminders created and cards the [Reminders mirror](../jobs/reminders-mirror.md) missed |
 | `agentx approvals settings [options]` | Show or change expiry, "later", the daily digest, the Mac card and check-ins |
 
 ## Open requests

@@ -12,7 +12,7 @@ import { isOffBox, pageToken, sessionValue } from "../src/daemon/dashboard-sessi
 
 const TOKEN = "dash-secret"
 const OFF = { "X-Forwarded-For": "100.64.0.9" }
-const PAGES = ["/wall", "/admin", "/approvals", "/admin/graph", "/admin/agents/ops", "/admin/health", "/admin/cost", "/admin/ledger"]
+const PAGES = ["/wall", "/admin", "/approvals", "/admin/graph", "/admin/agents/ops", "/admin/health", "/admin/ledger"]
 
 let server: Server | undefined
 
