@@ -34,7 +34,7 @@ class PlanModel implements LineModel {
   close() { this.closed = true }
 }
 
-function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: boolean; userActsAfter?: number; speakMs?: number; planMs?: number } = {}) {
+function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: boolean; userActsAfter?: number; speakMs?: number; planMs?: number; stuckOn?: string } = {}) {
   const app = fakeApp()
   const log: string[] = []
   const presence: Presence = {
@@ -48,7 +48,7 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
   let stopped = 0
   const speech = {
     busy: false,
-    say: async (u: { text: string }) => { said.push(u.text); await sleep(opts.speakMs ?? 5); return true },
+    say: async (u: { text: string }) => { said.push(u.text); if (u.text === opts.stuckOn) await new Promise(() => {}); await sleep(opts.speakMs ?? 5); return true },
     // A lesson silences only its own lines in the shared queue.
     cancel: (kind: string) => { if (kind === "lesson") stopped++ },
   } as any
@@ -318,6 +318,17 @@ describe("LiveTeach", () => {
     expect(s.log.at(-1)).toBe("close")
   })
 
+  it("a stuck closing line does not hold the lesson open after it ends (#1493)", async () => {
+    const WAIT = "TARGET: 1\nACTION: point\nSAY: New is up here."
+    const LINE = "I'll leave it there. Ask me to show you again whenever you like."
+    const s = setup("teach", [WAIT, WAIT, WAIT, WAIT], { stuckOn: LINE })
+    const run = s.t.run()
+    while (s.said.at(-1) !== LINE) await sleep(5)
+    s.dismiss()
+    await run
+    expect(s.t.state).toBe("ended")
+  })
+
   it("a step the listener does resets the count of undone ones", async () => {
     const WAIT = "TARGET: 1\nACTION: point\nSAY: New is up here."
     // Step 1 undone, step 2 done (the window opens), step 3 undone: still going.
@@ -563,6 +574,24 @@ describe("presence look and mode policy", () => {
     "où en est le projet Hasanah",
     "comment ça avance aujourd'hui",
     "explique-moi le statut du déploiement",
+    // DevOps's 38-phrase run on #1494/#1495: each of these opened a lesson on one head.
+    "show me how things look today",
+    "show me how the release is going",
+    "show me where we are on the release",
+    "walk me through where we are on #1493",
+    "walk me through the status",
+    "can you walk us through what happened yesterday",
+    "show me how we're doing on invoices",
+    "teach me about the project status",
+    "coach me on the client call",
+    "guide me through the client status",
+    "how can we fix the release",
+    "how do I know if the deploy worked",
+    "where do we go from here",
+    "watch me merge PR 40",
+    "montre-moi où on en est",
+    "explique-moi comment ça avance",
+    "comment on fait pour le déploiement",
   ]
   const SHOW = [
     "show me how to export this",

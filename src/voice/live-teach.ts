@@ -349,7 +349,8 @@ export class LiveTeach {
   private async stepBack(): Promise<"stopped"> {
     const line = "I'll leave it there. Ask me to show you again whenever you like."
     this.deps.presence.say(line)
-    await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line, agentId: this.opts.speaker.agentId, kind: "lesson" })
+    // A stuck speech call must not hold open a lesson that has decided to end.
+    await Promise.race([this.deps.speech.say({ voice: this.opts.speaker.voice, text: line, agentId: this.opts.speaker.agentId, kind: "lesson" }), this.poked()])
     this.stop("the listener did not follow the steps")
     return "stopped"
   }

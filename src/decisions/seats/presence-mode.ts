@@ -101,10 +101,17 @@ export const TALK: PresenceDecision = { mode: "talk", persist: false, nextAction
 // we on the HeyGen test" and "how do things look today" are status
 // questions, answered by voice (#1493).
 
-/** Asking outright to be shown, taught or coached: "show me how…",
- *  "teach me…", "walk me through…", "watch me do it", and French. */
+/** Asking outright to be shown, taught or coached: "show me how to…",
+ *  "teach me…", "walk me through…", and French. "show me how things look"
+ *  is not a how-to, and "walk me through the status" is about work, so
+ *  these still need !ABOUT_WORK. */
 const SHOW_ME =
-  /\b(show|guide)\s+(me|us)\s+(how|where|on\s+(the\s+)?screen)\b|\bteach\s+(me|us)\b|\b(walk|guide)\s+(me|us)\s+through\b|\bcoach\s+(me|us)\b|\bwatch\s+(me|us)\s+(do|try|while|as)\b|\bmontre[- ]?(moi|nous)\s+(comment|o[uù])\b|\bapprends[- ]?(moi|nous)\b|\bguide[- ]?(moi|nous)\b/i
+  /\b(show|guide)\s+(me|us)\s+(how\s+(to|i|we)\b|where\b)|\bteach\s+(me|us)\b|\b(walk|guide)\s+(me|us)\s+through\b|\bcoach\s+(me|us)\b|\bmontre[- ]?(moi|nous)\s+(comment|o[uù])\b|\bapprends[- ]?(moi|nous)\b|\bguide[- ]?(moi|nous)\b/i
+
+/** Asks that name the screen or the listener's own doing: "show me on
+ *  screen…", "watch me do it". These open a lesson whatever they are about. */
+const SHOW_ON_SCREEN =
+  /\b(show|guide)\s+(me|us)\s+on\s+(the\s+)?screen\b|\bwatch\s+(me|us)\s+(do|try|while|as)\b/i
 
 /** A how-to or where-is question about the listener's own hands: "how do
  *  I…", "how to…", "where is the…", "où est le…". "where are we",
@@ -117,17 +124,19 @@ const ON_SCREEN =
   /\b(button|menu|toolbar|sidebar|tab|field|icon|checkbox|toggle|dropdown|shortcut)s?\b|\bon\s+(the\s+|my\s+|this\s+)?screen\b|\bin\s+this\s+(app|window|page|tab)\b|\b(bouton|menu|onglet|champ|ic[oô]ne|raccourci)s?\b|\b[àa]\s+l'[ée]cran\b|\bsur\s+l'[ée]cran\b|\bdans\s+cette\s+(app|appli|fen[eê]tre|page)\b/i
 
 /** Words that make a how or where question about work, not about a
- *  control: "where's the tab redesign PR", "where is the menu fix deploy". */
+ *  control: "where's the tab redesign PR", "where is the menu fix deploy",
+ *  "walk me through where we are", "…what happened yesterday". */
 const ABOUT_WORK =
-  /\b(pr|mr|issue|ticket|branch|commit|merge|deploy|release|status|progress|update|test|draft|task|project|client|invoice)s?\b|#\d+/i
+  /\b(pr|mr|issue|ticket|branch|commit|merge|deploy|release|status|progress|update|test|draft|task|project|client|invoice)s?\b|#\d+|\bwhere\s+we\s+are\b|\bhow\s+we('re|\s+are)\s+doing\b|\bwhat\s+happened\b|\bhow\s+things\s+(look|stand|are)\b|\b(is|are)\s+going\b/i
 
 /** The listener asked to be shown, taught or coached on screen, in
  *  English or French. "Go merge PR 40", "finish the drafts" or "where are
  *  we on X" never match: those are work and status. */
 export function asksToBeShown(request: string): boolean {
   const said = request.replace(/[‘’]/g, "'")
-  if (SHOW_ME.test(said)) return true
-  return HOW_OR_WHERE.test(said) && ON_SCREEN.test(said) && !ABOUT_WORK.test(said)
+  if (SHOW_ON_SCREEN.test(said)) return true
+  if (ABOUT_WORK.test(said)) return false
+  return SHOW_ME.test(said) || (HOW_OR_WHERE.test(said) && ON_SCREEN.test(said))
 }
 
 /** Apply the policy to the seat's answers; null answers mean talk.
