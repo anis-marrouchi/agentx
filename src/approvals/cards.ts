@@ -399,7 +399,10 @@ export function resolveCard(
   const card = readCard(root, id)
   if (!card) return { ok: false, status: 404, error: `no card "${id}"` }
   if (card.raised_by !== opts.by || (card.node ?? "") !== (opts.node ?? "")) {
-    return { ok: false, status: 403, error: `card "${id}" was raised by another agent` }
+    // Name the raiser, so the caller knows who can close it (#1405).
+    const who = card.node ? `${card.raised_by} on node "${card.node}"` : card.raised_by
+    const how = card.node ? "it closes it through its own node's daemon" : "it closes it from one of its running turns"
+    return { ok: false, status: 403, error: `card "${id}" was raised by another agent (${who}): only that agent can close it (${how}), or the operator answers it in Approvals` }
   }
   if (!AGENT_RESOLVABLE_ORIGINS.has(card.origin?.kind)) {
     return { ok: false, status: 409, error: `card "${id}" is answered by the operator only` }
