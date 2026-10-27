@@ -58,6 +58,7 @@ export async function handleBusinessHttp(
         agentId: e.agentId,
         role: e.role.title,
         reportsTo: e.reportsTo,
+        manager: e.manager,
         onClock: onClock.includes(e.agentId),
       })),
       kpi: deps.kpi.snapshot(),

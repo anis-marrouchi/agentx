@@ -199,10 +199,75 @@ describe("the Org page and its API", () => {
     expect(readHolds(dir).newbie).toBeDefined()
   })
 
+  it("returns people, agents and typed relations from GET /api/admin/org (#1418)", async () => {
+    const cfg = {
+      node: { id: "n", name: "n" },
+      ...config,
+      people: [{ id: "sam", name: "Sam Rivera", role: "owner" }],
+      business: { ...config.business, relations: [{ from: "agent:ceo", to: "person:sam", type: "reports-to" }] },
+    }
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify(cfg))
+    process.chdir(dir)
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("ECONNREFUSED"))
+    try {
+      const { json } = await call("GET", "/api/admin/org")
+      expect(json.people).toEqual([{ id: "sam", name: "Sam Rivera", role: "owner" }])
+      expect(json.relations).toContainEqual({ from: "agent:ceo", to: "person:sam", type: "reports-to" })
+      expect(json.roots[0]).toMatchObject({ kind: "person", id: "sam" })
+      expect(json.roots[0].reports[0]).toMatchObject({ kind: "agent", id: "ceo", manager: "person:sam" })
+      expect(json.problems).toEqual([])
+    } finally { fetchMock.mockRestore() }
+  })
+
   it("ships a script that parses", () => {
     const html = renderOrgPage({})
     const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
     expect(html).toContain('id="org-tree"')
     for (const s of scripts) expect(() => new Function(s)).not.toThrow()
+  })
+})
+
+describe("the org tree with people and typed relations (#1418)", () => {
+  const withPeople = {
+    ...config,
+    people: [{ id: "sam", name: "Sam Rivera", role: "owner" }, { id: "kim", name: "Kim Lee" }],
+    business: {
+      ...config.business,
+      orgChart: { ...config.business.orgChart, ceo: { role: "lead", reportsTo: "person:sam" } },
+      relations: [
+        { from: "agent:dev", to: "person:kim", type: "dotted-line" },
+        { from: "agent:pm", to: "person:sam", type: "acts-for" },
+        { from: "agent:qa", to: "person:ghost", type: "dotted-line" },
+      ],
+    },
+  }
+
+  it("puts a person at the top, lists links on cards and returns people and relations", () => {
+    const view = buildOrgView(withPeople, {}, null)
+    // Kim has only a dotted line in, so Kim has no boss and sits at the top too.
+    expect(view.roots.map((n) => [n.kind, n.id])).toEqual([["person", "kim"], ["person", "sam"]])
+    const sam = view.roots[1]
+    expect(sam).toMatchObject({ name: "Sam Rivera", title: "owner" })
+    const ceo = sam.reports[0]
+    expect(ceo).toMatchObject({ kind: "agent", id: "ceo", manager: "person:sam" })
+    expect(ceo.reportsTo).toBeUndefined()
+    const pm = ceo.reports[0]
+    expect(pm).toMatchObject({ reportsTo: "ceo", manager: "agent:ceo", actsFor: ["person:sam"] })
+    expect(pm.reports.find((n) => n.id === "dev")?.dottedLine).toEqual(["person:kim"])
+    expect(view.people.map((p) => p.id).sort()).toEqual(["kim", "sam"])
+    expect(view.relations).toContainEqual({ from: "agent:ceo", to: "person:sam", type: "reports-to" })
+    expect(view.relations).toContainEqual({ from: "agent:dev", to: "person:kim", type: "dotted-line" })
+    // A bad link is skipped and explained, not fatal.
+    expect(view.problems).toEqual([expect.stringMatching(/unknown person "ghost"/)])
+  })
+
+  it("draws a reports-to loop through a person without losing anyone", () => {
+    const loop = { ...withPeople, business: { ...withPeople.business, relations: [{ from: "person:sam", to: "agent:dev", type: "reports-to" }] } }
+    const view = buildOrgView(loop, {}, null)
+    const ids: string[] = []
+    const walk = (list: any[]) => { for (const n of list) { ids.push(`${n.kind}:${n.id}`); walk(n.reports) } }
+    walk(view.roots)
+    expect(ids.sort()).toEqual(["agent:ceo", "agent:dev", "agent:pm", "agent:qa", "person:sam"])
+    expect(view.problems[0]).toMatch(/Reporting cycle/)
   })
 })

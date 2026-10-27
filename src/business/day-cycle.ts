@@ -108,7 +108,7 @@ export class DayCycle {
   private roleContext(agentId: string): string {
     const emp = this.org.get(agentId)
     if (!emp) return ""
-    const manager = emp.reportsTo ? `reporting to ${emp.reportsTo}` : "(no manager — top of org chart)"
+    const manager = emp.manager ? `reporting to ${this.org.nameOf(emp.manager)}` : "(no manager — top of org chart)"
     const responsibilities = emp.role.responsibilities.length
       ? `\nResponsibilities:\n${emp.role.responsibilities.map((r) => `- ${r}`).join("\n")}`
       : ""

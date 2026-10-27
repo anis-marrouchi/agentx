@@ -133,3 +133,103 @@ describe("Organization — backwards compatibility", () => {
     expect(org.pmFor("anything")).toBeUndefined()
   })
 })
+
+// People and typed relations in the org chart (#1418).
+describe("Organization — people and typed relations", () => {
+  const people = [
+    { id: "sam", name: "Sam Rivera", role: "owner" },
+    { id: "kim", name: "Kim Lee", role: "member" },
+  ]
+
+  it("lets a person be a boss through a legacy-style orgChart.reportsTo", () => {
+    const base = makeConfig()
+    const org = new Organization(makeConfig({
+      orgChart: { ...base.orgChart, ceo: { ...base.orgChart.ceo, reportsTo: "person:sam" } },
+    }), people)
+    expect(org.managerOf("agent:ceo")).toBe("person:sam")
+    expect(org.get("ceo")?.reportsTo).toBeUndefined()
+    expect(org.get("ceo")?.manager).toBe("person:sam")
+    expect(org.people().map((p) => p.id)).toEqual(["sam"])
+    expect(org.nameOf("person:sam")).toBe("Sam Rivera")
+  })
+
+  it("lets a person be a boss through business.relations", () => {
+    const org = new Organization(makeConfig({
+      relations: [{ from: "agent:ceo", to: "person:sam", type: "reports-to" }],
+    }), people)
+    expect(org.managerOf("agent:ceo")).toBe("person:sam")
+    expect(org.relations()).toContainEqual({ from: "agent:ceo", to: "person:sam", type: "reports-to" })
+  })
+
+  it("reads a legacy bare reportsTo as reports-to between agents", () => {
+    const org = new Organization(makeConfig())
+    expect(org.reportsTo("pm-globex")).toBe("ceo")
+    expect(org.managerOf("agent:pm-globex")).toBe("agent:ceo")
+    expect(org.relations()).toContainEqual({ from: "agent:globex-v2", to: "agent:pm-globex", type: "reports-to" })
+    expect(org.directReports("pm-globex").sort()).toEqual(["globex-v1", "globex-v2"])
+  })
+
+  it("rejects an unknown person or agent with a clear error", () => {
+    expect(() => new Organization(makeConfig({
+      relations: [{ from: "agent:ceo", to: "person:ghost", type: "reports-to" }],
+    }), people)).toThrow(/unknown person "ghost" \(not in people\)/)
+    expect(() => new Organization(makeConfig({
+      relations: [{ from: "agent:nobody", to: "person:sam", type: "dotted-line" }],
+    }), people)).toThrow(/unknown agent "nobody"/)
+    const base = makeConfig()
+    expect(() => new Organization(makeConfig({
+      orgChart: { ...base.orgChart, ceo: { ...base.orgChart.ceo, reportsTo: "ghost" } },
+    }), people)).toThrow(/reports to: unknown agent "ghost"/)
+  })
+
+  it("rejects a member written without agent: or person: in relations", () => {
+    expect(() => makeConfig({ relations: [{ from: "ceo", to: "person:sam", type: "reports-to" }] })).toThrow(/agent:<id> or person:<id>/)
+  })
+
+  it("detects a reports-to cycle through a person", () => {
+    expect(() => new Organization(makeConfig({
+      relations: [
+        { from: "agent:ceo", to: "person:sam", type: "reports-to" },
+        { from: "person:sam", to: "agent:globex-v2", type: "reports-to" },
+      ],
+    }), people)).toThrow(/Reporting cycle detected involving/)
+  })
+
+  it("allows one reports-to per member, many dotted-lines", () => {
+    expect(() => new Organization(makeConfig({
+      relations: [{ from: "agent:pm-globex", to: "person:sam", type: "reports-to" }],
+    }), people)).toThrow(/already reports to agent:ceo/)
+    const org = new Organization(makeConfig({
+      relations: [
+        { from: "agent:globex-v2", to: "person:sam", type: "dotted-line" },
+        { from: "agent:globex-v2", to: "person:kim", type: "dotted-line" },
+      ],
+    }), people)
+    expect(org.relations().filter((r) => r.type === "dotted-line")).toHaveLength(2)
+    // Dotted lines never feed escalation.
+    expect(org.escalationChain("globex-v2")).toEqual(["pm-globex", "ceo"])
+  })
+
+  it("accepts acts-for only from an agent to a person", () => {
+    expect(() => new Organization(makeConfig({
+      relations: [{ from: "agent:globex-v2", to: "person:sam", type: "acts-for" }],
+    }), people)).not.toThrow()
+    expect(() => new Organization(makeConfig({
+      relations: [{ from: "person:sam", to: "agent:ceo", type: "acts-for" }],
+    }), people)).toThrow(/acts-for links an agent to a person/)
+    expect(() => new Organization(makeConfig({
+      relations: [{ from: "agent:globex-v2", to: "agent:ceo", type: "acts-for" }],
+    }), people)).toThrow(/acts-for links an agent to a person/)
+  })
+
+  it("stops escalation at a person: it never dispatches to a person", () => {
+    const base = makeConfig()
+    const org = new Organization(makeConfig({
+      orgChart: { ...base.orgChart, "pm-globex": { ...base.orgChart["pm-globex"], reportsTo: "person:sam" } },
+      relations: [{ from: "person:sam", to: "agent:ceo", type: "reports-to" }],
+    }), people)
+    expect(org.escalationChain("globex-v2")).toEqual(["pm-globex"])
+    expect(org.chainOfCommand("pm-globex")).toEqual(["pm-globex"])
+    expect(org.managerOf("person:sam")).toBe("agent:ceo")
+  })
+})

@@ -1,4 +1,5 @@
 import type { BusinessConfig, BusinessOrgEntry, BusinessProject, BusinessRole } from "./config"
+import { memberRef, refId, refKind, resolveOrgGraph, type MemberRef, type OrgGraph, type OrgPerson, type OrgRelation } from "./org-graph"
 
 // --- Organization: org-chart queries and validation ---
 //
@@ -14,7 +15,10 @@ export interface EmployeeProfile {
   agentId: string
   role: BusinessRole
   roleKey: string
+  /** The boss's agent id, when the boss is an agent. */
   reportsTo?: string
+  /** The line manager, agent or person (#1418). */
+  manager?: MemberRef
   schedule: BusinessOrgEntry["schedule"]
   utilizationTarget: number
 }
@@ -22,41 +26,34 @@ export interface EmployeeProfile {
 export class Organization {
   private employees: Map<string, EmployeeProfile> = new Map()
   private projects: Map<string, BusinessProject> = new Map()
+  private graph: OrgGraph
 
-  constructor(config: BusinessConfig) {
+  /** `people` is the top-level people list; a person sits in the chart once
+   *  a relation names them. */
+  constructor(config: BusinessConfig, people: ReadonlyArray<{ id: string; name?: string; role?: string }> = []) {
     for (const [agentId, entry] of Object.entries(config.orgChart)) {
       const role = config.roles[entry.role]
       if (!role) {
         throw new Error(`Org chart references unknown role "${entry.role}" for agent "${agentId}"`)
       }
+    }
+
+    // Members, typed relations, unknown ids and reports-to cycles across
+    // people and agents.
+    this.graph = resolveOrgGraph(config, people)
+    if (this.graph.problems.length > 0) throw new Error(this.graph.problems[0])
+
+    for (const [agentId, entry] of Object.entries(config.orgChart)) {
+      const manager = this.graph.managerOf.get(memberRef("agent", agentId))
       this.employees.set(agentId, {
         agentId,
-        role,
+        role: config.roles[entry.role],
         roleKey: entry.role,
-        reportsTo: entry.reportsTo,
+        ...(manager && refKind(manager) === "agent" ? { reportsTo: refId(manager) } : {}),
+        ...(manager ? { manager } : {}),
         schedule: entry.schedule,
         utilizationTarget: entry.utilizationTarget,
       })
-    }
-
-    // Validate reportsTo refs
-    for (const emp of this.employees.values()) {
-      if (emp.reportsTo && !this.employees.has(emp.reportsTo)) {
-        throw new Error(`Agent "${emp.agentId}" reports to unknown agent "${emp.reportsTo}"`)
-      }
-    }
-
-    // Cycle detection
-    for (const emp of this.employees.values()) {
-      const seen = new Set<string>()
-      let cur: string | undefined = emp.agentId
-      while (cur) {
-        if (seen.has(cur)) {
-          throw new Error(`Reporting cycle detected involving "${emp.agentId}"`)
-        }
-        seen.add(cur)
-        cur = this.employees.get(cur)?.reportsTo
-      }
     }
 
     // Per-project config — Phase 3.
@@ -87,7 +84,8 @@ export class Organization {
       .map((e) => e.agentId)
   }
 
-  /** Walk up the org tree to the root. First element is `agentId` itself. */
+  /** Walk up `reports-to` to the root. First element is `agentId` itself.
+   *  Agents only: the walk stops at a person, who is never dispatched to. */
   chainOfCommand(agentId: string): string[] {
     const chain: string[] = []
     let cur: string | undefined = agentId
@@ -96,6 +94,26 @@ export class Organization {
       cur = this.employees.get(cur)?.reportsTo
     }
     return chain
+  }
+
+  /** The line manager of a member (`agent:<id>` or `person:<id>`). */
+  managerOf(member: MemberRef): MemberRef | undefined {
+    return this.graph.managerOf.get(member)
+  }
+
+  /** People in the chart: those a relation names. */
+  people(): OrgPerson[] {
+    return [...this.graph.people.values()]
+  }
+
+  /** Every typed relation, including those read from orgChart.reportsTo. */
+  relations(): OrgRelation[] {
+    return [...this.graph.relations]
+  }
+
+  /** A member's display name: the person's name, or the agent id. */
+  nameOf(member: MemberRef): string {
+    return refKind(member) === "person" ? this.graph.people.get(refId(member))?.name ?? refId(member) : refId(member)
   }
 
   /**

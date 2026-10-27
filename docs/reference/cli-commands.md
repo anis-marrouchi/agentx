@@ -2828,7 +2828,7 @@ Add or update an orgChart entry for an agent.
 | Flag | Default | What it does |
 |---|---|---|
 | `--role <role>` | required | Role title (e.g. 'PM', 'Coder', 'DevOps'). |
-| `--reports-to <agentId>` | — | Manager's agentId. |
+| `--reports-to <member>` | — | Manager: an agent id, or `person:<id>` from `people`. |
 | `--start <hh:mm>` | `09:00` | Schedule start. |
 | `--end <hh:mm>` | `17:00` | Schedule end. |
 | `--days <csv>` | `mon,tue,wed,thu,fri` | Working days (mon,tue,wed,thu,fri). |
@@ -2837,6 +2837,30 @@ Add or update an orgChart entry for an agent.
 ### `agentx business orgchart remove <agentId>`
 
 Remove an orgChart entry.
+
+No flags.
+
+### `agentx business relation`
+
+Manage business.relations — typed links between people and agents (reports-to, dotted-line, acts-for). See [Org › People and kinds of relation](../dashboard/org.md#people-and-kinds-of-relation).
+
+### `agentx business relation list`
+
+List every relation, orgChart reportsTo included, and any that are wrong.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--json` | — | JSON output. |
+
+### `agentx business relation add <from> <type> <to>`
+
+Link two members, e.g. `agentx business relation add agent:pm reports-to person:sam`. A member is `agent:<id>` or `person:<id>`. Refused when a member is unknown or the link breaks a rule.
+
+No flags.
+
+### `agentx business relation remove <from> <type> <to>`
+
+Remove one relation from business.relations. Alias: `rm`.
 
 No flags.
 

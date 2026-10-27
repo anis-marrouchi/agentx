@@ -158,6 +158,7 @@ An experimental layer that runs agents like a team, with roles, working hours an
 | `business.workSource.glob` | string | `"**/*.md"` | Which files to read in the folder (`wiki`). |
 | `business.roles` | map of objects | `{}` | Job roles, keyed by role id. |
 | `business.orgChart` | map of objects | `{}` | Which agent holds which role and when it works, keyed by agent id. |
+| `business.relations` | list of objects | `[]` | Typed links between people and agents in the org chart: who reports to whom, secondary managers, and agents that work for a person. |
 | `business.projects` | list of objects | `[]` | Projects, with an optional project manager and client. |
 | `business.contactMap` | list of objects | `[]` | Maps a chat or sender to a client and project, so the activity view credits the right client. |
 | `business.clients` | map of objects | `{}` | Per-client overrides, keyed by client id. Clients are otherwise worked out from `projects` and `contactMap`. |
@@ -182,11 +183,19 @@ Each entry in `business.orgChart.<agent>`:
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `role` | string | required | Role id from `business.roles`. |
-| `reportsTo` | string | — | Agent id of the manager. Must be another agent in the org chart. |
+| `reportsTo` | string | — | The manager: another agent in the org chart (its id), or a person from `people` written `person:<id>`. Read as a `reports-to` relation. |
 | `schedule.days` | list of `"mon"`…`"sun"` | Monday to Friday | Working days. |
 | `schedule.start`, `schedule.end` | string `HH:MM` | required | Start and end of the working day. |
 | `schedule.lunch` | object | — | Lunch break, with `start` and `end` as `HH:MM`. |
 | `utilizationTarget` | number (0–1) | `0.8` | Share of working time the agent should be busy. |
+
+Each entry in `business.relations`:
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `from` | string | required | A member: `agent:<id>` (an agent in `business.orgChart`) or `person:<id>` (a person in `people`). |
+| `to` | string | required | The other member, written the same way. |
+| `type` | `"reports-to"`, `"dotted-line"` or `"acts-for"` | required | `reports-to`: the line manager, at most one per member, no loops; escalation follows it and stops at a person. `dotted-line`: a secondary manager, many allowed, never used for escalation. `acts-for`: an agent works on behalf of a person (agent to person only). |
 
 Each entry in `business.projects`:
 

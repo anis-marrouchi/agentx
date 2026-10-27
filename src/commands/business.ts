@@ -2,6 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import { loadDaemonConfig } from "@/daemon/config"
+import { RELATION_TYPES, resolveOrgGraph } from "@/business/org-graph"
 
 // --- agentx business — manage the business layer config ---
 //
@@ -13,6 +14,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 // Scope kept narrow on purpose:
 //   show      — read-only summary
 //   orgchart  — add / remove / list entries (agentId → { role, reportsTo, schedule })
+//   relation  — add / remove / list typed links between people and agents
 //   project   — add / remove / list (id, pm?, client?)
 //   contact   — add / remove / list (chatId/username → client/project)
 //
@@ -110,7 +112,7 @@ orgchart
   .command("add <agentId>")
   .description("add or update an orgChart entry for an agent")
   .requiredOption("--role <role>", "role title (e.g. 'PM', 'Coder', 'DevOps')")
-  .option("--reports-to <agentId>", "manager's agentId")
+  .option("--reports-to <member>", "manager: an agent id, or person:<id> from people")
   .option("--start <hh:mm>", "schedule start", "09:00")
   .option("--end <hh:mm>", "schedule end", "17:00")
   .option("--days <csv>", "working days (mon,tue,wed,thu,fri)", "mon,tue,wed,thu,fri")
@@ -141,6 +143,56 @@ orgchart
       }
       delete cfg.business.orgChart[agentId]
       return `orgChart entry "${agentId}" removed`
+    })
+  })
+
+// ---- relation ------------------------------------------------------------
+
+const relation = business
+  .command("relation")
+  .description(`manage business.relations — typed links between people and agents (${RELATION_TYPES.join(", ")})`)
+
+relation
+  .command("list")
+  .description("list every relation, orgChart reportsTo included")
+  .option("--json", "JSON output")
+  .action((opts) => {
+    let cfg: any = {}
+    try { cfg = loadDaemonConfig() } catch {}
+    const graph = resolveOrgGraph(cfg.business || {}, cfg.people || [])
+    if (opts.json) { console.log(JSON.stringify({ relations: graph.relations, problems: graph.problems }, null, 2)); return }
+    if (graph.relations.length === 0) console.log(chalk.dim("  no relations"))
+    for (const r of graph.relations) console.log(`  ${chalk.cyan(r.from)}  ${r.type}  ${chalk.cyan(r.to)}`)
+    for (const p of graph.problems) console.log(chalk.yellow(`  ! ${p}`))
+  })
+
+relation
+  .command("add <from> <type> <to>")
+  .description("link two members, e.g. agent:pm reports-to person:sam")
+  .action((from: string, type: string, to: string) => {
+    mutate((cfg) => {
+      cfg.business = cfg.business || {}
+      const relations = [...(cfg.business.relations || []), { from, to, type }]
+      const problems = resolveOrgGraph({ ...cfg.business, relations }, cfg.people || []).problems
+      if (problems.length) throw new Error(problems[0])
+      cfg.business.relations = relations
+      return `relation added: ${from} ${type} ${to}`
+    })
+  })
+
+relation
+  .command("remove <from> <type> <to>")
+  .alias("rm")
+  .description("remove one relation from business.relations")
+  .action((from: string, type: string, to: string) => {
+    mutate((cfg) => {
+      const relations: any[] = cfg.business?.relations || []
+      const kept = relations.filter((r) => !(r.from === from && r.type === type && r.to === to))
+      if (kept.length === relations.length) {
+        throw new Error(`no relation "${from} ${type} ${to}" in business.relations (a reportsTo in orgChart is changed with: agentx business orgchart add)`)
+      }
+      cfg.business.relations = kept
+      return `relation removed: ${from} ${type} ${to}`
     })
   })
 

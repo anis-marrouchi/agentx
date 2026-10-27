@@ -3,7 +3,9 @@
 // The org chart (business.orgChart) as a tree: each agent with its role,
 // who it reports to, its one-line job and its status. From a card: open the
 // agent's activity, pause or resume it. Agents another agent created wait
-// in Approvals; their card says so.
+// in Approvals; their card says so. People from `people` sit in the tree
+// once a relation names them (#1418); a card lists its dotted-line and
+// acts-for links.
 //
 // API: GET /api/admin/org and POST /api/admin/org/hold, in admin-panel.ts.
 // Client JS avoids backslash escapes: they collapse inside this template
@@ -23,7 +25,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
   const body = pageHead({
     kicker: "Operations",
     title: "Org",
-    lead: "Who your agents are, who each one reports to, and what each one is doing now. Pause an agent here; it starts nothing until you resume it.",
+    lead: "Who your people and agents are, who each one reports to, and what each agent is doing now. Pause an agent here; it starts nothing until you resume it.",
   }) + `
   <div class="org">
     <div id="org-msg" class="org-msg" role="status" aria-live="polite"></div>
@@ -31,6 +33,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
       <h2 id="org-none-title">No org chart yet</h2>
       <p>Give each agent a role and a boss under <code>business.orgChart</code> in <code>agentx.json</code>, with the roles under <code>business.roles</code>. Until then every agent is listed below, side by side.</p>
     </section>
+    <ul id="org-problems" class="org-problems" hidden></ul>
     <div id="org-tree" class="org-tree" aria-label="Org chart"><p class="org-quiet">Loading…</p></div>
     <section id="org-outside" hidden aria-labelledby="org-outside-title">
       <h2 id="org-outside-title" class="org-h2">Not in the org chart</h2>
@@ -84,6 +87,10 @@ const ORG_CSS = `
 .org-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .org-acts a, .org-acts button { font: inherit; font-size: var(--ax-fs-xs); padding: 3px 9px; border-radius: var(--ax-radius-sm); border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-surface-2); color: var(--ax-text); text-decoration: none; cursor: pointer; }
 .org-acts button:disabled { opacity: 0.6; cursor: default; }
+.org-card.is-person { background: var(--ax-surface-2); }
+.org-kind { font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-links { margin: 8px 0 0; padding: 0; list-style: none; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-problems { margin: 0 0 12px; padding: 10px 14px 10px 30px; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius); font-size: var(--ax-fs-sm); color: var(--ax-amber-ink); }
 `
 
 const ORG_SCRIPT = `
@@ -99,8 +106,24 @@ const ORG_SCRIPT = `
     if (window.AX_LOCAL_TOKEN) h['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
     return h;
   }
+  var names = {};
+  function nameOf(ref) { return names[ref] || String(ref).replace(/^[a-z]+:/, ''); }
+  function index(list) { (list || []).forEach(function (n) { names[n.kind + ':' + n.id] = n.name; index(n.reports); }); }
+  function links(n) {
+    var rows = (n.dottedLine || []).map(function (r) { return 'Dotted line to ' + nameOf(r); })
+      .concat((n.actsFor || []).map(function (r) { return 'Acts for ' + nameOf(r); }));
+    if (n.manager && n.manager.indexOf('person:') === 0) rows.unshift('Reports to ' + nameOf(n.manager));
+    return rows.length ? '<ul class="org-links">' + rows.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' : '';
+  }
+  function personCard(n) {
+    return '<div class="org-card is-person" data-person="' + esc(n.id) + '">'
+      + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-kind">Person</span></div>'
+      + (n.title ? '<p class="org-title">' + esc(n.title) + '</p>' : '')
+      + links(n) + '</div>';
+  }
   function say(t, bad) { msg.textContent = t || ''; msg.className = 'org-msg' + (bad ? ' is-bad' : ''); }
   function card(n) {
+    if (n.kind === 'person') return personCard(n);
     var id = encodeURIComponent(n.id);
     var state = n.status === 'working' && n.active > 1 ? 'Working on ' + n.active : STATE[n.status] || n.status;
     if (n.status === 'paused' && n.heldBy) state += ' by ' + n.heldBy;
@@ -113,6 +136,7 @@ const ORG_SCRIPT = `
       + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(n.id) + '</span></div>'
       + (n.title ? '<p class="org-title">' + esc(n.title) + '</p>' : '')
       + (n.job ? '<p class="org-job">' + esc(n.job) + '</p>' : '')
+      + links(n)
       + '<span class="org-state is-' + esc(n.status) + '">' + esc(state) + '</span>'
       + '<div class="org-acts">' + acts + '</div></div>';
   }
@@ -127,6 +151,10 @@ const ORG_SCRIPT = `
       var d = await r.json();
       if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
       if (!d.exists) { tree.innerHTML = '<p class="org-quiet">No agentx.json in this folder.</p>'; return; }
+      names = {}; index(d.roots);
+      var probs = document.getElementById('org-problems');
+      probs.hidden = !(d.problems && d.problems.length);
+      probs.innerHTML = (d.problems || []).map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('');
       document.getElementById('org-none').hidden = d.roots.length > 0;
       tree.innerHTML = d.roots.length ? branch(d.roots) : '';
       var out = document.getElementById('org-outside');

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { RELATION_TYPES } from "./org-graph"
 
 // --- Business layer configuration schema (EXPERIMENTAL) ---
 // Optional top-level `business` key in agentx.json.
@@ -27,9 +28,20 @@ const roleSchema = z.object({
 
 const orgEntrySchema = z.object({
   role: z.string(),
+  /** The line manager: an agent id (bare, as before) or `person:<id>` from
+   *  `people`. Read as a `reports-to` relation (#1418). */
   reportsTo: z.string().optional(),
   schedule: scheduleSchema,
   utilizationTarget: z.number().min(0).max(1).default(0.8),
+})
+
+/** One typed link in the org chart (#1418). Members are `agent:<id>` (in
+ *  orgChart) or `person:<id>` (in `people`); Organization checks they exist. */
+const memberRefSchema = z.string().regex(/^(agent|person):\S+$/, "write it as agent:<id> or person:<id>")
+const relationSchema = z.object({
+  from: memberRefSchema,
+  to: memberRefSchema,
+  type: z.enum(RELATION_TYPES),
 })
 
 const channelRefSchema = z.object({
@@ -128,6 +140,10 @@ export const businessConfigSchema = z.object({
   workSource: workSourceSchema.default({ type: "backlog", path: ".agentx/backlog.md" }),
   roles: z.record(z.string(), roleSchema).default({}),
   orgChart: z.record(z.string(), orgEntrySchema).default({}),
+  /** Typed links between people and agents (#1418): reports-to (line
+   *  manager, one each), dotted-line (secondary manager, many) and acts-for
+   *  (an agent on behalf of a person). Adds to orgChart.reportsTo. */
+  relations: z.array(relationSchema).default([]),
   /** Per-project metadata. Phase 3 — defaults to empty array, so
    *  existing agentx.json files validate without modification. */
   projects: z.array(projectSchema).default([]),
@@ -177,3 +193,4 @@ export type BusinessSchedule = z.infer<typeof scheduleSchema>
 export type BusinessWorkSource = z.infer<typeof workSourceSchema>
 export type BusinessChannelRef = z.infer<typeof channelRefSchema>
 export type BusinessProject = z.infer<typeof projectSchema>
+export type BusinessRelation = z.infer<typeof relationSchema>

@@ -137,20 +137,24 @@ ${WALL_TASK_SCRIPT}
     var info = {};
     function walk(list) {
       (list || []).forEach(function (n) {
-        info[n.id] = { title: n.title, reportsTo: n.reportsTo, reports: (n.reports || []).length };
+        // People (#1418) sit in the tree too; the Wall keys agents only.
+        if (n.kind !== 'person') info[n.id] = { title: n.title, reportsTo: n.reportsTo, boss: !n.reportsTo && n.manager ? bossName(n.manager) : '', reports: (n.reports || []).length };
         walk(n.reports);
       });
     }
+    var people = {};
+    ((S.org && S.org.people) || []).forEach(function (p) { people['person:' + p.id] = p.name; });
+    function bossName(ref) { return people[ref] || String(ref).replace(/^[a-z]+:/, ''); }
     walk(S.org && S.org.roots);
     return info;
   }
   /** Role, boss and reports, read-only: Pause and Resume stay on /org. */
   function orgLineHtml(id) {
     var o = orgInfo()[id];
-    if (!o || (!o.title && !o.reportsTo && !o.reports)) return '';
+    if (!o || (!o.title && !o.reportsTo && !o.boss && !o.reports)) return '';
     var bits = [
       o.title ? '<b>' + esc(o.title) + '</b>' : '',
-      o.reportsTo ? 'reports to <button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>' : '',
+      o.reportsTo ? 'reports to <button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>' : o.boss ? 'reports to ' + esc(o.boss) : '',
       o.reports ? o.reports + (o.reports === 1 ? ' reports' : ' report') + ' to it' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
     return '<div class="wp__meta wpf__org">' + bits + '<a href="/org">Org chart</a></div>';
