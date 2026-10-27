@@ -36,6 +36,10 @@ import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests
 //        computer's speakers (the daemon's talk mode, POST /talk)
 //   POST /api/admin/wall/space/say    {text}  the owner's words into it
 //   POST /api/admin/wall/space/stop   end it
+//   POST /api/admin/wall/budget       {scope, id?, monthlyUsd, warnRatio?}
+//        a monthly budget from the Cost page (#1423): the same handler as
+//        POST /api/admin/budgets in board-dashboard.ts, here so the guard
+//        keeps it the owner's
 //
 // A comment and a call go to the node that keeps the post (the client
 // sends the post's peer, and the dashboard proxy forwards). A Space always
@@ -47,6 +51,7 @@ export const WALL_COMMENT_PATH = `${WALL_ACTIONS_PREFIX}/comment`
 export const WALL_CALL_PATH = `${WALL_ACTIONS_PREFIX}/call`
 export const WALL_POST_PATH = `${WALL_ACTIONS_PREFIX}/post`
 export const WALL_SPACE_PATH = `${WALL_ACTIONS_PREFIX}/space`
+export const WALL_BUDGET_PATH = `${WALL_ACTIONS_PREFIX}/budget`
 
 const AGENT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
 const TOPIC_MAX = 200

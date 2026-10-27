@@ -48,7 +48,7 @@ import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
 import { WALL_BUILD_SCRIPT } from "./wall-build.client"
 import { profileSpendHtml } from "./wall-spend"
-import { costPageHtml, costPageModel } from "./wall-cost"
+import { costPageHtml, costPageModel, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
@@ -64,7 +64,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml })}
+  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
@@ -224,6 +224,8 @@ ${WALL_BUILD_SCRIPT}
     FILTERS.forEach(function (k) { f[k] = q.get(k) || ''; });
     if (!q.has('status')) f.status = 'open';
     S.view = q.get('view') || S.view;
+    // The Cost page's range (#1423) is in the link: 7, 14, 30, 90 or all.
+    if (S.view === 'cost' && q.has('range')) { var cr = q.get('range') === 'all' ? 0 : +q.get('range'); if ([7, 14, 30, 90, 0].indexOf(cr) >= 0) C.range = cr; }
     S.page = PAGES.indexOf(q.get('page')) >= 0 ? q.get('page') : 'wall';
     // A Task page names its run (#1381); without one it is the Wall.
     S.task = S.page === 'task' ? readTask(q) : null;
@@ -240,6 +242,7 @@ ${WALL_BUILD_SCRIPT}
       if (v || k === 'status') q.set(k, v);
     });
     if (S.view !== 'feed') q.set('view', S.view);
+    if (S.view === 'cost') q.set('range', C.range ? String(C.range) : 'all');
     if (S.page !== 'wall') q.set('page', S.page);
     if (S.page === 'task' && S.task) TASK_KEYS.forEach(function (k) { if (S.task[k]) q.set(k, S.task[k]); });
     if (S.page === 'activity') actWrite(q);

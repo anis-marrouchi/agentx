@@ -28,7 +28,6 @@ import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-pan
 import { handlePeoplePanel } from "./people-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
-import { renderCostPage } from "./ui/pages/cost"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
 import { recordSurfaceUse } from "@/observability/surface-usage"
@@ -36,6 +35,7 @@ import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphD
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderWallPage } from "./ui/pages/wall"
+import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
@@ -91,7 +91,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, isWallWrite, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -226,7 +226,6 @@ const DASHBOARD_PAGES = new Set([
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
-  "/admin/cost",
   "/admin/projects",
   "/admin/wiki",
 ])
@@ -727,12 +726,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderLedgerPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
-  // /admin/cost — token-spend page. Replaces the standalone
-  // `agentx usage serve` (port 4201) and the Cost tab inside Health.
+  // /admin/cost was the token-spend page. The Wall's Cost page (#1423)
+  // does all it did, so old links and bookmarks land there. The CSV and
+  // the reads stay under /api/admin/observability/.
   if (method === "GET" && path === "/admin/cost") {
     if (!pageAllowed(req, res, ctx, path)) return
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.writeHead(302, { Location: WALL_COST_HREF })
+    res.end()
     return
   }
   // /admin/projects — aggregated per-project view. Data via
@@ -832,7 +832,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   // Set or raise a monthly budget from the Cost page (#1290), after the
   // token gate above. { scope: agent|project|fleet, id?, monthlyUsd, warnRatio? }
-  if (method === "POST" && path === "/api/admin/budgets") {
+  // The Wall's Cost page sends it to WALL_BUDGET_PATH, under the Wall's
+  // owner-only guard (#1454).
+  if (method === "POST" && (path === "/api/admin/budgets" || path === WALL_BUDGET_PATH)) {
     const body = await readJson(req).catch(() => ({})) as Record<string, unknown>
     const problem = budgetPatchProblem(body)
     if (problem) { sendJson(res, 400, { error: problem }); return }
@@ -1671,7 +1673,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const SLUG_TO_ADMIN: Record<string, string> = {
       health: "/admin/health",
       ledger: "/admin/ledger",
-      cost: "/admin/cost",
+      cost: WALL_COST_HREF,
       projects: "/admin/projects",
       graph: "/admin/graph",
       wiki: "/admin/wiki/",

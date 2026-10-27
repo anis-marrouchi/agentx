@@ -21,7 +21,7 @@ describe("profileSpendHtml", () => {
     const html = profileSpendHtml(view(12.5, 100), "coder")
     expect(html).toContain("Spent <b>$12.50</b> of $100.00 this month")
     expect(html).not.toContain("chip")
-    expect(html).toContain('href="/admin/cost"')
+    expect(html).toContain('href="#status=open&amp;view=cost"')
   })
 
   it("warns at the warn ratio", () => {
@@ -72,8 +72,9 @@ describe("profileSpendHtml", () => {
 })
 
 describe("Wall links to the Cost page", () => {
-  it("lists Cost among the classic pages", () => {
-    expect(WALL_CLASSIC_LINKS).toContainEqual(["Cost", "/admin/cost"])
-    expect(renderWallPage()).toContain('<a href="/admin/cost">Cost</a>')
+  it("sends Cost to the Wall's own page, not the classic one (#1449)", () => {
+    expect(WALL_CLASSIC_LINKS.map(([label]) => label)).not.toContain("Cost")
+    expect(renderWallPage()).not.toContain('href="/admin/cost"')
+    expect(renderWallPage()).toContain('data-nav="cost" href="#status=open&amp;view=cost"')
   })
 })

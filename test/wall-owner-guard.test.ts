@@ -79,6 +79,7 @@ describe("Wall owner-only write guard (#1454)", () => {
     expect(ROUTES).toEqual(expect.arrayContaining([
       "/api/admin/wall/comment", "/api/admin/wall/post", "/api/admin/wall/call",
       "/api/admin/wall/space", "/api/admin/wall/space/say", "/api/admin/wall/space/stop",
+      "/api/admin/wall/budget",
     ]))
   })
 
@@ -114,6 +115,7 @@ describe("Wall owner-only write guard (#1454)", () => {
     // An empty body: the route itself answers, so the guard let it pass.
     expect(await post(withToken, "/api/admin/wall/comment", { Authorization: "Bearer tok-wall" })).toBe(400)
     expect(await post(withToken, "/api/admin/wall/post", { Authorization: "Bearer tok-wall" })).toBe(400)
+    expect(await post(withToken, "/api/admin/wall/budget", { Authorization: "Bearer tok-wall" })).toBe(400)
   })
 
   it("with no dashboard token, writes only from this machine", async () => {
