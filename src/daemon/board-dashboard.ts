@@ -94,7 +94,7 @@ import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
-import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
+import { getTopbarFeatures, headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
 import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
 import { handleAgentChatApi } from "./agent-chat-api"
 
@@ -324,7 +324,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     }
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.end(renderWallPage(wallPageOpts(req, ctx)))
     return
   }
   // Classic pages retired with no views in 30 days (#1446): each address
@@ -339,7 +339,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/wall") {
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.end(renderWallPage(wallPageOpts(req, ctx)))
     return
   }
   // Classic Live is on the Wall now (#1439): Resume, Restart when idle and
@@ -3263,6 +3263,23 @@ function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: 
  *  the ones the dashboard started with when the file can't be read. */
 function currentAgents(config: DaemonConfig): DaemonConfig["agents"] {
   try { return loadDaemonConfig().agents ?? {} } catch { return config.agents ?? {} }
+}
+
+/** Is this Wall viewer the owner, who gets Settings (#1428)? The test the
+ *  /api/admin/* gate applies (isDashboardOwner), or a caller on this machine
+ *  whose page carries the token. Anyone else gets no Settings, and the
+ *  APIs refuse them either way. */
+function wallOwner(req: IncomingMessage, ctx: Ctx): boolean {
+  return isDashboardOwner(req, ctx) || !!pageToken(req, ctx.token)
+}
+
+function wallPageOpts(req: IncomingMessage, ctx: Ctx) {
+  return {
+    peers: buildTopbarPeers(ctx.config),
+    localToken: pageToken(req, ctx.token),
+    owner: wallOwner(req, ctx),
+    business: !!getTopbarFeatures().business,
+  }
 }
 
 function localNodeName(config: DaemonConfig): string {

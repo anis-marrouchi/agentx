@@ -38,6 +38,10 @@
 // that reaches the agent on the post (sent to the node that keeps it), a
 // voice call from that agent, and a Space: two agents talk about the post
 // out loud on this computer, with the owner's words going into it.
+//
+// Settings (#1428, wall-settings.client.ts) changes settings, for the owner
+// only: the owner replaced #1180's rule 4, so the Wall may write wherever a
+// classic page wrote (#1449).
 
 import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
@@ -50,6 +54,7 @@ import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
 import { WALL_BUILD_SCRIPT } from "./wall-build.client"
+import { WALL_SETTINGS_SCRIPT } from "./wall-settings.client"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
@@ -82,6 +87,7 @@ ${WALL_PICTURES_SCRIPT}
 ${WALL_TASK_SCRIPT}
 ${WALL_ACTIVITY_SCRIPT}
 ${WALL_BUILD_SCRIPT}
+${WALL_SETTINGS_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -295,6 +301,7 @@ ${WALL_BUILD_SCRIPT}
     if (S.page === 'task' && !S.task) S.page = 'wall';
     if (S.page === 'activity') actRead(q);
     S.post = q.get('post') || '';
+    settingsReadHash(q);
     return f;
   }
   /** The hash for the current filters and view, on this page or post. */
@@ -309,6 +316,7 @@ ${WALL_BUILD_SCRIPT}
     if (S.page !== 'wall') q.set('page', S.page);
     if (S.page === 'task' && S.task) TASK_KEYS.forEach(function (k) { if (S.task[k]) q.set(k, S.task[k]); });
     if (S.page === 'activity') actWrite(q);
+    if (S.page === 'settings') settingsHashInto(q);
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
@@ -699,7 +707,7 @@ ${WALL_BUILD_SCRIPT}
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
       profileSpendHtml(S.budgets, id) + pictureActsHtml(id) +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
-      '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a></div>' + profileTabsHtml(id, tab) + '</div>';
+      '<div class="wpf__links">' + agentPageLink(id) + '</div>' + profileTabsHtml(id, tab) + '</div>';
   }
   // --- Goals (#1392): the filter's line, with progress and cost ---
   function goalRow(id) { return ((S.data && S.data.goals) || []).find(function (g) { return g.id === id; }) || null; }
@@ -971,7 +979,7 @@ ${WALL_BUILD_SCRIPT}
         (a.summary && a.summary.text ? '<details class="wp__ask"><summary><span class="k">Last summary</span> ' + esc(plainMarkerText(a.summary.text)) + '</summary><div class="ax-md">' + md(a.summary.text) + '</div></details>' : '') +
         (a.nodes.length ? '<div class="wag__acts">' + agentActsHtml(a.id) + '</div>' : '') +
         '<div class="wpf__links">' + (s.posts ? '<button type="button" class="wa-more" data-agent="' + esc(a.id) + '">' + s.posts + (s.posts === 1 ? ' post' : ' posts') + '</button>' : '<span class="ax-wall__count">No posts in 7 days</span>') +
-          '<a href="/admin/agents/' + encodeURIComponent(a.id) + '">Agent page</a><a href="' + esc(activityHref(a.id)) + '">Activity</a></div>' +
+          agentPageLink(a.id) + '<a href="' + esc(activityHref(a.id)) + '">Activity</a></div>' +
         '</div></article>';
     }).join('');
   }
@@ -1013,7 +1021,7 @@ ${WALL_BUILD_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1252,6 +1260,10 @@ ${WALL_BUILD_SCRIPT}
     // Activity has a side column of its own (#1451 frame 3).
     $('wall-aside').classList.toggle('is-act', page === 'activity');
     if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
+    // Settings (#1428): drawn only for the owner, so it may not be on the page.
+    if (ST) $('wall-settings').hidden = page !== 'settings';
+    document.querySelector('.ax-wall').classList.toggle('is-settings', page === 'settings');
+    if (page === 'settings') settingsShow();
     paintTask(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.

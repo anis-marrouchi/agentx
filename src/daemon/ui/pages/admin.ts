@@ -4275,6 +4275,13 @@ for (const btn of document.querySelectorAll('nav.tabs button')) {
     if (btn.dataset.tab === 'tokens') loadTokens();
   });
 }
+// /admin#tab=<tab> opens that tab: the Wall's Settings links here for a
+// section it does not have yet (#1428).
+(function(){
+  var m = /(?:^#|&)tab=([a-z-]+)/.exec(location.hash);
+  var b = m && document.querySelector('nav.tabs button[data-tab="' + m[1] + '"]');
+  if (b) b.click();
+})();
 
 // --- Peer-proxy banner: shown when admin writes target a non-primary peer ---
 (function(){
