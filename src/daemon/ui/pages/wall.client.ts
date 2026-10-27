@@ -26,6 +26,8 @@
 // on X (#post=<id> in the hash, so a post is a link and Back returns to the
 // feed). The nav's Running now and Agents open pages of their own
 // (#page=running, #page=agents), and each nav item carries its count.
+// Activity (#page=activity, #1429, wall-activity.client.ts) lists the
+// agents' runs, newest first; an agent's profile has it as a tab.
 // Results and thread lines render their Markdown through the shared
 // renderer; links in them go to web, mail or same-site addresses only.
 //
@@ -41,6 +43,8 @@ import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
+import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
+import { WALL_BUILD_SCRIPT } from "./wall-build.client"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
@@ -54,7 +58,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
+  var PAGES = ['running', 'agents', 'creator', 'live', 'task', 'activity'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
@@ -65,6 +69,8 @@ ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
 ${WALL_TASK_SCRIPT}
+${WALL_ACTIVITY_SCRIPT}
+${WALL_BUILD_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -220,6 +226,7 @@ ${WALL_TASK_SCRIPT}
     // A Task page names its run (#1381); without one it is the Wall.
     S.task = S.page === 'task' ? readTask(q) : null;
     if (S.page === 'task' && !S.task) S.page = 'wall';
+    if (S.page === 'activity') actRead(q);
     S.post = q.get('post') || '';
     return f;
   }
@@ -233,6 +240,7 @@ ${WALL_TASK_SCRIPT}
     if (S.view !== 'feed') q.set('view', S.view);
     if (S.page !== 'wall') q.set('page', S.page);
     if (S.page === 'task' && S.task) TASK_KEYS.forEach(function (k) { if (S.task[k]) q.set(k, S.task[k]); });
+    if (S.page === 'activity') actWrite(q);
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
@@ -428,7 +436,7 @@ ${WALL_TASK_SCRIPT}
     });
     if (p.lastRun) {
       acts.push('<a href="' + esc(taskHref(p.lastRun.taskId, p.lastRun.agentId, p.node, !isOpen(p))) + '">' + ICON.trace + 'Task record and trace</a>');
-      acts.push('<a href="/agents/' + encodeURIComponent(p.lastRun.agentId) + '/history">Agent history</a>');
+      acts.push('<a href="' + esc(activityHref(p.lastRun.agentId)) + '">Agent activity</a>');
     }
     // Opened, a post reads as a task (#1355): the request as its title,
     // where it stands, its plan, the result, then the facts and the thread.
@@ -600,17 +608,29 @@ ${WALL_TASK_SCRIPT}
         '<span class="wa__n"><b>' + esc(nameOf(a.id)) + '</b><small>@' + esc(a.id) + ' · ' + a.open + ' open · ' + a.posts + (a.posts === 1 ? ' post' : ' posts') + '</small></span></button>';
     }).join('') + (list.length > 6 ? '<button type="button" class="wa-more" data-agents-more>' + (S.allAgents ? 'Show fewer' : 'Show all ' + list.length) + '</button>' : '');
   }
-  function profileHtml(id) {
+  /** An agent's Activity tab (#1429): its runs, newest first. */
+  function activityHref(id) { return '#page=activity&a-agent=' + encodeURIComponent(id); }
+  /** The profile's tabs: its posts on the Wall, or its runs (#1429). */
+  function profileTabsHtml(id, tab) {
+    var on = ' class="is-on" aria-current="page"';
+    return '<nav class="wpf__tabs" aria-label="' + esc(nameOf(id)) + '">' +
+      (tab === 'activity' ? '<button type="button" data-agent="' + esc(id) + '">Posts</button><a href="' + esc(activityHref(id)) + '"' + on + '>Activity</a>'
+        : '<a href="' + esc(hashOf('')) + '"' + on + '>Posts</a><a href="' + esc(activityHref(id)) + '">Activity</a>') + '</nav>';
+  }
+  /** tab: 'activity' on the agent's Activity tab, else its posts. */
+  function profileHtml(id, tab) {
     var a = agentStats().find(function (x) { return x.id === id; }) || { open: 0, owner: 0, done: 0, runs: 0, posts: 0 };
     var live = agentInfo()[id] && agentInfo()[id].live;
+    var clear = tab === 'activity' ? '<button type="button" class="ax-btn ax-btn--ghost" data-act-all>All agents</button>'
+      : '<button type="button" class="ax-btn ax-btn--ghost" data-profile-clear>All posts</button>';
     return '<div class="wpf__banner" style="--av-h:' + hue(id) + '"></div><div class="wpf">' +
-      '<div class="wpf__top">' + avatar(id, 'lg') + '<button type="button" class="ax-btn ax-btn--ghost" data-profile-clear>All posts</button></div>' +
+      '<div class="wpf__top">' + avatar(id, 'lg') + clear + '</div>' +
       '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' + orgLineHtml(id) +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
       profileSpendHtml(S.budgets, id) +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
-      '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(id) + '/history">History</a></div></div>';
+      '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a></div>' + profileTabsHtml(id, tab) + '</div>';
   }
   // --- Goals (#1392): the filter's line, with progress and cost ---
   function goalRow(id) { return ((S.data && S.data.goals) || []).find(function (g) { return g.id === id; }) || null; }
@@ -877,7 +897,7 @@ ${WALL_TASK_SCRIPT}
         (a.summary && a.summary.text ? '<details class="wp__ask"><summary><span class="k">Last summary</span> ' + esc(a.summary.text) + '</summary><div class="ax-md">' + md(a.summary.text) + '</div></details>' : '') +
         (a.nodes.length ? '<div class="wag__acts">' + agentActsHtml(a.id) + '</div>' : '') +
         '<div class="wpf__links">' + (s.posts ? '<button type="button" class="wa-more" data-agent="' + esc(a.id) + '">' + s.posts + (s.posts === 1 ? ' post' : ' posts') + '</button>' : '<span class="ax-wall__count">No posts in 7 days</span>') +
-          '<a href="/admin/agents/' + encodeURIComponent(a.id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(a.id) + '/history">History</a></div>' +
+          '<a href="/admin/agents/' + encodeURIComponent(a.id) + '">Agent page</a><a href="' + esc(activityHref(a.id)) + '">Activity</a></div>' +
         '</div></article>';
     }).join('');
   }
@@ -919,7 +939,7 @@ ${WALL_TASK_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1147,6 +1167,11 @@ ${WALL_TASK_SCRIPT}
     $('wall-creator').hidden = page !== 'creator';
     $('wall-live').hidden = page !== 'live';
     $('wall-task').hidden = page !== 'task';
+    $('wall-activity').hidden = page !== 'activity';
+    $('wall-act-switch').hidden = page !== 'activity';
+    // Activity has a side column of its own (#1451 frame 3).
+    $('wall-aside').classList.toggle('is-act', page === 'activity');
+    if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
     paintTask(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.
@@ -1221,6 +1246,7 @@ ${WALL_TASK_SCRIPT}
     getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
+    if (S.page === 'activity') loadActivity(true);
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
     try {
       S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
