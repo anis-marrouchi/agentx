@@ -529,6 +529,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       res.end("<p>Missing <code>?agent=</code>. Open this task from the Wall's Live page.</p>")
       return
     }
+    // Off-box with no session, sign in first with the whole Wall link as
+    // next: the hash never reaches the server, so a sign-in reached from
+    // "/" would come back to the bare Wall.
+    if (!pageAllowed(req, res, ctx, to)) return
     res.writeHead(302, { Location: to })
     res.end()
     return
