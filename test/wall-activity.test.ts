@@ -27,7 +27,7 @@ const RUNS: Record<string, unknown[]> = {
 const POST = { id: "r1", owner: "cx", state: "in_progress", headline: "Refund order 47", group: { channel: "telegram", chatId: "demo" }, project: "support",
   node: { name: "node-a", peer: null }, createdAt: NOW - 5 * H, lastMoveAt: NOW - H, runs: 1, failedRuns: 0, runMs: 95e3, lastRun: { taskId: "t1", agentId: "cx" } }
 
-function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?: unknown[] }) {
+function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?: unknown[]; build?: unknown; monitorFails?: boolean; monitorHangs?: boolean }) {
   const page = renderWallPage()
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -46,7 +46,7 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
         for (const m of v.matchAll(/<(\w+)\b[^>]*\sid="([^"]+)"[^>]*>/g)) els.set(m[2], make(m[2], m[0]))
       },
       getAttribute: (k: string) => e.attrs[k] ?? null, setAttribute: (k: string, v: string) => { e.attrs[k] = v },
-      hasAttribute: (k: string) => k in e.attrs,
+      hasAttribute: (k: string) => k in e.attrs, removeAttribute: (k: string) => { delete e.attrs[k] },
       addEventListener: (t: string, f: (ev?: unknown) => void) => { on[t] = f },
       appendChild: (c: any) => { e.children.push(c); return c },
       querySelector: () => null,
@@ -72,10 +72,14 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
   }
   const loc: any = { hash: opts.hash, search: "", href: "" }
   const calls: Array<{ url: string; init: any }> = []
+  const timers: Array<() => void> = []
   const runs = opts.runs ?? RUNS
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
     const node = /^\/api\/monitor\/activity\?node=([^&]+)/.exec(url)
+    if (url === "/api/monitor" && opts.monitorHangs) return new Promise(() => {})
+    if (url === "/api/monitor" && opts.monitorFails) return Promise.resolve({ ok: false, status: 502, json: async () => ({ error: "bad gateway" }) })
+    if (url === "/api/node/build") return opts.build === undefined ? Promise.resolve({ ok: false, status: 502, json: async () => ({}) }) : opts.build === null ? Promise.reject(new Error("down")) : Promise.resolve({ ok: true, status: 200, json: async () => opts.build })
     const body = url.startsWith("/api/admin/wall?") ? { node: "node-a", syncedAt: NOW, nodes: [{ name: "node-a", ok: true }], failures: [], posts: opts.posts ?? [POST] }
       : url === "/api/live" ? { nodes: [{ name: "node-a", url: "http://node-a", reachable: true, agents: [{ id: "cx", name: "Customer Desk" }, { id: "ops", name: "Night Shift" }] }] }
       : url === "/api/monitor" ? NODES
@@ -86,7 +90,7 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "EventSource", "requestAnimationFrame", script)(
     doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
-    { getItem: () => null, setItem: () => {} }, () => 0, class { addEventListener() {} close() {} }, (f: () => void) => { f(); return 1 },
+    { getItem: () => null, setItem: () => {} }, (f: () => void) => { timers.push(f); return 0 }, class { addEventListener() {} close() {} }, (f: () => void) => { f(); return 1 },
   )
   const settle = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   const go = async (hash: string) => { loc.hash = hash; onWindow.hashchange?.(); await settle() }
@@ -102,7 +106,9 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
   const html = () => el("wall-activity").innerHTML as string
   /** The rows, in order, as one string each. */
   const rows = () => html().split('<article class="wp wac').slice(1)
-  return { el, calls, settle, loc, go, pick, click, html, rows }
+  /** Let every interval fire once, as a minute going by would. */
+  const tick = async () => { for (const f of timers) f(); await settle() }
+  return { el, calls, settle, loc, go, pick, click, html, rows, tick, opts }
 }
 
 describe("Wall Activity: the agents' runs, newest first (#1429)", () => {
@@ -119,20 +125,22 @@ describe("Wall Activity: the agents' runs, newest first (#1429)", () => {
     const w = openWall({ hash: "#page=activity" })
     await w.settle()
     const r = w.rows()
-    expect(r.map((x) => /data-act-agent="(\w+)"/.exec(x)![1])).toEqual(["ops", "cx", "ops", "cx"])
+    expect(r.map((x) => /data-run-agent="(\w+)"/.exec(x)![1])).toEqual(["ops", "cx", "ops", "cx"])
     const [running, failed, job, done] = r
     // The Wall's post names the run: its headline, and its project.
     expect(done).toContain("Customer Desk</button>")
     expect(done).toContain(">Refund order 47</a>")
     expect(done).toContain("<b>support</b>")
-    expect(done).toContain("chip--done\">Done</span>")
+    expect(done).toContain('is-mute">Done</span>')
+    expect(done).toContain(">from a message on telegram</span>")
     expect(done).toContain(">1 min</span>")
     expect(done).toContain(">$0.12</span>")
     expect(done).toContain("<time datetime=")
     // With no post, the first line of what was asked.
     expect(job).toContain(">Morning digest</a>")
     expect(job).toContain(">4 min</span>")
-    expect(running).toContain('<span class="chip state">Running</span>')
+    expect(job).toContain(">from a job</span>")
+    expect(running).toContain('ax-badge--live">Running</span>')
     expect(running).toContain("so far</span>")
     expect(failed).toContain("node-a")
   })
@@ -142,7 +150,7 @@ describe("Wall Activity: the agents' runs, newest first (#1429)", () => {
     await w.settle()
     const failed = w.rows().find((x) => x.includes("Fix the checkout test"))!
     expect(failed.startsWith(" is-failed\"")).toBe(true)
-    expect(failed).toContain("chip--err\">Failed</span>")
+    expect(failed).toContain('ax-badge--err">Failed</span>')
     expect(w.html()).toContain("4 runs, 1 failed in the last 24 h")
   })
 
@@ -173,25 +181,29 @@ describe("Wall Activity: the agents' runs, newest first (#1429)", () => {
     expect(w.rows()).toHaveLength(2)
     await w.pick("act-project", "shop")
     expect(w.rows()).toHaveLength(1)
-    await w.pick("act-result", "failed")
+    await w.click({ "data-act-result": "failed" })
     expect(w.rows()).toHaveLength(1)
     expect(w.rows()[0]).toContain("Fix the checkout test")
     expect(w.loc.hash).toContain("page=activity")
     expect(w.loc.hash).toContain("a-agent=cx")
     expect(w.loc.hash).toContain("a-project=shop")
     expect(w.loc.hash).toContain("a-result=failed")
-    await w.pick("act-result", "done")
+    await w.click({ "data-act-result": "done" })
     expect(w.rows()).toHaveLength(0)
     expect(w.html()).toContain("No runs match these filters.")
+    expect(w.html()).toContain("data-act-clear")
+    await w.click({ "data-act-clear": "" })
+    expect(w.rows()).toHaveLength(2)
+    expect(w.loc.hash).not.toContain("a-result")
   })
 
   it("reads its filters back from a link", async () => {
     const w = openWall({ hash: "#page=activity&a-result=done" })
     await w.settle()
-    expect(w.rows().map((x) => /data-act-agent="(\w+)"/.exec(x)![1])).toEqual(["ops", "cx"])
+    expect(w.rows().map((x) => /data-run-agent="(\w+)"/.exec(x)![1])).toEqual(["ops", "cx"])
     const other = openWall({ hash: "#page=activity&a-project=-" })
     await other.settle()
-    expect(other.rows().map((x) => /data-act-agent="(\w+)"/.exec(x)![1])).toEqual(["ops"])
+    expect(other.rows().map((x) => /data-run-agent="(\w+)"/.exec(x)![1])).toEqual(["ops"])
   })
 
   it("reads 7 or 30 days when the period asks, and keeps it in the hash", async () => {
@@ -210,14 +222,15 @@ describe("Wall Activity: the agents' runs, newest first (#1429)", () => {
   it("names a machine that does not answer", async () => {
     const w = openWall({ hash: "#page=activity" })
     await w.settle()
-    expect(w.html()).toContain("node-c does not answer: its runs are missing.")
+    expect(w.html()).toContain('<p class="wac__banner is-warn" role="status">node-c does not answer: its runs are missing.</p>')
   })
 
   it("says so when nothing ran", async () => {
     const w = openWall({ hash: "#page=activity", runs: {} })
     await w.settle()
     expect(w.rows()).toHaveLength(0)
-    expect(w.html()).toContain("Nothing ran in the last 24 h.")
+    expect(w.html()).toContain("<h3>Nothing ran in this window</h3>")
+    expect(w.html()).toContain("Nothing ran in the last 24 h. Try 7 days.")
   })
 
   it("writes nothing: every call it makes is a read", async () => {
@@ -234,7 +247,7 @@ describe("Wall agent profile: the Activity tab (#1429)", () => {
   it("shows only that agent's runs under its profile, with the Activity tab on", async () => {
     const w = openWall({ hash: "#page=activity&a-agent=ops" })
     await w.settle()
-    expect(w.rows().map((x) => /data-act-agent="(\w+)"/.exec(x)![1])).toEqual(["ops", "ops"])
+    expect(w.rows().map((x) => /data-run-agent="(\w+)"/.exec(x)![1])).toEqual(["ops", "ops"])
     const html = w.html()
     expect(html).toContain('<nav class="wpf__tabs"')
     expect(html).toContain('<button type="button" data-agent="ops">Posts</button><a href="#page=activity&amp;a-agent=ops" class="is-on" aria-current="page">Activity</a>')
@@ -256,11 +269,146 @@ describe("Wall agent profile: the Activity tab (#1429)", () => {
   })
 })
 
-describe("Wall Activity on a phone (#1429)", () => {
-  it("puts Activity in the bottom bar's More menu", () => {
+describe("Wall Activity, design #1451 frame 3", () => {
+  it("has outcome tabs, with the failed count, over the filters and the period", async () => {
+    const w = openWall({ hash: "#page=activity" })
+    await w.settle()
+    const html = w.html()
+    expect(html).toContain('role="tablist" aria-label="Outcome"')
+    expect(html).toContain('data-act-result="" aria-selected="true" class="is-on">All</button>')
+    expect(html).toContain('data-act-result="failed" aria-selected="false">Failed <b class="wac__n">1</b></button>')
+    expect(html).toContain('id="act-source"')
+    expect(html).toContain("4 runs, 1 failed in the last 24 h, newest first")
+    // Feed or Timeline beside the title; Timeline is the classic lane view.
+    expect(w.el("wall-act-switch").hidden).toBe(false)
+    expect(renderWallPage()).toContain('<a href="/activity" title="The classic lane view, and the Map">Timeline</a>')
+  })
+
+  it("filters by what started a run", async () => {
+    const w = openWall({ hash: "#page=activity" })
+    await w.settle()
+    await w.pick("act-source", "jobs")
+    expect(w.rows()).toHaveLength(1)
+    expect(w.rows()[0]).toContain("Morning digest")
+    expect(w.loc.hash).toContain("a-source=jobs")
+  })
+
+  it("opens a run in place, with what was asked, where it ran and a link to the run", async () => {
+    const w = openWall({ hash: "#page=activity" })
+    await w.settle()
+    expect(w.html()).not.toContain("wac__open")
+    await w.click({ "data-act-row": "t1" })
+    const open = w.rows().find((x) => x.includes("Refund order 47"))!
+    expect(open).toContain('aria-expanded="true"')
+    expect(open).toContain('<dd class="wac__ask">Answer the refund question\nfor order 47</dd>')
+    expect(open).toContain("<dd>node-a · telegram · demo</dd>")
+    expect(open).toContain("No review findings for this run")
+    expect(open).toContain(">Open the run</a>")
+    await w.click({ "data-act-row": "t1" })
+    expect(w.html()).not.toContain("wac__open")
+  })
+
+  it("sums up the period in the side column, with unpriced runs counted apart", async () => {
+    const w = openWall({ hash: "#page=activity" })
+    await w.settle()
+    const side = w.el("wall-act-side").innerHTML as string
+    expect(side).toContain("<h2>Last 24 h</h2>")
+    expect(side).toContain("<b>4</b><span>runs</span>")
+    expect(side).toContain("<span>cost, 2 unpriced</span>")
+    expect(side).toContain('<h2>By agent</h2>')
+    expect(side).toContain('data-act-agent="cx"')
+    expect(w.el("wall-aside").classList.contains("is-act")).toBe(true)
+  })
+
+  it("shows rows of placeholders while it loads, then an error with Try again when the machines cannot be read", async () => {
+    const slow = openWall({ hash: "#page=activity", monitorHangs: true })
+    await slow.settle()
+    expect(slow.html()).toContain('<div class="wac__list" aria-busy="true">')
+    expect(slow.el("wall-act-side").innerHTML).toContain("Loading…")
+    const w = openWall({ hash: "#page=activity", monitorFails: true })
+    await w.settle()
+    expect(w.html()).toContain('<p class="wac__banner is-err" role="alert">Could not read the runs:')
+    expect(w.html()).toContain("data-act-retry")
+  })
+})
+
+describe("Wall nav and phone bar, design #1451 frame 0", () => {
+  it("groups the nav under Work, Automation, Fleet and Owner, with the new pages", () => {
     const page = renderWallPage()
-    expect(page).toContain('.ax-wall__nav > [data-nav="activity"]')
-    expect(page).toContain('.ax-wall__nav.is-more > [data-nav="activity"] { bottom: 330px; }')
-    expect(page).toMatch(/@media \(max-width: 640px\) \{\n {2}\.wac__bar label/)
+    const nav = page.slice(page.indexOf('<nav class="ax-wall__nav"'), page.indexOf("</nav>"))
+    const order = [...nav.matchAll(/data-nav="([\w]+)"|ax-wall__navlbl" aria-hidden="true">(\w+)</g)].map((m) => m[1] || m[2])
+    expect(order).toEqual(["wall", "needs", "Work", "live", "running", "projects", "activity", "Automation", "jobs", "workflows", "reviews", "failures",
+      "Fleet", "agents", "people", "org", "cost", "Owner", "settings", "dashboard", "creator"])
+    // Not on the Wall yet: they open their classic page until built.
+    expect(nav).toContain('data-nav="workflows" href="/workflows"')
+    expect(nav).toContain('data-nav="people" href="/people"')
+    expect(nav).toContain('data-nav="org" href="/org"')
+    expect(nav).toContain('data-nav="settings" href="/admin"')
+  })
+
+  it("keeps four pages in the phone bar and puts the rest in the More sheet, in the same groups", () => {
+    const page = renderWallPage()
+    for (const k of ["wall", "needs", "running", "projects"]) expect(page).toMatch(new RegExp(`data-nav="${k}" href="[^"]*" data-bar`))
+    expect(page).toContain(".ax-wall__nav > .ax-wall__item:not([data-bar]):not(.ax-wall__morebtn)")
+    const sheet = page.slice(page.indexOf('id="wall-more"'), page.indexOf('<div class="ax-wall__main">'))
+    expect([...sheet.matchAll(/<h2 class="ax-wall__navlbl">(\w+)<\/h2>/g)].map((m) => m[1])).toEqual(["Work", "Automation", "Fleet"])
+    expect([...sheet.matchAll(/class="ax-wall__moreitem" data-nav="(\w+)"/g)].map((m) => m[1])).toEqual(["live", "activity", "jobs", "workflows", "reviews", "failures", "agents", "people", "org", "cost"])
+    expect(sheet).toContain('data-n-for="nav-n-live"')
+    expect(sheet).toContain('data-nav="settings" href="/admin">Settings</a>')
+    expect(sheet).toContain("data-wall-theme>Light / dark</button>")
+    expect(page).toMatch(/@media \(max-width: 640px\) \{\n {2}\.wac__bar/)
+  })
+
+  it("opens More as a sheet and closes it when a page is picked", async () => {
+    const w = openWall({ hash: "#page=activity" })
+    await w.settle()
+    expect(w.el("wall-more").hidden).toBe(true)
+    await w.click({ "data-more-nav": "" })
+    expect(w.el("wall-more").hidden).toBe(false)
+    await w.click({ "data-nav": "jobs" })
+    expect(w.el("wall-more").hidden).toBe(true)
+    await w.click({ "data-more-nav": "" })
+    await w.click({ "data-more-close": "" })
+    expect(w.el("wall-more").hidden).toBe(true)
+  })
+})
+
+describe("Wall build line, design #1451 frame 0 (#1444)", () => {
+  const BUILD = { version: "0.182.0", commit: "4f2c9a1", startedAt: "2026-10-27T08:14:00Z", diskNewer: false, node: "node-a" }
+
+  it("shows the version, commit and since on the title row", async () => {
+    const w = openWall({ hash: "#page=activity", build: BUILD })
+    await w.settle()
+    const b = w.el("wall-build")
+    expect(b.innerHTML).toContain('<span class="wbl__v">0.182.0 · 4f2c9a1</span><span class="wbl__since">since ')
+    expect(b.innerHTML).not.toContain("Restart pending")
+    expect(b.title).toBe("The build the daemon is running, and when it started. Node: node-a")
+    expect(w.calls.filter((c) => c.url === "/api/node/build")).toHaveLength(1)
+  })
+
+  it("says Restart pending with the classic hover text, and links to the restart controls", async () => {
+    const w = openWall({ hash: "#page=wall", build: { ...BUILD, diskNewer: true } })
+    await w.settle()
+    const b = w.el("wall-build")
+    expect(b.innerHTML).toContain('<span class="ax-badge ax-badge--warn wbl__stale" role="status">Restart pending</span>')
+    expect(b.title).toBe("The code on disk is newer than the running daemon. Restart the daemon to load it. Node: node-a")
+    expect(b.attrs.href).toBe("/live")
+  })
+
+  it("draws nothing until the first answer, keeping its place", async () => {
+    const page = renderWallPage()
+    expect(page).toContain('<a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a>')
+    const w = openWall({ hash: "#page=wall" })
+    await w.settle()
+    expect(w.el("wall-build").innerHTML).toBe("")
+  })
+
+  it("asks again every minute, and keeps the last answer, marked as of, when one fails", async () => {
+    const w = openWall({ hash: "#page=wall", build: BUILD })
+    await w.settle()
+    ;(w.opts as any).build = null
+    await w.tick()
+    expect(w.el("wall-build").innerHTML).toContain("0.182.0 · 4f2c9a1")
+    expect(w.el("wall-build").innerHTML).toContain('wbl__asof">as of ')
   })
 })

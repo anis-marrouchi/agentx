@@ -44,6 +44,7 @@ import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
+import { WALL_BUILD_SCRIPT } from "./wall-build.client"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
@@ -69,6 +70,7 @@ ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
 ${WALL_TASK_SCRIPT}
 ${WALL_ACTIVITY_SCRIPT}
+${WALL_BUILD_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -1166,7 +1168,10 @@ ${WALL_ACTIVITY_SCRIPT}
     $('wall-live').hidden = page !== 'live';
     $('wall-task').hidden = page !== 'task';
     $('wall-activity').hidden = page !== 'activity';
-    if (page === 'activity') $('wall-activity').innerHTML = activityPageHtml();
+    $('wall-act-switch').hidden = page !== 'activity';
+    // Activity has a side column of its own (#1451 frame 3).
+    $('wall-aside').classList.toggle('is-act', page === 'activity');
+    if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
     paintTask(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.

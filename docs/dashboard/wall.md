@@ -11,10 +11,23 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
 ## Open the Wall
 
 1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, and agents. The page you are on is in bold.
-3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
-4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
-5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
+2. The nav on the left starts with **Wall** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
+   - **Work:** **Live**, **Running now**, **Projects** and **Activity**.
+   - **Automation:** **Jobs**, **Workflows**, **Reviews** and **Failures**.
+   - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
+   - **Owner:** **Settings**.
+
+   Under them, **Dashboard** opens the classic pages at **Live**. **Workflows**, **People**, **Org** and **Settings** open their classic page until they are built on the Wall. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, and agents. The page you are on is in bold.
+3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the classic **Live** page, where **Restart when idle** is. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
+
+   ![The Wall's title row: Wall, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
+
+4. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+5. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
+6. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
+
+   ![The Wall on a phone with More open: Work, Automation and Fleet, then Settings, Dashboard and Light / dark](/screenshots/wall/more-phone.png)
+
 
    ![The Wall on a phone in dark mode, with the bottom bar and the round + button](/screenshots/wall/phone-dark.png)
 
@@ -254,35 +267,37 @@ The **Task** page is one run on its own, with its own link: what it was asked, i
 
 The **Activity** page lists every run of every agent on your machines, newest first. A run is one turn of work: an answer to a message, a scheduled job, a step on an issue. It only reads: nothing on it sends anything.
 
-1. **Browser:** in the nav, select **Activity** (in **More** on a phone).
-2. Each row is one run: the agent's picture and name, when it started, the machine (when you have more than one), and its result:
+1. **Browser:** in the nav, select **Activity**, under **Work** (in **More** on a phone).
+2. Each row is one run: the agent's picture and name, the machine (when you have more than one), when it started, and its result on the right:
    - **Done**: it finished.
    - **Failed**: it ended with an error or ran out of time. The row has a red edge.
    - **Running**: it is still working.
    - **Stopped**: someone stopped it.
 3. Under the name, the row says what it worked on: the task's title when the run belongs to a post on the Wall, otherwise the first line of what it was asked.
-4. The last line gives its project (for work on a GitHub or GitLab project, or a post with a project), where it came from (such as **telegram** or **cron**), how long it took and what it cost. A run with no recorded cost shows **–**, not $0.00.
-5. Select a row to open the run's [Task page](#watch-and-steer-a-run).
+4. The last line says what started it (**from a job**, **from a workflow**, **from a post on the Wall**, or **from a message on** its channel, with who sent it when that is known), how long it took, what it cost and its project. A run with no recorded cost shows **–**, not $0.00.
+5. Select a row to open it in place. It shows the result, everything it was asked, where it ran, and the review findings for the run. **Open the run** opens its [Task page](#watch-and-steer-a-run), where the full conversation is; a job's run also links to **Jobs**. Select the row again to close it. Selecting the title opens the Task page straight away.
 6. To narrow the list:
+   - The tabs under the title pick the result: **All**, **Done**, **Failed** (with how many failed), **Running** or **Stopped**.
+   - **All agents**, **All projects** and **Any source** filter the runs. **Any source** picks what started them: **Jobs**, **Workflows**, **Wall posts** or **Messages**. They work together: for example one agent's failed jobs on one project. **Other (no project)** shows runs with no project.
    - **24 h**, **7 d** or **30 d** picks the period.
-   - **Agent**, **Project** and **Result** filter the runs. They work together: for example one agent's failed runs on one project. **Other (no project)** shows runs with no project.
    - Select an agent's name on a row to see only its runs.
-7. The filters are in the page's address, so you can bookmark or share a view.
-8. **Timeline** opens the classic Activity page, with its lane view and the Map.
+7. The filters are in the page's address, so you can bookmark or share a view. When nothing matches, **Clear filters** takes the tab and the filters back to their defaults.
+8. On a computer, the column on the right sums up what is listed: runs, failed runs, agent time and cost (runs with no recorded cost are counted apart), then the runs per agent. Select an agent there to see only its runs.
+9. **Timeline**, next to **Feed** beside the title, opens the classic Activity page, with its lane view and the Map.
 
-![The Activity page: four runs newest first, one running, one failed with a red edge, two done, with their project, channel, time and cost, in a demo](/screenshots/wall/activity.png)
+![The Activity page: outcome tabs, filters and the period, a line saying one machine does not answer, then runs newest first, with one failed job opened in place, and the period summed up on the right, in a demo](/screenshots/wall/activity.png)
 
 *Scripted demo data; your team's names and machines will differ.*
 
 ### One agent's runs
 
 1. Open an agent's profile (select its name or avatar), then select **Activity** under the profile. Or select **Activity** for it on the **Agents** page.
-2. The profile stays on top, with **Activity** underlined, and the list shows only that agent's runs. The period, project and result filters work as above.
+2. The profile stays on top, with **Activity** underlined, and the list shows only that agent's runs, each led by what it worked on. **All** and **Failed** (with how many failed) pick the result, and **24 h**, **7 d** or **30 d** the period. The line above the runs adds them up: runs, failed runs, agent time and cost.
 3. **Posts** goes back to its posts; **All agents** goes back to every agent's runs.
 
 This tab takes the place of the classic history page. The classic page still opens at `/agents/<agent>/history`.
 
-![An agent's profile on a phone with its Activity tab open: two runs, one running and one failed](/screenshots/wall/activity-profile.png)
+![An agent's profile on a phone with its Activity tab open: All and Failed, the period, the total line, and two runs, one failed](/screenshots/wall/activity-profile.png)
 
 *Scripted demo data; your team's names and machines will differ.*
 
@@ -574,7 +589,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 9. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 10. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 11. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
-12. Select **Activity** in the nav. The run of the task you sent in step 2 is at the top, with its agent and **Done** (or **Running** if it is still working). Select **Failed** under **Result**: only failed runs are left, and the address now has `a-result=failed`.
+12. Select **Activity** in the nav. The run of the task you sent in step 2 is at the top, with its agent and **Done** (or **Running** if it is still working). Select the **Failed** tab: only failed runs are left, and the address now has `a-result=failed`. Select a row: it opens in place with what it was asked.
 13. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
 14. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
 15. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
@@ -593,11 +608,15 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 28. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
 29. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
 30. Cost page: select **Cost** in the nav, then **30 days**. The total under the tabs and each agent's spend match the classic Cost page at `/admin/cost` with **30d** picked. Select an agent: its profile opens.
+31. Build line: the right of the Wall's title shows the same version as the first line of `agentx daemon status` in a terminal.
+32. Phone: open the Wall at 390 px wide (or on a phone) and select **More**. The sheet lists **Work**, **Automation** and **Fleet**. Select **Activity**: the sheet closes and the Activity page opens.
 
 ## If something is wrong
 
 - **Activity says a machine "does not answer":** the dashboard could not reach that machine's run records. Check the machine with `agentx daemon status`. The other machines' runs still show.
-- **Activity says "Could not read the runs":** the run records need the machine's database (SQLite). Check that the daemon started without a storage error, then select **Refresh**.
+- **No version on the right of the Wall's title:** the dashboard has not reached the daemon yet, or the daemon is older than this line. **Terminal:** run `agentx daemon status`.
+- **The Wall's title says "Restart pending":** the daemon runs older code than what is installed. Restart it when no task is running: `agentx daemon restart --when-idle`.
+- **Activity says "Could not read the runs":** the run records need the machine's database (SQLite). Check that the daemon started without a storage error, then select **Try again**.
 - **A run in Activity shows – for its cost:** no cost was recorded for it, for example a run on a local model or a run from before costs were recorded. See [Costs](../help/costs.md).
 - **30 d shows fewer days than expected:** that machine keeps run records for fewer days, or runs an older AgentX version (7 days at most). Update it to see 30 days.
 - **A comment on a closed post says requests are off:** the machine that keeps the post has `requests.enabled` off, so the post cannot open again. Turn requests on there, or post a new task instead.

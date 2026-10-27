@@ -240,14 +240,35 @@ export const WALL_PAGES_SCRIPT = String.raw`
     render();
     load();
   }
+  // --- The phone's More sheet (#1451 frame 0) ---
+  function moreOpen(on) {
+    var sheet = $('wall-more'), btn = document.querySelector('[data-more-nav]');
+    if (!sheet) return;
+    sheet.hidden = !on;
+    if (btn) btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (on) { var first = sheet.querySelector('a,button:not([data-more-close])'); if (first) first.focus(); }
+    else if (btn && sheet.contains(document.activeElement)) btn.focus();
+  }
+  // Its links carry the nav's counts, copied from the nav as they change.
+  document.querySelectorAll('[data-n-for]').forEach(function (el) {
+    var src = $(el.getAttribute('data-n-for'));
+    if (!src) return;
+    var copy = function () { el.textContent = src.textContent; el.hidden = !src.textContent || src.textContent === '0'; };
+    copy();
+    new MutationObserver(copy).observe(src, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && $('wall-more') && !$('wall-more').hidden) moreOpen(false);
+  });
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-creator-agent],[data-creator-post],[data-quick],[data-more-nav],[data-nav]');
+    var t = ev.target.closest('[data-creator-agent],[data-creator-post],[data-quick],[data-more-nav],[data-more-close],[data-nav]');
     if (!t) return;
     // On the phone, picking a page from More closes More.
-    if (t.hasAttribute('data-nav')) { var open = document.querySelector('.ax-wall__nav.is-more'); if (open) open.classList.remove('is-more'); return; }
-    if (t.hasAttribute('data-creator-agent')) { if (S.creator.posting) return; creatorRead(); S.creator.agent = t.getAttribute('data-creator-agent'); S.creator.note = ''; render(); }
+    if (t.hasAttribute('data-nav')) { moreOpen(false); return; }
+    if (t.hasAttribute('data-more-close')) moreOpen(false);
+    else if (t.hasAttribute('data-creator-agent')) { if (S.creator.posting) return; creatorRead(); S.creator.agent = t.getAttribute('data-creator-agent'); S.creator.note = ''; render(); }
     else if (t.hasAttribute('data-creator-post')) creatorPost();
-    else if (t.hasAttribute('data-more-nav')) { var nav = document.querySelector('.ax-wall__nav'); if (nav) nav.classList.toggle('is-more'); }
+    else if (t.hasAttribute('data-more-nav')) moreOpen($('wall-more').hidden);
     else {
       var q = t.getAttribute('data-quick');
       if (q === 'cols') { S.allCols = !S.allCols; render(); }
