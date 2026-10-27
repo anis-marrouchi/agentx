@@ -7,8 +7,8 @@ This page is the user guide: install it, ask your first question, and learn the 
 ## What it does
 
 - **Ask any agent from any app.** Hold **Option–Space**, speak, let go. The ticked agent answers.
-- **Hear the answer, and read it.** Each agent has its own voice, so you can tell who is talking without looking. When an answer has links or more to read, the pill opens to show it.
-- **Ask several agents at once.** Start with an agent's name ("Researcher, what's the status?") to ask it directly. Answers never talk over each other: they wait their turn.
+- **Ask, and move on.** As soon as your words are sent, the pill is free for the next request. Ask several agents in a row; each answer waits until you choose to hear it.
+- **Hear the answer, and read it.** Pick an answer from the open-requests list and it plays in the agent's own voice, so you can tell who is talking without looking. When an answer has links or more to read, the pill opens to show it.
 - **Stop it any time.** One key, **Command–Option–.** (the period key), silences everything.
 - **Hear it again later.** History keeps every question you asked out loud, and replays any answer.
 
@@ -55,8 +55,10 @@ Developers building from a source checkout can also run `apps/mac-voice/install.
 
 1. **Mac:** hold **Option–Space**. The floating pill appears in the bottom-right corner and says **Listening**.
 2. Say "What can you do?" while you keep holding the keys.
-3. Let go. The pill shows the agent thinking, then the agent says its answer out loud.
-4. Say nothing more. After an answer, the microphone stays open for a few seconds in case you want to add something, then closes on its own.
+3. Let go. The pill says **Sent. Ask the next one**. The agent works on it in the background.
+4. When the answer is ready, you hear a soft sound and the pill shows a blue **1 new**.
+5. Point at the pill for half a second. A list of your requests opens above it.
+6. Click the row with the blue dot. The agent says its answer out loud, and the pill shows its text.
 
 That's it. From now on, hold **Option–Space** from any app to ask again.
 
@@ -134,12 +136,14 @@ Click the AgentX icon in the menu bar, press **Command–Option–A** from any a
 
 | Item | What it does |
 |---|---|
-| **Talk to** (your agents) | The ticked agent answers your questions. Click another one, or press its number (**1** to **9**) while the menu is open. Each row shows what the agent is doing: **idle**, **thinking**, **speaking**, **working** on something else, or **queued 2** when two answers wait to be spoken. The app remembers your choice |
+| **Talk to** (your agents) | The ticked agent answers your questions. Click another one, or press its number (**1** to **9**) while the menu is open. Each row shows what the agent is doing: **idle**, **thinking**, **answer ready** when its answer waits for you, **speaking**, **working** on something else, or **queued 2** when two answers wait to be spoken. An agent with its own shortcut shows it at the end of its row. The app remembers your choice |
 | **Agent (set by AGENTX_VOICE_AGENT)** | Shown instead of **Talk to** when the app was installed with `--agent`. The agent can't be changed from the menu |
 | **Loading agents…** | The app is asking the daemon for your agents |
 | **No agents configured** | The daemon answered but has no agents. Add one to `agentx.json` |
 | **AgentX daemon isn't reachable** and **Retry** | The app can't reach the daemon. Start it, then choose **Retry** (or press **R**) |
 | **Recent · click to replay** | Your last three spoken questions and who answered. Click one to hear its answer again. Point at a row to see the start of its answer. Not shown until you have asked something |
+| **Open requests…** | Opens the [open-requests list](#ask-several-agents-at-once) with the keyboard in it. Same as **Command–Option–O** from any app |
+| **Play answers at once** | Plays each answer as soon as it is back, as before, instead of waiting until you pick it. Off by default |
 | **Stop speaking** | Stops every voice on the Mac and drops the answers still waiting. Same as **Command–Option–.** |
 | **Hold notifications** | A "don't interrupt me" switch. While ticked, agent notifications wait and the orb turns amber. Untick it to let them through |
 | **Show floating pill** | Keeps the pill on screen when idle. Off by default |
@@ -203,6 +207,7 @@ To try a voice before keeping it:
 | **Stop every voice** | Silences everything. Default **Command–Option–.** |
 | **Smart paste** | Reshapes what you copied for the app you are typing in, then pastes it. Default **Command–Option–V** |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it |
+| **Open requests** | **Command–Option–O**. Opens the list of your requests. Fixed; shown so you don't reuse it |
 | **Keep the answer open** | How long an [answer in the pill](#read-the-answer-in-the-pill) stays open after it has been spoken: from 10 seconds to 5 minutes, or **Until I close it**. Default 30 seconds |
 | **Tallest answer** | How tall the answer grows before it scrolls, from 120 to 800 points. Default 320 |
 | **Launch at login** | Starts the app when you log in. Greyed out and on when `agentx desktop install` already does it |
@@ -257,11 +262,27 @@ An agent answers to every entry in its `mentions` list, spoken or typed. To catc
 
 ### Ask several agents at once
 
-1. **Mac:** ask one agent something that takes a while.
-2. While it thinks, hold **Option–Space** and ask another agent by name.
-3. Both agents work at the same time. Each answer is spoken when it arrives, one after the other.
+You don't wait for an answer before asking the next thing.
 
-While more than one agent is busy, a row of small orbs appears in the pill, one per agent in its colours. The big orb on the left keeps following the agent that is listening or speaking.
+1. **Mac:** ask one agent something that takes a while, and let go. The pill says **Sent. Ask the next one**.
+2. **Mac:** hold **Option–Space** again at once and ask another agent by name ("Researcher, compare the two plans"). Both agents work at the same time.
+3. When an answer is ready, you hear one soft sound and the pill shows a blue **1 new**. Nothing plays by itself.
+4. **Mac:** point at the pill for half a second, or press **Command–Option–O**. The open-requests list opens beside the pill.
+5. **Mac:** click the row with the blue dot, or move to it with the arrow keys and press **Return**. The answer plays and its text shows in the pill.
+
+Each row in the list shows the agent, what it is doing, the first words of your request, and how long ago you sent it:
+
+| A row says | What it means |
+|---|---|
+| **Thinking, 1:12** | The agent is still working on it |
+| **Waiting its turn** | You asked that agent again; this one goes when the first is answered |
+| A blue dot and **Answer ready** | The answer is back and you haven't heard it. Pick it to hear it |
+| **Heard** | You have heard it. Pick it to read it again; **Listen again** plays it |
+| **Couldn't answer** | Something went wrong. Pick it to see why |
+
+With the list open from the keyboard, hold **Option–Space** to talk to the agent of the row you are on. Press **Escape** to close the list. Moving the pointer away closes a list you opened by pointing.
+
+While agents are working, or answers wait for you, a row of small orbs appears in the pill, one per agent in its colours. The big orb on the left keeps following the agent that is listening or speaking.
 
 ![Three pills with mini orbs, light mode: Writer drafting with small Writer and Planner orbs, both with a ring going round; Ops saying its answer with an Ops orb, a Planner orb with a 1 badge for one more question waiting and a Researcher orb with a steady ring; and the idle pill with one Planner orb still thinking](/screenshots/voice/pill-mini-orbs-light.png)
 
@@ -269,14 +290,15 @@ While more than one agent is busy, a row of small orbs appears in the pill, one 
 
 | Small orb | What it means |
 |---|---|
-| A ring goes round it | The agent is thinking on your question |
-| A steady ring | Its answer is ready and waits its turn to be spoken |
+| A ring goes round it | The agent is thinking on your request |
+| A steady ring and a blue dot | Its answer is ready and you haven't heard it |
+| A red ring | It couldn't answer |
 | It pulses | Its answer is being spoken |
-| A number on it | More questions wait for that agent |
+| A number on it | More requests wait for that agent |
 
-Point at a small orb to see the agent's name and the computer it runs on. The small orbs never take clicks: clicking or dragging the pill works as before. The row goes away once only one agent is left working on what the big orb shows.
+Point at a small orb to see the agent's name and the computer it runs on. Click the small orbs, or **1 new**, to open the list. Clicking anywhere else on the pill talks, and dragging moves it, as before.
 
-Open the menu to see each agent's state. If you ask the same agent again while it is still thinking on your question, your new words replace the old question. More rules are in [Ask several agents at once](../dashboard/voice.md#ask-several-agents-at-once).
+Prefer the old way, where each answer plays as soon as it is back? Tick **Play answers at once** in the menu. More rules are in [Ask several agents at once](../dashboard/voice.md#ask-several-agents-at-once).
 
 ### Interrupt or stop
 
@@ -406,6 +428,7 @@ These are menu choices, not in `agentx.json`. macOS saves them for your user, ex
 |---|---|
 | The ticked agent | the daemon's `node.defaultAgent`, else the first agent |
 | **Show floating pill** | off |
+| **Play answers at once** | off: answers wait until you pick them |
 | **Animated orb** | on |
 | **Hold notifications** | off |
 | Pill position | bottom-right corner of the main screen |
@@ -461,9 +484,9 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 1. **Terminal:** run `agentx desktop status`. It shows the app's login service running, not `Not installed`.
 2. **Mac:** click the AgentX icon in the menu bar. Your agents are listed and one is ticked.
 3. **Mac:** hold **Option–Space**, say "What can you do?", then let go.
-4. **Mac:** the pill shows **Listening**, then a ring while the agent thinks, then the answer while it is spoken aloud.
+4. **Mac:** the pill shows **Listening**, then **Sent. Ask the next one**. When you hear the soft sound, point at the pill and click the row with the blue dot: the answer is spoken aloud.
 5. **Mac:** hold **Option–Space** again and say another agent's name before a question. The pill names that agent while it answers, and the ticked agent stays ticked in the menu.
-6. **Mac:** ask one agent something long, then at once ask a second agent by name. The pill shows two small orbs until both have answered.
+6. **Mac:** ask one agent something long, then at once ask a second agent by name. The pill shows two small orbs. Press **Command–Option–O**: the list shows both requests, each **Thinking**.
 7. **Mac (with a mesh):** ask an agent on another computer by name. While it thinks, the menu lists it with that computer's name in brackets.
 8. **Mac:** while an answer plays, press **Command–Option–.**. The voice stops at once.
 9. **Mac:** open **History…** from the menu. Your questions are listed under **Today**.
@@ -477,6 +500,8 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **Nothing is heard, or "Sorry, I didn't hear that":** check **System Settings › Privacy & Security › Microphone** allows **AgentX Desktop**, and keep holding the keys while you speak. If it still fails, speech to text isn't working: check your ElevenLabs key, or run `agentx doctor` to check Whisper and `ffmpeg` on this Mac. After installing `ffmpeg`, run `agentx desktop install` again.
 - **The pill says "Too short — hold while speaking":** you let go before saying anything. Keep holding **Option–Space** until you have finished.
 - **Parakeet is picked but answers are still slow:** it is still downloading (483 MB) or loading for the first time; Whisper answers meanwhile. Parakeet has no Arabic: for Arabic, set **On-this-Mac engine** back to Whisper. See [Switch to Parakeet](../dashboard/voice.md#switch-to-parakeet).
+- **An answer is never spoken:** answers wait until you pick them. Point at the pill, or press **Command–Option–O**, and pick the row with the blue dot. To hear them as soon as they are back, tick **Play answers at once** in the menu.
+- **The list of requests is empty after the app restarts:** the app keeps the list for now, not the daemon. Your questions and answers are in [History](#history).
 - **No sound from the answer:** check the Mac's volume and output device. Then check an agent isn't waiting behind another: **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue`. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`. An ElevenLabs agent without a key uses a Mac voice, or stays silent when `voice.fallback` is `"none"`.
 - **An answer stops before the end:** a long answer is read aloud only up to `voice.spokenMaxChars` and then says "The rest is on screen": read the rest in the pill. If it stopped without that phrase, the daemon's log says why. **Terminal:** run `agentx daemon logs` and look for the lines that start with `[voice] answer`. Each one names how the line ended: `finished`, `paused` (you spoke or pressed the talk shortcut), `skipped`, `stopped`, `watchdog` (it ran far past its length) or `failed`.
 - **The answer closes before you finish reading it:** keep the pointer over it, or raise **Keep the answer open** on the [General tab](#general-tab).

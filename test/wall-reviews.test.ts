@@ -200,13 +200,13 @@ describe("route and page", () => {
     expect(snap()).toBe(before)
   })
 
-  it("puts Reviews in the Wall's views, decided with the graph page's own calls (#1440)", () => {
+  it("puts Reviews in the Wall's views, decided under the Wall's guarded route (#1440, #1454)", () => {
     const html = renderWallPage()
     expect(html).toContain('data-nav="reviews"')
     expect(html).toContain('id="wall-reviews"')
     expect(html).toContain("/api/admin/wall/reviews")
     expect(html).toContain("/admin/wiki/search?q=")
-    expect(WALL_REVIEWS_SCRIPT).toContain("'/api/admin/graph/classifications/' + verdict")
+    expect(WALL_REVIEWS_SCRIPT).toContain("'/api/admin/wall/review/' + verdict")
     expect(WALL_REVIEWS_SCRIPT).toContain('data-rdecide="approve"')
     expect(WALL_REVIEWS_SCRIPT).toContain('data-rdecide="reject"')
     // Its one write is that decision: nothing else is sent.

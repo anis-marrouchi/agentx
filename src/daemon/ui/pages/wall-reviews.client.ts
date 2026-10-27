@@ -1,13 +1,13 @@
 // --- Wall review queue, browser side (#1182) ---
 //
 // Spliced into WALL_PAGE_SCRIPT's closure, so it uses that script's esc(),
-// when(), stateBadge(), getJson() and headers(). Reads only
+// when(), stateBadge(), getJson(), headers() and plainMarkerText(). Reads only
 // /api/admin/wall/reviews on this node: graph classifications that went to
 // review, the decision and its reason, the nodes an approval added, and a
 // link to the wiki search for the path. A pending one is decided here
-// (#1440) with Approve or Reject, through the calls the classic graph page
-// makes (/api/admin/graph/classifications/approve|reject), owner only like
-// every /api/admin call.
+// (#1440) with Approve or Reject through /api/admin/wall/review/approve|reject,
+// served by the classic graph page's calls and kept the owner's by the
+// Wall's guard (#1454).
 //
 // renderReviews(view) is the one call the Wall's render() makes. It loads
 // the queue the first time the Reviews view opens; refreshReviews() is
@@ -30,7 +30,7 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
     if (t.loading) return '<p class="ax-wall__empty">Loading thread…</p>';
     if (t.error) return '<p class="ax-wall__empty">Thread not available: ' + esc(t.error) + '</p>';
     return '<ol class="wt">' + t.events.map(function (e) {
-      return '<li><span class="k">' + esc(e.status) + '</span> <span class="who">' + esc(e.who || '') + '</span> ' + when(e.at) + '<div class="txt">' + esc(e.text) + '</div></li>';
+      return '<li><span class="k">' + esc(e.status) + '</span> <span class="who">' + esc(e.who || '') + '</span> ' + when(e.at) + '<div class="txt">' + esc(plainMarkerText(e.text)) + '</div></li>';
     }).join('') + '</ol>';
   }
   function revCard(r) {
@@ -45,7 +45,7 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
     return '<article class="wr is-' + esc(r.status) + '" id="review-' + esc(r.id) + '">' +
       '<div class="wr__head">' + stateBadge(r.status) + '<span class="wr__path">' + esc(revPath(r.path)) + '</span>' +
         (r.confidence != null ? '<span class="k">confidence ' + Number(r.confidence).toFixed(2) + '</span>' : '<span class="k">no confidence</span>') + '</div>' +
-      (r.message ? '<p class="wr__msg">' + esc(r.message) + '</p>' : '') +
+      (r.message ? '<p class="wr__msg">' + esc(plainMarkerText(r.message)) + '</p>' : '') +
       '<dl class="wr__facts">' +
         '<dt>Proposed axes</dt><dd>' + (proposed.length ? proposed.map(function (id) { return '<div><b>' + esc(id) + '</b> ' + esc(revAxes(r.proposedAxes[id]) || '—') + '</div>'; }).join('') : 'none, existing nodes only') + '</dd>' +
         '<dt>Decision</dt><dd>' + decided + '</dd>' +
@@ -121,7 +121,7 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
     var h = headers();
     h['Content-Type'] = 'application/json';
     try {
-      var res = await fetch('/api/admin/graph/classifications/' + verdict, { method: 'POST', headers: h, body: JSON.stringify({ msgHash: id }) });
+      var res = await fetch('/api/admin/wall/review/' + verdict, { method: 'POST', headers: h, body: JSON.stringify({ msgHash: id }) });
       var b = await res.json().catch(function () { return {}; });
       if (res.ok) R.note = verdict === 'approve' ? 'Approved: the path is in the graph now.' : 'Rejected: nothing was added.';
       else { R.noteErr = true; R.note = 'Not decided: ' + (res.status === 401 || res.status === 403 ? 'only the owner can decide a review. Sign in with the dashboard key, then try again.' : b.error || ('HTTP ' + res.status)); }

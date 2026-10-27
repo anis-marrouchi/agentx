@@ -6,7 +6,9 @@
 // /api/workflows/runs (failed workflow runs), /api/admin/org (each
 // agent's role and who it reports to, #1398) and
 // /api/admin/observability/budgets (an agent's month spend vs its cap on
-// its profile, #1393, wall-spend.ts). Pending owner decision
+// its profile, #1393, wall-spend.ts). The feed and the machines are read
+// first, quick (#1442): a slow peer or node reads "checking…" and the page
+// asks again; the other reads follow the first paint. Pending owner decision
 // cards (#1185) come with their post and are answered there (#1440,
 // wall-decide.client.ts). Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
@@ -27,6 +29,8 @@
 // on X (#post=<id> in the hash, so a post is a link and Back returns to the
 // feed). The nav's Running now and Agents open pages of their own
 // (#page=running, #page=agents), and each nav item carries its count.
+// Activity (#page=activity, #1429, wall-activity.client.ts) lists the
+// agents' runs, newest first; an agent's profile has it as a tab.
 // Results and thread lines render their Markdown through the shared
 // renderer; links in them go to web, mail or same-site addresses only.
 //
@@ -39,37 +43,47 @@
 
 import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
+import { plainMarkerText } from "../marker-text"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
+import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
+import { WALL_BUILD_SCRIPT } from "./wall-build.client"
 import { profileSpendHtml } from "./wall-spend"
-import { costPageHtml, costPageModel } from "./wall-cost"
+import { costPageHtml, costPageModel, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
+import { WALL_ORG_SCRIPT } from "./wall-org.client"
+import { layoutOrg } from "@/business/org-layout"
+import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
   var OPEN = ['in_progress', 'waiting_owner', 'waiting_other', 'needs_attention'];
   var DAY = 864e5;
-  var FILTERS = ['owner', 'load', 'status', 'idle', 'project', 'goal', 'node', 'group', 'by', 'grp', 'time', 'conc', 'qa', 'q'];
+  var FILTERS = ['owner', 'asker', 'load', 'status', 'idle', 'project', 'goal', 'node', 'group', 'by', 'grp', 'time', 'conc', 'qa', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
+  var PAGES = ['running', 'agents', 'people', 'org', 'creator', 'live', 'task', 'activity'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml })}
+  ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
 ${WALL_COST_SCRIPT}
+${WALL_PEOPLE_SCRIPT}
+${WALL_ORG_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
 ${WALL_TASK_SCRIPT}
+${WALL_ACTIVITY_SCRIPT}
+${WALL_BUILD_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -140,28 +154,68 @@ ${WALL_TASK_SCRIPT}
   function nameOf(id) { var i = agentInfo()[id]; return i ? i.name : id; }
 
   // --- The org on the Wall (#1398): role and who each agent reports to ---
+  // People and typed relations (#1421): members are agent:<id> or
+  // person:<id>, a bare id is an agent. Relations are reports-to,
+  // dotted-line and acts-for; a node's own reportsTo reads as reports-to.
+  /** { kind: 'agent' | 'person', id } for an org member reference. */
+  function orgRef(ref) {
+    var s = String(ref || '');
+    var m = s.match(/^(agent|person):(.+)$/);
+    return m ? { kind: m[1], id: m[2] } : { kind: 'agent', id: s };
+  }
+  function orgList(key) { var v = S.org && S.org[key]; return Array.isArray(v) ? v : []; }
   /** Each agent's place in this node's org chart, from /api/admin/org. */
   function orgInfo() {
     var info = {};
+    function at(id) { return info[id] || (info[id] = { reportsTo: '', dotted: [], actsFor: [], reports: [] }); }
+    function report(boss, id) { if (boss.kind === 'agent' && at(boss.id).reports.indexOf(id) < 0) at(boss.id).reports.push(id); }
     function walk(list) {
       (list || []).forEach(function (n) {
-        info[n.id] = { title: n.title, reportsTo: n.reportsTo, reports: (n.reports || []).length };
+        var o = at(n.id);
+        o.title = n.title;
+        if (n.reportsTo && !o.reportsTo) o.reportsTo = String(n.reportsTo);
+        (n.reports || []).forEach(function (r) { report({ kind: 'agent', id: n.id }, r.id); });
         walk(n.reports);
       });
     }
     walk(S.org && S.org.roots);
+    orgList('relations').forEach(function (r) {
+      if (!r) return;
+      var from = orgRef(r.from), to = r.to;
+      if (from.kind !== 'agent' || !from.id || !to) return;
+      var o = at(from.id);
+      if (r.type === 'reports-to') { o.reportsTo = String(to); report(orgRef(to), from.id); }
+      else if (r.type === 'dotted-line' && o.dotted.indexOf(to) < 0) o.dotted.push(to);
+      else if (r.type === 'acts-for' && o.actsFor.indexOf(to) < 0) o.actsFor.push(to);
+    });
     return info;
   }
-  /** Role, boss and reports, read-only: Pause and Resume stay on /org. */
+  /** A person's display name from /api/admin/org's people, else its id.
+   *  Not personName: the People page script (#1441) owns that name here. */
+  function orgPersonName(id) {
+    var p = orgList('people').filter(function (x) { return x && x.id === id; })[0];
+    return (p && p.name) || id;
+  }
+  /** An org member: an agent opens its profile, a person is plain text. */
+  function orgMemberHtml(ref) {
+    var m = orgRef(ref);
+    if (m.kind === 'person') return esc(orgPersonName(m.id));
+    return '<button type="button" data-agent="' + esc(m.id) + '">' + esc(nameOf(m.id)) + '</button>';
+  }
+  function orgMembersHtml(list) { return list.map(orgMemberHtml).join(', '); }
+  /** Role, relations and reports, read-only: setup, Pause and Resume stay on /org; the chart is #page=org (#1419). */
   function orgLineHtml(id) {
     var o = orgInfo()[id];
-    if (!o || (!o.title && !o.reportsTo && !o.reports)) return '';
+    if (!o || (!o.title && !o.reportsTo && !o.dotted.length && !o.actsFor.length && !o.reports.length)) return '';
+    var n = o.reports.length;
     var bits = [
       o.title ? '<b>' + esc(o.title) + '</b>' : '',
-      o.reportsTo ? 'reports to <button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>' : '',
-      o.reports ? o.reports + (o.reports === 1 ? ' reports' : ' report') + ' to it' : '',
+      o.reportsTo ? 'reports to ' + orgMemberHtml(o.reportsTo) : '',
+      o.dotted.length ? 'dotted line to ' + orgMembersHtml(o.dotted) : '',
+      o.actsFor.length ? 'acts for ' + orgMembersHtml(o.actsFor) : '',
+      n ? n + (n === 1 ? ' reports' : ' report') + ' to it' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
-    return '<div class="wp__meta wpf__org">' + bits + '<a href="/org">Org chart</a></div>';
+    return '<div class="wp__meta wpf__org">' + bits + '<a href="#page=org">Org chart</a></div>';
   }
   function isAgent(id) {
     return !!agentInfo()[id] || ((S.data && S.data.posts) || []).some(function (p) { return p.owner === id; });
@@ -206,9 +260,15 @@ ${WALL_TASK_SCRIPT}
   /** Markdown from an agent, escaped first; links only to web, mail or this site. */
   function md(text) {
     var html;
-    try { html = markdownToHtml(String(text == null ? '' : text)); } catch (e) { return '<p>' + esc(text) + '</p>'; }
+    text = plainMarkerText(text);
+    try { html = markdownToHtml(text); } catch (e) { return '<p>' + esc(text) + '</p>'; }
     // "/" but not "//host" or "/\host": those open another site.
     return html.replace(/href="([^"]*)"/g, function (m, u) { return /^(https?:|mailto:|\/(?![\/\\])|#)/i.test(u) ? m : 'href="#"'; });
+  }
+  /** A post as the Wall shows it: its headline without internal markers (#1443). */
+  function plainPost(p) {
+    if (p) p.headline = plainMarkerText(p.headline);
+    return p;
   }
   function linkOrText(ref) {
     return /^https?:\/\//.test(ref) ? '<a href="' + esc(ref) + '" target="_blank" rel="noopener">' + esc(ref) + '</a>' : esc(ref);
@@ -221,10 +281,13 @@ ${WALL_TASK_SCRIPT}
     FILTERS.forEach(function (k) { f[k] = q.get(k) || ''; });
     if (!q.has('status')) f.status = 'open';
     S.view = q.get('view') || S.view;
+    // The Cost page's range (#1423) is in the link: 7, 14, 30, 90 or all.
+    if (S.view === 'cost' && q.has('range')) { var cr = q.get('range') === 'all' ? 0 : +q.get('range'); if ([7, 14, 30, 90, 0].indexOf(cr) >= 0) C.range = cr; }
     S.page = PAGES.indexOf(q.get('page')) >= 0 ? q.get('page') : 'wall';
     // A Task page names its run (#1381); without one it is the Wall.
     S.task = S.page === 'task' ? readTask(q) : null;
     if (S.page === 'task' && !S.task) S.page = 'wall';
+    if (S.page === 'activity') actRead(q);
     S.post = q.get('post') || '';
     return f;
   }
@@ -236,8 +299,10 @@ ${WALL_TASK_SCRIPT}
       if (v || k === 'status') q.set(k, v);
     });
     if (S.view !== 'feed') q.set('view', S.view);
+    if (S.view === 'cost') q.set('range', C.range ? String(C.range) : 'all');
     if (S.page !== 'wall') q.set('page', S.page);
     if (S.page === 'task' && S.task) TASK_KEYS.forEach(function (k) { if (S.task[k]) q.set(k, S.task[k]); });
+    if (S.page === 'activity') actWrite(q);
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
@@ -282,6 +347,7 @@ ${WALL_TASK_SCRIPT}
   }
   function match(p, f) {
     if (f.owner && p.owner !== f.owner) return false;
+    if (f.asker && p.askedBy !== f.asker) return false;
     if (f.load && !countsFor(p, f.load)) return false;
     if (f.status === 'open' && !isOpen(p)) return false;
     if (f.status === 'closed' && isOpen(p)) return false;
@@ -434,7 +500,7 @@ ${WALL_TASK_SCRIPT}
     });
     if (p.lastRun) {
       acts.push('<a href="' + esc(taskHref(p.lastRun.taskId, p.lastRun.agentId, p.node, !isOpen(p))) + '">' + ICON.trace + 'Task record and trace</a>');
-      acts.push('<a href="/agents/' + encodeURIComponent(p.lastRun.agentId) + '/history">Agent history</a>');
+      acts.push('<a href="' + esc(activityHref(p.lastRun.agentId)) + '">Agent activity</a>');
     }
     // Opened, a post reads as a task (#1355): the request as its title,
     // where it stands, its plan, the result, then the facts and the thread.
@@ -606,17 +672,29 @@ ${WALL_TASK_SCRIPT}
         '<span class="wa__n"><b>' + esc(nameOf(a.id)) + '</b><small>@' + esc(a.id) + ' · ' + a.open + ' open · ' + a.posts + (a.posts === 1 ? ' post' : ' posts') + '</small></span></button>';
     }).join('') + (list.length > 6 ? '<button type="button" class="wa-more" data-agents-more>' + (S.allAgents ? 'Show fewer' : 'Show all ' + list.length) + '</button>' : '');
   }
-  function profileHtml(id) {
+  /** An agent's Activity tab (#1429): its runs, newest first. */
+  function activityHref(id) { return '#page=activity&a-agent=' + encodeURIComponent(id); }
+  /** The profile's tabs: its posts on the Wall, or its runs (#1429). */
+  function profileTabsHtml(id, tab) {
+    var on = ' class="is-on" aria-current="page"';
+    return '<nav class="wpf__tabs" aria-label="' + esc(nameOf(id)) + '">' +
+      (tab === 'activity' ? '<button type="button" data-agent="' + esc(id) + '">Posts</button><a href="' + esc(activityHref(id)) + '"' + on + '>Activity</a>'
+        : '<a href="' + esc(hashOf('')) + '"' + on + '>Posts</a><a href="' + esc(activityHref(id)) + '">Activity</a>') + '</nav>';
+  }
+  /** tab: 'activity' on the agent's Activity tab, else its posts. */
+  function profileHtml(id, tab) {
     var a = agentStats().find(function (x) { return x.id === id; }) || { open: 0, owner: 0, done: 0, runs: 0, posts: 0 };
     var live = agentInfo()[id] && agentInfo()[id].live;
+    var clear = tab === 'activity' ? '<button type="button" class="ax-btn ax-btn--ghost" data-act-all>All agents</button>'
+      : '<button type="button" class="ax-btn ax-btn--ghost" data-profile-clear>All posts</button>';
     return '<div class="wpf__banner" style="--av-h:' + hue(id) + '"></div><div class="wpf">' +
-      '<div class="wpf__top">' + avatar(id, 'lg') + '<button type="button" class="ax-btn ax-btn--ghost" data-profile-clear>All posts</button></div>' +
+      '<div class="wpf__top">' + avatar(id, 'lg') + clear + '</div>' +
       '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' + orgLineHtml(id) +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
       profileSpendHtml(S.budgets, id) +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
-      '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(id) + '/history">History</a></div></div>';
+      '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a></div>' + profileTabsHtml(id, tab) + '</div>';
   }
   // --- Goals (#1392): the filter's line, with progress and cost ---
   function goalRow(id) { return ((S.data && S.data.goals) || []).find(function (g) { return g.id === id; }) || null; }
@@ -655,7 +733,10 @@ ${WALL_TASK_SCRIPT}
     // From a post or another page, an agent opens its profile; on the feed it toggles.
     var away = S.page !== 'wall' || S.post;
     S.page = 'wall'; S.post = ''; S.pushed = false;
-    $('f-owner').value = !away && $('f-owner').value === id ? '' : id;
+    var want = !away && $('f-owner').value === id ? '' : id;
+    $('f-owner').value = want;
+    // An agent with no post yet is not in the Owner list: add it, as showGoal does (#1419).
+    if ($('f-owner').value !== want) { var o = document.createElement('option'); o.value = id; o.textContent = id; $('f-owner').appendChild(o); $('f-owner').value = want; }
     if ($('f-owner').value === id) $('f-status').value = '';
     writeHash();
     render();
@@ -860,7 +941,7 @@ ${WALL_TASK_SCRIPT}
   }
   function agentsPageHtml() {
     var list = allAgents();
-    var down = ((S.live && S.live.nodes) || []).filter(function (n) { return !n.reachable || n.error; });
+    var down = ((S.live && S.live.nodes) || []).filter(nodeDown);
     var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
     var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
@@ -880,10 +961,10 @@ ${WALL_TASK_SCRIPT}
         '<div class="wpf__stats"><span><b>' + s.open + '</b> open</span><span><b>' + s.owner + '</b> waiting on the owner</span>' +
           '<span><b>' + s.done + '</b> done in 7 days</span><span><b>' + s.runs + '</b> runs</span>' +
           (a.errors ? '<span class="is-err"><b>' + a.errors + '</b> errors</span>' : '') + '</div>' +
-        (a.summary && a.summary.text ? '<details class="wp__ask"><summary><span class="k">Last summary</span> ' + esc(a.summary.text) + '</summary><div class="ax-md">' + md(a.summary.text) + '</div></details>' : '') +
+        (a.summary && a.summary.text ? '<details class="wp__ask"><summary><span class="k">Last summary</span> ' + esc(plainMarkerText(a.summary.text)) + '</summary><div class="ax-md">' + md(a.summary.text) + '</div></details>' : '') +
         (a.nodes.length ? '<div class="wag__acts">' + agentActsHtml(a.id) + '</div>' : '') +
         '<div class="wpf__links">' + (s.posts ? '<button type="button" class="wa-more" data-agent="' + esc(a.id) + '">' + s.posts + (s.posts === 1 ? ' post' : ' posts') + '</button>' : '<span class="ax-wall__count">No posts in 7 days</span>') +
-          '<a href="/admin/agents/' + encodeURIComponent(a.id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(a.id) + '/history">History</a></div>' +
+          '<a href="/admin/agents/' + encodeURIComponent(a.id) + '">Agent page</a><a href="' + esc(activityHref(a.id)) + '">Activity</a></div>' +
         '</div></article>';
     }).join('');
   }
@@ -926,7 +1007,7 @@ ${WALL_TASK_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1077,14 +1158,19 @@ ${WALL_TASK_SCRIPT}
     return runs + cronFailures().reduce(function (n, g) { return n + g.count; }, 0) + workflowFailures().length;
   }
 
+  // A node that ran out of time is slow, not down (#1442): it reads
+  // "checking…" and the Wall asks again; only a refusal reads as down.
+  function nodeChecking(n) { return !!n.checking; }
+  function nodeDown(n) { return (!n.reachable || !!n.error) && !n.checking; }
+
   // --- Happening now (#1355): one line per machine, who runs what ---
   function happeningHtml() {
     var live = (S.live && S.live.nodes) || [];
-    if (!live.length) return '<p class="ax-wall__empty">Loading…</p>';
+    if (!live.length) return '<p class="ax-wall__empty">' + (S.liveError ? 'Could not reach the machines just now; trying again.' : 'Loading…') + '</p>';
     return live.map(function (n) {
-      var down = !n.reachable || n.error, running = [];
-      (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + (t.messagePreview || '').slice(0, 60)); }); });
-      var what = down ? 'does not answer' : running.length ? running[0] + (running.length > 1 ? ' · +' + (running.length - 1) + ' more' : '') : 'nothing running';
+      var down = nodeDown(n), running = [];
+      (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + plainMarkerText(t.messagePreview).slice(0, 60)); }); });
+      var what = nodeChecking(n) ? 'checking…' : down ? 'does not answer' : running.length ? running[0] + (running.length > 1 ? ' · +' + (running.length - 1) + ' more' : '') : 'nothing running';
       return '<div class="wh' + (down ? ' is-down' : '') + '"><b>' + esc(n.name) + '</b><span title="' + esc(running.join('\n')) + '">' + esc(what) + '</span></div>';
     }).join('') + '<a class="wa-more" href="#page=running">See all running</a>';
   }
@@ -1099,7 +1185,7 @@ ${WALL_TASK_SCRIPT}
       (n.agents || []).forEach(function (a) {
         (a.runningTasks || []).forEach(function (t) { running.push({ a: a, t: t }); });
       });
-      var down = !n.reachable || n.error;
+      var down = nodeDown(n), checking = nodeChecking(n);
       var crons = (n.cronRuns || []).filter(function (r) { return r.status !== 'success' && Date.parse(r.startedAt) >= Date.now() - DAY; }).length;
       var ops = [
         n.uptimeSec != null ? 'Up ' + Math.round(n.uptimeSec / 3600) + ' h' : '',
@@ -1111,18 +1197,19 @@ ${WALL_TASK_SCRIPT}
         n.commit ? 'Commit ' + n.commit.slice(0, 8) : '',
       ].filter(Boolean);
       return '<div class="wn' + (down ? ' is-down' : '') + '"><header><b>' + esc(n.name) + '</b>' +
-        '<span class="' + (down ? 'ax-badge ax-badge--err' : 'ax-badge ax-badge--live') + '">' + (down ? (n.stale ? 'unreachable, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'unreachable') : 'up') + '</span></header>' +
+        '<span class="' + (checking ? 'ax-badge' : down ? 'ax-badge ax-badge--err' : 'ax-badge ax-badge--live') + '">' + (checking ? (n.stale ? 'checking…, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'checking…') : down ? (n.stale ? 'unreachable, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'unreachable') : 'up') + '</span></header>' +
         '<div class="ver">' + esc(n.version ? 'v' + n.version : 'version unknown') + '</div>' +
         (running.length ? '<ul>' + running.map(function (x) {
           var rid = x.t.traceId || x.t.id;
           var conc = ((S.live && S.live.concurrent) || []).filter(function (o) { return o.runs.indexOf(rid) >= 0; });
-          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc((x.t.messagePreview || '').slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
+          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc(plainMarkerText(x.t.messagePreview).slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
             conc.map(function (o) { return concHtml(o, function (id) { return esc(id); }); }).join('') + '</li>';
-        }).join('') + '</ul>' : '<div class="idle">' + (down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
+        }).join('') + '</ul>' : '<div class="idle">' + (checking ? 'Slow to answer; asking again.' : down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
         (ops.length ? '<details><summary>Ops details</summary>' + ops.map(esc).join(' · ') + '</details>' : '') + '</div>';
     });
     wallNodes.filter(function (w) { return !w.ok; }).forEach(function (w) {
-      cards.push('<div class="wn is-down"><header><b>' + esc(w.name) + '</b><span class="ax-badge ax-badge--err">posts not shown</span></header><div class="idle">' + esc(w.error || 'unreachable') + '</div></div>');
+      cards.push(w.checking ? '<div class="wn"><header><b>' + esc(w.name) + '</b><span class="ax-badge">checking…</span></header><div class="idle">Its posts are on the way.</div></div>'
+        : '<div class="wn is-down"><header><b>' + esc(w.name) + '</b><span class="ax-badge ax-badge--err">posts not shown</span></header><div class="idle">' + esc(w.error || 'unreachable') + '</div></div>');
     });
     return cards.join('');
   }
@@ -1154,6 +1241,11 @@ ${WALL_TASK_SCRIPT}
     $('wall-creator').hidden = page !== 'creator';
     $('wall-live').hidden = page !== 'live';
     $('wall-task').hidden = page !== 'task';
+    $('wall-activity').hidden = page !== 'activity';
+    $('wall-act-switch').hidden = page !== 'activity';
+    // Activity has a side column of its own (#1451 frame 3).
+    $('wall-aside').classList.toggle('is-act', page === 'activity');
+    if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
     paintTask(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.
@@ -1170,13 +1262,19 @@ ${WALL_TASK_SCRIPT}
     if (page === 'post') $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
     if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
+    // The People page (#1441): wall-people.client.ts.
+    renderPeople(page);
+    // The Org page (#1419): wall-org.client.ts. It needs no feed.
+    renderOrg(page);
+    document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list' || page === 'org');
     if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-decide', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     // Needs you does not wait on the feed (#1440): its list is the inbox.
     if (onWall && S.view === 'decide') renderDecide('decide');
     if (!S.data) return;
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
-    document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list');
+    // Opened from a person on the People page (#1441): say whose requests these are.
+    if (f.asker) $('wall-count').innerHTML += '<span class="ax-wall__asker"> asked by ' + esc(personName(f.asker)) + ' · <button type="button" data-asker-clear>everyone</button></span>';
     $('wall-agents').innerHTML = agentsHtml();
     var n = failCount();
     $('wall-fail-n').textContent = n ? String(n) : '';
@@ -1222,32 +1320,68 @@ ${WALL_TASK_SCRIPT}
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }
-  async function load() {
-    // The quick reads go out first and draw as each answers; the feed is
-    // the slow one and keeps its own "Loading…" (#1252).
-    getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
+  // Asks again soon while something is still on its way (#1442): a node
+  // still checking, a peer still building, a forge read still out. Each
+  // read keeps its own few tries, so a node that stays slow settles.
+  var AGAIN_MS = 1500, AGAIN_MAX = 5;
+  var again = { live: 0, wall: 0 };
+  function askAgain(what, still, fn) {
+    if (!still) { again[what] = 0; return; }
+    if (again[what] >= AGAIN_MAX) return;
+    again[what]++;
+    setTimeout(fn, AGAIN_MS);
+  }
+  function loadLive() {
+    return getJson('/api/live?quick=1').then(function (d) {
+      S.live = d; S.liveError = false; render();
+      askAgain('live', (d.nodes || []).some(nodeChecking), loadLive);
+    }).catch(function () {
+      S.liveError = true;
+      if (!S.live) S.live = { nodes: [] };
+      render();
+      askAgain('live', true, loadLive);
+    });
+  }
+  // The reads the home does not need for its first paint (#1442): after it.
+  function loadRest() {
     refreshReviews();
     refreshDecide();
     refreshCost();
-    getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
+    refreshPeople();
+    // A failed read says so on the Org page; the rest of the Wall goes on.
+    getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function (e) { S.org = { error: e.message }; render(); });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
+    if (S.page === 'activity') loadActivity(true);
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
+  }
+  async function loadWall() {
+    // A quick read (#1442): what the peers and the forge have ready now;
+    // the reply says when more is on its way, and the Wall asks again.
+    S.data = await getJson('/api/admin/wall?peer=fleet&days=7&quick=1');
+    var posts = (S.data.posts || []).map(plainPost);
+    fillSelect('f-owner', uniq(posts.map(function (p) { return p.owner; })));
+    fillSelect('f-load', uniq(((S.data.capacity && S.data.capacity.owners) || []).map(function (r) { return r.owner; })));
+    var other = posts.some(function (p) { return !p.project; }) ? [OTHER] : [];
+    fillSelect('f-project', uniq(posts.map(function (p) { return p.project; })).concat(other), function (v) { return v === OTHER ? 'Other (no project)' : v; });
+    var goalIds = uniq(((S.data.goals || []).map(function (g) { return g.id; })).concat(posts.map(function (p) { return p.goal && p.goal.id; })));
+    fillSelect('f-goal', goalIds, goalTitle);
+    fillSelect('f-node', uniq(posts.map(function (p) { return p.node.name; })));
+    fillSelect('f-group', uniq(posts.map(groupKey)));
+    fillAsker();
+    applyHash();
+    askAgain('wall', S.data.pending === true, function () { loadWall().catch(function () {}); });
+  }
+  async function load() {
+    // Two reads go out first and draw as each answers: the machines and the
+    // posts. The rest follow once the posts are on screen (#1252, #1442).
+    loadLive();
     try {
-      S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
-      var posts = S.data.posts || [];
-      fillSelect('f-owner', uniq(posts.map(function (p) { return p.owner; })));
-      fillSelect('f-load', uniq(((S.data.capacity && S.data.capacity.owners) || []).map(function (r) { return r.owner; })));
-      var other = posts.some(function (p) { return !p.project; }) ? [OTHER] : [];
-      fillSelect('f-project', uniq(posts.map(function (p) { return p.project; })).concat(other), function (v) { return v === OTHER ? 'Other (no project)' : v; });
-      var goalIds = uniq(((S.data.goals || []).map(function (g) { return g.id; })).concat(posts.map(function (p) { return p.goal && p.goal.id; })));
-      fillSelect('f-goal', goalIds, goalTitle);
-      fillSelect('f-node', uniq(posts.map(function (p) { return p.node.name; })));
-      fillSelect('f-group', uniq(posts.map(groupKey)));
-      applyHash();
+      await loadWall();
     } catch (e) {
       $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the Wall: ' + esc(e.message) + '. The classic pages above still work.</p>';
     }
+    loadRest();
   }
 
   document.addEventListener('click', function (ev) {
@@ -1323,6 +1457,7 @@ ${WALL_TASK_SCRIPT}
     if (!fromTask || !S.data) return;
     fetch('/api/admin/wall/thread?task=' + encodeURIComponent(fromTask), { headers: headers() }).then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
       if (!b || !b.post) return;
+      plainPost(b.post);
       S.threads[b.post.id] = { events: b.events || [] };
       // Kept aside too, so a refresh that no longer lists it still shows it.
       if (!findPost(b.post.id)) S.extra = Object.assign({}, b.post, { node: { name: S.data.node, peer: null, daemonUrl: null } });

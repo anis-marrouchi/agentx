@@ -22,7 +22,7 @@ The always-on infrastructure. Long-lived, mostly declarative.
 | Verified References (canonical facts: hosts, projects) | `agentx.json:references`, `src/agents/references/` | Settings |
 | Memory (per-agent persistent facts) | `src/agents/memory-store.ts` | Settings |
 | Activity ledger | `src/intent/ledger.ts` | /admin/ledger |
-| Costs / token tracking | `src/daemon/token-tracker.ts` | /admin/cost |
+| Costs / token tracking | `src/daemon/token-tracker.ts` | Wall › Cost (`/admin/cost` redirects) |
 
 Touch this tier when you are changing **what exists**, not what we do
 with it.

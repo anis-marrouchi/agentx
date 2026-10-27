@@ -7,13 +7,13 @@
 // The Needs you page (#view=decide) is the Approvals inbox: it reads
 // /api/admin/approvals, the same list and count /approvals, the phone
 // app's Desk and the digest show, and answers through
-// /api/admin/approvals/decide with the same body /approvals sends, so the
-// result and its record are the same. Under it, the posts waiting on you.
+// /api/admin/wall/decide (served by /api/admin/approvals/decide) with the
+// same body /approvals sends, so the result and its record are the same. Under it, the posts waiting on you.
 // A decision card on a post is answered on the post, through the same
 // call, sent to the node that keeps the post.
 //
-// Owner-only: the dashboard token gate refuses every /api/admin call from
-// anyone else (adminTokenOk in board-dashboard.ts). A refusal shows as a
+// Owner-only: the answers go under /api/admin/wall, so the Wall's
+// owner-only guard (#1454, board-dashboard.ts) refuses them from anyone else. A refusal shows as a
 // note, and nothing on the page changes.
 //
 // A pick or an edited message is kept per item in D, so the Wall's
@@ -186,7 +186,7 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     // Only an edited message is sent: the card keeps its own suggested one.
     if (action === 'yes' && D.texts[key] != null && D.texts[key].trim()) body.text = D.texts[key];
     if (action === 'yes' && el.getAttribute('data-dseen')) body.seen = el.getAttribute('data-dseen');
-    var path = action === 'pop' ? '/api/admin/approvals/popup' : '/api/admin/approvals/decide';
+    var path = action === 'pop' ? '/api/admin/wall/decide/popup' : '/api/admin/wall/decide';
     if (action === 'pop') body = { key: key };
     D.sending[key] = true;
     el.querySelectorAll('button[data-decide]').forEach(function (b) { b.disabled = true; });

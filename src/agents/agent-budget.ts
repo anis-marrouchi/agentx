@@ -201,9 +201,9 @@ export function getAgentSpend(agentId: string, now: number = Date.now()): number
 
 /** Where the owner raises a scope's cap. */
 function whereToRaise(scope: string): string {
-  if (scope === FLEET_SCOPE) return "the fleet cap on the Cost page (/admin/cost) or budget.monthlyUsd in agentx.json"
-  if (scope.startsWith("project:")) return `the cap of project ${scope.slice(8)} on the Cost page (/admin/cost) or its budget.monthlyUsd under dashboard.wall.projects in agentx.json`
-  return `the cap on the Cost page (/admin/cost) or agents.${scope}.budget.monthlyUsd in agentx.json`
+  if (scope === FLEET_SCOPE) return "the fleet cap on the Wall's Cost page or budget.monthlyUsd in agentx.json"
+  if (scope.startsWith("project:")) return `the cap of project ${scope.slice(8)} on the Wall's Cost page or its budget.monthlyUsd under dashboard.wall.projects in agentx.json`
+  return `the cap on the Wall's Cost page or agents.${scope}.budget.monthlyUsd in agentx.json`
 }
 
 function notice(kind: "warn" | "cap", scope: string, spent: number, cap: number, b: MonthlyBudget | undefined): BudgetNotice {

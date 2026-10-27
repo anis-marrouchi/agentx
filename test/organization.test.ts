@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { Organization } from "../src/business/organization"
+import { configRelationsProblem, memberLabel } from "../src/business/relations"
 import { businessConfigSchema, type BusinessConfig } from "../src/business/config"
 
 // Tests for Phase 3 of the architectural rescue — pmFor,
@@ -202,5 +203,38 @@ describe("Organization — people and typed relations", () => {
     expect(() => new Organization(makeConfig({ relations: [{ from: "person:sam", to: "person:owner", type: "acts-for" }] }), people))
       .toThrow(/acts-for goes from an agent to a person/)
     expect(businessConfigSchema.safeParse({ relations: [{ from: "a", to: "b", type: "manages" }] }).success).toBe(false)
+  })
+
+  it("gives each employee its boss from the typed relations, for status and prompts", () => {
+    const org = new Organization(makeConfig({
+      orgChart: {
+        ceo: { role: "ceo", schedule: { start: "09:00", end: "17:00" } },
+        "pm-globex": { role: "pm", reportsTo: "agent:ceo", schedule: { start: "09:00", end: "17:00" } },
+      },
+      relations: [{ from: "ceo", to: "person:owner", type: "reports-to" }],
+      projects: [],
+    }), [{ id: "owner", name: "Sam Owner" }])
+    expect(org.get("ceo")?.reportsTo).toBe("person:owner")
+    expect(org.get("pm-globex")?.reportsTo).toBe("ceo")
+    expect(org.memberLabel("person:owner")).toBe("Sam Owner")
+    expect(org.memberLabel("agent:ceo")).toBe("ceo")
+  })
+})
+
+describe("configRelationsProblem and memberLabel (#1427 follow-ups)", () => {
+  it("checks a whole agentx.json, so writers can refuse a bad ref before saving", () => {
+    const business = { orgChart: { ceo: {}, dev: { reportsTo: "ceo" } } }
+    expect(configRelationsProblem({ business })).toBeUndefined()
+    expect(configRelationsProblem({ business: { orgChart: { dev: { reportsTo: "nobody" } } } })).toMatch(/"nobody"/)
+    expect(configRelationsProblem({ business: { orgChart: { dev: { reportsTo: "person:owner" } } } })).toMatch(/not a person/)
+    expect(configRelationsProblem({ people: [{ id: "owner" }], business: { orgChart: { dev: { reportsTo: "person:owner" } } } })).toBeUndefined()
+    expect(configRelationsProblem(undefined)).toBeUndefined()
+  })
+
+  it("labels an agent by id and a person by name, falling back to the id", () => {
+    expect(memberLabel("agent:dev")).toBe("dev")
+    expect(memberLabel("dev")).toBe("dev")
+    expect(memberLabel("person:owner", [{ id: "owner", name: "Sam Owner" }])).toBe("Sam Owner")
+    expect(memberLabel("person:owner")).toBe("owner")
   })
 })

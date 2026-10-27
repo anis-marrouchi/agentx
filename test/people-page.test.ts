@@ -7,7 +7,6 @@ import type { AddressInfo } from "net"
 import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { peopleRows } from "../src/daemon/people-panel"
-import { renderPeoplePage } from "../src/daemon/ui/pages/people"
 import { renderGuestsPage } from "../src/daemon/ui/pages/guests"
 import { TokenStore } from "../src/daemon/token-store"
 import { PairCodeStore } from "../src/daemon/pair-codes"
@@ -279,7 +278,7 @@ describe("who can open it", () => {
       expect(r.text).not.toContain("Sara B")
       expect(r.text).not.toContain("pp-list")
     }
-    expect((await raw("/people")).status).toBe(200)
+    expect((await raw("/people")).status).toBe(302)
     expect((await raw("/api/admin/people?x=1")).status).toBe(200)
   })
 
@@ -295,42 +294,10 @@ describe("who can open it", () => {
 })
 
 describe("the page", () => {
-  it("is served at /people and linked from the dashboard navigation", async () => {
-    const r = await fetch(`${base}/people`)
-    expect(r.status).toBe(200)
-    const html = await r.text()
-    expect(html).toContain("<h1>People</h1>")
-    expect(html).toMatch(/<a href="\/people" class="ax-topbar__tab is-active">People<\/a>/)
-    // On every other page too.
-    expect(renderGuestsPage({})).toMatch(/<a href="\/people" class="ax-topbar__tab">People<\/a>/)
-  })
-
-  it("says so when nobody is paired and shows how to invite someone", () => {
-    const html = renderPeoplePage()
-    expect(html).toContain("Nobody has paired a machine yet")
-    expect(html).toContain("agentx people add sara")
-    expect(html).toContain("agentx people invite sara")
-    // Shown by the script when the list reports no paired machine.
-    expect(html).toContain("none.hidden = d.paired > 0")
-  })
-
-  it("carries the dashboard token to its own script only when one is set", () => {
-    expect(renderPeoplePage()).not.toContain("AX_LOCAL_TOKEN =")
-    expect(renderPeoplePage({ localToken: "dash-secret" })).toContain('window.AX_LOCAL_TOKEN = "dash-secret"')
-  })
-
-  it("has scripts that parse, call only functions that exist, and touch only elements the page renders", () => {
-    const html = renderPeoplePage({ localToken: "t" })
-    const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map((m) => m[1]).filter(Boolean)
-    expect(scripts.length).toBeGreaterThan(0)
-    for (const s of scripts) expect(() => new Function(s)).not.toThrow()
-    const page = scripts.find((s) => s.includes("pp-list"))!
-    for (const m of page.matchAll(/getElementById\('([^']+)'\)/g)) expect(html).toContain(`id="${m[1]}"`)
-    const declared = new Set([...page.matchAll(/function (\w+)\(/g)].map((m) => m[1]))
-    for (const m of page.matchAll(/(?<![.\w'])([a-z]\w*)\(/g)) {
-      const name = m[1]
-      if (["function", "if", "for", "return", "confirm", "fetch", "isNaN", "setInterval", "encodeURIComponent"].includes(name)) continue
-      expect([name, declared.has(name)]).toEqual([name, true])
-    }
+  it("moved to the Wall: /people goes to the Wall's People page, and the dashboard navigation links there", async () => {
+    const r = await fetch(`${base}/people`, { redirect: "manual" })
+    expect(r.status).toBe(302)
+    expect(r.headers.get("location")).toBe("/wall#page=people")
+    expect(renderGuestsPage({})).toMatch(/<a href="\/wall#page=people" class="ax-topbar__tab">People<\/a>/)
   })
 })

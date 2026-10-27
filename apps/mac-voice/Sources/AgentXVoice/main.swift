@@ -88,6 +88,21 @@ final class App: NSObject, NSApplicationDelegate {
     /// would hear the next answer as the listener's words.
     private var openAsides = 0
 
+    // Send and move on (#1455): a request outside a call runs on its own,
+    // and its answer waits in the open-requests list until it is picked.
+
+    /// Every request sent outside a call, until it has been heard.
+    private var requests = OpenRequests()
+    /// Each answered request's answer, until its row leaves the list.
+    private var answers: [Int: AgentClient.Answer] = [:]
+    /// The list beside the pill.
+    private let requestsWindow = RequestsWindow()
+    private var listHotkey: Hotkey?
+    /// Opens the list after half a second's hover on the pill.
+    private var hoverOpen: DispatchWorkItem?
+    /// Puts the pill back to rest after a passing line.
+    private var noteReset: DispatchWorkItem?
+
     // An agent ringing the owner (#321).
     private let callWatcher = CallWatcher()
     private let guideWatcher = GuideWatcher()
@@ -153,6 +168,7 @@ final class App: NSObject, NSApplicationDelegate {
     private func publishThinking() {
         var counts = inFlight
         for (agent, words) in waitingAsides { counts[agent, default: 0] += words.count }
+        for (agent, n) in requests.waiting { counts[agent, default: 0] += n }
         statusMenu.thinking = counts
     }
 
@@ -166,9 +182,11 @@ final class App: NSObject, NSApplicationDelegate {
         let queue = statusMenu.queue
         var snap = PillBusy.Snapshot()
         snap.inFlight = inFlight
-        snap.waiting = waitingAsides.mapValues(\.count)
+        snap.waiting = waitingAsides.mapValues(\.count).merging(requests.waiting, uniquingKeysWith: +)
         snap.playing = queue?.playing?.agentId
         snap.toSpeak = queue?.waiting.compactMap(\.agentId) ?? []
+        snap.ready = requests.readyAgents
+        snap.failed = requests.failedAgents
         let items = PillBusy.items(snap, order: busyOrder)
         busyOrder = items.map(\.agentID)
         let mainActive = recorder.isRecording || busy || asideSpeaker != nil
@@ -205,9 +223,10 @@ final class App: NSObject, NSApplicationDelegate {
             else { Log.warn("shortcut \(spec.text ?? "?") for \(what) is taken by another app") }
         }
 
-        // Hold to talk; release sends.
+        // Hold to talk; release sends. With a row picked by the keyboard in
+        // the open-requests list, the words go to that row's agent.
         let talk = Hotkey(id: 1,
-                          onPress: { [weak self] in self?.forcedAgent = nil; self?.startListening() },
+                          onPress: { [weak self] in self?.forcedAgent = self?.listAgent; self?.startListening() },
                           onRelease: { [weak self] in self?.stopAndSend() })
         register(talk, spec(keys?.talk, "opt+space"), "talk")
         hotkey = talk
@@ -229,6 +248,11 @@ final class App: NSObject, NSApplicationDelegate {
         register(menu, HotkeySpec("cmd+opt+a")!, "the menu")
         menuHotkey = menu
 
+        // The open-requests list, with the keyboard in it (#1455).
+        let list = Hotkey(id: 5, onPress: {}, onRelease: { [weak self] in self?.openList(keyboard: true) })
+        register(list, HotkeySpec("cmd+opt+o")!, "open requests")
+        listHotkey = list
+
         // Hold an agent's own shortcut to ask it; the target stays.
         for (i, agent) in (settings?.agents ?? []).enumerated() {
             guard let text = agent.voice.hotkey, let s = HotkeySpec(text) else { continue }
@@ -243,7 +267,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// Dropping a Hotkey unregisters it.
     private func unregisterHotkeys() {
-        hotkey = nil; pasteHotkey = nil; stopHotkey = nil; menuHotkey = nil
+        hotkey = nil; pasteHotkey = nil; stopHotkey = nil; menuHotkey = nil; listHotkey = nil
         agentHotkeys.removeAll()
     }
 
@@ -361,6 +385,7 @@ final class App: NSObject, NSApplicationDelegate {
         if ringingCall != nil { endRinging { await CallClient.decline($0) } }
         if activeCall != nil { hangUp() }
         panel.dismiss()
+        requestsWindow.dismissList()
         character.setHidden(true)
         if recorder.isRecording {
             stopPolling()
@@ -474,6 +499,17 @@ final class App: NSObject, NSApplicationDelegate {
             return self.statusMenu.palette(of: self.shownAgent)
         }
         panel.answer.onOpenChat = { [weak self] in self?.openChat() }
+        // The open-requests list (#1455): a click on the mini orbs or "1 new",
+        // half a second's hover, ⌘⌥O or the menu opens it.
+        requestsWindow.rows = { [weak self] newestLast in self?.listRows(newestLast: newestLast) ?? [] }
+        requestsWindow.pillFrame = { [weak self] in self?.panel.frame ?? .zero }
+        requestsWindow.model.onPick = { [weak self] id in self?.pick(id) }
+        panel.onOpenList = { [weak self] in self?.openList(keyboard: false) }
+        panel.onHover = { [weak self] inside in self?.pillHover(inside) }
+        statusMenu.onOpenRequests = { [weak self] in self?.openList(keyboard: true) }
+        statusMenu.shortcut = { [weak self] id in
+            self?.settings?.agents.first(where: { $0.id == id })?.voice.hotkey.map(HotkeySpec.display)
+        }
         panel.answer.onListenAgain = { [weak self] in self?.listenAgain() }
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
@@ -760,6 +796,7 @@ final class App: NSObject, NSApplicationDelegate {
         // two ways of talking never fight over the microphone.
         stopPolling()
         play.end("the talk key")
+        requestsWindow.dismissList()
         guard !recorder.isRecording else { return }
         // A dismissed pill comes back with the talk key.
         summonPill()
@@ -864,6 +901,15 @@ final class App: NSObject, NSApplicationDelegate {
                 statusMenu.learn(addressed)
                 agent = addressed.agentID
             }
+            // Send and move on (#1455): outside a call, a request runs on its
+            // own and the pill is free for the next one at once. Its answer
+            // waits in the open-requests list as not heard.
+            if activeCall == nil {
+                if !midTurn { busy = false }
+                if Self.isStop(heard) { stopSpeaking(); return }
+                send(heard, agent: agent)
+                return
+            }
             if midTurn {
                 // Another agent: ask it alongside ours rather than waiting.
                 if agent != turnAgent && !Self.isStop(heard) {
@@ -896,6 +942,219 @@ final class App: NSObject, NSApplicationDelegate {
             }
             await runTurn(heard, agent: agent, handsFree: handsFree)
         }
+    }
+
+    // --- Open requests (#1455) ---
+
+    /// Send a request and move on: it runs on its own, or waits behind the
+    /// one its agent is still thinking about.
+    private func send(_ heard: String, agent: String) {
+        let id = requests.add(agentID: agent, question: heard, at: Date())
+        Log.info("request \(id) → \(agent)\(requests.request(id)?.phase == .waiting ? " (waits its turn)" : ""): \(heard)")
+        if requests.request(id)?.phase == .thinking { run(id) }
+        requestsChanged()
+        note("\(statusMenu.name(of: agent)) · \(OpenRequests.sentNote)")
+    }
+
+    /// Ask the agent. The answer waits as not heard, with a soft sound, or
+    /// plays at once with "Play answers at once" ticked. The agent's next
+    /// request goes as soon as this one is back.
+    private func run(_ id: Int) {
+        guard let r = requests.request(id) else { return }
+        Task { @MainActor in
+            let result: Result<AgentClient.Answer, Error>
+            do { result = .success(try await ask(r.question, agent: r.agentID)) }
+            catch { result = .failure(error) }
+            let now = Date()
+            switch result {
+            case .success(let answer) where answer.dropped:
+                Log.info("request \(id): the daemon took the words for the floor holder's sound")
+                requests.remove(id)
+            case .success(let answer):
+                Log.info("request \(id) answered (\(answer.agentID ?? r.agentID)): \(answer.text)")
+                answers[id] = answer
+                requests.answered(id, at: now)
+            case .failure(let error):
+                Log.warn("request \(id) failed (\(r.agentID)): \(error.localizedDescription)")
+                requests.failed(id, reason: Self.reason(error), at: now)
+            }
+            if let next = requests.startNext(for: r.agentID, at: now) { run(next) }
+            requestsChanged()
+            guard let done = requests.request(id) else { return }
+            if done.phase == .answered && Config.playAnswersAtOnce {
+                await waitForFloor(r.agentID, ownTurn: false)
+                if requests.request(id)?.heard == false { play(id) }
+                return
+            }
+            cue(done)
+        }
+    }
+
+    /// Why a request failed, in a line the list and the pill can show.
+    private static func reason(_ error: Error) -> String {
+        let text = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return "Something went wrong." }
+        return text.count > 140 ? String(text.prefix(139)) + "…" : text
+    }
+
+    /// An answer is back, or a request failed: one soft sound, and a line
+    /// on the pill for a few seconds. Nothing plays.
+    private func cue(_ r: OpenRequests.Request) {
+        let name = statusMenu.name(of: r.agentID)
+        if case .failed = r.phase { note(OpenRequests.failedNote(name: name)) }
+        else { note(OpenRequests.readyNote(name: name)) }
+        // Quiet while notifications are held, while someone holds the floor,
+        // and while the microphone is open, which would hear it.
+        if !Hold.isOn && !floorWatcher.state.held && !recorder.isRecording { NSSound(named: "Pop")?.play() }
+    }
+
+    /// A passing line on the pill at rest, back to the pill's own after
+    /// a few seconds. Not over listening, a turn, a call or an answer
+    /// being said.
+    private func note(_ text: String) {
+        guard !recorder.isRecording, !busy, asideSpeaker == nil, activeCall == nil, ringingCall == nil else { return }
+        noteReset?.cancel()
+        panel.render(.note(text))
+        let reset = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, case .note(let shown) = self.panel.current, shown == text,
+                      !self.recorder.isRecording, !self.busy else { return }
+                self.panel.render(self.rest)
+            }
+        }
+        noteReset = reset
+        DispatchQueue.main.asyncAfter(deadline: .now() + OpenRequests.noteSeconds, execute: reset)
+    }
+
+    /// The pill and the list follow the requests: the mini orbs, "1 new",
+    /// the menu's states and the list's rows.
+    private func requestsChanged() {
+        // Rows that left the list take their answers with them.
+        let kept = Set(requests.requests.map(\.id))
+        answers = answers.filter { kept.contains($0.key) }
+        publishThinking()
+        refreshBusy()
+        panel.showNew(requests.newCount)
+        statusMenu.ready = requests.readyAgents
+        requestsWindow.reload()
+    }
+
+    /// The agent of the row the keyboard is on in the open list.
+    private var listAgent: String? {
+        requestsWindow.selectedRow.flatMap { requests.request($0)?.agentID }
+    }
+
+    /// Open the list: by a click (no keyboard), or by ⌘⌥O or the menu
+    /// (the keyboard lands on the oldest answer not heard yet).
+    private func openList(keyboard: Bool) {
+        hoverOpen?.cancel()
+        hoverOpen = nil
+        if keyboard { summonPill() }
+        requestsWindow.open(.pinned, select: keyboard ? requests.firstSelection : nil)
+    }
+
+    /// Half a second on the pill opens the list, while there is a request
+    /// to show; leaving the pill lets a list opened that way go.
+    private func pillHover(_ inside: Bool) {
+        hoverOpen?.cancel()
+        hoverOpen = nil
+        guard inside else { requestsWindow.pointerLeft(); return }
+        guard !requests.requests.isEmpty, !requestsWindow.isOpen, !recorder.isRecording else { return }
+        let open = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.panel.hovering, !self.recorder.isRecording else { return }
+                self.requestsWindow.open(.hover)
+            }
+        }
+        hoverOpen = open
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: open)
+    }
+
+    /// The list's rows, as OpenRequests words them.
+    private func listRows(newestLast: Bool) -> [RequestsModel.Row] {
+        let now = Date()
+        return requests.rows(newestLast: newestLast).map { r in
+            let name = statusMenu.name(of: r.agentID)
+            let cue: RequestsModel.Row.Cue
+            let action: String?
+            switch r.phase {
+            case .waiting: cue = .waiting; action = nil
+            case .thinking: cue = .thinking; action = nil
+            case .answered: cue = r.heard ? .heard : .ready; action = r.heard ? "Show the answer" : "Listen"
+            case .failed: cue = .failed; action = "See why"
+            }
+            return RequestsModel.Row(
+                id: r.id, name: name, state: OpenRequests.stateWords(r, now: now),
+                words: OpenRequests.firstWords(r.question),
+                ago: OpenRequests.ago(Int(now.timeIntervalSince(r.sentAt))),
+                cue: cue, isNew: r.isNew,
+                tint: statusMenu.color(of: r.agentID), colors: statusMenu.palette(of: r.agentID),
+                voiceOver: OpenRequests.voiceOver(name: name, r, now: now), action: action)
+        }
+    }
+
+    /// A row picked in the list: an answer not heard plays, a heard one
+    /// shows its text again (Listen again plays it), a failure says why.
+    private func pick(_ id: Int) {
+        guard let r = requests.request(id) else { return }
+        let action = OpenRequests.pick(r)
+        guard action != .nothing else { return }
+        requestsWindow.dismissList()
+        switch action {
+        case .nothing: return
+        case .listen: play(id)
+        case .show: showAgain(id)
+        case .reason(let why):
+            requests.heard(id)
+            requestsChanged()
+            note("\(statusMenu.name(of: r.agentID)) couldn’t answer: \(why)")
+        }
+    }
+
+    /// Play an answer: heard from now on, its text in the pill, said in
+    /// its agent's voice on the daemon's speaking queue. Listen again, or
+    /// the stop shortcut, stops it.
+    private func play(_ id: Int) {
+        guard let r = requests.request(id), let answer = answers[id] else { return }
+        requests.heard(id)
+        requestsChanged()
+        let agent = answer.agentID ?? r.agentID
+        Log.info("request \(id): playing (\(agent))")
+        endReplay()
+        // An open microphone would take the answer for the listener's words.
+        if recorder.isRecording {
+            stopPolling()
+            _ = recorder.stop()
+        }
+        if AnswerView.isWorthShowing(spoken: answer.text, written: answer.written,
+                                     buttons: answer.buttons, imageURL: answer.imageURL) {
+            panel.showAnswer(spoken: answer.text, written: answer.written,
+                             buttons: answer.buttons, imageURL: answer.imageURL)
+        }
+        shownAnswer = (answer.text, agent, answer.voice)
+        noteReset?.cancel()
+        let onScreen = !busy
+        if onScreen { asideSpeaker = agent; panel.render(.saying(answer.text)) }
+        panel.answer.setReplaying(true)
+        let line = Task { await Speech.say(answer.text, agentID: agent, kind: "answer", voice: answer.voice) }
+        replaying = line
+        Task { @MainActor [weak self] in
+            await line.value
+            guard let self else { return }
+            if self.replaying == line { self.endReplay() }
+            if onScreen && self.asideSpeaker == agent {
+                self.asideSpeaker = nil
+                if !self.busy && !self.recorder.isRecording { self.panel.render(self.rest) }
+            }
+        }
+    }
+
+    /// A heard answer again: its text in the pill, with Listen again.
+    private func showAgain(_ id: Int) {
+        guard let r = requests.request(id), let answer = answers[id] else { return }
+        panel.showAnswer(spoken: answer.text, written: answer.written,
+                         buttons: answer.buttons, imageURL: answer.imageURL)
+        shownAnswer = (answer.text, answer.agentID ?? r.agentID, answer.voice)
     }
 
     /// Someone holds the floor (#924): the answer is kept, and shown and

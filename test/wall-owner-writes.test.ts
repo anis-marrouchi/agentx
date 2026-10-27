@@ -8,8 +8,9 @@ import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { listCards, saveCard, type DecisionCard } from "../src/approvals/cards"
 
-// #1440: the Wall answers what waits on the owner through the calls the
-// classic pages make. Only the owner may: the dashboard refuses an answer
+// #1440: the Wall answers what waits on the owner under /api/admin/wall
+// (#1454's guard), served by the calls the classic pages make. Only the
+// owner may: the dashboard refuses an answer
 // without the dashboard token, from this machine or through a peer, and
 // the card stays as it was. With the token, the record is the one
 // /approvals writes.
@@ -53,20 +54,20 @@ afterAll(async () => {
 
 describe("owner-only answers from the Wall (#1440)", () => {
   it("refuses an answer without the dashboard token, and leaves the card waiting", async () => {
-    expect((await post("/api/admin/approvals/decide", { key: "card:c-1", action: "yes" })).status).toBe(401)
-    expect((await post("/api/admin/approvals/decide", { key: "card:c-1", action: "yes" }, { Authorization: "Bearer not-the-token" })).status).toBe(401)
+    expect((await post("/api/admin/wall/decide", { key: "card:c-1", action: "yes" })).status).toBe(401)
+    expect((await post("/api/admin/wall/decide", { key: "card:c-1", action: "yes" }, { Authorization: "Bearer not-the-token" })).status).toBe(401)
     // Sent on to another node, as for a post kept there: refused here first.
-    expect((await post("/api/admin/approvals/decide", { key: "card:c-1", action: "yes" }, { "X-Agentx-Peer": "node-b" })).status).toBe(401)
+    expect((await post("/api/admin/wall/decide", { key: "card:c-1", action: "yes" }, { "X-Agentx-Peer": "node-b" })).status).toBe(401)
     expect(listCards(process.cwd(), "pending").map((c) => c.id)).toEqual(["c-1"])
   })
 
   it("refuses a review decision without the dashboard token", async () => {
-    expect((await post("/api/admin/graph/classifications/approve", { msgHash: "m-1" })).status).toBe(401)
-    expect((await post("/api/admin/graph/classifications/reject", { msgHash: "m-1" })).status).toBe(401)
+    expect((await post("/api/admin/wall/review/approve", { msgHash: "m-1" })).status).toBe(401)
+    expect((await post("/api/admin/wall/review/reject", { msgHash: "m-1" })).status).toBe(401)
   })
 
   it("takes the owner's answer, with the same record /approvals writes", async () => {
-    const r = await post("/api/admin/approvals/decide", { key: "card:c-1", action: "yes" }, { Authorization: `Bearer ${TOKEN}` })
+    const r = await post("/api/admin/wall/decide", { key: "card:c-1", action: "yes" }, { Authorization: `Bearer ${TOKEN}` })
     expect(r.status).toBe(200)
     expect((await r.json()).message).toContain("writer will be told yes")
     const done = listCards(process.cwd(), "decided").find((c) => c.id === "c-1")!
