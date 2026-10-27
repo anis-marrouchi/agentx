@@ -467,12 +467,12 @@ The **Cost** page shows what this machine's agents spent, in total and per agent
 3. Pick **7 days**, **14 days**, **30 days**, **90 days** or **All** (everything recorded on this machine). The line under the tabs gives the total, the runs and the cost per run over that range.
 4. The chart stacks each day's spend by agent: the five agents that spent most in the range each have their own shade, and the rest are **others**. Point at a bar to read its agent and amount.
 5. Each agent has one row, highest spend first: its spend in the range with the change against the period before (**new** when it spent nothing then; no change is shown for **All**), a bar for this month's spend against its cap (or **no cap**), its runs and its cost per run. Select an agent's name to open its [profile](#see-one-agent-s-profile).
-6. The box on the right lists the three agents whose spend moved most this week, the share of input read from the cache, and the runs this month that had no price.
+6. The box on the right lists the three agents whose spend moved most this week, the share of input read from the cache, and the runs in the range that had no price.
 7. **Phone:** the chart becomes a single line of the spend per day, **Export CSV** moves above the tabs, and the box on the right moves under the list.
 
    ![The Cost page on a phone in dark mode: the month's total, Export CSV, the tabs, the spend line and the agents' rows](/screenshots/wall/cost-phone.png)
 
-A run on a model with no price, such as a local model, is not counted as $0. The page says how many runs had no price this month, on the agent's row and in the box on the right; they are not in the totals, and a cap does not stop them.
+A run on a model with no price, such as a local model, is not counted as $0. The page says how many runs in the range had no price, on the agent's row and in the box on the right. They are counted in runs but not in the dollars, the cost per run counts priced runs only, and a cap does not stop them.
 
 ![The Cost page: this month's total, the range tabs with Export CSV, the stacked chart and one row per agent](/screenshots/wall/cost.png)
 

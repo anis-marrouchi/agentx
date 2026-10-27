@@ -23,11 +23,11 @@
 /** The range tabs, in days; 0 is "All". */
 export const COST_RANGES = [7, 14, 30, 90, 0] as const
 
-interface CostAgentDay { tasks?: number; cost?: number; input?: number; cacheRead?: number }
+interface CostAgentDay { tasks?: number; cost?: number; input?: number; cacheRead?: number; unpriced?: number }
 interface CostReply {
   generatedAt?: string
   kpis?: { spendToday?: number; spend7d?: number; spendDeltaWoW?: number }
-  days?: Array<{ date: string; cost?: number; tasks?: number; input?: number; output?: number; cacheRead?: number; cacheCreate?: number; agents?: Record<string, CostAgentDay> }>
+  days?: Array<{ date: string; cost?: number; tasks?: number; input?: number; output?: number; cacheRead?: number; cacheCreate?: number; unpriced?: number; agents?: Record<string, CostAgentDay> }>
 }
 interface BudgetRowLike { agentId?: string; name?: string; spentUsd?: number; capUsd?: number; state?: string; unpricedRuns?: number }
 interface BudgetsReply { month?: string; agents?: BudgetRowLike[]; projects?: BudgetRowLike[]; fleet?: BudgetRowLike; agentIds?: string[] }
@@ -43,7 +43,10 @@ export interface CostAgentRow {
   monthSpent?: number
   cap?: number
   state?: string
+  /** Runs in the range on a model with no price. */
   unpriced: number
+  /** The same this month, from the budgets, for a reply that does not count them. */
+  unpricedMonth: number
 }
 
 export interface CostCapRow { key: string; label: string; spent: number; cap?: number; state?: string; unpriced: number }
@@ -69,6 +72,9 @@ export interface CostPageModel {
   spendToday?: number
   spend7d?: number
   wow?: number
+  /** Runs in the range with no price, when the cost reply counts them; else null. */
+  unpricedRange: number | null
+  /** Runs this month with no price, from the budgets. */
   unpriced: number
   /** Token mix over the range. */
   mix: { input: number; output: number; cacheRead: number; cacheCreate: number }
@@ -87,16 +93,18 @@ export function costPageModel(cost: CostReply, budgets: BudgetsReply | null, ran
   const days = (cost.days || []).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
   const byDate: Record<string, NonNullable<CostReply["days"]>[number]> = {}
   for (const d of days) byDate[d.date] = d
+  // A reply from before the unpriced count (#1423) has no field to read.
+  const counts = days.some((d) => d.unpriced != null)
 
-  const acc: Record<string, { spend: number; runs: number; prev: number; week: number; before: number }> = {}
-  const at = (id: string) => acc[id] || (acc[id] = { spend: 0, runs: 0, prev: 0, week: 0, before: 0 })
-  let total = 0, runs = 0
+  const acc: Record<string, { spend: number; runs: number; prev: number; week: number; before: number; unpriced: number }> = {}
+  const at = (id: string) => acc[id] || (acc[id] = { spend: 0, runs: 0, prev: 0, week: 0, before: 0, unpriced: 0 })
+  let total = 0, runs = 0, unpricedRange = 0
   const mix = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 }
   const daily: CostDayRow[] = []
   for (const d of days) {
     const cur = d.date >= cut, prev = !all && !cur && d.date >= prevCut
     if (cur) {
-      total += d.cost || 0; runs += d.tasks || 0
+      total += d.cost || 0; runs += d.tasks || 0; unpricedRange += d.unpriced || 0
       mix.input += d.input || 0; mix.output += d.output || 0; mix.cacheRead += d.cacheRead || 0; mix.cacheCreate += d.cacheCreate || 0
       const ag = d.agents || {}
       daily.push({
@@ -106,7 +114,7 @@ export function costPageModel(cost: CostReply, budgets: BudgetsReply | null, ran
     }
     for (const [id, a] of Object.entries(d.agents || {})) {
       const r = at(id)
-      if (cur) { r.spend += a.cost || 0; r.runs += a.tasks || 0 }
+      if (cur) { r.spend += a.cost || 0; r.runs += a.tasks || 0; r.unpriced += a.unpriced || 0 }
       if (prev) r.prev += a.cost || 0
       if (d.date >= weekCut) r.week += a.cost || 0
       else if (d.date >= week2Cut) r.before += a.cost || 0
@@ -122,12 +130,14 @@ export function costPageModel(cost: CostReply, budgets: BudgetsReply | null, ran
   const agents: CostAgentRow[] = Object.keys(acc).map((id) => {
     const r = acc[id], b = rows[id]
     return {
-      id, spend: r.spend, runs: r.runs, perRun: r.runs ? r.spend / r.runs : null, prev: r.prev,
+      // Per priced run: runs with no price would pull it toward $0.
+      id, spend: r.spend, runs: r.runs, perRun: r.runs - r.unpriced > 0 ? r.spend / (r.runs - r.unpriced) : null, prev: r.prev,
       change: r.prev > 0 ? (r.spend - r.prev) / r.prev : null,
       ...(b ? { monthSpent: b.spentUsd || 0, ...(b.capUsd ? { cap: b.capUsd } : {}), state: b.state } : {}),
-      unpriced: (b && b.unpricedRuns) || 0,
+      unpriced: r.unpriced,
+      unpricedMonth: (b && b.unpricedRuns) || 0,
     }
-  }).filter((r) => r.spend > 0 || r.runs > 0 || r.prev > 0 || r.unpriced > 0)
+  }).filter((r) => r.spend > 0 || r.runs > 0 || r.prev > 0 || r.unpriced > 0 || r.unpricedMonth > 0)
     .sort((a, b) => b.spend - a.spend || b.runs - a.runs || (a.id < b.id ? -1 : 1))
 
   const dates: string[] = []
@@ -169,6 +179,7 @@ export function costPageModel(cost: CostReply, budgets: BudgetsReply | null, ran
     dates, top, stacks, spark30, agents, movers,
     ...(f ? { month: { spent: f.spentUsd || 0, ...(f.capUsd ? { cap: f.capUsd } : {}), state: f.state, label: budgets?.month } } : {}),
     ...(cost.kpis ? { spendToday: cost.kpis.spendToday || 0, spend7d: cost.kpis.spend7d || 0, wow: cost.kpis.spendDeltaWoW || 0 } : {}),
+    unpricedRange: counts ? unpricedRange : null,
     unpriced: (f && f.unpricedRuns) || 0,
     mix, daily, caps,
   }
@@ -232,11 +243,17 @@ export function costPageHtml(m: CostPageModel, names: Record<string, string>, av
     '<button type="button" class="ax-btn ax-btn--ghost wc__csv" data-ccsv title="Download the days of this range as a spreadsheet file (CSV)">Export CSV</button></div>' +
     (u.csvMsg ? '<p class="wc__warn" role="alert">' + esc(u.csvMsg) + "</p>" : "")
 
-  const unpricedNote = m.unpriced
-    ? '<p class="wc__warn" role="note">' + m.unpriced + " run" + (m.unpriced === 1 ? "" : "s") + " this month had no price (a model with no rate, such as a local one). They are not in these totals, and a cap does not stop them.</p>"
-    : ""
+  const span = all ? "since the first record" : "last " + m.range + " days"
+  const inSpan = all ? "since the first record" : "in the last " + m.range + " days"
+  const unpricedNote = m.unpricedRange
+    ? '<p class="wc__warn" role="note">' + m.unpricedRange + " run" + (m.unpricedRange === 1 ? "" : "s") + " " + inSpan + " had no price (a model with no rate, such as a local one). " + (m.unpricedRange === 1 ? "It is" : "They are") + " counted in runs, not in the dollars, and a cap does not stop " + (m.unpricedRange === 1 ? "it" : "them") + ".</p>"
+    : m.unpriced
+      ? '<p class="wc__warn" role="note">' + m.unpriced + " run" + (m.unpriced === 1 ? "" : "s") + " this month had no price (a model with no rate, such as a local one). They are not in these totals, and a cap does not stop them.</p>"
+      : ""
+  // Per priced run, as on each agent's row.
+  const priced = m.runs - (m.unpricedRange || 0)
   const sum = '<p class="ax-wall__count">' + usd(m.total) + " " + over + " · " + m.runs + " run" + (m.runs === 1 ? "" : "s") +
-    (m.runs ? " · " + usd(m.total / m.runs) + " per run" : "") + "</p>" + unpricedNote
+    (priced > 0 ? " · " + usd(m.total / priced) + " per run" : "") + "</p>" + unpricedNote
 
   const max = Math.max(0, ...m.stacks.map((s) => s.reduce((a, b) => a + b, 0)))
   const w = 100 / Math.max(1, m.dates.length)
@@ -251,7 +268,6 @@ export function costPageHtml(m: CostPageModel, names: Record<string, string>, av
   }).join("")
   const legend = m.top.map((id, k) => '<span><i class="wc-s' + k + '"></i>' + esc(name(id)) + "</span>").join("") +
     (m.stacks.some((s) => s[s.length - 1] > 0) ? '<span><i class="wc-s5"></i>others</span>' : "")
-  const span = all ? "since the first record" : "last " + m.range + " days"
   const chart = '<figure class="wc__chart"><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Spend per day by agent, ' + span + '">' + bars + "</svg>" +
     '<figcaption><span class="k">' + esc(m.dates[0]) + " – " + esc(m.today) + " · peak " + usd(max) + "</span>" + legend + "</figcaption></figure>" +
     spark(m.stacks.map((s) => s.reduce((a, b) => a + b, 0)), "wc__phone", "Spend per day, " + span)
@@ -261,13 +277,14 @@ export function costPageHtml(m: CostPageModel, names: Record<string, string>, av
     const bar = a.cap
       ? '<span class="wc__bar' + (a.state === "paused" ? " is-err" : a.state === "warn" ? " is-warn" : "") + '" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(Math.min(100, ((a.monthSpent || 0) / a.cap) * 100)) + '" aria-label="' + esc(name(a.id) + ": month spend against its cap") + '"><i style="width:' + Math.min(100, ((a.monthSpent || 0) / a.cap) * 100).toFixed(1) + '%"></i></span><small>' + usd(a.monthSpent || 0) + " of " + usd(a.cap) + " this month</small>"
       : "<small>no cap</small>"
+    const np = a.unpriced ? a.unpriced + " not priced" : a.unpricedMonth ? a.unpricedMonth + " not priced this month" : ""
     const change = all ? "" : a.change == null ? (a.spend ? '<i class="new">new</i>' : "") : '<i class="' + (a.change > 0 ? "up" : a.change < 0 ? "down" : "") + '">' + pct(a.change) + "</i>"
     return '<li class="wc__row"><button type="button" class="wc__who" data-cagent="' + esc(a.id) + '" title="' + esc(name(a.id)) + ': profile and posts">' +
         (avatarOf ? avatarOf(a.id) : "") + "<span><b>" + esc(name(a.id)) + "</b><small>@" + esc(a.id) + "</small></span></button>" +
       '<span class="wc__amt"><b>' + usd(a.spend) + "</b>" + change + "</span>" +
       '<span class="wc__cap">' + bar + capBtn + "</span>" +
       '<span class="wc__runs">' + a.runs + " run" + (a.runs === 1 ? "" : "s") + (a.perRun != null ? " · " + usd(a.perRun) + " per run" : "") +
-        (a.unpriced ? ' · <b class="wc__np">' + a.unpriced + " not priced this month</b>" : "") + "</span></li>"
+        (np ? ' · <b class="wc__np">' + np + "</b>" : "") + "</span></li>"
   }).join("") + "</ol>" : '<p class="ax-wall__empty">No spend ' + (all ? "recorded yet" : "in the last " + m.range + " days") + ".</p>"
 
   const rail = '<aside class="wc__rail" aria-label="Cost notes">' +
@@ -275,7 +292,9 @@ export function costPageHtml(m: CostPageModel, names: Record<string, string>, av
       "<li><span>" + esc(name(x.id)) + "</span><b>" + usd(x.week) + "</b><small>" + (x.before ? pct((x.week - x.before) / x.before) : "new") + " vs " + usd(x.before) + "</small></li>").join("") + "</ul>"
       : '<p class="k">No change against the week before.</p>') +
     "<h3>Cache</h3><p>" + (m.cacheHit == null ? '<span class="k">No input tokens in this range.</span>' : "<b>" + Math.round(m.cacheHit * 100) + "%</b> of input read from the cache " + over) + "</p>" +
-    "<h3>Runs without a cost</h3><p>" + (m.unpriced ? '<b class="wc__np">' + m.unpriced + "</b> this month, not in the totals" : "None this month") + "</p></aside>"
+    "<h3>Runs without a cost</h3><p>" + (m.unpricedRange
+      ? '<b class="wc__np">' + m.unpricedRange + "</b> " + esc(inSpan) + ", counted in runs, not in the dollars"
+      : m.unpriced ? '<b class="wc__np">' + m.unpriced + "</b> this month, not in the totals" : m.unpricedRange === 0 ? "None " + esc(inSpan) : "None this month") + "</p></aside>"
 
   // Monthly caps: the fleet and the projects with a cap or spend, then the
   // form that sets any cap. The agents' own caps are on their rows above.

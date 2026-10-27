@@ -88,11 +88,30 @@ describe("Wall Cost page numbers (#1423)", () => {
     const m = costPageModel(buildCost(db!, 60), BUDGETS, 30)
     expect(m.unpriced).toBe(6)
     const local = m.agents.find((r) => r.id === "local")!
-    expect(local).toMatchObject({ spend: 0, unpriced: 4 })
+    // The fixture's cost rows are all priced, so the month's count comes from the budgets.
+    expect(local).toMatchObject({ spend: 0, unpriced: 0, unpricedMonth: 4 })
     const html = costPageHtml(m, { coder: "Coder" })
     expect(html).toContain("6 runs this month had no price")
     expect(html).toContain("4 not priced this month")
     expect(html).toContain("2 not priced this month")
+  })
+
+  it("counts runs on a model with no price in the range, per agent, from the API", () => {
+    const ins = db!.prepare(`INSERT INTO usage_daily (agent_id, model, day, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, tasks) VALUES (?, 'llama-3-8b', ?, 5000, 500, 0, 0, ?)`)
+    for (const n of [0, 2, 40]) ins.run("local", day(n), 4)
+    const api = buildCost(db!, 7)
+    expect(api.kpis.unpricedRange).toBe(8)
+    const m = costPageModel(buildCost(db!, 14), BUDGETS, 7)
+    expect(m.unpricedRange).toBe(8)
+    expect(m.agents.find((r) => r.id === "local")).toMatchObject({ spend: 0, runs: 8, unpriced: 8, perRun: null })
+    const html = costPageHtml(m, {})
+    expect(html).toContain("8 runs in the last 7 days had no price")
+    expect(html).toContain("8 not priced</b>")
+    // Cost per run counts priced runs only.
+    expect(html).toContain("$" + (m.total / (m.runs - 8)).toFixed(2) + " per run</p>")
+    // A reply from before the count (no `unpriced` field) falls back to the month's.
+    const old = { ...buildCost(db!, 14), days: buildCost(db!, 14).days.map(({ unpriced: _u, ...d }) => d) }
+    expect(costPageModel(old, BUDGETS, 7).unpricedRange).toBeNull()
   })
 
   it("draws the header, tabs, chart, rows that open the profile, and the rail", () => {

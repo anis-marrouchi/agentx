@@ -290,7 +290,7 @@ A project works like an agent: one notice at 80%, and at 100% new runs for that 
 - **`No tasks recorded yet`:** no agent has run yet on this machine. Send an agent a message first.
 - **The Cost page is empty:** it only counts work done since AgentX started recording on this machine. Pick **All** to see everything it has.
 - **Requests fail with `Credit balance is too low`:** the API key's account has no credits. In the provider's console, add a payment method and buy credits, then try again.
-- **The Cost page shows `$0` but your agents ran:** they use a model that isn't Claude, so AgentX has no price for it. Check that provider's billing page.
+- **The Cost page shows `$0` and "not priced" but your agents ran:** they use a model that isn't Claude, so AgentX has no price for it. Check that provider's billing page.
 - **The Cost page shows dollars, but you pay a subscription:** that's expected. The figures show what the work would cost with an API key; you pay the plan's fixed price.
 - **Monitor's Reviews failed keeps going up:** the reviewer can't run Claude Code on the daemon's machine. **Terminal:** on that machine, run `claude --version`. If it's not found, install Claude Code and sign in, or accept that Monitor stays empty; this costs nothing. See [Monitor's reviewer](#monitor-s-reviewer).
 - **The numbers don't match your bill:** your bill also covers use outside AgentX, and providers may round or group charges differently. Use the provider's figure.
