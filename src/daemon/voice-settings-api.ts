@@ -33,6 +33,8 @@ type Priority = "high" | "normal" | "low"
 
 /** The shortcut that opens the menu. Fixed, so no setting may take it. */
 export const MENU_HOTKEY = "cmd+opt+a"
+/** The shortcut that opens the open-requests list (#1455). Fixed too. */
+export const LIST_HOTKEY = "cmd+opt+o"
 
 export interface AgentVoicePatch {
   provider?: Provider | null
@@ -238,6 +240,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
     owners.set(r.value, [...(owners.get(r.value) ?? []), who])
   }
   own(MENU_HOTKEY, "open the menu")
+  own(LIST_HOTKEY, "open requests")
   const hk = { ...DEFAULT_HOTKEYS, ...(config.voice.hotkeys ?? {}), ...(g.hotkeys ?? {}) }
   own(hk.talk, "talk"); own(hk.stop, "stop"); own(hk.paste, "smart paste")
   for (const [id, a] of Object.entries(config.agents)) {

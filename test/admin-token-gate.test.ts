@@ -91,9 +91,25 @@ describe("admin token gate (#1302)", () => {
     const page = (path: string) => new Promise<string>((resolve, reject) => {
       request(base + path, (res) => { let b = ""; res.on("data", (c) => (b += c)); res.on("end", () => resolve(b)) }).on("error", reject).end()
     })
-    for (const path of ["/admin/health", "/admin/cost", "/admin/ledger", "/activity?view=map"]) {
+    for (const path of ["/admin/health", "/admin/ledger", "/activity?view=map"]) {
       expect(await page(path), path).toContain('window.AX_LOCAL_TOKEN = "tok-123"')
     }
+  })
+
+  it("sends the old Cost page to the Wall's Cost page (#1423)", async () => {
+    for (const path of ["/admin/cost", "/cost"]) {
+      const r = await fetch(base + path, { redirect: "manual" })
+      expect(r.status, path).toBe(302)
+      expect(r.headers.get("location"), path).toBe("/wall#status=open&view=cost")
+    }
+  })
+
+  it("lets only the owner set a budget (#1423)", async () => {
+    const post = (headers: Record<string, string>) => fetch(base + "/api/admin/budgets", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ scope: "fleet", monthlyUsd: 10 }),
+    })
+    expect((await post({})).status).toBe(401)
+    expect((await post({ Authorization: "Bearer wrong" })).status).toBe(401)
   })
 })
 
