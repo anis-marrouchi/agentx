@@ -5,11 +5,18 @@
 // "unknown" this time and is filled from the cache on the next refresh.
 // Errors are kept for a shorter time than answers, so a forge that comes
 // back is read again soon.
+//
+// A quick read (#1442) waits only QUICK_BUDGET_MS: the Wall's first paint
+// shows what is cached, the reads it started go on, and busy() tells the
+// reply to say so, so the page asks again in a moment.
 
 const MINUTE = 60_000
 const OK_TTL_MS = 5 * MINUTE
 const ERROR_TTL_MS = MINUTE
 const BUDGET_MS = 4_000
+export const QUICK_BUDGET_MS = 300
+/** What a post says about a home a quick read left unread. */
+export const LATE_QUICK = "still being read; shown in a moment"
 /** Homes read per Wall read; the rest are "not read yet" until cached. */
 const MAX_READS = 40
 const CONCURRENCY = 4
@@ -27,8 +34,11 @@ export type ForgeRead<T> =
 export interface ForgeCacheOptions { budgetMs?: number; maxReads?: number; clock?: () => number }
 
 export interface ForgeCache<R, T> {
-  /** Reads every ref (keyed, in order) inside one time box. */
-  readAll(refs: Map<string, R>): Promise<Map<string, ForgeRead<T>>>
+  /** Reads every ref (keyed, in order) inside one time box; a quick read
+   *  uses the short one. */
+  readAll(refs: Map<string, R>, quick?: boolean): Promise<Map<string, ForgeRead<T>>>
+  /** True while a read started earlier has not answered yet. */
+  busy(): boolean
 }
 
 export function forgeCache<R, T>(read: (ref: R) => Promise<ForgeAnswer<T>>, opts: ForgeCacheOptions = {}): ForgeCache<R, T> {
@@ -68,8 +78,9 @@ export function forgeCache<R, T>(read: (ref: R) => Promise<ForgeAnswer<T>>, opts
   }
 
   return {
-    async readAll(refs) {
-      const budget = opts.budgetMs ?? BUDGET_MS
+    busy: () => inFlight.size > 0,
+    async readAll(refs, quick) {
+      const budget = quick ? Math.min(QUICK_BUDGET_MS, opts.budgetMs ?? BUDGET_MS) : opts.budgetMs ?? BUDGET_MS
       const maxReads = opts.maxReads ?? MAX_READS
       const out = new Map<string, ForgeRead<T>>()
       let reads = 0

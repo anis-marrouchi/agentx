@@ -6,7 +6,9 @@
 // /api/workflows/runs (failed workflow runs), /api/admin/org (each
 // agent's role and who it reports to, #1398) and
 // /api/admin/observability/budgets (an agent's month spend vs its cap on
-// its profile, #1393, wall-spend.ts). Pending owner decision
+// its profile, #1393, wall-spend.ts). The feed and the machines are read
+// first, quick (#1442): a slow peer or node reads "checking…" and the page
+// asks again; the other reads follow the first paint. Pending owner decision
 // cards (#1185) come with their post and are shown without buttons:
 // answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
@@ -884,7 +886,7 @@ ${WALL_BUILD_SCRIPT}
   }
   function agentsPageHtml() {
     var list = allAgents();
-    var down = ((S.live && S.live.nodes) || []).filter(function (n) { return !n.reachable || n.error; });
+    var down = ((S.live && S.live.nodes) || []).filter(nodeDown);
     var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
     var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
@@ -1100,14 +1102,19 @@ ${WALL_BUILD_SCRIPT}
     return runs + cronFailures().reduce(function (n, g) { return n + g.count; }, 0) + workflowFailures().length;
   }
 
+  // A node that ran out of time is slow, not down (#1442): it reads
+  // "checking…" and the Wall asks again; only a refusal reads as down.
+  function nodeChecking(n) { return !!n.checking; }
+  function nodeDown(n) { return (!n.reachable || !!n.error) && !n.checking; }
+
   // --- Happening now (#1355): one line per machine, who runs what ---
   function happeningHtml() {
     var live = (S.live && S.live.nodes) || [];
-    if (!live.length) return '<p class="ax-wall__empty">Loading…</p>';
+    if (!live.length) return '<p class="ax-wall__empty">' + (S.liveError ? 'Could not reach the machines just now; trying again.' : 'Loading…') + '</p>';
     return live.map(function (n) {
-      var down = !n.reachable || n.error, running = [];
+      var down = nodeDown(n), running = [];
       (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + plainMarkerText(t.messagePreview).slice(0, 60)); }); });
-      var what = down ? 'does not answer' : running.length ? running[0] + (running.length > 1 ? ' · +' + (running.length - 1) + ' more' : '') : 'nothing running';
+      var what = nodeChecking(n) ? 'checking…' : down ? 'does not answer' : running.length ? running[0] + (running.length > 1 ? ' · +' + (running.length - 1) + ' more' : '') : 'nothing running';
       return '<div class="wh' + (down ? ' is-down' : '') + '"><b>' + esc(n.name) + '</b><span title="' + esc(running.join('\n')) + '">' + esc(what) + '</span></div>';
     }).join('') + '<a class="wa-more" href="#page=running">See all running</a>';
   }
@@ -1122,7 +1129,7 @@ ${WALL_BUILD_SCRIPT}
       (n.agents || []).forEach(function (a) {
         (a.runningTasks || []).forEach(function (t) { running.push({ a: a, t: t }); });
       });
-      var down = !n.reachable || n.error;
+      var down = nodeDown(n), checking = nodeChecking(n);
       var crons = (n.cronRuns || []).filter(function (r) { return r.status !== 'success' && Date.parse(r.startedAt) >= Date.now() - DAY; }).length;
       var ops = [
         n.uptimeSec != null ? 'Up ' + Math.round(n.uptimeSec / 3600) + ' h' : '',
@@ -1134,18 +1141,19 @@ ${WALL_BUILD_SCRIPT}
         n.commit ? 'Commit ' + n.commit.slice(0, 8) : '',
       ].filter(Boolean);
       return '<div class="wn' + (down ? ' is-down' : '') + '"><header><b>' + esc(n.name) + '</b>' +
-        '<span class="' + (down ? 'ax-badge ax-badge--err' : 'ax-badge ax-badge--live') + '">' + (down ? (n.stale ? 'unreachable, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'unreachable') : 'up') + '</span></header>' +
+        '<span class="' + (checking ? 'ax-badge' : down ? 'ax-badge ax-badge--err' : 'ax-badge ax-badge--live') + '">' + (checking ? (n.stale ? 'checking…, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'checking…') : down ? (n.stale ? 'unreachable, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'unreachable') : 'up') + '</span></header>' +
         '<div class="ver">' + esc(n.version ? 'v' + n.version : 'version unknown') + '</div>' +
         (running.length ? '<ul>' + running.map(function (x) {
           var rid = x.t.traceId || x.t.id;
           var conc = ((S.live && S.live.concurrent) || []).filter(function (o) { return o.runs.indexOf(rid) >= 0; });
           return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc(plainMarkerText(x.t.messagePreview).slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
             conc.map(function (o) { return concHtml(o, function (id) { return esc(id); }); }).join('') + '</li>';
-        }).join('') + '</ul>' : '<div class="idle">' + (down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
+        }).join('') + '</ul>' : '<div class="idle">' + (checking ? 'Slow to answer; asking again.' : down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
         (ops.length ? '<details><summary>Ops details</summary>' + ops.map(esc).join(' · ') + '</details>' : '') + '</div>';
     });
     wallNodes.filter(function (w) { return !w.ok; }).forEach(function (w) {
-      cards.push('<div class="wn is-down"><header><b>' + esc(w.name) + '</b><span class="ax-badge ax-badge--err">posts not shown</span></header><div class="idle">' + esc(w.error || 'unreachable') + '</div></div>');
+      cards.push(w.checking ? '<div class="wn"><header><b>' + esc(w.name) + '</b><span class="ax-badge">checking…</span></header><div class="idle">Its posts are on the way.</div></div>'
+        : '<div class="wn is-down"><header><b>' + esc(w.name) + '</b><span class="ax-badge ax-badge--err">posts not shown</span></header><div class="idle">' + esc(w.error || 'unreachable') + '</div></div>');
     });
     return cards.join('');
   }
@@ -1247,10 +1255,30 @@ ${WALL_BUILD_SCRIPT}
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }
-  async function load() {
-    // The quick reads go out first and draw as each answers; the feed is
-    // the slow one and keeps its own "Loading…" (#1252).
-    getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
+  // Asks again soon while something is still on its way (#1442): a node
+  // still checking, a peer still building, a forge read still out. Each
+  // read keeps its own few tries, so a node that stays slow settles.
+  var AGAIN_MS = 1500, AGAIN_MAX = 5;
+  var again = { live: 0, wall: 0 };
+  function askAgain(what, still, fn) {
+    if (!still) { again[what] = 0; return; }
+    if (again[what] >= AGAIN_MAX) return;
+    again[what]++;
+    setTimeout(fn, AGAIN_MS);
+  }
+  function loadLive() {
+    return getJson('/api/live?quick=1').then(function (d) {
+      S.live = d; S.liveError = false; render();
+      askAgain('live', (d.nodes || []).some(nodeChecking), loadLive);
+    }).catch(function () {
+      S.liveError = true;
+      if (!S.live) S.live = { nodes: [] };
+      render();
+      askAgain('live', true, loadLive);
+    });
+  }
+  // The reads the home does not need for its first paint (#1442): after it.
+  function loadRest() {
     refreshReviews();
     refreshCost();
     getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
@@ -1258,21 +1286,33 @@ ${WALL_BUILD_SCRIPT}
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
     if (S.page === 'activity') loadActivity(true);
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
+  }
+  async function loadWall() {
+    // A quick read (#1442): what the peers and the forge have ready now;
+    // the reply says when more is on its way, and the Wall asks again.
+    S.data = await getJson('/api/admin/wall?peer=fleet&days=7&quick=1');
+    var posts = (S.data.posts || []).map(plainPost);
+    fillSelect('f-owner', uniq(posts.map(function (p) { return p.owner; })));
+    fillSelect('f-load', uniq(((S.data.capacity && S.data.capacity.owners) || []).map(function (r) { return r.owner; })));
+    var other = posts.some(function (p) { return !p.project; }) ? [OTHER] : [];
+    fillSelect('f-project', uniq(posts.map(function (p) { return p.project; })).concat(other), function (v) { return v === OTHER ? 'Other (no project)' : v; });
+    var goalIds = uniq(((S.data.goals || []).map(function (g) { return g.id; })).concat(posts.map(function (p) { return p.goal && p.goal.id; })));
+    fillSelect('f-goal', goalIds, goalTitle);
+    fillSelect('f-node', uniq(posts.map(function (p) { return p.node.name; })));
+    fillSelect('f-group', uniq(posts.map(groupKey)));
+    applyHash();
+    askAgain('wall', S.data.pending === true, function () { loadWall().catch(function () {}); });
+  }
+  async function load() {
+    // Two reads go out first and draw as each answers: the machines and the
+    // posts. The rest follow once the posts are on screen (#1252, #1442).
+    loadLive();
     try {
-      S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
-      var posts = (S.data.posts || []).map(plainPost);
-      fillSelect('f-owner', uniq(posts.map(function (p) { return p.owner; })));
-      fillSelect('f-load', uniq(((S.data.capacity && S.data.capacity.owners) || []).map(function (r) { return r.owner; })));
-      var other = posts.some(function (p) { return !p.project; }) ? [OTHER] : [];
-      fillSelect('f-project', uniq(posts.map(function (p) { return p.project; })).concat(other), function (v) { return v === OTHER ? 'Other (no project)' : v; });
-      var goalIds = uniq(((S.data.goals || []).map(function (g) { return g.id; })).concat(posts.map(function (p) { return p.goal && p.goal.id; })));
-      fillSelect('f-goal', goalIds, goalTitle);
-      fillSelect('f-node', uniq(posts.map(function (p) { return p.node.name; })));
-      fillSelect('f-group', uniq(posts.map(groupKey)));
-      applyHash();
+      await loadWall();
     } catch (e) {
       $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the Wall: ' + esc(e.message) + '. The classic pages above still work.</p>';
     }
+    loadRest();
   }
 
   document.addEventListener('click', function (ev) {

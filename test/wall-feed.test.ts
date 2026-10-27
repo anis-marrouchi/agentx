@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown } } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -77,6 +77,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
+    if (opts.liveFails && url === "/api/live?quick=1") return Promise.resolve({ ok: false, status: 502, json: async () => ({}) })
     if (opts.post && url === "/api/admin/wall/post") return opts.post
     const peer = init?.headers?.["X-Agentx-Peer"] as string | undefined
     if (peer && opts.peerCost && url.startsWith("/api/admin/observability/")) {
@@ -89,7 +90,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     }
     if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
     if (url.startsWith("/api/admin/observability/cost?") && opts.cost === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
-    const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
+    const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live?quick=1" ? (opts.live ?? LIVE)
       : url === "/api/admin/org" ? (opts.org ?? { exists: false })
       : url.startsWith("/api/admin/observability/cost?") ? (opts.cost ?? { days: [] })
       : url === "/api/admin/observability/budgets" && opts.budgets ? opts.budgets
@@ -97,10 +98,12 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
       : opts.thread && url.startsWith("/api/admin/wall/thread?") ? opts.thread : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
   }
-  new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", script)(
+  // With `timers`, the script's timeouts are kept for the test to run.
+  const later = opts.timers ? (f: () => void) => { opts.timers!.push(f); return 0 } : setTimeout
+  new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "setTimeout", script)(
     doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
-    { getItem: () => null, setItem: () => {} }, () => 0,
+    { getItem: () => null, setItem: () => {} }, () => 0, later,
   )
   /** A click on an element carrying these attributes. */
   const click = (attrs: Record<string, string>) => {
@@ -343,7 +346,7 @@ describe("Running now does not wait on the feed (#1252)", () => {
     const feed = new Promise((r) => { answer = r })
     const w = openWall({ feed })
     await w.settle()
-    expect(w.calls.map((c) => c.url)).toContain("/api/live")
+    expect(w.calls.map((c) => c.url)).toContain("/api/live?quick=1")
     const nodes = w.el("wall-nodes").innerHTML
     expect(nodes).toContain("<b>node-a</b>")
     expect(nodes).toContain("Customer Desk: x")
@@ -359,6 +362,62 @@ describe("Running now does not wait on the feed (#1252)", () => {
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain("Could not load the Wall")
     expect(w.el("wall-nodes").innerHTML).toContain("Customer Desk: x")
+  })
+})
+
+describe("Wall home first load (#1442)", () => {
+  it("asks for the machines and a quick feed first, and the rest once the posts are drawn", async () => {
+    let answer: (v: unknown) => void = () => {}
+    const w = openWall({ feed: new Promise((r) => { answer = r }) })
+    await w.settle()
+    // The build line (#1444) asks its own small route as the script starts.
+    expect(w.calls.map((c) => c.url)).toEqual(["/api/node/build", "/api/live?quick=1", "/api/admin/wall?peer=fleet&days=7&quick=1"])
+    answer({ ok: true, status: 200, json: async () => WALL })
+    await w.settle()
+    expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
+    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/observability/budgets", "/api/admin/org", "/api/workflows/runs?summary=1&limit=100"])
+  })
+
+  it("shows a machine that is slow to answer as checking, not down, and asks again", async () => {
+    const timers: Array<() => void> = []
+    const slow = { nodes: [LIVE.nodes[0], { name: "node-b", reachable: false, error: "timed out", checking: true, agents: [] }] }
+    const w = openWall({ live: slow, timers })
+    await w.settle()
+    const side = w.el("wall-nodes").innerHTML
+    expect(side).toContain('<div class="wh"><b>node-b</b><span title="">checking…</span></div>')
+    expect(side).not.toContain("does not answer")
+    const lives = () => w.calls.filter((c) => c.url === "/api/live?quick=1").length
+    expect(lives()).toBe(1)
+    timers.splice(0).forEach((f) => f())
+    await w.settle()
+    expect(lives()).toBe(2)
+  })
+
+  it("still names a machine that refuses as down", async () => {
+    const down = { nodes: [LIVE.nodes[0], { name: "node-b", reachable: false, error: "unreachable", agents: [] }] }
+    const w = openWall({ live: down, timers: [] })
+    await w.settle()
+    expect(w.el("wall-nodes").innerHTML).toContain('<div class="wh is-down"><b>node-b</b><span title="">does not answer</span></div>')
+  })
+
+  it("asks for the feed again while the reply says more is on its way, a few times at most", async () => {
+    const timers: Array<() => void> = []
+    const w = openWall({ data: { ...WALL, pending: true, nodes: [...WALL.nodes, { name: "node-b", peer: "http://b", ok: false, checking: true }] }, timers })
+    await w.settle()
+    const feeds = () => w.calls.filter((c) => c.url.startsWith("/api/admin/wall?")).length
+    expect(feeds()).toBe(1)
+    for (let i = 0; i < 8; i++) { timers.splice(0).forEach((f) => f()); await w.settle() }
+    expect(feeds()).toBe(6)
+    w.click({ "data-view": "feed" })
+    expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
+  })
+
+  it("tries the machines again when the live read fails, instead of loading forever", async () => {
+    const timers: Array<() => void> = []
+    const w = openWall({ liveFails: true, timers })
+    await w.settle()
+    expect(w.el("wall-nodes").innerHTML).toContain("Could not reach the machines just now; trying again.")
+    expect(timers.length).toBe(1)
   })
 })
 

@@ -566,7 +566,20 @@ Each connected machine has a card:
 
 When a machine does not answer, its card turns red and the Wall still shows everything else. A machine whose posts could not be read says **posts not shown**.
 
+A machine that is only slow says **checking…** instead, in grey, never **does not answer**. The Wall asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
+
+![Happening now on a phone: one machine answered, the other is still checking](/screenshots/wall/checking-phone.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
 **Running now** does not wait for the feed. Its cards appear as soon as the machines answer, usually within a second, while the feed may still say **Loading…**.
+
+When the Wall opens, it first asks for two things only: the posts and what runs on each machine. It shows the posts that are ready, usually within a second, and adds the rest when they arrive:
+
+- posts from a machine still building its list,
+- the GitHub or GitLab state of a post (for a moment it says **still being read; shown in a moment**).
+
+The agents' roles, their spend and the workflow runs load right after the first posts are on screen.
 
 **Last synced**, under the Wall's title, says when the Wall last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
 
@@ -606,10 +619,10 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 6. Open a post that is in progress, type a comment and select **Comment**. The note under the buttons says it was sent to the agent, and a **comment** line by **owner** appears in its thread. Within a minute, a new **run** of that agent follows it. Select **Call** *agent*: your AgentX Voice widget rings.
 7. Open `/live` in the browser. The classic Live page still opens.
 8. Select **Refresh**. **Happening now** fills in while the feed still says **Loading…**; it does not wait for the posts.
-9. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
-10. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
-11. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
-12. Select **Activity** in the nav. The run of the task you sent in step 2 is at the top, with its agent and **Done** (or **Running** if it is still working). Select the **Failed** tab: only failed runs are left, and the address now has `a-result=failed`. Select a row: it opens in place with what it was asked.
+9. **Browser:** open the Wall in a private window on a phone-sized screen. The first posts appear within about a second and a half. A machine that is slow to answer says **checking…** under **Happening now**, then its usual line a few seconds later.
+10. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
+11. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
+12. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
 13. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
 14. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
 15. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
@@ -630,8 +643,9 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 30. Cost page: select **Cost** in the nav, then **7 days**. The address ends with `range=7` and the total changes. Select an agent: its profile opens. Open `/admin/cost` in the browser: the same Cost page opens.
 31. Budget: on the Cost page, select **Set a cap** on a test agent's row. Under **Monthly budgets**, the form shows that agent. Type `5` and select **Save**. The line says **Saved**, and the agent's row shows **of $5.00 this month**. Empty the box and select **Save** again to remove the cap.
 32. CSV: select **Export CSV**. Your browser saves a file named like `agentx-cost-30d-<date>.csv` with one line per day.
-33. Build line: the right of the Wall's title shows the same version as the first line of `agentx daemon status` in a terminal.
-34. Phone: open the Wall at 390 px wide (or on a phone) and select **More**. The sheet lists **Work**, **Automation** and **Fleet**. Select **Activity**: the sheet closes and the Activity page opens.
+33. Select **Activity** in the nav. The run of the task you sent in step 2 is at the top, with its agent and **Done** (or **Running** if it is still working). Select the **Failed** tab: only failed runs are left, and the address now has `a-result=failed`. Select a row: it opens in place with what it was asked.
+34. Build line: the right of the Wall's title shows the same version as the first line of `agentx daemon status` in a terminal.
+35. Phone: open the Wall at 390 px wide (or on a phone) and select **More**. The sheet lists **Work**, **Automation** and **Fleet**. Select **Activity**: the sheet closes and the Activity page opens.
 
 ## If something is wrong
 
@@ -659,6 +673,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **The Wall is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on; see [Approvals](./approvals.md). Running work still shows under **Running now**.
 - **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.
+- **A machine stays on "checking…":** it answers, but slower than the Wall waits (about six seconds for what runs on it). Its line fills in on a later refresh. If it stays like this, see what keeps it busy with `agentx daemon status` on that machine, and use the timings command above to see how long it takes.
 - **A machine says "posts not shown":** its dashboard is not reachable from this one. Check the machine with `agentx daemon status`, then see [Add a second machine](../jobs/second-machine.md).
 - **"This post is not on the Wall":** the link names a task older than seven days, or one on a machine that did not answer. Open it from the classic task page, or try again when that machine's card says **up**.
 - **A post shows `**` or `#` signs instead of formatting:** the agent wrote them in a way Markdown does not read as formatting, for example `** bold**` with a space. The words are all there.

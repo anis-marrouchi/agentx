@@ -30,6 +30,10 @@ import type { RequestGoal } from "@/requests/goals"
 //   GET /api/admin/wall/thread?id=<req>   one post and its timeline
 //   GET /api/admin/wall/thread?task=<id>  the same, found from a run (classic task page link)
 //
+// `?quick=1` on the list (#1442) waits only briefly for the forge and for
+// peers: what is cached shows now, and `pending: true` says the page should
+// ask again in a moment.
+//
 // A pending decision card (#1185) sits on the post of the request it was
 // raised from, read-only: its recommendation, what applies if the owner
 // stays silent, and when. Answering stays on the Desk and Approvals page.
@@ -761,11 +765,11 @@ export function wallFailures(db: Database.Database | null, now: number): WallFai
  *  (#1189) and home state (#1184). A missing source (no connector) leaves
  *  its field null. The sources read side by side, each in its own time box. */
 export async function withForge(
-  reply: { status: number; body: any }, deps: WallDeps | null, sources: Array<WallForgeTimeSource | WallForgeStateSource | null>,
+  reply: { status: number; body: any }, deps: WallDeps | null, sources: Array<WallForgeTimeSource | WallForgeStateSource | null>, quick?: boolean,
 ): Promise<{ status: number; body: unknown }> {
   if (!deps || reply.status !== 200) return reply
   const posts: WallPost[] = Array.isArray(reply.body?.posts) ? reply.body.posts : reply.body?.post ? [reply.body.post] : []
-  if (posts.length) await Promise.all(sources.map((s) => s?.annotate(posts, deps.now, deps.staleAfterHours)))
+  if (posts.length) await Promise.all(sources.map((s) => s?.annotate(posts, deps.now, deps.staleAfterHours, quick)))
   return reply
 }
 
