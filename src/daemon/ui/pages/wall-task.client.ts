@@ -1,8 +1,8 @@
 // --- Wall v2 Task page, browser side (#1381) ---
 //
 // Spliced into WALL_PAGE_SCRIPT's closure, so it uses that script's S, $,
-// esc(), avatar(), nameOf(), headers(), progressHtml(), planHtml() and
-// factsHtml().
+// esc(), avatar(), nameOf(), headers(), progressHtml(), planHtml(),
+// factsHtml(), plainPost() and plainMarkerText().
 //
 // The classic task page (task.ts) on the Wall: one run, at its own link
 // (#page=task&task=<id>&agent=<id>&node=<url>). On top, the request and,
@@ -38,7 +38,7 @@ export const WALL_TASK_SCRIPT = String.raw`
     if (t.traceId) q.set('trace', t.traceId);
     if (t.channel) q.set('ch', t.channel);
     // A live run's stream never replays what was asked: carry it, capped.
-    var ask = String(t.message || t.messagePreview || '').slice(0, 400);
+    var ask = plainMarkerText(t.message || t.messagePreview || '').slice(0, 400);
     if (ask) q.set('ask', ask);
     if (t.startedAt) q.set('at', t.startedAt);
     if (done) q.set('done', '1');
@@ -105,6 +105,7 @@ export const WALL_TASK_SCRIPT = String.raw`
         var b = r.ok ? await r.json() : null;
         if (b && b.post) {
           if (taskKey(S.task) !== taskKey(t)) return;
+          plainPost(b.post);
           b.post.node = b.post.node || { name: at.n ? at.n.name : '', peer: peer, daemonUrl: t.node };
           S.taskDetail = { post: b.post, plan: b.plan || [] };
           render();
@@ -144,6 +145,7 @@ export const WALL_TASK_SCRIPT = String.raw`
       $('wall-task').innerHTML = taskSkeleton(want);
       S.taskClose = mountTaskPage($('wtask-root'), {
         href: function (id, channel) { return wallTaskHref({ id: id, channel: channel }, want.agent, want.node, false); },
+        plain: plainMarkerText,
       });
     }
     if (!want) return;

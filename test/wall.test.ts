@@ -5,7 +5,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import type { AddressInfo } from "net"
 import type Database from "better-sqlite3"
-import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
+import { handleBoardRequest, resetWallFleetCaches, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { redactSecrets } from "../src/agents/memory-trust"
 import { RequestStore } from "../src/requests/store"
@@ -469,6 +469,69 @@ describe("routes", () => {
     } finally {
       for (const s of [fleetServer, ...peers]) await new Promise<void>((r) => s.close(() => r()))
     }
+  })
+
+  describe("a quick fleet read (#1442)", () => {
+    const listen = async (s: Server) => { await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r())); return `http://127.0.0.1:${(s.address() as AddressInfo).port}` }
+    const close = (s: Server) => new Promise<void>((r) => s.close(() => r()))
+    async function fleetWith(peerUrls: string[]) {
+      const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, agents: { coder: { name: "Coder", workspace: process.cwd() } },
+        dashboard: { daemons: peerUrls.map((url, i) => ({ name: `peer-${i}`, url })) } })
+      const s = createServer((req, res) => { void handleBoardRequest(req, res, { boards: [], sources: new Map(), config } as unknown as Ctx) })
+      return { server: s, url: await listen(s) }
+    }
+
+    it("answers within about half a second while a peer builds, says checking, and fills it in on the next read", async () => {
+      resetWallFleetCaches()
+      const asked: string[] = []
+      const peer = createServer((req, res) => {
+        asked.push(req.url || "")
+        setTimeout(() => {
+          res.setHeader("Content-Type", "application/json")
+          res.end(JSON.stringify({ node: "node-b", syncedAt: 1, posts: [{ id: "pb", owner: "pm", state: "open", updatedAt: 5 }], failures: [] }))
+        }, 1800)
+      })
+      const fleet = await fleetWith([await listen(peer)])
+      try {
+        const t0 = Date.now()
+        const [first, second] = await Promise.all([1, 2].map(async () => (await fetch(`${fleet.url}/api/admin/wall?peer=fleet&quick=1`)).json() as Promise<any>))
+        expect(Date.now() - t0).toBeLessThan(1200)
+        // Two pages at once share one build and one request to the peer.
+        expect(asked).toHaveLength(1)
+        expect(asked[0]).toContain("quick=1")
+        expect(second).toEqual(first)
+        expect(first.pending).toBe(true)
+        expect(first.nodes[1]).toMatchObject({ name: "peer-0", ok: false, checking: true })
+        expect(first.nodes[1].error).toBeUndefined()
+        expect(first.posts.map((p: any) => p.id).sort()).toEqual(["r1", "r2", "r3"])
+        // Asked again once the peer has answered: a new request goes out, and
+        // while it builds the last reply, still fresh, stands in.
+        await new Promise((r) => setTimeout(r, 1600))
+        const later = await (await fetch(`${fleet.url}/api/admin/wall?peer=fleet&quick=1`)).json() as any
+        expect(asked).toHaveLength(2)
+        expect(later.pending).toBeUndefined()
+        expect(later.nodes[1]).toMatchObject({ name: "node-b", ok: true })
+        expect(later.posts.map((p: any) => p.id)).toContain("pb")
+      } finally {
+        for (const s of [fleet.server, peer]) await close(s)
+      }
+    }, 15_000)
+
+    it("names a peer that refuses as down, not checking", async () => {
+      resetWallFleetCaches()
+      const gone = createServer()
+      const goneUrl = await listen(gone)
+      await close(gone)
+      const fleet = await fleetWith([goneUrl])
+      try {
+        const body = await (await fetch(`${fleet.url}/api/admin/wall?peer=fleet&quick=1`)).json() as any
+        expect(body.pending).toBeUndefined()
+        expect(body.nodes[1]).toMatchObject({ ok: false, error: expect.any(String) })
+        expect(body.nodes[1].checking).toBeUndefined()
+      } finally {
+        await close(fleet.server)
+      }
+    })
   })
 
   it("sits behind the dashboard token", async () => {

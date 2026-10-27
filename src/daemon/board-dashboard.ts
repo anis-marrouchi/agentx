@@ -998,7 +998,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Live mesh view endpoints (JSON snapshot + SSE push every 2s)
   if (method === "GET" && path === "/api/live") {
     try {
-      const snap = await buildLiveSnapshot(ctx.config)
+      // ?quick=1 (#1442): a node still answering after a moment is "checking".
+      const snap = await buildLiveSnapshot(ctx.config, undefined, url.searchParams.get("quick") === "1")
       sendJson(res, 200, snap)
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
@@ -1895,6 +1896,9 @@ interface NodeLive {
   url: string
   reachable: boolean
   error?: string
+  /** #1442 — /agents did not answer within the node's deadline: the node
+   *  is slow, not down. Pages show "checking…" and ask again. */
+  checking?: boolean
   /** #193 — last good data kept while the node is briefly unreachable. */
   stale?: boolean
   staleSince?: string
@@ -2101,7 +2105,11 @@ export async function fetchDaemonAgents(
       optional("/api/signals/stopped?limit=20"),
     ])
     if (!agentsRes || !agentsRes.ok) {
-      base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
+      // Out of time is a slow node, not a down one (#1442): it answered
+      // nothing yet, so it is "checking", and the next snapshot asks again.
+      const late = !agentsRes && signal?.aborted === true
+      base.error = agentsRes ? `HTTP ${agentsRes.status}` : late ? "timed out" : "unreachable"
+      if (late) base.checking = true
       return base
     }
     const agents: any[] = await agentsRes.json()
@@ -2199,6 +2207,8 @@ export async function fetchDaemonAgents(
     ;(base as any)._peers = Array.isArray(meshRes?.ok ? await meshRes.json() : null) ? (base as any)._peers : undefined
   } catch (e: any) {
     base.error = e.message || String(e)
+    // The body ran out of time mid-read: slow, not down (#1442).
+    if (signal?.aborted) { base.error = "timed out"; base.checking = true }
   }
   return base
 }
@@ -2290,25 +2300,52 @@ const STALE_NODE_TTL_MS = 5 * 60_000
 const lastGoodNode = new Map<string, { node: NodeLive; at: number }>()
 const inflightSnapshots = new Map<string, Promise<LiveSnapshot>>()
 
+/** A quick snapshot (#1442) waits this long for each node; one still
+ *  answering shows its last good data, or nothing yet, marked checking. */
+const QUICK_NODE_MS = 1_500
+/** One read per node at a time for the live view: a quick snapshot asked
+ *  again while a node is slow joins its read instead of starting another. */
+const inflightNodes = new Map<string, Promise<NodeLive>>()
+
 /** One build at a time per view: every open Live tab and the SSE ticks share
  *  it, so a slow daemon is not hit by piled-up overlapping snapshots. */
 function buildLiveSnapshot(
   daemon: DaemonConfig,
   day?: { date: string; timezone: string },
+  quick = false,
 ): Promise<LiveSnapshot> {
-  const key = day ? `${day.date}|${day.timezone}` : "live"
+  const key = day ? `${day.date}|${day.timezone}` : quick ? "live|quick" : "live"
   const running = inflightSnapshots.get(key)
   if (running) return running
   const build = (async () => {
     const targets = await resolveNodeTargets(daemon, AbortSignal.timeout(TARGETS_TIMEOUT_MS))
     const nodes = await Promise.all(targets.map(async (d) => {
-      const node = await fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS), day)
-      return day ? node : withLastGood(d.url, node)
+      if (day) return fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS), day)
+      let asking = inflightNodes.get(d.url)
+      if (!asking) {
+        asking = fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS))
+          .then((node) => withLastGood(d.url, node))
+          .finally(() => inflightNodes.delete(d.url))
+        inflightNodes.set(d.url, asking)
+      }
+      if (!quick) return asking
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const late = new Promise<null>((r) => { timer = setTimeout(() => r(null), QUICK_NODE_MS) })
+      const node = await Promise.race([asking, late]).finally(() => clearTimeout(timer))
+      return node ?? stillChecking(d)
     }))
     return { ts: new Date().toISOString(), nodes, concurrent: liveOverlaps(nodes) }
   })().finally(() => inflightSnapshots.delete(key))
   inflightSnapshots.set(key, build)
   return build
+}
+
+/** A node a quick snapshot is still waiting on: its last good data marked
+ *  checking, or an empty row by the name it was listed under. */
+function stillChecking(d: NodeTarget, now: number = Date.now()): NodeLive {
+  const good = lastGoodNode.get(d.url)
+  if (good && now - good.at <= STALE_NODE_TTL_MS) return { ...good.node, stale: true, staleSince: new Date(good.at).toISOString(), checking: true }
+  return { id: d.url, name: d.name, url: d.url, reachable: false, agents: [], checking: true }
 }
 
 export function withLastGood(url: string, node: NodeLive, now: number = Date.now()): NodeLive {
@@ -2318,13 +2355,14 @@ export function withLastGood(url: string, node: NodeLive, now: number = Date.now
   }
   const good = lastGoodNode.get(url)
   if (!good || now - good.at > STALE_NODE_TTL_MS) return node
-  return { ...good.node, stale: true, staleSince: new Date(good.at).toISOString(), error: node.error }
+  return { ...good.node, stale: true, staleSince: new Date(good.at).toISOString(), error: node.error, ...(node.checking ? { checking: true } : {}) }
 }
 
 /** Test-only. */
 export function resetLiveCaches(): void {
   lastGoodNode.clear()
   inflightSnapshots.clear()
+  inflightNodes.clear()
 }
 
 export function applyAttachSessions(
@@ -3299,12 +3337,47 @@ function wallReportedSource(config: DaemonConfig): WallReportedSource | null {
   return wallReportedCached.source
 }
 
+/** A quick fleet read waits this long for each peer (#1442); a peer still
+ *  answering after that shows its last reply, or "checking", and the page
+ *  asks again. The request goes on and fills the cache below. */
+const WALL_PEER_QUICK_MS = 600
+const WALL_PEER_TIMEOUT_MS = 8_000
+/** A peer's last reply younger than this stands in as is while the peer is
+ *  slow to answer; an older one, up to the stale limit, says "checking". */
+const WALL_PEER_FRESH_MS = 60_000
+const WALL_PEER_STALE_MS = 10 * 60_000
+type WallPeerReply = { name: string; id: string; body?: any; error?: string; answeredMs?: number }
+/** Each peer's last Wall reply, by address and query: a reply or an error. */
+const lastPeerWall = new Map<string, { reply: WallPeerReply; at: number }>()
+/** One request per peer and query at a time: a page that asks again while
+ *  a slow peer still builds joins that request instead of piling up. */
+const inflightPeerWall = new Map<string, Promise<WallPeerReply>>()
+/** One fleet build per query at a time, shared by every open Wall. */
+const inflightWallFleet = new Map<string, Promise<unknown>>()
+
+/** Test-only. */
+export function resetWallFleetCaches(): void {
+  lastPeerWall.clear()
+  inflightPeerWall.clear()
+  inflightWallFleet.clear()
+}
+
 /** The Wall across the mesh: this node's posts, then each configured
  *  peer's, every post tagged with the node it lives on. A peer that does
  *  not answer is listed as unreachable; the others still show (#1180). */
-async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
+function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
+  const key = ["days", "timings", "quick"].map((k) => q.get(k) ?? "").join("|")
+  const running = inflightWallFleet.get(key)
+  if (running) return running
+  const build = buildWallFleetOnce(q, ctx).finally(() => inflightWallFleet.delete(key))
+  inflightWallFleet.set(key, build)
+  return build
+}
+
+async function buildWallFleetOnce(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   const days = q.get("days") ?? "7"
   const withTimings = q.get("timings") === "1"
+  const quick = q.get("quick") === "1"
   const t0 = performance.now()
   const ms = () => Math.round(performance.now() - t0)
   const deps = wallDeps(ctx.config)
@@ -3316,15 +3389,16 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   // its own, so the fleet takes about the slowest node's time, not the sum
   // of all of them (#1252).
   const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
-  const peerReplies = Promise.all(peers.map(async (d) => {
+  const query = `?days=${encodeURIComponent(days)}${withTimings ? "&timings=1" : ""}${quick ? "&quick=1" : ""}`
+  const askPeer = async (d: { url: string; name?: string }): Promise<WallPeerReply> => {
     const id = d.url.replace(/\/+$/, "")
     const name = d.name || id
     const peer = findPeer(id, ctx.config)
     if (!peer) return { name, id, error: "no dashboard address" }
     try {
-      const r = await fetch(`${peer.url}${WALL_PREFIX}?days=${encodeURIComponent(days)}${withTimings ? "&timings=1" : ""}`, {
+      const r = await fetch(`${peer.url}${WALL_PREFIX}${query}`, {
         headers: { Accept: "application/json", "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(WALL_PEER_TIMEOUT_MS),
       })
       if (!r.ok) return { name, id, error: `answered ${r.status}` }
       const body = await r.json() as any
@@ -3332,14 +3406,43 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
     } catch (e: any) {
       return { name, id, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) }
     }
+  }
+  const peerReplies = Promise.all(peers.map(async (d): Promise<WallPeerReply & { checking?: boolean }> => {
+    const id = d.url.replace(/\/+$/, "")
+    const cacheKey = `${id}${query}`
+    let asking = inflightPeerWall.get(cacheKey)
+    if (!asking) {
+      asking = askPeer(d).then((reply) => {
+        lastPeerWall.set(cacheKey, { reply, at: Date.now() })
+        return reply
+      }).finally(() => inflightPeerWall.delete(cacheKey))
+      inflightPeerWall.set(cacheKey, asking)
+    }
+    if (!quick) return asking
+    // A quick read waits briefly; a peer still building shows its last
+    // reply, or "checking" when it has none, never "does not answer".
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<null>((r) => { timer = setTimeout(() => r(null), WALL_PEER_QUICK_MS) })
+    const reply = await Promise.race([asking, late]).finally(() => clearTimeout(timer))
+    if (reply) return reply
+    // A peer whose last answer was an error keeps that error meanwhile, so
+    // a peer that is down does not read as "checking" on every refresh.
+    const last = lastPeerWall.get(cacheKey)
+    const age = last ? Date.now() - last.at : Infinity
+    if (last?.reply.body && age < WALL_PEER_FRESH_MS) return last.reply
+    if (last?.reply.body && age < WALL_PEER_STALE_MS) return { ...last.reply, checking: true }
+    if (last?.reply.error) return last.reply
+    return { name: d.name || id, id, checking: true }
   }))
   // Let the peer requests go out before the local build takes the thread.
   await new Promise<void>((r) => setImmediate(r))
-  const local = (await wallLocal(WALL_PREFIX, new URLSearchParams({ days, ...(withTimings ? { timings: "1" } : {}) }), ctx, deps)).body as any
+  const local = (await wallLocal(WALL_PREFIX, new URLSearchParams({ days, ...(withTimings ? { timings: "1" } : {}), ...(quick ? { quick: "1" } : {}) }), ctx, deps)).body as any
   const localMs = ms()
-  const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string; syncedAt?: number }> = [
+  // `checking`: the peer is still answering this read (#1442).
+  const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string; syncedAt?: number; checking?: boolean }> = [
     { name: local.node, peer: null, ok: true, syncedAt: local.syncedAt },
   ]
+  let pending = local.pending === true
   const tag = (items: any[], name: string, peer: string | null, daemonUrl: string | null) =>
     items.map((x) => ({ ...x, node: { name, peer, daemonUrl } }))
   const posts = tag(local.posts, local.node, null, null)
@@ -3349,10 +3452,12 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
   const goalLists: unknown[][] = [Array.isArray(local.goals) ? local.goals : []]
   // Keyed by peer address: two peers can report the same node name.
   const peerTimingsOf: Record<string, unknown> = {}
-  for (const { name, id, body, error, answeredMs } of await peerReplies as Array<{ name: string; id: string; body?: any; error?: string; answeredMs?: number }>) {
-    if (!body) { nodes.push({ name, peer: id, ok: false, error }); continue }
+  for (const { name, id, body, error, answeredMs, checking } of await peerReplies) {
+    if (checking) pending = true
+    if (body?.pending === true) pending = true
+    if (!body) { nodes.push({ name, peer: id, ok: false, ...(error ? { error } : {}), ...(checking ? { checking: true } : {}) }); continue }
     const node = body.node || name
-    nodes.push({ name: node, peer: id, ok: true, syncedAt: body.syncedAt })
+    nodes.push({ name: node, peer: id, ok: true, syncedAt: body.syncedAt, ...(checking ? { checking: true } : {}) })
     posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], node, id, id).map((p) => claimBlocker(claimPost(p, projects, now), projects)))
     failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], node, id, id))
     if (Array.isArray(body.goals)) goalLists.push(body.goals)
@@ -3360,7 +3465,7 @@ async function buildWallFleet(q: URLSearchParams, ctx: Ctx): Promise<unknown> {
     if (withTimings) peerTimingsOf[id] = { node, answeredMs, ...(body.timings ? { build: body.timings } : {}) }
   }
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
-  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), projects: projectOverview(posts, projects?.names),
+  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), ...(pending ? { pending: true } : {}), projects: projectOverview(posts, projects?.names),
     goals: mergeGoals(goalLists),
     // Capacity (#1191): counted here over every node's posts, with this node's threshold.
     capacity: wallCapacity(posts, deps?.capacityThreshold), staleAfterHours: local.staleAfterHours,
@@ -3390,13 +3495,20 @@ function wallDaemon(config: DaemonConfig): (method: "GET" | "POST", path: string
 }
 
 async function wallLocal(path: string, q: URLSearchParams, ctx: Ctx, deps = wallDeps(ctx.config)): Promise<{ status: number; body: unknown }> {
+  // A quick read (#1442) shows what the forge caches hold and says when a
+  // read it started is still out, so the page asks again in a moment.
+  const quick = q.get("quick") === "1"
+  const sources = wallForgeSources(ctx.config)
+  const reportedSource = wallReportedSource(ctx.config)
   const reply = handleWallApi(path, q, deps, localNodeName(ctx.config))
   const t1 = performance.now()
-  const forged = await withForge(reply, deps, wallForgeSources(ctx.config))
+  const forged = await withForge(reply, deps, sources, quick)
   const t2 = performance.now()
-  const out = await withReported(forged, path, wallReportedSource(ctx.config))
-  const timings = (out.body as any)?.timings
+  const out = await withReported(forged, path, reportedSource, quick)
+  const body = out.body as any
+  const timings = body?.timings
   if (timings) Object.assign(timings, { forgeMs: Math.round(t2 - t1), reportedMs: Math.round(performance.now() - t2) })
+  if (quick && out.status === 200 && body && [...sources, reportedSource].some((s) => s?.busy())) body.pending = true
   return out
 }
 
