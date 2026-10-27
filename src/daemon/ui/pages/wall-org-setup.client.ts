@@ -4,62 +4,99 @@
 // headers(), getJson(), avatar() and render(). The markup comes from
 // orgSetupHtml() in wall-org-setup.ts; S.org is the Wall's own read of
 // /api/admin/org. Each change is one POST /api/admin/org/chart, then the
-// org is read again. The page repaints only when what it shows changed,
-// so a refresh never resets a list or a field in use.
+// org is read again. A change to a line, or a removal, first waits in
+// OS.pending for Save or Cancel (orgConfirmFor); Cancel sends nothing.
+// The page repaints only when what it shows changed, so a refresh never
+// resets a list or a field in use.
 
 export const WALL_ORG_SETUP_SCRIPT = String.raw`
-  var OS = { msg: '', bad: false, painted: '' };
+  var OS = { msg: '', bad: false, painted: '', pending: null, focus: false };
   function orgFace(m) { return m.kind === 'person' ? avatar(m.name, 'sm', true) : avatar(m.id, 'sm'); }
   /** Called from the Wall's render() for the setup page. */
   function renderOrgSetup(page) {
     var on = page === 'orgsetup';
     $('wall-orgsetup').hidden = !on;
-    if (!on) return;
+    // Leaving the page drops a change waiting for Save.
+    if (!on) { OS.pending = null; return; }
     var o = S.org;
-    var key = JSON.stringify([!!o, o && o.error, o && o.exists, o && o.canEdit, o && o.setup, o && o.choices, OS.msg, OS.bad]);
+    var key = JSON.stringify([!!o, o && o.error, o && o.exists, o && o.canEdit, o && o.setup, o && o.choices, OS.msg, OS.bad, OS.pending && OS.pending.text]);
     if (key === OS.painted) return;
     OS.painted = key;
     $('wall-orgsetup').innerHTML = o && o.error
       ? '<p class="ax-wall__empty">Could not read the org chart: ' + esc(o.error) + '. The rest of the Wall still works.</p>'
-      : orgSetupHtml(o, { text: OS.msg, bad: OS.bad }, orgFace);
+      : orgSetupHtml(o, { text: OS.msg, bad: OS.bad }, orgFace, OS.pending);
+    if (OS.focus && OS.pending) { var sv = $('wos-confirm-save'); if (sv && sv.focus) sv.focus(); }
+    OS.focus = false;
   }
   async function loadOrg() {
     try { S.org = await getJson('/api/admin/org'); }
     catch (e) { S.org = { error: e.message }; }
     render();
   }
-  async function orgChange(change, button) {
+  async function postOrg(change) {
+    var h = headers();
+    h['Content-Type'] = 'application/json';
+    var r = await fetch('/api/admin/org/chart', { method: 'POST', headers: h, body: JSON.stringify(change) });
+    var d = await r.json().catch(function () { return {}; });
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    return d;
+  }
+  /** Sends the steps in order. If a later step is refused, the undo steps
+   *  put back what the earlier ones changed. */
+  async function orgChange(steps, undo, button) {
     if (button) button.disabled = true;
+    var done = 0, d = {};
     try {
-      var h = headers();
-      h['Content-Type'] = 'application/json';
-      var r = await fetch('/api/admin/org/chart', { method: 'POST', headers: h, body: JSON.stringify(change) });
-      var d = await r.json().catch(function () { return {}; });
-      if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+      for (; done < steps.length; done++) d = await postOrg(steps[done]);
       OS.msg = (d.summary || 'Saved') + '. Saved.'; OS.bad = false;
-      await loadOrg();
     } catch (e) {
       OS.msg = e.message; OS.bad = true;
-      render();
+      if (done > 0) {
+        try { for (var i = 0; i < (undo || []).length; i++) await postOrg(undo[i]); OS.msg += ' Nothing was changed.'; }
+        catch (e2) { OS.msg += ' Putting the old line back failed too: ' + e2.message + '. Check the chart below.'; }
+      }
     }
+    await loadOrg();
     if (button) button.disabled = false;
+  }
+  /** A change that moves or removes a line waits for Save or Cancel. */
+  function orgAsk(change, button) {
+    var c = S.org && S.org.setup ? orgConfirmFor(S.org.setup, change) : null;
+    if (!c) { orgChange([change], [], button); return; }
+    OS.pending = c; OS.msg = ''; OS.bad = false; OS.focus = true;
+    render();
+  }
+  function orgCancel() {
+    OS.pending = null; OS.msg = 'Nothing changed.'; OS.bad = false;
+    render();
   }
   document.addEventListener('click', function (ev) {
     var b = ev.target.closest ? ev.target.closest('[data-os]') : null;
     if (!b) return;
     var op = b.getAttribute('data-os');
-    if (op === 'add-member') {
+    if (op === 'confirm') {
+      var p = OS.pending;
+      if (!p) return;
+      OS.pending = null;
+      orgChange(p.steps, p.undo, b);
+    } else if (op === 'cancel') {
+      orgCancel();
+    } else if (op === 'add-member') {
       if (!$('wos-add-member').value) return;
-      orgChange({ op: op, member: $('wos-add-member').value, role: $('wos-add-role').value }, b);
+      orgChange([{ op: op, member: $('wos-add-member').value, role: $('wos-add-role').value }], [], b);
     } else if (op === 'add-relation') {
-      orgChange({ op: op, from: $('wos-rel-from').value, type: $('wos-rel-type').value, to: $('wos-rel-to').value }, b);
+      orgAsk({ op: op, from: $('wos-rel-from').value, type: $('wos-rel-type').value, to: $('wos-rel-to').value }, b);
     } else if (op === 'set-role') {
-      orgChange({ op: op, member: b.getAttribute('data-os-member'), role: $('wos-role-' + b.getAttribute('data-os-i')).value }, b);
+      orgChange([{ op: op, member: b.getAttribute('data-os-member'), role: $('wos-role-' + b.getAttribute('data-os-i')).value }], [], b);
     } else if (op === 'remove-member') {
-      orgChange({ op: op, member: b.getAttribute('data-os-member') }, b);
+      orgAsk({ op: op, member: b.getAttribute('data-os-member') }, b);
     } else if (op === 'remove-relation') {
-      orgChange({ op: op, from: b.getAttribute('data-os-from'), type: b.getAttribute('data-os-type'), to: b.getAttribute('data-os-to') }, b);
+      orgAsk({ op: op, from: b.getAttribute('data-os-from'), type: b.getAttribute('data-os-type'), to: b.getAttribute('data-os-to') }, b);
     }
+  });
+  // Escape cancels a change waiting for Save.
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && OS.pending && S.page === 'orgsetup') { ev.preventDefault(); orgCancel(); }
   });
 `
 
@@ -67,6 +104,8 @@ export const WALL_ORG_SETUP_CSS = `
 .wos { padding: 4px 16px 32px; }
 .wos__lead { margin: 4px 0 8px; color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
 .wos__msg { min-height: 1.4em; margin: 0 0 4px; font-size: var(--ax-fs-sm); }
+.wos__confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); background: var(--ax-bg-elev); font-size: var(--ax-fs-sm); }
+.wos__confirm-text { flex: 1 1 240px; margin: 0; }
 .wos__msg.is-bad { color: var(--ax-red-ink, var(--ax-err)); }
 .wos__h { display: flex; align-items: baseline; gap: 8px; margin: 18px 0 6px; font-size: var(--ax-fs); }
 .wos__form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 6px 0 10px; }

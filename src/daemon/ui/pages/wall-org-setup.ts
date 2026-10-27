@@ -19,9 +19,65 @@ export interface OrgSetupReply {
   choices?: { agents: Array<{ ref: string; name: string }>; people: Array<{ ref: string; name: string }>; roles: Array<{ key: string; title: string }>; types: string[] }
 }
 
+export interface OrgChange { op: string; member?: string; role?: string; from?: string; to?: string; type?: string }
+export interface OrgConfirm { text: string; save: string; steps: OrgChange[]; undo: OrgChange[] }
+
+/** The confirm step for a change that moves or removes a line (#1463
+ *  section 5): one sentence on what changes, the button that saves it, the
+ *  POSTs to send in order, and the POSTs that put things back if a later
+ *  step is refused. A new boss for a member who has one is "remove the old
+ *  line, add the new one", since the server allows one boss at a time.
+ *  Returns null for a change that saves without asking (add a member, set
+ *  a role). */
+export function orgConfirmFor(setup: { members: SetupMember[]; relations: SetupRelation[] }, change: OrgChange): OrgConfirm | null {
+  const WILL: Record<string, string> = { "reports-to": "report to", "dotted-line": "have a dotted line to", "acts-for": "act for" }
+  const byRef: Record<string, SetupMember> = {}
+  for (const m of setup.members) byRef[m.ref] = m
+  const name = (ref?: string) => (ref && byRef[ref] ? byRef[ref].name : String(ref || "").replace(/^(agent|person):/, ""))
+  const agent = (ref?: string) => !!ref && !!byRef[ref] && byRef[ref].kind === "agent"
+  const list = (names: string[]) => names.length < 2 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1]
+  const F = name(change.from), T = name(change.to)
+  if (change.op === "add-relation" && change.type === "reports-to") {
+    const boss = setup.relations.find((r) => r.type === "reports-to" && r.from === change.from)
+    const stuck = agent(change.from) ? " When " + F + " is stuck, it asks " + T + " first." : ""
+    // Same boss, or a member as their own boss: one step, which the server refuses.
+    if (boss && boss.to !== change.to && change.from !== change.to) {
+      const old: OrgChange = { op: "add-relation", from: boss.from, type: "reports-to", to: boss.to }
+      return {
+        text: F + " will report to " + T + ", not " + name(boss.to) + "." + stuck,
+        save: "Save the move",
+        steps: [{ op: "remove-relation", from: boss.from, type: "reports-to", to: boss.to }, change],
+        undo: [old],
+      }
+    }
+    return { text: F + " will report to " + T + "." + stuck, save: "Save the move", steps: [change], undo: [] }
+  }
+  if (change.op === "add-relation") {
+    return { text: F + " will " + (WILL[change.type || ""] || change.type) + " " + T + ".", save: "Save", steps: [change], undo: [] }
+  }
+  if (change.op === "remove-relation") {
+    const up = change.type === "reports-to"
+    const stuck = up && agent(change.from) ? " When " + F + " is stuck, it no longer asks " + T + "." : ""
+    return { text: F + " will no longer " + (WILL[change.type || ""] || change.type) + " " + T + "." + stuck, save: up ? "Save the move" : "Save", steps: [change], undo: [] }
+  }
+  if (change.op === "remove-member") {
+    const M = name(change.member)
+    const lines = setup.relations.filter((r) => r.from === change.member || r.to === change.member).length
+    const below = setup.relations.filter((r) => r.type === "reports-to" && r.to === change.member).map((r) => name(r.from))
+    return {
+      text: M + " will leave the org chart" + (lines ? ", with " + lines + " " + (lines === 1 ? "line" : "lines") : "") + "." +
+        (below.length ? " " + list(below) + " will report to no one." : ""),
+      save: "Save the move",
+      steps: [change],
+      undo: [],
+    }
+  }
+  return null
+}
+
 /** The page. `msg` is the answer to the last change; `face(member)` draws
- *  a member's avatar. */
-export function orgSetupHtml(org: OrgSetupReply | null, msg: { text: string; bad: boolean }, face: (m: SetupMember) => string): string {
+ *  a member's avatar; `pending` is a change waiting for Save or Cancel. */
+export function orgSetupHtml(org: OrgSetupReply | null, msg: { text: string; bad: boolean }, face: (m: SetupMember) => string, pending?: { text: string; save: string } | null): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c])
   const TYPE: Record<string, string> = { "reports-to": "Reports to", "dotted-line": "Dotted line to", "acts-for": "Acts for" }
   const LINE: Record<string, string> = { "reports-to": "reports to", "dotted-line": "has a dotted line to", "acts-for": "acts for" }
@@ -32,6 +88,11 @@ export function orgSetupHtml(org: OrgSetupReply | null, msg: { text: string; bad
   if (!org.canEdit || !org.setup || !org.choices) {
     return '<p class="ax-wall__empty">Only the owner can set up the org. Sign in to the dashboard with the owner\'s key to change who reports to whom.</p>'
   }
+  const confirm = pending
+    ? '<div class="wos__confirm" role="group" aria-label="Confirm the change"><p class="wos__confirm-text">' + esc(pending.text) + "</p>" +
+      '<span class="wos__acts"><button type="button" class="ax-btn" id="wos-confirm-save" data-os="confirm">' + esc(pending.save) + "</button>" +
+      '<button type="button" class="ax-btn ax-btn--ghost" data-os="cancel">Cancel</button></span></div>'
+    : ""
   const c = org.choices
   const members = org.setup.members
   const byRef: Record<string, SetupMember> = {}
@@ -70,8 +131,8 @@ export function orgSetupHtml(org: OrgSetupReply | null, msg: { text: string; bad
     : '<p class="ax-wall__count">Add two members to link them.</p>'
 
   return '<div class="wos">' +
-    '<p class="wos__lead">Who is in your org, their role, and who reports to whom. Each change is checked, saved to agentx.json with a backup, and used at once. No restart.</p>' +
-    note +
+    '<p class="wos__lead">Who is in your org, their role, and who reports to whom. Each change is checked, saved to agentx.json with a backup, and used at once. No restart. A change to a line or a removal asks you to confirm first.</p>' +
+    note + confirm +
     '<h2 class="wos__h">Add a member</h2>' + add +
     '<h2 class="wos__h">Members <span class="ax-wall__count">' + members.length + "</span></h2>" + rows +
     '<h2 class="wos__h">Relations <span class="ax-wall__count">' + rels.length + "</span></h2>" + lines + addRel +

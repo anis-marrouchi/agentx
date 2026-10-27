@@ -252,8 +252,19 @@ Here you, the owner, decide who is in your org chart, the role each one holds, a
 3. Type a role, for example `Engineer`, or pick one from the suggestions. A role you type for the first time is created. Agents need a role; for people it is optional.
 4. Select **Add**. The line under the introduction says what changed, ending with **Saved.**
 5. To link two members, under **Relations**, pick the member, the kind of relation, and the target.
-6. Select **Add relation**.
-7. To change a role, type the new one next to the member and select **Save role**. To take out a member or a line, select **Remove** next to it. Removing a member removes their lines too.
+6. Select **Add relation**. A box under the introduction says, in one line, what will change. Nothing is saved yet.
+7. Read the line, then select **Save the move** (or **Save** for a dotted line or acts for) to save it, or **Cancel** to leave the chart as it is. The **Escape** key also cancels.
+
+   ![The confirm box on Set up the org: one line saying what the move changes, with Save the move and Cancel, in the isolated demo](/screenshots/wall/org-setup-confirm.png)
+
+   On a phone, the box sits at the top of the page, with the buttons under the sentence.
+
+   ![The confirm box on a phone, in the isolated demo](/screenshots/wall/org-setup-confirm-phone.png)
+
+8. To change a role, type the new one next to the member and select **Save role**. A role is saved at once, without the confirm box.
+9. To take out a member or a line, select **Remove** next to it, then **Save the move** or **Save** in the box that opens. Removing a member removes their lines too, and the box names anyone who then reports to no one.
+
+To give a member a new boss, add a **Reports to** line to the new one. You don't need to remove the old line first. The box says what changes, for example: "Helper will report to Planner, not Reviewer. When Helper is stuck, it asks Planner first." If the new line is refused, the old line is put back and the message ends with **Nothing was changed.**
 
 There are three kinds of relation:
 
@@ -263,7 +274,7 @@ There are three kinds of relation:
 | **Dotted line to** | A second manager for one topic or project. | As many as you like. Not used to pass work up. |
 | **Acts for** | An agent works on behalf of a person. | From an agent to a person only. |
 
-A change that would break the chart is refused before anything is saved, with a sentence saying why, for example: "CX already reports to Planner. Remove that line first: each member has one boss."
+A change that would break the chart is refused before anything is saved, with a sentence saying why, for example: "Helper cannot report to Planner: Planner already reports up to Helper."
 
 ![Set up the org on the Wall: the members with their roles, the five relations, and the form to add one, in the isolated demo](/screenshots/wall/org-setup.png)
 
@@ -723,7 +734,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Wall** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
-39. Org setup: select **Agents**, then **Set up the org**. Add an agent with a role, then add a **Reports to** line from it to another member. The line under the introduction ends with **Saved.**, the line is listed under **Relations**, and the agent's profile says **reports to** that member. Add a second **Reports to** line from the same agent: it is refused, and nothing changes.
+39. Org setup: select **Agents**, then **Set up the org**. Add an agent with a role, then add a **Reports to** line from it to another member. The line under the introduction ends with **Saved.**, the line is listed under **Relations**, and the agent's profile says **reports to** that member. Add a second **Reports to** line from the same agent to a different member: a box says it will report to the new member, not the old one. Select **Cancel**: the message says **Nothing changed.** and the old line is still listed.
 
 ## If something is wrong
 
@@ -781,6 +792,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **"No progress or cost for this goal":** the machine that keeps the goal's tasks did not answer, or runs a daemon from before this change. Its posts still show. Restart that daemon, then select **Refresh**.
 - **A goal counts more tasks than the posts shown:** the Wall lists closed posts of the last seven days only, while the goal counts every task kept for it. Pick the **All** tab to see every post the Wall has.
 - **No Set up the org link, or "Only the owner can set up the org":** you opened the dashboard without the owner's key. On the dashboard's own computer, open it at `127.0.0.1`; from another machine, sign in with the dashboard key (`dashboard.token`).
+- **A line or a removal on Set up the org is not saved:** select **Save the move** or **Save** in the box under the introduction. **Cancel**, the **Escape** key, or leaving the page drops the change.
 - **A person is missing from the Member list on Set up the org:** add them on the [People](./people.md) page first, then select **Refresh**.
 - **Set up the org refuses a change:** the message names the line in the way. Remove that line, then try again.
 - **"Only the owner can change the org chart.":** the change came from a caller that is not the owner, for example a key with only `dashboard:read`. Use the dashboard key.

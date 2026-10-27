@@ -130,7 +130,9 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const hashchange = () => onWindow.hashchange?.()
   /** A form's submit, as the Enter key or its button sends it. */
   const submit = (attrs: Record<string, string>) => { for (const f of onDoc.submit ?? []) f({ preventDefault: () => {}, target: { hasAttribute: (k: string) => k in attrs } }) }
-  return { el, wall, calls, click, change, submit, settle, loc, hashchange }
+  /** A key pressed on the page, outside any field. */
+  const key = (k: string) => { for (const f of onDoc.keydown ?? []) f({ key: k, preventDefault: () => {}, target: { tagName: "BODY", hasAttribute: () => false } }) }
+  return { el, wall, calls, click, change, submit, settle, loc, hashchange, key }
 }
 
 describe("Wall as a social feed (#1207)", () => {
@@ -1508,6 +1510,10 @@ describe("Set up the org on the Wall (#1420)", () => {
     w.el("wos-rel-to").value = "person:sam"
     w.click({ "data-os": "add-relation" })
     await w.settle()
+    expect(sent).toEqual([])
+    expect(w.el("wall-orgsetup").innerHTML).toContain('<p class="wos__confirm-text">Customer Desk will act for Sam Doe.</p>')
+    w.click({ "data-os": "confirm" })
+    await w.settle()
     expect(sent).toEqual([{ op: "add-relation", from: "agent:cx", type: "acts-for", to: "person:sam" }])
     const post = w.calls.find((c) => c.url === "/api/admin/org/chart")!
     expect(post.init.method).toBe("POST")
@@ -1516,11 +1522,15 @@ describe("Set up the org on the Wall (#1420)", () => {
     expect(html).toContain('Customer Desk <span class="k">acts for</span> Sam Doe')
     w.click({ "data-os": "remove-relation", "data-os-from": "agent:cx", "data-os-type": "reports-to", "data-os-to": "agent:reviewer" })
     await w.settle()
+    expect(w.el("wall-orgsetup").innerHTML).toContain("Customer Desk will no longer report to Reviewer. When Customer Desk is stuck, it no longer asks Reviewer.")
+    w.click({ "data-os": "confirm" })
+    await w.settle()
     expect(sent[1]).toEqual({ op: "remove-relation", from: "agent:cx", type: "reports-to", to: "agent:reviewer" })
   })
 
-  it("shows a refusal as it came, and keeps the chart as it was", async () => {
-    const w = openWall({ org: OWNER, hash: "#page=orgsetup", orgChart: () => ({ status: 400, body: { error: "Customer Desk already reports to Reviewer. Remove that line first: each member has one boss." } }) })
+  it("shows what a new boss changes, and Save the move sends it as remove then add", async () => {
+    const sent: any[] = []
+    const w = openWall({ org: OWNER, hash: "#page=orgsetup", orgChart: (body) => { sent.push(body); return { status: 200, body: { summary: "Customer Desk reports to Sam Doe" } } } })
     await w.settle()
     w.el("wos-rel-from").value = "agent:cx"
     w.el("wos-rel-type").value = "reports-to"
@@ -1528,8 +1538,82 @@ describe("Set up the org on the Wall (#1420)", () => {
     w.click({ "data-os": "add-relation" })
     await w.settle()
     const html = w.el("wall-orgsetup").innerHTML
-    expect(html).toContain('<p class="wos__msg is-bad" role="status">Customer Desk already reports to Reviewer. Remove that line first: each member has one boss.</p>')
-    expect(html).not.toContain("acts for")
+    expect(html).toContain('<p class="wos__confirm-text">Customer Desk will report to Sam Doe, not Reviewer. When Customer Desk is stuck, it asks Sam Doe first.</p>')
+    expect(html).toContain('data-os="confirm">Save the move</button>')
+    expect(html).toContain('data-os="cancel">Cancel</button>')
+    expect(sent).toEqual([])
+    w.click({ "data-os": "confirm" })
+    await w.settle()
+    expect(sent).toEqual([
+      { op: "remove-relation", from: "agent:cx", type: "reports-to", to: "agent:reviewer" },
+      { op: "add-relation", from: "agent:cx", type: "reports-to", to: "person:sam" },
+    ])
+    expect(w.el("wall-orgsetup").innerHTML).toContain("Customer Desk reports to Sam Doe. Saved.")
+    expect(w.el("wall-orgsetup").innerHTML).not.toContain("wos__confirm")
+  })
+
+  it("Cancel, or Escape, sends nothing for a move, a removed line or a removed member", async () => {
+    const w = openWall({ org: OWNER, hash: "#page=orgsetup", orgChart: () => ({ status: 200, body: {} }) })
+    await w.settle()
+    w.el("wos-rel-from").value = "agent:cx"
+    w.el("wos-rel-type").value = "reports-to"
+    w.el("wos-rel-to").value = "person:sam"
+    w.click({ "data-os": "add-relation" })
+    await w.settle()
+    w.click({ "data-os": "cancel" })
+    await w.settle()
+    w.click({ "data-os": "remove-relation", "data-os-from": "agent:cx", "data-os-type": "reports-to", "data-os-to": "agent:reviewer" })
+    await w.settle()
+    w.key("Escape")
+    await w.settle()
+    w.click({ "data-os": "remove-member", "data-os-member": "agent:reviewer" })
+    await w.settle()
+    expect(w.el("wall-orgsetup").innerHTML).toContain('<p class="wos__confirm-text">Reviewer will leave the org chart, with 1 line. Customer Desk will report to no one.</p>')
+    w.click({ "data-os": "cancel" })
+    await w.settle()
+    // A stray Save after Cancel has nothing to send.
+    w.click({ "data-os": "confirm" })
+    await w.settle()
+    expect(w.calls.filter((c) => c.url === "/api/admin/org/chart")).toEqual([])
+    const html = w.el("wall-orgsetup").innerHTML
+    expect(html).toContain('<p class="wos__msg" role="status">Nothing changed.</p>')
+    expect(html).not.toContain("wos__confirm")
+    expect(html).toContain('Customer Desk <span class="k">reports to</span> Reviewer')
+  })
+
+  it("puts the old boss back when the new one is refused", async () => {
+    const sent: any[] = []
+    const w = openWall({ org: OWNER, hash: "#page=orgsetup", orgChart: (body) => {
+      sent.push(body)
+      return body.op === "add-relation" && body.to === "person:sam"
+        ? { status: 400, body: { error: "Customer Desk cannot report to Sam Doe: Sam Doe already reports up to Customer Desk." } }
+        : { status: 200, body: {} }
+    } })
+    await w.settle()
+    w.el("wos-rel-from").value = "agent:cx"
+    w.el("wos-rel-type").value = "reports-to"
+    w.el("wos-rel-to").value = "person:sam"
+    w.click({ "data-os": "add-relation" })
+    await w.settle()
+    w.click({ "data-os": "confirm" })
+    await w.settle()
+    expect(sent.map((b) => b.op + " " + b.to)).toEqual(["remove-relation agent:reviewer", "add-relation person:sam", "add-relation agent:reviewer"])
+    expect(w.el("wall-orgsetup").innerHTML).toContain('<p class="wos__msg is-bad" role="status">Customer Desk cannot report to Sam Doe: Sam Doe already reports up to Customer Desk. Nothing was changed.</p>')
+  })
+
+  it("shows a refusal as it came, and keeps the chart as it was", async () => {
+    const w = openWall({ org: OWNER, hash: "#page=orgsetup", orgChart: () => ({ status: 400, body: { error: "Customer Desk already acts for Sam Doe." } }) })
+    await w.settle()
+    w.el("wos-rel-from").value = "agent:cx"
+    w.el("wos-rel-type").value = "acts-for"
+    w.el("wos-rel-to").value = "person:sam"
+    w.click({ "data-os": "add-relation" })
+    await w.settle()
+    w.click({ "data-os": "confirm" })
+    await w.settle()
+    const html = w.el("wall-orgsetup").innerHTML
+    expect(html).toContain('<p class="wos__msg is-bad" role="status">Customer Desk already acts for Sam Doe.</p>')
+    expect(html).not.toContain('<span class="k">acts for</span>')
   })
 
   it("is the owner's only: anyone else gets a sentence, no forms and no link", async () => {

@@ -58,7 +58,7 @@ import { WALL_COST_SCRIPT } from "./wall-cost.client"
 import { WALL_ORG_SCRIPT } from "./wall-org.client"
 import { layoutOrg } from "@/business/org-layout"
 import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
-import { orgSetupHtml } from "./wall-org-setup"
+import { orgConfirmFor, orgSetupHtml } from "./wall-org-setup"
 import { WALL_ORG_SETUP_SCRIPT } from "./wall-org-setup.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
@@ -74,7 +74,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgSetupHtml })}
+  ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgSetupHtml, orgConfirmFor })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
