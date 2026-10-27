@@ -41,6 +41,7 @@ The Cost page has no tab in the top bar. You open it by its address.
 2. Pick a period at the top right: **7d**, **14d**, **30d**, **90d** or **All**.
 3. Read the totals, then **Top agents by spend**.
 4. To keep a copy or compare with your bill, select **Export CSV**.
+5. To compare agents side by side, open the Wall and select **Cost** in its nav. It shows the same figures, added up over every machine, with one row per agent; it only shows them (see [See what the fleet spends](../dashboard/wall.md#see-what-the-fleet-spends)).
 
 ![The Cost page with the period picker, the totals and Top agents by spend](/screenshots/costs/page.png)
 
@@ -48,7 +49,7 @@ The Cost page doesn't read your bill. It counts the tokens (small pieces of text
 
 - **Anthropic API key:** the figures are an estimate of your bill. The built-in prices can be out of date; the provider's bill is the figure you pay.
 - **Claude subscription:** the figures show what the same work would cost with an API key. You pay the plan's fixed price, not these amounts. Use them to see which agents use the most.
-- **Another provider (such as Codex, GPT or Gemini models):** the tokens are counted, but the spend shows as `$0`. Check that provider's billing page for the cost. [Monthly budgets](#set-a-monthly-budget-for-an-agent) do count these runs, at the model's list price.
+- **Another provider (such as Codex, GPT or Gemini models):** the tokens are counted, but the spend shows as `$0`. The Wall's Cost page counts these runs as **not priced** instead. Check that provider's billing page for the cost. [Monthly budgets](#set-a-monthly-budget-for-an-agent) do count these runs, at the model's list price.
 
 Monitor's reviewer is not on the Cost page, because it runs outside the agents' own work.
 

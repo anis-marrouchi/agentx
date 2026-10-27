@@ -39,6 +39,9 @@ const shots = [
   { name: "wall/task", path: "/wall#status=&post=req-docs-plan", wait: "#open-req-docs-plan .wtk__plan", clipTo: "#open-req-docs-plan" },
   { name: "wall/agents", path: "/wall#page=agents", wait: ".wag" },
   { name: "wall/running", path: "/wall#page=running", wait: "#wall-running .wn" },
+  // #1423: the Cost page, global and per agent, on a desktop and a phone.
+  { name: "wall/cost", path: "/wall#page=cost&range=30", wait: "#wall-cost .wco__row" },
+  { name: "wall/cost-phone", path: "/wall#page=cost&range=30", wait: "#wall-cost .wco__row", phone: true },
   // #1355: the feed keeps posts compact; these flags show on the opened post.
   { name: "wall/concurrent", path: "/wall#status=&post=req-docs-wall-question", wait: "#open-req-docs-wall-question .ax-conc", clipTo: "#open-req-docs-wall-question" },
   // A pending decision card on its post (#1185), under "Waiting on the owner".

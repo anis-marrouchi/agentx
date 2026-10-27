@@ -6,7 +6,9 @@
 // /api/workflows/runs (failed workflow runs), /api/admin/org (each
 // agent's role and who it reports to, #1398) and
 // /api/admin/observability/budgets (an agent's month spend vs its cap on
-// its profile, #1393, wall-spend.ts). Pending owner decision
+// its profile, #1393, wall-spend.ts), and for the Cost page (#1423,
+// wall-cost.client.ts) /api/admin/observability/cost and the budgets
+// again from every machine. Pending owner decision
 // cards (#1185) come with their post and are shown without buttons:
 // answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
@@ -42,6 +44,8 @@ import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { profileSpendHtml } from "./wall-spend"
+import { WALL_COST_SCRIPT } from "./wall-cost.client"
+import { wallCostModel, wallMonthSpend, costUsd, costShort, costFetchRange } from "./wall-cost"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -52,16 +56,17 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
+  var PAGES = ['running', 'agents', 'creator', 'live', 'task', 'cost'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
+  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, budgetsDone: false, peerBudgets: null, cost: {}, costRange: 30, costModel: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, profileSpendHtml })}
+  ${injectFns({ markdownToHtml, profileSpendHtml, wallCostModel, wallMonthSpend, costUsd, costShort, costFetchRange })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
 ${WALL_TASK_SCRIPT}
+${WALL_COST_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -217,6 +222,8 @@ ${WALL_TASK_SCRIPT}
     // A Task page names its run (#1381); without one it is the Wall.
     S.task = S.page === 'task' ? readTask(q) : null;
     if (S.page === 'task' && !S.task) S.page = 'wall';
+    // The Cost page's range tab (#1423): 7, 30 or 90 days.
+    if (S.page === 'cost') S.costRange = COST_RANGES.indexOf(+q.get('range')) >= 0 ? +q.get('range') : COST_DEFAULT;
     S.post = q.get('post') || '';
     return f;
   }
@@ -230,6 +237,7 @@ ${WALL_TASK_SCRIPT}
     if (S.view !== 'feed') q.set('view', S.view);
     if (S.page !== 'wall') q.set('page', S.page);
     if (S.page === 'task' && S.task) TASK_KEYS.forEach(function (k) { if (S.task[k]) q.set(k, S.task[k]); });
+    if (S.page === 'cost') q.set('range', String(S.costRange));
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
@@ -915,8 +923,13 @@ ${WALL_TASK_SCRIPT}
       el.classList.toggle('is-zero', !n);
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
+    // Cost's count is money: this month's spend on every machine that answered (#1423).
+    var ms = monthSpend(), cn = $('nav-n-cost');
+    cn.textContent = ms ? costShort(ms.spent) : '';
+    cn.classList.toggle('is-zero', !ms || !ms.spent);
+    cn.setAttribute('title', ms ? costUsd(ms.spent) + ' spent this month' : '');
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'cost' ? 'Cost' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1145,6 +1158,7 @@ ${WALL_TASK_SCRIPT}
     $('wall-live').hidden = page !== 'live';
     $('wall-task').hidden = page !== 'task';
     paintTask(page);
+    paintCost(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.
     if (page === 'live') {
@@ -1210,11 +1224,13 @@ ${WALL_TASK_SCRIPT}
   async function load() {
     // The quick reads go out first and draw as each answers; the feed is
     // the slow one and keeps its own "Loading…" (#1252).
-    getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
+    getJson('/api/live').then(function (d) { S.live = d; loadPeerBudgets(); render(); }).catch(function () { S.live = { nodes: [] }; render(); });
     refreshReviews();
     getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
-    getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
+    getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; S.budgetsDone = true; render(); }).catch(function () { S.budgets = null; S.budgetsDone = true; render(); });
+    // The Cost page reads its range again with the rest (#1423).
+    if (S.page === 'cost') loadCost(true);
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
     try {
       S.data = await getJson('/api/admin/wall?peer=fleet&days=7');
