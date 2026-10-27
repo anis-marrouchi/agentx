@@ -71,7 +71,7 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
     const body = url.startsWith("/api/admin/wall?") ? { node: "node-a", syncedAt: NOW, nodes: [{ name: "node-a", ok: true }], failures: [], posts: [] }
-      : url === "/api/live" ? (opts.live ?? LIVE)
+      : url === "/api/live?quick=1" ? (opts.live ?? LIVE)
       : url.startsWith("/api/task/history?") ? (opts.history ?? {})
       : url.startsWith("/api/task/action?") ? (opts.action ?? { ok: true })
       : url.startsWith("/api/admin/wall/thread?") ? (opts.thread ?? null)
