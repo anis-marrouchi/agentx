@@ -51,6 +51,9 @@ export interface MirrorEntry {
   state: MirrorState
   /** ISO time of the last change. */
   at: string
+  /** ISO time its task was added. Unset on entries from before #1062's
+   *  trial, and on items whose task was never added. */
+  createdAt?: string
   failures: number
   lastError?: string
 }
@@ -243,6 +246,8 @@ export async function runMirror(deps: MirrorDeps): Promise<MirrorResult> {
   }
 
   let listReady: boolean | null = null
+  let listError = ""
+  let cardsMissed = 0
   const gaveUp: { title: string; message: string }[] = []
   for (const [key, item] of waiting) {
     const entry = file.items[key]
@@ -255,17 +260,24 @@ export async function runMirror(deps: MirrorDeps): Promise<MirrorResult> {
         listReady = true
       } catch (e: any) {
         log(`[mirror] could not make list "${settings.list}": ${e?.message ?? e}`)
-        fail(String(e?.message ?? e))
+        listError = String(e?.message ?? e)
+        fail(listError)
         listReady = false
       }
     }
     const failures = entry?.state === "failed" ? entry.failures : 0
     try {
+      // No list (access denied, or a permission prompt nobody answers under
+      // launchd, which runs into the timeout): every add would fail the
+      // same way, one timeout each. Count it as this item's failed add
+      // without trying.
+      if (listReady === false) throw new Error(listError)
       const { id } = await tasks.add({ list: settings.list, title: item.title, notes: item.notes, due: item.due, priority: item.priority })
-      file.items[key] = { id, list: settings.list, state: "open", at, failures: 0 }
+      file.items[key] = { id, list: settings.list, state: "open", at, createdAt: at, failures: 0 }
       result.created++
     } catch (e: any) {
       const message = String(e?.message ?? e)
+      if (key.startsWith("card:")) cardsMissed++
       const n = failures + 1
       file.items[key] = { list: settings.list, state: "failed", at, failures: n, lastError: message }
       fail(message)
@@ -274,6 +286,10 @@ export async function runMirror(deps: MirrorDeps): Promise<MirrorResult> {
       if (n === MAX_ADD_FAILURES) gaveUp.push({ title: item.title, message })
     }
   }
+
+  // A card without a task is not covered (mirrorCovers): the Mac popup
+  // shows it. Said once a pass, so the fallback is in the log.
+  if (cardsMissed) log(`[mirror] ${cardsMissed} card(s) could not be added to Reminders; the Mac popup shows them instead`)
 
   // One notification a day at most, however many items gave up: a missing
   // permission fails every card the same way.
@@ -299,4 +315,67 @@ export async function runMirror(deps: MirrorDeps): Promise<MirrorResult> {
   }
   writeMirror(root, file)
   return result
+}
+
+// --- The trial count (#1062 step 5) ---
+//
+// One line a day while the mirror is on trial: cards raised, Reminders
+// created, cards missed. A card closed before a pass could reach it (within
+// the grace below of being raised) is counted apart, not as a miss; so is
+// one still that new. Read from the card files and the mirror file, both
+// on this node.
+
+/** A card closed or still pending this soon after it was raised may never
+ *  have met a pass: it is not a miss. */
+export const MIRROR_GRACE_MS = 5 * 60_000
+
+export interface MirrorTally {
+  from: string
+  to: string
+  /** Cards raised in [from, to). */
+  raised: number
+  /** Tasks added in [from, to), by kind. */
+  created: { cards: number; requests: number }
+  /** Cards raised in the window that never got a task, with why. */
+  missed: { id: string; title: string; reason: string }[]
+  /** Raised in the window and closed within the grace, with no task. */
+  closedFast: number
+  /** Raised within the grace of now, with no task yet. */
+  tooNew: number
+}
+
+export function mirrorTally(root: string, cards: DecisionCard[], from: number, to: number, now = Date.now()): MirrorTally {
+  const file = readMirror(root)
+  const inWindow = (iso?: string) => {
+    const t = iso ? Date.parse(iso) : NaN
+    return t >= from && t < to
+  }
+  const tally: MirrorTally = {
+    from: new Date(from).toISOString(), to: new Date(to).toISOString(),
+    raised: 0, created: { cards: 0, requests: 0 }, missed: [], closedFast: 0, tooNew: 0,
+  }
+  for (const [key, entry] of Object.entries(file.items)) {
+    if (!entry.id || !inWindow(entry.createdAt)) continue
+    if (key.startsWith("card:")) tally.created.cards++
+    else tally.created.requests++
+  }
+  for (const card of cards) {
+    if (!inWindow(card.created_at)) continue
+    tally.raised++
+    const entry = file.items[`card:${card.id}`]
+    if (entry?.id) continue
+    const raisedAt = Date.parse(card.created_at)
+    const closedAt = card.status === "pending" ? NaN : Date.parse(card.decided_at ?? "")
+    if (closedAt - raisedAt <= MIRROR_GRACE_MS) { tally.closedFast++; continue }
+    if (card.status === "pending" && now - raisedAt <= MIRROR_GRACE_MS) { tally.tooNew++; continue }
+    const reason = entry?.state === "failed" ? `could not be added (${entry.failures}x): ${entry.lastError ?? "unknown error"}` : "no pass reached it"
+    tally.missed.push({ id: card.id, title: card.title, reason })
+  }
+  return tally
+}
+
+/** The day's line for the trial issue. */
+export function tallyLine(t: MirrorTally): string {
+  const extra = [t.closedFast ? `closed within 5 min: ${t.closedFast}` : "", t.tooNew ? `raised in the last 5 min: ${t.tooNew}` : ""].filter(Boolean)
+  return `cards raised ${t.raised} / Reminders created ${t.created.cards + t.created.requests} (${t.created.cards} cards, ${t.created.requests} requests) / missed ${t.missed.length}${extra.length ? ` · ${extra.join(" · ")}` : ""}`
 }

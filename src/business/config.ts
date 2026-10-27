@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { RELATION_TYPES } from "./relations"
 
 // --- Business layer configuration schema (EXPERIMENTAL) ---
 // Optional top-level `business` key in agentx.json.
@@ -30,6 +31,12 @@ const orgEntrySchema = z.object({
   reportsTo: z.string().optional(),
   schedule: scheduleSchema,
   utilizationTarget: z.number().min(0).max(1).default(0.8),
+})
+
+const relationSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  type: z.enum(RELATION_TYPES),
 })
 
 const channelRefSchema = z.object({
@@ -128,6 +135,10 @@ export const businessConfigSchema = z.object({
   workSource: workSourceSchema.default({ type: "backlog", path: ".agentx/backlog.md" }),
   roles: z.record(z.string(), roleSchema).default({}),
   orgChart: z.record(z.string(), orgEntrySchema).default({}),
+  /** Typed relations between org members (#1418): `agent:<id>` or
+   *  `person:<id>`, a bare id being an agent. An orgChart `reportsTo` is
+   *  read as `reports-to`, so it needs no entry here. See relations.ts. */
+  relations: z.array(relationSchema).default([]),
   /** Per-project metadata. Phase 3 — defaults to empty array, so
    *  existing agentx.json files validate without modification. */
   projects: z.array(projectSchema).default([]),

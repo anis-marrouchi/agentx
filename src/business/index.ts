@@ -33,7 +33,7 @@ export class BusinessLayer {
     router: MessageRouter,
     log: (...args: unknown[]) => void,
   ) {
-    this.org = new Organization(business)
+    this.org = new Organization(business, daemon.people ?? [])
     this.schedule = new Schedule(this.org, business)
     this.workSource = createWorkSource(business, daemon, log)
     this.reporter = new Reporter(router, this.org, business, log)

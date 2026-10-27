@@ -412,7 +412,8 @@ interface CostDay {
   agents: Record<string, CostAgentDay>;
 }
 
-function buildCost(db: Database.Database, range: number) {
+/** Exported for the Wall Cost page's tests (#1423), which match its totals. */
+export function buildCost(db: Database.Database, range: number) {
   // range=0 means "all" — no cutoff. Otherwise day ≥ today − range.
   const where = range > 0 ? `WHERE day >= date('now', '-${range} day')` : ""
   const usageAll = db.prepare(`
