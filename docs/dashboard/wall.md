@@ -261,7 +261,7 @@ Here and everywhere else on the Wall (cards, a run's Task page, a post's thread,
 
 ## Watch and steer a run
 
-The **Task** page is one run on its own, with its own link: what it was asked, its conversation as it happens, and a box to steer it. It replaces the classic task page: an old task address (`/tasks/<task-id>?agent=…`, from a chat message, a voice reply or a classic page) opens this page.
+The **Task** page is one run on its own, with its own link: what it was asked, its conversation as it happens, and a box to steer it. It replaces the classic task page: an old task address (`/tasks/<task-id>?agent=…`, from a chat message, a voice reply or a classic page) opens this page. On another device that has not signed in yet, the address asks for the dashboard token first and then opens the same run.
 
 1. **Browser:** open it from a card under **Running now** on the **Live** page, or select **● Join live** on an open post or an agent's page. Every other run link on the Wall opens it too: **Task record and trace**, **run …** next to an answer, a run in a post's thread, **last run** and **full log** on Failures and Jobs, and the runs listed on a machine's card.
 2. At the top: the agent, the channel, **live** while it runs, and how long it has run.
