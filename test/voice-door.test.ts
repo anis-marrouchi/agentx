@@ -135,7 +135,8 @@ describe("the door", () => {
     expect(log.some((l) => new RegExp(`^${stamp} secretary-agent \\(teach\\): open the merge request$`).test(l))).toBe(true)
     expect(log.some((l) => new RegExp(`^${stamp} 1\\. highlight "Reload": Let's reload\\. \\(screen \\d+ ms, plan \\d+ ms\\)$`).test(l))).toBe(true)
     // On screen from the start, before the first plan is back.
-    expect(log.indexOf("Secretary say Looking at Safari…")).toBe(log.findIndex((l) => l.startsWith("Secretary say")))
+    expect(log.findIndex((l) => l.startsWith("Secretary say Looking at Safari…\nYou asked: “open the merge request”")))
+      .toBe(log.findIndex((l) => l.startsWith("Secretary say")))
     svc.handle("POST", "/voice/stop", {})
     expect(log.some((l) => new RegExp(`^${stamp} ended \\(stopped\\)$`).test(l))).toBe(true)
   })

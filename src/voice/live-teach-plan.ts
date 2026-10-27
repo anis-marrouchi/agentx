@@ -73,13 +73,20 @@ export function parsePlan(reply: string, ids: Set<number>): Plan {
   }
 }
 
-/** What the bubble shows while the voice says the whole line: the
- *  target's name when it is short, otherwise a pointer phrase. Nothing
- *  when there is no target to point at. */
-export function bubbleText(label: string | null): string {
-  if (label === null) return ""
-  const l = label.trim()
-  return l && l.length <= 24 ? l : "this one"
+/** How to end a lesson, on its bubble at every step. */
+export const END_HINT = "Say “stop” or click × to end"
+
+/** What the bubble shows while the voice says the whole line: what is
+ *  pointed at (the target's name when it is short, otherwise a pointer
+ *  phrase; nothing without a target), why (the request that opened the
+ *  lesson), and how to end it. Without the why, a cursor pointing at
+ *  something reads as the agent taking over the screen (#1493). */
+export function bubbleText(label: string | null, goal: string): string {
+  const l = label?.trim() ?? null
+  const at = l === null ? null : l && l.length <= 24 ? l : "this one"
+  const g = goal.replace(/\s+/g, " ").trim()
+  const asked = g ? `You asked: “${g.length > 60 ? `${g.slice(0, 60).trimEnd()}…` : g}”` : null
+  return [at, asked, END_HINT].filter(Boolean).join("\n")
 }
 
 export function screenSignature(s: ScreenView): string {

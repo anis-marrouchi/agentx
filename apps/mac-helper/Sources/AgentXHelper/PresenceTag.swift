@@ -7,6 +7,7 @@ import AppKit
 /// take the mouse without the arrow ever stealing a click:
 ///
 ///   drag anywhere        move it; it stays there (pinned) for this agent
+///   click ×              end it: the owner is told, and ends the lesson
 ///   double-click bubble  dismiss the bubble for the rest of this overlay
 ///   double-click name    unpin; it rides next to the arrow again
 ///
@@ -26,6 +27,8 @@ final class PresenceTag: NSView {
     /// Called with the window's new top-left once a drag ends.
     var onPin: ((NSPoint) -> Void)?
     var onUnpin: (() -> Void)?
+    /// The × beside the name: the person wants the agent off the screen.
+    var onClose: (() -> Void)?
     /// A double-click on the bubble hides it; later lines stay hidden too.
     private(set) var dismissed = false
 
@@ -54,7 +57,10 @@ final class PresenceTag: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     private static let nameAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold)]
-    private var rowWidth: CGFloat { 24 + 4 + (name as NSString).size(withAttributes: PresenceTag.nameAttrs).width + 14 }
+    private var nameWidth: CGFloat { (name as NSString).size(withAttributes: PresenceTag.nameAttrs).width + 14 }
+    private var rowWidth: CGFloat { 24 + 4 + nameWidth + 4 + 18 }
+    /// The close control, after the name pill.
+    private var closeRect: NSRect { NSRect(x: 24 + 4 + nameWidth + 4, y: bounds.maxY - 21, width: 18, height: 18) }
 
     override var fittingSize: NSSize {
         guard !box.isHidden else { return NSSize(width: rowWidth, height: PresenceTag.rowHeight) }
@@ -91,10 +97,18 @@ final class PresenceTag: NSView {
         let ring = NSBezierPath(ovalIn: badge.insetBy(dx: 0.75, dy: 0.75)); ring.lineWidth = 1.5; ring.stroke()
         draw(initial, in: badge, size: 11, weight: .bold)
 
-        let nameW = (name as NSString).size(withAttributes: PresenceTag.nameAttrs).width + 14
-        let pill = NSRect(x: badge.maxX + 4, y: badge.minY + 3, width: nameW, height: 18)
+        let pill = NSRect(x: badge.maxX + 4, y: badge.minY + 3, width: nameWidth, height: 18)
         color.setFill(); NSBezierPath(roundedRect: pill, xRadius: 9, yRadius: 9).fill()
         draw(name, in: pill, size: 11, weight: .semibold)
+
+        let close = closeRect
+        NSColor.black.withAlphaComponent(0.55).setFill(); NSBezierPath(ovalIn: close).fill()
+        let x = NSBezierPath()
+        let c = close.insetBy(dx: 6, dy: 6)
+        x.move(to: NSPoint(x: c.minX, y: c.minY)); x.line(to: NSPoint(x: c.maxX, y: c.maxY))
+        x.move(to: NSPoint(x: c.minX, y: c.maxY)); x.line(to: NSPoint(x: c.maxX, y: c.minY))
+        x.lineWidth = 1.5; x.lineCapStyle = .round
+        NSColor.white.setStroke(); x.stroke()
     }
 
     private func draw(_ s: String, in r: NSRect, size: CGFloat, weight: NSFont.Weight) {
@@ -113,6 +127,11 @@ final class PresenceTag: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        if closeRect.insetBy(dx: -3, dy: -3).contains(convert(event.locationInWindow, from: nil)) {
+            dragFrom = nil
+            onClose?()
+            return
+        }
         if event.clickCount == 2 {
             let p = convert(event.locationInWindow, from: nil)
             if !box.isHidden && box.frame.contains(p) {

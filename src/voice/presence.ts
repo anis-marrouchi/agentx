@@ -50,6 +50,9 @@ export interface Presence {
   close(): void
   /** Keep-alive: the overlay fades out after IDLE_SECONDS without a command. */
   ping?(): void
+  /** Called when the person closes the overlay themselves (the × on the
+   *  name tag). Presences with no close control never call it. */
+  onClose?(fn: () => void): void
   /** False once the overlay's process has gone. */
   readonly alive?: boolean
 }
@@ -130,9 +133,18 @@ export function reapPresence(dir = presenceDir(), ps: ProcessOps = systemProcess
   return n
 }
 
+/** The event in one line of the overlay's output, or null. */
+export function overlayEvent(line: string): string | null {
+  try {
+    const o = JSON.parse(line)
+    return typeof o?.event === "string" ? o.event : null
+  } catch { return null }
+}
+
 /** The mac-helper overlay process for one agent, the only one on this machine. */
 export class PresenceOverlay implements Presence {
   private child: ChildProcessWithoutNullStreams | null
+  private closed: Array<() => void> = []
 
   constructor(look: PresenceLook, helper: string, agentId: string, dir = presenceDir()) {
     if (!existsSync(helper)) { this.child = null; return }
@@ -155,7 +167,22 @@ export class PresenceOverlay implements Presence {
     child.on("error", gone)
     child.on("exit", gone)
     child.stdin.on("error", () => {})
+    // The helper writes one JSON object per line when the person acts on
+    // the tag: {"event":"close"} for its ×.
+    let buf = ""
+    child.stdout?.setEncoding("utf8")
+    child.stdout?.on("data", (d: string) => {
+      buf += d
+      let i: number
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim()
+        buf = buf.slice(i + 1)
+        if (overlayEvent(line) === "close") for (const fn of this.closed.splice(0)) { try { fn() } catch { /* the owner's problem */ } }
+      }
+    })
   }
+
+  onClose(fn: () => void): void { this.closed.push(fn) }
 
   get alive(): boolean { return this.child !== null }
 

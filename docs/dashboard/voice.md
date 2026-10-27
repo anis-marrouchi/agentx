@@ -1157,6 +1157,10 @@ An agent can appear on your screen as its own pointer: an arrow in its colour, w
 
 The pointer appears only during a lesson (see [Live lessons](#live-lessons)) and goes when the lesson ends. A spoken answer shows no pointer: the answer is in the pill, or in the character's bubble.
 
+During a lesson, the bubble under the name shows three things: what the pointer is on (the control's name, or "this one" when the name is long), why the lesson is on screen ("You asked: …" and your words), and how to end it. To end the lesson, click the **×** beside the agent's name. You can also drag the name tag out of the way, and double-click the bubble to hide it while the lesson goes on.
+
+<!-- Screenshot needed: the agent's name tag during a lesson, with the × beside the name and the bubble reading "Export", "You asked: “show me how to export this”" and "Say “stop” or click × to end" (native macOS app). Not captured: the pointer only appears during a real lesson on a Mac with the helper installed. -->
+
 ![An agent's on-screen pointer beside the Numbers sidebar: an arrow in the agent's colour, a circle with its initial C, its name CX, and a speech bubble with what it is saying](/screenshots/voice/presence-pointer.png)
 
 To change how an agent's pointer looks:
@@ -1204,7 +1208,8 @@ Presence mode lets AgentX decide, on each question you ask through the widget, w
 
 Some safety rules always apply:
 
-- A lesson (`teach` or `watch`) starts only when you ask to be shown something, for example "show me how…", "how do I…", "where is…", "walk me through…" or "montre-moi…". An instruction such as "merge and deploy the release" is always answered as `talk`.
+- A lesson (`teach` or `watch`) starts only when you clearly ask to be shown how to do something on screen, for example "show me how to export this", "teach me Numbers", "walk me through the export", "how do I add a column", "where is the export button" or "montre-moi comment faire". An instruction such as "merge and deploy the release" is always answered as `talk`.
+- A question about how things are going is answered as `talk`, even when it starts with "how" or "where": "where are we on the launch", "how do things look today" or "comment on the pull request" never open a lesson. "Where is…" opens one only when it names something on screen, such as a button, menu, tab or setting.
 - If the seat is unsure (below 55% confidence), takes longer than 2.5 seconds, or fails, the answer is `talk`.
 
 To switch presence mode on:
@@ -1230,6 +1235,8 @@ In a live lesson, an agent teaches you how to do something in an app, one step a
 As soon as a lesson starts, the agent's pointer says **Looking at** and the app's name, until the first step is ready. On a Mac that is not busy, that takes a few seconds.
 
 A lesson stays in the app it started in. If you switch to another app, the agent asks you to bring it back and waits without doing anything else. After 45 seconds it ends. A lesson stops after 12 steps unless you set another limit.
+
+A lesson you are not following ends on its own. When two steps in a row pass (45 seconds each) with nothing changing on screen and nothing said to the agent, it says "I'll leave it there. Ask me again when you want to." and its pointer goes.
 
 A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` or `act` for your question, or from a terminal.
 
@@ -1261,7 +1268,7 @@ A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` 
 
 To end the lesson, say **stop** the same way. A short "okay, stop now", "please stop" or "cancel" ends it too. A longer sentence that only contains the word, such as "how do I stop the recording", goes to the lesson as a question. A lesson that hears nothing for one minute after it went quiet also ends.
 
-Pressing **Command–Option–.** also ends a lesson. In the terminal where it runs, type `stop` and press Return, or press Control–C.
+Pressing **Command–Option–.** also ends a lesson, and so does clicking the **×** beside the agent's name on screen. In the terminal where it runs, type `stop` and press Return, or press Control–C.
 
 ### Check a running lesson in the browser
 
@@ -1408,6 +1415,8 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **`agentx voice lessons` says no daemon log was found:** the daemon writes its log where it was started from. Give the file with `--log <path>`, or pipe the log in: `agentx daemon logs -n 2000 | agentx voice lessons --log -`.
 - **`agentx voice lessons` finds no lesson, or its lines have no time:** the daemon running is older than 0.94.0, or the lesson never started (the presence seat chose `talk`, which the daemon log shows on a `[presence]` line). Update the daemon, restart it, then run `agentx desktop install` again so the app matches.
 - **A lesson ended as soon as you spoke to it:** the check prints **not ok** with *a hush ended it*. The daemon is older than 0.94.0; update and restart it. On a current daemon, a lesson that hears nothing for a minute after you clicked the pill ends on its own (*no words after the hush*).
+- **A lesson opened when you only asked a question:** the daemon log shows a `[presence]` line with the seat's choice for that turn. **Terminal:** run `agentx daemon logs` and look for it. A daemon from before this fix let questions such as "where are we on…" open a lesson; update and restart it. A lesson that is already open ends with the **×** beside the agent's name, or by saying "stop".
+- **A lesson ended by itself:** it ends after two steps in a row with nothing done on screen and nothing said (*not followed* in the daemon log). Ask again when you are ready to follow it.
 - **The first step took more than 10 seconds:** the check names the slow part. A long **plan** means the planning model was slow, which happens on a Mac that is busy or has just started; try again once it is idle. A long **screen** read means the app's window had to be read from a screenshot, which takes a second or two more.
 - **The pill doesn't appear:** it was hidden with **×**, **Esc** or **Hide pill**. Hold **Option–Space**, or choose **Show floating pill** in the menu, to bring it back. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
 - **The pill is off screen or in an odd place:** click the AgentX icon in the menu bar and choose **Reset position**.

@@ -128,6 +128,7 @@ export class PresenceHost {
       say: (t) => slot.presence.say(t),
       clear: () => slot.presence.clear(),
       park: () => slot.presence.park(),
+      onClose: (fn) => slot.presence.onClose?.(fn),
       close: () => { if (this.slots.get(agentId) === slot) this.hide(agentId) },
     }
   }

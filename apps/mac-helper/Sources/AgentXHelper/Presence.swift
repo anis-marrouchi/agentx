@@ -16,6 +16,10 @@ import AppKit
 ///   {"cmd":"park"}    return beside the person's own pointer, no highlight
 ///   {"cmd":"ping"}    nothing; keeps an idle overlay alive
 ///
+/// It writes one JSON object per line to stdout when the person acts on it:
+///
+///   {"event":"close"} the × on the name tag; the overlay then fades out
+///
 /// Coordinates are accessibility coordinates (top-left origin, global),
 /// the same as `read`, `ocr` and `point`.
 ///
@@ -279,6 +283,12 @@ enum Presence {
             quitting = true
             ctl.fadeOut { exit(0) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+        }
+        // The owner ends what the overlay was for (a lesson); the overlay
+        // goes either way, so the × works even if nobody is listening.
+        ctl.tag.onClose = {
+            FileHandle.standardOutput.write("{\"event\":\"close\"}\n".data(using: .utf8)!)
+            quit()
         }
         DispatchQueue(label: "tn.acme.agentx.presence.stdin").async {
             while let line = readLine(strippingNewline: true) {

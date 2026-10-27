@@ -96,10 +96,32 @@ export interface PresenceDecision {
 
 export const TALK: PresenceDecision = { mode: "talk", persist: false, nextAction: "speak", chose: null, probability: 0, override: "no-decision" }
 
-/** The listener asked to be shown, taught or coached, in English or French.
- *  "Go merge PR 40" or "finish the drafts" never match: those are work. */
-export const ASKS_TO_BE_SHOWN =
-  /\b(show|teach|guide|walk|coach|watch)\s+(me|us)\b|\bhow\s+(do|can|would|should|to)\b|\bwhere\s+(is|are|do|can|'s)\b|\bwhere's\b|\bstep\s+by\s+step\b|\b(tutorial|lesson)\b|\b(montre|explique|guide)[- ]moi\b|\bcomment\s+(on|je|faire)\b|\bo[uù]\s+(est|sont|se\s+trouve)\b/i
+/** A control or place on screen, for "where is the export button". */
+const CONTROL = String.raw`(button|menu|option|setting|tab|icon|field|toggle|switch|checkbox|panel|sidebar|toolbar|bar|link|control|shortcut|bouton|r[ée]glage|param[eè]tre|onglet|ic[oô]ne|champ|barre|raccourci)s?`
+
+/** The listener asked to be shown how to do something on screen, in
+ *  English or French. Work ("Go merge PR 40", "finish the drafts") and
+ *  status questions ("where are we on the launch", "how do things look
+ *  today", "comment on the PR") never match: a lesson takes the screen,
+ *  so only a request about doing something in an app opens one (#1493). */
+export const ASKS_TO_BE_SHOWN = new RegExp([
+  String.raw`\b(teach|coach)\s+(me|us)\b`,
+  String.raw`\bwalk\s+(me|us)\s+through\b`,
+  String.raw`\bguide\s+(me|us)\s+(through|to|in)\b`,
+  String.raw`\bwatch\s+me\b`,
+  String.raw`\bshow\s+(me|us)\s+(how|where)\b`,
+  String.raw`\bshow\s+(me|us)\s+(the|that|this)\s+(\S+\s+){0,3}${CONTROL}\b`,
+  String.raw`\bhow\s+(do|can|would|should)\s+(i|we)\b`,
+  String.raw`\bhow\s+to\s+(do|use|make|add|open|find|get|set|turn|change|create|export|import|save|delete|remove|move|insert|draw|edit)\b`,
+  String.raw`\bwhere\s+(do|can|should)\s+(i|we)\s+(find|click|go|set|change|turn)\b`,
+  String.raw`\bwhere(\s+is|\s+are|'s|\s+'s)\s+(the|that|this|my)\s+(\S+\s+){0,3}${CONTROL}\b`,
+  String.raw`\b(montre|apprends|guide)[- ]moi\b`,
+  String.raw`\bexplique[- ]moi\s+comment\b`,
+  String.raw`\bcomment\s+(est-ce\s+qu[e']\s*)?(je|j'|on)\s*(fais|fait|peux|peut|dois|doit|ajoute|ouvre|trouve|exporte|mets|met)\b`,
+  String.raw`\bcomment\s+faire\b`,
+  String.raw`\bo[uù]\s+(est|sont|se\s+trouvent?)\s+(le|la|les|l')\s*(\S+\s+){0,3}${CONTROL}\b`,
+  String.raw`\bo[uù]\s+(puis-je|je\s+peux|est-ce\s+que\s+je\s+peux)\s+(trouver|cliquer|r[ée]gler|changer)\b`,
+].join("|"), "i")
 
 /** Apply the policy to the seat's answers; null answers mean talk.
  *  `request` is what the listener said; teach and watch need it to ask. */

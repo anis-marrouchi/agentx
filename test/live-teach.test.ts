@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { LiveTeach, closesByKeys, leavesApp, parsePlan, type ScreenView, type TeachDeps, type TeachMode } from "../src/voice/live-teach"
-import { bubbleText, findControl, teachSystemPrompt } from "../src/voice/live-teach-plan"
-import { presenceLook, type Presence } from "../src/voice/presence"
+import { END_HINT, bubbleText, findControl, teachSystemPrompt } from "../src/voice/live-teach-plan"
+import { overlayEvent, presenceLook, type Presence } from "../src/voice/presence"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 import { toPresence, type PresenceModeAnswers } from "../src/decisions/seats/presence-mode"
 
@@ -34,13 +34,16 @@ class PlanModel implements LineModel {
   close() { this.closed = true }
 }
 
-function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: boolean; userActsAfter?: number; speakMs?: number; planMs?: number } = {}) {
+function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: boolean; userActsAfter?: number; speakMs?: number; planMs?: number; maxIgnored?: number } = {}) {
   const app = fakeApp()
   const log: string[] = []
+  let closeOnScreen = () => {}
   const presence: Presence = {
     moveTo: (r, o) => log.push(`move ${r.x} ${o?.highlight ? "highlight" : "point"}`),
-    say: (t) => { if (t) log.push(`bubble ${t}`) },
+    // The first line of the bubble is what is pointed at; the rest says why and how to end.
+    say: (t) => { if (t) log.push(`bubble ${t.split("\n")[0]}`) },
     clear: () => log.push("clear"), park: () => log.push("park"), close: () => log.push("close"),
+    onClose: (fn) => { closeOnScreen = fn },
   }
   const said: string[] = []
   let stopped = 0
@@ -59,9 +62,9 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
   if (opts.userActsAfter !== undefined) setTimeout(app.open, opts.userActsAfter)
   const t = new LiveTeach({
     goal: "start a new note", mode, speaker: { name: "Coder", voice: { provider: "system", elevenlabs: "roger", system: null, fallback: true } },
-    actionsAllowed: !!opts.actionsAllowed, waitMs: 300, pollMs: 10, holdMs: 100,
+    actionsAllowed: !!opts.actionsAllowed, waitMs: 300, pollMs: 10, holdMs: 100, maxIgnored: opts.maxIgnored ?? 99,
   }, deps)
-  return { t, log, said, acted, model, get stopped() { return stopped } }
+  return { t, log, said, acted, model, closeOnScreen: () => closeOnScreen(), get stopped() { return stopped } }
 }
 
 const STEP1 = "TARGET: 1\nACTION: click\nSAY: Click New to start a note."
@@ -94,10 +97,18 @@ describe("parsePlan", () => {
 
 describe("bubbleText", () => {
   it("shows a short target name, a pointer phrase for long ones, nothing without a target", () => {
-    expect(bubbleText("Rectangle")).toBe("Rectangle")
-    expect(bubbleText("Export as PNG with a transparent background")).toBe("this one")
-    expect(bubbleText("")).toBe("this one")
-    expect(bubbleText(null)).toBe("")
+    const first = (label: string | null) => bubbleText(label, "").split("\n")[0]
+    expect(first("Rectangle")).toBe("Rectangle")
+    expect(first("Export as PNG with a transparent background")).toBe("this one")
+    expect(first("")).toBe("this one")
+    expect(bubbleText(null, "")).toBe(END_HINT)
+  })
+
+  it("says why the lesson is on screen and how to end it, with or without a target (#1493)", () => {
+    expect(bubbleText("Export", "show me how to export this")).toBe(`Export\nYou asked: “show me how to export this”\n${END_HINT}`)
+    expect(bubbleText(null, "teach me Numbers")).toBe(`You asked: “teach me Numbers”\n${END_HINT}`)
+    const long = bubbleText(null, "walk me through making a table of every monthly expense for the whole of last year")
+    expect(long.split("\n")[0]).toMatch(/^You asked: “.{1,60}…”$/)
   })
 })
 
@@ -112,6 +123,47 @@ describe("teachSystemPrompt", () => {
 })
 
 describe("LiveTeach", () => {
+  it("ends on its own when two steps in a row pass with nothing done or said (#1493)", async () => {
+    const POINT = "TARGET: 1\nACTION: point\nSAY: That's New, top left."
+    const s = setup("teach", [POINT, POINT, POINT], { maxIgnored: 2 })
+    const ends: string[] = []
+    s.t.on((e) => { if (e.type === "end") ends.push(e.reason) })
+    await s.t.run()
+    expect(s.model.prompts).toHaveLength(2)
+    expect(s.said.at(-1)).toBe("I'll leave it there. Ask me again when you want to.")
+    expect(ends).toEqual(["not followed"])
+    expect(s.log.at(-1)).toBe("close")
+  })
+
+  it("a step the listener does resets the count of steps let pass", async () => {
+    const POINT = "TARGET: 1\nACTION: point\nSAY: That's New, top left."
+    const s = setup("teach", [POINT, POINT, POINT], { maxIgnored: 2, userActsAfter: 450 })
+    const ends: string[] = []
+    s.t.on((e) => { if (e.type === "end") ends.push(e.reason) })
+    await s.t.run()
+    expect(s.model.prompts.length).toBeGreaterThanOrEqual(3)
+    expect(ends).not.toContain("not followed")
+  })
+
+  it("the × on screen ends the lesson, not just the bubble (#1493)", async () => {
+    const s = setup("teach", ["TARGET: 1\nACTION: point\nSAY: That's New, top left."])
+    const ends: string[] = []
+    s.t.on((e) => { if (e.type === "end") ends.push(e.reason) })
+    const running = s.t.run()
+    await sleep(40)
+    s.closeOnScreen()
+    await running
+    expect(ends).toEqual(["closed on screen"])
+    expect(s.t.state).toBe("ended")
+    expect(s.log).toContain("close")
+  })
+
+  it("reads the overlay's close event", () => {
+    expect(overlayEvent('{"event":"close"}')).toBe("close")
+    expect(overlayEvent("garbage")).toBeNull()
+    expect(overlayEvent('{"ok":true}')).toBeNull()
+  })
+
   it("teach: shows and says the step with its own cursor, waits for the user, never clicks", async () => {
     const s = setup("teach", [STEP1, DONE], { userActsAfter: 40 })
     await s.t.run()
@@ -496,9 +548,20 @@ describe("presence look and mode policy", () => {
   })
 
   it("a lesson or coaching only when the listener asked to be shown", () => {
-    for (const request of ["finish the Reddit drafts right now", "Go merge and deploy 40", "what's on my calendar"])
+    for (const request of [
+      "finish the Reddit drafts right now", "Go merge and deploy 40", "what's on my calendar",
+      // Status and voice questions that only look like how/where (#1493).
+      "where are we on the HeyGen test", "how do things look today", "where is the HeyGen test at",
+      "how can you help with the launch", "give me a step by step of the plan", "any tutorial ideas for the blog?",
+      "comment on the PR please", "où est le client sur ce dossier", "comment ça va aujourd'hui",
+      "show me today's tasks",
+    ])
       expect(toPresence(answers("teach", 0.9), false, request)).toMatchObject({ mode: "talk", nextAction: "speak", override: "not-asked-to-show" })
-    for (const request of ["show me how to export this", "how do I open the drafts?", "where is the export button", "teach me Numbers", "montre-moi comment faire"])
+    for (const request of [
+      "show me how to export this", "how do I open the drafts?", "where is the export button", "teach me Numbers", "montre-moi comment faire",
+      "walk me through the export", "where's the share menu", "show me the export button", "where do I find the settings",
+      "how to add a column", "comment je fais pour exporter", "où est le bouton partager", "apprends-moi Numbers",
+    ])
       expect(toPresence(answers("teach", 0.9, "highlight"), false, request)).toMatchObject({ mode: "teach", nextAction: "highlight" })
     expect(toPresence(answers("watch", 0.9, "point"), false, "watch me do it")).toMatchObject({ mode: "watch" })
   })
