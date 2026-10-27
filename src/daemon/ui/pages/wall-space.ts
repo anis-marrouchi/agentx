@@ -56,6 +56,8 @@ button, input, select { font-family: inherit; }
 /* Three columns: nav, feed, side. */
 .ax-wall { display: grid; grid-template-columns: 240px minmax(0, 600px) 350px; justify-content: center; align-items: start; min-height: 100vh; }
 .ax-wall.is-wide { grid-template-columns: 240px minmax(0, 1fr) 300px; }
+/* Settings (#1428) has its section list inside the middle column: wider. */
+.ax-wall.is-settings { grid-template-columns: 240px minmax(0, 860px) 300px; }
 .ax-wall__nav { grid-column: 1; grid-row: 1 / span 4; position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
 .ax-wall__logo { font-weight: 800; font-size: 22px; padding: 8px 12px 16px; color: var(--ax-text); text-decoration: none; }
 .ax-wall__logo small { font-weight: 400; color: var(--ax-muted); font-size: 13px; margin-left: 4px; }
@@ -87,6 +89,8 @@ button, input, select { font-family: inherit; }
    Running now stay above the feed, the agents below it. */
 @media (max-width: 1180px) {
   .ax-wall, .ax-wall.is-wide { grid-template-columns: 72px minmax(0, 600px); }
+  .ax-wall.is-settings { grid-template-columns: 72px minmax(0, 1fr); }
+  .ax-wall.is-settings .ax-wall__aside { display: none; }
   .ax-wall__nav { padding: 12px 8px; align-items: center; }
   .ax-wall__logo small, .ax-wall__item span, .ax-wall__navfoot { display: none; }
   .ax-wall__newpost { width: 48px; height: 48px; padding: 0; font-size: 0; }
@@ -104,18 +108,20 @@ button, input, select { font-family: inherit; }
 /* Phone: the nav becomes a bar at the bottom, as on X. */
 @media (max-width: 640px) {
   body { padding-bottom: 60px; }
-  .ax-wall, .ax-wall.is-wide { grid-template-columns: minmax(0, 1fr); }
+  .ax-wall, .ax-wall.is-wide, .ax-wall.is-settings { grid-template-columns: minmax(0, 1fr); }
   .ax-wall__nav { position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: 56px; z-index: 10; flex-direction: row; justify-content: space-around; padding: 0 4px;
     background: color-mix(in srgb, var(--ax-bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--ax-border); overflow: visible; }
   /* Wall, Needs you, Running now, Projects and More (#1355); More opens
      the rest above the bar. New post is a round + over the feed. */
   .ax-wall__morebtn { display: flex; }
   .ax-wall__nav > [data-nav="live"], .ax-wall__nav > [data-nav="jobs"], .ax-wall__nav > [data-nav="reviews"], .ax-wall__nav > [data-nav="failures"],
-  .ax-wall__nav > [data-nav="agents"], .ax-wall__nav > [data-nav="dashboard"] { display: none; }
+  .ax-wall__nav > [data-nav="agents"], .ax-wall__nav > [data-nav="dashboard"], .ax-wall__nav > [data-nav="settings"] { display: none; }
   .ax-wall__nav.is-more > [data-nav="live"], .ax-wall__nav.is-more > [data-nav="jobs"], .ax-wall__nav.is-more > [data-nav="reviews"], .ax-wall__nav.is-more > [data-nav="failures"],
-  .ax-wall__nav.is-more > [data-nav="agents"], .ax-wall__nav.is-more > [data-nav="dashboard"] {
+  .ax-wall__nav.is-more > [data-nav="agents"], .ax-wall__nav.is-more > [data-nav="dashboard"], .ax-wall__nav.is-more > [data-nav="settings"] {
     display: flex; position: fixed; right: 8px; width: 200px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 10px 14px; }
   .ax-wall__nav.is-more > * > span { display: inline; font-size: var(--ax-fs); }
+  /* Settings (#1428) is on top, so a viewer without it leaves no gap. */
+  .ax-wall__nav.is-more > [data-nav="settings"] { bottom: 384px; }
   .ax-wall__nav.is-more > [data-nav="live"] { bottom: 330px; } .ax-wall__nav.is-more > [data-nav="jobs"] { bottom: 276px; } .ax-wall__nav.is-more > [data-nav="reviews"] { bottom: 222px; }
   .ax-wall__nav.is-more > [data-nav="failures"] { bottom: 168px; } .ax-wall__nav.is-more > [data-nav="agents"] { bottom: 114px; }
   .ax-wall__nav.is-more > [data-nav="dashboard"] { bottom: 60px; }

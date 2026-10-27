@@ -54,6 +54,12 @@ const shots = [
   { name: "wall/live", path: "/wall#page=live", wait: ".wlv" },
   { name: "wall/comment", path: "/wall#status=&post=req-docs-wall-done", wait: "#wdo-text", steps: [{ type: "#wdo-text", text: "Thanks. @builder please add the delivery times to the shop page too" }], clipTo: ".wdo" },
   { name: "wall/phone-dark", path: "/wall", wait: ".wp", phone: true, dark: true },
+  // Settings on the Wall (#1428): the Agents section, one agent, a save, and a phone.
+  { name: "wall/settings", path: "/wall#page=settings&section=agents", wait: ".wsa" },
+  { name: "wall/settings-agent", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name" },
+  { name: "wall/settings-saved", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ click: "[data-st-form=edit] button[type=submit]" }, { waitText: ["#st-n-edit", "Saved"] }], clipTo: "[data-st-form=edit]" },
+  { name: "wall/settings-phone", path: "/wall#page=settings", wait: ".wst__sec", phone: true },
+  { name: "wall/settings-phone-agents", path: "/wall#page=settings&section=agents", wait: ".wsa", phone: true },
   // #1355: the status tabs with the filters open, and the composer.
   { name: "wall/filters", path: "/wall#status=waiting", wait: ".wp", steps: [{ click: "#wall-search" }, { wait: "#wall-filters.is-open" }] },
   { name: "wall/compose", path: "/wall", wait: ".wp", steps: [{ type: "#wc-text", text: "@cx please summarise the open support tickets" }], clipTo: "#wall-compose" },

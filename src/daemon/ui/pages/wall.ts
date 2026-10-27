@@ -6,7 +6,9 @@
 // Running now and Agents open pages of their own, each with a count (#1316).
 //
 // Read-only over records the daemon already keeps (requests, plan events,
-// task traces, the live fleet snapshot). Nothing here writes or notifies.
+// task traces, the live fleet snapshot). It writes, owner-only, where a
+// classic page wrote (#1449): an open post's actions and Settings (#1428),
+// drawn only when `owner` is set (wall-settings.client.ts).
 //
 // It reads like a social feed (#1207): each post carries its agent's
 // avatar, name and @handle, with an action row under it; tapping an agent
@@ -27,12 +29,18 @@ import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_TASK_CSS } from "./wall-task.client"
+import { WALL_SETTINGS_CSS } from "./wall-settings.client"
 import { TASK_PAGE_CSS } from "./task"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
   currentPeerId?: string
   localToken?: string
+  /** The viewer is the owner: draw Settings (#1428). Off, the page has no
+   *  Settings entry, section or script config at all. */
+  owner?: boolean
+  /** config.business.enabled: Settings lists the Business section. */
+  business?: boolean
 }
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
@@ -61,12 +69,19 @@ const NAV_ICON = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   space: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
 }
 
 export function renderWallPage(opts: WallPageOpts = {}): string {
   const token = opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : ""
-  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")
+  // Settings (#1428): only the owner gets its nav entry, section and config.
+  const owner = !!opts.owner
+  const settingsCfg = owner ? `<script>window.AX_WALL_SETTINGS = ${JSON.stringify({ business: !!opts.business })};</script>` : ""
+  const settingsNav = owner ? `<a class="ax-wall__item" data-nav="settings" href="#page=settings" title="Settings">${NAV_ICON.settings}<span>Settings</span></a>` : ""
+  const settingsSection = owner ? `<section id="wall-settings" aria-label="Settings" hidden></section>` : ""
+  // The owner's Settings link stays on the Wall (#1428, #1449).
+  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${owner && label === "Settings" ? "#page=settings" : href}">${label}</a>`).join("")
   // Take B's three columns (#1242): a nav on the left, the feed in the
   // middle, Running now, Agents and the dashboard links on the right.
   const body = `<div class="ax-wall">
@@ -84,6 +99,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages">${NAV_ICON.more}<span>More</span></button>
     <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
+    ${settingsNav}
     <div class="ax-wall__navfoot">
       <span>The Wall shows the work. It sends something only when you post, comment, call or start a Space.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button">Light / dark</button>
@@ -143,6 +159,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
     <section id="wall-task" aria-label="A run: its request, conversation and steer box" hidden></section>
+    ${settingsSection}
   </div>
   <aside class="ax-wall__aside">
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
@@ -164,8 +181,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS,
-    scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + (owner ? WALL_SETTINGS_CSS : ""),
+    scripts: token + settingsCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }
 

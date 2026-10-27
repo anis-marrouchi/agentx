@@ -98,7 +98,7 @@ import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
-import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
+import { getTopbarFeatures, headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
 import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
 import { handleAgentChatApi } from "./agent-chat-api"
 
@@ -322,7 +322,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     }
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.end(renderWallPage(wallPageOpts(req, ctx)))
     return
   }
   if (method === "GET" && path === "/boards") {
@@ -333,7 +333,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/wall") {
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.end(renderWallPage(wallPageOpts(req, ctx)))
     return
   }
   if (method === "GET" && path === "/live") {
@@ -3170,6 +3170,24 @@ function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: 
     return false
   }
   return true
+}
+
+/** Is this Wall viewer the owner, who gets Settings (#1428)? The same test
+ *  the /api/admin/* gate applies, plus a caller on this machine, whose page
+ *  carries the token. pageAllowed sends anyone else to /login first, so
+ *  today every Wall viewer passes; the check keeps Settings off for any
+ *  viewer who would not, and the APIs refuse them either way. */
+function wallOwner(req: IncomingMessage, ctx: Ctx): boolean {
+  return !ctx.token || !!pageToken(req, ctx.token) || adminTokenOk(req, ctx)
+}
+
+function wallPageOpts(req: IncomingMessage, ctx: Ctx) {
+  return {
+    peers: buildTopbarPeers(ctx.config),
+    localToken: pageToken(req, ctx.token),
+    owner: wallOwner(req, ctx),
+    business: !!getTopbarFeatures().business,
+  }
 }
 
 function localNodeName(config: DaemonConfig): string {
