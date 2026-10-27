@@ -28,7 +28,7 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
     </div>
   </div>
   <div class="ax-topbar__right">
-    <a href="/live" class="ax-skip">Skip — open dashboard</a>
+    <a href="/wall#page=live" class="ax-skip">Skip — open dashboard</a>
     <div class="ax-theme-switch" role="tablist" aria-label="Theme">
       <button data-theme-opt="dark">Dark</button>
       <button data-theme-opt="light">Light</button>
@@ -131,7 +131,7 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
     ${step4}
     <footer class="ax-actions">
       ${btn("Save and continue", { type: "submit", primary: true, id: "submitBtn" })}
-      ${btn("Skip, I'll do it later", { onclick: "window.location.href='/live'" })}
+      ${btn("Skip, I'll do it later", { onclick: "window.location.href='/wall#page=live'" })}
     </footer>
   </form>
 </div>`

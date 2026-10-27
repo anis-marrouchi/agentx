@@ -459,11 +459,11 @@ export function renderTopbar(opts: TopbarOpts): string {
       name: "Mesh",
       tabs: [
         { id: "wall", label: "Wall", href: "/wall" },
-        { id: "live", label: "Live", href: "/live" },
+        { id: "live", label: "Live", href: "/wall#page=live" },
         { id: "mesh", label: "Operations", href: "/mesh" },
         { id: "monitor", label: "Monitor", href: "/monitor" },
         { id: "approvals", label: "Approvals", href: "/approvals" },
-        { id: "people", label: "People", href: "/people" },
+        { id: "people", label: "People", href: "/wall#page=people" },
         { id: "org", label: "Org", href: "/org" },
         { id: "activity", label: "Activity", href: "/activity" },
         { id: "workflows", label: "Workflows", href: "/workflows" },

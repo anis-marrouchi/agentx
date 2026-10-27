@@ -117,6 +117,19 @@ describe("posts with forge time", () => {
     expect(again.forgeTime?.loggedMinutes).toBe(1)
   })
 
+  it("a quick read waits briefly, says the read is on its way, and is busy until it lands (#1442)", async () => {
+    const slow = wallForgeTime(GL, () => new Promise((r) => setTimeout(() => r(stats(1, 1)), 600)))
+    const t0 = Date.now()
+    const [q] = await slow.annotate([post()], NOW, 24, true)
+    expect(Date.now() - t0).toBeLessThan(550)
+    expect(q.forgeTime?.unknown).toBe("still being read; shown in a moment")
+    expect(slow.busy()).toBe(true)
+    await new Promise((r) => setTimeout(r, 700))
+    expect(slow.busy()).toBe(false)
+    const [again] = await slow.annotate([post()], NOW, 24, true)
+    expect(again.forgeTime?.loggedMinutes).toBe(1)
+  })
+
   it("caches answers between refreshes and caps reads per refresh", async () => {
     const read = vi.fn<ForgeTimeReader>(async () => stats(10, 60))
     const source = wallForgeTime(GL, read, { maxReads: 2 })

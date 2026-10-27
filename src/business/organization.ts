@@ -1,5 +1,5 @@
 import type { BusinessConfig, BusinessOrgEntry, BusinessProject, BusinessRole } from "./config"
-import { memberKey, orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
+import { memberKey, memberLabel, orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
 
 // --- Organization: org-chart queries and validation ---
 //
@@ -15,6 +15,7 @@ export interface EmployeeProfile {
   agentId: string
   role: BusinessRole
   roleKey: string
+  /** Reports-to boss from the typed relations: a bare id for an agent, `person:<id>` for a person. */
   reportsTo?: string
   schedule: BusinessOrgEntry["schedule"]
   utilizationTarget: number
@@ -26,9 +27,11 @@ export class Organization {
   private relationList: OrgRelation[] = []
   /** Member → its reports-to boss, both written in full (`agent:x`, `person:y`). */
   private bosses: Map<string, string> = new Map()
+  private people: ReadonlyArray<{ id: string; name?: string }>
 
   /** `people`: the top-level people list, so a person can sit in the org. */
-  constructor(config: BusinessConfig, people: ReadonlyArray<{ id: string }> = []) {
+  constructor(config: BusinessConfig, people: ReadonlyArray<{ id: string; name?: string }> = []) {
+    this.people = people
     for (const [agentId, entry] of Object.entries(config.orgChart)) {
       const role = config.roles[entry.role]
       if (!role) {
@@ -38,7 +41,6 @@ export class Organization {
         agentId,
         role,
         roleKey: entry.role,
-        reportsTo: entry.reportsTo,
         schedule: entry.schedule,
         utilizationTarget: entry.utilizationTarget,
       })
@@ -51,6 +53,10 @@ export class Organization {
     if (problem) throw new Error(problem)
     for (const r of this.relationList) {
       if (r.type === "reports-to") this.bosses.set(r.from, r.to)
+    }
+    for (const emp of this.employees.values()) {
+      const boss = this.reportsTo(emp.agentId)
+      if (boss) emp.reportsTo = boss
     }
 
     // Per-project config — Phase 3.
@@ -82,6 +88,11 @@ export class Organization {
     if (!boss) return undefined
     const m = parseMember(boss)
     return m.kind === "agent" ? m.id : boss
+  }
+
+  /** A member for people to read: an agent's id, or a person's name. */
+  memberLabel(member: string): string {
+    return memberLabel(member, this.people)
   }
 
   /** The agents whose reports-to boss is `member`. */

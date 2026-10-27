@@ -51,7 +51,6 @@ const shots = [
   { name: "wall/projects", path: "/wall#status=open&view=projects", wait: ".wpc" },
   { name: "wall/jobs", path: "/wall#status=open&view=jobs", wait: ".wjb" },
   { name: "wall/creator", path: "/wall#page=creator", wait: ".wcr__a", steps: [{ click: ".wcr__a" }, { wait: ".wcr__a.is-on" }, { type: "#cr-text", text: "Summarise the open support tickets by topic" }, { type: "#cr-done", text: "A short list in the post" }] },
-  { name: "wall/live", path: "/wall#page=live", wait: ".wlv" },
   { name: "wall/comment", path: "/wall#status=&post=req-docs-wall-done", wait: "#wdo-text", steps: [{ type: "#wdo-text", text: "Thanks. @builder please add the delivery times to the shop page too" }], clipTo: ".wdo" },
   { name: "wall/phone-dark", path: "/wall", wait: ".wp", phone: true, dark: true },
   // #1355: the status tabs with the filters open, and the composer.
@@ -68,7 +67,8 @@ const shots = [
   { name: "wall/blocked", path: "/wall#status=blocked&by=agent&view=list", wait: ".wl" },
   // The review queue: pending and decided classifications (#1182).
   { name: "wall/reviews", path: "/wall#status=&view=reviews", wait: "[data-rtab]", steps: [{ click: '[data-rtab="approved"]' }, { wait: ".wr__diff" }], clipTo: "#review-docs-review-invoice" },
-  { name: "live", path: "/live", wait: ".ax-agent__name" },
+  // Classic /live opens Wall Live (#1439).
+  { name: "live", path: "/wall#page=live", wait: ".wmc" },
   { name: "operations", path: "/mesh", wait: "body" },
   { name: "operations/routines", path: "/mesh", wait: "body", steps: [{ clickText: "Operations" }, { wait: "#mx-routines .mx-flags" }, { scroll: "#mx-routines-title" }] },
   { name: "activity", path: "/activity", wait: ".ac-row" },
@@ -122,23 +122,29 @@ const shots = [
     { scroll: '[name="agentName"]' },
   ] },
   { name: "setup/engine", path: "/setup", wait: "#wizard", steps: [{ select: '[name="tier"]', value: "sdk" }, { scroll: '[name="triggerWords"]' }] },
-  { name: "costs/page", path: "/admin/cost", wait: "body" },
+  // The Wall's Cost page (#1423), which /admin/cost now opens: the page, a
+  // phone, the details it folds, and the monthly budgets with their form.
+  { name: "wall/cost", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row" },
+  { name: "wall/cost-phone", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row", phone: true },
+  { name: "costs/page", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row", steps: [{ click: "[data-cdetails]" }, { wait: "#wc-details:not([hidden])" }], clipTo: "#wall-cost .wc__more" },
+  { name: "costs/budgets", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__form", clipTo: "#wall-cost-budgets" },
   // Only the first check group: the others describe this machine's desktop
   // app and home folder, which a screenshot must not publish.
   { name: "doctor/tab", path: "/admin/health", wait: '[data-tab="doctor"]', steps: [{ click: '[data-tab="doctor"]' }, { wait: ".ax-obs__doctor-group" }], clipBefore: ".ax-obs__doctor-group + .ax-obs__doctor-group" },
   { name: "health/routing", path: "/admin/health", wait: '[data-tab="routing"]', steps: [{ click: '[data-tab="routing"]' }] },
-  { name: "live/running-build", path: "/live", wait: ".ax-build", clipTo: ".ax-topbar__right" },
+  { name: "live/running-build", path: "/mesh", wait: ".ax-build", clipTo: ".ax-topbar__right" },
   // Last: the scripted reply takes a minute, so later shots would show it running.
-  { name: "live/running-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--update" }] },
-  // The same scripted task, still running: its pause button, then paused.
-  { name: "live/pause-task", path: "/live", wait: ".ax-task-action--pause", clipTo: ".ax-agent:has(.ax-task-action--pause)" },
-  { name: "live/stopped-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped details" }, { click: ".ax-node__stopped details summary" }], clipTo: ".ax-node__stopped" },
+  // Wall Live (#1439): a running task's page with Pause; the same task
+  // paused, with its plan open; Live with it; the machine cards; a phone.
+  { name: "wall/task-pause", path: "/wall#page=live", wait: ".wlv", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".wls.is-work" }, { click: ".wls.is-work" }, { wait: "#wtask-ops .wtask__pause" }] },
+  { name: "wall/live-paused", path: "/wall#page=live", wait: ".wlv", steps: [{ pause: "cx" }, { wait: ".wls.is-stopped .wls__plan" }, { click: ".wls.is-stopped .wls__plan summary" }, { wait: ".wls.is-stopped .wls__plan[open]" }], clipTo: ".wls.is-stopped" },
+  { name: "wall/live", path: "/wall#page=live", wait: ".wls.is-stopped" },
+  { name: "wall/live-machines", path: "/wall#page=live", wait: ".wmc", clipTo: ".wlv__mc" },
+  { name: "wall/live-phone", path: "/wall#page=live", wait: ".wls.is-stopped", phone: true },
   // Every task in a workflow (#858): switched on through the card itself,
   // then a task on the Live tab shows its run's step; switched off again.
   { name: "workflows/required-settings", path: "/workflows", wait: "#wf-required", steps: [{ click: "#wf-required > summary" }, { wait: "#wf-required-agents select" }, { click: "#wf-required-enabled" }, { waitText: ["#wf-required-note", "Saved"] }, { click: ".ax-wf__req-agents > summary" }], clipTo: ".ax-wf__required" },
-  { name: "live/running-task-workflow", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-agent__task-wf" }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".ax-agent.is-handling" },
-  // A workflow step paused by a stop signal: the run waits at that step (#870).
-  { name: "live/stopped-workflow-step", path: "/live", wait: ".ax-agent__name", steps: [{ workflow: "demo-backlog" }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped-item:has(.ax-node__stopped-wf) details" }, { click: ".ax-node__stopped-item:has(.ax-node__stopped-wf) details summary" }], clipTo: ".ax-node__stopped-item:has(.ax-node__stopped-wf)" },
+  { name: "live/running-task-workflow", path: "/wall#page=live", wait: ".wlv", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { waitText: [".wls.is-work", "Workflow"] }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".wls.is-work" },
 ]
 
 function client(ws) {

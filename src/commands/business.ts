@@ -2,6 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import { loadDaemonConfig } from "@/daemon/config"
+import { RELATION_TYPES, configRelationsProblem, memberKey, memberLabel, orgRelations, parseMember, type RelationType } from "@/business/relations"
 
 // --- agentx business — manage the business layer config ---
 //
@@ -13,6 +14,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 // Scope kept narrow on purpose:
 //   show      — read-only summary
 //   orgchart  — add / remove / list entries (agentId → { role, reportsTo, schedule })
+//   relation  — add / remove / list typed links between people and agents (#1418)
 //   project   — add / remove / list (id, pm?, client?)
 //   contact   — add / remove / list (chatId/username → client/project)
 //
@@ -33,6 +35,27 @@ function readBusiness(): any {
   } catch {
     return {}
   }
+}
+
+function readPeople(): Array<{ id: string; name?: string }> {
+  try {
+    return (loadDaemonConfig() as any).people || []
+  } catch {
+    return []
+  }
+}
+
+/** Each agent's reports-to boss for display: an agent id, or a person's name
+ *  (orgChart reportsTo and business.relations both count, #1418). */
+function bossLabels(b: any): Map<string, string> {
+  const people = readPeople()
+  const out = new Map<string, string>()
+  for (const r of orgRelations(b)) {
+    const from = parseMember(r.from)
+    if (r.type !== "reports-to" || from.kind !== "agent" || out.has(from.id)) continue
+    out.set(from.id, memberLabel(r.to, people) + (r.to.startsWith("person:") ? " (person)" : ""))
+  }
+  return out
 }
 
 export const business = new Command()
@@ -61,9 +84,10 @@ business
     console.log()
     console.log(chalk.bold("  Org chart"))
     const orgEntries = Object.entries(orgChart) as Array<[string, any]>
+    const bosses = bossLabels(b)
     if (orgEntries.length === 0) console.log(chalk.dim("    (empty)"))
     else for (const [id, e] of orgEntries) {
-      const reports = e.reportsTo ? chalk.dim(` → reports to ${e.reportsTo}`) : ""
+      const reports = bosses.has(id) ? chalk.dim(` → reports to ${bosses.get(id)}`) : ""
       const sched = e.schedule ? chalk.dim(` · ${(e.schedule.days || []).join(",")} ${e.schedule.start}–${e.schedule.end}`) : ""
       console.log(`    ${chalk.cyan(id)}  ${e.role}${reports}${sched}`)
     }
@@ -101,8 +125,9 @@ orgchart
     const entries = Object.entries(b.orgChart || {}) as Array<[string, any]>
     if (opts.json) { console.log(JSON.stringify(Object.fromEntries(entries), null, 2)); return }
     if (entries.length === 0) { console.log(chalk.dim("  no entries")); return }
+    const bosses = bossLabels(b)
     for (const [id, e] of entries) {
-      console.log(`  ${chalk.cyan(id)}  ${e.role}${e.reportsTo ? chalk.dim(` → ${e.reportsTo}`) : ""}`)
+      console.log(`  ${chalk.cyan(id)}  ${e.role}${bosses.has(id) ? chalk.dim(` → ${bosses.get(id)}`) : ""}`)
     }
   })
 
@@ -110,7 +135,7 @@ orgchart
   .command("add <agentId>")
   .description("add or update an orgChart entry for an agent")
   .requiredOption("--role <role>", "role title (e.g. 'PM', 'Coder', 'DevOps')")
-  .option("--reports-to <agentId>", "manager's agentId")
+  .option("--reports-to <member>", "manager: an agentId, or person:<id> from people")
   .option("--start <hh:mm>", "schedule start", "09:00")
   .option("--end <hh:mm>", "schedule end", "17:00")
   .option("--days <csv>", "working days (mon,tue,wed,thu,fri)", "mon,tue,wed,thu,fri")
@@ -126,6 +151,8 @@ orgchart
         schedule: { days, start: opts.start, end: opts.end },
         utilizationTarget: parseFloat(opts.utilization) || 0.8,
       }
+      const problem = configRelationsProblem(cfg)
+      if (problem) throw new Error(problem)
       return `orgChart entry "${agentId}" upserted (role=${opts.role}${opts.reportsTo ? `, reports to ${opts.reportsTo}` : ""})`
     })
   })
@@ -141,6 +168,68 @@ orgchart
       }
       delete cfg.business.orgChart[agentId]
       return `orgChart entry "${agentId}" removed`
+    })
+  })
+
+// ---- relation ------------------------------------------------------------
+
+const relation = business
+  .command("relation")
+  .description(`manage business.relations — typed links between people and agents (${RELATION_TYPES.join(", ")})`)
+
+relation
+  .command("list")
+  .description("list every relation, orgChart reportsTo included, and any problem with them")
+  .option("--json", "JSON output")
+  .action((opts) => {
+    let cfg: any
+    try { cfg = loadDaemonConfig() } catch (e: any) {
+      console.error(chalk.red(`  could not read agentx.json: ${e.message}`))
+      process.exitCode = 1
+      return
+    }
+    const relations = orgRelations(cfg.business)
+    const problem = configRelationsProblem(cfg)
+    if (opts.json) { console.log(JSON.stringify({ relations, ...(problem ? { problem } : {}) }, null, 2)); return }
+    if (relations.length === 0) console.log(chalk.dim("  no relations"))
+    for (const r of relations) console.log(`  ${chalk.cyan(r.from)}  ${r.type}  ${chalk.cyan(r.to)}`)
+    if (problem) console.log(chalk.yellow(`  ! ${problem}`))
+  })
+
+relation
+  .command("add <from> <type> <to>")
+  .description("link two members, e.g. agent:pm reports-to person:sam")
+  .action((from: string, type: string, to: string) => {
+    if (!(RELATION_TYPES as readonly string[]).includes(type)) {
+      console.error(chalk.red(`  unknown relation type "${type}"; use one of: ${RELATION_TYPES.join(", ")}`))
+      process.exitCode = 1
+      return
+    }
+    mutate((cfg) => {
+      cfg.business = cfg.business || {}
+      const r = { from: memberKey(from), to: memberKey(to), type: type as RelationType }
+      const relations = [...(cfg.business.relations || []), r]
+      const problem = configRelationsProblem({ ...cfg, business: { ...cfg.business, relations } })
+      if (problem) throw new Error(problem)
+      cfg.business.relations = relations
+      return `relation added: ${r.from} ${r.type} ${r.to}`
+    })
+  })
+
+relation
+  .command("remove <from> <type> <to>")
+  .alias("rm")
+  .description("remove one relation from business.relations")
+  .action((from: string, type: string, to: string) => {
+    mutate((cfg) => {
+      const relations: any[] = cfg.business?.relations || []
+      const f = memberKey(from), t = memberKey(to)
+      const kept = relations.filter((r) => !(memberKey(r.from) === f && r.type === type && memberKey(r.to) === t))
+      if (kept.length === relations.length) {
+        throw new Error(`no relation "${f} ${type} ${t}" in business.relations (a reportsTo in orgChart is changed with: agentx business orgchart add)`)
+      }
+      cfg.business.relations = kept
+      return `relation removed: ${f} ${type} ${t}`
     })
   })
 
