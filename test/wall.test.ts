@@ -500,9 +500,22 @@ describe("routes", () => {
     const node = "?node=" + encodeURIComponent("http://node-a.example")
     token = "tok-123"
     try {
-      for (const path of ["/api/signals/resume", "/api/signals/drop", "/api/signals/stop", "/api/node/restart", "/api/node/restart/cancel", "/api/voice/stop", "/api/monitor/register"]) {
+      const wallLive = ["resume", "drop", "pause", "restart", "restart-cancel", "lesson-stop", "cli"].map((op) => "/api/admin/wall/live/" + op)
+      for (const path of [...wallLive, "/api/signals/resume", "/api/signals/drop", "/api/signals/stop", "/api/node/restart", "/api/node/restart/cancel", "/api/voice/stop", "/api/monitor/register"]) {
         expect(await post(path + node), path).toBe(401)
         expect(await post(path + node, { Authorization: "Bearer wrong" }), path).toBe(401)
+      }
+      // With the key, a Wall Live control reaches the node proxy, which only
+      // sends to a node the dashboard knows; an unknown op is no control.
+      const owner = { Authorization: "Bearer tok-123" }
+      const resume = await fetch(base + "/api/admin/wall/live/resume" + node, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...owner }, body: '{"id":"t1"}' })
+      expect(resume.status).toBe(403)
+      expect((await resume.json()).error).toBe("node not in dashboard allowlist")
+      expect(await post("/api/admin/wall/live/resume", owner), "no node").toBe(400)
+      for (const op of ["constructor", "toString", "nope"]) {
+        const r = await fetch(base + "/api/admin/wall/live/" + op + node, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...owner }, body: "{}" })
+        expect(r.status, op).not.toBe(403)
+        expect(r.status, op).toBeGreaterThanOrEqual(400)
       }
       // With the key, a monitor write still needs the dashboard's own header.
       const bare = await fetch(base + "/api/monitor/register" + node, { method: "POST", headers: { Authorization: "Bearer tok-123" }, body: "{}" })

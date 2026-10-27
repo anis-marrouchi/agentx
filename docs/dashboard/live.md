@@ -115,7 +115,7 @@ If a machine is slow to answer, Live keeps its last known data for up to five mi
 - **No machine appears:** the daemon (the AgentX background service) isn't running or the dashboard can't reach it. See [It's not answering](../help/its-not-answering.md).
 - **The agent never shows under Running now:** the message didn't reach AgentX. Check that the channel is connected in [Settings](./settings.md).
 - **A machine is missing:** its daemon or the connection to it is down. See [Add a second machine](../jobs/second-machine.md).
-- **"Not done: unauthorized":** the page was opened without your dashboard key. Open the dashboard from the same machine, or sign in again. Only you can resume, drop, pause or restart.
+- **"Not done: Only the owner writes on the Wall…":** the page was opened without your dashboard key. Open the dashboard from the same machine, or sign in again. Only you can resume, drop, pause or restart.
 - **A machine says it cannot restart from here:** it runs an AgentX from before this feature. Update it, or use `agentx daemon restart --when-idle` in a terminal on it.
 - **"Not done: … would not start AgentX again":** nothing would start AgentX after it exits. See [Restart from the dashboard](../jobs/restart-safely.md#restart-from-the-dashboard).
 - **Resume is missing on a paused task:** the agent is still writing its plan (**Pausing…**), or the task's chat can no longer be reached. Wait a few seconds; if it stays, drop the task and send it again.

@@ -282,13 +282,13 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     expect(card).toContain("#page=task&amp;task=t7&amp;agent=cx")
   })
 
-  it("resumes it on its machine with the same API as classic Live", async () => {
+  it("resumes it on its machine through the Wall's guarded route", async () => {
     const w = openWall({ hash: "#page=live", live: OPS })
     await w.settle()
     w.press(w.el("wall-live").innerHTML, 'data-lv="resume"')
     await w.settle()
-    const sent = posts(w, "/api/signals/resume")
-    expect(sent.map((c) => c.url)).toEqual(["/api/signals/resume?node=http%3A%2F%2Fnode-a"])
+    const sent = posts(w, "/api/admin/wall/live/resume")
+    expect(sent.map((c) => c.url)).toEqual(["/api/admin/wall/live/resume?node=http%3A%2F%2Fnode-a"])
     expect(JSON.parse(sent[0].init.body)).toEqual({ id: "t7" })
     expect(sent[0].init.headers["X-Requested-With"]).toBe("agentx-board")
     expect(w.el("wall-live").innerHTML).toContain("Resumed: it goes on from its plan.")
@@ -299,11 +299,11 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     await w.settle()
     w.press(w.el("wall-live").innerHTML, 'data-lv="drop"')
     await w.settle()
-    expect(posts(w, "/api/signals/drop")).toHaveLength(0)
+    expect(posts(w, "/api/admin/wall/live/drop")).toHaveLength(0)
     expect(w.el("wall-live").innerHTML).toContain("Drop it for good?")
     w.press(w.el("wall-live").innerHTML, 'data-lv="drop"')
     await w.settle()
-    expect(JSON.parse(posts(w, "/api/signals/drop")[0].init.body)).toEqual({ id: "t7" })
+    expect(JSON.parse(posts(w, "/api/admin/wall/live/drop")[0].init.body)).toEqual({ id: "t7" })
   })
 
   it("shows the same task as Paused, with Resume, on its Task page", async () => {
@@ -313,7 +313,7 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     expect(ops).toContain("❚❚ Paused")
     w.press(ops, 'data-lv="resume"')
     await w.settle()
-    expect(posts(w, "/api/signals/resume").map((c) => c.url)).toEqual(["/api/signals/resume?node=http%3A%2F%2Fnode-a"])
+    expect(posts(w, "/api/admin/wall/live/resume").map((c) => c.url)).toEqual(["/api/admin/wall/live/resume?node=http%3A%2F%2Fnode-a"])
   })
 
   it("offers Pause on a live run's Task page, which stops it with a resume plan", async () => {
@@ -322,7 +322,7 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     w.press(w.el("wtask-ops").innerHTML, 'data-lv="pause"')
     w.press(w.el("wtask-ops").innerHTML, 'data-lv="pause"')
     await w.settle()
-    expect(JSON.parse(posts(w, "/api/signals/stop")[0].init.body)).toEqual({ taskId: "t9" })
+    expect(JSON.parse(posts(w, "/api/admin/wall/live/pause")[0].init.body)).toEqual({ taskId: "t9" })
   })
 })
 
@@ -349,7 +349,7 @@ describe("Wall Live: machines (#1439)", () => {
     w.press(html, 'data-lv="restart"')
     w.press(w.el("wall-live").innerHTML, 'data-lv="restart"')
     await w.settle()
-    expect(posts(w, "/api/node/restart").map((c) => c.url)).toEqual(["/api/node/restart?node=http%3A%2F%2Fnode-a"])
+    expect(posts(w, "/api/admin/wall/live/restart").map((c) => c.url)).toEqual(["/api/admin/wall/live/restart?node=http%3A%2F%2Fnode-a"])
     const live = w.streams.find((s) => s.url === "/api/live/stream")!
     const deadline = NOW + 1800e3
     live.on.snapshot({ data: JSON.stringify({ nodes: [{ ...OPS.nodes[0], restart: { state: "pending", deadline: iso(deadline) } }] }) })
@@ -358,7 +358,7 @@ describe("Wall Live: machines (#1439)", () => {
     expect(after).not.toContain('data-lv="restart"')
     w.press(after, 'data-lv="cancel"')
     await w.settle()
-    expect(posts(w, "/api/node/restart/cancel")).toHaveLength(1)
+    expect(posts(w, "/api/admin/wall/live/restart-cancel")).toHaveLength(1)
   })
 
   it("lists the attached Claude Code sessions with their agent and start time", async () => {
@@ -375,7 +375,7 @@ describe("Wall Live: machines (#1439)", () => {
   it("finds CLI sessions on a machine and connects one", async () => {
     const w = openWall({ hash: "#page=live", live: OPS, replies: {
       "/api/monitor/discover?": { sessions: [{ id: "sess-1", label: "/home/demo/demo-site", runtime: "claude" }], processes: [] },
-      "/api/monitor/register?": { ok: true },
+      "/api/admin/wall/live/cli?": { ok: true },
     } })
     await w.settle()
     w.press(w.el("wall-live").innerHTML, 'data-lv="find"')
@@ -385,8 +385,8 @@ describe("Wall Live: machines (#1439)", () => {
     expect(html).toContain("<b>Claude Code in demo-site</b>")
     w.press(html, 'data-lv="reg"')
     await w.settle()
-    const sent = posts(w, "/api/monitor/register")
-    expect(sent.map((c) => c.url)).toEqual(["/api/monitor/register?node=http%3A%2F%2Fnode-a"])
+    const sent = posts(w, "/api/admin/wall/live/cli")
+    expect(sent.map((c) => c.url)).toEqual(["/api/admin/wall/live/cli?node=http%3A%2F%2Fnode-a"])
     expect(JSON.parse(sent[0].init.body)).toEqual({ id: "sess-1", runtime: "claude", label: "/home/demo/demo-site" })
     expect(w.el("wall-live").innerHTML).toContain("Connected</span>")
   })

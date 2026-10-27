@@ -23,8 +23,9 @@
 // with its agent and start time, and Connect a CLI session (the monitor's
 // discover and register). The Task page reuses them: Resume on a paused
 // run, Pause on a live one. Drop, Pause and Restart ask once more on the
-// button itself. Every one of these writes goes through the dashboard's
-// token gate, so only the owner's Wall can make them.
+// button itself. Every one of these writes goes to /api/admin/wall/live/*
+// (board-dashboard.ts), under the Wall's owner guard (#1454), which sends
+// it on to the node API classic Live used.
 //
 // Also here: who an @mention in a comment names, and the call and join
 // buttons of an agent's page and profile.
@@ -290,12 +291,12 @@ export const WALL_LIVE_SCRIPT = String.raw`
     st.armed = '';
     var q = '?node=' + encodeURIComponent(node);
     var plan = {
-      resume: ['/api/signals/resume', { id: id }, 'Resuming…', 'Resumed: it goes on from its plan.'],
-      drop: ['/api/signals/drop', { id: id }, 'Dropping…', 'Dropped. It can no longer be resumed.'],
-      pause: ['/api/signals/stop', { taskId: id }, 'Pausing…', 'Pausing: the agent writes its resume plan, then it shows under Paused on Live.'],
-      restart: ['/api/node/restart', {}, 'Asking…', 'Restart waiting: it restarts once no task runs.'],
-      cancel: ['/api/node/restart/cancel', {}, 'Cancelling…', 'Restart cancelled.'],
-      lesson: ['/api/voice/stop', {}, 'Stopping…', 'Lesson stopped.'],
+      resume: ['/api/admin/wall/live/resume', { id: id }, 'Resuming…', 'Resumed: it goes on from its plan.'],
+      drop: ['/api/admin/wall/live/drop', { id: id }, 'Dropping…', 'Dropped. It can no longer be resumed.'],
+      pause: ['/api/admin/wall/live/pause', { taskId: id }, 'Pausing…', 'Pausing: the agent writes its resume plan, then it shows under Paused on Live.'],
+      restart: ['/api/admin/wall/live/restart', {}, 'Asking…', 'Restart waiting: it restarts once no task runs.'],
+      cancel: ['/api/admin/wall/live/restart-cancel', {}, 'Cancelling…', 'Restart cancelled.'],
+      lesson: ['/api/admin/wall/live/lesson-stop', {}, 'Stopping…', 'Lesson stopped.'],
     }[kind];
     if (kind === 'find') {
       st.busy[key] = 'Looking…';
@@ -311,7 +312,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
       if (!item) return;
       st.busy[key] = 'Connecting…';
       render();
-      var g = await act('POST', '/api/monitor/register' + q, item.body);
+      var g = await act('POST', '/api/admin/wall/live/cli' + q, item.body);
       delete st.busy[key];
       if (g.ok) item.done = true;
       st.msg = g.ok ? 'Connected ' + item.name + '. AgentX reviews its next turns.' : 'Not connected: ' + g.error;
