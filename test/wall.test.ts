@@ -292,7 +292,7 @@ describe("owner decision cards (#1185)", () => {
     // The owner answers on the Wall now: no hand-off to the classic page.
     expect(html).not.toContain("Answer it on the Desk")
     expect(html).toContain('data-decide="yes"')
-    expect(html).toContain("/api/admin/approvals/decide")
+    expect(html).toContain("/api/admin/wall/decide")
   })
 
   it("carries a card's choices and suggested message, so the post can answer it (#1440)", async () => {
