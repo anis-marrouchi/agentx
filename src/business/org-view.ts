@@ -1,4 +1,5 @@
 import type { AgentHold } from "@/agents/holds"
+import { layoutOrg, orgKey, type OrgMemberKind, type OrgRelation, type OrgRelationType } from "./org-layout"
 
 // --- The Org view's data (#1169), from agentx.json, the holds and the daemon ---
 //
@@ -22,8 +23,32 @@ export interface OrgNode {
   reports: OrgNode[]
 }
 
+/** One box of the diagram (#1419): an agent with its card, or a person. */
+export interface OrgBox {
+  key: string
+  kind: OrgMemberKind
+  id: string
+  name: string
+  title?: string
+  job?: string
+  status?: OrgStatus
+  active?: number
+  heldBy?: string
+  level: number
+  col: number
+}
+
+export interface OrgDiagram {
+  boxes: OrgBox[]
+  edges: OrgRelation[]
+  columns: number
+  levels: number
+}
+
 export interface OrgView {
   roots: OrgNode[]
+  /** The same chart laid out for drawing, with people and typed relations. */
+  diagram: OrgDiagram
   /** Agents with no entry in business.orgChart. */
   outside: OrgNode[]
   /** False when the daemon did not answer: working and idle are unknown. */
@@ -87,7 +112,23 @@ export function buildOrgView(
   const sortDeep = (list: OrgNode[]) => { list.sort(byName); for (const n of list) sortDeep(n.reports) }
   sortDeep(roots)
   const outside = Object.keys(agents).filter((id) => !nodes.has(id)).map(node).sort(byName)
-  return { roots, outside, live: live !== null }
+  return { roots, outside, diagram: orgDiagram(nodes), live: live !== null }
+}
+
+/** The chart's members and relations, laid out. Agents and their
+ *  `reportsTo` for now; people and the other relation types come from
+ *  the org chart once it holds them (#1418). */
+function orgDiagram(nodes: Map<string, OrgNode>): OrgDiagram {
+  const members = [...nodes.values()].map((n) => ({ key: orgKey("agent", n.id), name: n.name }))
+  const relations: OrgRelation[] = [...nodes.values()].flatMap((n) => n.reportsTo
+    ? [{ from: orgKey("agent", n.id), to: orgKey("agent", n.reportsTo), type: "reports-to" as OrgRelationType }]
+    : [])
+  const layout = layoutOrg(members, relations)
+  const boxes = layout.boxes.map(({ key, level, col }): OrgBox => {
+    const { reports: _reports, reportsTo: _boss, ...card } = nodes.get(key.slice("agent:".length))!
+    return { key, kind: "agent", ...card, level, col }
+  })
+  return { ...layout, boxes }
 }
 
 /** Does `from` reach `target` by following reportsTo? */
