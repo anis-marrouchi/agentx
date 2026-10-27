@@ -111,13 +111,13 @@ button, input, select { font-family: inherit; }
      the rest above the bar. New post is a round + over the feed. */
   .ax-wall__morebtn { display: flex; }
   .ax-wall__nav > [data-nav="live"], .ax-wall__nav > [data-nav="jobs"], .ax-wall__nav > [data-nav="reviews"], .ax-wall__nav > [data-nav="failures"],
-  .ax-wall__nav > [data-nav="agents"], .ax-wall__nav > [data-nav="dashboard"] { display: none; }
+  .ax-wall__nav > [data-nav="cost"], .ax-wall__nav > [data-nav="agents"], .ax-wall__nav > [data-nav="dashboard"] { display: none; }
   .ax-wall__nav.is-more > [data-nav="live"], .ax-wall__nav.is-more > [data-nav="jobs"], .ax-wall__nav.is-more > [data-nav="reviews"], .ax-wall__nav.is-more > [data-nav="failures"],
-  .ax-wall__nav.is-more > [data-nav="agents"], .ax-wall__nav.is-more > [data-nav="dashboard"] {
+  .ax-wall__nav.is-more > [data-nav="cost"], .ax-wall__nav.is-more > [data-nav="agents"], .ax-wall__nav.is-more > [data-nav="dashboard"] {
     display: flex; position: fixed; right: 8px; width: 200px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 10px 14px; }
   .ax-wall__nav.is-more > * > span { display: inline; font-size: var(--ax-fs); }
-  .ax-wall__nav.is-more > [data-nav="live"] { bottom: 330px; } .ax-wall__nav.is-more > [data-nav="jobs"] { bottom: 276px; } .ax-wall__nav.is-more > [data-nav="reviews"] { bottom: 222px; }
-  .ax-wall__nav.is-more > [data-nav="failures"] { bottom: 168px; } .ax-wall__nav.is-more > [data-nav="agents"] { bottom: 114px; }
+  .ax-wall__nav.is-more > [data-nav="live"] { bottom: 384px; } .ax-wall__nav.is-more > [data-nav="jobs"] { bottom: 330px; } .ax-wall__nav.is-more > [data-nav="reviews"] { bottom: 276px; }
+  .ax-wall__nav.is-more > [data-nav="failures"] { bottom: 222px; } .ax-wall__nav.is-more > [data-nav="cost"] { bottom: 168px; } .ax-wall__nav.is-more > [data-nav="agents"] { bottom: 114px; }
   .ax-wall__nav.is-more > [data-nav="dashboard"] { bottom: 60px; }
   .ax-wall__newpost { position: fixed; right: 16px; bottom: 72px; width: 56px; height: 56px; margin: 0; border-radius: 50%; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }
   .ax-wall__logo { display: none; }
