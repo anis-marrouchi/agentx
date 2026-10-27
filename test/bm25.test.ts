@@ -45,6 +45,15 @@ describe("BM25", () => {
       expect(tokenize("والبيانات بالبرنامج فالوزارة كالبيانات")).toEqual(["بيانات", "برنامج", "وزاره", "بيانات"])
     })
 
+    it("does not take إل at the start of a word for the article", () => {
+      expect(tokenize("بريد إلكتروني")).toEqual(tokenize("البريد الإلكتروني"))
+      expect(tokenize("إلكتروني")).toEqual(["الكتروني"])
+      expect(tokenize("إلغاء")).toEqual(tokenize("الإلغاء"))
+      expect(tokenize("إلغاء")).toEqual(["الغاء"])
+      expect(tokenize("إلهام")).toEqual(["الهام"])
+      expect(tokenize("إلهام")).not.toEqual(tokenize("هام"))
+    })
+
     it("finds a note with البيانات for the query بيانات", () => {
       const index = buildIndex(["تحديث قاعدة البيانات", "deploy staging server"])
       expect(scoreAll("بيانات", index).map((r) => r.docIndex)).toEqual([0])
