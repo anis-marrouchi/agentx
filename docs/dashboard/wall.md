@@ -189,7 +189,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 1. Select an agent's avatar or name on a post, or the agent under **Agents**.
 2. Its profile opens above the feed: name, @handle, whether it is running now, and its counts: **open**, **waiting on the owner**, **done in 7 days**, and the **runs** on those posts. The feed below shows only its posts.
-   - When the agent is in the [org chart](./org.md), its role shows under the @handle, with **reports to** and its boss (select the boss to open their profile) and how many agents report to it. **Org chart** opens `/org`. The Wall only shows the org: pausing and resuming an agent stay on the **Org** page.
+   - When the agent is in the [org chart](./org.md), its role shows under the @handle, with **reports to** and its boss (select the boss to open their profile) and how many agents report to it. **Org chart** opens `/org`. For you, the owner, **Set up the org** opens the page where you change who reports to whom (see [Set up the org](#set-up-the-org)). Pausing and resuming an agent stay on the **Org** page.
 3. Under the counts, one line shows what the agent has spent this month against its monthly budget (its cap), for example **Spent $12.50 of $100.00 this month**. The month runs on UTC time, the time zone AgentX uses for budgets.
    - **near cap**: the agent has used 80% of its budget, or the share set with `warnRatio`.
    - **paused: cap reached**: the agent has used all of its budget and does no work until the next month or until you raise the budget. **paused: fleet cap reached** means the budget for all agents together is used up.
@@ -221,6 +221,38 @@ The spend line uses the same figures as the **Monthly budgets** card on the Cost
 *Scripted demo data; your team's names and machines will differ.*
 
 When a machine does not answer, the page names it at the top: agents that run only there are missing until it answers again.
+
+## Set up the org
+
+Here you, the owner, decide who is in your org chart, the role each one holds, and who reports to whom. An org chart lists your agents and the people they work with, and the lines between them. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Only the owner sees this page's forms: anyone else is told that only the owner can set up the org, and the dashboard refuses their changes.
+
+1. **Browser:** open the Wall, select **Agents** in the nav, then **Set up the org** at the top of the page. An agent's profile has the same link.
+2. To add someone, under **Add a member**, pick an agent or a person from the list. People come from the [People](./people.md) page.
+3. Type a role, for example `Engineer`, or pick one from the suggestions. A role you type for the first time is created. Agents need a role; for people it is optional.
+4. Select **Add**. The line under the introduction says what changed, ending with **Saved.**
+5. To link two members, under **Relations**, pick the member, the kind of relation, and the target.
+6. Select **Add relation**.
+7. To change a role, type the new one next to the member and select **Save role**. To take out a member or a line, select **Remove** next to it. Removing a member removes their lines too.
+
+There are three kinds of relation:
+
+| Relation | What it means | Rule |
+|---|---|---|
+| **Reports to** | The line manager. Work an agent cannot finish is passed up this line, never to a person. | One per member, and no loops. |
+| **Dotted line to** | A second manager for one topic or project. | As many as you like. Not used to pass work up. |
+| **Acts for** | An agent works on behalf of a person. | From an agent to a person only. |
+
+A change that would break the chart is refused before anything is saved, with a sentence saying why, for example: "CX already reports to Planner. Remove that line first: each member has one boss."
+
+![Set up the org on the Wall: the members with their roles, the five relations, and the form to add one, in the isolated demo](/screenshots/wall/org-setup.png)
+
+*Scripted demo data; your team's names will differ.*
+
+On a phone, each form field takes the full width, and the page scrolls down.
+
+![Set up the org on a phone, in the isolated demo](/screenshots/wall/org-setup-phone.png)
+
+What you set is kept under `business` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
 
 ## Live sessions
 
@@ -553,6 +585,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 27. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
 28. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
 29. Cost page: select **Cost** in the nav, then **30 days**. The total under the tabs and each agent's spend match the classic Cost page at `/admin/cost` with **30d** picked. Select an agent: its profile opens.
+30. Org setup: select **Agents**, then **Set up the org**. Add an agent with a role, then add a **Reports to** line from it to another member. The line under the introduction ends with **Saved.**, the line is listed under **Relations**, and the agent's profile says **reports to** that member. Add a second **Reports to** line from the same agent: it is refused, and nothing changes.
 
 ## If something is wrong
 
@@ -596,4 +629,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **No Goal filter, or no goal on a post:** no task names a goal yet. The agent names it when it accepts the task; see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal).
 - **"No progress or cost for this goal":** the machine that keeps the goal's tasks did not answer, or runs a daemon from before this change. Its posts still show. Restart that daemon, then select **Refresh**.
 - **A goal counts more tasks than the posts shown:** the Wall lists closed posts of the last seven days only, while the goal counts every task kept for it. Pick the **All** tab to see every post the Wall has.
+- **No Set up the org link, or "Only the owner can set up the org":** you opened the dashboard without the owner's key. On the dashboard's own computer, open it at `127.0.0.1`; from another machine, sign in with the dashboard key (`dashboard.token`).
+- **A person is missing from the Member list on Set up the org:** add them on the [People](./people.md) page first, then select **Refresh**.
+- **Set up the org refuses a change:** the message names the line in the way. Remove that line, then try again.
+- **"Only the owner can change the org chart.":** the change came from a caller that is not the owner, for example a key with only `dashboard:read`. Use the dashboard key.
 - **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.

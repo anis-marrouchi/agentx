@@ -25,6 +25,7 @@ import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
 import { WALL_COST_CSS } from "./wall-cost.client"
+import { WALL_ORG_SETUP_CSS } from "./wall-org-setup.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_TASK_CSS } from "./wall-task.client"
@@ -144,6 +145,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
     <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
+    <section id="wall-orgsetup" class="ax-wall__orgsetup" aria-label="Set up the org" hidden></section>
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
     <section id="wall-task" aria-label="A run: its request, conversation and steer box" hidden></section>
@@ -168,7 +170,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_ORG_SETUP_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

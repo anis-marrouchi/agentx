@@ -10,6 +10,8 @@ When an agent creates another agent, the new one does not start on its own. It w
 
 The chart comes from `business.orgChart` in `agentx.json`. Until you fill it in, every agent is listed under **Not in the org chart**.
 
+The easiest way to fill it in is the Wall's [Set up the org](./wall.md#set-up-the-org) page: pick members from lists, give them roles, and add who reports to whom, people included. The steps below do the same for agents from the terminal.
+
 1. **Terminal:** in the folder with `agentx.json`, give each agent a role, and a boss for every agent but the top one. `assistant`, `pm` and `dev` are examples; use your agents' IDs:
 
    ```sh

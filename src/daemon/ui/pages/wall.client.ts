@@ -29,7 +29,11 @@
 // Results and thread lines render their Markdown through the shared
 // renderer; links in them go to web, mail or same-site addresses only.
 //
-// The only writes (#1316, wall-actions.ts), from an open post: a comment
+// Set up the org (#1420, #page=orgsetup, wall-org-setup.client.ts): the
+// owner's page for who is in the org chart and who reports to whom; its
+// writes go to POST /api/admin/org/chart, which refuses anyone else.
+//
+// The only other writes (#1316, wall-actions.ts), from an open post: a comment
 // that reaches the agent on the post (sent to the node that keeps it), a
 // voice call from that agent, and a Space: two agents talk about the post
 // out loud on this computer, with the owner's words going into it.
@@ -44,6 +48,8 @@ import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
+import { orgSetupHtml } from "./wall-org-setup"
+import { WALL_ORG_SETUP_SCRIPT } from "./wall-org-setup.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -54,13 +60,14 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
+  var PAGES = ['running', 'agents', 'creator', 'live', 'task', 'orgsetup'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml })}
+  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml, orgSetupHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_COST_SCRIPT}
+${WALL_ORG_SETUP_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
@@ -156,7 +163,11 @@ ${WALL_TASK_SCRIPT}
       o.reportsTo ? 'reports to <button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>' : '',
       o.reports ? o.reports + (o.reports === 1 ? ' reports' : ' report') + ' to it' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
-    return '<div class="wp__meta wpf__org">' + bits + '<a href="/org">Org chart</a></div>';
+    return '<div class="wp__meta wpf__org">' + bits + '<a href="/org">Org chart</a>' + orgSetupLink() + '</div>';
+  }
+  /** The owner's way to the org setup page (#1420); no one else sees it. */
+  function orgSetupLink() {
+    return S.org && S.org.canEdit ? '<a href="#page=orgsetup">Set up the org</a>' : '';
   }
   function isAgent(id) {
     return !!agentInfo()[id] || ((S.data && S.data.posts) || []).some(function (p) { return p.owner === id; });
@@ -856,6 +867,7 @@ ${WALL_TASK_SCRIPT}
     var list = allAgents();
     var down = ((S.live && S.live.nodes) || []).filter(function (n) { return !n.reachable || n.error; });
     var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
+    if (S.org && S.org.canEdit) note += '<p class="ax-wall__count wag__note"><a href="#page=orgsetup">Set up the org</a>: who reports to whom.</p>';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
     var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
     return note + called + list.map(function (a) {
@@ -919,7 +931,7 @@ ${WALL_TASK_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'orgsetup' ? 'Set up the org' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1148,6 +1160,8 @@ ${WALL_TASK_SCRIPT}
     $('wall-live').hidden = page !== 'live';
     $('wall-task').hidden = page !== 'task';
     paintTask(page);
+    // Set up the org (#1420): wall-org-setup.client.ts.
+    renderOrgSetup(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.
     if (page === 'live') {
@@ -1218,7 +1232,7 @@ ${WALL_TASK_SCRIPT}
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
     refreshReviews();
     refreshCost();
-    getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
+    getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function (e) { S.org = { error: e.message }; render(); });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });

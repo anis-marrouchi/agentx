@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; orgChart?: (body: any) => { status: number; body: unknown; org?: unknown } } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -38,7 +38,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const el = (id: string) => {
     if (!els.has(id)) {
       // The open post's action box (wdo-*) is drawn by the script itself.
-      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (id.startsWith("wdo-") ? [`<x id="${id}">`] : null)
+      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (id.startsWith("wdo-") || id.startsWith("wos-") ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       const on: Record<string, (ev: unknown) => void> = {}
@@ -74,14 +74,20 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   }
   const loc = { hash: opts.hash ?? "", search: "" }
   const calls: Array<{ url: string; init: any }> = []
+  let org = opts.org
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
+    if (url === "/api/admin/org/chart" && opts.orgChart) {
+      const reply = opts.orgChart(JSON.parse(init.body))
+      if (reply.org !== undefined) org = reply.org
+      return Promise.resolve({ ok: reply.status === 200, status: reply.status, json: async () => reply.body })
+    }
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.post && url === "/api/admin/wall/post") return opts.post
-    if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
+    if (url === "/api/admin/org" && org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
     if (url.startsWith("/api/admin/observability/cost?") && opts.cost === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
-      : url === "/api/admin/org" ? (opts.org ?? { exists: false })
+      : url === "/api/admin/org" ? (org ?? { exists: false })
       : url.startsWith("/api/admin/observability/cost?") ? (opts.cost ?? { days: [] })
       : url === "/api/admin/observability/budgets" && opts.budgets ? opts.budgets
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {})
@@ -1367,6 +1373,98 @@ describe("The org on the Wall (#1398)", () => {
       expect(prof).toContain("<h2>Customer Desk</h2>")
       expect(prof).not.toContain("wpf__org")
     }
+  })
+})
+
+describe("Set up the org on the Wall (#1420)", () => {
+  const ROOTS = [{ id: "reviewer", name: "Reviewer", title: "Head of Quality", status: "idle", reports: [
+    { id: "cx", name: "Customer Desk", title: "Support Lead", reportsTo: "reviewer", status: "working", reports: [] },
+  ] }]
+  const SETUP = {
+    members: [
+      { ref: "agent:reviewer", kind: "agent", id: "reviewer", name: "Reviewer", role: "qa", title: "Head of Quality" },
+      { ref: "agent:cx", kind: "agent", id: "cx", name: "Customer Desk", role: "support", title: "Support Lead" },
+      { ref: "person:sam", kind: "person", id: "sam", name: "Sam Doe" },
+    ],
+    relations: [{ from: "agent:cx", to: "agent:reviewer", type: "reports-to" }],
+  }
+  const CHOICES = {
+    agents: [{ ref: "agent:reviewer", name: "Reviewer" }, { ref: "agent:cx", name: "Customer Desk" }, { ref: "agent:helper", name: "Helper" }],
+    people: [{ ref: "person:sam", name: "Sam Doe" }, { ref: "person:kim", name: "Kim Roe" }],
+    roles: [{ key: "qa", title: "Head of Quality" }, { key: "support", title: "Support Lead" }],
+    types: ["reports-to", "dotted-line", "acts-for"],
+  }
+  const OWNER = { exists: true, live: true, outside: [], roots: ROOTS, setup: SETUP, canEdit: true, choices: CHOICES }
+
+  it("lists members and lines for the owner, and offers only agents and people not in the chart", async () => {
+    const w = openWall({ org: OWNER, hash: "#page=orgsetup" })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("Set up the org")
+    expect(w.el("wall-orgsetup").hidden).toBe(false)
+    expect(w.el("wall-feed").hidden).toBe(true)
+    const html = w.el("wall-orgsetup").innerHTML
+    expect(html).toContain('<optgroup label="Agents"><option value="agent:helper">Helper</option></optgroup><optgroup label="People"><option value="person:kim">Kim Roe</option></optgroup>')
+    expect(html).toContain('<b>Sam Doe</b><span class="chip">Person</span>')
+    expect(html).toContain('value="Support Lead" aria-label="Role of Customer Desk"')
+    expect(html).toContain('Customer Desk <span class="k">reports to</span> Reviewer')
+    expect(html).toContain('<option value="dotted-line">Dotted line to</option>')
+  })
+
+  it("sends one change, says what it did, and shows the chart read again", async () => {
+    const sent: any[] = []
+    const after = { ...OWNER, setup: { ...SETUP, relations: [...SETUP.relations, { from: "agent:cx", to: "person:sam", type: "acts-for" }] } }
+    const w = openWall({ org: OWNER, hash: "#page=orgsetup", orgChart: (body) => { sent.push(body); return { status: 200, body: { summary: "Customer Desk acts for Sam Doe" }, org: after } } })
+    await w.settle()
+    w.el("wos-rel-from").value = "agent:cx"
+    w.el("wos-rel-type").value = "acts-for"
+    w.el("wos-rel-to").value = "person:sam"
+    w.click({ "data-os": "add-relation" })
+    await w.settle()
+    expect(sent).toEqual([{ op: "add-relation", from: "agent:cx", type: "acts-for", to: "person:sam" }])
+    const post = w.calls.find((c) => c.url === "/api/admin/org/chart")!
+    expect(post.init.method).toBe("POST")
+    const html = w.el("wall-orgsetup").innerHTML
+    expect(html).toContain('<p class="wos__msg" role="status">Customer Desk acts for Sam Doe. Saved.</p>')
+    expect(html).toContain('Customer Desk <span class="k">acts for</span> Sam Doe')
+    w.click({ "data-os": "remove-relation", "data-os-from": "agent:cx", "data-os-type": "reports-to", "data-os-to": "agent:reviewer" })
+    await w.settle()
+    expect(sent[1]).toEqual({ op: "remove-relation", from: "agent:cx", type: "reports-to", to: "agent:reviewer" })
+  })
+
+  it("shows a refusal as it came, and keeps the chart as it was", async () => {
+    const w = openWall({ org: OWNER, hash: "#page=orgsetup", orgChart: () => ({ status: 400, body: { error: "Customer Desk already reports to Reviewer. Remove that line first: each member has one boss." } }) })
+    await w.settle()
+    w.el("wos-rel-from").value = "agent:cx"
+    w.el("wos-rel-type").value = "reports-to"
+    w.el("wos-rel-to").value = "person:sam"
+    w.click({ "data-os": "add-relation" })
+    await w.settle()
+    const html = w.el("wall-orgsetup").innerHTML
+    expect(html).toContain('<p class="wos__msg is-bad" role="status">Customer Desk already reports to Reviewer. Remove that line first: each member has one boss.</p>')
+    expect(html).not.toContain("acts for")
+  })
+
+  it("is the owner's only: anyone else gets a sentence, no forms and no link", async () => {
+    const other = { exists: true, live: true, outside: [], roots: ROOTS, setup: SETUP, canEdit: false }
+    const w = openWall({ org: other, hash: "#page=orgsetup" })
+    await w.settle()
+    const html = w.el("wall-orgsetup").innerHTML
+    expect(html).toContain("Only the owner can set up the org.")
+    expect(html).not.toContain("data-os=")
+    w.click({ "data-agent": "cx" })
+    await w.settle()
+    expect(w.el("wall-profile").innerHTML).not.toContain("#page=orgsetup")
+    const owner = openWall({ org: OWNER })
+    await owner.settle()
+    owner.click({ "data-agent": "cx" })
+    await owner.settle()
+    expect(owner.el("wall-profile").innerHTML).toContain('<a href="#page=orgsetup">Set up the org</a>')
+  })
+
+  it("says so when the org cannot be read, and the rest of the Wall works", async () => {
+    const w = openWall({ org: "fail", hash: "#page=orgsetup" })
+    await w.settle()
+    expect(w.el("wall-orgsetup").innerHTML).toContain("Could not read the org chart: HTTP 500. The rest of the Wall still works.")
   })
 })
 

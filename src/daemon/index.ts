@@ -2139,6 +2139,18 @@ export class AgentXDaemon {
       this.log(`[reload] hooks reload failed: ${e.message}`)
     }
 
+    // 6b. Org chart (#1420): who reports to whom, set from the Wall, applies
+    //     to escalation without a restart. The rest of the business layer
+    //     (schedules, day cycle) still reads its config at start.
+    if (this.business && next.business && orgShape(this.config) !== orgShape(next)) {
+      try {
+        this.business.org.replaceWith(next.business, next.people ?? [])
+        applied.push("business.org")
+      } catch (e: any) {
+        this.log(`[reload] org chart kept: ${e.message}`)
+      }
+    }
+
     // 7. Landscape — cheap rebuild, always safe.
     if (JSON.stringify(this.config.business) !== JSON.stringify(next.business)
         || JSON.stringify(this.config.agents) !== JSON.stringify(next.agents)) {
@@ -9339,4 +9351,10 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
     })
     req.on("error", reject)
   })
+}
+
+/** What the business layer's Organization is built from. */
+function orgShape(c: DaemonConfig): string {
+  const b = c.business
+  return JSON.stringify([b?.roles, b?.orgChart, b?.relations, b?.projects, (c.people ?? []).map((p) => p.id)])
 }
