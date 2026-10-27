@@ -202,7 +202,14 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
 
 1. Select an agent's avatar or name on a post, or the agent under **Agents**.
 2. Its profile opens above the feed: name, @handle, whether it is running now, and its counts: **open**, **waiting on the owner**, **done in 7 days**, and the **runs** on those posts. The feed below shows only its posts.
-   - When the agent is in the [org chart](./org.md), its role shows under the @handle, with **reports to** and its boss (select the boss to open their profile) and how many agents report to it. **Org chart** opens `/org`. The Wall only shows the org: pausing and resuming an agent stay on the **Org** page.
+   - When the agent is in the [org chart](./org.md), its role shows under the @handle, with **reports to** and its boss, and how many agents report to it. The boss can be an agent (select it to open their profile) or a person, such as **reports to The Owner**; a person's name is plain text.
+   - The agent's other relations show on the same line: **dotted line to** a second manager for one topic or project, and **acts for** the person the agent works on behalf of.
+     ![An agent's profile: its role, reports to an agent, dotted line to a person and acts for a person](/screenshots/wall/org-relations.png)
+
+     ![The same profile on a phone in dark mode, the relations wrapping onto a second line](/screenshots/wall/org-relations-phone.png)
+
+     *Fictional data; your org will differ.*
+   - **Org chart** opens the diagram at `/org`. The Wall only shows the org: setting up members and relations, pausing and resuming an agent stay on the **Org** page.
 3. Under the counts, one line shows what the agent has spent this month against its monthly budget (its cap), for example **Spent $12.50 of $100.00 this month**. The month runs on UTC time, the time zone AgentX uses for budgets.
    - **near cap**: the agent has used 80% of its budget, or the share set with `warnRatio`.
    - **paused: cap reached**: the agent has used all of its budget and does no work until the next month or until you raise the budget. **paused: fleet cap reached** means the budget for all agents together is used up.
@@ -225,7 +232,7 @@ The spend line uses the same figures as **Monthly budgets** on the Cost page, fr
 
 1. **Browser:** in the nav, select **Agents**.
 2. The page lists every agent the connected machines report, including agents with no post this week. Agents running something come first, then those with the most open posts.
-3. Each agent shows its name and @handle, **running** with a count when it works on something now, the machine it is on, its tier, model and skill count, when it was last active, its role and who it reports to when it is in the org chart, and its counts: **open**, **waiting on the owner**, **done in 7 days**, **runs** and any **errors**.
+3. Each agent shows its name and @handle, **running** with a count when it works on something now, the machine it is on, its tier, model and skill count, when it was last active, its role, who it reports to, its **dotted line to** and **acts for** relations when it is in the org chart, and its counts: **open**, **waiting on the owner**, **done in 7 days**, **runs** and any **errors**.
 4. Select **Last summary** to read what it last reported.
 5. Select its name, its avatar or **posts** to see its profile over its own posts. Select **Activity** for its runs, or **Agent page** for its classic page.
 6. Select **Call** to have the agent call you on AgentX Voice, as from a post. When it is working now, **● Join live** opens what it is doing. Its profile has the same two buttons.
@@ -657,6 +664,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 34. Build line: the right of the Wall's title shows the same version as the first line of `agentx daemon status` in a terminal.
 35. Phone: open the Wall at 390 px wide (or on a phone) and select **More**. The sheet lists **Work**, **Automation** and **Fleet**. Select **Activity**: the sheet closes and the Activity page opens.
 36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Wall** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
+37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
 
 ## If something is wrong
 
@@ -702,6 +710,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **No "Comment by" link:** the comment was posted before this version, by a person, or outside AgentX. Only comments AgentX posted, with the id the forge returned, are linked.
 - **A task waits on QA but Awaiting QA only does not list it:** check **Status**. With **Open**, a closed task is hidden; choose **All**. If it is still missing, run `agentx requests --qa awaiting` on the machine that keeps it. When it is not listed there, it was never marked with `needsQa: true`, or it already has a verdict since the mark.
 - **"Couldn't read …" under Reported issues:** this machine could not list that project's issues. "not found" usually means the token cannot see the project or the `project` path is wrong; "did not answer in time" clears on the next refresh.
+- **An agent's profile has no org line, or no dotted-line or acts-for relation:** the Wall could not read the org chart, or the agent has no entry or relation there. Open **Org** to check; relations are set up there, not on the Wall.
 - **No Reported issues list on Failures:** `wall.reportedIssues` is not set on any machine, or the dashboard was not restarted after you set it.
 - **A card is on the Approvals page but not on the Wall:** it was raised outside a task, or it was already answered or expired. Only pending cards that belong to a task show on a post.
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
