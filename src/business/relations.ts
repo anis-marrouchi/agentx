@@ -84,3 +84,24 @@ export function relationsProblem(
   }
   return undefined
 }
+
+/** A member for people to read: an agent's id, or a person's name from `people`. */
+export function memberLabel(ref: string, people: ReadonlyArray<{ id: string; name?: string }> = []): string {
+  const m = parseMember(ref)
+  if (m.kind === "agent") return m.id
+  return people.find((p) => p.id === m.id)?.name || m.id
+}
+
+/** The first thing wrong with the org relations of a whole agentx.json, or
+ *  undefined. For writers (admin POST, CLI) to refuse a bad ref before it is
+ *  saved, instead of the daemon refusing it at the next start. */
+export function configRelationsProblem(cfg: {
+  people?: Array<{ id: string }>
+  business?: { orgChart?: Record<string, { reportsTo?: string }>; relations?: OrgRelation[] }
+} | undefined): string | undefined {
+  return relationsProblem(
+    orgRelations(cfg?.business),
+    new Set(Object.keys(cfg?.business?.orgChart ?? {})),
+    new Set((cfg?.people ?? []).map((p) => p?.id).filter(Boolean)),
+  )
+}

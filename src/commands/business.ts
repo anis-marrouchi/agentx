@@ -2,6 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import { loadDaemonConfig } from "@/daemon/config"
+import { configRelationsProblem, memberLabel, orgRelations, parseMember } from "@/business/relations"
 
 // --- agentx business — manage the business layer config ---
 //
@@ -35,6 +36,27 @@ function readBusiness(): any {
   }
 }
 
+function readPeople(): Array<{ id: string; name?: string }> {
+  try {
+    return (loadDaemonConfig() as any).people || []
+  } catch {
+    return []
+  }
+}
+
+/** Each agent's reports-to boss for display: an agent id, or a person's name
+ *  (orgChart reportsTo and business.relations both count, #1418). */
+function bossLabels(b: any): Map<string, string> {
+  const people = readPeople()
+  const out = new Map<string, string>()
+  for (const r of orgRelations(b)) {
+    const from = parseMember(r.from)
+    if (r.type !== "reports-to" || from.kind !== "agent" || out.has(from.id)) continue
+    out.set(from.id, memberLabel(r.to, people) + (r.to.startsWith("person:") ? " (person)" : ""))
+  }
+  return out
+}
+
 export const business = new Command()
   .name("business")
   .description("manage the business layer in agentx.json — orgChart, projects, contactMap")
@@ -61,9 +83,10 @@ business
     console.log()
     console.log(chalk.bold("  Org chart"))
     const orgEntries = Object.entries(orgChart) as Array<[string, any]>
+    const bosses = bossLabels(b)
     if (orgEntries.length === 0) console.log(chalk.dim("    (empty)"))
     else for (const [id, e] of orgEntries) {
-      const reports = e.reportsTo ? chalk.dim(` → reports to ${e.reportsTo}`) : ""
+      const reports = bosses.has(id) ? chalk.dim(` → reports to ${bosses.get(id)}`) : ""
       const sched = e.schedule ? chalk.dim(` · ${(e.schedule.days || []).join(",")} ${e.schedule.start}–${e.schedule.end}`) : ""
       console.log(`    ${chalk.cyan(id)}  ${e.role}${reports}${sched}`)
     }
@@ -101,8 +124,9 @@ orgchart
     const entries = Object.entries(b.orgChart || {}) as Array<[string, any]>
     if (opts.json) { console.log(JSON.stringify(Object.fromEntries(entries), null, 2)); return }
     if (entries.length === 0) { console.log(chalk.dim("  no entries")); return }
+    const bosses = bossLabels(b)
     for (const [id, e] of entries) {
-      console.log(`  ${chalk.cyan(id)}  ${e.role}${e.reportsTo ? chalk.dim(` → ${e.reportsTo}`) : ""}`)
+      console.log(`  ${chalk.cyan(id)}  ${e.role}${bosses.has(id) ? chalk.dim(` → ${bosses.get(id)}`) : ""}`)
     }
   })
 
@@ -110,7 +134,7 @@ orgchart
   .command("add <agentId>")
   .description("add or update an orgChart entry for an agent")
   .requiredOption("--role <role>", "role title (e.g. 'PM', 'Coder', 'DevOps')")
-  .option("--reports-to <agentId>", "manager's agentId")
+  .option("--reports-to <member>", "manager: an agentId, or person:<id> from people")
   .option("--start <hh:mm>", "schedule start", "09:00")
   .option("--end <hh:mm>", "schedule end", "17:00")
   .option("--days <csv>", "working days (mon,tue,wed,thu,fri)", "mon,tue,wed,thu,fri")
@@ -126,6 +150,8 @@ orgchart
         schedule: { days, start: opts.start, end: opts.end },
         utilizationTarget: parseFloat(opts.utilization) || 0.8,
       }
+      const problem = configRelationsProblem(cfg)
+      if (problem) throw new Error(problem)
       return `orgChart entry "${agentId}" upserted (role=${opts.role}${opts.reportsTo ? `, reports to ${opts.reportsTo}` : ""})`
     })
   })

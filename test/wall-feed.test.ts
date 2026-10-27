@@ -1334,6 +1334,19 @@ describe("The org on the Wall (#1398)", () => {
     expect(boss).not.toContain("reports to <button")
   })
 
+  it("names a person boss in plain text, with no agent button (#1418)", async () => {
+    const org = { exists: true, live: true, outside: [], people: [{ id: "owner", name: "Sam Owner" }], roots: [
+      { id: "cx", name: "Customer Desk", title: "Support Lead", reportsTo: "person:owner", status: "idle", reports: [] },
+    ] }
+    const w = openWall({ org })
+    await w.settle()
+    w.click({ "data-agent": "cx" })
+    await w.settle()
+    const prof = w.el("wall-profile").innerHTML
+    expect(prof).toContain("<span>reports to Sam Owner</span>")
+    expect(prof).not.toContain('data-agent="person:owner"')
+  })
+
   it("shows the role and boss on each Agents page card", async () => {
     const w = openWall({ org: ORG, hash: "#page=agents" })
     await w.settle()
