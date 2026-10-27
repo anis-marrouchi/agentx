@@ -812,6 +812,9 @@ export function handleWallApi(path: string, q: URLSearchParams, deps: WallDeps |
     const id = q.get("id")
     const task = q.get("task")
     const r = id ? deps.store.get(id) : task ? deps.store.byLink("run", task) : null
+    // A run no request tracks is the usual case for the Wall's Task page
+    // (#1439): an answer, not a failed request.
+    if (!r && !id && task) return { status: 200, body: { node, syncedAt, post: null } }
     if (!r) return { status: 404, body: { error: "no post for that id" } }
     return { status: 200, body: { node, syncedAt, post: wallPost(r, deps), events: wallThread(r, deps), plan: wallPlan(r, deps) } }
   }

@@ -11,8 +11,8 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
 ## Open the Wall
 
 1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, and agents. The page you are on is in bold.
-3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard**, which opens the classic pages at **Operations**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, and agents. The page you are on is in bold.
+3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. The old Live page is on the Wall now: `/live` opens [Live](#live-sessions).
 4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
 5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
@@ -224,17 +224,19 @@ When a machine does not answer, the page names it at the top: agents that run on
 
 ## Live sessions
 
-The **Live** page lists everything live on your machines: Spaces and lessons on top, then the sessions and jobs running now (the same runs the classic `/live` page shows), then what comes up next. While the page is open it updates every two seconds.
+The **Live** page lists everything live on your machines: Spaces and lessons on top, then the sessions and jobs running now, the tasks you paused, one card per machine, and what comes up next. While the page is open it updates every two seconds. The old address `/live` opens it. Its own page, [Live](./live.md), walks through each part.
 
 1. **Browser:** in the nav, select **Live** (in **More** on a phone). The number next to it counts the live sessions and runs.
 2. Under **Spaces and lessons**, when there are any:
    - a **Space** (two agents talking out loud) comes first, with its topic, who talks and since when. On this computer, select **Join**: its transcript opens under the list, with **Say something into the Space** and **End**. A Space on another machine says **Plays on** and that machine's name, since its voices play there.
-   - a **Lesson** on a machine's screen shows whose it is.
+   - a **Lesson** on a machine's screen shows whose it is. **Stop** ends it and gives the screen back.
 3. Under **Running now**, each card is one run: **Session** for a chat, mail or other message, **Job** for a scheduled job (with the job's name). It shows the agent, what it is working on, how long it has run and, under **Latest**, the last thing it did, such as **Using Bash** or a line of its reply. Select a card to open its [Task page](#watch-and-steer-a-run).
-4. **Coming up** lists the next five scheduled jobs, with their agent, machine and when they run.
-5. To start a Space, pick two agents under **Start a Space**, write what they should talk about, and select **Start**. It plays on this computer, and its transcript opens on the page.
+4. Under **Paused**, when there are any: the tasks a stop paused, each with who stopped it, why, what it was asked and its resume plan. Select **Resume** to go on from the plan, or **Drop** (then **Drop it for good?**) to forget it. See [Resume a paused task](./live.md#resume-a-paused-task).
+5. Under **Machines**, one card per machine: **Restart when idle** (then **Restart once idle?**) restarts it once no task runs, and the card shows **Restart waiting** until then, with **Cancel restart**. The card also lists the **Claude Code sessions** attached to it, each with its agent and start time, and **Connect a CLI session** finds the command-line AI sessions on it so AgentX reviews their turns. See [Restart a machine when it is idle](./live.md#restart-a-machine-when-it-is-idle).
+6. **Coming up** lists the next five scheduled jobs, with their agent, machine and when they run.
+7. To start a Space, pick two agents under **Start a Space**, write what they should talk about, and select **Start**. It plays on this computer, and its transcript opens on the page.
 
-![The Live page with three runs: two sessions and a scheduled job, each with its agent, what it is on, how long it has run and its latest line, then Coming up and the form to start a Space](/screenshots/wall/live.png)
+![The Live page: a session and a job running now, a paused task with Resume and Drop, and the machine cards](/screenshots/wall/live.png)
 
 ## Watch and steer a run
 
@@ -244,7 +246,7 @@ The **Task** page is one run on its own, with its own link: what it was asked, i
 2. At the top: the agent, the channel, **live** while it runs, and how long it has run. **Classic page** opens the same run on the classic dashboard.
 3. **request** shows what the run was asked. When the run belongs to a tracked request, its box follows: the status strip (**Asked**, **Working**, **Waits**, **Done**), the **Plan** if it has one, and the facts. **Open the post** opens the post.
 4. **Conversation** streams what the agent does: tool calls, results, its thinking and its reply.
-5. To steer it, write in the box under the conversation and select **Send** (or press ⌘/Ctrl+Enter). The current turn keeps running; your message goes in as the next turn. **Stop** ends the current turn.
+5. To steer it, write in the box under the conversation and select **Send** (or press ⌘/Ctrl+Enter). The current turn keeps running; your message goes in as the next turn. **Stop** ends the current turn. **Pause**, at the top, stops the task with a resume plan so it can go on later (select **Pause it?** to confirm). A paused run's page shows its plan with **Resume** and **Drop**, as on Live.
 6. A finished run shows its stored record. A finished scheduled job can be continued: **Send** starts a new turn in the same job session, and the page moves to it. A finished run from any other channel only reads: its chat goes on where it came from.
 
 ![A run's Task page: the request, the tracked request's status strip, plan and facts, the conversation, and the steer box with Stop and Send](/screenshots/wall/run.png)
@@ -524,13 +526,13 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 
 ## Check it worked
 
-1. **Browser:** open the dashboard. The Wall opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Happening now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Live page opens, and its **Wall** tab brings you back.
+1. **Browser:** open the dashboard. The Wall opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Happening now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Operations page opens, and its **Wall** tab brings you back.
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**. Then select the post itself: it opens on its own page with the same thread. Press Escape: you are back on the feed.
 4. Select **Agents** in the nav. Every agent on your machines is listed, and the number next to **Agents** matches the list.
 5. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or the **Waiting** tab). The card shows on that task's post, with its expiry and what happens with no answer.
 6. Open a post that is in progress, type a comment and select **Comment**. The note under the buttons says it was sent to the agent, and a **comment** line by **owner** appears in its thread. Within a minute, a new **run** of that agent follows it. Select **Call** *agent*: your AgentX Voice widget rings.
-7. Open `/live` in the browser. The classic Live page still opens.
+7. Open `/live` in the browser. The Wall's **Live** page opens.
 8. Select **Refresh**. **Happening now** fills in while the feed still says **Loading…**; it does not wait for the posts.
 9. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 10. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
@@ -596,4 +598,4 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **No Goal filter, or no goal on a post:** no task names a goal yet. The agent names it when it accepts the task; see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal).
 - **"No progress or cost for this goal":** the machine that keeps the goal's tasks did not answer, or runs a daemon from before this change. Its posts still show. Restart that daemon, then select **Refresh**.
 - **A goal counts more tasks than the posts shown:** the Wall lists closed posts of the last seven days only, while the goal counts every task kept for it. Pick the **All** tab to see every post the Wall has.
-- **A link from the old home page stopped working:** only `/` changed. Every other address, including `/live`, works as before.
+- **A link from the old home page stopped working:** only `/` changed. Every other address works as before; `/live` opens the Wall's **Live** page.

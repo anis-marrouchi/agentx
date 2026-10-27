@@ -28,7 +28,7 @@ The top bar has nine tabs:
 | Tab | What to look for |
 |---|---|
 | [Wall](./wall.md) | Every task as a post, its thread, and what runs now |
-| [Live](./live.md) | Agents currently running |
+| [Live](./live.md) | What runs now, paused tasks, and each machine (the Wall's Live page) |
 | [Operations](./operations.md) | Work across connected machines |
 | [Monitor](./monitor.md) | What needs a person and what agents can handle |
 | [Approvals](./approvals.md) | Decisions waiting for your yes or no |
@@ -47,7 +47,7 @@ On every page, the right of the top bar shows the version of the daemon, its com
 
 *The daemon runs version 0.89.0, built from commit e66f85a, and started on October 2.*
 
-When the AgentX files on disk were rebuilt or upgraded after the daemon started, the same place adds a **restart pending** badge. Hover over it to read why: the code on disk is newer than the running daemon. The daemon keeps running the old code until it restarts: use **Restart when idle** on the Live tab, or `agentx daemon restart --when-idle` in a terminal ([restart without losing work](../jobs/restart-safely.md#restart-from-the-dashboard)). The line refreshes every minute.
+When the AgentX files on disk were rebuilt or upgraded after the daemon started, the same place adds a **restart pending** badge. Hover over it to read why: the code on disk is newer than the running daemon. The daemon keeps running the old code until it restarts: use **Restart when idle** on a machine's card on the Wall's [Live](./live.md#restart-a-machine-when-it-is-idle) page, or `agentx daemon restart --when-idle` in a terminal ([restart without losing work](../jobs/restart-safely.md#restart-from-the-dashboard)). The line refreshes every minute.
 
 The badge looks at the folder the daemon was started from. If you install each release into a new folder and then point the service at it, a release waiting in the new folder does not show the badge.
 
@@ -61,8 +61,8 @@ To open the dashboard through your own web address, see [Open the dashboard thro
 
 ## Check it worked
 
-1. **Browser:** open `http://127.0.0.1:4202/live`. The top bar shows the eight tabs.
-2. Your agents appear on **Live**. If they do, the dashboard can reach the daemon.
+1. **Browser:** open `http://127.0.0.1:4202/mesh`. The top bar shows the tabs.
+2. Select **Live**. The Wall's **Live** page opens and lists your machines under **Machines**. If they say **up**, the dashboard can reach the daemon.
 3. The right of the top bar shows a version and "since" with a date. **Terminal:** `agentx daemon status` names the same version on its first line.
 
 ## If something is wrong

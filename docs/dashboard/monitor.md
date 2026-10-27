@@ -13,7 +13,7 @@ Monitor groups work into **Only you**, **Agents can handle**, **In motion**, and
 
 ## Where the items come from
 
-After an agent finishes a task, AgentX reviews it and writes down what is left to do. An item appears only once the task has finished and its review has succeeded. Some routine work is never reviewed, such as successful scheduled jobs and internal workflow steps. Work done in a separate terminal tool (for example a Claude Code session outside AgentX) only appears if that tool is set up to report its sessions to AgentX.
+After an agent finishes a task, AgentX reviews it and writes down what is left to do. An item appears only once the task has finished and its review has succeeded. Some routine work is never reviewed, such as successful scheduled jobs and internal workflow steps. Work done in a separate terminal tool (for example a Claude Code session outside AgentX) only appears if that tool is set up to report its sessions to AgentX. To set one up, select **Find CLI sessions** under **Connect a CLI session** on a machine's card on the Wall's [Live](./live.md#connect-a-cli-session) page, or use **Connect a CLI session** at the bottom of this page, which can also register one by hand.
 
 The review runs with Claude Code on the machine that runs the daemon (the AgentX background service). This is separate from the model the agent itself used, and reviews can use paid model usage:
 

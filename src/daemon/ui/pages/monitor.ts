@@ -39,7 +39,9 @@ const secLabel = (icon: string, text: string, countId?: string, rightHtml = "") 
   '<div class="ax-sec-label"><h3>' + svg(icon, 13) + text +
   (countId ? '<span class="ax-sec-label__n" id="' + countId + '"></span>' : "") + "</h3>" + rightHtml + "</div>"
 
-export function renderMonitorPage(opts: { peers?: TopbarPeer[] } = {}): string {
+export function renderMonitorPage(opts: { peers?: TopbarPeer[]; localToken?: string } = {}): string {
+  // Its writes are the owner's (#1439): they carry the dashboard key.
+  const tokenScript = opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : ""
   return renderShell({
     title: "AgentX · Monitor", activeTab: "monitor", subtitle: "Monitor", peers: opts.peers,
     body: `<div class="bf">
@@ -133,7 +135,7 @@ ${secLabel(ICON.file, "Session briefings", "brief-count")}
 </section>
 </div>`,
     css: MONITOR_CSS,
-    scripts: `<script>${injectFns({ decayOf, rankByDecay })}const ICON = ${JSON.stringify(ICON)};${MONITOR_SCRIPT}</script>`,
+    scripts: `${tokenScript}<script>${injectFns({ decayOf, rankByDecay })}const ICON = ${JSON.stringify(ICON)};${MONITOR_SCRIPT}</script>`,
   })
 }
 
@@ -421,7 +423,7 @@ const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g
 const ic=(n,s)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="'+(s||14)+'" height="'+(s||14)+'" aria-hidden="true">'+ICON[n]+'</svg>';
 let nodes=[], actions=[], busy=false, expandedActions=false;
 let filter={kind:'all',agent:null,node:null};
-async function api(op,node,body){const r=await fetch('/api/monitor/'+op+'?node='+encodeURIComponent(node),{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw Error(data.error||'Request failed');return data;}
+async function api(op,node,body){const h={'Content-Type':'application/json'};if(body){h['X-Requested-With']='agentx-board';if(window.AX_LOCAL_TOKEN)h.Authorization='Bearer '+window.AX_LOCAL_TOKEN;}const r=await fetch('/api/monitor/'+op+'?node='+encodeURIComponent(node),{method:body?'POST':'GET',headers:h,...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw Error(data.error||'Request failed');return data;}
 function message(s){$('notice').textContent=s;}
 let clientFilter='';
 const PAGE=25;

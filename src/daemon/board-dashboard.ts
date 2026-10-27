@@ -34,8 +34,7 @@ import { createWikiHandler } from "@/wiki/serve"
 import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
-import { renderLivePage } from "./ui/pages/live"
-import { renderWallPage } from "./ui/pages/wall"
+import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
 import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
@@ -336,9 +335,11 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
+  // Classic Live is on the Wall now (#1439): Resume, Restart when idle and
+  // the attached sessions are all on Wall Live, so the old address opens it.
   if (method === "GET" && path === "/live") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    res.writeHead(302, { Location: WALL_LIVE_HREF })
+    res.end()
     return
   }
   // n8n posts here. It is forwarded to the local node rather than served
@@ -438,10 +439,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/monitor") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   if (path === "/api/monitor" || path.startsWith("/api/monitor/")) {
+    // Its writes register a CLI session or settle an action (Monitor and
+    // Wall Live's "Connect a CLI session", #1439): the owner's only. The
+    // reads stay open like /api/live, which they sit beside.
+    if (method === "POST") {
+      if (!adminTokenOk(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
+      if (req.headers["x-requested-with"] !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
+    }
     const ac = new AbortController()
     const timeout = setTimeout(() => ac.abort(), 8000)
     try {
@@ -1114,6 +1122,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // talk, narration (the daemon's POST /voice/stop).
   //   POST /api/voice/stop?node=<url>
   if (method === "POST" && path === "/api/voice/stop") {
+    // The Wall's Stop on a lesson (#1439): the owner's only.
+    if (!adminTokenOk(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
     const nodeUrl = new URL(req.url || "/", "http://localhost").searchParams.get("node")
     if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
     await proxyNodePost(req, res, ctx, nodeUrl, "/voice/stop")
@@ -1868,6 +1878,8 @@ interface NodeLive {
     agentIds: string[]
     mode: string
     lastSeenAt: number
+    /** When the session registered (#1439); absent for a saved binding. */
+    startedAt?: number
     pending: number
     /** Bound, but the session has not reported since a restart or idle drop. */
     waiting?: boolean
@@ -2289,7 +2301,7 @@ export function resetLiveCaches(): void {
 
 export function applyAttachSessions(
   node: NodeLive,
-  sessions: Array<{ sessionId: string; cwd?: string; agentIds?: string[]; mode?: string; lastSeenAt?: number; pending?: number }>,
+  sessions: Array<{ sessionId: string; cwd?: string; agentIds?: string[]; mode?: string; lastSeenAt?: number; registeredAt?: number; pending?: number }>,
   saved: Record<string, { agentIds?: string[]; mode?: string; cwd?: string; savedAt?: number }>,
 ): void {
   const project = (cwd?: string) => (cwd ? cwd.replace(/\/+$/, "").split("/").pop() || cwd : "")
@@ -2299,6 +2311,7 @@ export function applyAttachSessions(
     agentIds: Array.isArray(s.agentIds) ? s.agentIds : [],
     mode: String(s.mode || "notify"),
     lastSeenAt: Number(s.lastSeenAt) || 0,
+    ...(Number(s.registeredAt) > 0 ? { startedAt: Number(s.registeredAt) } : {}),
     pending: Number(s.pending) || 0,
   }))
   const live = new Set(sessions.map((s) => s.sessionId))
