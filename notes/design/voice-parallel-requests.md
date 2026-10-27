@@ -1,8 +1,8 @@
 # AgentX Voice: parallel requests, round 1 (#1460 for #1455)
 
-Design proposals for review. Nothing here is built. Per #1455 and #1460, the widget change is built only after the owner accepts its design.
+Design accepted on 2026-10-27 (see [Verdict](#verdict)). Nothing here is built yet. Per #1455 and #1460, the widget change is built only after the owner accepts its design.
 
-Each screen is shown below as an image (`img/voice-parallel-requests/`), so the note reads on GitHub without the canvas. The same screens are on the design canvas for those with access: https://claude.ai/artifact/J1pQGfbNzc2rmL59kveutz. Comment on #1460.
+Each screen is shown below as an image (`img/voice-parallel-requests/`), so the note reads on GitHub without the canvas. The same screens are on the design canvas for those with access: https://claude.ai/artifact/J1pQGfbNzc2rmL59kveutz (comment on any screen there, or on #1460).
 
 All data on the screens is made up. The look is the pill as it ships: 284 × 54 pt, 18 pt corners, popover blur with a light wash (`Surface.swift`), the system font, the agents' orb colours, and the mini orbs from `MiniOrbs.swift`. Screens are at real size on a plain desktop. The images are exported from the canvas at 2×; their text is set in Inter, a close stand-in for the system font, so a few long lines cut off a little earlier than they would on a Mac.
 
@@ -128,6 +128,13 @@ No phone change. The phone's Chat strip (`app-chat-strip.client.ts`) already sho
 6. **Default after the update**: "Wait until I pick it" for everyone (drawn), or keep auto-play for existing installs and make waiting the default only for new ones?
 7. **The list shortcut**: ⌘⌥O is free in the app today. Is that the key you want?
 
-## Next round
+## Verdict
 
-Comments on the canvas or on #1460 become round 2. Once the screens are accepted, #1455 links them and is built in `apps/mac-voice` with the daemon changes above, with the README's Known limits and the AgentX Voice guide updated in the same PR.
+Accepted. The owner approved all eight round 1 screens on 2026-10-27 (by voice, through Hakim, recorded on #1460). There is no round 2.
+
+- **Screens**: 1 to 8 accepted as drawn.
+- **Questions 1 to 7**: no separate answer was given, so the build starts from the option marked "drawn" for each. Anything the owner changes on #1455 wins over this note.
+
+## Next step
+
+The build goes on #1455: `apps/mac-voice` with the daemon changes above, with the README's Known limits and the AgentX Voice guide updated in the same PR.
