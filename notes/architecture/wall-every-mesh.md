@@ -55,8 +55,8 @@ What the Wall already does well, and the design keeps:
   `node: { name, peer, daemonUrl }`.
 - **Writes go home.** A comment or a call on a post is proxied to the
   machine that keeps it, with that machine's own token
-  (`src/daemon/wall-actions.ts`, `proxyAdminToPeer`). The owner-only guard
-  (#1454) runs first.
+  (`proxyAdminToPeer` in `src/daemon/board-dashboard.ts`). The owner-only
+  guard (#1454, `src/daemon/wall-actions.ts`) runs first.
 - **Scoped keys.** `agentx token create --scope` already supports
   `dashboard:read`, `dashboard:write`, `agent:<id>`, `mesh:peer`, `app`,
   `wall:portfolio`, `member:<name>` and `guest:<grant>`
