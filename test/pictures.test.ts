@@ -121,9 +121,15 @@ describe("the dashboard (owner)", () => {
   const put = (kind: string, id: string, body: Buffer, headers: Record<string, string> = WRITE) =>
     fetch(`${base}/api/admin/pictures/${kind}/${id}`, { method: "PUT", headers: { "Content-Type": "image/png", ...headers }, body })
   const list = async (headers: Record<string, string> = {}) => (await fetch(`${base}/api/admin/pictures`, { headers })).json() as Promise<any>
+  /** The pictures alone, without the list of who may be changed. */
+  const shown = async () => { const { agent, person } = await list(); return { agent, person } }
 
   it("with no picture, lists none: every page keeps the initials", async () => {
-    expect(await list()).toEqual({ agent: {}, person: {} })
+    expect(await shown()).toEqual({ agent: {}, person: {} })
+  })
+
+  it("says which members this machine can change: its own agents and people", async () => {
+    expect((await list()).editable).toEqual({ agent: ["coder"], person: ["owner", "sara"] })
   })
 
   it("the owner uploads for an agent and a person; the list names them at once and the picture is served", async () => {
@@ -153,7 +159,7 @@ describe("the dashboard (owner)", () => {
     const old = (await list()).agent.coder
     const r = await fetch(`${base}/api/admin/pictures/agent/coder`, { method: "DELETE", headers: WRITE })
     expect(await r.json()).toEqual({ ok: true, removed: true })
-    expect(await list()).toEqual({ agent: {}, person: {} })
+    expect(await shown()).toEqual({ agent: {}, person: {} })
     expect((await fetch(`${base}${old}`)).status).toBe(404)
   })
 
@@ -166,7 +172,7 @@ describe("the dashboard (owner)", () => {
     r = await put("agent", "coder", Buffer.alloc(PICTURE_MAX_BYTES + 10, 1))
     expect(r.status).toBe(413)
     expect((await r.json()).error).toMatch(/limit is 1 MB/)
-    expect(await list()).toEqual({ agent: {}, person: {} })
+    expect(await shown()).toEqual({ agent: {}, person: {} })
   })
 
   it("only for members agentx.json lists, and only from a same-origin page", async () => {

@@ -16,8 +16,6 @@ The page refreshes every 30 seconds.
 
 ## What you see for one person
 
-**Picture.** The person's picture, with **Upload picture**, **Replace picture** and **Remove picture**. Without one, their initials show. See [Give agents and people a picture](../jobs/profile-pictures.md).
-
 **Machines.** A machine is a computer the person paired with their own page: **My work** for a teammate (see [Invite a teammate to their work page](../jobs/members.md)), **Your project** for a client (see [Give a client a page of their own](../jobs/clients.md)). Each line shows:
 
 | Column | What it means |

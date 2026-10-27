@@ -6,7 +6,8 @@ import {
 
 // --- Dashboard side of profile pictures (#1425) ---
 //
-//   GET    /api/admin/pictures                     every picture: { agent: {id: url}, person: {id: url} }
+//   GET    /api/admin/pictures                     every picture: { agent: {id: url}, person: {id: url} },
+//                                                  and `editable`: the agents and people of this machine
 //   PUT    /api/admin/pictures/<agent|person>/<id> set or replace one (the body is the file)
 //   DELETE /api/admin/pictures/<agent|person>/<id> remove one: the initials show again
 //   GET    /api/pictures/<agent|person>/<id>?v=<version>   the picture itself
@@ -79,7 +80,7 @@ export async function handlePicturesPanel(req: IncomingMessage, res: ServerRespo
 
   if (path === PICTURES_API) {
     if (method !== "GET") { sendJson(res, 405, { error: "GET only" }); return true }
-    sendJson(res, 200, pictureUrls(deps.root))
+    sendJson(res, 200, { ...pictureUrls(deps.root), editable: { agent: deps.agentIds(), person: deps.personIds() } })
     return true
   }
 

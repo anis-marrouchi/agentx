@@ -27,14 +27,6 @@ A **Business** tab (org chart, projects, and which chat belongs to which client)
 3. Type a small task with an answer you can check, and send it.
 4. Read the reply in the panel. Test drives use the agent's real model, so they may cost money.
 
-## Give an agent a picture
-
-1. **Browser:** on **Agents**, select **Details** on the agent.
-2. Select **Upload picture** and choose a PNG, JPEG or WebP file of 1 MB at most.
-3. The picture shows next to the agent's name, and on the Wall and the Org page. **Remove picture** brings the initials back.
-
-The rules, the terminal commands and how an agent sets its own picture are in [Give agents and people a picture](../jobs/profile-pictures.md).
-
 ## Connect a chat app
 
 ![The Channels tab with Telegram configured](/screenshots/settings-channels.png)

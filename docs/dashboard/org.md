@@ -55,10 +55,6 @@ From the terminal: `agentx approvals approve agent:<id>` or `agentx approvals re
 
 This is a guard, not a lock. An agent that edits `agentx.json` by hand is not caught by it. To keep agents from changing the configuration at all, limit what their tools may write; see [SECURITY.md](https://github.com/anis-marrouchi/agentx/blob/main/SECURITY.md).
 
-## Pictures on the cards
-
-An agent with a profile picture shows it next to its name on its card. Agents without one show their name only, as before. Set pictures in Settings: see [Give agents and people a picture](../jobs/profile-pictures.md).
-
 ## Check it worked
 
 1. **Browser:** open **Org**. Each agent in `business.orgChart` is a card under its boss.

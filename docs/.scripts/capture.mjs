@@ -104,10 +104,9 @@ const shots = [
   { name: "operations/schedule-drawer", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-runs .mx-item" }, { click: "#mx-runs .mx-item" }, { wait: "#mx-drawer.is-open" }] },
   { name: "operations/nodes", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-nodes .ax-row-card, #mx-nodes > *" }, { scroll: "#mx-nodes-title" }] },
   // Profile pictures (#1425): docs/jobs/profile-pictures.md sets them on the demo first.
-  { name: "pictures/settings-agent", path: "/admin", wait: "#agent-list .ax-row-card", steps: [{ click: "#agent-list .ax-row-card .ax-btn--ghost" }, { wait: "#agent-list .ax-btn--file" }], clipTo: "#agent-list .ax-row-card" },
-  { name: "pictures/people", path: "/people", wait: '[data-open="owner"]', steps: [{ click: '[data-open="owner"]' }, { wait: ".pp-pic" }], clipTo: ".pp-person" },
   { name: "pictures/wall-agents", path: "/wall#page=agents", wait: ".wag .av--pic" },
-  { name: "pictures/org", path: "/org", wait: ".org-av img", clipTo: ".org" },
+  { name: "pictures/wall-profile", path: "/wall#page=agents", wait: "#agent-cx .av", steps: [{ click: "#agent-cx .av" }, { wait: "#wall-profile .wpc-pic" }], clipTo: "#wall-profile" },
+  { name: "pictures/wall-profile-phone", path: "/wall#page=agents", wait: "#agent-cx .av", phone: true, steps: [{ click: "#agent-cx .av" }, { wait: "#wall-profile .wpc-pic" }] },
   { name: "settings/webhooks", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="webhooks"]' }, { scroll: "#tab-webhooks" }] },
   { name: "settings/webhook-routing", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="webhooks"]' }, { click: "#tab-webhooks details summary" }, { scroll: "#tab-webhooks details" }] },
   { name: "settings/mesh", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="mesh"]' }, { scroll: "#tab-mesh" }] },

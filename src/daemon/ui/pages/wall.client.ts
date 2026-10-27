@@ -41,6 +41,7 @@ import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
+import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { profileSpendHtml } from "./wall-spend"
 
@@ -55,13 +56,14 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The pages the nav opens besides the Wall itself (#1316). */
   var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null };
+  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, profileSpendHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
+${WALL_PICTURES_SCRIPT}
 ${WALL_TASK_SCRIPT}
 
   function headers(peer) {
@@ -613,7 +615,7 @@ ${WALL_TASK_SCRIPT}
       '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' + orgLineHtml(id) +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
-      profileSpendHtml(S.budgets, id) +
+      profileSpendHtml(S.budgets, id) + pictureActsHtml(id) +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
       '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a><a href="/agents/' + encodeURIComponent(id) + '/history">History</a></div></div>';
   }
