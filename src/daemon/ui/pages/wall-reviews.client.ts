@@ -4,15 +4,17 @@
 // when(), stateBadge(), getJson() and headers(). Reads only
 // /api/admin/wall/reviews on this node: graph classifications that went to
 // review, the decision and its reason, the nodes an approval added, and a
-// link to the wiki search for the path. No decision buttons: deciding stays
-// on the graph page and with `agentx graph review`.
+// link to the wiki search for the path. A pending one is decided here
+// (#1440) with Approve or Reject, through the calls the classic graph page
+// makes (/api/admin/graph/classifications/approve|reject), owner only like
+// every /api/admin call.
 //
 // renderReviews(view) is the one call the Wall's render() makes. It loads
 // the queue the first time the Reviews view opens; refreshReviews() is
 // called from the Wall's own load() so the queue refreshes with the page.
 
 export const WALL_REVIEWS_SCRIPT = String.raw`
-  var R = { data: null, loading: false, threads: {}, tab: 'pending' };
+  var R = { data: null, loading: false, threads: {}, tab: 'pending', note: '', noteErr: false, sending: {} };
   function revPath(path) { return (path || []).join(' › ') || '(root)'; }
   function revAxes(axes) { return Object.keys(axes || {}).map(function (k) { return k + '=' + axes[k]; }).join(', '); }
   function revDiff(lines) {
@@ -54,6 +56,9 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
         '<span>Proposed ' + when(r.proposedAt) + '</span><span>By ' + esc(r.source) + (r.agentId ? ', for ' + esc(r.agentId) : '') + '</span>' +
         (r.channel ? '<span>Channel ' + esc(r.channel) + '</span>' : '') +
         '<button type="button" data-rthread="' + esc(r.id) + '" aria-expanded="' + (t ? 'true' : 'false') + '">' + (t ? 'Hide thread' : 'Thread') + '</button></div>' +
+      (r.status === 'pending' ? '<div class="wdc__acts">' +
+        '<button type="button" class="ax-btn ax-btn--primary" data-rdecide="approve" data-rid="' + esc(r.id) + '"' + (R.sending[r.id] ? ' disabled' : '') + '>Approve</button>' +
+        '<button type="button" class="ax-btn ax-btn--danger" data-rdecide="reject" data-rid="' + esc(r.id) + '"' + (R.sending[r.id] ? ' disabled' : '') + ' title="It is not added to the graph, and nothing is remembered for this message">Reject</button></div>' : '') +
       (t ? revThread(t) : '') + '</article>';
   }
   function revList() {
@@ -61,7 +66,7 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
     if (!v) return '<p class="ax-wall__empty">Loading…</p>';
     if (v.error) return '<p class="ax-wall__empty">Could not load the review queue: ' + esc(v.error) + '</p>';
     var list = v.reviews || [], c = v.counts || {};
-    var head = '<p class="ax-wall__count">' + (c.pending || 0) + ' pending · ' + (c.approved || 0) + ' approved · ' + (c.rejected || 0) + ' rejected' +
+    var head = (R.note ? '<p class="wdc__note' + (R.noteErr ? ' is-err' : '') + '" role="status">' + esc(R.note) + '</p>' : '') + '<p class="ax-wall__count">' + (c.pending || 0) + ' pending · ' + (c.approved || 0) + ' approved · ' + (c.rejected || 0) + ' rejected' +
       (c.autoApproved ? ' · ' + c.autoApproved + ' approved by the classifier without review (not shown)' : '') +
       '</p>';
     if (!list.length) return head + '<p class="ax-wall__empty">No classification has gone to review on this machine.' +
@@ -108,7 +113,25 @@ export const WALL_REVIEWS_SCRIPT = String.raw`
     } catch (e) { R.threads[id] = { error: String(e && e.message || e) }; }
     render();
   }
+  /** Approve or reject a pending review: the classic graph page's own calls. */
+  async function decideReview(id, verdict) {
+    if (R.sending[id]) return;
+    R.sending[id] = true; R.note = verdict === 'approve' ? 'Approving…' : 'Rejecting…'; R.noteErr = false;
+    render();
+    var h = headers();
+    h['Content-Type'] = 'application/json';
+    try {
+      var res = await fetch('/api/admin/graph/classifications/' + verdict, { method: 'POST', headers: h, body: JSON.stringify({ msgHash: id }) });
+      var b = await res.json().catch(function () { return {}; });
+      if (res.ok) R.note = verdict === 'approve' ? 'Approved: the path is in the graph now.' : 'Rejected: nothing was added.';
+      else { R.noteErr = true; R.note = 'Not decided: ' + (res.status === 401 || res.status === 403 ? 'only the owner can decide a review. Sign in with the dashboard key, then try again.' : b.error || ('HTTP ' + res.status)); }
+    } catch (e) { R.noteErr = true; R.note = 'Not decided: ' + String(e && e.message || e); }
+    delete R.sending[id];
+    if (!R.noteErr) await loadReviews(); else render();
+  }
   document.addEventListener('click', function (ev) {
+    var d = ev.target.closest('[data-rdecide]');
+    if (d) { decideReview(d.getAttribute('data-rid'), d.getAttribute('data-rdecide')); return; }
     var t = ev.target.closest('[data-rthread],[data-rtab]');
     if (t && t.hasAttribute('data-rtab')) { R.tab = t.getAttribute('data-rtab'); render(); }
     else if (t) toggleReviewThread(t.getAttribute('data-rthread'));

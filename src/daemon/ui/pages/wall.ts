@@ -5,8 +5,9 @@
 // Selecting a post opens it on its own, with its thread, as on X; the nav's
 // Running now and Agents open pages of their own, each with a count (#1316).
 //
-// Read-only over records the daemon already keeps (requests, plan events,
-// task traces, the live fleet snapshot). Nothing here writes or notifies.
+// Reads records the daemon already keeps (requests, plan events, task
+// traces, the live fleet snapshot). It writes only when the owner does:
+// a post, a comment, a call, a Space, or an answer on Needs you (#1440).
 //
 // It reads like a social feed (#1207): each post carries its agent's
 // avatar, name and @handle, with an action row under it; tapping an agent
@@ -24,6 +25,7 @@ import { WALL_PAGE_SCRIPT } from "./wall.client"
 import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
+import { WALL_DECIDE_CSS } from "./wall-decide.client"
 import { WALL_COST_CSS } from "./wall-cost.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
@@ -75,7 +77,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   <nav class="ax-wall__nav" aria-label="Wall">
     <a class="ax-wall__logo" href="/wall">AX<small>wall</small></a>
     <a class="ax-wall__item is-on" data-nav="wall" href="#status=open&amp;view=feed" title="Wall">${NAV_ICON.wall}<span>Wall</span><b class="ax-wall__n" id="nav-n-wall"></b></a>
-    <a class="ax-wall__item" data-nav="needs" href="#status=waiting_owner&amp;view=feed" title="Needs you">${NAV_ICON.needs}<span>Needs you</span><b class="ax-wall__n" id="nav-n-needs"></b></a>
+    <a class="ax-wall__item" data-nav="needs" href="#status=open&amp;view=decide" title="Needs you">${NAV_ICON.needs}<span>Needs you</span><b class="ax-wall__n" id="nav-n-needs"></b></a>
     <a class="ax-wall__item" data-nav="live" href="#page=live" title="Live">${NAV_ICON.space}<span>Live</span><b class="ax-wall__n" id="nav-n-live"></b></a>
     <a class="ax-wall__item" data-nav="running" href="#page=running" title="Running now">${NAV_ICON.live}<span>Running now</span><b class="ax-wall__n" id="nav-n-running"></b></a>
     <a class="ax-wall__item" data-nav="projects" href="#status=open&amp;view=projects" title="Projects">${NAV_ICON.projects}<span>Projects</span><b class="ax-wall__n" id="nav-n-projects"></b></a>
@@ -88,7 +90,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages">${NAV_ICON.more}<span>More</span></button>
     <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
     <div class="ax-wall__navfoot">
-      <span>The Wall shows the work. It sends something only when you post, comment, call or start a Space.</span>
+      <span>The Wall shows the work. It sends something only when you post, comment, call, start a Space or answer.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button">Light / dark</button>
     </div>
   </nav>
@@ -140,6 +142,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-failures" class="ax-wall__failures" aria-label="Failures" hidden></section>
     <section id="wall-jobs" class="ax-wall__failures" aria-label="Recurring jobs" hidden></section>
     <section id="wall-reviews" class="ax-wall__reviews" aria-label="Review queue" hidden></section>
+    <section id="wall-decide" class="ax-wall__decide" aria-label="Waiting for your answer" hidden></section>
     <section id="wall-cost" class="ax-wall__cost" aria-label="Cost: global and per agent" hidden></section>
     <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
     <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
@@ -168,7 +171,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }
