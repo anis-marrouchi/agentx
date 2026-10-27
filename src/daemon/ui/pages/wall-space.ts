@@ -108,15 +108,15 @@ button, input, select { font-family: inherit; }
   .ax-wall__nav { position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: 56px; z-index: 10; flex-direction: row; justify-content: space-around; padding: 0 4px;
     background: color-mix(in srgb, var(--ax-bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--ax-border); overflow: visible; }
   /* Wall, Needs you, Running now, Projects and More (#1355); More opens
-     the rest above the bar. New post is a round + over the feed. */
+     the rest above the bar, Activity among them (#1429). New post is a round + over the feed. */
   .ax-wall__morebtn { display: flex; }
-  .ax-wall__nav > [data-nav="live"], .ax-wall__nav > [data-nav="jobs"], .ax-wall__nav > [data-nav="reviews"], .ax-wall__nav > [data-nav="failures"],
+  .ax-wall__nav > [data-nav="live"], .ax-wall__nav > [data-nav="activity"], .ax-wall__nav > [data-nav="jobs"], .ax-wall__nav > [data-nav="reviews"], .ax-wall__nav > [data-nav="failures"],
   .ax-wall__nav > [data-nav="agents"], .ax-wall__nav > [data-nav="dashboard"] { display: none; }
-  .ax-wall__nav.is-more > [data-nav="live"], .ax-wall__nav.is-more > [data-nav="jobs"], .ax-wall__nav.is-more > [data-nav="reviews"], .ax-wall__nav.is-more > [data-nav="failures"],
+  .ax-wall__nav.is-more > [data-nav="live"], .ax-wall__nav.is-more > [data-nav="activity"], .ax-wall__nav.is-more > [data-nav="jobs"], .ax-wall__nav.is-more > [data-nav="reviews"], .ax-wall__nav.is-more > [data-nav="failures"],
   .ax-wall__nav.is-more > [data-nav="agents"], .ax-wall__nav.is-more > [data-nav="dashboard"] {
     display: flex; position: fixed; right: 8px; width: 200px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 10px 14px; }
   .ax-wall__nav.is-more > * > span { display: inline; font-size: var(--ax-fs); }
-  .ax-wall__nav.is-more > [data-nav="live"] { bottom: 330px; } .ax-wall__nav.is-more > [data-nav="jobs"] { bottom: 276px; } .ax-wall__nav.is-more > [data-nav="reviews"] { bottom: 222px; }
+  .ax-wall__nav.is-more > [data-nav="live"] { bottom: 384px; } .ax-wall__nav.is-more > [data-nav="activity"] { bottom: 330px; } .ax-wall__nav.is-more > [data-nav="jobs"] { bottom: 276px; } .ax-wall__nav.is-more > [data-nav="reviews"] { bottom: 222px; }
   .ax-wall__nav.is-more > [data-nav="failures"] { bottom: 168px; } .ax-wall__nav.is-more > [data-nav="agents"] { bottom: 114px; }
   .ax-wall__nav.is-more > [data-nav="dashboard"] { bottom: 60px; }
   .ax-wall__newpost { position: fixed; right: 16px; bottom: 72px; width: 56px; height: 56px; margin: 0; border-radius: 50%; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }

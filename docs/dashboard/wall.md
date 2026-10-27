@@ -196,8 +196,9 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
    - **no cap**: the agent has no budget; the line still shows what it spent.
    - **not priced**: runs on a model with no price, such as a local model. The budget does not count them, as on the Cost page.
 4. Select **Cost** at the end of that line to open the Cost page, where you can raise or remove the budget (see [Set or raise a budget on the Cost page](../help/costs.md#set-or-raise-a-budget-on-the-cost-page)). The Wall only shows the figure; it never changes a budget.
-5. Select **Agent page** or **History** to open the classic pages for that agent.
-6. Select **All posts**, or the same agent again, to go back to every post.
+5. Select **Agent page** to open the classic page for that agent.
+6. Under the profile, **Posts** shows its posts (the default) and **Activity** shows its runs: see [See what the agents ran](#see-what-the-agents-ran).
+7. Select **All posts**, or the same agent again, to go back to every post.
 
 ![An agent's profile above its own posts, with its spend this month near its cap, in the isolated demo](/screenshots/wall/profile.png)
 
@@ -213,7 +214,7 @@ The spend line uses the same figures as the **Monthly budgets** card on the Cost
 2. The page lists every agent the connected machines report, including agents with no post this week. Agents running something come first, then those with the most open posts.
 3. Each agent shows its name and @handle, **running** with a count when it works on something now, the machine it is on, its tier, model and skill count, when it was last active, its role and who it reports to when it is in the org chart, and its counts: **open**, **waiting on the owner**, **done in 7 days**, **runs** and any **errors**.
 4. Select **Last summary** to read what it last reported.
-5. Select its name, its avatar or **posts** to see its profile over its own posts. Select **Agent page** or **History** to open the classic pages for it.
+5. Select its name, its avatar or **posts** to see its profile over its own posts. Select **Activity** for its runs, or **Agent page** for its classic page.
 6. Select **Call** to have the agent call you on AgentX Voice, as from a post. When it is working now, **● Join live** opens what it is doing. Its profile has the same two buttons.
 
 ![The Agents page in the isolated demo](/screenshots/wall/agents.png)
@@ -248,6 +249,44 @@ The **Task** page is one run on its own, with its own link: what it was asked, i
 6. A finished run shows its stored record. A finished scheduled job can be continued: **Send** starts a new turn in the same job session, and the page moves to it. A finished run from any other channel only reads: its chat goes on where it came from.
 
 ![A run's Task page: the request, the tracked request's status strip, plan and facts, the conversation, and the steer box with Stop and Send](/screenshots/wall/run.png)
+
+## See what the agents ran
+
+The **Activity** page lists every run of every agent on your machines, newest first. A run is one turn of work: an answer to a message, a scheduled job, a step on an issue. It only reads: nothing on it sends anything.
+
+1. **Browser:** in the nav, select **Activity** (in **More** on a phone).
+2. Each row is one run: the agent's picture and name, when it started, the machine (when you have more than one), and its result:
+   - **Done**: it finished.
+   - **Failed**: it ended with an error or ran out of time. The row has a red edge.
+   - **Running**: it is still working.
+   - **Stopped**: someone stopped it.
+3. Under the name, the row says what it worked on: the task's title when the run belongs to a post on the Wall, otherwise the first line of what it was asked.
+4. The last line gives its project (for work on a GitHub or GitLab project, or a post with a project), where it came from (such as **telegram** or **cron**), how long it took and what it cost. A run with no recorded cost shows **–**, not $0.00.
+5. Select a row to open the run's [Task page](#watch-and-steer-a-run).
+6. To narrow the list:
+   - **24 h**, **7 d** or **30 d** picks the period.
+   - **Agent**, **Project** and **Result** filter the runs. They work together: for example one agent's failed runs on one project. **Other (no project)** shows runs with no project.
+   - Select an agent's name on a row to see only its runs.
+7. The filters are in the page's address, so you can bookmark or share a view.
+8. **Timeline** opens the classic Activity page, with its lane view and the Map.
+
+![The Activity page: four runs newest first, one running, one failed with a red edge, two done, with their project, channel, time and cost, in a demo](/screenshots/wall/activity.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+### One agent's runs
+
+1. Open an agent's profile (select its name or avatar), then select **Activity** under the profile. Or select **Activity** for it on the **Agents** page.
+2. The profile stays on top, with **Activity** underlined, and the list shows only that agent's runs. The period, project and result filters work as above.
+3. **Posts** goes back to its posts; **All agents** goes back to every agent's runs.
+
+This tab takes the place of the classic history page. The classic page still opens at `/agents/<agent>/history`.
+
+![An agent's profile on a phone with its Activity tab open: two runs, one running and one failed](/screenshots/wall/activity-profile.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+The page reads the same records as the classic Activity Timeline: the run records each machine keeps. Each machine sends at most its newest 400 runs for a period; the page says so when that limit cuts the list. A machine running an AgentX version from before this page sends at most 7 days, and the page says from when its runs start.
 
 ## Use the list to sort through many tasks
 
@@ -517,26 +556,31 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 9. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 10. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 11. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
-12. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
-13. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
-14. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
-15. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
-16. Capacity: with `dashboard.wall.capacity.threshold` set to `0`, give an agent a task and select **Projects**. Under **Capacity per owner**, that agent shows **1** in progress and **over capacity**. Select its name: the **List** shows that one task. Remove the setting: the flag is gone.
-17. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
-18. Post a task: type `@` and an agent's name and a small task in the box at the top of the feed, then select **Post**. The box says who has it. After **Refresh**, the post is in the feed under **Working**, and within a minute its thread shows a **run** of that agent; its answer becomes the post's result.
-19. Select the **Done** tab: only finished posts are listed. Select the search button: the search box and the filters open.
-20. Select **Jobs**. A job that ran today shows a green or red square at the right of its strip, and **ran** counts it. Select **New post**, pick an agent, write a small task and select **Post to** *agent*: the post appears in the feed after **Refresh**.
-21. Open a post that is done and comment on it with `@` and another agent's name. The post shows **in progress** again after **Refresh**, and the other agent has a new post that quotes your comment.
-22. Select **Live**. Start a Space with two agents: it is listed first under **Spaces and lessons**, and its transcript fills in under the list. Select **Agents**, then **Call** on an agent: your voice widget rings.
-23. Open a post whose request has a plan. Under its title, **Working** is marked while it runs, and **Plan** lists the steps the agent wrote, each with its owner and done check (see [Follow a request of several steps](../jobs/tracked-plans.md)).
-24. Give an agent a task that takes a minute, then select **Live**. Its card is under **Running now**, with the time going up and **Latest** changing as it works. Select the card: the **Task** page opens with **live**, the request and the conversation filling in. Write "Also say which files you read" and select **Send**: the hint says **queued — dispatches as the next turn**, and the agent answers it after the current turn. Give it another task and select **Stop** on its Task page: the conversation ends and its card leaves **Live**.
-25. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
-26. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
-27. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
-28. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
+12. Select **Activity** in the nav. The run of the task you sent in step 2 is at the top, with its agent and **Done** (or **Running** if it is still working). Select **Failed** under **Result**: only failed runs are left, and the address now has `a-result=failed`.
+13. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
+14. Reported issues: with `wall.reportedIssues` set, select **Failures**. **Reported issues labelled …** lists one line per problem, and its count matches the number of open issues with that label in the project.
+15. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
+16. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
+17. Capacity: with `dashboard.wall.capacity.threshold` set to `0`, give an agent a task and select **Projects**. Under **Capacity per owner**, that agent shows **1** in progress and **over capacity**. Select its name: the **List** shows that one task. Remove the setting: the flag is gone.
+18. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+19. Post a task: type `@` and an agent's name and a small task in the box at the top of the feed, then select **Post**. The box says who has it. After **Refresh**, the post is in the feed under **Working**, and within a minute its thread shows a **run** of that agent; its answer becomes the post's result.
+20. Select the **Done** tab: only finished posts are listed. Select the search button: the search box and the filters open.
+21. Select **Jobs**. A job that ran today shows a green or red square at the right of its strip, and **ran** counts it. Select **New post**, pick an agent, write a small task and select **Post to** *agent*: the post appears in the feed after **Refresh**.
+22. Open a post that is done and comment on it with `@` and another agent's name. The post shows **in progress** again after **Refresh**, and the other agent has a new post that quotes your comment.
+23. Select **Live**. Start a Space with two agents: it is listed first under **Spaces and lessons**, and its transcript fills in under the list. Select **Agents**, then **Call** on an agent: your voice widget rings.
+24. Open a post whose request has a plan. Under its title, **Working** is marked while it runs, and **Plan** lists the steps the agent wrote, each with its owner and done check (see [Follow a request of several steps](../jobs/tracked-plans.md)).
+25. Give an agent a task that takes a minute, then select **Live**. Its card is under **Running now**, with the time going up and **Latest** changing as it works. Select the card: the **Task** page opens with **live**, the request and the conversation filling in. Write "Also say which files you read" and select **Send**: the hint says **queued — dispatches as the next turn**, and the agent answers it after the current turn. Give it another task and select **Stop** on its Task page: the conversation ends and its card leaves **Live**.
+26. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
+27. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
+28. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
+29. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
 
 ## If something is wrong
 
+- **Activity says a machine "does not answer":** the dashboard could not reach that machine's run records. Check the machine with `agentx daemon status`. The other machines' runs still show.
+- **Activity says "Could not read the runs":** the run records need the machine's database (SQLite). Check that the daemon started without a storage error, then select **Refresh**.
+- **A run in Activity shows – for its cost:** no cost was recorded for it, for example a run on a local model or a run from before costs were recorded. See [Costs](../help/costs.md).
+- **30 d shows fewer days than expected:** that machine keeps run records for fewer days, or runs an older AgentX version (7 days at most). Update it to see 30 days.
 - **A comment on a closed post says requests are off:** the machine that keeps the post has `requests.enabled` off, so the post cannot open again. Turn requests on there, or post a new task instead.
 - **An opened post shows no Plan:** its request has no tracked plan, or the machine that keeps it runs a daemon from before this change. Restart that daemon to send the plan with the thread.
 - **A Task page says "disconnected":** the run's machine stopped answering, or the run ended while the page was closed. Reload the page; a finished run then shows on its post's **Task record and trace**.
