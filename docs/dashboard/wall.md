@@ -582,9 +582,9 @@ The **Org** page draws your org chart from the top down: whoever reports to no o
 7. Select **−** and **+** to zoom out and in, or the percentage to go back to 100%. On a laptop trackpad, pinch over the chart.
 8. Select an agent's card to open its [profile](#see-one-agent-s-profile).
 9. The box on the right, **In the org**, counts the people, agents and levels, and lists the agents that are not in the chart. Select one to open its profile.
-10. **Phone:** the chart becomes a list. Each card is indented under its boss, on a line like a thread's, and shows its dotted lines as words.
+10. **Phone:** the chart becomes a list. Each card is indented under its boss, on a line like a thread's, and shows its dotted lines as words. The page says **Only the owner can change the org** and has no **Edit org**.
 
-The page only reads. **Edit org** opens the classic Org page, where the chart is set up.
+A person has a grey card with a **person** chip. The page only reads. **Edit org** opens the classic Org page, where the chart is set up.
 
 ![The Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager; dotted lines are shown](/screenshots/wall/org.png)
 

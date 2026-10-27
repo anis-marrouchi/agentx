@@ -1623,6 +1623,8 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(w.wall.classList.contains("is-wide")).toBe(true)
     const html = w.el("wall-org").innerHTML
     const card = (key: string) => new RegExp(`<article class="wog__card[^"]*" data-org-key="${key}"[\\s\\S]*?</article>`).exec(html)?.[0] ?? ""
+    // The phone shows this line (CSS); the chart itself stays read-only.
+    expect(html).toContain('<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>')
     expect(card("person:sam")).toContain("is-person is-top")
     expect(card("person:sam")).toContain('<span class="wog__chip is-person">person</span>')
     expect(card("person:sam")).toContain("<small class=\"wog__title\">Owner</small>")

@@ -113,6 +113,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     shown.forEach(function (b) { byKey[b.key] = b; });
     var cards = lay.boxes.map(function (at) { return orgCardHtml(byKey[at.key], at, d); }).join('');
     return orgLegendHtml(d) +
+      '<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>' +
       (S.org.problem ? '<p class="wog__problem" role="alert">Something in the org chart does not hold: ' + esc(S.org.problem) + '</p>' : '') +
       (S.org.live === false ? '<p class="ax-wall__count wog__note">The daemon did not answer, so working or idle is not known.</p>' : '') +
       '<div class="wog__scroll" id="wog-scroll"><div class="wog__size" id="wog-size"><div class="wog__chart" id="wog-chart" style="--wog-cols: ' + lay.columns + '; transform: scale(' + ORG.zoom + ')">' +
@@ -218,7 +219,7 @@ export const WALL_ORG_CSS = `
 .wog__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wog__legend li { display: inline-flex; align-items: center; gap: 6px; }
 .wog__key { display: inline-block; width: 18px; height: 12px; border: 1px solid var(--ax-border-2); border-radius: 4px; background: var(--ax-bg); }
-.wog__key.is-person { border-style: dashed; border-color: var(--ax-accent); border-radius: 9999px; }
+.wog__key.is-person { background: var(--ax-surface-3); }
 .wog__tools { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--ax-fs-xs); }
 .wog__toggle { font: inherit; font-weight: 600; background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 3px 12px; cursor: pointer; }
 .wog__toggle[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); border-color: var(--ax-text); }
@@ -228,6 +229,7 @@ export const WALL_ORG_CSS = `
 .wog__edit { font-size: var(--ax-fs-xs); padding: 3px 12px; }
 .wog__problem { margin: 10px 16px 0; padding: 8px 12px; border-radius: var(--ax-radius); background: var(--ax-amber-t); color: var(--ax-amber-ink); font-size: var(--ax-fs-sm); }
 .wog__note { padding: 8px 16px 0; }
+.wog__owner { display: none; }
 .wog__scroll { overflow: auto; padding: 16px; }
 .wog__size { position: relative; margin: 0 auto; }
 .wog__chart { --wog-half: 118px; position: relative; display: grid; grid-template-columns: repeat(var(--wog-cols, 2), var(--wog-half)); row-gap: 48px; width: max-content; transform-origin: 0 0; }
@@ -237,7 +239,7 @@ export const WALL_ORG_CSS = `
 .wog__arrow { fill: var(--ax-muted); }
 .wog__card { position: relative; z-index: 1; width: 220px; justify-self: center; align-self: start; display: flex; flex-direction: column; gap: 6px;
   padding: 10px 12px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-lg); }
-.wog__card.is-person { border: 1.5px dashed var(--ax-accent); background: var(--ax-blue-t); }
+.wog__card.is-person { background: var(--ax-surface-3); }
 .wog__card.is-paused, .wog__card.is-waiting { box-shadow: inset 3px 0 0 var(--ax-amber); }
 .wog__head { display: flex; gap: 10px; align-items: center; min-width: 0; text-align: left; font: inherit; color: var(--ax-text); background: none; border: 0; padding: 0; }
 button.wog__head { cursor: pointer; border-radius: var(--ax-radius); }
@@ -280,7 +282,8 @@ button.wog__head:hover b { text-decoration: underline; }
   .wog__scroll { overflow: visible; padding: 12px 12px 0; }
   .wog__size { width: auto !important; height: auto !important; }
   .wog__chart { display: flex; flex-direction: column; gap: 8px; width: auto; transform: none !important; }
-  .wog__lines, .wog__zoom { display: none; }
+  .wog__lines, .wog__zoom, .wog__edit { display: none; }
+  .wog__owner { display: block; }
   .wog__card { width: auto; align-self: stretch; margin-left: calc(min(var(--lvl, 0), 5) * 18px); }
   .wog__chip { white-space: normal; }
   .wog__card:not(.is-top)::before { content: ""; position: absolute; left: -12px; top: -9px; width: 10px; height: 30px;
