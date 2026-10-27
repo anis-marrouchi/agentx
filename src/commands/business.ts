@@ -2,7 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import { loadDaemonConfig } from "@/daemon/config"
-import { configRelationsProblem, memberLabel, orgRelations, parseMember } from "@/business/relations"
+import { RELATION_TYPES, configRelationsProblem, memberKey, memberLabel, orgRelations, parseMember, type RelationType } from "@/business/relations"
 
 // --- agentx business — manage the business layer config ---
 //
@@ -14,6 +14,7 @@ import { configRelationsProblem, memberLabel, orgRelations, parseMember } from "
 // Scope kept narrow on purpose:
 //   show      — read-only summary
 //   orgchart  — add / remove / list entries (agentId → { role, reportsTo, schedule })
+//   relation  — add / remove / list typed links between people and agents (#1418)
 //   project   — add / remove / list (id, pm?, client?)
 //   contact   — add / remove / list (chatId/username → client/project)
 //
@@ -167,6 +168,68 @@ orgchart
       }
       delete cfg.business.orgChart[agentId]
       return `orgChart entry "${agentId}" removed`
+    })
+  })
+
+// ---- relation ------------------------------------------------------------
+
+const relation = business
+  .command("relation")
+  .description(`manage business.relations — typed links between people and agents (${RELATION_TYPES.join(", ")})`)
+
+relation
+  .command("list")
+  .description("list every relation, orgChart reportsTo included, and any problem with them")
+  .option("--json", "JSON output")
+  .action((opts) => {
+    let cfg: any
+    try { cfg = loadDaemonConfig() } catch (e: any) {
+      console.error(chalk.red(`  could not read agentx.json: ${e.message}`))
+      process.exitCode = 1
+      return
+    }
+    const relations = orgRelations(cfg.business)
+    const problem = configRelationsProblem(cfg)
+    if (opts.json) { console.log(JSON.stringify({ relations, ...(problem ? { problem } : {}) }, null, 2)); return }
+    if (relations.length === 0) console.log(chalk.dim("  no relations"))
+    for (const r of relations) console.log(`  ${chalk.cyan(r.from)}  ${r.type}  ${chalk.cyan(r.to)}`)
+    if (problem) console.log(chalk.yellow(`  ! ${problem}`))
+  })
+
+relation
+  .command("add <from> <type> <to>")
+  .description("link two members, e.g. agent:pm reports-to person:sam")
+  .action((from: string, type: string, to: string) => {
+    if (!(RELATION_TYPES as readonly string[]).includes(type)) {
+      console.error(chalk.red(`  unknown relation type "${type}"; use one of: ${RELATION_TYPES.join(", ")}`))
+      process.exitCode = 1
+      return
+    }
+    mutate((cfg) => {
+      cfg.business = cfg.business || {}
+      const r = { from: memberKey(from), to: memberKey(to), type: type as RelationType }
+      const relations = [...(cfg.business.relations || []), r]
+      const problem = configRelationsProblem({ ...cfg, business: { ...cfg.business, relations } })
+      if (problem) throw new Error(problem)
+      cfg.business.relations = relations
+      return `relation added: ${r.from} ${r.type} ${r.to}`
+    })
+  })
+
+relation
+  .command("remove <from> <type> <to>")
+  .alias("rm")
+  .description("remove one relation from business.relations")
+  .action((from: string, type: string, to: string) => {
+    mutate((cfg) => {
+      const relations: any[] = cfg.business?.relations || []
+      const f = memberKey(from), t = memberKey(to)
+      const kept = relations.filter((r) => !(memberKey(r.from) === f && r.type === type && memberKey(r.to) === t))
+      if (kept.length === relations.length) {
+        throw new Error(`no relation "${f} ${type} ${t}" in business.relations (a reportsTo in orgChart is changed with: agentx business orgchart add)`)
+      }
+      cfg.business.relations = kept
+      return `relation removed: ${f} ${type} ${t}`
     })
   })
 
