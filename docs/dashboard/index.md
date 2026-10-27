@@ -45,7 +45,7 @@ On every Wall page, the header under the page title shows the version of the dae
 
 ![The Wall header: the daemon's version and commit, and since when it has been running](/screenshots/wall/running-build.png)
 
-*The daemon runs version 0.181.1, built from commit c10bdda. The line under it says when it started.*
+*The daemon runs version 0.181.1, built from commit 91c787b, and has been running since 06:16 on October 27.*
 
 On a phone (390 pixels wide), the same line sits in the same place and wraps onto two lines:
 
