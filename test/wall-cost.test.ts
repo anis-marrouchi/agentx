@@ -98,6 +98,10 @@ describe("Wall Cost page numbers (#1423)", () => {
     expect(html).toContain('<button type="button" class="wc__who" data-cagent="coder"')
     expect(html).toContain("$85.00 of $100.00 this month")
     expect(html).toContain('class="wc__bar is-warn"')
+    // Each row links to the budgets form for that agent; none when the budgets were not read.
+    expect(html).toContain('data-ccap="pm" title="Set the monthly cap of Planner">Change cap</button>')
+    expect(html).toContain('data-ccap="local" title="Set the monthly cap of local">Set a cap</button>')
+    expect(costPageHtml(costPageModel(buildCost(db!, 60), null, 30), {})).not.toContain("data-ccap")
     expect(html).toContain("Biggest movers this week")
     // Everything the classic page did is here (#1449): CSV, budgets, details.
     expect(html).not.toContain("/admin/cost")
@@ -217,7 +221,8 @@ describe("Everything /admin/cost did, on the Wall (#1423, #1449)", () => {
     expect(html).toContain("Monthly budgets")
     expect(html).toContain("<li><span>All agents</span><b>$97.50 of $500.00</b>")
     expect(html).toContain("<li><span>Project shop</span><b>$4.00 of $50.00</b>")
-    expect(html).toContain('<span class="chip chip--warn">near cap</span>')
+    expect(html).toContain('<span class="chip chip--warn">Near cap</span>')
+    expect(html).toContain('<b>$4.00 of $50.00</b><small><span class="chip chip--done">On track</span>')
     expect(html).toContain('<option value="agent:pm" selected>Agent @pm</option>')
     expect(html).toContain('<option value="agent:writer">Agent @writer</option>')
     expect(html).toContain('value="100"')

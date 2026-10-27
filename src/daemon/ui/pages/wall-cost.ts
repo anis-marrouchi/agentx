@@ -341,11 +341,13 @@ export function costPageHtml(m: CostPageModel, names: Record<string, string>, av
       ? '<span class="wc__bar' + (a.state === "paused" ? " is-err" : a.state === "warn" ? " is-warn" : "") + '" title="' + esc("Month: " + usd(a.monthSpent || 0) + " of " + usd(a.cap)) + '"><i style="width:' + Math.min(100, ((a.monthSpent || 0) / a.cap) * 100).toFixed(1) + '%"></i></span><small>' + usd(a.monthSpent || 0) + " of " + usd(a.cap) + " this month</small>"
       : "<small>no cap</small>"
     const np = a.unpriced ? a.unpriced + " not priced" : a.unpricedMonth ? a.unpricedMonth + " not priced this month" : ""
+    // Picks this agent in the budgets form, on the machine it runs on. Only when the budgets were read.
+    const capBtn = m.month ? ' <button type="button" class="wc__link" data-ccap="' + esc(a.id) + '" title="' + esc("Set the monthly cap of " + name(a.id)) + '">' + (a.cap ? "Change cap" : "Set a cap") + "</button>" : ""
     return '<li class="wc__row"><button type="button" class="wc__who" data-cagent="' + esc(a.id) + '" title="' + esc(name(a.id)) + ': profile and posts">' +
         (avatarOf ? avatarOf(a.id) : "") + "<span><b>" + esc(name(a.id)) + "</b><small>@" + esc(a.id) + "</small></span></button>" +
       '<span class="wc__amt"><b>' + usd(a.spend) + "</b>" +
         (a.change == null ? (a.spend && m.range > 0 ? '<i class="new">new</i>' : "") : '<i class="' + (a.change > 0 ? "up" : a.change < 0 ? "down" : "") + '">' + pct(a.change) + "</i>") + "</span>" +
-      '<span class="wc__cap">' + bar + "</span>" +
+      '<span class="wc__cap">' + bar + capBtn + "</span>" +
       '<span class="wc__runs">' + a.runs + " run" + (a.runs === 1 ? "" : "s") + (a.perRun != null ? " · " + usd(a.perRun) + " per run" : "") +
         (np ? ' · <b class="wc__np">' + np + "</b>" : "") + "</span></li>"
   }).join("") + "</ol>" : '<p class="ax-wall__empty">No spend in ' + span + ".</p>"
@@ -417,8 +419,12 @@ export function costBudgetsHtml(machines: CostBudgetMachine[], form: { machine?:
   if (!ok.length) return head + '<p class="ax-wall__empty">The budgets could not be read. Select Refresh to try again.</p>'
   const multi = ok.length > 1
   const line = (label: string, b: BudgetRowLike): string => {
-    const chip = b.state === "paused" ? ' <span class="chip chip--err">paused</span>' : b.state === "warn" ? ' <span class="chip chip--warn">near cap</span>' : ""
-    return "<li><span>" + label + "</span><b>" + usd(b.spentUsd || 0) + (b.capUsd ? " of " + usd(b.capUsd) : "") + "</b><small>" + (b.capUsd ? "" : "no cap") + chip + "</small></li>"
+    // One status per cap: On track, Near cap, Paused or No cap.
+    const st = !b.capUsd ? '<span class="chip chip--ghost">No cap</span>'
+      : b.state === "paused" ? '<span class="chip chip--err">Paused</span>'
+      : b.state === "warn" ? '<span class="chip chip--warn">Near cap</span>'
+      : '<span class="chip chip--done">On track</span>'
+    return "<li><span>" + label + "</span><b>" + usd(b.spentUsd || 0) + (b.capUsd ? " of " + usd(b.capUsd) : "") + "</b><small>" + st + "</small></li>"
   }
   const lists = ok.map((x) => {
     const b = x.budgets!

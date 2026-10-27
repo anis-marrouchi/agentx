@@ -484,7 +484,7 @@ A run on a model with no price, such as a local model, is not counted as $0. The
 
 Only the owner can save a budget: the dashboard checks its key, and a refusal says so. Every other part of the page only reads.
 
-1. **Browser:** on the Cost page, scroll to **Monthly budgets**, or select **Budgets** in the box on the right. It lists all agents together, each project and each agent with a cap, with this month's spend against it.
+1. **Browser:** on the Cost page, scroll to **Monthly budgets**, or select **Budgets** in the box on the right. It lists all agents together, each project and each agent with a cap, with this month's spend against it and **On track**, **Near cap**, **Paused** or **No cap**. To go straight to one agent, select **Set a cap** (or **Change cap**) on its row: the form picks that agent, on the machine that runs it.
 2. With more than one machine, choose the machine under **Machine**. A budget belongs to the machine where the agent runs.
 3. Under **Budget for**, choose **All agents**, a project or an agent. The box shows its current cap, or **No cap**.
 4. Type the most it may spend each month, in US dollars, or empty the box to remove the cap.
@@ -571,7 +571,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 27. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
 28. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's line under **Monthly budgets** on the Cost page. Select **Cost** on that line: the Wall's Cost page opens.
 29. Cost page: select **Cost** in the nav, then **7 days**. The address ends with `range=7` and the total changes. Select an agent: its profile opens. Open `/admin/cost` in the browser: the same Cost page opens.
-30. Budget: on the Cost page, under **Monthly budgets**, choose a test agent, type `5` and select **Save**. The line says **Saved**, and the agent's row shows **of $5.00 this month**. Empty the box and select **Save** again to remove the cap.
+30. Budget: on the Cost page, select **Set a cap** on a test agent's row. Under **Monthly budgets**, the form shows that agent. Type `5` and select **Save**. The line says **Saved**, and the agent's row shows **of $5.00 this month**. Empty the box and select **Save** again to remove the cap.
 31. CSV: select **Export CSV**. Your browser saves a file named like `agentx-cost-30d-<date>.csv` with one line per day.
 
 ## If something is wrong
@@ -587,6 +587,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **The profile shows no spend line:** the dashboard could not read the budgets, for example because its token was refused. Select **Refresh**. If it is still missing, open the Cost page: if **Monthly budgets** says the budgets could not be read there too, see [Costs](../help/costs.md).
 - **Cost says "Could not read the cost":** no machine sent its cost figures. The rest of the Wall still works. Select **Refresh**; if it persists, check the machine with `agentx daemon status`.
 - **Cost says "Not read: … (this dashboard has no address for it)":** that machine is in your mesh but not under `dashboard.daemons` in `agentx.json`, so the dashboard cannot ask it. Add it there (see [Add a second machine](../jobs/second-machine.md)), or open the Wall on that machine.
+- **An agent's row has no Set a cap link:** the budgets could not be read, so the page cannot tell its cap. Select **Refresh**.
 - **A budget says "Not saved: only the owner can change a budget":** the dashboard did not accept your key. Open the Wall on the machine itself, or sign in with the dashboard token, then save again.
 - **Export CSV saves nothing:** the browser blocked the download. Allow downloads for the dashboard's address and select it again.
 - **The profile's spend differs from another machine's Cost page:** each machine counts the runs it keeps. Open the Wall on the machine that runs the agent to see its own figure.

@@ -143,7 +143,7 @@ export const WALL_COST_SCRIPT = String.raw`
     render();
   }
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-crange],[data-cagent],[data-ccsv],[data-cfilter],[data-cdetails],[data-cbudgets]');
+    var t = ev.target.closest('[data-crange],[data-cagent],[data-ccap],[data-ccsv],[data-cfilter],[data-cdetails],[data-cbudgets]');
     if (!t) return;
     if (t.hasAttribute('data-crange')) {
       var r = Number(t.getAttribute('data-crange'));
@@ -153,6 +153,17 @@ export const WALL_COST_SCRIPT = String.raw`
     if (t.hasAttribute('data-ccsv')) { exportCostCsv(); return; }
     if (t.hasAttribute('data-cfilter')) { C.filter = t.getAttribute('data-cfilter'); C.details = true; render(); return; }
     if (t.hasAttribute('data-cdetails')) { C.details = !C.details; render(); return; }
+    if (t.hasAttribute('data-ccap')) {
+      // An agent row's "Set a cap": pick that agent in the form, on the machine that runs it.
+      var id = t.getAttribute('data-ccap');
+      var on = costBudgetMachines().find(function (x) { var b = x.budgets; return !!b && (((b.agentIds || []).indexOf(id) >= 0) || (b.agents || []).some(function (a) { return a.agentId === id; })); });
+      if (on) C.form.machine = on.name;
+      C.form.scope = 'agent:' + id; C.form.usd = null; C.form.note = '';
+      render();
+      var box = $('cb-usd');
+      if (box) { if (box.scrollIntoView) box.scrollIntoView({ block: 'center' }); if (box.focus) box.focus(); }
+      return;
+    }
     if (t.hasAttribute('data-cbudgets')) { if (ev.preventDefault) ev.preventDefault(); var b = $('wall-cost-budgets'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'start' }); return; }
     // A row opens the agent's Wall profile over its posts.
     S.view = 'feed';
@@ -247,6 +258,9 @@ export const WALL_COST_CSS = `
 .wc__caps { list-style: none; margin: 6px 0; padding: 0; font-size: var(--ax-fs-sm); }
 .wc__caps li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--ax-border); align-items: baseline; }
 .wc__caps small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.wc__link { font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-accent); background: none; border: 0; padding: 2px 0; cursor: pointer; }
+.wc__link:hover { text-decoration: underline; }
+.wc__link:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wc__form { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin: 10px 0 4px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wc__form label { display: flex; flex-direction: column; gap: 2px; }
 .wc__form select, .wc__form input { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 6px 8px; min-width: 0; }

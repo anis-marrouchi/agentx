@@ -1499,4 +1499,27 @@ describe("The Cost page does all /admin/cost did (#1423, #1449)", () => {
     await w.settle()
     expect(w.el("wall-cost").innerHTML).toContain("Not saved: only the owner can change a budget")
   })
+
+  it("an agent row's Set a cap picks that agent in the form, on the machine that runs it", async () => {
+    const sent: Array<{ body: any; peer: string | null }> = []
+    const w = open({ budgetPost: (body: any, peer: string | null) => { sent.push({ body, peer }); return { status: 200, body: { ok: true } } } })
+    await w.settle()
+    const html = w.el("wall-cost").innerHTML
+    expect(html).toContain('data-ccap="cx" title="Set the monthly cap of Customer Desk">Change cap</button>')
+    expect(html).toContain('data-ccap="builder" title="Set the monthly cap of builder">Set a cap</button>')
+    w.click({ "data-ccap": "builder" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="node-b" selected>node-b</option>')
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:builder" selected>Agent @builder</option>')
+    w.el("cb-usd").value = "7"
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(sent).toEqual([{ body: { scope: "agent", id: "builder", monthlyUsd: 7 }, peer: "http://node-b" }])
+    // Back to an agent on this machine.
+    w.click({ "data-ccap": "cx" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="node-a" selected>node-a</option>')
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:cx" selected>Agent @cx</option>')
+    expect(w.el("cb-usd").value).toBe("10")
+  })
 })
