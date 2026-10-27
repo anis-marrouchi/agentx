@@ -10,7 +10,7 @@ The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 | See machines, peer work and schedules | **Operations** | `/mesh` |
 | See what needs a person | **Monitor** | `/monitor` |
 | Answer what agents ask you | **Approvals** | `/approvals` |
-| See who is connected, their machines and what they asked for | **People** | `/people` |
+| See who is connected, their machines and what they asked for: the Wall's [People](../dashboard/people.md) page | **People** | `/wall#page=people` (the old `/people` opens it too) |
 | Investigate past work | **Activity** | `/activity` |
 | Edit a workflow | **Workflows** | `/workflows` (editor: `/workflows/editor`) |
 | Configure agents, channels, schedules, webhooks and tokens | **Settings** | `/admin` |

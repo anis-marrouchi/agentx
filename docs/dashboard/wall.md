@@ -11,10 +11,10 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
 ## Open the Wall
 
 1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, and agents. The page you are on is in bold.
-3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
+2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Cost**, **People**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, people listed, and agents. The page you are on is in bold.
+3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **Org**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. **Live** is still at `/live`. People moved to the Wall: `/people` opens the Wall's [People](./people.md) page.
 4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
-5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
+5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Cost**, **People**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
    ![The Wall on a phone in dark mode, with the bottom bar and the round + button](/screenshots/wall/phone-dark.png)
 
@@ -458,6 +458,14 @@ When the intent graph (`graph.enabled` in `agentx.json`) is not sure where a mes
 
 A skipped classification stays pending: a skip is not recorded. The wiki searches a reviewer ran are not recorded either, so the link searches the path's names instead. Classifications the graph approved by itself never went to review; the count line says how many.
 
+## See who talks to the agents
+
+The **People** page lists everyone who talks to your agents: you, your teammates, your clients and guests, with the machines each paired and what each asked for. Select **People** in the nav. Each person links to their open requests on the Wall, which opens the feed with only their posts. The full page is described in [People](./people.md).
+
+![The People page: one row per person with their role, identities, machines and open requests](/screenshots/wall/people.png)
+
+*Fictional data; your people will differ.*
+
 ## See what the fleet costs
 
 The **Cost** page shows what this machine's agents spent, in total and per agent. It reads the same figures as the classic Cost page at `/admin/cost` (see [Costs](../help/costs.md)), so the two agree for the same range. It only reads: caps, the CSV export and the full breakdown stay on `/admin/cost`.
@@ -553,6 +561,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 27. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
 28. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
 29. Cost page: select **Cost** in the nav, then **30 days**. The total under the tabs and each agent's spend match the classic Cost page at `/admin/cost` with **30d** picked. Select an agent: its profile opens.
+30. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Wall** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 
 ## If something is wrong
 

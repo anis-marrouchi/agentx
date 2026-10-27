@@ -44,23 +44,25 @@ import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
+import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
   var OPEN = ['in_progress', 'waiting_owner', 'waiting_other', 'needs_attention'];
   var DAY = 864e5;
-  var FILTERS = ['owner', 'load', 'status', 'idle', 'project', 'goal', 'node', 'group', 'by', 'grp', 'time', 'conc', 'qa', 'q'];
+  var FILTERS = ['owner', 'asker', 'load', 'status', 'idle', 'project', 'goal', 'node', 'group', 'by', 'grp', 'time', 'conc', 'qa', 'q'];
   var SAVED_KEY = 'ax.wall.myView';
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
+  var PAGES = ['running', 'agents', 'people', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_COST_SCRIPT}
+${WALL_PEOPLE_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
@@ -277,6 +279,7 @@ ${WALL_TASK_SCRIPT}
   }
   function match(p, f) {
     if (f.owner && p.owner !== f.owner) return false;
+    if (f.asker && p.askedBy !== f.asker) return false;
     if (f.load && !countsFor(p, f.load)) return false;
     if (f.status === 'open' && !isOpen(p)) return false;
     if (f.status === 'closed' && isOpen(p)) return false;
@@ -919,7 +922,7 @@ ${WALL_TASK_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1163,10 +1166,14 @@ ${WALL_TASK_SCRIPT}
     if (page === 'post') $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
     if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
+    // The People page (#1441): wall-people.client.ts.
+    renderPeople(page);
     if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     if (!S.data) return;
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
+    // Opened from a person on the People page (#1441): say whose requests these are.
+    if (f.asker) $('wall-count').innerHTML += '<span class="ax-wall__asker"> asked by ' + esc(personName(f.asker)) + ' · <button type="button" data-asker-clear>everyone</button></span>';
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list');
     $('wall-agents').innerHTML = agentsHtml();
     var n = failCount();
@@ -1218,6 +1225,7 @@ ${WALL_TASK_SCRIPT}
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
     refreshReviews();
     refreshCost();
+    refreshPeople();
     getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
@@ -1233,6 +1241,7 @@ ${WALL_TASK_SCRIPT}
       fillSelect('f-goal', goalIds, goalTitle);
       fillSelect('f-node', uniq(posts.map(function (p) { return p.node.name; })));
       fillSelect('f-group', uniq(posts.map(groupKey)));
+      fillAsker();
       applyHash();
     } catch (e) {
       $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the Wall: ' + esc(e.message) + '. The classic pages above still work.</p>';
