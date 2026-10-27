@@ -12,9 +12,10 @@
 // (the feed with the "Asked by" filter), each request to its post and each
 // turn to the Wall's Task page.
 //
-// One write, the one the classic page had: End access for one machine,
-// POST /api/admin/people/<id>/devices/<tokenId>/end, behind the dashboard
-// token gate like every /api/admin write. Adding and editing people stays
+// Writes, the ones the classic page had: End access for one machine,
+// POST /api/admin/people/<id>/devices/<tokenId>/end, and the person's
+// picture (#1425, wall-pictures.client.ts), behind the dashboard token
+// gate like every /api/admin write. Adding and editing people stays
 // with `agentx people` and Settings (#1428).
 //
 // renderPeople(page) is the one call the Wall's render() makes;
@@ -125,7 +126,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
     var n = p.machines.active + p.machines.pending, asked = openAskedBy(p.id);
     var ids = p.identities.length ? p.identities.map(function (i) { return '<span>' + esc(i) + '</span>'; }).join('')
       : '<span>' + (p.builtIn ? 'What you do on this machine (voice, app, dashboard) is recorded here.' : 'No channel identity yet') + '</span>';
-    return '<article class="wpp" id="person-' + esc(p.id) + '">' + avatar(p.name, '', true) + '<div class="wpp__b">' +
+    return '<article class="wpp" id="person-' + esc(p.id) + '">' + avatar(p.id, '', true, p.name) + '<div class="wpp__b">' +
       '<div class="wp__by"><button type="button" class="name" data-pp-open="' + esc(p.id) + '" aria-expanded="' + on + '" aria-controls="pp-body-' + esc(p.id) + '">' + esc(p.name) + '</button>' +
         '<span class="h">@' + esc(p.id) + '</span><span class="chip' + (p.role === 'owner' ? '' : ' chip--ghost') + '">' + esc(PP_ROLE[p.role] || p.role) + '</span></div>' +
       '<div class="wp__meta wpp__ids">' + ids + '</div>' +
@@ -133,6 +134,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
       '<div class="wpf__stats"><span><b>' + n + '</b> ' + (n === 1 ? 'machine' : 'machines') + '</span>' +
         (p.machines.pending ? '<span class="is-warn"><b>' + p.machines.pending + '</b> waiting for approval</span>' : '') +
         '<span><a href="' + askerHref(p.id) + '"><b>' + (S.data ? asked : '…') + '</b> open ' + (asked === 1 ? 'request' : 'requests') + ' on the Wall</a></span></div>' +
+      pictureActsHtml(p.id, true) +
       '<button type="button" class="wpp__toggle" data-pp-open="' + esc(p.id) + '" aria-expanded="' + on + '" aria-controls="pp-body-' + esc(p.id) + '">' + (on ? 'Hide machines and requests' : 'Machines and requests') + '</button>' +
       '<div class="wpp__body" id="pp-body-' + esc(p.id) + '"' + (on ? '' : ' hidden') + '>' + (on ? personDetailHtml(p) : '') + '</div>' +
       '</div></article>';

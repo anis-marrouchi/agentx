@@ -103,6 +103,10 @@ const shots = [
   { name: "chat/panel", path: "/monitor", wait: "#you .bf-act", steps: [{ click: "#ax-as-handle" }, { type: "#ax-as-bar-input", text: "Summarize what needs my attention on this page." }, { click: "#ax-as-bar-send" }, { wait: ".ax-as__msg--them.ax-as__md" }] },
   { name: "operations/schedule-drawer", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-runs .mx-item" }, { click: "#mx-runs .mx-item" }, { wait: "#mx-drawer.is-open" }] },
   { name: "operations/nodes", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-nodes .ax-row-card, #mx-nodes > *" }, { scroll: "#mx-nodes-title" }] },
+  // Profile pictures (#1425): docs/jobs/profile-pictures.md sets them on the demo first.
+  { name: "pictures/wall-agents", path: "/wall#page=agents", wait: ".wag .av--pic" },
+  { name: "pictures/wall-profile", path: "/wall#page=agents", wait: "#agent-cx .av", steps: [{ click: "#agent-cx .av" }, { wait: "#wall-profile .wpc-pic" }], clipTo: "#wall-profile" },
+  { name: "pictures/wall-profile-phone", path: "/wall#page=agents", wait: "#agent-cx .av", phone: true, steps: [{ click: "#agent-cx .av" }, { wait: "#wall-profile .wpc-pic" }] },
   { name: "settings/webhooks", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="webhooks"]' }, { scroll: "#tab-webhooks" }] },
   { name: "settings/webhook-routing", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="webhooks"]' }, { click: "#tab-webhooks details summary" }, { scroll: "#tab-webhooks details" }] },
   { name: "settings/mesh", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="mesh"]' }, { scroll: "#tab-mesh" }] },

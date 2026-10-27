@@ -168,6 +168,10 @@ importers:
       vitest:
         specifier: ^1.2.2
         version: 1.6.1(@types/node@25.2.3)
+    optionalDependencies:
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
 
 packages:
 

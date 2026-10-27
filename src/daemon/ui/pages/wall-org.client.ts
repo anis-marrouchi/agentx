@@ -55,7 +55,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     var folded = !!ORG.folded[b.key];
     var actsFor = d.edges.filter(function (e) { return e.type === 'acts-for' && e.from === b.key; });
     var dotted = d.edges.filter(function (e) { return e.type === 'dotted-line' && e.from === b.key; });
-    var face = person ? avatar(b.name, 'sm', true) : avatar(b.id, 'sm');
+    var face = person ? avatar(b.id, 'sm', true, b.name) : avatar(b.id, 'sm');
     var dot = person ? '' : '<span class="wog__dot is-' + esc(b.status || 'unknown') + '" title="' + esc(ORG_STATE[b.status] || b.status) + '"></span>';
     var who = '<span class="wog__who"><b>' + esc(b.name) + dot + '</b><small>@' + esc(b.id) + '</small>' + (b.title ? '<small class="wog__title">' + esc(b.title) + '</small>' : '') + '</span>';
     var head = person ? '<div class="wog__head">' + face + who + '</div>'

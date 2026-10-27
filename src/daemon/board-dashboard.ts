@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, mkdirSync } from "fs"
 import { readFile } from "fs/promises"
 import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
-import type { DaemonConfig } from "./config"
+import { loadDaemonConfig, type DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
 import { handleLogin, hasSession, hasStreamTicket, isOffBox, pageToken, redirectToLogin, streamTicket, STREAM_TICKET_TTL_S } from "./dashboard-session"
 import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
@@ -26,6 +26,8 @@ import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
 import { handlePeoplePanel } from "./people-panel"
+import { handlePicturesPanel, servePicture } from "./pictures-panel"
+import { IMPLICIT_OWNER } from "@/people/people"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderProjectsPage } from "./ui/pages/projects"
@@ -40,7 +42,7 @@ import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
-import { renderTaskPage } from "./ui/pages/task"
+import { classicRedirect } from "./ui/classic-routes"
 import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
@@ -292,6 +294,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(icon.body)
     return
   }
+  // A profile picture (#1425): before the token gate, as an <img> sends
+  // none; it answers only for the version the gated list names.
+  if (servePicture(req, res, path, url, process.cwd())) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -512,31 +517,20 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
-  // /tasks/:id — watching an agent work is a place, not a popup. Replaces the
-  // full-screen modal on Live and the right-hand drawer on the agent page,
-  // both of which streamed this same task into something you couldn't link
-  // to, reload, or keep open beside anything else.
+  // /tasks/:id — watching an agent work is a place, not a popup. The Wall's
+  // Task page (#1381) does everything this page did, so the address now
+  // redirects there (#1447, classic-routes.ts); links in chat messages,
+  // voice replies and the classic pages keep working.
   const taskPage = method === "GET" && path.match(/^\/tasks\/([^/]+)$/)
   if (taskPage) {
-    const agentId = url.searchParams.get("agent") || ""
-    const nodeUrl = url.searchParams.get("node") || ctx.config.dashboard.daemonUrl
-    if (!agentId) {
+    const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)
+    if (!to) {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
-      res.end("<p>Missing <code>?agent=</code>. Open this task from the Live page.</p>")
+      res.end("<p>Missing <code>?agent=</code>. Open this task from the Wall's Live page.</p>")
       return
     }
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderTaskPage({
-      taskId: decodeURIComponent(taskPage[1]),
-      agentId,
-      agentName: url.searchParams.get("name") || undefined,
-      channel: url.searchParams.get("channel") || undefined,
-      archived: url.searchParams.get("archived") === "1",
-      ask: url.searchParams.get("ask") || undefined,
-      askAt: url.searchParams.get("at") || undefined,
-      nodeUrl,
-      peers: buildTopbarPeers(ctx.config),
-    }))
+    res.writeHead(302, { Location: to })
+    res.end()
     return
   }
   // /agents/:id/history — was a 360px drawer sliding over Live. The list is
@@ -917,6 +911,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderOrgPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
+  // Profile pictures (#1425): set, replace and remove, after the token gate.
+  if (await handlePicturesPanel(req, res, path, {
+    root: process.cwd(),
+    agentIds: () => Object.keys(currentAgents(ctx.config)),
+    personIds: () => [IMPLICIT_OWNER, ...currentPeople(ctx.config.people).map((p) => p.id)],
+  })) return
   if (method === "GET" && path === "/people" && !pageAllowed(req, res, ctx, path)) return
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
@@ -3253,6 +3253,12 @@ function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: 
     return false
   }
   return true
+}
+
+/** The agents agentx.json lists now, so a new agent needs no restart;
+ *  the ones the dashboard started with when the file can't be read. */
+function currentAgents(config: DaemonConfig): DaemonConfig["agents"] {
+  try { return loadDaemonConfig().agents ?? {} } catch { return config.agents ?? {} }
 }
 
 function localNodeName(config: DaemonConfig): string {

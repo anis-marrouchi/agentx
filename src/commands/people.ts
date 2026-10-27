@@ -9,6 +9,7 @@ import { TokenStore } from "@/daemon/token-store"
 import { PairCodeStore, formatCode } from "@/daemon/pair-codes"
 import { MemberStore } from "@/members/store"
 import { CODE_MINUTES, inviteMember, inviteMessage, pageFor, removeDevice, removePersonDevices, MEMBER_KEY_DAYS } from "@/members/pairing"
+import { peoplePictureCommand } from "./picture"
 import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeStatus } from "./app"
 
 // --- agentx people: the humans who talk to your agents (#384) ---
@@ -31,9 +32,13 @@ import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeS
 //                                          and a message to forward to them as it is (#659)
 //   devices [id]                           their machines: state, first and last use
 //   revoke-device <tokenId>                end one machine at once
+//   picture set <id> <file> | remove <id>  their profile picture (#1425, picture.ts)
 
 export const people = new Command("people")
   .description("the humans who talk to your agents: one person per human, whatever channel they use")
+
+// Profile picture (#1425): picture.ts.
+people.addCommand(peoplePictureCommand())
 
 const ROLES = PERSON_ROLES
 /** The line above and below the message to forward. */
