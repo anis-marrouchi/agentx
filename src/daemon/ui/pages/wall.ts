@@ -41,7 +41,7 @@ export interface WallPageOpts {
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
-  ["Live", "/live"], ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
+  ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
   ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
@@ -50,8 +50,12 @@ export const WALL_STATUS_TABS: Array<[string, string]> = [
   ["open", "Open"], ["in_progress", "Working"], ["waiting", "Waiting"], ["done", "Done"], ["failed", "Failed"], ["", "All"],
 ]
 
-/** Where the Wall's "Dashboard" link goes: the first classic page. */
-export const WALL_DASHBOARD_HREF = "/live"
+/** Where the Wall's "Dashboard" link goes: the first classic page. Classic
+ *  Live redirects to Wall Live (#1439), so it is Operations now. */
+export const WALL_DASHBOARD_HREF = "/mesh"
+
+/** Wall Live, where /live redirects (#1439). */
+export const WALL_LIVE_HREF = "/wall#page=live"
 
 const NAV_ICON = {
   wall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>',

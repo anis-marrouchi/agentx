@@ -81,7 +81,7 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
     if (url === "/api/monitor" && opts.monitorFails) return Promise.resolve({ ok: false, status: 502, json: async () => ({ error: "bad gateway" }) })
     if (url === "/api/node/build") return opts.build === undefined ? Promise.resolve({ ok: false, status: 502, json: async () => ({}) }) : opts.build === null ? Promise.reject(new Error("down")) : Promise.resolve({ ok: true, status: 200, json: async () => opts.build })
     const body = url.startsWith("/api/admin/wall?") ? { node: "node-a", syncedAt: NOW, nodes: [{ name: "node-a", ok: true }], failures: [], posts: opts.posts ?? [POST] }
-      : url === "/api/live" ? { nodes: [{ name: "node-a", url: "http://node-a", reachable: true, agents: [{ id: "cx", name: "Customer Desk" }, { id: "ops", name: "Night Shift" }] }] }
+      : url === "/api/live?quick=1" ? { nodes: [{ name: "node-a", url: "http://node-a", reachable: true, agents: [{ id: "cx", name: "Customer Desk" }, { id: "ops", name: "Night Shift" }] }] }
       : url === "/api/monitor" ? NODES
       : node ? { node: decodeURIComponent(node[1]).replace("http://", ""), since: NOW - 24 * H, runs: runs[decodeURIComponent(node[1])] ?? [], marks: [] }
       : { runs: [] }
@@ -387,13 +387,13 @@ describe("Wall build line, design #1451 frame 0 (#1444)", () => {
     expect(w.calls.filter((c) => c.url === "/api/node/build")).toHaveLength(1)
   })
 
-  it("says Restart pending with the classic hover text, and links to the restart controls", async () => {
+  it("says Restart pending with the classic hover text, and links to Wall Live's restart controls (#1439)", async () => {
     const w = openWall({ hash: "#page=wall", build: { ...BUILD, diskNewer: true } })
     await w.settle()
     const b = w.el("wall-build")
     expect(b.innerHTML).toContain('<span class="ax-badge ax-badge--warn wbl__stale" role="status">Restart pending</span>')
     expect(b.title).toBe("The code on disk is newer than the running daemon. Restart the daemon to load it. Node: node-a")
-    expect(b.attrs.href).toBe("/live")
+    expect(b.attrs.href).toBe("#page=live")
   })
 
   it("draws nothing until the first answer, keeping its place", async () => {

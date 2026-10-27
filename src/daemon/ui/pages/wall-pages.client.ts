@@ -173,8 +173,8 @@ export const WALL_PAGES_SCRIPT = String.raw`
       });
       var down = !n.reachable || n.error;
       return '<section class="wjm"><h3>' + esc(n.name) + ' <small>' + jobs.length + (jobs.length === 1 ? ' job' : ' jobs') +
-        (n.stale ? ', as of ' + esc(stamp(Date.parse(n.staleSince))) : down ? ', does not answer' : '') + '</small></h3>' +
-        (jobs.length ? jobs.join('') : '<p class="ax-wall__empty">' + (down && !n.stale ? 'Its jobs are not known.' : 'No recurring jobs.') + '</p>') + '</section>';
+        (n.stale ? ', as of ' + esc(stamp(Date.parse(n.staleSince))) : nodeChecking(n) ? ', checking…' : down ? ', does not answer' : '') + '</small></h3>' +
+        (jobs.length ? jobs.join('') : '<p class="ax-wall__empty">' + (nodeChecking(n) && !n.stale ? 'Checking this machine…' : down && !n.stale ? 'Its jobs are not known.' : 'No recurring jobs.') + '</p>') + '</section>';
     });
     var totals = [['ran', tot.ran], ['worked', tot.worked], ['failed', tot.failed], ['quiet', tot.quiet], ['look stale', tot.stale]];
     return '<dl class="wjt">' + totals.map(function (t) { return '<div><dt>' + t[0] + '</dt><dd>' + t[1] + '</dd></div>'; }).join('') + '</dl>' +

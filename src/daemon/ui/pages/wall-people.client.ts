@@ -77,7 +77,8 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
     if (d.state === 'pending') return ppState('Waiting for your approval', 'chip--warn') + ' <a href="/approvals">Approve</a>';
     return ppState('Ended', 'chip--ghost') + (d.removedReason ? ' <small>' + esc(plain(d.removedReason)) + '</small>' : '');
   }
-  function machinesHtml(p, devices) {
+  // Not machinesHtml: the Live page's script shares this scope (#1461).
+  function personMachinesHtml(p, devices) {
     if (!devices.length) return '<p class="wpp__quiet">No machine paired.' + (p.builtIn ? '' : ' Invite them with <code>agentx people invite ' + esc(p.id) + '</code>.') + '</p>';
     return '<ul class="wpp__machines">' + devices.map(function (d) {
       var end = d.state === 'removed' ? '' : '<button type="button" class="ax-btn wpp__end" data-pp-end="' + esc(d.tokenId) + '" data-pp-person="' + esc(p.id) + '" data-pp-name="' + esc(d.name) + '">End access</button>';
@@ -115,7 +116,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
     var d = PP.detail[p.id];
     if (!d) return '<p class="wpp__quiet">Loading…</p>';
     if (d.error) return '<p class="wpp__quiet">Could not read this person: ' + esc(d.error) + '.</p>';
-    return '<h3>Machines</h3>' + machinesHtml(p, d.devices || []) +
+    return '<h3>Machines</h3>' + personMachinesHtml(p, d.devices || []) +
       '<h3>Requests</h3>' + requestsHtml(p, d) +
       '<h3>Latest turns they started</h3>' + runsHtml(d.runs || []);
   }

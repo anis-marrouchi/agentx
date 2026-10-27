@@ -36,8 +36,8 @@ export const WALL_BUILD_SCRIPT = String.raw`
     if (!el || !buildLast) return;
     el.innerHTML = buildHtml(buildLast, asOf);
     el.title = buildTitle(buildLast);
-    // Restart pending leads to the restart controls (Restart when idle).
-    el.setAttribute('href', buildLast.diskNewer ? '/live' : '#page=live');
+    // Wall Live, where each machine's card has Restart when idle (#1439).
+    el.setAttribute('href', '#page=live');
     el.classList.remove('is-wait');
     el.removeAttribute('aria-hidden');
   }
