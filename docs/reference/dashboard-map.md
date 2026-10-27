@@ -21,7 +21,7 @@ The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 |---|---|
 | Run setup again, or add another agent | `/setup` |
 | Edit one agent's instructions and skills | `/admin/agents/<agent-id>` |
-| Watch or reopen one task | `/tasks/<task-id>` |
+| Watch or reopen one task | `/tasks/<task-id>?agent=<agent-id>` opens the run on the Wall's **Task** page ([Watch and steer a run](../dashboard/wall.md#watch-and-steer-a-run)) |
 | Trace an inbound message, errors, and daemon health | `/admin/health` (the old `/admin/observability` redirects here) |
 | See token spend and set monthly budgets ([Wall › Cost](../dashboard/wall.md#see-what-the-fleet-costs)) | `/wall`, **Cost** (`/admin/cost` opens it) |
 | Browse the shared wiki by pillar and type ([Wiki](../dashboard/wiki.md)) | `/admin/wiki/` |
