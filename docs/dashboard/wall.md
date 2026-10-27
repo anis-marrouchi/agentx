@@ -11,10 +11,10 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
 ## Open the Wall
 
 1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, and agents. The page you are on is in bold.
+2. The nav on the left has **Wall** (open posts), **Needs you** (posts waiting on you), **Running now**, **Projects**, **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard**, which opens the classic pages at **Live**. Each item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, what this machine spent this month, and agents. The page you are on is in bold.
 3. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Org**, **Activity**, **Workflows**, **Cost** and **Settings**. Their addresses have not changed. **Live** is still at `/live`.
 4. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
-5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
+5. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**, which opens **Jobs**, **Reviews**, **Failures**, **Cost**, **Agents** and **Dashboard** above the bar. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
    ![The Wall on a phone in dark mode, with the bottom bar and the round + button](/screenshots/wall/phone-dark.png)
 
@@ -497,6 +497,24 @@ When the intent graph (`graph.enabled` in `agentx.json`) is not sure where a mes
 
 A skipped classification stays pending: a skip is not recorded. The wiki searches a reviewer ran are not recorded either, so the link searches the path's names instead. Classifications the graph approved by itself never went to review; the count line says how many.
 
+## See what the fleet costs
+
+The **Cost** page shows what this machine's agents spent, in total and per agent. It reads the same figures as the classic Cost page at `/admin/cost` (see [Costs](../help/costs.md)), so the two agree for the same range. It only reads: caps, the CSV export and the full breakdown stay on `/admin/cost`.
+
+1. Select **Cost** in the nav. The number next to it is what this machine spent this month.
+2. The top line shows this month's total, against the fleet budget when one is set, with **near cap** or **fleet cap reached** when that applies. Under it: what was spent today, the last 7 days and the change against the 7 days before. The small line on the right is the spend per day over the last 30 days.
+3. Pick **7 days**, **30 days** or **90 days**. The line under the tabs gives the total, the runs and the cost per run over that range.
+4. The chart stacks each day's spend by agent: the five agents that spent most in the range each have their own shade, and the rest are **others**. Point at a bar to read its agent and amount.
+5. Each agent has one row, highest spend first: its spend in the range with the change against the period before (**new** when it spent nothing then), a bar for this month's spend against its cap (or **no cap**), its runs and its cost per run. Select an agent to open its [profile](#see-one-agent-s-profile).
+6. The box on the right lists the three agents whose spend moved most this week, the share of input read from the cache, and the runs this month that had no price.
+7. **Phone:** the chart becomes a single line of the spend per day, and the box on the right moves under the list.
+
+A run on a model with no price, such as a local model, is not counted as $0. The page says how many runs had no price this month, on the agent's row and in the box on the right; they are not in the totals.
+
+![The Cost page: this month's total, the 30-day range, the stacked chart and one row per agent](/screenshots/wall/cost.png)
+
+*Fictional data; your figures will differ.*
+
 ## Running now
 
 Running now sits in the side column on every page. Select **Running now** in the nav to open it as a page of its own, in the middle column.
@@ -574,6 +592,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 27. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
 28. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page, not the classic one. **Classic page** there opens the classic task page.
 29. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's row on the Cost page's **Monthly budgets** card. Select **Cost** on that line: the Cost page opens.
+30. Cost page: select **Cost** in the nav, then **30 days**. The total under the tabs and each agent's spend match the classic Cost page at `/admin/cost` with **30d** picked. Select an agent: its profile opens.
 
 ## If something is wrong
 

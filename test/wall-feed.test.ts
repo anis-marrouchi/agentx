@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -79,8 +79,11 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.post && url === "/api/admin/wall/post") return opts.post
     if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
+    if (url.startsWith("/api/admin/observability/cost?") && opts.cost === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
       : url === "/api/admin/org" ? (opts.org ?? { exists: false })
+      : url.startsWith("/api/admin/observability/cost?") ? (opts.cost ?? { days: [] })
+      : url === "/api/admin/observability/budgets" && opts.budgets ? opts.budgets
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {})
       : opts.thread && url.startsWith("/api/admin/wall/thread?") ? opts.thread : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
@@ -1364,5 +1367,48 @@ describe("The org on the Wall (#1398)", () => {
       expect(prof).toContain("<h2>Customer Desk</h2>")
       expect(prof).not.toContain("wpf__org")
     }
+  })
+})
+
+describe("The Cost page on the Wall (#1423)", () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const COST = { generatedAt: new Date().toISOString(), kpis: { spendToday: 1.5, spend7d: 4, spendDeltaWoW: 0.25 },
+    days: [{ date: today, cost: 4, tasks: 3, input: 100, cacheRead: 300, agents: { cx: { cost: 3, tasks: 2 }, reviewer: { cost: 1, tasks: 1 } } }] }
+  const BUDGETS = { month: "2026-10", agents: [{ agentId: "cx", spentUsd: 3, capUsd: 10, state: "ok" }], fleet: { spentUsd: 4, state: "uncapped" } }
+
+  it("opens from the nav with the month total, reads the cost for twice the range, and a row opens the profile", async () => {
+    const w = openWall({ hash: "#status=open&view=cost", cost: COST, budgets: BUDGETS })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("Cost")
+    expect(w.el("wall-cost-n").textContent).toBe("$4.00")
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/observability/cost?range=60")
+    const html = w.el("wall-cost").innerHTML
+    expect(w.el("wall-cost").hidden).toBe(false)
+    expect(html).toContain("<b>$4.00</b> this month")
+    expect(html).toMatch(/data-cagent="cx"[\s\S]*Customer Desk[\s\S]*<b>\$3\.00<\/b>[\s\S]*data-cagent="reviewer"/)
+    w.click({ "data-cagent": "cx" })
+    await w.settle()
+    expect(w.el("wall-cost").hidden).toBe(true)
+    expect(w.el("wall-profile").hidden).toBe(false)
+    expect(w.el("wall-profile").innerHTML).toContain("<h2>Customer Desk</h2>")
+  })
+
+  it("a range tab reads that range again", async () => {
+    const w = openWall({ hash: "#status=open&view=cost", cost: COST, budgets: BUDGETS })
+    await w.settle()
+    w.click({ "data-crange": "90" })
+    await w.settle()
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/observability/cost?range=180")
+    expect(w.el("wall-cost").innerHTML).toMatch(/data-crange="90" class="is-on"/)
+  })
+
+  it("says so when the cost read fails, and the rest of the Wall still works", async () => {
+    const w = openWall({ hash: "#status=open&view=cost", cost: "fail" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain("Could not load the cost: HTTP 503")
+    w.click({ "data-view": "feed" })
+    await w.settle()
+    expect(w.el("wall-cost").hidden).toBe(true)
+    expect(w.el("wall-feed").innerHTML).toContain("Post r1")
   })
 })
