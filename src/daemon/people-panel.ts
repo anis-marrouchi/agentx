@@ -5,10 +5,8 @@ import { MemberStore, type MemberDevice } from "@/members/store"
 import { pendingAnswer, removeDevice } from "@/members/pairing"
 import { requestsOf, runsOf, type PersonRequest, type PersonRun } from "@/people/activity"
 import { IMPLICIT_OWNER, type Person } from "@/people/people"
-import { renderPeoplePage } from "./ui/pages/people"
-import type { TopbarPeer } from "./topbar"
 
-// --- Dashboard side of the People page (#441) ---
+// --- Data of the People page (#441), on the Wall since #1441 ---
 //
 // The owner's view of what `agentx people list`, `devices` and `show`
 // print: every person, the machines each has paired, what each asked the
@@ -17,7 +15,7 @@ import type { TopbarPeer } from "./topbar"
 // when one is configured, and X-Requested-With from a same-origin page on a
 // write.
 //
-//   GET  /people                                          the page
+//   GET  /people                                          moved: to the Wall's People page
 //   GET  /api/admin/people                                everyone, with machine counts
 //   GET  /api/admin/people/<id>                           one person: machines, requests, runs
 //   POST /api/admin/people/<id>/devices/<tokenId>/end     end one machine at once
@@ -28,6 +26,8 @@ import type { TopbarPeer } from "./topbar"
 // refused for every page before it gets here (board-dashboard.ts, #452).
 
 export const PEOPLE_API = "/api/admin/people"
+/** Where /people goes now: the Wall's People page. */
+export const WALL_PEOPLE_HREF = "/wall#page=people"
 
 export interface PeoplePanelDeps {
   /** The people list as agentx.json holds it now. */
@@ -37,8 +37,6 @@ export interface PeoplePanelDeps {
   /** The install folder: pairing cards live under it. */
   root: string
   db: () => Database.Database | null
-  peers?: TopbarPeer[]
-  localToken?: string
   now?: () => number
 }
 
@@ -102,8 +100,9 @@ export async function handlePeoplePanel(
 
   if (path === "/people") {
     if (method !== "GET") { sendJson(res, 405, { error: "GET only" }); return true }
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
-    res.end(renderPeoplePage({ peers: deps.peers, localToken: deps.localToken }))
+    // The Wall's People page shows all the classic page did (#1441).
+    res.writeHead(302, { Location: WALL_PEOPLE_HREF, "Cache-Control": "no-store" })
+    res.end()
     return true
   }
 

@@ -5,11 +5,14 @@ import SwiftUI
 ///
 /// Each is a small glassy dot in the agent's colours with a cue for its
 /// state: a ring going round while it thinks, a steady ring while its
-/// answer waits to be spoken, a gentle pulse while it speaks, and a count
-/// when more questions wait for it. It moves only while shown on screen
-/// with something busy; Reduce Motion or "Animated orb" off gives still
-/// orbs. Clicks go through to the pill, it never takes the keyboard, and
-/// hovering an orb names the agent and its node.
+/// answer waits to be spoken, a steady ring and a blue dot while its
+/// answer waits to be heard (#1455), a red ring when it couldn't answer, a
+/// gentle pulse while it speaks, and a count when more questions wait for
+/// it. It moves only while shown on screen with something busy; Reduce
+/// Motion or "Animated orb" off gives still orbs. Clicks go through to the
+/// pill, which opens the open-requests list for a click on the row; it
+/// never takes the keyboard, and hovering an orb names the agent and its
+/// node.
 @MainActor
 final class MiniOrbsModel: ObservableObject {
     struct Orb: Identifiable, Equatable {
@@ -82,6 +85,14 @@ struct MiniOrb: View {
                 .scaleEffect(orb.activity == .queued ? 0.72 : 0.78 * pulse)
                 .opacity(orb.activity == .queued ? 0.7 : 1)
             cue
+            if orb.activity == .ready && orb.queued == 0 {
+                // Not heard yet: the same blue as the list's dot.
+                Circle()
+                    .fill(RequestRow.blue)
+                    .frame(width: 7, height: 7)
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 1))
+                    .offset(x: 5, y: -6)
+            }
             if orb.queued > 0 {
                 Text("\(min(orb.queued, 9))")
                     .font(.system(size: 7.5, weight: .bold).monospacedDigit())
@@ -102,8 +113,10 @@ struct MiniOrb: View {
                 .trim(from: 0, to: 0.3)
                 .stroke(Color(nsColor: ring), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
                 .rotationEffect(.radians(still ? -.pi / 2 : t * 3.4))
-        case .answering:
+        case .answering, .ready:
             Circle().stroke(Color(nsColor: ring).opacity(0.85), lineWidth: 1.2)
+        case .failed:
+            Circle().stroke(RequestRow.red, lineWidth: 1.4)
         case .speaking:
             Circle().stroke(Color(nsColor: ring).opacity(0.5), lineWidth: 1)
                 .scaleEffect(still ? 1 : 0.94 + 0.06 * OrbMath.speakingEnvelope(at: t + 0.4))

@@ -44,7 +44,7 @@ describe("live snapshot: attached sessions", () => {
   it("marks the bound agent and lists every session, including saved ones waiting to return", () => {
     const node = good([{ id: "dev-session" }, { id: "coder-agent" }, { id: "cx-agent" }])
     applyAttachSessions(node, [
-      { sessionId: "67d57923-aaaa", cwd: "/Users/x/Developer/mtgl-system-v2", agentIds: ["dev-session"], mode: "notify", lastSeenAt: 5, pending: 1 },
+      { sessionId: "67d57923-aaaa", cwd: "/Users/x/Developer/mtgl-system-v2", agentIds: ["dev-session"], mode: "notify", lastSeenAt: 5, registeredAt: 2, pending: 1 },
       { sessionId: "9a0ec9b7-bbbb", cwd: "/Users/x/Developer/devops-workspace", agentIds: [], mode: "notify", lastSeenAt: 4 },
     ], {
       "c0ffee00-cccc": { agentIds: ["coder-agent"], mode: "auto", cwd: "/Users/x/Developer/coder-workspace", savedAt: 3 },
@@ -55,6 +55,9 @@ describe("live snapshot: attached sessions", () => {
     expect(node.agents[2].attached).toBeUndefined()
     expect(node.attachSessions).toHaveLength(3)
     expect(node.attachSessions[1]).toMatchObject({ project: "devops-workspace", agentIds: [] })
+    // #1439: Wall Live shows when each session started.
+    expect(node.attachSessions[0].startedAt).toBe(2)
+    expect(node.attachSessions[1].startedAt).toBeUndefined()
     // Only the project folder leaves the machine, never the full path.
     expect(JSON.stringify(node.attachSessions)).not.toContain("/Users/")
   })

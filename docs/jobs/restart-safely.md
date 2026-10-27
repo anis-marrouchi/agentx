@@ -60,13 +60,13 @@ If a step fails before AgentX was stopped, it stays running and the command prin
 
 The dashboard can ask a node to restart itself as soon as no task is running. This needs launchd or systemd, because a service manager has to start AgentX again after it exits. On a daemon started by hand, use the terminal command above.
 
-1. **Browser:** open the dashboard's **Live** page.
-2. **Browser:** find the node, then select **Restart when idle** at the right of its name.
+1. **Browser:** open the dashboard and select **Live** in the Wall's nav (under **More** on a phone).
+2. **Browser:** under **Machines**, find the node's card, then select **Restart when idle**.
 
-   ![A node on the Live page, with the Restart when idle button at the right](/screenshots/live/restart-when-idle.png)
-3. **Browser:** confirm.
-4. The node shows `restart pending · 2 running · until 14:30` while it waits. To call it off, select **Cancel restart**.
-5. When no task is running, it shows `restarting…`, drops offline for a few seconds, then comes back online.
+   ![Machine cards on Live: Restart when idle, the Claude Code sessions attached with their agent and start time, and Connect a CLI session](/screenshots/wall/live-machines.png)
+3. **Browser:** the button reads **Restart once idle?**. Select it again within a few seconds to confirm.
+4. The card shows **Restart waiting · 2 running · until 14:30** while it waits. To call it off, select **Cancel restart**.
+5. When no task is running, it shows **Restarting…**, is unreachable for a few seconds, then comes back **up**.
 
 The node waits up to 30 minutes, then restarts anyway. It refuses straight away, with a message saying why, when nothing would start it again:
 
@@ -76,7 +76,7 @@ The node waits up to 30 minutes, then restarts anyway. It refuses straight away,
 
 With `Restart=on-failure`, or a Mac `KeepAlive` that only restarts after a failed exit, AgentX exits with code 75 so that the service manager starts it again.
 
-Only you can use the button: the request must come from the same machine, or from another node with its mesh token. Pages from other websites are refused.
+Only you can use the button: the dashboard asks for its key (`dashboard.token`) when one is set, and the node takes the request only from the same machine or from another node with its mesh token. Pages from other websites are refused.
 
 ## Stop and start by hand
 
@@ -272,8 +272,8 @@ To check the restart command:
 
 To check the dashboard button:
 
-1. **Browser:** select **Restart when idle** on a node of the **Live** page, and confirm.
-2. The node shows `restart pending`, then `restarting…`, then `online` again.
+1. **Browser:** on the Wall's **Live** page, select **Restart when idle** on a machine's card, then **Restart once idle?**.
+2. The card shows **Restart waiting**, then **Restarting…**, then **up** again.
 3. **Terminal:** on that node, `agentx daemon logs` shows `Restart when idle: no tasks running`, then `Shutdown: restart requested by restart-when-idle from the dashboard (…)`.
 
 To check which version is running after an update:

@@ -22,6 +22,9 @@ swiftc -O -o "$out/pill-tests" Sources/AgentXVoice/PillPlacement.swift Sources/A
 swiftc -O -o "$out/pill-busy-tests" Sources/AgentXVoice/PillBusy.swift Tests/PillBusy/main.swift \
   -target arm64-apple-macosx14.0
 "$out/pill-busy-tests"
+swiftc -O -o "$out/open-requests-tests" Sources/AgentXVoice/OpenRequests.swift Tests/OpenRequests/main.swift \
+  -target arm64-apple-macosx14.0
+"$out/open-requests-tests"
 swiftc -O -o "$out/history-tests" Sources/AgentXVoice/HistoryModel.swift Tests/History/main.swift \
   -target arm64-apple-macosx14.0
 "$out/history-tests"

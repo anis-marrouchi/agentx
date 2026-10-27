@@ -13,7 +13,7 @@ import { handleMemberRequest, withoutAgents } from "../src/daemon/member-routes"
 import { CLIENT_MANIFEST_PATH, renderClientManifest, renderClientPage } from "../src/daemon/ui/pages/client"
 import { clientRequestState, clientSentState, clientSummary } from "../src/daemon/ui/pages/client-logic"
 import { renderMemberLockedPage, renderMemberWaitingPage } from "../src/daemon/ui/pages/member"
-import { renderPeoplePage } from "../src/daemon/ui/pages/people"
+import { WALL_PEOPLE_SCRIPT } from "../src/daemon/ui/pages/wall-people.client"
 import { peopleConfigSchema } from "../src/daemon/config"
 import { PERSON_ROLES, type Person } from "../src/people/people"
 import { closeDb, openDb } from "../src/storage/sqlite"
@@ -40,8 +40,8 @@ describe("the client role", () => {
   })
 
   it("has a badge on the People page", () => {
-    expect(renderPeoplePage()).toContain("client: 'Client'")
-    expect(renderPeoplePage()).toContain("--role client")
+    expect(WALL_PEOPLE_SCRIPT).toContain("client: 'Client'")
+    expect(WALL_PEOPLE_SCRIPT).toContain("--role client")
   })
 })
 
