@@ -1,4 +1,5 @@
 import type { AgentHold } from "@/agents/holds"
+import { orgRelations, relationsProblem, type OrgRelation } from "./relations"
 
 // --- The Org view's data (#1169), from agentx.json, the holds and the daemon ---
 //
@@ -28,6 +29,12 @@ export interface OrgView {
   outside: OrgNode[]
   /** False when the daemon did not answer: working and idle are unknown. */
   live: boolean
+  /** People from the top-level people list, name only (#1418). */
+  people: Array<{ id: string; name: string }>
+  /** Typed relations, reportsTo included, members as `agent:<id>` / `person:<id>`. */
+  relations: OrgRelation[]
+  /** What is wrong with the relations, when something is; the daemon refuses to start the business layer on it. */
+  problem?: string
 }
 
 const JOB_MAX = 140
@@ -41,7 +48,11 @@ export function firstLine(text: string | undefined): string | undefined {
 }
 
 export function buildOrgView(
-  config: { agents?: Record<string, any>; business?: { roles?: Record<string, any>; orgChart?: Record<string, any> } },
+  config: {
+    agents?: Record<string, any>
+    people?: Array<{ id: string; name?: string }>
+    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; relations?: any[] }
+  },
   holds: Record<string, AgentHold>,
   live: Array<{ id: string; active?: number }> | null,
 ): OrgView {
@@ -87,7 +98,10 @@ export function buildOrgView(
   const sortDeep = (list: OrgNode[]) => { list.sort(byName); for (const n of list) sortDeep(n.reports) }
   sortDeep(roots)
   const outside = Object.keys(agents).filter((id) => !nodes.has(id)).map(node).sort(byName)
-  return { roots, outside, live: live !== null }
+  const people = (config.people ?? []).filter((p) => p?.id).map((p) => ({ id: p.id, name: p.name || p.id }))
+  const relations = orgRelations(config.business)
+  const problem = relationsProblem(relations, new Set(Object.keys(chart)), new Set(people.map((p) => p.id)))
+  return { roots, outside, live: live !== null, people, relations, ...(problem ? { problem } : {}) }
 }
 
 /** Does `from` reach `target` by following reportsTo? */

@@ -66,6 +66,27 @@ describe("the org tree", () => {
     expect(view.roots[1].heldBy).toBe("ceo")
   })
 
+  it("returns people and typed relations, a person boss putting the agent at the top (#1418)", () => {
+    const withPeople = {
+      ...config,
+      people: [{ id: "owner", name: "The Owner", identities: ["telegram:1"] }],
+      business: {
+        ...config.business,
+        orgChart: { ...config.business.orgChart, ceo: { role: "lead", reportsTo: "person:owner" } },
+        relations: [{ from: "dev", to: "person:owner", type: "acts-for" }],
+      },
+    }
+    const view = buildOrgView(withPeople, {}, null)
+    expect(view.people).toEqual([{ id: "owner", name: "The Owner" }])
+    expect(view.relations).toContainEqual({ from: "agent:ceo", to: "person:owner", type: "reports-to" })
+    expect(view.relations).toContainEqual({ from: "agent:pm", to: "agent:ceo", type: "reports-to" })
+    expect(view.relations).toContainEqual({ from: "agent:dev", to: "person:owner", type: "acts-for" })
+    expect(view.problem).toBeUndefined()
+    expect(view.roots.map((n) => [n.id, n.reportsTo])).toEqual([["ceo", "person:owner"]])
+    const bad = buildOrgView({ ...withPeople, people: [] }, {}, null)
+    expect(bad.problem).toMatch(/"owner", which is not a person/)
+  })
+
   it("cuts a long job to one short line", () => {
     expect(firstLine("  Many\n spaces.  Second.")).toBe("Many spaces.")
     expect(firstLine("x".repeat(300))!.length).toBe(140)
