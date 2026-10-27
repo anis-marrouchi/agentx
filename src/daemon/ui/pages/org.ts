@@ -74,7 +74,7 @@ const ORG_CSS = `
 .org-h2 { margin: 28px 0 10px; font-size: 14px; }
 .org-tree { overflow-x: auto; padding-bottom: 8px; }
 .org-tree ul, .org-row { list-style: none; margin: 0; padding: 0; }
-.org-tree > ul { display: flex; gap: 24px; justify-content: center; }
+.org-tree > ul { display: flex; gap: 24px; width: max-content; margin: 0 auto; }
 .org-tree li { position: relative; display: flex; flex-direction: column; align-items: center; }
 .org-tree li > ul { display: flex; padding-top: 22px; position: relative; }
 .org-tree li > ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 11px; border-left: var(--ax-border-w) solid var(--ax-border-2); }
