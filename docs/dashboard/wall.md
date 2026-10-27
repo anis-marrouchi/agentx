@@ -558,6 +558,9 @@ A run on a model with no price, such as a local model, is not counted as $0. The
 Only the owner can save a budget: the dashboard checks its key, and a refusal says so. Every other part of the page only reads.
 
 1. **Browser:** on the Cost page, scroll to **Monthly budgets**, or select **Budgets** in the box on the right. It lists all agents together, each project and each agent with a cap, with this month's spend against it and **On track**, **Near cap**, **Paused** or **No cap**. To go straight to one agent, select **Set a cap** (or **Change cap**) on its row: the form picks that agent, on the machine that runs it.
+
+   ![One agent's row on the Cost page: its spend this month against its cap, with Change cap on the right](/screenshots/wall/cost-set-cap.png)
+
 2. With more than one machine, choose the machine under **Machine**. A budget belongs to the machine where the agent runs.
 3. Under **Budget for**, choose **All agents**, a project or an agent. The box shows its current cap, or **No cap**.
 4. Type the most it may spend each month, in US dollars, or empty the box to remove the cap.
