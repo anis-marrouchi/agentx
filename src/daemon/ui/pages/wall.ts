@@ -24,9 +24,13 @@ import { WALL_PAGE_SCRIPT } from "./wall.client"
 import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
+import { WALL_COST_CSS } from "./wall-cost.client"
+import { WALL_PEOPLE_CSS } from "./wall-people.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_TASK_CSS } from "./wall-task.client"
+import { WALL_ACTIVITY_CSS } from "./wall-activity.client"
+import { WALL_BUILD_CSS } from "./wall-build.client"
 import { TASK_PAGE_CSS } from "./task"
 
 export interface WallPageOpts {
@@ -37,8 +41,8 @@ export interface WallPageOpts {
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
-  ["Live", "/live"], ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
-  ["People", "/people"], ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Cost", "/admin/cost"], ["Settings", "/admin"],
+  ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
+  ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
 /** The status tabs over the feed and the list (#1355): filter value, label. */
@@ -46,53 +50,125 @@ export const WALL_STATUS_TABS: Array<[string, string]> = [
   ["open", "Open"], ["in_progress", "Working"], ["waiting", "Waiting"], ["done", "Done"], ["failed", "Failed"], ["", "All"],
 ]
 
-/** Where the Wall's "Dashboard" link goes: the first classic page. */
-export const WALL_DASHBOARD_HREF = "/live"
+/** Where the Wall's "Dashboard" link goes: the first classic page. Classic
+ *  Live redirects to Wall Live (#1439), so it is Operations now. */
+export const WALL_DASHBOARD_HREF = "/mesh"
+
+/** Wall Live, where /live redirects (#1439). */
+export const WALL_LIVE_HREF = "/wall#page=live"
 
 const NAV_ICON = {
   wall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>',
   needs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>',
   live: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>',
-  agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>',
+  agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9.5 16h5"/></svg>',
+  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>',
+  org: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-4h12v4"/></svg>',
+  workflows: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.5 6H12a3 3 0 0 1 3 3v1M8.5 18H12a3 3 0 0 0 3-3v-1"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>',
   projects: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/></svg>',
   jobs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   reviews: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 10l2.5 2.5L16 8"/></svg>',
+  activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h9M4 18h6"/><circle cx="18" cy="16" r="3.5"/><path d="M18 14.5V16l1 .8"/></svg>',
   failures: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
+  cost: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   space: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
 }
 
+type NavIcon = keyof typeof NAV_ICON
+
+/** One nav destination: data-nav key, label, link, icon, count id, tooltip. */
+interface NavItem { key: string; label: string; href: string; icon: NavIcon; count?: string; title?: string }
+
+/**
+ * The nav, grouped (#1451 frame 0): one list for the left nav and the
+ * phone's More sheet. Pages not on the Wall yet (Workflows, Org, Settings)
+ * open their classic page until they are built. The Wall is
+ * the owner's dashboard (members have /member), so Settings is listed.
+ */
+export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
+  { label: "", items: [
+    { key: "wall", label: "Wall", href: "#status=open&amp;view=feed", icon: "wall", count: "nav-n-wall" },
+    { key: "needs", label: "Needs you", href: "#status=waiting_owner&amp;view=feed", icon: "needs", count: "nav-n-needs" },
+  ] },
+  { label: "Work", items: [
+    { key: "live", label: "Live", href: "#page=live", icon: "space", count: "nav-n-live" },
+    { key: "running", label: "Running now", href: "#page=running", icon: "live", count: "nav-n-running" },
+    { key: "projects", label: "Projects", href: "#status=open&amp;view=projects", icon: "projects", count: "nav-n-projects" },
+    { key: "activity", label: "Activity", href: "#page=activity", icon: "activity", title: "Activity: every run, newest first" },
+  ] },
+  { label: "Automation", items: [
+    { key: "jobs", label: "Jobs", href: "#status=open&amp;view=jobs", icon: "jobs", count: "nav-n-jobs" },
+    { key: "workflows", label: "Workflows", href: "/workflows", icon: "workflows" },
+    { key: "reviews", label: "Reviews", href: "#status=open&amp;view=reviews", icon: "reviews", count: "wall-rev-n" },
+    { key: "failures", label: "Failures", href: "#status=open&amp;view=failures", icon: "failures", count: "wall-fail-n" },
+  ] },
+  { label: "Fleet", items: [
+    { key: "agents", label: "Agents", href: "#page=agents", icon: "agents", count: "nav-n-agents" },
+    { key: "people", label: "People", href: "#page=people", icon: "people", count: "nav-n-people" },
+    { key: "org", label: "Org", href: "/org", icon: "org" },
+    { key: "cost", label: "Cost", href: "#status=open&amp;view=cost", icon: "cost", count: "wall-cost-n" },
+  ] },
+  { label: "Owner", items: [
+    { key: "settings", label: "Settings", href: "/admin", icon: "settings" },
+  ] },
+]
+
+/** The four pages in the phone's bottom bar; More holds the rest (#1355). */
+export const WALL_BAR_KEYS = ["wall", "needs", "running", "projects"]
+
+function navItemHtml(i: NavItem): string {
+  const bar = WALL_BAR_KEYS.includes(i.key) ? " data-bar" : ""
+  const n = i.count ? `<b class="ax-wall__n" id="${i.count}"></b>` : ""
+  return `<a class="ax-wall__item${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${bar} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${i.label}</span>${n}</a>`
+}
+
+/** The phone's More sheet: every page not in the bar, in the same groups. */
+function moreSheetHtml(): string {
+  const groups = WALL_NAV_GROUPS.filter((g) => g.label && g.label !== "Owner").map((g) => {
+    const items = g.items.filter((i) => !WALL_BAR_KEYS.includes(i.key))
+    return `<h2 class="ax-wall__navlbl">${g.label}</h2><div class="ax-wall__moregrid">${items.map((i) =>
+      `<a class="ax-wall__moreitem" data-nav="${i.key}" href="${i.href}">${i.label}${i.count ? `<b class="ax-wall__moren" data-n-for="${i.count}" hidden></b>` : ""}</a>`).join("")}</div>`
+  }).join("")
+  return `<div class="ax-wall__more" id="wall-more" hidden>
+    <button type="button" class="ax-wall__morescrim" data-more-close aria-label="Close More"></button>
+    <section class="ax-wall__moresheet" role="dialog" aria-modal="true" aria-label="More pages">
+      <span class="ax-wall__grab" aria-hidden="true"></span>
+      ${groups}
+      <div class="ax-wall__morefoot"><a class="ax-btn ax-btn--ghost" data-nav="settings" href="/admin">Settings</a><a class="ax-btn ax-btn--ghost" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}">Dashboard</a><button type="button" class="ax-btn ax-btn--ghost" data-wall-theme>Light / dark</button></div>
+    </section>
+  </div>`
+}
+
 export function renderWallPage(opts: WallPageOpts = {}): string {
   const token = opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : ""
+  const navItems = WALL_NAV_GROUPS.map((g) =>
+    (g.label ? `    <span class="ax-wall__navlbl" aria-hidden="true">${g.label}</span>\n` : "") + g.items.map((i) => `    ${navItemHtml(i)}`).join("\n"),
+  ).join("\n") + `\n    <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
   const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")
   // Take B's three columns (#1242): a nav on the left, the feed in the
   // middle, Running now, Agents and the dashboard links on the right.
   const body = `<div class="ax-wall">
   <nav class="ax-wall__nav" aria-label="Wall">
     <a class="ax-wall__logo" href="/wall">AX<small>wall</small></a>
-    <a class="ax-wall__item is-on" data-nav="wall" href="#status=open&amp;view=feed" title="Wall">${NAV_ICON.wall}<span>Wall</span><b class="ax-wall__n" id="nav-n-wall"></b></a>
-    <a class="ax-wall__item" data-nav="needs" href="#status=waiting_owner&amp;view=feed" title="Needs you">${NAV_ICON.needs}<span>Needs you</span><b class="ax-wall__n" id="nav-n-needs"></b></a>
-    <a class="ax-wall__item" data-nav="live" href="#page=live" title="Live">${NAV_ICON.space}<span>Live</span><b class="ax-wall__n" id="nav-n-live"></b></a>
-    <a class="ax-wall__item" data-nav="running" href="#page=running" title="Running now">${NAV_ICON.live}<span>Running now</span><b class="ax-wall__n" id="nav-n-running"></b></a>
-    <a class="ax-wall__item" data-nav="projects" href="#status=open&amp;view=projects" title="Projects">${NAV_ICON.projects}<span>Projects</span><b class="ax-wall__n" id="nav-n-projects"></b></a>
-    <a class="ax-wall__item" data-nav="jobs" href="#status=open&amp;view=jobs" title="Jobs">${NAV_ICON.jobs}<span>Jobs</span><b class="ax-wall__n" id="nav-n-jobs"></b></a>
-    <a class="ax-wall__item" data-nav="reviews" href="#status=open&amp;view=reviews" title="Reviews">${NAV_ICON.reviews}<span>Reviews</span><b class="ax-wall__n" id="wall-rev-n"></b></a>
-    <a class="ax-wall__item" data-nav="failures" href="#status=open&amp;view=failures" title="Failures">${NAV_ICON.failures}<span>Failures</span><b class="ax-wall__n" id="wall-fail-n"></b></a>
-    <a class="ax-wall__item" data-nav="agents" href="#page=agents" title="Agents">${NAV_ICON.agents}<span>Agents</span><b class="ax-wall__n" id="nav-n-agents"></b></a>
-    <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>
-    <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages">${NAV_ICON.more}<span>More</span></button>
+${navItems}
+    <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
     <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
     <div class="ax-wall__navfoot">
       <span>The Wall shows the work. It sends something only when you post, comment, call or start a Space.</span>
-      <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button">Light / dark</button>
+      <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button" data-wall-theme>Light / dark</button>
     </div>
   </nav>
+  ${moreSheetHtml()}
   <div class="ax-wall__main">
     <header class="ax-wall__head">
       <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1>
-        <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span></div>
+        <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
+        <span class="ax-wall__switch" id="wall-act-switch" aria-label="Show as" hidden><button type="button" class="is-on" aria-pressed="true">Feed</button><a href="/activity" title="The classic lane view, and the Map">Timeline</a></span>
+        <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a></div>
       <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
       <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
         ${WALL_STATUS_TABS.map(([v, label]) => `<button type="button" role="tab" data-tab="${v}">${label}</button>`).join("")}
@@ -101,6 +177,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     </header>
     <section class="ax-wall__filters" id="wall-filters" aria-label="Filters">
       <label>Owner <select id="f-owner"><option value="">All</option></select></label>
+      <label>Asked by <select id="f-asker"><option value="">All</option></select></label>
       <label>Counted for <select id="f-load"><option value="">All</option></select></label>
       <label>Status <select id="f-status">
         <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option><option value="stalled">Stalled</option>
@@ -137,14 +214,18 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <section id="wall-failures" class="ax-wall__failures" aria-label="Failures" hidden></section>
     <section id="wall-jobs" class="ax-wall__failures" aria-label="Recurring jobs" hidden></section>
     <section id="wall-reviews" class="ax-wall__reviews" aria-label="Review queue" hidden></section>
+    <section id="wall-cost" class="ax-wall__cost" aria-label="Cost: global and per agent" hidden></section>
     <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
     <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
+    <section id="wall-people" class="ax-wall__people" aria-label="People who talk to the agents" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
     <section id="wall-task" aria-label="A run: its request, conversation and steer box" hidden></section>
+    <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
   </div>
-  <aside class="ax-wall__aside">
+  <aside class="ax-wall__aside" id="wall-aside">
+    <div class="wac__side" id="wall-act-side" aria-label="Activity in numbers"></div>
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
       <h2 id="wall-nodes-h">Happening now</h2>
       <div id="wall-nodes"><p class="ax-wall__empty">Loading…</p></div>
@@ -164,7 +245,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }
@@ -193,7 +274,7 @@ const WALL_PAGE_CSS = `
 .ax-wall__search svg { width: 18px; height: 18px; }
 .ax-wall__search[aria-expanded="true"] { color: var(--ax-accent); }
 /* Feed or List, a small switch beside the title (#1355). */
-.ax-wall__switch { margin-left: auto; display: inline-flex; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); overflow: hidden; }
+.ax-wall__switch { margin-left: 12px; flex: none; display: inline-flex; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); overflow: hidden; }
 .ax-wall__switch button { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; background: none; border: 0; color: var(--ax-muted); padding: 4px 12px; cursor: pointer; }
 .ax-wall__switch button.is-on { background: var(--ax-text); color: var(--ax-bg); }
 

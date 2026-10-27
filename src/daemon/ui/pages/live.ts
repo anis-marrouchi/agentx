@@ -360,7 +360,7 @@ function renderStatStrip(snapshot, summary) {
 
   // Two tiles, because this page answers one question: who is alive, and what
   // are they doing right now. "tasks today" and "tokens today" answer a cost
-  // question that /admin/cost owns; "failed" answers a health question that
+  // question that the Wall's Cost page owns; "failed" answers a health question that
   // /admin/health owns. Five tiles made the page look like a status report
   // and buried the two numbers someone opening Live actually came for.
   const failing = errors + summary.errors;
