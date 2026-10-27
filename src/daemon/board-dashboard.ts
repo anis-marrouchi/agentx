@@ -39,11 +39,7 @@ import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
-import { renderBoardsPage } from "./ui/pages/boards"
-import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
-import { renderProceduresPage } from "./ui/pages/procedures"
-import { renderProcessesPage } from "./ui/pages/processes"
 import { classicRedirect } from "./ui/classic-routes"
 import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
@@ -59,7 +55,6 @@ import { dashboardIcon } from "./app-icon"
 import { assetLinks, handleDashboardPlaces, placesDeps, type PlacesDeps } from "./app-places"
 import { pinsDeps } from "./app-pins"
 import { daemonFireDeps } from "@/places/fire"
-import { renderPlacesPage } from "./ui/pages/places"
 import { relayedPush, relayedPushHere, type AppPushDeps } from "./app-push"
 import { appAnnounceDeps } from "./app-announce"
 import { PushStore } from "@/channels/push-store"
@@ -183,13 +178,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
 
   server.listen(port, bind, () => {
     const displayHost = bind === "0.0.0.0" ? "localhost" : bind
-    if (boards.length === 0) {
-      console.log(`\n  Live dashboard: http://${displayHost}:${port}\n`)
-      console.log("  (no boards configured — '/' serves the live view; add a board with 'agentx board add')")
-    } else {
-      console.log(`\n  Kanban dashboard: http://${displayHost}:${port}\n`)
-      console.log(`  Boards: ${boards.map((b) => b.id).join(", ")}`)
-    }
+    console.log(`\n  Dashboard: http://${displayHost}:${port}\n`)
     if (bind === "127.0.0.1" && !token) {
       console.log("  (bound to localhost; no auth token — safe default)")
     } else if (bind !== "127.0.0.1" && !token) {
@@ -208,12 +197,8 @@ const DASHBOARD_PAGES = new Set([
   "/mesh",
   "/monitor",
   "/activity",
-  "/boards",
-  "/glossary",
   "/workflows",
   "/workflows/editor",
-  "/procedures",
-  "/processes",
   "/graph",
   "/setup",
   "/admin",
@@ -221,13 +206,21 @@ const DASHBOARD_PAGES = new Set([
   "/approvals",
   "/people",
   "/org",
-  "/places",
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
   "/admin/projects",
   "/admin/wiki",
 ])
+
+/** Retired classic pages and the Wall view each one now opens (#1446). */
+export const RETIRED_PAGES: Record<string, string> = {
+  "/boards": "/wall#status=open&view=projects",
+  "/glossary": "/wall",
+  "/procedures": "/wall#page=agents",
+  "/processes": "/wall#status=open&view=jobs",
+  "/places": "/wall",
+}
 
 export interface Ctx {
   boards: BoardConfig[]
@@ -313,8 +306,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // as a post with its thread, and what runs on each node now. Live
     // stays at /live, and every other address is unchanged. Boards used to
     // take the root whenever any were configured, which meant the landing
-    // page silently changed identity based on config; now they live at
-    // /boards like every other surface.
+    // page silently changed identity based on config. The Boards page
+    // itself is retired (#1446): /boards opens the Wall's Projects view.
     //
     // The one exception is a machine with no agents yet, where there is
     // nothing live to show and the wizard is the only useful destination.
@@ -329,9 +322,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
-  if (method === "GET" && path === "/boards") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderBoardsPage({ peers: buildTopbarPeers(ctx.config) }))
+  // Classic pages retired with no views in 30 days (#1446): each address
+  // still works and opens the closest Wall view. The phone app keeps place
+  // reminders; only the dashboard's Places page went.
+  const retired = method === "GET" ? RETIRED_PAGES[path] : undefined
+  if (retired) {
+    res.writeHead(302, { Location: retired })
+    res.end()
     return
   }
   if (method === "GET" && path === "/wall") {
@@ -488,13 +485,6 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
-  // Places for the phone's place reminders (#676): the same store and
-  // routes the phone app uses (app-places.ts), from the dashboard.
-  if (method === "GET" && path === "/places") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderPlacesPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
   // Guest meshes (#380): the host's panel, with its data proxied to the
   // daemon's /mesh/guests (loopback-trusted there, like the other panels).
   if (method === "GET" && path === "/guests") {
@@ -517,24 +507,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     }
     return
   }
-  if (method === "GET" && path === "/glossary") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderGlossaryPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
   if (method === "GET" && path === "/workflows") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
-  if (method === "GET" && path === "/procedures") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderProceduresPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
-  if (method === "GET" && path === "/processes") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderProcessesPage({}))
     return
   }
   // /tasks/:id — watching an agent work is a place, not a popup. The Wall's
