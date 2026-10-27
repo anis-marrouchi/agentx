@@ -84,7 +84,7 @@ process_
       return
     }
     if (!res.ok) {
-      console.log(chalk.red(`  HTTP ${res.status} from ${baseUrl}/processes`))
+      console.log(chalk.red(`  HTTP ${res.status} from ${baseUrl}/api/processes`))
       process.exit(1)
     }
     const body = (await res.json()) as { processes: Array<Record<string, any>> }
