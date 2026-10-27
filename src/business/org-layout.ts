@@ -1,31 +1,26 @@
-// --- The Org diagram's layout (#1419) ---
+import type { OrgRelation, RelationType } from "./relations"
+
+// --- The Org chart's layout (#1419) ---
 //
-// Where each box of /org sits, and which lines join them. Members are
-// people and agents, keyed "person:<id>" and "agent:<id>"; relations are
-// typed. `reports-to` builds the levels: the top row is whoever reports to
-// no one, each report sits one row under its boss. The other types are
-// drawn between boxes already placed and never move them.
+// Where each card of the Wall's Org page sits, and which lines join them.
+// Members are people and agents, keyed "person:<id>" and "agent:<id>";
+// relations are typed (#1418). `reports-to` builds the levels: the top row
+// is whoever reports to no one, each report sits one row under its boss,
+// siblings side by side by name. The other types never move a card.
 //
 // Columns are half-slots: every leaf of the reporting tree gets one slot
 // (two half-columns) and a boss is centred over its reports, so two boxes
 // never share a cell and the page can place them with a plain CSS grid.
-
-export type OrgMemberKind = "agent" | "person"
-export const ORG_RELATION_TYPES = ["reports-to", "dotted-line", "acts-for"] as const
-export type OrgRelationType = (typeof ORG_RELATION_TYPES)[number]
-
-export interface OrgRelation {
-  /** The member the relation starts from: the report, or the agent acting. */
-  from: string
-  /** The boss, or the person acted for. */
-  to: string
-  type: OrgRelationType
-}
+//
+// The Wall runs layoutOrg in the browser too (injectFns), when a branch is
+// folded, so it stays self-contained: no import used at run time.
 
 export interface OrgPlacement {
   key: string
   /** 0 is the top row. */
   level: number
+  /** The reports-to boss this card hangs under, when it has one. */
+  parent?: string
   /** First half-column, from 1; a box spans two. */
   col: number
 }
@@ -39,11 +34,8 @@ export interface OrgLayout {
   levels: number
 }
 
-export function orgKey(kind: OrgMemberKind, id: string): string {
-  return `${kind}:${id}`
-}
-
 export function layoutOrg(members: Array<{ key: string; name: string }>, relations: OrgRelation[]): OrgLayout {
+  const types: RelationType[] = ["reports-to", "dotted-line", "acts-for"]
   const names = new Map(members.map((m) => [m.key, m.name]))
   const byName = (a: string, b: string) => names.get(a)!.localeCompare(names.get(b)!) || a.localeCompare(b)
 
@@ -73,7 +65,8 @@ export function layoutOrg(members: Array<{ key: string; name: string }>, relatio
   const place = (key: string, level: number): [number, number] => {
     levels = Math.max(levels, level + 1)
     const under = (reports.get(key) ?? []).sort(byName)
-    const at = boxes.push({ key, level, col: 0 }) - 1
+    const parent = kept.get(key)
+    const at = boxes.push({ key, level, ...(parent ? { parent } : {}), col: 0 }) - 1
     let first = slot
     let last = slot
     if (under.length) {
@@ -90,11 +83,11 @@ export function layoutOrg(members: Array<{ key: string; name: string }>, relatio
   const seen = new Set(edges.map((e) => `${e.type} ${e.from} ${e.to}`))
   for (const r of relations) {
     const id = `${r.type} ${r.from} ${r.to}`
-    if (r.type === "reports-to" || !ORG_RELATION_TYPES.includes(r.type) || r.from === r.to || !names.has(r.from) || !names.has(r.to) || seen.has(id)) continue
+    if (r.type === "reports-to" || !types.includes(r.type) || r.from === r.to || !names.has(r.from) || !names.has(r.to) || seen.has(id)) continue
     seen.add(id)
     edges.push({ from: r.from, to: r.to, type: r.type })
   }
-  const order = (t: OrgRelationType) => ORG_RELATION_TYPES.indexOf(t)
+  const order = (t: RelationType) => types.indexOf(t)
   edges.sort((a, b) => order(a.type) - order(b.type) || a.from.localeCompare(b.from) || a.to.localeCompare(b.to))
   return { boxes, edges, columns: slot * 2, levels }
 }

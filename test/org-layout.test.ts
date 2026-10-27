@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { layoutOrg, type OrgRelation } from "../src/business/org-layout"
+import { layoutOrg } from "../src/business/org-layout"
 import { buildOrgView } from "../src/business/org-view"
+import type { OrgRelation } from "../src/business/relations"
 
 // The Org diagram's layout (#1419): levels, columns and lines per type.
 
@@ -24,6 +25,16 @@ describe("the org diagram layout", () => {
     expect(l.levels).toBe(4)
     expect(Object.fromEntries(l.boxes.map((b) => [b.key, b.level]))).toEqual({
       "person:owner": 0, "agent:helper": 1, "agent:lead": 1, "agent:pm": 2, "agent:dev": 3, "agent:qa": 3,
+    })
+  })
+
+  it("puts siblings side by side, by name, each under its own boss", () => {
+    const l = layoutOrg(members, relations)
+    const row = (n: number) => l.boxes.filter((b) => b.level === n).sort((a, b) => a.col - b.col).map((b) => b.key)
+    expect(row(1)).toEqual(["agent:helper", "agent:lead"])
+    expect(row(3)).toEqual(["agent:dev", "agent:qa"])
+    expect(Object.fromEntries(l.boxes.map((b) => [b.key, b.parent]))).toEqual({
+      "person:owner": undefined, "agent:helper": "person:owner", "agent:lead": "person:owner", "agent:pm": "agent:lead", "agent:dev": "agent:pm", "agent:qa": "agent:pm",
     })
   })
 
@@ -76,16 +87,44 @@ describe("the org diagram layout", () => {
 })
 
 describe("the org view's diagram", () => {
-  it("draws the chart's agents with their cards, and their reportsTo as reports-to lines", () => {
+  const holds = { pm: { kind: "paused" as const, at: "t", by: "the owner" } }
+  const live = [{ id: "ceo", active: 1 }, { id: "pm", active: 0 }]
+
+  it("draws the chart's agents with their status, and each reportsTo as a reports-to line", () => {
     const view = buildOrgView({
       agents: { ceo: { name: "Chief" }, pm: { name: "PM" }, solo: { name: "Solo" } },
       business: { orgChart: { ceo: { role: "Boss" }, pm: { role: "Planner", reportsTo: "ceo" } } },
-    }, { pm: { kind: "paused", at: "t", by: "the owner" } }, [{ id: "ceo", active: 1 }, { id: "pm", active: 0 }])
+    }, holds, live)
     expect(view.diagram.boxes).toEqual([
       { key: "agent:ceo", kind: "agent", id: "ceo", name: "Chief", title: "Boss", status: "working", active: 1, level: 0, col: 1 },
-      { key: "agent:pm", kind: "agent", id: "pm", name: "PM", title: "Planner", status: "paused", active: 0, heldBy: "the owner", level: 1, col: 1 },
+      { key: "agent:pm", kind: "agent", id: "pm", name: "PM", title: "Planner", status: "paused", active: 0, heldBy: "the owner", level: 1, parent: "agent:ceo", col: 1 },
     ])
     expect(view.diagram.edges).toEqual([{ from: "agent:pm", to: "agent:ceo", type: "reports-to" }])
     expect(view.outside.map((n) => n.id)).toEqual(["solo"])
+  })
+
+  it("puts a person boss on top, keeps dotted lines, and keeps acts-for for a person with no card", () => {
+    const view = buildOrgView({
+      agents: { ceo: { name: "Chief" }, pm: { name: "PM" } },
+      people: [{ id: "sam", name: "Sam", role: "owner" }, { id: "alex", name: "Alex", role: "client" }, { id: "kim", name: "Kim" }],
+      business: {
+        orgChart: { ceo: { role: "Boss", reportsTo: "person:sam" }, pm: { role: "Planner", reportsTo: "ceo" } },
+        relations: [
+          { from: "pm", to: "person:sam", type: "dotted-line" },
+          { from: "ceo", to: "person:sam", type: "acts-for" },
+          { from: "pm", to: "person:alex", type: "acts-for" },
+        ],
+      },
+    }, {}, live)
+    const d = view.diagram
+    // Kim is in no relation, Alex only acted for: neither gets a card.
+    expect(d.boxes.map((b) => [b.key, b.level, b.title])).toEqual([["person:sam", 0, "Owner"], ["agent:ceo", 1, "Boss"], ["agent:pm", 2, "Planner"]])
+    expect(d.boxes[0]).not.toHaveProperty("status")
+    expect(d.levels).toBe(3)
+    const by = (t: string) => d.edges.filter((e) => e.type === t).map((e) => `${e.from}>${e.to}`)
+    expect(by("reports-to").sort()).toEqual(["agent:ceo>person:sam", "agent:pm>agent:ceo"])
+    expect(by("dotted-line")).toEqual(["agent:pm>person:sam"])
+    expect(by("acts-for").sort()).toEqual(["agent:ceo>person:sam", "agent:pm>person:alex"])
+    expect(view.problem).toBeUndefined()
   })
 })

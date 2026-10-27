@@ -38,6 +38,17 @@ describe("client resolution", () => {
     expect(map.get("umbrella-coding")).toBe("umbrella")
   })
 
+  it("climbs an agent: ref and a reports-to relation, never a person (#1418)", () => {
+    const map = agentClients({
+      projects: [{ id: "globex/globex-system-v2", pm: "pm-globex" }],
+      orgChart: { "a": { reportsTo: "agent:pm-globex" }, "b": {}, "c": { reportsTo: "person:owner" } },
+      relations: [{ from: "b", to: "a", type: "reports-to" }],
+    })
+    expect(map.get("a")).toBe("globex")
+    expect(map.get("b")).toBe("globex")
+    expect(map.has("c")).toBe(false)
+  })
+
   it("lets a hand-written contact rule beat any heuristic", () => {
     expect(matchContact("telegram", { chatId: "1816212449" }, business.contactMap)?.client).toBe("acme")
     expect(matchContact("telegram", { chatId: "999" }, business.contactMap)).toBeUndefined()

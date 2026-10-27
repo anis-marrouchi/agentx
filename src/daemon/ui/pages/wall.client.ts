@@ -42,6 +42,10 @@ import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { profileSpendHtml } from "./wall-spend"
+import { costPageHtml, costPageModel } from "./wall-cost"
+import { WALL_COST_SCRIPT } from "./wall-cost.client"
+import { WALL_ORG_SCRIPT } from "./wall-org.client"
+import { layoutOrg } from "@/business/org-layout"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -52,12 +56,14 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
+  var PAGES = ['running', 'agents', 'org', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, profileSpendHtml })}
+  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml, layoutOrg })}
 ${WALL_REVIEWS_SCRIPT}
+${WALL_COST_SCRIPT}
+${WALL_ORG_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
@@ -144,16 +150,17 @@ ${WALL_TASK_SCRIPT}
     walk(S.org && S.org.roots);
     return info;
   }
-  /** Role, boss and reports, read-only: Pause and Resume stay on /org. */
+  /** Role, boss and reports, read-only: Pause and Resume stay on /org; the chart is #page=org (#1419). */
   function orgLineHtml(id) {
     var o = orgInfo()[id];
     if (!o || (!o.title && !o.reportsTo && !o.reports)) return '';
     var bits = [
       o.title ? '<b>' + esc(o.title) + '</b>' : '',
-      o.reportsTo ? 'reports to <button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>' : '',
+      // A person boss (#1418) is a name, not a profile.
+      o.reportsTo ? 'reports to ' + (/^person:/.test(o.reportsTo) ? esc(orgName(o.reportsTo)) : '<button type="button" data-agent="' + esc(o.reportsTo) + '">' + esc(nameOf(o.reportsTo)) + '</button>') : '',
       o.reports ? o.reports + (o.reports === 1 ? ' reports' : ' report') + ' to it' : '',
     ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
-    return '<div class="wp__meta wpf__org">' + bits + '<a href="/org">Org chart</a></div>';
+    return '<div class="wp__meta wpf__org">' + bits + '<a href="#page=org">Org chart</a></div>';
   }
   function isAgent(id) {
     return !!agentInfo()[id] || ((S.data && S.data.posts) || []).some(function (p) { return p.owner === id; });
@@ -602,7 +609,7 @@ ${WALL_TASK_SCRIPT}
     var live = agentInfo()[id] && agentInfo()[id].live;
     return '<div class="wpf__banner" style="--av-h:' + hue(id) + '"></div><div class="wpf">' +
       '<div class="wpf__top">' + avatar(id, 'lg') + '<button type="button" class="ax-btn ax-btn--ghost" data-profile-clear>All posts</button></div>' +
-      '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' + orgLineHtml(id) +
+      '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' + (orgProfileHtml(id) || orgLineHtml(id)) +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
       profileSpendHtml(S.budgets, id) +
@@ -646,7 +653,10 @@ ${WALL_TASK_SCRIPT}
     // From a post or another page, an agent opens its profile; on the feed it toggles.
     var away = S.page !== 'wall' || S.post;
     S.page = 'wall'; S.post = ''; S.pushed = false;
-    $('f-owner').value = !away && $('f-owner').value === id ? '' : id;
+    var want = !away && $('f-owner').value === id ? '' : id;
+    $('f-owner').value = want;
+    // An agent with no post yet is not in the Owner list: add it, as showGoal does (#1419).
+    if ($('f-owner').value !== want) { var o = document.createElement('option'); o.value = id; o.textContent = id; $('f-owner').appendChild(o); $('f-owner').value = want; }
     if ($('f-owner').value === id) $('f-status').value = '';
     writeHash();
     render();
@@ -891,7 +901,7 @@ ${WALL_TASK_SCRIPT}
     return n;
   }
   function navHtml(page, f) {
-    var side = ['projects', 'jobs', 'reviews', 'failures'].indexOf(S.view) >= 0;
+    var side = ['projects', 'jobs', 'reviews', 'failures', 'cost'].indexOf(S.view) >= 0;
     var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'wall' ? (side ? S.view : f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       var me = a.getAttribute('data-nav') === on;
@@ -915,8 +925,8 @@ ${WALL_TASK_SCRIPT}
       el.classList.toggle('is-zero', !n);
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
-    var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
+    var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'org' ? 'Org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1160,11 +1170,13 @@ ${WALL_TASK_SCRIPT}
     if (page === 'post') $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
     if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
-    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
+    // The Org page (#1419): wall-org.client.ts. It needs no feed.
+    renderOrg(page);
+    document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list' || page === 'org');
+    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     if (!S.data) return;
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
-    document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list');
     $('wall-agents').innerHTML = agentsHtml();
     var n = failCount();
     $('wall-fail-n').textContent = n ? String(n) : '';
@@ -1173,7 +1185,7 @@ ${WALL_TASK_SCRIPT}
     $('wall-synced').textContent = stamp(synced);
     $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
     $('wall-synced').parentNode.classList.toggle('is-stale', Date.now() - synced > 120000);
-    if (!onWall) { renderReviews(''); return; }
+    if (!onWall) { renderReviews(''); renderCost(''); return; }
     var side = S.view === 'failures' || S.view === 'projects' || S.view === 'jobs';
     $('wall-profile').hidden = !f.owner || side;
     if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
@@ -1193,6 +1205,8 @@ ${WALL_TASK_SCRIPT}
     // Recurring jobs with their value line (#1183): cron-value.ts.
     if (S.view === 'jobs') $('wall-jobs').innerHTML = jobsPageHtml();
     renderReviews(S.view);
+    // The Cost page (#1423): wall-cost.client.ts.
+    renderCost(S.view);
   }
   function setView(v, quiet) {
     S.view = v;
@@ -1212,7 +1226,9 @@ ${WALL_TASK_SCRIPT}
     // the slow one and keeps its own "Loading…" (#1252).
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
     refreshReviews();
-    getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
+    refreshCost();
+    // A failed read says so on the Org page; the rest of the Wall goes on.
+    getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function (e) { S.org = { error: e.message }; render(); });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
