@@ -89,13 +89,12 @@ In `agentx.json`:
 
 ## See the step each agent is on
 
-![The Live tab: an agent card with a running task and, under it, the line workflow step reply](/screenshots/live/running-task-workflow.png)
+![A run on the Wall's Live page, with the workflow step it is on under the request](/screenshots/live/running-task-workflow.png)
 
-1. **Browser:** open the dashboard and click the **Live** tab.
-2. **Browser:** look at a busy agent's card. Under each running task, a line starting with `workflow` names the step it is on. For a task that wrote a plan it shows the step's title and its place, for example `step Rename the report (2/3)`. A task of one step shows `step reply`. A step of a saved workflow also shows the workflow's name.
-3. **Browser:** hover over the line to see the run's id.
+1. **Browser:** open the dashboard and select **Live** in the Wall's nav (under **More** on a phone).
+2. **Browser:** look at a card under **Running now**. A line starting with **Workflow** names the step it is on. For a task that wrote a plan it shows the step's title and its place, for example `step Rename the report (2/3)`. A task of one step shows `step reply`. A step of a saved workflow also shows the workflow's name first.
 
-The Live tab shows every computer of your mesh. A computer that cannot be reached is marked on the tab and the others still show.
+Live shows every computer of your mesh. A computer that cannot be reached says **unreachable** on its card under **Machines**, and the others still show.
 
 ## Read the records
 

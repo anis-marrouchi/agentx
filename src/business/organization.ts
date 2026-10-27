@@ -1,4 +1,5 @@
 import type { BusinessConfig, BusinessOrgEntry, BusinessProject, BusinessRole } from "./config"
+import { memberKey, memberLabel, orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
 
 // --- Organization: org-chart queries and validation ---
 //
@@ -14,6 +15,7 @@ export interface EmployeeProfile {
   agentId: string
   role: BusinessRole
   roleKey: string
+  /** Reports-to boss from the typed relations: a bare id for an agent, `person:<id>` for a person. */
   reportsTo?: string
   schedule: BusinessOrgEntry["schedule"]
   utilizationTarget: number
@@ -22,8 +24,14 @@ export interface EmployeeProfile {
 export class Organization {
   private employees: Map<string, EmployeeProfile> = new Map()
   private projects: Map<string, BusinessProject> = new Map()
+  private relationList: OrgRelation[] = []
+  /** Member → its reports-to boss, both written in full (`agent:x`, `person:y`). */
+  private bosses: Map<string, string> = new Map()
+  private people: ReadonlyArray<{ id: string; name?: string }>
 
-  constructor(config: BusinessConfig) {
+  /** `people`: the top-level people list, so a person can sit in the org. */
+  constructor(config: BusinessConfig, people: ReadonlyArray<{ id: string; name?: string }> = []) {
+    this.people = people
     for (const [agentId, entry] of Object.entries(config.orgChart)) {
       const role = config.roles[entry.role]
       if (!role) {
@@ -33,30 +41,22 @@ export class Organization {
         agentId,
         role,
         roleKey: entry.role,
-        reportsTo: entry.reportsTo,
         schedule: entry.schedule,
         utilizationTarget: entry.utilizationTarget,
       })
     }
 
-    // Validate reportsTo refs
-    for (const emp of this.employees.values()) {
-      if (emp.reportsTo && !this.employees.has(emp.reportsTo)) {
-        throw new Error(`Agent "${emp.agentId}" reports to unknown agent "${emp.reportsTo}"`)
-      }
+    // Members and typed relations (#1418): reportsTo may name a person,
+    // and business.relations adds reports-to, dotted-line and acts-for.
+    this.relationList = orgRelations(config)
+    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)))
+    if (problem) throw new Error(problem)
+    for (const r of this.relationList) {
+      if (r.type === "reports-to") this.bosses.set(r.from, r.to)
     }
-
-    // Cycle detection
     for (const emp of this.employees.values()) {
-      const seen = new Set<string>()
-      let cur: string | undefined = emp.agentId
-      while (cur) {
-        if (seen.has(cur)) {
-          throw new Error(`Reporting cycle detected involving "${emp.agentId}"`)
-        }
-        seen.add(cur)
-        cur = this.employees.get(cur)?.reportsTo
-      }
+      const boss = this.reportsTo(emp.agentId)
+      if (boss) emp.reportsTo = boss
     }
 
     // Per-project config — Phase 3.
@@ -77,23 +77,39 @@ export class Organization {
     return [...this.employees.values()]
   }
 
-  reportsTo(agentId: string): string | undefined {
-    return this.employees.get(agentId)?.reportsTo
+  /** Every relation, reportsTo included, with both ends written in full. */
+  relations(): OrgRelation[] {
+    return [...this.relationList]
   }
 
-  directReports(agentId: string): string[] {
-    return [...this.employees.values()]
-      .filter((e) => e.reportsTo === agentId)
-      .map((e) => e.agentId)
+  /** The member's reports-to boss: a bare id for an agent, `person:<id>` for a person. */
+  reportsTo(member: string): string | undefined {
+    const boss = this.bosses.get(memberKey(member))
+    if (!boss) return undefined
+    const m = parseMember(boss)
+    return m.kind === "agent" ? m.id : boss
   }
 
-  /** Walk up the org tree to the root. First element is `agentId` itself. */
+  /** A member for people to read: an agent's id, or a person's name. */
+  memberLabel(member: string): string {
+    return memberLabel(member, this.people)
+  }
+
+  /** The agents whose reports-to boss is `member`. */
+  directReports(member: string): string[] {
+    const key = memberKey(member)
+    return [...this.employees.keys()].filter((id) => this.bosses.get(`agent:${id}`) === key)
+  }
+
+  /** Walk up reports-to to the root. First element is `agentId` itself.
+   *  Agents only: the walk stops before a person, who is never dispatched to. */
   chainOfCommand(agentId: string): string[] {
     const chain: string[] = []
     let cur: string | undefined = agentId
     while (cur && !chain.includes(cur)) {
       chain.push(cur)
-      cur = this.employees.get(cur)?.reportsTo
+      const boss = this.bosses.get(`agent:${cur}`)
+      cur = boss?.startsWith("agent:") ? parseMember(boss).id : undefined
     }
     return chain
   }

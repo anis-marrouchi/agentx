@@ -12,6 +12,8 @@
 // costs you, and what agents may do for it without asking. A client with no
 // entry there still resolves; it just gets defaults.
 
+import { orgRelations, parseMember, type RelationType } from "./relations"
+
 export interface ContactRule {
   channel?: string
   chatId?: string
@@ -32,6 +34,7 @@ export interface BusinessShape {
   projects?: ProjectRule[]
   contactMap?: ContactRule[]
   orgChart?: Record<string, { reportsTo?: string }>
+  relations?: Array<{ from: string; to: string; type: RelationType }>
   clients?: Record<string, ClientPolicy>
 }
 export interface ResolvedClient {
@@ -63,6 +66,12 @@ export function agentClients(business: BusinessShape): Map<string, string> {
   const out = new Map<string, string>()
   const projects = business.projects ?? []
   const orgChart = business.orgChart ?? {}
+  // Agent → agent reports-to bosses, `agent:` refs and business.relations included (#1418).
+  const bossOf = new Map<string, string>()
+  for (const r of orgRelations(business)) {
+    const from = parseMember(r.from), to = parseMember(r.to)
+    if (r.type === "reports-to" && from.kind === "agent" && to.kind === "agent") bossOf.set(from.id, to.id)
+  }
   for (const p of projects) {
     if (p.pm) if (!out.has(p.pm)) out.set(p.pm, clientFromProject(p.id, projects))
   }
@@ -70,7 +79,7 @@ export function agentClients(business: BusinessShape): Map<string, string> {
     if (out.has(agentId)) return out.get(agentId)
     if (seen.has(agentId)) return undefined
     seen.add(agentId)
-    const up = orgChart[agentId]?.reportsTo
+    const up = bossOf.get(agentId)
     if (!up) return undefined
     const c = climb(up, seen)
     if (c) out.set(agentId, c)

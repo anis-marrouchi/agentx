@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { Organization } from "../src/business/organization"
+import { configRelationsProblem, memberLabel } from "../src/business/relations"
 import { businessConfigSchema, type BusinessConfig } from "../src/business/config"
 
 // Tests for Phase 3 of the architectural rescue — pmFor,
@@ -131,5 +132,109 @@ describe("Organization — backwards compatibility", () => {
     })
     const org = new Organization(cfg)
     expect(org.pmFor("anything")).toBeUndefined()
+  })
+})
+
+// People and typed relations in the org (#1418).
+describe("Organization — people and typed relations", () => {
+  const people = [{ id: "owner" }, { id: "sam" }]
+
+  it("a person can be an agent's boss, and escalation stops before them", () => {
+    const org = new Organization(makeConfig({
+      orgChart: {
+        ceo: { role: "ceo", reportsTo: "person:owner", schedule: { start: "09:00", end: "17:00" } },
+        "pm-globex": { role: "pm", reportsTo: "ceo", schedule: { start: "09:00", end: "17:00" } },
+      },
+      projects: [],
+    }), people)
+    expect(org.reportsTo("ceo")).toBe("person:owner")
+    expect(org.directReports("person:owner")).toEqual(["ceo"])
+    expect(org.chainOfCommand("pm-globex")).toEqual(["pm-globex", "ceo"])
+    expect(org.escalationChain("pm-globex")).toEqual(["ceo"])
+    expect(org.escalationChain("ceo")).toEqual([])
+  })
+
+  it("reads a legacy reportsTo as reports-to, with no change to the config", () => {
+    const org = new Organization(makeConfig())
+    expect(org.reportsTo("globex-v2")).toBe("pm-globex")
+    expect(org.directReports("pm-globex").sort()).toEqual(["globex-v1", "globex-v2"])
+    expect(org.relations()).toContainEqual({ from: "agent:globex-v2", to: "agent:pm-globex", type: "reports-to" })
+  })
+
+  it("keeps dotted-line and acts-for out of escalation", () => {
+    const org = new Organization(makeConfig({
+      relations: [
+        { from: "globex-v2", to: "person:sam", type: "dotted-line" },
+        { from: "agent:globex-v2", to: "agent:ceo", type: "dotted-line" },
+        { from: "globex-v2", to: "person:owner", type: "acts-for" },
+        { from: "ceo", to: "person:owner", type: "reports-to" },
+      ],
+    }), people)
+    expect(org.escalationChain("globex-v2")).toEqual(["pm-globex", "ceo"])
+    expect(org.relations().filter((r) => r.from === "agent:globex-v2").map((r) => r.type))
+      .toEqual(["reports-to", "dotted-line", "dotted-line", "acts-for"])
+  })
+
+  it("rejects an unknown member with an error that names it", () => {
+    expect(() => new Organization(makeConfig({ relations: [{ from: "ceo", to: "person:ghost", type: "reports-to" }] }), people))
+      .toThrow(/"ghost", which is not a person in people/)
+    expect(() => new Organization(makeConfig({ relations: [{ from: "ghost-agent", to: "person:owner", type: "dotted-line" }] }), people))
+      .toThrow(/"ghost-agent", which is not an agent in business.orgChart/)
+    expect(() => new Organization(makeConfig({
+      orgChart: { ceo: { role: "ceo", reportsTo: "nobody", schedule: { start: "09:00", end: "17:00" } } },
+      projects: [],
+    }))).toThrow(/"nobody"/)
+  })
+
+  it("detects a reporting cycle through a person", () => {
+    expect(() => new Organization(makeConfig({
+      relations: [
+        { from: "ceo", to: "person:owner", type: "reports-to" },
+        { from: "person:owner", to: "globex-v2", type: "reports-to" },
+      ],
+    }), people)).toThrow(/Reporting cycle/)
+  })
+
+  it("allows one reports-to per member and acts-for only from an agent to a person", () => {
+    expect(() => new Organization(makeConfig({ relations: [{ from: "globex-v2", to: "ceo", type: "reports-to" }] })))
+      .toThrow(/reports to both/)
+    expect(() => new Organization(makeConfig({ relations: [{ from: "globex-v2", to: "ceo", type: "acts-for" }] })))
+      .toThrow(/acts-for goes from an agent to a person/)
+    expect(() => new Organization(makeConfig({ relations: [{ from: "person:sam", to: "person:owner", type: "acts-for" }] }), people))
+      .toThrow(/acts-for goes from an agent to a person/)
+    expect(businessConfigSchema.safeParse({ relations: [{ from: "a", to: "b", type: "manages" }] }).success).toBe(false)
+  })
+
+  it("gives each employee its boss from the typed relations, for status and prompts", () => {
+    const org = new Organization(makeConfig({
+      orgChart: {
+        ceo: { role: "ceo", schedule: { start: "09:00", end: "17:00" } },
+        "pm-globex": { role: "pm", reportsTo: "agent:ceo", schedule: { start: "09:00", end: "17:00" } },
+      },
+      relations: [{ from: "ceo", to: "person:owner", type: "reports-to" }],
+      projects: [],
+    }), [{ id: "owner", name: "Sam Owner" }])
+    expect(org.get("ceo")?.reportsTo).toBe("person:owner")
+    expect(org.get("pm-globex")?.reportsTo).toBe("ceo")
+    expect(org.memberLabel("person:owner")).toBe("Sam Owner")
+    expect(org.memberLabel("agent:ceo")).toBe("ceo")
+  })
+})
+
+describe("configRelationsProblem and memberLabel (#1427 follow-ups)", () => {
+  it("checks a whole agentx.json, so writers can refuse a bad ref before saving", () => {
+    const business = { orgChart: { ceo: {}, dev: { reportsTo: "ceo" } } }
+    expect(configRelationsProblem({ business })).toBeUndefined()
+    expect(configRelationsProblem({ business: { orgChart: { dev: { reportsTo: "nobody" } } } })).toMatch(/"nobody"/)
+    expect(configRelationsProblem({ business: { orgChart: { dev: { reportsTo: "person:owner" } } } })).toMatch(/not a person/)
+    expect(configRelationsProblem({ people: [{ id: "owner" }], business: { orgChart: { dev: { reportsTo: "person:owner" } } } })).toBeUndefined()
+    expect(configRelationsProblem(undefined)).toBeUndefined()
+  })
+
+  it("labels an agent by id and a person by name, falling back to the id", () => {
+    expect(memberLabel("agent:dev")).toBe("dev")
+    expect(memberLabel("dev")).toBe("dev")
+    expect(memberLabel("person:owner", [{ id: "owner", name: "Sam Owner" }])).toBe("Sam Owner")
+    expect(memberLabel("person:owner")).toBe("owner")
   })
 })

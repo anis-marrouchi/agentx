@@ -672,6 +672,16 @@ Show or change expiry, "later" and digest settings (approvals in agentx.json).
 | `--digest-timezone <zone>` | — | IANA timezone for --digest-time; "local" for this machine's. |
 | `--digest-to <channel:chatId>` | — | Where the digest goes; "default" for notifications.destination. |
 
+### `agentx approvals mirror-report`
+
+The Reminders mirror's count: cards raised, Reminders created, cards missed, one line per day. See [Count what the mirror covered](../jobs/reminders-mirror.md#count-what-the-mirror-covered).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--start <time>` | 24 hours ago, times `--days` | When the first day starts (ISO time). |
+| `--days <n>` | `1` | How many 24-hour days. |
+| `--json` | — | Machine-readable output. |
+
 ## requests
 
 `agentx requests`: What you asked agents for that is not finished, oldest first.
@@ -2848,7 +2858,7 @@ Add or update an orgChart entry for an agent.
 | Flag | Default | What it does |
 |---|---|---|
 | `--role <role>` | required | Role title (e.g. 'PM', 'Coder', 'DevOps'). |
-| `--reports-to <agentId>` | — | Manager's agentId. |
+| `--reports-to <member>` | — | The manager: an agent id, or a person from `people` written as `person:<id>`. An id that is not in the org chart or in `people` is refused, and nothing is saved. |
 | `--start <hh:mm>` | `09:00` | Schedule start. |
 | `--end <hh:mm>` | `17:00` | Schedule end. |
 | `--days <csv>` | `mon,tue,wed,thu,fri` | Working days (mon,tue,wed,thu,fri). |
@@ -2857,6 +2867,30 @@ Add or update an orgChart entry for an agent.
 ### `agentx business orgchart remove <agentId>`
 
 Remove an orgChart entry.
+
+No flags.
+
+### `agentx business relation`
+
+Manage business.relations — typed links between people and agents (reports-to, dotted-line, acts-for). See [Org › People and kinds of relation](../dashboard/org.md#people-and-kinds-of-relation).
+
+### `agentx business relation list`
+
+List every relation, orgChart reportsTo included, and any problem with them.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--json` | — | JSON output. |
+
+### `agentx business relation add <from> <type> <to>`
+
+Link two members, e.g. `agentx business relation add agent:pm reports-to person:sam`. A member is `agent:<id>` or `person:<id>`; a bare id is an agent. Refused, and nothing saved, when a member is unknown or the link breaks a rule.
+
+No flags.
+
+### `agentx business relation remove <from> <type> <to>`
+
+Remove one relation from business.relations. Alias: `rm`. A reportsTo in orgChart is changed with `agentx business orgchart add`.
 
 No flags.
 

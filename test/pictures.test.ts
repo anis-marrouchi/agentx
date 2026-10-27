@@ -13,7 +13,6 @@ import {
   AGENT_PICTURE_PATH, PICTURE_MAX_BYTES, PICTURE_SIDE, PictureError, listPictures, preparePicture, removePicture, setPicture,
 } from "../src/pictures/pictures"
 import { setOwnPicture } from "../src/pictures/self"
-import { renderPeoplePage } from "../src/daemon/ui/pages/people"
 import { renderOrgPage } from "../src/daemon/ui/pages/org"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import type { Person } from "../src/people/people"
@@ -290,7 +289,7 @@ describe("the pages", () => {
     // eslint-disable-next-line no-new-func
     return new Function("S", "agentInfo", "nameOf", `${body}; return avatar`)(
       { pics }, () => ({ coder: { name: "Code Bot", live: false } }), () => "Code Bot",
-    ) as (id: string, size?: string, person?: boolean) => string
+    ) as (id: string, size?: string, person?: boolean, name?: string) => string
   }
 
   it("the Wall shows the initials exactly as before when no picture is set", () => {
@@ -309,8 +308,14 @@ describe("the pages", () => {
     expect(av("writer")).not.toContain("<img")
   })
 
-  it("People and Org read the picture list", () => {
-    expect(renderPeoplePage()).toContain("/api/admin/pictures")
+  it("a person's picture is found by id; with none, the initials come from their name", () => {
+    expect(wallAvatar({ agent: {}, person: { sara: "/api/pictures/person/sara?v=def" } })("sara", "", true, "Sara Ben Ali")).toContain('<img src="/api/pictures/person/sara?v=def"')
+    expect(wallAvatar(null)("sara", "", true, "Sara Ben Ali")).toContain(">SB</span>")
+  })
+
+  it("the Wall People page and the Org page offer the picture buttons", () => {
+    expect(WALL_PAGE_SCRIPT).toContain("pictureActsHtml(p.id, true)")
+    expect(WALL_PAGE_SCRIPT).toContain("'/api/admin/pictures/' + kind + '/'")
     expect(renderOrgPage()).toContain("/api/admin/pictures")
   })
 })
