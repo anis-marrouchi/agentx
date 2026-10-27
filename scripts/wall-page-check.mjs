@@ -65,7 +65,14 @@ function client(ws, onEvent) {
 // What went wrong on the page being checked; reset for each view and size.
 let problems = []
 const urls = new Map()
+let cdp
 function onEvent(method, p) {
+  // The token goes to the dashboard only: sent to Google Fonts too (/org
+  // loads them), it fails their CORS check.
+  if (method === "Fetch.requestPaused") {
+    const headers = Object.entries({ ...p.request.headers, Authorization: `Bearer ${token}` }).map(([name, value]) => ({ name, value }))
+    cdp("Fetch.continueRequest", { requestId: p.requestId, headers }).catch((e) => problems.push(`token not added: ${p.request.url} (${e.message})`))
+  }
   if (method === "Runtime.exceptionThrown") problems.push(`uncaught: ${p.exceptionDetails.exception?.description || p.exceptionDetails.text}`)
   if (method === "Runtime.consoleAPICalled" && (p.type === "error" || p.type === "assert")) {
     problems.push(`console.${p.type}: ${p.args.map((a) => a.value ?? a.description ?? "").join(" ")}`)
@@ -91,10 +98,10 @@ try {
   const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()
   ws = new WebSocket(pages.find((p) => p.type === "page").webSocketDebuggerUrl)
   await new Promise((res, rej) => { ws.addEventListener("open", res, { once: true }); ws.addEventListener("error", rej, { once: true }) })
-  const cdp = client(ws, onEvent)
+  cdp = client(ws, onEvent)
   const evaluate = async (expression) => (await cdp("Runtime.evaluate", { expression, returnByValue: true })).result?.value
   await Promise.all(["Page.enable", "Runtime.enable", "Log.enable", "Network.enable"].map((m) => cdp(m)))
-  if (token) await cdp("Network.setExtraHTTPHeaders", { headers: { Authorization: `Bearer ${token}` } })
+  if (token) await cdp("Fetch.enable", { patterns: [{ urlPattern: `${target}/*` }] })
   await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] })
   mkdirSync(out, { recursive: true })
 
