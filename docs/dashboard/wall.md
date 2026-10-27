@@ -240,6 +240,8 @@ When a machine does not answer, the page names it at the top: agents that run on
 
 The **Live** page lists everything live on your machines: Spaces and lessons on top, then the sessions and jobs running now (the same runs the classic `/live` page shows), then what comes up next. While the page is open it updates every two seconds.
 
+Here and everywhere else on the Wall (cards, a run's Task page, a post's thread, the review queue), the internal `[agentx:…]` markers the daemon adds to the turns it sends an agent are left out. A text that held only a marker reads as one plain line, such as **Result from dev-session**.
+
 1. **Browser:** in the nav, select **Live** (in **More** on a phone). The number next to it counts the live sessions and runs.
 2. Under **Spaces and lessons**, when there are any:
    - a **Space** (two agents talking out loud) comes first, with its topic, who talks and since when. On this computer, select **Join**: its transcript opens under the list, with **Say something into the Space** and **End**. A Space on another machine says **Plays on** and that machine's name, since its voices play there.
