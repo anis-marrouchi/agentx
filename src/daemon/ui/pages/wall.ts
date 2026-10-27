@@ -96,7 +96,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <header class="ax-wall__head">
       <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1>
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span></div>
-      <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
+      <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span><span class="ax-wall__build" id="wall-build" hidden></span></p>
       <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
         ${WALL_STATUS_TABS.map(([v, label]) => `<button type="button" role="tab" data-tab="${v}">${label}</button>`).join("")}
         <button type="button" id="wall-search" class="ax-wall__search" aria-expanded="false" aria-controls="wall-filters" title="Search and filters">${NAV_ICON.search}</button>
@@ -188,6 +188,11 @@ const WALL_PAGE_CSS = `
 .ax-wall__sub .ax-wall__count { font-size: var(--ax-fs-xs); }
 .ax-wall__sync { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
 .ax-wall__sync.is-stale time { color: var(--ax-warn); }
+/* The running build (#1444): version, commit, since; restart pending when the disk has newer code. */
+.ax-wall__build { display: inline-flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; min-width: 0; }
+.ax-wall__buildv { font-family: var(--ax-mono); color: var(--ax-text-2); overflow-wrap: anywhere; }
+.ax-wall__build .chip { text-decoration: none; }
+.ax-wall__build .chip:hover { text-decoration: underline; }
 .ax-wall__sync button { font: inherit; background: none; border: 0; padding: 0; color: var(--ax-accent); cursor: pointer; }
 .ax-wall__views { display: flex; overflow-x: auto; scrollbar-width: none; }
 .ax-wall__views button { flex: 1 0 auto; font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ax-muted); padding: 14px 12px 11px; cursor: pointer; white-space: nowrap; }

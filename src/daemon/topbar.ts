@@ -165,6 +165,10 @@ export const TOPBAR_CSS = `
 .ax-subheader > * {flex-shrink:0}
 .ax-subheader .spacer{flex:1}`
 
+/** The running build's hover text, the same in the top bar and on the Wall (#1444). */
+export const BUILD_TITLE_STALE = "The code on disk is newer than the running daemon. Restart the daemon to load it."
+export const BUILD_TITLE_OK = "The build the daemon is running, and when it started."
+
 /**
  * Shared click wiring for the theme switcher + mesh selector. Safe to call
  * multiple times — only binds once per element.
@@ -350,9 +354,7 @@ export const TOPBAR_SCRIPT = `<script>
           w.setAttribute('role', 'status');
           el.appendChild(w);
         }
-        el.title = (b.diskNewer
-          ? 'The code on disk is newer than the running daemon. Restart the daemon to load it.'
-          : 'The build the daemon is running, and when it started.') + (b.node ? ' Node: ' + b.node : '');
+        el.title = (b.diskNewer ? ${JSON.stringify(BUILD_TITLE_STALE)} : ${JSON.stringify(BUILD_TITLE_OK)}) + (b.node ? ' Node: ' + b.node : '');
         el.hidden = false;
       }).catch(function(){});
     }

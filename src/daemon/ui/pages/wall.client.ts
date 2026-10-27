@@ -44,6 +44,7 @@ import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
+import { wallBuildHtml, WALL_BUILD_TITLES } from "./wall-build"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -58,7 +59,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml })}
+  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml, wallBuildHtml })}
+  var BUILD_TITLES = ${JSON.stringify(WALL_BUILD_TITLES)};
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
@@ -1212,7 +1214,23 @@ ${WALL_TASK_SCRIPT}
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }
+  // The running build in the header (#1444, wall-build.ts): asked with
+  // every load, so once a minute and on Refresh. A failed read keeps the
+  // line it had; with none yet, it says the daemon did not answer.
+  function loadBuild() {
+    fetch('/api/node/build').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }).then(function (b) {
+      if (!b && S.build) return;
+      S.build = b;
+      var d = b && b.startedAt ? Date.parse(b.startedAt) : NaN;
+      var line = wallBuildHtml(b, isNaN(d) ? '' : stamp(d), BUILD_TITLES);
+      var el = $('wall-build');
+      el.innerHTML = line.html;
+      el.title = line.title;
+      el.hidden = !line.html;
+    });
+  }
   async function load() {
+    loadBuild();
     // The quick reads go out first and draw as each answers; the feed is
     // the slow one and keeps its own "Loading…" (#1252).
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });

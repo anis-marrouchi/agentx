@@ -41,17 +41,28 @@ Start in Monitor for an overview of the work, then open Activity when you need t
 
 ## See which version is running
 
-On every page, the right of the top bar shows the version of the daemon, its commit (the exact state of the source code it was built from) and when it started, in your time zone.
+On every Wall page, the header under the page title shows the version of the daemon, its commit (the exact state of the source code it was built from) and since when it has been running. The time is in your browser's time zone, with its offset from UTC, like every time on the Wall.
 
-![The right of the top bar: the daemon's version and commit, and since when it has been running](/screenshots/live/running-build.png)
+![The Wall header: the daemon's version and commit, and since when it has been running](/screenshots/wall/running-build.png)
 
-*The daemon runs version 0.89.0, built from commit e66f85a, and started on October 2.*
+*The daemon runs version 0.181.1, built from commit c10bdda. The line under it says when it started.*
 
-When the AgentX files on disk were rebuilt or upgraded after the daemon started, the same place adds a **restart pending** badge. Hover over it to read why: the code on disk is newer than the running daemon. The daemon keeps running the old code until it restarts: use **Restart when idle** on the Live tab, or `agentx daemon restart --when-idle` in a terminal ([restart without losing work](../jobs/restart-safely.md#restart-from-the-dashboard)). The line refreshes every minute.
+On a phone (390 pixels wide), the same line sits in the same place and wraps onto two lines:
+
+![The same line in the Wall header on a phone](/screenshots/wall/running-build-phone.png)
+
+Hover over the line to read which machine it describes.
+
+When the AgentX files on disk were rebuilt or upgraded after the daemon started, the line adds a **restart pending** badge. Hover over it to read why: the code on disk is newer than the running daemon. The daemon keeps running the old code until it restarts. To restart it without stopping a task:
+
+1. **Browser:** select **restart pending**. It opens **Live** on the Wall, where you can see what each machine is running.
+2. **Terminal:** once you are ready, run `agentx daemon restart --when-idle`. The daemon restarts as soon as no task is running ([restart without losing work](../jobs/restart-safely.md#restart-when-no-task-is-running-recommended)).
+
+The line refreshes every minute, and when you select **Refresh**.
 
 The badge looks at the folder the daemon was started from. If you install each release into a new folder and then point the service at it, a release waiting in the new folder does not show the badge.
 
-This is the daemon the dashboard is attached to (`dashboard.daemonUrl`), not the machine picked under **Managing**. For the full picture, with the last restart and how often the daemon restarts, run [`agentx daemon status`](../reference/cli.md#see-what-the-daemon-is-running).
+This is the daemon the dashboard is attached to (`dashboard.daemonUrl`), not every machine in your mesh (the machines connected to this one). **Running now** on the Wall shows each machine's version. For the full picture, with the last restart and how often the daemon restarts, run [`agentx daemon status`](../reference/cli.md#see-what-the-daemon-is-running).
 
 ## Talk to your agents
 
@@ -63,7 +74,7 @@ To open the dashboard through your own web address, see [Open the dashboard thro
 
 1. **Browser:** open `http://127.0.0.1:4202/live`. The top bar shows the eight tabs.
 2. Your agents appear on **Live**. If they do, the dashboard can reach the daemon.
-3. The right of the top bar shows a version and "since" with a date. **Terminal:** `agentx daemon status` names the same version on its first line.
+3. **Browser:** open `http://127.0.0.1:4202/wall`. Under the title, the header shows a version and "since" with a date. **Terminal:** `agentx daemon status` names the same version on its first line.
 
 ## If something is wrong
 
@@ -71,6 +82,6 @@ To open the dashboard through your own web address, see [Open the dashboard thro
 - **The page loads but shows no agents:** the daemon is stopped or unreachable. **Terminal:** run `agentx daemon status`. See [It's not answering](../help/its-not-answering.md).
 - **Every page stops answering for seconds at a time, the teammate page and the phone app included:** one database read is holding the dashboard, which serves all of them. Read the output of `agentx board serve` (its terminal, or the log file of the service that starts it) for a line containing `slow query`. It gives the time taken and the query, for any read of 200 ms or longer. Report that line. No such line means the cause is elsewhere.
 - **The page looks out of date after an update:** the dashboard is a separate program. Stop it and start it again.
-- **The top bar shows no version:** the dashboard can't reach the daemon, or the daemon is older than this page. **Terminal:** run `agentx daemon status`.
-- **The top bar shows "restart pending":** the daemon is running older code than what is installed. Restart it when no task is running: `agentx daemon restart --when-idle`.
+- **The Wall header shows no version, or says "Daemon version: not reachable":** the dashboard can't reach the daemon, or the daemon is older than this page. **Terminal:** run `agentx daemon status`.
+- **The Wall header shows "restart pending":** the daemon is running older code than what is installed. Restart it when no task is running: `agentx daemon restart --when-idle`.
 - **You changed the port:** the address uses `dashboard.port` from `agentx.json` instead of `4202`.

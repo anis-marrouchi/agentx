@@ -67,6 +67,9 @@ const shots = [
   // Blocked tasks grouped by the agent that blocks them (#1193).
   { name: "wall/blocked", path: "/wall#status=blocked&by=agent&view=list", wait: ".wl" },
   // The review queue: pending and decided classifications (#1182).
+  // The running build in the Wall's header, desktop and phone (#1444).
+  { name: "wall/running-build", path: "/wall", wait: "#wall-build:not([hidden])", clipTo: ".ax-wall__head" },
+  { name: "wall/running-build-phone", path: "/wall", wait: "#wall-build:not([hidden])", phone: true, clipTo: ".ax-wall__head" },
   { name: "wall/reviews", path: "/wall#status=&view=reviews", wait: "[data-rtab]", steps: [{ click: '[data-rtab="approved"]' }, { wait: ".wr__diff" }], clipTo: "#review-docs-review-invoice" },
   { name: "live", path: "/live", wait: ".ax-agent__name" },
   { name: "operations", path: "/mesh", wait: "body" },
@@ -128,7 +131,6 @@ const shots = [
   // app and home folder, which a screenshot must not publish.
   { name: "doctor/tab", path: "/admin/health", wait: '[data-tab="doctor"]', steps: [{ click: '[data-tab="doctor"]' }, { wait: ".ax-obs__doctor-group" }], clipBefore: ".ax-obs__doctor-group + .ax-obs__doctor-group" },
   { name: "health/routing", path: "/admin/health", wait: '[data-tab="routing"]', steps: [{ click: '[data-tab="routing"]' }] },
-  { name: "live/running-build", path: "/live", wait: ".ax-build", clipTo: ".ax-topbar__right" },
   // Last: the scripted reply takes a minute, so later shots would show it running.
   { name: "live/running-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--update" }] },
   // The same scripted task, still running: its pause button, then paused.
