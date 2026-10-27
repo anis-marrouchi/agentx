@@ -83,7 +83,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
       const body = opts.peerCost(peer, url)
       return Promise.resolve({ ok: body !== null, status: body === null ? 404 : 200, json: async () => body ?? { error: "unknown peer" } })
     }
-    if (opts.budgetPost && url === "/api/admin/budgets" && init?.method === "POST") {
+    if (opts.budgetPost && url === "/api/admin/wall/budget" && init?.method === "POST") {
       const r = opts.budgetPost(JSON.parse(init.body), peer ?? null)
       return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
     }

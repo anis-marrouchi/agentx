@@ -18,7 +18,7 @@
 //
 // Shipped to the browser through injectFns, so each function is
 // self-contained. The only write, a budget, goes through POST
-// /api/admin/budgets behind the dashboard token (wall-cost.client.ts).
+// /api/admin/wall/budget behind the Wall's owner-only guard (wall-cost.client.ts).
 
 /** Where the Cost page lives; /admin/cost and /cost send here. */
 export const WALL_COST_HREF = "/wall#status=open&view=cost"

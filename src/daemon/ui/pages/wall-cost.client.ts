@@ -13,9 +13,9 @@
 //
 // renderCost(view) is the one call the Wall's render() makes; refreshCost()
 // is called from the Wall's own load(). The nav count is this month's total
-// on every machine read. The only write is a budget: POST /api/admin/budgets
-// on the machine picked, which the dashboard lets only its owner do (its
-// token gate); a refusal is shown as such.
+// on every machine read. The only write is a budget: POST /api/admin/wall/budget
+// on the machine picked, which the dashboard lets only its owner do (the
+// Wall's owner-only guard); a refusal is shown as such.
 
 export const WALL_COST_SCRIPT = String.raw`
   var C = { range: 30, key: '', loading: '', data: null, error: '', failed: [], peerBudgets: {}, form: {}, filter: 'all', details: false };
@@ -131,7 +131,7 @@ export const WALL_COST_SCRIPT = String.raw`
     if (cut >= 0) body.id = key.slice(cut + 1);
     C.form.scope = key; C.form.saving = true; C.form.note = 'Saving…';
     render();
-    var r = await act('POST', '/api/admin/budgets', body, m.peer);
+    var r = await act('POST', '/api/admin/wall/budget', body, m.peer);
     C.form.saving = false;
     C.form.usd = null;
     C.form.note = r.ok ? (body.monthlyUsd ? 'Saved. It applies now; paused work resumes if the new cap allows it.' : 'Saved: no cap.')

@@ -91,7 +91,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, isWallWrite, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -832,7 +832,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   // Set or raise a monthly budget from the Cost page (#1290), after the
   // token gate above. { scope: agent|project|fleet, id?, monthlyUsd, warnRatio? }
-  if (method === "POST" && path === "/api/admin/budgets") {
+  // The Wall's Cost page sends it to WALL_BUDGET_PATH, under the Wall's
+  // owner-only guard (#1454).
+  if (method === "POST" && (path === "/api/admin/budgets" || path === WALL_BUDGET_PATH)) {
     const body = await readJson(req).catch(() => ({})) as Record<string, unknown>
     const problem = budgetPatchProblem(body)
     if (problem) { sendJson(res, 400, { error: problem }); return }
