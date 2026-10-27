@@ -30,14 +30,15 @@ export const STOP_WORDS = new Set([
 ])
 
 /** Bump when tokenize() output changes, so cached indexes on disk are rebuilt. */
-const TOKENIZER_VERSION = "2"
+const TOKENIZER_VERSION = "3"
 
 const ARABIC = /[؀-ۿ]/
 
 /**
  * Arabic word normalisation (#1390): drop tashkeel, superscript alef and tatweel,
- * turn Arabic-Indic digits into 0-9, unify alef forms, ى → ي and ة → ه, then strip a leading و/ب and the article ال
- * when the word stays long enough to mean something.
+ * turn Arabic-Indic digits into 0-9, unify alef forms, ى → ي and ة → ه, then strip the article ال, with a و/ب/ف/ك
+ * glued before it, when 3+ letters remain. A bare و/ب is never stripped: it
+ * is often part of the word (بيانات, وزارة).
  */
 function normalizeArabic(w: string): string {
   w = w
@@ -47,8 +48,8 @@ function normalizeArabic(w: string): string {
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ى/g, "ي")
     .replace(/ة/g, "ه")
-  if (/^[وب]/.test(w) && w.length - 1 >= 4) w = w.slice(1)
-  if (w.startsWith("ال") && w.length - 2 >= 3) w = w.slice(2)
+  const article = /^[وبفك]?ال/.exec(w)
+  if (article && w.length - article[0].length >= 3) w = w.slice(article[0].length)
   return w
 }
 

@@ -36,6 +36,20 @@ describe("BM25", () => {
       expect(tokenize("فاتورة ٢٠٤١")).toEqual(["فاتوره", "2041"])
     })
 
+    it("gives a bare Arabic word and its ال form the same token", () => {
+      for (const w of ["بيانات", "برنامج", "وزارة"]) {
+        expect(tokenize(w)).toEqual(tokenize(`ال${w}`))
+        expect(tokenize(w)[0].length).toBe(w.length)
+      }
+      // و/ب/ف/ك go only when glued to ال
+      expect(tokenize("والبيانات بالبرنامج فالوزارة كالبيانات")).toEqual(["بيانات", "برنامج", "وزاره", "بيانات"])
+    })
+
+    it("finds a note with البيانات for the query بيانات", () => {
+      const index = buildIndex(["تحديث قاعدة البيانات", "deploy staging server"])
+      expect(scoreAll("بيانات", index).map((r) => r.docIndex)).toEqual([0])
+    })
+
     it("matches an Arabic query against an Arabic note", () => {
       const index = buildIndex(["تم إرسال الفاتورة إلى العميل", "deploy staging server"])
       const results = scoreAll("فاتورة العميل", index)
