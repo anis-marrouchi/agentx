@@ -30,27 +30,29 @@ export const STOP_WORDS = new Set([
 ])
 
 /** Bump when tokenize() output changes, so cached indexes on disk are rebuilt. */
-const TOKENIZER_VERSION = "3"
+const TOKENIZER_VERSION = "4"
 
 const ARABIC = /[؀-ۿ]/
 
 /**
  * Arabic word normalisation (#1390): drop tashkeel, superscript alef and tatweel,
- * turn Arabic-Indic digits into 0-9, unify alef forms, ى → ي and ة → ه, then strip the article ال, with a و/ب/ف/ك
- * glued before it, when 3+ letters remain. A bare و/ب is never stripped: it
- * is often part of the word (بيانات, وزارة).
+ * turn Arabic-Indic digits into 0-9, strip the article ال, with a و/ب/ف/ك
+ * glued before it, when 3+ letters remain, then unify alef forms, ى → ي and ة → ه.
+ * A bare و/ب is never stripped: it is often part of the word (بيانات, وزارة).
  */
 function normalizeArabic(w: string): string {
   w = w
     .replace(/[ً-ٰٟـ]/g, "")
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
     .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
+  // Match the article before alef forms are unified: only a literal ا+ل is ال,
+  // so إلكتروني, إلغاء and إلهام keep their first two letters.
   const article = /^[وبفك]?ال/.exec(w)
   if (article && w.length - article[0].length >= 3) w = w.slice(article[0].length)
   return w
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
 }
 
 /**
