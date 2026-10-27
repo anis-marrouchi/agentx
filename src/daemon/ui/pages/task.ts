@@ -57,7 +57,7 @@ export function renderTaskPage(opts: TaskPageOpts): string {
 
   <header class="ax-task-page__head">
     <nav class="ax-crumbs" aria-label="Breadcrumb">
-      <a href="/live">Live</a>
+      <a href="/wall#page=live">Live</a>
       <span class="ax-crumbs__sep">/</span>
       <a href="/agents/${esc(opts.agentId)}/history?node=${encodeURIComponent(opts.nodeUrl)}&name=${encodeURIComponent(who)}"><span class="ax-mention">@${esc(opts.agentId)}</span></a>
       <span class="ax-crumbs__sep">/</span>

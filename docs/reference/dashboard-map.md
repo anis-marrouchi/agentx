@@ -1,12 +1,12 @@
 # Dashboard map
 
-The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows**, and **Settings**. Each tab answers a different question. The dashboard also has deeper pages, reached from those tabs or by typing the address. Add each path to your dashboard's address, for example `http://127.0.0.1:4202/live`.
+The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows**, and **Settings**. Each tab answers a different question. The dashboard also has deeper pages, reached from those tabs or by typing the address. Add each path to your dashboard's address, for example `http://127.0.0.1:4202/mesh`.
 
 ## Tabs
 
 | Need | Tab | Path |
 |---|---|---|
-| See current agent work | **Live** | `/live` |
+| See current agent work, resume paused tasks, restart a machine | **Live** (on the Wall) | `/wall#page=live` (`/live` opens it) |
 | See machines, peer work and schedules | **Operations** | `/mesh` |
 | See what needs a person | **Monitor** | `/monitor` |
 | Answer what agents ask you | **Approvals** | `/approvals` |
@@ -43,7 +43,7 @@ The route list is a navigation aid, not a list of separate products. A view may 
 
 ## Check it worked
 
-1. **Browser:** open `/live` on your dashboard. The top bar shows the eight tabs.
+1. **Browser:** open `/mesh` on your dashboard. The top bar shows the eight tabs. Select **Live**: the Wall's Live page opens.
 2. Open `/admin/health`. It loads, or redirects there from `/admin/observability`.
 
 ## If something is wrong

@@ -386,13 +386,13 @@ describe("Wall build line, design #1451 frame 0 (#1444)", () => {
     expect(w.calls.filter((c) => c.url === "/api/node/build")).toHaveLength(1)
   })
 
-  it("says Restart pending with the classic hover text, and links to the restart controls", async () => {
+  it("says Restart pending with the classic hover text, and links to Wall Live's restart controls (#1439)", async () => {
     const w = openWall({ hash: "#page=wall", build: { ...BUILD, diskNewer: true } })
     await w.settle()
     const b = w.el("wall-build")
     expect(b.innerHTML).toContain('<span class="ax-badge ax-badge--warn wbl__stale" role="status">Restart pending</span>')
     expect(b.title).toBe("The code on disk is newer than the running daemon. Restart the daemon to load it. Node: node-a")
-    expect(b.attrs.href).toBe("/live")
+    expect(b.attrs.href).toBe("#page=live")
   })
 
   it("draws nothing until the first answer, keeping its place", async () => {

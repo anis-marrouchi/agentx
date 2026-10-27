@@ -17,6 +17,17 @@
 // its machine. While the page is open the snapshot streams in, so the
 // cards move as the runs do.
 //
+// What the classic /live and /monitor did for the owner is here too
+// (#1439): the tasks a stop paused, each with its resume plan, Resume and
+// Drop; and one card per machine with Restart when idle (or the restart
+// it waits on, with Cancel), the Claude Code sessions attached to it, each
+// with its agent and start time, and Connect a CLI session (the monitor's
+// discover and register). The Task page reuses them: Resume on a paused
+// run, Pause on a live one. Drop, Pause and Restart ask once more on the
+// button itself. Every one of these writes goes to /api/admin/wall/live/*
+// (board-dashboard.ts), under the Wall's owner guard (#1454), which sends
+// it on to the node API classic Live used.
+//
 // Also here: who an @mention in a comment names, and the call and join
 // buttons of an agent's page and profile.
 
@@ -54,6 +65,14 @@ export const WALL_LIVE_SCRIPT = String.raw`
     if (l.indexOf('[error] ') === 0) return 'Error: ' + say(l.slice(8));
     return 'Writing: ' + say(l);
   }
+  /** The workflow run a task is in and its step, as classic Live had it
+   *  (#858). A task wrapped under workflows.required runs as "task"; its
+   *  title is the request, already shown, so only the step is named. */
+  function wfLine(w) {
+    if (!w || !(w.runId || w.title)) return '';
+    var name = w.workflowId === 'task' ? '' : esc(w.title || w.workflowId || '') + (w.runId ? ' · ' : '');
+    return '<div class="wls__k">Workflow ' + name + (w.runId ? 'step ' + esc(w.step || '…') : '') + '</div>';
+  }
   /** A session or job at work: the whole card opens its Task page. */
   function workHtml(s) {
     var t = s.task, job = t.channel === 'cron';
@@ -64,7 +83,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
       '<div class="wls__ag">' + avatar(s.agent.id, 'sm') + '<b>' + esc(nameOf(s.agent.id)) + '</b><span class="h">@' + esc(s.agent.id) + '</span>' +
         (jobId ? '<span class="chip chip--ghost">' + esc(jobId) + '</span>' : '') + '</div>' +
       '<p class="wls__t">' + esc(s.title) + '</p>' +
-      (t.workflow && t.workflow.title ? '<div class="wls__k">Workflow ' + esc(t.workflow.title) + '</div>' : '') +
+      wfLine(t.workflow) +
       '<div class="wls__act"><span class="wls__k">Latest</span> ' + esc(activityText(t)) + '</div></a>';
   }
   function sessionHtml(s) {
@@ -74,7 +93,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
     var label = s.kind === 'space' ? 'Space' : s.kind === 'lesson' ? 'Lesson' : 'Working';
     var join = s.kind === 'space'
       ? (s.here ? '<button type="button" class="ax-btn" data-join-space>Join</button>' : '<span class="wls__k">Plays on ' + esc(s.node.name) + '</span>')
-      : '<span class="wls__k">On ' + esc(s.node.name) + '\'s screen</span>';
+      : '<span class="wls__k">On ' + esc(s.node.name) + '\'s screen</span>' + lvBtn('lesson', s.node.url, '', 'Stop', '', 'End the lesson and give the screen back', true);
     return '<article class="wls is-' + s.kind + '"><div class="wls__h"><span class="ax-badge ax-badge--live">● ' + label + '</span><span class="wls__k">' + esc(s.node.name) +
       (s.at ? ' · since ' + esc(stamp(s.at).slice(11, 16)) : '') + '</span></div>' +
       '<p class="wls__t">' + esc(s.title) + '</p>' +
@@ -89,14 +108,16 @@ export const WALL_LIVE_SCRIPT = String.raw`
   }
   function livePageHtml() {
     if (!S.live) return '<p class="ax-wall__empty">Loading…</p>';
-    var all = liveSessions(), next = comingUp();
+    var all = liveSessions(), next = comingUp(), stopped = stoppedList();
     var live = all.filter(function (s) { return s.kind !== 'work'; }), work = all.filter(function (s) { return s.kind === 'work'; });
     var agents = allAgents().filter(function (a) { return a.nodes.length; });
     var opts = function (pick) { return agents.map(function (a, i) { return '<option value="' + esc(a.id) + '"' + (i === pick ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join(''); };
-    return '<div class="wlv">' +
+    return '<div class="wlv">' + lvNoteHtml() +
       (live.length ? '<h3>Spaces and lessons <small>' + live.length + '</small></h3>' + live.map(sessionHtml).join('') : '') +
       '<h3>Running now <small>' + work.length + '</small></h3>' +
       (work.length ? '<div class="wlv__work">' + work.map(sessionHtml).join('') + '</div>' : '<p class="ax-wall__empty">No session or job is running.' + (live.length ? '' : ' Start a Space below, or open a post and start one about it.') + '</p>') +
+      (stopped.length ? '<h3>Paused <small>' + stopped.length + '</small></h3><p class="ax-wall__count">Tasks a stop paused. Each kept a plan to go on from.</p>' + stopped.map(function (x) { return stoppedHtml(x); }).join('') : '') +
+      machinesHtml() +
       '<div id="live-space">' + spaceHtml() + '</div>' +
       '<h3>Coming up</h3>' + (next.length ? '<ul class="wlv__next">' + next.map(function (x) {
         return '<li>' + avatar(x.j.agent, 'sm') + '<span><b>' + esc(x.j.id) + '</b> <small>@' + esc(x.j.agent) + ' on ' + esc(x.n.name) + '</small></span><span class="wls__k">' + esc(until(x.at)) + '</span></li>';
@@ -129,6 +150,184 @@ export const WALL_LIVE_SCRIPT = String.raw`
     S.spaceTopic = topic;
     paintSpace();
     pollSpace();
+  }
+
+  // --- The owner's controls (#1439): paused tasks, machines, CLI sessions ---
+  /** Which button waits for its second press, which are at work, the last
+   *  outcome, each machine's CLI search and which plans are open. Kept
+   *  across repaints: Live repaints with every snapshot. */
+  function lvState() { return S.lv || (S.lv = { armed: '', busy: {}, msg: '', cli: {}, open: {} }); }
+  function lvKey(kind, node, id) { return kind + '|' + node + '|' + (id || ''); }
+  /** A control. With a confirm label, the first press arms it and the
+   *  second acts; it disarms by itself after a few seconds. */
+  function lvBtn(kind, node, id, label, confirm, title, ghost) {
+    var st = lvState(), key = lvKey(kind, node, id);
+    if (st.busy[key]) return '<button type="button" class="ax-btn ax-btn--ghost wlv__b" disabled>' + esc(st.busy[key]) + '</button>';
+    var armed = !!confirm && st.armed === key;
+    return '<button type="button" class="ax-btn wlv__b' + (ghost && !armed ? ' ax-btn--ghost' : '') + (armed ? ' is-armed' : '') + '" data-lv="' + esc(kind) + '" data-lv-node="' + esc(node) + '" data-lv-id="' + esc(id || '') + '"' +
+      (title ? ' title="' + esc(title) + '"' : '') + '>' + esc(armed ? confirm : label) + '</button>';
+  }
+  function lvNoteHtml() {
+    var m = lvState().msg;
+    return '<p class="wlv__note' + (m ? '' : ' is-empty') + '" role="status" aria-live="polite">' + esc(m) + '</p>';
+  }
+  function hhmm(ms) { return ms ? stamp(ms).slice(11, 16) : ''; }
+
+  /** Tasks a stop paused, newest first, on the machines that answer. */
+  function stoppedList() {
+    var out = [];
+    ((S.live && S.live.nodes) || []).forEach(function (n) {
+      if (!n.reachable || n.error) return;
+      (n.stoppedTasks || []).forEach(function (t) { out.push({ t: t, n: n }); });
+    });
+    return out.sort(function (a, b) { return (Date.parse(b.t.stoppedAt) || 0) - (Date.parse(a.t.stoppedAt) || 0); });
+  }
+  function stoppedOf(taskId, nodeUrl) {
+    return stoppedList().filter(function (x) { return x.t.id === taskId && (!nodeUrl || x.n.url === nodeUrl); })[0] || null;
+  }
+  function stopperName(s) { return !s || /^owner\b/.test(s) ? 'you' : s; }
+  /** A paused task: who stopped it and why, what it was asked, its plan, Resume and Drop. */
+  function stoppedHtml(x, onTask) {
+    var t = x.t, n = x.n, wf = t.workflow, at = Date.parse(t.stoppedAt) || 0, winding = t.state === 'winding-down';
+    var planKey = n.url + '|' + t.id;
+    var plan = t.plan
+      ? '<details class="wls__plan" data-lv-plan="' + esc(planKey) + '"' + (lvState().open[planKey] ? ' open' : '') + '><summary>Resume plan, by ' + (t.plan.author === 'agent' ? esc(nameOf(t.agentId)) : 'AgentX' + (t.plan.note ? ' (' + esc(t.plan.note) + ')' : '')) + '</summary><pre>' + esc(t.plan.text) + '</pre></details>'
+      : '<div class="wls__k">' + (winding ? esc(nameOf(t.agentId)) + ' is writing its resume plan…' : 'No resume plan was saved.') + '</div>';
+    var acts = (t.state === 'stopped' && t.resumable
+        ? lvBtn('resume', n.url, t.id, 'Resume', '', wf ? 'Resume this step from its plan: the workflow run goes on from it' : 'Resume this task from its plan, in the same chat')
+        : '') +
+      (!winding ? lvBtn('drop', n.url, t.id, 'Drop', 'Drop it for good?', 'Forget this paused task and its plan: it can no longer be resumed', true) : '');
+    var open = onTask ? '' : '<a class="wls__k" href="' + esc(wallTaskHref({ id: t.id, channel: t.channel, message: t.request }, t.agentId, n.url, true)) + '">Open the run</a>';
+    return '<article class="wls is-stopped" aria-label="Paused task of ' + esc(nameOf(t.agentId)) + '">' +
+      '<div class="wls__h"><span class="ax-badge ax-badge--warn">' + (winding ? 'Pausing…' : '❚❚ Paused') + '</span><span class="wls__k">' + esc(n.name) +
+        (t.channel ? ' · ' + esc(t.channel) : '') + ' · stopped by ' + esc(stopperName(t.stoppedBy)) + (at ? ' at ' + esc(hhmm(at)) + ' (' + esc(ago(at)) + ')' : '') + '</span></div>' +
+      (onTask ? '' : '<div class="wls__ag">' + avatar(t.agentId, 'sm') + '<b>' + esc(nameOf(t.agentId)) + '</b><span class="h">@' + esc(t.agentId) + '</span></div>') +
+      (onTask ? '' : '<p class="wls__t">' + esc(t.request || 'A task') + '</p>') +
+      (wf ? '<div class="wls__k">A workflow step: its run waits here until this resumes.</div>' : '') +
+      (t.reason ? '<div class="wls__k">Why: ' + esc(t.reason) + '</div>' : '') +
+      plan +
+      '<div class="wls__f wlv__acts">' + open + '<span class="wlv__btns">' + acts + '</span></div></article>';
+  }
+
+  // --- Machines: restart when idle, attached sessions, connect a CLI ---
+  function machinesHtml() {
+    var nodes = (S.live && S.live.nodes) || [];
+    if (!nodes.length) return '';
+    return '<h3>Machines <small>' + nodes.length + '</small></h3><div class="wlv__mc">' + nodes.map(machineHtml).join('') + '</div>';
+  }
+  function machineHtml(n) {
+    var down = !n.reachable || n.error;
+    var badge = down
+      ? '<span class="ax-badge ax-badge--err">' + (n.stale ? 'not responding' : 'unreachable') + '</span>'
+      : '<span class="ax-badge ax-badge--live">up' + (n.uptimeSec ? ' ' + esc(dur(n.uptimeSec * 1000)) : '') + '</span>';
+    var head = '<div class="wls__h"><b>' + esc(n.name) + '</b>' + badge + '</div>';
+    if (down) {
+      return '<article class="wls wmc is-down">' + head + '<p class="wls__k">' + esc(n.error || 'It does not answer.') +
+        (n.stale ? ' Shown from its last answer, ' + esc(ago(Date.parse(n.staleSince) || Date.now())) + '.' : '') + ' Its controls come back when it answers.</p></article>';
+    }
+    return '<article class="wls wmc" aria-label="Machine ' + esc(n.name) + '">' + head +
+      '<div class="wmc__r">' + restartHtml(n) + '</div>' + attachedHtml(n) + connectHtml(n) + '</article>';
+  }
+  function restartHtml(n) {
+    var r = n.restart;
+    if (!r) return '<span class="wls__k">This machine does not say whether it can restart, so it cannot restart from here.</span>';
+    if (r.state === 'restarting') return '<span class="ax-badge ax-badge--warn" role="status">Restarting…</span>';
+    if (r.state === 'pending') {
+      var dl = Date.parse(r.deadline || '') || 0;
+      return '<span class="ax-badge ax-badge--warn" role="status" title="It restarts as soon as no task runs">Restart waiting · ' +
+          (typeof n.inflight === 'number' ? n.inflight + ' running' : 'tasks running') + (dl ? ' · until ' + esc(hhmm(dl)) : '') + '</span>' +
+        lvBtn('cancel', n.url, '', 'Cancel restart', '', 'Keep it running: forget the restart', true);
+    }
+    return lvBtn('restart', n.url, '', 'Restart when idle', 'Restart once idle?', 'Restart this machine as soon as no task runs. It waits up to 30 minutes, then restarts anyway.', true) +
+      '<span class="wls__k">' + (typeof n.inflight === 'number' ? (n.inflight ? n.inflight + ' running now' : 'Nothing running now') : '') + '</span>';
+  }
+  var ATTACH_MODE = { manual: 'you read its inbox', notify: 'tells you about new messages', auto: 'answers new messages' };
+  /** Claude Code sessions attached here. Only the machine the dashboard runs on reports them. */
+  function attachedHtml(n) {
+    var rows = n.attachSessions;
+    if (!rows) return '';
+    if (!rows.length) return '<section class="wmc__s"><p class="wls__k">No Claude Code session attached.</p></section>';
+    var list = rows.length ? '<ul class="wmc__l">' + rows.map(function (r) {
+      var who = r.agentIds.length
+        ? r.agentIds.map(function (id) { return avatar(id, 'sm') + '<b>' + esc(nameOf(id)) + '</b>'; }).join(' ')
+        : '<span class="wls__k">answers for no agent</span>';
+      var time = r.waiting ? 'waiting for the session to report again'
+        : (r.startedAt ? 'started ' + hhmm(r.startedAt) + ' (' + ago(r.startedAt) + ')' : '') + (r.lastSeenAt ? (r.startedAt ? ' · ' : '') + 'seen ' + ago(r.lastSeenAt) : '');
+      return '<li><span class="wmc__who">' + who + '</span><span class="wmc__m"><b>' + esc(r.project || 'A session') + '</b> · ' + esc(time) +
+        (ATTACH_MODE[r.mode] ? ' · ' + esc(ATTACH_MODE[r.mode]) : '') + (r.pending ? ' · ' + r.pending + ' waiting for it' : '') + '</span></li>';
+    }).join('') + '</ul>' : '<p class="wls__k">None attached. Connect one below, or open Claude Code with the AgentX attach hooks.</p>';
+    return '<section class="wmc__s"><h4>Claude Code sessions <small>' + rows.length + '</small></h4>' + list + '</section>';
+  }
+  function connectHtml(n) {
+    var c = lvState().cli[n.url], body = '';
+    if (c && c.error) body = '<p class="wls__k">Could not look: ' + esc(c.error) + '</p>';
+    else if (c && c.items) {
+      body = c.items.length ? '<ul class="wmc__l">' + c.items.map(function (x, j) {
+        return '<li><span class="wmc__m"><b>' + esc(x.name) + '</b> · ' + esc(x.meta) + '</span>' +
+          (x.done ? '<span class="ax-badge ax-badge--live">Connected</span>' : lvBtn('reg', n.url, String(j), 'Connect', '', x.title)) + '</li>';
+      }).join('') + '</ul>' : '<p class="wls__k">No CLI found. Only the processes this machine\'s AgentX account runs show here.</p>';
+    }
+    return '<section class="wmc__s"><h4>Connect a CLI session</h4>' +
+      lvBtn('find', n.url, '', c && c.items ? 'Look again' : 'Find CLI sessions', '', 'Look for Claude Code and other CLIs running on this machine. AgentX reviews each turn of a connected one and tells you what needs you.', true) + body + '</section>';
+  }
+  function cliItems(d) {
+    var base = function (p) { return String(p || '').replace(/\/+$/, '').split('/').pop() || 'A folder'; };
+    return (d.sessions || []).map(function (s) {
+      return { name: 'Claude Code in ' + base(s.label), meta: 'reports its turns itself', title: 'Review this session\'s turns', body: { id: s.id, runtime: s.runtime || 'claude', label: s.label || s.id } };
+    }).concat((d.processes || []).map(function (p) {
+      return { name: p.runtime, meta: 'running since ' + p.started, title: 'Register this process; add a stop hook or send its transcript to review it',
+        body: { id: p.runtime + ':' + p.pid + ':' + p.started, label: p.runtime + ' ' + p.pid, runtime: p.runtime, pid: p.pid, started: p.started } };
+    }));
+  }
+
+  /** A control pressed: arm it, or send it to the machine that holds what it acts on. */
+  async function lvAct(kind, node, id) {
+    var st = lvState(), key = lvKey(kind, node, id);
+    if ((kind === 'drop' || kind === 'restart' || kind === 'pause') && st.armed !== key) {
+      st.armed = key;
+      render();
+      setTimeout(function () { if (st.armed === key) { st.armed = ''; render(); } }, 6000);
+      return;
+    }
+    st.armed = '';
+    var q = '?node=' + encodeURIComponent(node);
+    var plan = {
+      resume: ['/api/admin/wall/live/resume', { id: id }, 'Resuming…', 'Resumed: it goes on from its plan.'],
+      drop: ['/api/admin/wall/live/drop', { id: id }, 'Dropping…', 'Dropped. It can no longer be resumed.'],
+      pause: ['/api/admin/wall/live/pause', { taskId: id }, 'Pausing…', 'Pausing: the agent writes its resume plan, then it shows under Paused on Live.'],
+      restart: ['/api/admin/wall/live/restart', {}, 'Asking…', 'Restart waiting: it restarts once no task runs.'],
+      cancel: ['/api/admin/wall/live/restart-cancel', {}, 'Cancelling…', 'Restart cancelled.'],
+      lesson: ['/api/admin/wall/live/lesson-stop', {}, 'Stopping…', 'Lesson stopped.'],
+    }[kind];
+    if (kind === 'find') {
+      st.busy[key] = 'Looking…';
+      render();
+      var f = await act('GET', '/api/admin/wall/live/discover' + q);
+      delete st.busy[key];
+      st.cli[node] = f.ok ? { items: cliItems(f.body || {}) } : { error: f.error };
+      render();
+      return;
+    }
+    if (kind === 'reg') {
+      var item = st.cli[node] && st.cli[node].items && st.cli[node].items[Number(id)];
+      if (!item) return;
+      st.busy[key] = 'Connecting…';
+      render();
+      var g = await act('POST', '/api/admin/wall/live/cli' + q, item.body);
+      delete st.busy[key];
+      if (g.ok) item.done = true;
+      st.msg = g.ok ? 'Connected ' + item.name + '. AgentX reviews its next turns.' : 'Not connected: ' + g.error;
+      render();
+      return;
+    }
+    if (!plan) return;
+    st.busy[key] = plan[2];
+    st.msg = '';
+    render();
+    var r = await act('POST', plan[0] + q, plan[1]);
+    delete st.busy[key];
+    st.msg = r.ok ? plan[3] : 'Not done: ' + r.error;
+    render();
   }
 
   // --- @mentions in a comment: the other agents it names ---
@@ -187,9 +386,13 @@ export const WALL_LIVE_SCRIPT = String.raw`
     render();
   }
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-join-space],[data-live-start],[data-call-agent]');
+    // A plan opened or closed stays so through the next repaint.
+    var pl = ev.target.closest('[data-lv-plan]');
+    if (pl && ev.target.closest('summary')) lvState().open[pl.getAttribute('data-lv-plan')] = !pl.open;
+    var t = ev.target.closest('[data-join-space],[data-live-start],[data-call-agent],[data-lv]');
     if (!t) return;
-    if (t.hasAttribute('data-join-space')) joinSpace();
+    if (t.hasAttribute('data-lv')) lvAct(t.getAttribute('data-lv'), t.getAttribute('data-lv-node'), t.getAttribute('data-lv-id'));
+    else if (t.hasAttribute('data-join-space')) joinSpace();
     else if (t.hasAttribute('data-live-start')) startSpace();
     else callAgent(t.getAttribute('data-call-agent'));
   });
@@ -220,6 +423,31 @@ export const WALL_LIVE_CSS = `
 .wlv__next li > span:nth-child(2) { flex: 1; min-width: 0; }
 .wlv__next small { color: var(--ax-muted); }
 .wlv select { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 5px 10px; }
+/* The owner's controls (#1439): paused tasks and machines. */
+.wlv__note { margin: 8px 0 0; padding: 8px 12px; border-radius: var(--ax-radius-lg); background: var(--ax-bg-elev); border: 1px solid var(--ax-border); font-size: var(--ax-fs-sm); }
+.wlv__note.is-empty { display: none; }
+.wls.is-stopped { border-color: color-mix(in srgb, var(--ax-warn) 45%, var(--ax-border)); }
+.wls.is-stopped .wls__t { font-weight: 500; font-size: var(--ax-fs); margin: 4px 0 6px; overflow-wrap: anywhere; }
+.wls__plan { margin: 6px 0; font-size: var(--ax-fs-sm); }
+.wls__plan summary { cursor: pointer; color: var(--ax-text-2); }
+.wls__plan pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--ax-mono); font-size: var(--ax-fs-xs); background: var(--ax-bg); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); padding: 8px; margin: 6px 0 0; max-height: 40vh; overflow: auto; }
+.wlv__acts { flex-wrap: wrap; margin-top: 6px; }
+.wlv__btns { display: inline-flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.wlv .wlv__b { font-size: var(--ax-fs-xs); padding: 4px 14px; }
+.wlv .wlv__b.is-armed { background: var(--ax-err); border-color: var(--ax-err); color: #fff; }
+.wlv__mc { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 10px; }
+.wmc { margin: 0; min-width: 0; }
+.wmc.is-down { opacity: .8; }
+.wmc__r { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 2px; }
+.wmc__s { border-top: 1px solid var(--ax-border); margin-top: 10px; padding-top: 8px; }
+.wmc__s h4 { margin: 0 0 6px; font-size: var(--ax-fs-sm); }
+.wmc__s h4 small { color: var(--ax-muted); font-weight: 400; }
+.wmc__s p { margin: 0 0 6px; }
+.wmc__l { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wmc__l li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--ax-fs-sm); min-width: 0; }
+.wmc__who { display: inline-flex; gap: 4px; align-items: center; }
+.wmc__m { flex: 1; min-width: 0; color: var(--ax-text-2); overflow-wrap: anywhere; }
+.wls.is-lesson .wls__f .wlv__b { margin-left: 8px; }
 .wag__acts, .wpf__acts { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .wag__acts .ax-btn, .wpf__acts .ax-btn { font-size: var(--ax-fs-xs); padding: 4px 14px; }
 `

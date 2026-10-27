@@ -28,7 +28,7 @@ export function renderHistoryPage(opts: HistoryPageOpts): string {
      data-node-url="${esc(opts.nodeUrl)}">
   <header class="ax-history__head">
     <nav class="ax-crumbs" aria-label="Breadcrumb">
-      <a href="/live">Live</a>
+      <a href="/wall#page=live">Live</a>
       <span class="ax-crumbs__sep">/</span>
       <span class="ax-mention">@${esc(opts.agentId)}</span>
       <span class="ax-crumbs__sep">/</span>

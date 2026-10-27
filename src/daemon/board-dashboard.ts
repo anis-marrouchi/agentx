@@ -33,8 +33,7 @@ import { createWikiHandler } from "@/wiki/serve"
 import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
-import { renderLivePage } from "./ui/pages/live"
-import { renderWallPage } from "./ui/pages/wall"
+import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
 import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
@@ -341,9 +340,11 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
+  // Classic Live is on the Wall now (#1439): Resume, Restart when idle and
+  // the attached sessions are all on Wall Live, so the old address opens it.
   if (method === "GET" && path === "/live") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    res.writeHead(302, { Location: WALL_LIVE_HREF })
+    res.end()
     return
   }
   // n8n posts here. It is forwarded to the local node rather than served
@@ -446,12 +447,19 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
-  if (path === "/api/monitor" || path.startsWith("/api/monitor/")) {
+  // Wall Live's "Connect a CLI session" (#1439) is the monitor's discover and
+  // register, at Wall addresses so the Wall's owner guard (#1454) holds the
+  // write. /api/monitor/* itself stays as it was for its other callers.
+  const wallCli = method === "POST" && path === WALL_LIVE_CLI_PATH
+  const monitorPath = wallCli ? "/api/monitor/register"
+    : method === "GET" && path === WALL_LIVE_DISCOVER_PATH ? "/api/monitor/discover" : path
+  if (monitorPath === "/api/monitor" || monitorPath.startsWith("/api/monitor/")) {
+    if (wallCli && req.headers["x-requested-with"] !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
     const ac = new AbortController()
     const timeout = setTimeout(() => ac.abort(), 8000)
     try {
       const targets = monitorTargets(await resolveNodeTargets(ctx.config, ac.signal), ctx.config.mesh.peers)
-      if (method === "GET" && path === "/api/monitor") {
+      if (method === "GET" && monitorPath === "/api/monitor") {
         const nodes = await Promise.all(targets.map(async node => {
           try {
             const r = await fetch(node.url + "/monitor", { headers: node.token ? { Authorization: `Bearer ${node.token}` } : {}, signal: ac.signal })
@@ -463,7 +471,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       }
       const node = targets.find(n => n.url === url.searchParams.get("node"))
       if (!node) { sendJson(res, 400, { error: "Select a known node" }); return }
-      const op = path.slice("/api/monitor/".length)
+      const op = monitorPath.slice("/api/monitor/".length)
       if (!((method === "GET" && ["discover", "actions", "activity"].includes(op)) || (method === "POST" && ["register", "ended", "action", "retry", "clear"].includes(op)))) {
         sendJson(res, 405, { error: "Unknown monitor operation" }); return
       }
@@ -880,6 +888,28 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     sendJson(res, reply.status, reply.body)
     return
   }
+  // Wall Live's controls (#1439): Resume, Drop and Pause a task, Restart
+  // when idle (and cancel it), Stop a lesson. Each goes to the node that
+  // holds what it acts on, through the node API classic Live used. Under
+  // /api/admin/wall, so the Wall's owner guard (#1454) holds every one.
+  //   POST /api/admin/wall/live/resume?node=<url>          { id }
+  //   POST /api/admin/wall/live/drop?node=<url>            { id }
+  //   POST /api/admin/wall/live/pause?node=<url>           { taskId }
+  //   POST /api/admin/wall/live/restart?node=<url>
+  //   POST /api/admin/wall/live/restart-cancel?node=<url>
+  //   POST /api/admin/wall/live/lesson-stop?node=<url>
+  //   POST /api/admin/wall/live/cli?node=<url>             a CLI to connect (the monitor block above)
+  //   GET  /api/admin/wall/live/discover?node=<url>        CLI sessions to connect (the monitor block above)
+  const liveUpstream = method === "POST" && path.startsWith(`${WALL_LIVE_ACTIONS_PREFIX}/`)
+    ? WALL_LIVE_UPSTREAM.get(path.slice(WALL_LIVE_ACTIONS_PREFIX.length + 1)) : undefined
+  if (liveUpstream) {
+    if (req.headers["x-requested-with"] !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
+    const nodeUrl = url.searchParams.get("node")
+    if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
+    await proxyNodePost(req, res, ctx, nodeUrl, liveUpstream)
+    return
+  }
+
   // The Wall's writes (#1316): comment on a post, call its agent, a Space.
   // After the token gate above; the proxy above sends a comment or a call
   // to the node that keeps the post.
@@ -1880,6 +1910,8 @@ interface NodeLive {
     agentIds: string[]
     mode: string
     lastSeenAt: number
+    /** When the session registered (#1439); absent for a saved binding. */
+    startedAt?: number
     pending: number
     /** Bound, but the session has not reported since a restart or idle drop. */
     waiting?: boolean
@@ -2335,7 +2367,7 @@ export function resetLiveCaches(): void {
 
 export function applyAttachSessions(
   node: NodeLive,
-  sessions: Array<{ sessionId: string; cwd?: string; agentIds?: string[]; mode?: string; lastSeenAt?: number; pending?: number }>,
+  sessions: Array<{ sessionId: string; cwd?: string; agentIds?: string[]; mode?: string; lastSeenAt?: number; registeredAt?: number; pending?: number }>,
   saved: Record<string, { agentIds?: string[]; mode?: string; cwd?: string; savedAt?: number }>,
 ): void {
   const project = (cwd?: string) => (cwd ? cwd.replace(/\/+$/, "").split("/").pop() || cwd : "")
@@ -2345,6 +2377,7 @@ export function applyAttachSessions(
     agentIds: Array.isArray(s.agentIds) ? s.agentIds : [],
     mode: String(s.mode || "notify"),
     lastSeenAt: Number(s.lastSeenAt) || 0,
+    ...(Number(s.registeredAt) > 0 ? { startedAt: Number(s.registeredAt) } : {}),
     pending: Number(s.pending) || 0,
   }))
   const live = new Set(sessions.map((s) => s.sessionId))
@@ -2833,6 +2866,20 @@ function appDeskDeps(config: DaemonConfig): AppDeskDeps {
 /** What the phone app's Chat tab talks through (app-chat.ts): turns go to
  *  the primary daemon with its token, the picker reads the live snapshot,
  *  and conversations live in the same SQLite file as the push tables. */
+/** Wall Live's controls (#1439) under the Wall's guarded prefix. */
+const WALL_LIVE_ACTIONS_PREFIX = "/api/admin/wall/live"
+const WALL_LIVE_CLI_PATH = `${WALL_LIVE_ACTIONS_PREFIX}/cli`
+const WALL_LIVE_DISCOVER_PATH = `${WALL_LIVE_ACTIONS_PREFIX}/discover`
+/** Each control's node API, the one classic Live called. */
+const WALL_LIVE_UPSTREAM = new Map([
+  ["resume", "/api/signals/resume"],
+  ["drop", "/api/signals/drop"],
+  ["pause", "/api/signals/stop"],
+  ["restart", "/daemon/restart"],
+  ["restart-cancel", "/daemon/restart/cancel"],
+  ["lesson-stop", "/voice/stop"],
+])
+
 /** One member store per dashboard process, so its hourly log pruning holds;
  *  a new one when the retention setting changes. */
 let _members: { days: number; store: MemberStore } | null = null

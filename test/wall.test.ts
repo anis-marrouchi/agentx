@@ -383,18 +383,22 @@ describe("helpers", () => {
   })
   it("answers 404 for an unknown post and an empty wall with no request store", () => {
     expect(handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "nope" }), deps(), "n").status).toBe(404)
+    // #1439: a run no request tracks answers with no post, not a failure.
+    const untracked = handleWallApi("/api/admin/wall/thread", new URLSearchParams({ task: "no-such-run" }), deps(), "n")
+    expect(untracked.status).toBe(200)
+    expect((untracked.body as any).post).toBeNull()
     expect((handleWallApi("/api/admin/wall", new URLSearchParams(), null, "n").body as any).posts).toEqual([])
   })
 })
 
 describe("routes", () => {
-  it("serves the Wall at / and keeps Live at /live", async () => {
+  it("serves the Wall at / and sends classic Live to Wall Live (#1439)", async () => {
     const root = await get("/")
     expect(root.status).toBe(200)
     expect(root.body).toContain('id="wall-feed"')
     const live = await get("/live")
-    expect(live.status).toBe(200)
-    expect(live.body).not.toContain('id="wall-feed"')
+    expect(live.status).toBe(302)
+    expect(live.location).toBe("/wall#page=live")
     expect((await get("/wall")).body).toContain('id="wall-feed"')
   })
 
@@ -418,7 +422,7 @@ describe("routes", () => {
   })
 
   it("the dashboard keeps its Wall link (#1242)", async () => {
-    expect((await get("/live")).body).toContain('href="/wall"')
+    expect((await get("/mesh")).body).toContain('href="/wall"')
   })
 
   it("answers the Wall API, the thread from a run id, and the fleet view", async () => {
@@ -548,6 +552,37 @@ describe("routes", () => {
       // GET /api/agents needs no token on this node, so its proxy needs none.
       expect((await get("/api/agents", { "X-Agentx-Peer": "http://peer.example:4200" })).status).not.toBe(401)
       expect((await get("/api/admin/activity-graph?peer=fleet", { Authorization: "Bearer tok-123" })).status).toBe(200)
+    } finally {
+      token = undefined
+    }
+  })
+
+  it("refuses Wall Live's owner controls to anyone without the dashboard key (#1439)", async () => {
+    const post = (path: string, headers: Record<string, string> = {}) =>
+      fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...headers }, body: "{}" }).then((r) => r.status)
+    const node = "?node=" + encodeURIComponent("http://node-a.example")
+    token = "tok-123"
+    try {
+      const wallLive = ["resume", "drop", "pause", "restart", "restart-cancel", "lesson-stop", "cli"].map((op) => "/api/admin/wall/live/" + op)
+      for (const path of [...wallLive, "/api/signals/resume", "/api/signals/drop", "/api/signals/stop", "/api/node/restart", "/api/node/restart/cancel"]) {
+        expect(await post(path + node), path).toBe(401)
+        expect(await post(path + node, { Authorization: "Bearer wrong" }), path).toBe(401)
+      }
+      // With the key, a Wall Live control reaches the node proxy, which only
+      // sends to a node the dashboard knows; an unknown op is no control.
+      const owner = { Authorization: "Bearer tok-123" }
+      const resume = await fetch(base + "/api/admin/wall/live/resume" + node, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...owner }, body: '{"id":"t1"}' })
+      expect(resume.status).toBe(403)
+      expect((await resume.json()).error).toBe("node not in dashboard allowlist")
+      expect(await post("/api/admin/wall/live/resume", owner), "no node").toBe(400)
+      for (const op of ["constructor", "toString", "nope"]) {
+        const r = await fetch(base + "/api/admin/wall/live/" + op + node, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...owner }, body: "{}" })
+        expect(r.status, op).not.toBe(403)
+        expect(r.status, op).toBeGreaterThanOrEqual(400)
+      }
+      // With the key, connecting a CLI still needs the dashboard's own header.
+      const bare = await fetch(base + "/api/admin/wall/live/cli" + node, { method: "POST", headers: { Authorization: "Bearer tok-123" }, body: "{}" })
+      expect(bare.status).toBe(400)
     } finally {
       token = undefined
     }
