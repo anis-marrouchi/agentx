@@ -652,6 +652,16 @@ Show or change expiry, "later" and digest settings (approvals in agentx.json).
 | `--digest-timezone <zone>` | — | IANA timezone for --digest-time; "local" for this machine's. |
 | `--digest-to <channel:chatId>` | — | Where the digest goes; "default" for notifications.destination. |
 
+### `agentx approvals mirror-report`
+
+The Reminders mirror's count: cards raised, Reminders created, cards missed, one line per day. See [Count what the mirror covered](../jobs/reminders-mirror.md#count-what-the-mirror-covered).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--start <time>` | 24 hours ago, times `--days` | When the first day starts (ISO time). |
+| `--days <n>` | `1` | How many 24-hour days. |
+| `--json` | — | Machine-readable output. |
+
 ## requests
 
 `agentx requests`: What you asked agents for that is not finished, oldest first.
