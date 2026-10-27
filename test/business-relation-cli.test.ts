@@ -99,6 +99,15 @@ describe("Org page people", () => {
     expect(out.names["person:lee"]).toBe("Lee")
   })
 
+  it("gives a person placed in the chart with no line a card with their role (#1432)", () => {
+    const out = withPeople({
+      roots: [agent("pm")],
+      people: [{ id: "sam", name: "Sam", placed: true, title: "Engineer" }, { id: "lee", name: "Lee" }],
+      relations: [],
+    })
+    expect(out.roots.map((n) => [n.id, n.title])).toEqual([["pm", undefined], ["sam", "Engineer"]])
+  })
+
   it("draws a loop between a person and an agent without nesting it forever", () => {
     const pm = agent("pm", "person:sam")
     const out = withPeople({

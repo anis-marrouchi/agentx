@@ -146,7 +146,7 @@ export const ORG_PEOPLE_JS = `
     (d.people || []).forEach(function (p) {
       var key = 'person:' + p.id;
       names[key] = p.name;
-      if (named[key]) nodes[key] = { kind: 'person', id: p.id, name: p.name, reports: [] };
+      if (named[key] || p.placed) nodes[key] = { kind: 'person', id: p.id, name: p.name, title: p.title, reports: [] };
     });
     rels.forEach(function (r) {
       var n = nodes[r.from];
@@ -196,6 +196,7 @@ const ORG_SCRIPT = `
   function personCard(n) {
     return '<div class="org-card is-person" data-person="' + esc(n.id) + '">'
       + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-kind">Person</span></div>'
+      + (n.title ? '<p class="org-title">' + esc(n.title) + '</p>' : '')
       + links(n) + '</div>';
   }
   function say(t, bad) { msg.textContent = t || ''; msg.className = 'org-msg' + (bad ? ' is-bad' : ''); }
@@ -238,7 +239,7 @@ const ORG_SCRIPT = `
       paintEdit();
       var org = withPeople(d);
       names = org.names;
-      document.getElementById('org-none').hidden = d.roots.length > 0;
+      document.getElementById('org-none').hidden = org.roots.length > 0;
       tree.innerHTML = org.roots.length ? branch(org.roots) : '';
       var out = document.getElementById('org-outside');
       out.hidden = d.outside.length === 0;

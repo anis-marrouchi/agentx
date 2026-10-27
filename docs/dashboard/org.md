@@ -14,7 +14,7 @@ On `/org`, you, the owner, decide who is in the chart, the role each one holds, 
 2. Select **Edit org** above the chart. The edit panel opens. To open `/org` with the panel already open, go to `/org#edit`.
 3. To add someone, under **Add a member**, pick an agent or a person from the list. People come from the [People](./people.md) page.
 4. Type a role, for example `Engineer`, or pick one from the suggestions. A role you type for the first time is created. Agents need a role; for people it is optional.
-5. Select **Add**. The line at the top of the panel says what changed, ending with **Saved.**
+5. Select **Add**. The line at the top of the panel says what changed, ending with **Saved.** The new member gets a card in the chart at once, with their role. A person with no line yet sits at the top until you link them.
 6. To link two members, under **Relations**, pick the member, the kind of relation, and the target.
 7. Select **Add relation**. A box at the top of the panel says, in one line, what will change. Nothing is saved yet.
 8. Read the line, then select **Save the move** to save it, or **Cancel** to leave the chart as it is. The **Escape** key also cancels.
@@ -122,7 +122,7 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 
 ## Check it worked
 
-1. **Browser:** on the Wall, select **Org**. Each member of `business.orgChart`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On the classic page at `/org`, each agent is a card under its boss.
+1. **Browser:** on the Wall, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On the classic page at `/org`, each agent is a card under its boss.
 2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
 3. Click **Resume**. The card says **Idle** again.
 4. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
