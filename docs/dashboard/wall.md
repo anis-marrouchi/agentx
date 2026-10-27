@@ -245,7 +245,7 @@ When a machine does not answer, the page names it at the top: agents that run on
 
 ## Set up the org
 
-Here you, the owner, decide who is in your org chart, the role each one holds, and who reports to whom. An org chart lists your agents and the people they work with, and the lines between them. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Only the owner sees this page's forms: anyone else is told that only the owner can set up the org, and the dashboard refuses their changes.
+Here you, the owner, decide who is in your org chart, the role each one holds, and who reports to whom. An org chart lists your agents and the people they work with, and the lines between them. A new line or a removal first shows one sentence on what changes, such as "Customer Desk will report to Sam Doe, not Reviewer. When Customer Desk is stuck, it asks Sam Doe first.", with **Save the move** and **Cancel**; Cancel writes nothing. A new boss for someone who has one replaces the old line, and if the new line is refused the old one is put back. Each saved change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Only the owner sees this page's forms: anyone else is told that only the owner can set up the org, and the dashboard refuses their changes.
 
 1. **Browser:** open the Wall, select **Agents** in the nav, then **Set up the org** at the top of the page. An agent's profile has the same link.
 2. To add someone, under **Add a member**, pick an agent or a person from the list. People come from the [People](./people.md) page.

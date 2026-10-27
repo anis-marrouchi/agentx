@@ -19,14 +19,46 @@ export interface OrgSetupReply {
   choices?: { agents: Array<{ ref: string; name: string }>; people: Array<{ ref: string; name: string }>; roles: Array<{ key: string; title: string }>; types: string[] }
 }
 
+export interface OrgChange { op: string; member?: string; from?: string; to?: string; type?: string; role?: string }
+
+/** One line on what a change will do, shown with Save the move / Cancel
+ *  before anything is written (#1463 §5). */
+export function orgChangeLine(setup: OrgSetupReply["setup"], change: OrgChange): string {
+  const members = setup ? setup.members : []
+  const rels = setup ? setup.relations : []
+  const name = (ref?: string) => {
+    const m = members.find((x) => x.ref === ref)
+    return m ? m.name : String(ref || "").replace(/^(agent|person):/, "")
+  }
+  if (change.op === "remove-member") {
+    const n = rels.filter((r) => r.from === change.member || r.to === change.member).length
+    return name(change.member) + " will leave the org chart" + (n ? ", with " + n + (n === 1 ? " line" : " lines") : "") + "."
+  }
+  const from = name(change.from), to = name(change.to)
+  if (change.op === "remove-relation") {
+    if (change.type === "reports-to") return from + " will no longer report to " + to + " and will have no boss in the chart."
+    return from + (change.type === "acts-for" ? " will no longer act for " : " will no longer have a dotted line to ") + to + "."
+  }
+  if (change.type === "reports-to") {
+    const boss = rels.find((r) => r.type === "reports-to" && r.from === change.from)
+    const stuck = /^agent:/.test(change.from || "") ? " When " + from + " is stuck, it asks " + to + " first." : ""
+    return from + " will report to " + to + (boss && boss.to !== change.to ? ", not " + name(boss.to) : "") + "." + stuck
+  }
+  return from + (change.type === "acts-for" ? " will act for " : " will have a dotted line to ") + to + "."
+}
+
 /** The page. `msg` is the answer to the last change; `face(member)` draws
- *  a member's avatar. */
-export function orgSetupHtml(org: OrgSetupReply | null, msg: { text: string; bad: boolean }, face: (m: SetupMember) => string): string {
+ *  a member's avatar; `confirm` is the line of a change waiting for Save
+ *  the move or Cancel. */
+export function orgSetupHtml(org: OrgSetupReply | null, msg: { text: string; bad: boolean }, face: (m: SetupMember) => string, confirm?: string): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c])
   const TYPE: Record<string, string> = { "reports-to": "Reports to", "dotted-line": "Dotted line to", "acts-for": "Acts for" }
   const LINE: Record<string, string> = { "reports-to": "reports to", "dotted-line": "has a dotted line to", "acts-for": "acts for" }
   const opt = (v: string, label: string) => '<option value="' + esc(v) + '">' + esc(label) + "</option>"
-  const note = msg.text ? '<p class="wos__msg' + (msg.bad ? " is-bad" : "") + '" role="status">' + esc(msg.text) + "</p>" : '<p class="wos__msg" role="status"></p>'
+  const note = (msg.text ? '<p class="wos__msg' + (msg.bad ? " is-bad" : "") + '" role="status">' + esc(msg.text) + "</p>" : '<p class="wos__msg" role="status"></p>') +
+    (confirm ? '<div class="wos__confirm" id="wos-confirm" role="group" aria-label="Confirm the change"><p>' + esc(confirm) + "</p>" +
+      '<span class="wos__acts"><button type="button" class="ax-btn" data-os="confirm">Save the move</button>' +
+      '<button type="button" class="ax-btn ax-btn--ghost" data-os="cancel">Cancel</button></span></div>' : "")
   if (!org) return '<p class="ax-wall__empty">Loading…</p>'
   if (!org.exists) return '<p class="ax-wall__empty">This computer has no agentx.json, so there is no org chart to set up.</p>'
   if (!org.canEdit || !org.setup || !org.choices) {
@@ -70,7 +102,7 @@ export function orgSetupHtml(org: OrgSetupReply | null, msg: { text: string; bad
     : '<p class="ax-wall__count">Add two members to link them.</p>'
 
   return '<div class="wos">' +
-    '<p class="wos__lead">Who is in your org, their role, and who reports to whom. Each change is checked, saved to agentx.json with a backup, and used at once. No restart.</p>' +
+    '<p class="wos__lead">Who is in your org, their role, and who reports to whom. A move or a removal shows what changes first; once saved, it is checked, written to agentx.json with a backup, and used at once. No restart.</p>' +
     note +
     '<h2 class="wos__h">Add a member</h2>' + add +
     '<h2 class="wos__h">Members <span class="ax-wall__count">' + members.length + "</span></h2>" + rows +

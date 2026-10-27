@@ -7,6 +7,7 @@
     { "name": "jobs", "path": "/wall#status=open&view=jobs", "ready": "#wall-jobs > *" },
     { "name": "reviews", "path": "/wall#status=&view=reviews", "ready": "#wall-reviews > *" },
     { "name": "agents", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" },
+    { "name": "orgsetup", "path": "/wall#page=orgsetup", "ready": "#wall-orgsetup > *" },
     { "name": "cost", "path": "/wall#status=open&view=cost", "ready": "#wall-cost > *" }
   ]
 }
