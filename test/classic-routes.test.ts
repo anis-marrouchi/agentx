@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "http"
 import type { AddressInfo } from "net"
-import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
+import { handleBoardRequest, RETIRED_PAGES, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { CLASSIC_ROUTES, classicRedirect, classicRouteFor } from "../src/daemon/ui/classic-routes"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
@@ -28,9 +28,17 @@ describe("classic routes registry", () => {
   it("gives every pending page an issue to wait on, and every Wall page a target", () => {
     for (const r of CLASSIC_ROUTES) {
       if (r.status === "pending") expect(r.blockedBy?.length, r.path).toBeGreaterThan(0)
-      if (r.status === "wall") expect(r.wall, r.path).toMatch(/^\/(wall)?#/)
+      if (r.status === "wall") expect(r.wall, r.path).toMatch(/^\/(wall)?(#|$)/)
     }
     expect(new Set(CLASSIC_ROUTES.map((r) => r.path)).size).toBe(CLASSIC_ROUTES.length)
+  })
+
+  it("lists every retired page (#1446) with the Wall view it redirects to", () => {
+    for (const [path, target] of Object.entries(RETIRED_PAGES)) {
+      const r = classicRouteFor(path)
+      expect(r?.status, path).toBe("wall")
+      expect(r?.wall, path).toBe(target)
+    }
   })
 
   it("keeps /setup and /workflows/editor as tool pages", () => {
