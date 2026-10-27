@@ -158,6 +158,7 @@ An experimental layer that runs agents like a team, with roles, working hours an
 | `business.workSource.glob` | string | `"**/*.md"` | Which files to read in the folder (`wiki`). |
 | `business.roles` | map of objects | `{}` | Job roles, keyed by role id. |
 | `business.orgChart` | map of objects | `{}` | Which agent holds which role and when it works, keyed by agent id. |
+| `business.relations` | list of objects | `[]` | Typed links between org members, people included. See below. |
 | `business.projects` | list of objects | `[]` | Projects, with an optional project manager and client. |
 | `business.contactMap` | list of objects | `[]` | Maps a chat or sender to a client and project, so the activity view credits the right client. |
 | `business.clients` | map of objects | `{}` | Per-client overrides, keyed by client id. Clients are otherwise worked out from `projects` and `contactMap`. |
@@ -182,11 +183,35 @@ Each entry in `business.orgChart.<agent>`:
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `role` | string | required | Role id from `business.roles`. |
-| `reportsTo` | string | — | Agent id of the manager. Must be another agent in the org chart. |
+| `reportsTo` | string | — | The manager: another agent in the org chart (its id, or `agent:<id>`), or a person from `people` as `person:<id>`. Read as a `reports-to` relation. |
 | `schedule.days` | list of `"mon"`…`"sun"` | Monday to Friday | Working days. |
 | `schedule.start`, `schedule.end` | string `HH:MM` | required | Start and end of the working day. |
 | `schedule.lunch` | object | — | Lunch break, with `start` and `end` as `HH:MM`. |
 | `utilizationTarget` | number (0–1) | `0.8` | Share of working time the agent should be busy. |
+
+Each entry in `business.relations` links two members. A member is `agent:<id>` (an agent in `business.orgChart`) or `person:<id>` (a person in `people`); a bare id is an agent. An unknown member stops the business layer from starting, with an error that names it.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `from` | string | required | The member the relation starts from. |
+| `to` | string | required | The member it points to. |
+| `type` | `"reports-to"`, `"dotted-line"` or `"acts-for"` | required | **reports-to**: the line manager. At most one per member, no cycles, and escalation follows it; it stops at a person, who is never sent a task. **dotted-line**: a second manager for one topic or project; many allowed, never used for escalation. **acts-for**: an agent works on behalf of a person; from an agent to a person only. |
+
+For example, an agent that reports to an agent, with a dotted line to the owner, working on the owner's behalf:
+
+```json
+"people": [{ "id": "owner", "name": "The Owner", "role": "owner" }],
+"business": {
+  "orgChart": { "pm": { "role": "pm" }, "dev": { "role": "dev", "reportsTo": "pm" } },
+  "relations": [
+    { "from": "pm", "to": "person:owner", "type": "reports-to" },
+    { "from": "dev", "to": "person:owner", "type": "dotted-line" },
+    { "from": "agent:dev", "to": "person:owner", "type": "acts-for" }
+  ]
+}
+```
+
+`GET /api/admin/org` returns `people` (id and name), and `relations` with every member written in full, `orgChart` `reportsTo` included.
 
 Each entry in `business.projects`:
 

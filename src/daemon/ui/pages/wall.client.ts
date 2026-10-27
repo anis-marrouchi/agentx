@@ -42,6 +42,8 @@ import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { profileSpendHtml } from "./wall-spend"
+import { costPageHtml, costPageModel } from "./wall-cost"
+import { WALL_COST_SCRIPT } from "./wall-cost.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -56,8 +58,9 @@ export const WALL_PAGE_SCRIPT = String.raw`
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, profileSpendHtml })}
+  ${injectFns({ markdownToHtml, profileSpendHtml, costPageModel, costPageHtml })}
 ${WALL_REVIEWS_SCRIPT}
+${WALL_COST_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
@@ -930,7 +933,7 @@ ${WALL_TASK_SCRIPT}
     return n;
   }
   function navHtml(page, f) {
-    var side = ['projects', 'jobs', 'reviews', 'failures'].indexOf(S.view) >= 0;
+    var side = ['projects', 'jobs', 'reviews', 'failures', 'cost'].indexOf(S.view) >= 0;
     var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'wall' ? (side ? S.view : f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       var me = a.getAttribute('data-nav') === on;
@@ -954,7 +957,7 @@ ${WALL_TASK_SCRIPT}
       el.classList.toggle('is-zero', !n);
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
-    var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', needs: 'Needs you' };
+    var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
     $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : named[on] || 'Wall';
   }
 
@@ -1199,7 +1202,7 @@ ${WALL_TASK_SCRIPT}
     if (page === 'post') $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
     if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
-    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
+    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     if (!S.data) return;
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
@@ -1212,7 +1215,7 @@ ${WALL_TASK_SCRIPT}
     $('wall-synced').textContent = stamp(synced);
     $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
     $('wall-synced').parentNode.classList.toggle('is-stale', Date.now() - synced > 120000);
-    if (!onWall) { renderReviews(''); return; }
+    if (!onWall) { renderReviews(''); renderCost(''); return; }
     var side = S.view === 'failures' || S.view === 'projects' || S.view === 'jobs';
     $('wall-profile').hidden = !f.owner || side;
     if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
@@ -1232,6 +1235,8 @@ ${WALL_TASK_SCRIPT}
     // Recurring jobs with their value line (#1183): cron-value.ts.
     if (S.view === 'jobs') $('wall-jobs').innerHTML = jobsPageHtml();
     renderReviews(S.view);
+    // The Cost page (#1423): wall-cost.client.ts.
+    renderCost(S.view);
   }
   function setView(v, quiet) {
     S.view = v;
@@ -1251,6 +1256,7 @@ ${WALL_TASK_SCRIPT}
     // the slow one and keeps its own "Loading…" (#1252).
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
     refreshReviews();
+    refreshCost();
     getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
