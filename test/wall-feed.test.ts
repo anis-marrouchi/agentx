@@ -29,7 +29,7 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown } } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -38,7 +38,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const el = (id: string) => {
     if (!els.has(id)) {
       // The open post's action box (wdo-*) is drawn by the script itself.
-      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (id.startsWith("wdo-") ? [`<x id="${id}">`] : null)
+      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (/^(wdo|cb)-/.test(id) ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       const on: Record<string, (ev: unknown) => void> = {}
@@ -78,6 +78,15 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     calls.push({ url, init })
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.post && url === "/api/admin/wall/post") return opts.post
+    const peer = init?.headers?.["X-Agentx-Peer"] as string | undefined
+    if (peer && opts.peerCost && url.startsWith("/api/admin/observability/")) {
+      const body = opts.peerCost(peer, url)
+      return Promise.resolve({ ok: body !== null, status: body === null ? 404 : 200, json: async () => body ?? { error: "unknown peer" } })
+    }
+    if (opts.budgetPost && url === "/api/admin/wall/budget" && init?.method === "POST") {
+      const r = opts.budgetPost(JSON.parse(init.body), peer ?? null)
+      return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    }
     if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
     if (url.startsWith("/api/admin/observability/cost?") && opts.cost === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live" ? (opts.live ?? LIVE)
@@ -105,7 +114,9 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   /** The browser's hashchange, as after `location.hash = …`. */
   const hashchange = () => onWindow.hashchange?.()
-  return { el, wall, calls, click, change, settle, loc, hashchange }
+  /** A form's submit, as the Enter key or its button sends it. */
+  const submit = (attrs: Record<string, string>) => { for (const f of onDoc.submit ?? []) f({ preventDefault: () => {}, target: { hasAttribute: (k: string) => k in attrs } }) }
+  return { el, wall, calls, click, change, submit, settle, loc, hashchange }
 }
 
 describe("Wall as a social feed (#1207)", () => {
@@ -1405,10 +1416,110 @@ describe("The Cost page on the Wall (#1423)", () => {
   it("says so when the cost read fails, and the rest of the Wall still works", async () => {
     const w = openWall({ hash: "#status=open&view=cost", cost: "fail" })
     await w.settle()
-    expect(w.el("wall-cost").innerHTML).toContain("Could not load the cost: HTTP 503")
+    expect(w.el("wall-cost").innerHTML).toContain("Could not read the cost: node-a answered with an error. The rest of the Wall still works.")
     w.click({ "data-view": "feed" })
     await w.settle()
     expect(w.el("wall-cost").hidden).toBe(true)
     expect(w.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+})
+
+describe("The Cost page does all /admin/cost did (#1423, #1449)", () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const cost = (agent: string, usd: number) => ({ generatedAt: new Date().toISOString(), kpis: { spendToday: usd, spend7d: usd, spendDeltaWoW: 0 },
+    days: [{ date: today, cost: usd, tasks: 1, input: 10, output: 1, cacheRead: 0, cacheCreate: 0, unpriced: 0, agents: { [agent]: { cost: usd, tasks: 1, unpriced: 0 } } }] })
+  const BUDGETS = { month: "2026-10", fleet: { spentUsd: 4, capUsd: 50, state: "ok" }, agents: [{ agentId: "cx", spentUsd: 3, capUsd: 10, state: "ok" }], agentIds: ["cx", "reviewer"] }
+  const PEER_BUDGETS = { month: "2026-10", fleet: { spentUsd: 6, capUsd: 50, state: "ok" }, agents: [], agentIds: ["builder"] }
+  // node-b is read through the peer proxy; node-c is in the mesh but this dashboard has no address for it.
+  const DATA = { ...WALL, nodes: [{ name: "node-a", peer: null, ok: true }, { name: "node-b", peer: "http://node-b", ok: true }] }
+  const LIVE3 = { nodes: [...LIVE.nodes, { name: "node-b", url: "http://node-b", reachable: true, agents: [] }, { name: "node-c", url: "http://node-c", reachable: true, agents: [] }] }
+  const open = (extra: Record<string, unknown> = {}) => openWall({ hash: "#status=open&view=cost", data: DATA, live: LIVE3, cost: cost("cx", 4), budgets: BUDGETS,
+    peerCost: (peer, url) => (peer !== "http://node-b" ? null : url === "/api/admin/observability/budgets" ? PEER_BUDGETS : cost("builder", 6)), ...extra })
+
+  it("adds up every machine the feed reads, and asks none the dashboard cannot reach", async () => {
+    const w = open()
+    await w.settle()
+    const html = w.el("wall-cost").innerHTML
+    expect(html).toContain("$10.00 over 30 days · 2 runs · $5.00 per run · 2 machines")
+    expect(html).toContain("Not read: node-c (this dashboard has no address for it). Its spend is not in these numbers.")
+    expect(w.el("wall-cost-n").textContent).toBe("$10.00")
+    expect(w.calls.some((c) => c.init?.headers?.["X-Agentx-Peer"] === "http://node-c")).toBe(false)
+    expect(w.calls.filter((c) => c.init?.headers?.["X-Agentx-Peer"] === "http://node-b").map((c) => c.url)).toEqual(
+      expect.arrayContaining(["/api/admin/observability/cost?range=60", "/api/admin/observability/budgets"]))
+  })
+
+  it("keeps the range in the link, All included", async () => {
+    const w = open({ hash: "#status=open&view=cost&range=14" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toMatch(/data-crange="14" class="is-on"/)
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/observability/cost?range=30")
+    w.click({ "data-crange": "0" })
+    await w.settle()
+    expect(w.loc.hash).toContain("range=all")
+    expect(w.calls.map((c) => c.url)).toContain("/api/admin/observability/cost?range=all")
+    expect(w.el("wall-cost").innerHTML).toContain("over every day kept")
+  })
+
+  it("opens the details and filters the days", async () => {
+    const w = open()
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<div id="wc-details" hidden>')
+    w.click({ "data-cdetails": "" })
+    expect(w.el("wall-cost").innerHTML).toContain('<div id="wc-details">')
+    w.click({ "data-cfilter": "over10" })
+    expect(w.el("wall-cost").innerHTML).toContain('data-cfilter="over10" aria-pressed="true"')
+    expect(w.el("wall-cost").innerHTML).toContain("No days match this filter.")
+  })
+
+  it("lets the owner set a budget on the machine picked, and says when it is refused", async () => {
+    const sent: Array<{ body: any; peer: string | null }> = []
+    let status = 200
+    const w = open({ budgetPost: (body: any, peer: string | null) => { sent.push({ body, peer }); return status === 200 ? { status, body: { ok: true } } : { status, body: { error: "unauthorized" } } } })
+    await w.settle()
+    const html = w.el("wall-cost").innerHTML
+    expect(html).toContain("Monthly budgets")
+    expect(html).toContain('<form class="wc__form" data-cform')
+    expect(html).toContain('<option value="node-b">node-b</option>')
+    w.change("cb-scope", "agent:reviewer")
+    w.el("cb-usd").value = "25"
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(sent).toEqual([{ body: { scope: "agent", id: "reviewer", monthlyUsd: 25 }, peer: null }])
+    expect(w.el("wall-cost").innerHTML).toContain("Saved. It applies now")
+    // Another machine: the change goes to it, through the peer proxy.
+    w.change("cb-machine", "node-b")
+    w.el("cb-usd").value = ""
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(sent[1]).toEqual({ body: { scope: "fleet", monthlyUsd: null }, peer: "http://node-b" })
+    expect(w.el("wall-cost").innerHTML).toContain("Saved: no cap.")
+    status = 401
+    w.el("cb-usd").value = "5"
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain("Not saved: only the owner can change a budget")
+  })
+
+  it("an agent row's Set a cap picks that agent in the form, on the machine that runs it", async () => {
+    const sent: Array<{ body: any; peer: string | null }> = []
+    const w = open({ budgetPost: (body: any, peer: string | null) => { sent.push({ body, peer }); return { status: 200, body: { ok: true } } } })
+    await w.settle()
+    const html = w.el("wall-cost").innerHTML
+    expect(html).toContain('data-ccap="cx" title="Set the monthly cap of Customer Desk">Change cap</button>')
+    expect(html).toContain('data-ccap="builder" title="Set the monthly cap of builder">Set a cap</button>')
+    w.click({ "data-ccap": "builder" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="node-b" selected>node-b</option>')
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:builder" selected>Agent @builder</option>')
+    w.el("cb-usd").value = "7"
+    w.submit({ "data-cform": "" })
+    await w.settle()
+    expect(sent).toEqual([{ body: { scope: "agent", id: "builder", monthlyUsd: 7 }, peer: "http://node-b" }])
+    // Back to an agent on this machine.
+    w.click({ "data-ccap": "cx" })
+    await w.settle()
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="node-a" selected>node-a</option>')
+    expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:cx" selected>Agent @cx</option>')
+    expect(w.el("cb-usd").value).toBe("10")
   })
 })

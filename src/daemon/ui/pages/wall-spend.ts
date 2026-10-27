@@ -7,7 +7,7 @@
 // Shipped to the browser through injectFns, so it is self-contained: it
 // formats on its own, with the same money format as /cost so the two
 // figures match. It prints only numbers and fixed text, so nothing needs
-// escaping. Read-only: raising a cap stays on the Cost page (/admin/cost).
+// escaping. Read-only here: a cap is raised on the Wall's Cost page (#1423).
 
 /** The part of a budgets row the line reads (BudgetRow in src/agents/agent-budget.ts). */
 export interface SpendRow {
@@ -52,5 +52,5 @@ export function profileSpendHtml(budgets: { agents?: Array<SpendRow & { agentId:
     ? ' <span title="Runs on a model with no price, such as a local model. The cap does not count them.">· ' + Number(row.unpricedRuns) + " not priced</span>"
     : ""
   return '<div class="wpf__spend">' + text + unpriced + (chip ? " " + chip : "") +
-    ' <a href="/admin/cost" title="Spend and caps for every agent; raise a cap there">Cost</a></div>'
+    ' <a href="#status=open&amp;view=cost" title="Spend and caps for every agent; raise a cap there">Cost</a></div>'
 }

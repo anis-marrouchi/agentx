@@ -123,7 +123,12 @@ const shots = [
   ] },
   { name: "setup/engine", path: "/setup", wait: "#wizard", steps: [{ select: '[name="tier"]', value: "sdk" }, { scroll: '[name="triggerWords"]' }] },
   { name: "places/page", path: "/places", wait: ".pl-item" },
-  { name: "costs/page", path: "/admin/cost", wait: "body" },
+  // The Wall's Cost page (#1423), which /admin/cost now opens: the page, a
+  // phone, the details it folds, and the monthly budgets with their form.
+  { name: "wall/cost", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row" },
+  { name: "wall/cost-phone", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row", phone: true },
+  { name: "costs/page", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row", steps: [{ click: "[data-cdetails]" }, { wait: "#wc-details:not([hidden])" }], clipTo: "#wall-cost .wc__more" },
+  { name: "costs/budgets", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__form", clipTo: "#wall-cost-budgets" },
   // Only the first check group: the others describe this machine's desktop
   // app and home folder, which a screenshot must not publish.
   { name: "doctor/tab", path: "/admin/health", wait: '[data-tab="doctor"]', steps: [{ click: '[data-tab="doctor"]' }, { wait: ".ax-obs__doctor-group" }], clipBefore: ".ax-obs__doctor-group + .ax-obs__doctor-group" },
