@@ -367,6 +367,7 @@ private struct GeneralTab: View {
                     HotkeyField(title: "Stop every voice", value: nonOptional(\.stop, draft.general.hotkeys.stop), optional: false, model: model, id: "stop")
                     HotkeyField(title: "Smart paste", value: nonOptional(\.paste, draft.general.hotkeys.paste), optional: false, model: model, id: "paste")
                     LabeledContent("Open the menu", value: HotkeySpec.display(draft.menuHotkey))
+                    LabeledContent("Open requests", value: HotkeySpec.display("cmd+opt+o"))
                 } header: {
                     Text("Shortcuts")
                 } footer: {

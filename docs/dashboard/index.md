@@ -41,13 +41,13 @@ Start in Monitor for an overview of the work, then open Activity when you need t
 
 ## See which version is running
 
-On every page, the right of the top bar shows the version of the daemon, its commit (the exact state of the source code it was built from) and when it started, in your time zone.
+On every page, the version of the daemon, its commit (the exact state of the source code it was built from) and when it started, in your time zone, are shown in one line. On the Wall, the line is on the right of each page's title (under the title on a phone). On the classic pages, it is on the right of the top bar.
 
-![The right of the top bar: the daemon's version and commit, and since when it has been running](/screenshots/live/running-build.png)
+![The Wall's title row: on the right, the daemon's version and commit, since when it has been running, and Restart pending](/screenshots/wall/build-line.png)
 
-*The daemon runs version 0.89.0, built from commit e66f85a, and started on October 2.*
+*The daemon runs version 0.182.0, built from commit 4f2c9a1, and a newer version waits on disk.*
 
-When the AgentX files on disk were rebuilt or upgraded after the daemon started, the same place adds a **restart pending** badge. Hover over it to read why: the code on disk is newer than the running daemon. The daemon keeps running the old code until it restarts: use **Restart when idle** on a machine's card on the Wall's [Live](./live.md#restart-a-machine-when-it-is-idle) page, or `agentx daemon restart --when-idle` in a terminal ([restart without losing work](../jobs/restart-safely.md#restart-from-the-dashboard)). The line refreshes every minute.
+When the AgentX files on disk were rebuilt or upgraded after the daemon started, the same place adds a **restart pending** badge (**Restart pending** on the Wall). Hover over it to read why: the code on disk is newer than the running daemon. The daemon keeps running the old code until it restarts: use **Restart when idle** on a machine's card on the Wall's [Live](./live.md#restart-a-machine-when-it-is-idle) page (select **Restart pending** on the Wall to open it), or `agentx daemon restart --when-idle` in a terminal ([restart without losing work](../jobs/restart-safely.md#restart-from-the-dashboard)). The line refreshes every minute.
 
 The badge looks at the folder the daemon was started from. If you install each release into a new folder and then point the service at it, a release waiting in the new folder does not show the badge.
 
@@ -63,7 +63,7 @@ To open the dashboard through your own web address, see [Open the dashboard thro
 
 1. **Browser:** open `http://127.0.0.1:4202/mesh`. The top bar shows the tabs.
 2. Select **Live**. The Wall's **Live** page opens and lists your machines under **Machines**. If they say **up**, the dashboard can reach the daemon.
-3. The right of the top bar shows a version and "since" with a date. **Terminal:** `agentx daemon status` names the same version on its first line.
+3. The right of the top bar, and the right of the Wall's title, show a version and "since" with a date. **Terminal:** `agentx daemon status` names the same version on its first line.
 
 ## If something is wrong
 

@@ -28,13 +28,13 @@ import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-pan
 import { handlePeoplePanel } from "./people-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
-import { renderCostPage } from "./ui/pages/cost"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
 import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
+import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
@@ -90,7 +90,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -225,7 +225,6 @@ const DASHBOARD_PAGES = new Set([
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
-  "/admin/cost",
   "/admin/projects",
   "/admin/wiki",
 ])
@@ -266,6 +265,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
+  // The Wall's owner-only guard (#1454): every write under /api/admin/wall,
+  // here or forwarded to a peer, stops here without the owner's token.
+  if (isWallWrite(method, path) && !wallOwnerOk(req, ctx)) {
+    sendJson(res, 401, { error: "Only the owner writes on the Wall: sign in, or send the dashboard token." })
+    return
+  }
   // Sign-in for a browser on another machine (#1306, dashboard-session.ts).
   if (await handleLogin(req, res, url, method, ctx.token)) return
 
@@ -442,10 +447,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
-  if (path === "/api/monitor" || path.startsWith("/api/monitor/")) {
-    // Its writes register a CLI session or settle an action (Monitor and
-    // Wall Live's "Connect a CLI session", #1439): the owner's only. The
-    // reads stay open like /api/live, which they sit beside.
+  // Wall Live's "Connect a CLI session" (#1439) is the monitor's register,
+  // at a Wall address so the Wall's owner guard (#1454) holds it.
+  const monitorPath = method === "POST" && path === WALL_LIVE_CLI_PATH ? "/api/monitor/register" : path
+  if (monitorPath === "/api/monitor" || monitorPath.startsWith("/api/monitor/")) {
+    // Its writes register a CLI session or settle an action: the owner's
+    // only. The reads stay open like /api/live, which they sit beside.
     if (method === "POST") {
       if (!adminTokenOk(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
       if (req.headers["x-requested-with"] !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
@@ -454,7 +461,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const timeout = setTimeout(() => ac.abort(), 8000)
     try {
       const targets = monitorTargets(await resolveNodeTargets(ctx.config, ac.signal), ctx.config.mesh.peers)
-      if (method === "GET" && path === "/api/monitor") {
+      if (method === "GET" && monitorPath === "/api/monitor") {
         const nodes = await Promise.all(targets.map(async node => {
           try {
             const r = await fetch(node.url + "/monitor", { headers: node.token ? { Authorization: `Bearer ${node.token}` } : {}, signal: ac.signal })
@@ -466,7 +473,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       }
       const node = targets.find(n => n.url === url.searchParams.get("node"))
       if (!node) { sendJson(res, 400, { error: "Select a known node" }); return }
-      const op = path.slice("/api/monitor/".length)
+      const op = monitorPath.slice("/api/monitor/".length)
       if (!((method === "GET" && ["discover", "actions", "activity"].includes(op)) || (method === "POST" && ["register", "ended", "action", "retry", "clear"].includes(op)))) {
         sendJson(res, 405, { error: "Unknown monitor operation" }); return
       }
@@ -729,12 +736,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderLedgerPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
-  // /admin/cost — token-spend page. Replaces the standalone
-  // `agentx usage serve` (port 4201) and the Cost tab inside Health.
+  // /admin/cost was the token-spend page. The Wall's Cost page (#1423)
+  // does all it did, so old links and bookmarks land there. The CSV and
+  // the reads stay under /api/admin/observability/.
   if (method === "GET" && path === "/admin/cost") {
     if (!pageAllowed(req, res, ctx, path)) return
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.writeHead(302, { Location: WALL_COST_HREF })
+    res.end()
     return
   }
   // /admin/projects — aggregated per-project view. Data via
@@ -834,7 +842,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   // Set or raise a monthly budget from the Cost page (#1290), after the
   // token gate above. { scope: agent|project|fleet, id?, monthlyUsd, warnRatio? }
-  if (method === "POST" && path === "/api/admin/budgets") {
+  // The Wall's Cost page sends it to WALL_BUDGET_PATH, under the Wall's
+  // owner-only guard (#1454).
+  if (method === "POST" && (path === "/api/admin/budgets" || path === WALL_BUDGET_PATH)) {
     const body = await readJson(req).catch(() => ({})) as Record<string, unknown>
     const problem = budgetPatchProblem(body)
     if (problem) { sendJson(res, 400, { error: problem }); return }
@@ -880,6 +890,27 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     sendJson(res, reply.status, reply.body)
     return
   }
+  // Wall Live's controls (#1439): Resume, Drop and Pause a task, Restart
+  // when idle (and cancel it), Stop a lesson. Each goes to the node that
+  // holds what it acts on, through the node API classic Live used. Under
+  // /api/admin/wall, so the Wall's owner guard (#1454) holds every one.
+  //   POST /api/admin/wall/live/resume?node=<url>          { id }
+  //   POST /api/admin/wall/live/drop?node=<url>            { id }
+  //   POST /api/admin/wall/live/pause?node=<url>           { taskId }
+  //   POST /api/admin/wall/live/restart?node=<url>
+  //   POST /api/admin/wall/live/restart-cancel?node=<url>
+  //   POST /api/admin/wall/live/lesson-stop?node=<url>
+  //   POST /api/admin/wall/live/cli?node=<url>             a CLI to connect (the monitor block above)
+  const liveUpstream = method === "POST" && path.startsWith(`${WALL_LIVE_ACTIONS_PREFIX}/`)
+    ? WALL_LIVE_UPSTREAM.get(path.slice(WALL_LIVE_ACTIONS_PREFIX.length + 1)) : undefined
+  if (liveUpstream) {
+    if (req.headers["x-requested-with"] !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
+    const nodeUrl = url.searchParams.get("node")
+    if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
+    await proxyNodePost(req, res, ctx, nodeUrl, liveUpstream)
+    return
+  }
+
   // The Wall's writes (#1316): comment on a post, call its agent, a Space.
   // After the token gate above; the proxy above sends a comment or a call
   // to the node that keeps the post.
@@ -1674,7 +1705,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const SLUG_TO_ADMIN: Record<string, string> = {
       health: "/admin/health",
       ledger: "/admin/ledger",
-      cost: "/admin/cost",
+      cost: WALL_COST_HREF,
       projects: "/admin/projects",
       graph: "/admin/graph",
       wiki: "/admin/wiki/",
@@ -2800,6 +2831,19 @@ function appDeskDeps(config: DaemonConfig): AppDeskDeps {
 /** What the phone app's Chat tab talks through (app-chat.ts): turns go to
  *  the primary daemon with its token, the picker reads the live snapshot,
  *  and conversations live in the same SQLite file as the push tables. */
+/** Wall Live's controls (#1439) under the Wall's guarded prefix. */
+const WALL_LIVE_ACTIONS_PREFIX = "/api/admin/wall/live"
+const WALL_LIVE_CLI_PATH = `${WALL_LIVE_ACTIONS_PREFIX}/cli`
+/** Each control's node API, the one classic Live called. */
+const WALL_LIVE_UPSTREAM = new Map([
+  ["resume", "/api/signals/resume"],
+  ["drop", "/api/signals/drop"],
+  ["pause", "/api/signals/stop"],
+  ["restart", "/daemon/restart"],
+  ["restart-cancel", "/daemon/restart/cancel"],
+  ["lesson-stop", "/voice/stop"],
+])
+
 /** One member store per dashboard process, so its hourly log pruning holds;
  *  a new one when the retention setting changes. */
 let _members: { days: number; store: MemberStore } | null = null
@@ -3163,6 +3207,13 @@ function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
   if (got === ctx.token || hasSession(req, ctx.token)) return true
   const rec = got ? new TokenStore().verify(got) : null
   return !!rec && recordHasScope(rec, "dashboard:write")
+}
+
+/** The owner, for a Wall write (#1454): the dashboard token, its session
+ *  cookie or a dashboard:write key. With no token set, only a caller on
+ *  this machine: a board bound off loopback without one reads, never writes. */
+function wallOwnerOk(req: IncomingMessage, ctx: Ctx): boolean {
+  return adminTokenOk(req, ctx) && (!!ctx.token || !isOffBox(req))
 }
 
 const STREAM_TICKET_PATH = "/api/admin/stream-ticket"

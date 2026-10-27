@@ -85,6 +85,8 @@ describe("checkVoiceSettings", () => {
     expect(errors[0].message).toBe("⌥Space is used for both talk and ask Writer; give each its own shortcut")
     const menu = checkVoiceSettings({ general: { hotkeys: { paste: "cmd+opt+a" } } }, config())
     expect(menu[0].message).toMatch(/open the menu/)
+    const list = checkVoiceSettings({ agents: { writer: { hotkey: "cmd+opt+o" } } }, config())
+    expect(list[0].message).toBe("⌥⌘O is used for both open requests and ask Writer; give each its own shortcut")
     // Moving talk away frees it for the agent in the same save.
     expect(checkVoiceSettings({ general: { hotkeys: { talk: "ctrl+space" } }, agents: { writer: { hotkey: "opt+space" } } }, config())).toEqual([])
   })
