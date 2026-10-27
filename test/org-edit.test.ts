@@ -169,11 +169,12 @@ describe("editing the org chart", () => {
     expect(cfg.business.relations).toBeUndefined()
   })
 
-  it("offers known agents and people, and the built-in owner when no one is listed as owner", () => {
+  it("offers known agents and listed people only, never an unlisted built-in owner", () => {
     const cfg = base()
     expect(orgChoices(cfg).people.map((p) => p.ref)).toEqual(["person:sam", "person:kim"])
     cfg.people = []
-    expect(orgChoices(cfg).people).toEqual([{ ref: "person:owner", name: "Owner of this machine" }])
+    expect(orgChoices(cfg).people).toEqual([])
+    expect(() => applyOrgEdit(cfg, { op: "add-member", member: "person:owner" })).toThrow('There is no person "owner" in your people list.')
     expect(orgChoices(cfg).agents.map((a) => a.ref)).toEqual(["agent:lead", "agent:pm", "agent:dev", "agent:helper"])
   })
 })
@@ -233,6 +234,20 @@ describe("POST /api/admin/org/chart", () => {
     expect(r).toMatchObject({ status: 400, json: { error: "Lead cannot report to PM: PM already reports up to Lead." } })
     expect(saved()).toEqual(base())
     expect(backups()).toEqual([])
+  })
+
+  it("saves nothing that names an unlisted owner, so /org shows no \"not a person\" warning", async () => {
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({ ...base(), people: [] }))
+    const before = saved()
+    const r = await call("POST", "/api/admin/org/chart", { op: "add-member", member: "person:owner", role: "Advisor" }, true)
+    expect(r).toMatchObject({ status: 400, json: { error: 'There is no person "owner" in your people list. Add them on the People page first.' } })
+    expect(saved()).toEqual(before)
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"))
+    try {
+      const view = await call("GET", "/api/admin/org", undefined, true)
+      expect(view.json.choices.people).toEqual([])
+      expect(view.json.problem).toBeUndefined()
+    } finally { fetchMock.mockRestore() }
   })
 
   it("is the owner's only: anyone else sees the chart and cannot change it", async () => {

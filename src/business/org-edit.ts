@@ -1,4 +1,3 @@
-import { IMPLICIT_OWNER } from "@/people/people"
 import { memberKey, orgRelations, parseMember, relationsProblem, RELATION_TYPES, type OrgRelation, type RelationType } from "./relations"
 
 // --- Setting up the org chart from the Wall (#1420) ---
@@ -57,12 +56,12 @@ export const RELATION_LABEL: Record<RelationType, string> = {
   "acts-for": "acts for",
 }
 
-/** The people this install knows: `people`, plus the built-in owner when no
- *  one is listed as owner, as on the People page. */
+/** The people listed in `people`. Not the built-in owner: the daemon, the
+ *  CLI and the org view accept a listed person only, so a line to an
+ *  unlisted owner would be refused at the next start. */
 function knownPeople(cfg: any): Map<string, string> {
   const list: any[] = Array.isArray(cfg?.people) ? cfg.people : []
   const out = new Map<string, string>()
-  if (!list.some((p) => p?.role === "owner")) out.set(IMPLICIT_OWNER, "Owner of this machine")
   for (const p of list) if (p?.id) out.set(String(p.id), String(p.name || p.id))
   return out
 }
