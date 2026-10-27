@@ -228,6 +228,48 @@ describe("Wall Task: the run, its conversation and a steer box (#1381)", () => {
   })
 })
 
+describe("Wall: no internal marker in visible text (#1443)", () => {
+  const MARKED = { nodes: [
+    { name: "node-a", url: "http://node-a", reachable: true, agents: [
+      { id: "cx", name: "Customer Desk", runningTasks: [{ id: "t9", channel: "a2a", startedAt: iso(NOW - 60e3),
+        messagePreview: "[agentx:delegation-result task=dlg-1 from=dev-session status=done]",
+        message: "[agentx:delegation-result task=dlg-1 from=dev-session status=done]\nEarlier in this conversation you asked dev-session to help.",
+        lastActivity: "· [agentx:plan-step id=req-1 step=2]\nWorking on the refund form" }] },
+      { id: "ops", name: "Night Shift", runningTasks: [{ id: "t5", channel: "cron", sender: "cron:digest", startedAt: iso(NOW - 30e3),
+        messagePreview: "[agentx:plan-step id=req-1 step=2]\nYou own step 2 of 3", step: "agent" }] },
+    ] },
+  ] }
+
+  it("says a Live card's marker-only headline in plain words and drops markers from the rest", async () => {
+    const w = openWall({ hash: "#page=live", live: MARKED })
+    await w.settle()
+    const html = w.el("wall-live").innerHTML
+    const text = html.replace(/href="[^"]*"/g, "")
+    expect(text).not.toContain("[agentx:")
+    const cx = html.split("task=t9")[1].split("</a>")[0]
+    expect(cx).toContain('<p class="wls__t">Result from dev-session</p>')
+    expect(cx).toContain('<span class="wls__k">Latest</span> Working on the refund form</div>')
+    expect(html.split("task=t5")[1].split("</a>")[0]).toContain("You own step 2 of 3")
+    // The card's link carries what was asked, without the marker either.
+    expect(html).toContain("ask=Earlier+in+this+conversation")
+    w.go("#page=running")
+    await w.settle()
+    expect(w.el("wall-running").innerHTML.replace(/href="[^"]*"/g, "")).not.toContain("[agentx:")
+  })
+
+  it("drops markers from the Task page's request and the tracked post's headline", async () => {
+    const post = { id: "r1", owner: "cx", state: "in_progress", headline: "[agentx:request-pickup id=r1]", askedBy: "Demo operator", group: { channel: "telegram", chatId: "demo" },
+      project: null, createdAt: NOW - 7200e3, lastMoveAt: NOW - 600e3, closedAt: null, runs: 1, failedRuns: 0, runMs: 120e3, blocked: null, timeFlag: null }
+    const w = openWall({ hash: "#page=task&task=t1&agent=cx&node=http%3A%2F%2Fnode-a&ch=a2a&done=1",
+      history: { ok: true, channel: "a2a", message: "[agentx:plan-step id=r1 step=2]\nYou own step 2 of 3", transcript: "done\n" }, thread: { post, plan: [] } })
+    await w.settle()
+    expect(w.el("task-ask-body").innerHTML).toContain("You own step 2 of 3")
+    expect(w.el("task-ask-body").innerHTML).not.toContain("[agentx:")
+    expect(w.el("wtask-details").innerHTML).toContain("A request picked up again")
+    expect(w.el("wtask-details").innerHTML).not.toContain("[agentx:")
+  })
+})
+
 describe("lastActivityLine (#1381)", () => {
   it("gives the last non-empty line, cut to 160 characters", () => {
     expect(lastActivityLine("→ Read({})\n← ok\n\n")).toBe("← ok")
