@@ -224,6 +224,8 @@ const WALL_PAGE_CSS = `
 .av--sm { width: 28px; height: 28px; font-size: 11px; }
 .av--lg { width: 88px; height: 88px; font-size: 30px; border: 4px solid var(--ax-bg); cursor: default; }
 .av--person { background: var(--ax-muted); }
+.av--pic { background: var(--ax-surface-2); overflow: visible; }
+.av--pic img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .av.is-live::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: var(--ax-green); border: 2px solid var(--ax-surface); }
 
 /* Posts */

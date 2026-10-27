@@ -355,6 +355,26 @@ Set agent capability flags (intents, maxDelegationDepth, contextReferences, cont
 | `--max-execution-minutes <n>` | — | Wall-clock cap on a single Claude Code call (1–240). |
 | `--show` | — | Just print the current capability fields. |
 
+### `agentx agent picture set <file>`
+
+Set an agent's profile picture from a PNG, JPEG or WebP file of 1 MB at most. It is cut to a square and its metadata is dropped. Run by an agent from its own terminal, it sets that agent's own picture only, and the daemon checks the request comes from a task the agent is running. See [Give agents and people a picture](../jobs/profile-pictures.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | the agent running the command | Which agent. Required when you run it yourself. An agent naming another agent is refused. |
+
+### `agentx agent picture remove`
+
+Remove an agent's picture: its initials show again. Same `--agent <id>` flag and rules as `set`.
+
+### `agentx agent picture show`
+
+Say whether an agent has a picture.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | the agent running the command | Which agent. |
+
 ### `agentx agent integrations`
 
 Manage per-agent third-party credentials (telegram-bot, hubspot, gitlab-user, gmail, etc.).
@@ -3890,6 +3910,18 @@ The machines paired to people's own pages (My work, Your project): state, where 
 ### `agentx people revoke-device <tokenId>`
 
 End one machine's access at once. The id is in `agentx people devices`.
+
+No flags.
+
+### `agentx people picture set <id> <file>`
+
+Set a person's profile picture from a PNG, JPEG or WebP file of 1 MB at most. The owner only: refused when run from an agent's terminal. See [Give agents and people a picture](../jobs/profile-pictures.md).
+
+No flags.
+
+### `agentx people picture remove <id>`
+
+Remove a person's picture: their initials show again. The owner only.
 
 No flags.
 

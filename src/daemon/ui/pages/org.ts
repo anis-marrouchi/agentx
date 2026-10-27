@@ -6,6 +6,7 @@
 // in Approvals; their card says so.
 //
 // API: GET /api/admin/org and POST /api/admin/org/hold, in admin-panel.ts.
+// Pictures (#1425): GET /api/admin/pictures, in pictures-panel.ts.
 // Client JS avoids backslash escapes: they collapse inside this template
 // literal.
 
@@ -74,6 +75,9 @@ const ORG_CSS = `
 .org-card { width: 236px; padding: 12px 14px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); text-align: left; }
 .org-card.is-paused, .org-card.is-waiting { border-style: dashed; }
 .org-top { display: flex; align-items: baseline; gap: 8px; }
+.org-top--pic { align-items: center; }
+.org-av { width: 32px; height: 32px; border-radius: 50%; flex: none; overflow: hidden; background: var(--ax-surface-2); }
+.org-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .org-name { font-size: 15px; font-weight: 600; }
 .org-id { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-title { margin: 2px 0 0; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
@@ -91,6 +95,7 @@ const ORG_SCRIPT = `
   var tree = document.getElementById('org-tree');
   var msg = document.getElementById('org-msg');
   var warned = false;
+  var pics = {};   // agent id -> picture address (#1425); none keeps the card as it was
   var STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status unknown' };
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function headers(json) {
@@ -110,7 +115,7 @@ const ORG_SCRIPT = `
     else if (n.status === 'paused') acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="0">Resume</button>';
     else acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="1">Pause</button>';
     return '<div class="org-card is-' + esc(n.status) + '" data-agent="' + esc(n.id) + '">'
-      + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(n.id) + '</span></div>'
+      + '<div class="org-top' + (pics[n.id] ? ' org-top--pic' : '') + '">' + (pics[n.id] ? '<span class="org-av"><img src="' + esc(pics[n.id]) + '" alt=""></span>' : '') + '<span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(n.id) + '</span></div>'
       + (n.title ? '<p class="org-title">' + esc(n.title) + '</p>' : '')
       + (n.job ? '<p class="org-job">' + esc(n.job) + '</p>' : '')
       + '<span class="org-state is-' + esc(n.status) + '">' + esc(state) + '</span>'
@@ -123,8 +128,11 @@ const ORG_SCRIPT = `
   }
   async function load() {
     try {
+      var pr = fetch('/api/admin/pictures', { headers: headers(false) }).then(function (x) { return x.ok ? x.json() : null; }).catch(function () { return null; });
       var r = await fetch('/api/admin/org', { headers: headers(false) });
       var d = await r.json();
+      var p = await pr;
+      pics = (p && p.agent) || {};
       if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
       if (!d.exists) { tree.innerHTML = '<p class="org-quiet">No agentx.json in this folder.</p>'; return; }
       document.getElementById('org-none').hidden = d.roots.length > 0;

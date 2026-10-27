@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, mkdirSync } from "fs"
 import { readFile } from "fs/promises"
 import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
-import type { DaemonConfig } from "./config"
+import { loadDaemonConfig, type DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
 import { handleLogin, hasSession, hasStreamTicket, isOffBox, pageToken, redirectToLogin, streamTicket, STREAM_TICKET_TTL_S } from "./dashboard-session"
 import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
@@ -26,6 +26,8 @@ import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
 import { handlePeoplePanel } from "./people-panel"
+import { handlePicturesPanel, servePicture } from "./pictures-panel"
+import { IMPLICIT_OWNER } from "@/people/people"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
@@ -295,6 +297,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(icon.body)
     return
   }
+  // A profile picture (#1425): before the token gate, as an <img> sends
+  // none; it answers only for the version the gated list names.
+  if (servePicture(req, res, path, url, process.cwd())) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -903,6 +908,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderOrgPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
+  // Profile pictures (#1425): set, replace and remove, after the token gate.
+  if (await handlePicturesPanel(req, res, path, {
+    root: process.cwd(),
+    agentIds: () => Object.keys(currentAgents(ctx.config)),
+    personIds: () => [IMPLICIT_OWNER, ...currentPeople(ctx.config.people).map((p) => p.id)],
+  })) return
   if (method === "GET" && path === "/people" && !pageAllowed(req, res, ctx, path)) return
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
@@ -3170,6 +3181,12 @@ function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: 
     return false
   }
   return true
+}
+
+/** The agents agentx.json lists now, so a new agent needs no restart;
+ *  the ones the dashboard started with when the file can't be read. */
+function currentAgents(config: DaemonConfig): DaemonConfig["agents"] {
+  try { return loadDaemonConfig().agents ?? {} } catch { return config.agents ?? {} }
 }
 
 function localNodeName(config: DaemonConfig): string {

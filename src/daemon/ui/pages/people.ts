@@ -2,7 +2,8 @@
 //
 // Everyone who talks to the agents: the owner, teammates, clients and guests. Open a
 // person to see the machines they paired (state, where from, first and
-// last use), what they asked for, and to end one machine.
+// last use), what they asked for, and to end one machine, and to set,
+// replace or remove their picture (#1425, /api/admin/pictures).
 //
 // API lives in people-panel.ts (dashboard side, token-gated like the rest
 // of /api/admin). This file owns only the HTML, CSS and client JS.
@@ -63,6 +64,13 @@ const PEOPLE_CSS = `
 .pp-person { border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); }
 .pp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; width: 100%; padding: 14px 16px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--ax-radius); }
 .pp-head:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.pp-av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; overflow: hidden; background: var(--ax-muted); color: #fff; font-size: 12px; font-weight: 700; }
+.pp-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pp-av--lg { width: 72px; height: 72px; font-size: 24px; }
+.pp-pic { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.pp-file { position: relative; cursor: pointer; }
+.pp-file input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.pp-file:focus-within { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .pp-name { font-size: 16px; font-weight: 600; }
 .pp-id { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .pp-count { margin-left: auto; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
@@ -99,6 +107,7 @@ const PEOPLE_SCRIPT = `
   var none = document.getElementById('pp-none');
   var open = {};   // person id -> the last detail loaded for it
   var people = [];
+  var pics = {};   // person id -> picture address (#1425)
   var ROLE = { owner: 'Owner', member: 'Member', client: 'Client', guest: 'Guest' };
   var REQUEST = {
     in_progress: ['In progress', 'ok'], waiting_owner: ['Waiting on you', 'warn'], waiting_other: ['Waiting on another agent', 'warn'],
@@ -152,10 +161,29 @@ const PEOPLE_SCRIPT = `
       return '<li><p class="pp-text">' + esc(flat(r.messagePreview)) + '</p><p class="pp-meta">' + state(s[0], s[1]) + '<span>' + esc(r.agentId) + '</span><span>' + esc(r.channel || '') + '</span><span>' + esc(when(r.startedAt)) + '</span></p></li>';
     }).join('') + '</ol>';
   }
+  function initials(name) {
+    var words = String(name || '?').split(/[^A-Za-z0-9]+/).filter(Boolean);
+    if (!words.length) return '?';
+    return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
+  }
+  /** The person's picture when one is set (#1425), else their initials. */
+  function face(p, big) {
+    var cls = 'pp-av' + (big ? ' pp-av--lg' : '');
+    return pics[p.id] ? '<span class="' + cls + '"><img src="' + esc(pics[p.id]) + '" alt=""></span>'
+      : '<span class="' + cls + '" aria-hidden="true">' + esc(initials(p.name)) + '</span>';
+  }
+  function picture(p) {
+    return '<h3>Picture</h3><div class="pp-pic">' + face(p, true) +
+      '<label class="ax-btn pp-file">' + (pics[p.id] ? 'Replace picture' : 'Upload picture') +
+        '<input type="file" accept="image/png,image/jpeg,image/webp" data-pic="' + esc(p.id) + '" aria-label="Picture for ' + esc(p.name) + ': PNG, JPEG or WebP, 1 MB at most"></label>' +
+      (pics[p.id] ? '<button type="button" class="ax-btn" data-pic-remove="' + esc(p.id) + '">Remove picture</button>' : '') +
+      '<span class="pp-quiet">PNG, JPEG or WebP, 1 MB at most. It is cut to a square.</span></div>';
+  }
   function detail(id) {
     var d = open[id];
     if (!d || d === true) return '<p class="pp-quiet" style="padding-top:14px">Loading…</p>';
-    return '<h3>Machines</h3>' + machines(id, d.devices || [], !(d.person && d.person.builtIn)) +
+    var p = people.filter(function (x) { return x.id === id; })[0];
+    return (p ? picture(p) : '') + '<h3>Machines</h3>' + machines(id, d.devices || [], !(d.person && d.person.builtIn)) +
       '<h3>Requests, newest first</h3>' + (d.database ? requests(d.requests || []) : '<p class="pp-quiet">The database could not be opened. Start the dashboard from the folder that holds agentx.json.</p>') +
       '<h3>Latest turns they started</h3>' + runs(d.runs || []);
   }
@@ -169,6 +197,7 @@ const PEOPLE_SCRIPT = `
     return '<li class="pp-person" data-person="' + esc(p.id) + '">' +
       '<button type="button" class="pp-head" aria-expanded="' + isOpen + '" aria-controls="pp-body-' + esc(p.id) + '" data-open="' + esc(p.id) + '">' +
         '<span class="pp-caret" aria-hidden="true">&#9656;</span>' +
+        face(p) +
         '<span class="pp-name">' + esc(p.name) + '</span>' +
         '<span class="ax-badge' + (p.role === 'owner' ? ' ax-badge--accent' : '') + '">' + esc(ROLE[p.role] || p.role) + '</span>' +
         '<span class="pp-id">' + esc(p.id) + '</span>' + limit +
@@ -196,8 +225,12 @@ const PEOPLE_SCRIPT = `
     return get('/api/admin/people/' + encodeURIComponent(id)).then(function (d) { if (open[id]) { open[id] = d; draw(); } })
       .catch(function (e) { say('Could not read ' + id + ': ' + e.message, true); });
   }
+  function loadPictures() {
+    return get('/api/admin/pictures').then(function (d) { pics = d.person || {}; }).catch(function () { pics = {}; });
+  }
   function load() {
-    return get('/api/admin/people').then(function (d) {
+    return Promise.all([get('/api/admin/people'), loadPictures()]).then(function (all) {
+      var d = all[0];
       people = d.people || [];
       none.hidden = d.paired > 0;
       Object.keys(open).forEach(function (id) { if (!people.some(function (p) { return p.id === id; })) delete open[id]; });
@@ -205,7 +238,37 @@ const PEOPLE_SCRIPT = `
       Object.keys(open).forEach(loadOne);
     }).catch(function (e) { say('Could not read the people list: ' + e.message, true); });
   }
+  function pictureCall(method, id, file) {
+    var h = headers(false);
+    if (file) h['Content-Type'] = file.type || 'application/octet-stream';
+    return fetch('/api/admin/pictures/person/' + encodeURIComponent(id), { method: method, credentials: 'same-origin', headers: h, body: file || undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status)); return d; }); });
+  }
+  /** Back on the same person's control after a redraw. */
+  function refocus(sel) { var el = list.querySelector(sel); if (el) el.focus(); }
+  list.addEventListener('change', function (ev) {
+    var input = ev.target.closest('input[data-pic]');
+    if (!input || !input.files || !input.files[0]) return;
+    var id = input.getAttribute('data-pic'), file = input.files[0];
+    input.value = '';
+    // The server's rules, checked here for a quick answer; the server decides.
+    if (['image/png', 'image/jpeg', 'image/webp'].indexOf(file.type) < 0) { say('Use a PNG, JPEG or WebP picture' + (file.type === 'image/svg+xml' ? ': SVG is not accepted.' : '.'), true); return; }
+    if (file.size > 1024 * 1024) { say('The picture is ' + (file.size / 1048576).toFixed(1) + ' MB; the limit is 1 MB.', true); return; }
+    pictureCall('PUT', id, file).then(function () { say('Picture set.', false); return load(); })
+      .then(function () { refocus('input[data-pic="' + id + '"]'); })
+      .catch(function (e) { say('Could not set the picture: ' + e.message, true); });
+  });
   list.addEventListener('click', function (ev) {
+    var rm = ev.target.closest('button[data-pic-remove]');
+    if (rm) {
+      var pid0 = rm.getAttribute('data-pic-remove');
+      if (!confirm('Remove this picture? The initials show again.')) return;
+      rm.disabled = true;
+      pictureCall('DELETE', pid0).then(function () { say('Picture removed.', false); return load(); })
+        .then(function () { refocus('input[data-pic="' + pid0 + '"]'); })
+        .catch(function (e) { say('Could not remove the picture: ' + e.message, true); rm.disabled = false; });
+      return;
+    }
     var end = ev.target.closest('button[data-end]');
     if (end) {
       var id = end.getAttribute('data-person'), token = end.getAttribute('data-end'), name = end.getAttribute('data-name');

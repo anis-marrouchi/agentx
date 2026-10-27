@@ -222,6 +222,8 @@ The spend line uses the same figures as the **Monthly budgets** card on the Cost
 
 When a machine does not answer, the page names it at the top: agents that run only there are missing until it answers again.
 
+Avatars show an agent's or a person's profile picture when one is set on the machine that serves this dashboard, and the coloured circle with initials otherwise. See [Give agents and people a picture](../jobs/profile-pictures.md).
+
 ## Live sessions
 
 The **Live** page lists everything live on your machines: Spaces and lessons on top, then the sessions and jobs running now (the same runs the classic `/live` page shows), then what comes up next. While the page is open it updates every two seconds.

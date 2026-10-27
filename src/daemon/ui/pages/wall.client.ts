@@ -6,7 +6,8 @@
 // /api/workflows/runs (failed workflow runs), /api/admin/org (each
 // agent's role and who it reports to, #1398) and
 // /api/admin/observability/budgets (an agent's month spend vs its cap on
-// its profile, #1393, wall-spend.ts). Pending owner decision
+// its profile, #1393, wall-spend.ts) and /api/admin/pictures (the
+// pictures set for agents and people, #1425). Pending owner decision
 // cards (#1185) come with their post and are shown without buttons:
 // answering stays on the Desk. Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
@@ -54,7 +55,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The pages the nav opens besides the Wall itself (#1316). */
   var PAGES = ['running', 'agents', 'creator', 'live', 'task'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
+  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, profileSpendHtml })}
 ${WALL_REVIEWS_SCRIPT}
@@ -168,10 +169,17 @@ ${WALL_TASK_SCRIPT}
     if (!words.length) return '?';
     return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
   }
-  /** A round avatar. Agents open their profile; people get a plain grey one. */
+  /** The picture set for an agent or a person on this node (#1425), or ''. */
+  function pictureOf(id, person) {
+    var p = S.pics && S.pics[person ? 'person' : 'agent'];
+    return (p && Object.prototype.hasOwnProperty.call(p, id) && p[id]) || '';
+  }
+  /** A round avatar: the picture when one is set, else the initials.
+   *  Agents open their profile; people get a plain grey one. */
   function avatar(id, size, person) {
-    var cls = 'av' + (size ? ' av--' + size : '') + (person ? ' av--person' : '') + (!person && agentInfo()[id] && agentInfo()[id].live ? ' is-live' : '');
-    var face = esc(initials(person ? id : nameOf(id)));
+    var pic = pictureOf(id, person);
+    var cls = 'av' + (size ? ' av--' + size : '') + (person ? ' av--person' : '') + (pic ? ' av--pic' : '') + (!person && agentInfo()[id] && agentInfo()[id].live ? ' is-live' : '');
+    var face = pic ? '<img src="' + esc(pic) + '" alt="" loading="lazy" decoding="async">' : esc(initials(person ? id : nameOf(id)));
     if (person || size) return '<span class="' + cls + '" style="--av-h:' + hue(id) + '" aria-hidden="true">' + face + '</span>';
     return '<button type="button" class="' + cls + '" style="--av-h:' + hue(id) + '" data-agent="' + esc(id) + '" title="' + esc(nameOf(id)) + ': profile and posts">' + face + '</button>';
   }
@@ -1213,6 +1221,8 @@ ${WALL_TASK_SCRIPT}
     getJson('/api/live').then(function (d) { S.live = d; render(); }).catch(function () { S.live = { nodes: [] }; render(); });
     refreshReviews();
     getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function () { S.org = {}; render(); });
+    // Pictures (#1425): none set, or the read failing, keeps the initials.
+    getJson('/api/admin/pictures').then(function (d) { S.pics = d; render(); }).catch(function () { S.pics = null; });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
     getJson('/api/workflows/runs?summary=1&limit=100').then(function (d) { S.wf = d; render(); }).catch(function () { S.wf = { runs: [] }; render(); });
