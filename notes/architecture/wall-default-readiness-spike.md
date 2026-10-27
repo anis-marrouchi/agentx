@@ -3,9 +3,15 @@
 Evaluation only. Nothing was built. Date: 2026-10-27, AgentX 0.181.1.
 
 **Short answer:** the Wall is already a good default home page. But the
-classic pages cannot be retired yet. **Verdict: ready after 6 fixes.** The
-biggest gap is approvals: the Wall shows only the decision cards that belong to
-a task, and it has no way to answer them.
+classic pages cannot be retired yet. The biggest gap is approvals: the Wall
+shows only the decision cards that belong to a task, and it has no way to
+answer them.
+
+> **Final verdict, from the live fleet: ready after 7 fixes.** The owner
+> re-ran this spike on the live Mac daemon (0.181.1, `e44cda75`); the result
+> is in the [issue comment on #1430](https://github.com/anis-marrouchi/agentx/issues/1430).
+> It supersedes the demo verdict below (6 fixes). See [Live fleet
+> result](#live-fleet-result) for what it added and where the two disagree.
 
 ## How this was measured
 
@@ -90,7 +96,7 @@ Screenshots (demo data) are in [`wall-default-readiness/`](wall-default-readines
 `desktop-needs.png`, `desktop-jobs.png`, `desktop-live.png`, `phone-feed.png`,
 `phone-list.png`, `down-running.png`.
 
-## 4. Verdict: ready after 6 fixes
+## 4. Verdict on the demo: ready after 6 fixes (superseded, see Live fleet result)
 
 The Wall stays the default; it already is, and it holds up. Retire the classic
 pages **one by one**: each one goes only after its port ships **and** it passes the
@@ -125,10 +131,47 @@ deciding on Reviews (**F**).
 - **E. Task: Wall – measure use of each classic page on the live fleet, then retire or port.** Run `agentx usage surfaces --kind page --days 30` on both nodes. Decide the fate of Boards, Guests, Procedures, Processes, Glossary and the Workflows page. Settle the two project models. Choose the new target of the Wall's **Dashboard** link.
 - **F. Feat: Wall – approve or reject a classification on Reviews.** Today you approve or reject only on `/admin/graph` or with `agentx graph review`.
 
-## Still to measure on the live fleet
+## Live fleet result
 
-Run these on the machine that serves the dashboard:
+The owner measured the live Mac daemon on 2026-10-27 (usage from
+`surface_usage`, Mac only; Playwright at 390 × 844). The full tables and
+screenshots are in the issue comment. The live run found what the demo could
+not:
 
-1. **Terminal:** `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. Note `timings.totalMs` and when each peer answered.
-2. **Terminal:** `agentx usage surfaces --kind page --days 30`, on each node. This shows which classic pages anyone still opens.
-3. **Browser:** open `/wall` at 390 px and at full width, and take the same screenshots as above.
+- **Cold load.** The first post appears after 0.3 to 5.5 s, median about
+  2.8 s. In 2 of about 12 cold loads the home stayed empty after 8 s, and once
+  it showed both machines as "does not answer" while `/api/live` reached them.
+  This is the new blocker 5, the reason the verdict moves from 6 to 7 fixes.
+- **Raw `[agentx:…]` markers** show as headlines on Live cards. Not a blocker.
+- **89 of 90 links on the Wall lead to classic pages.** Agent page and History
+  links make up 62 of them. Each one needs a new target before retirement.
+- **Usage over 30 days.** `/live` 296 views, `/activity` 63, `/approvals` 24,
+  `/admin` 10. `/boards`, `/glossary`, `/processes`, `/procedures`, `/places`
+  and `/guests` had 0, so they can go without a port.
+- **Classic pages at 390 px.** 8 of 10 overflow. `/mesh` and `/workflows`
+  return 502s.
+- **Phone layout of the Wall.** All 10 views fit 390 px. The demo run found
+  the filter button off-screen (D above). The live run did not list that, so
+  check it again when the issues are filed.
+
+### Ranked blockers on the live fleet
+
+1. Decide on the Wall: cards and every inbox item (B above, the same scope).
+2. Settings, including agent edit, guests and health (#1428).
+3. Activity and per-agent history (#1429).
+4. Global cost and the comparison between agents (#1423).
+5. Reliable cold load (new).
+6. Resume, restart when idle and attached sessions on Wall Live (A above).
+7. Org chart as a Wall page (#1419, #1421; needs #1418; edit is #1420).
+
+### Where the two runs disagree
+
+- **Projects:** the live run rates `/admin/projects` **full**. This report
+  says **partial**. Wall Projects is a read-only health view built from
+  `dashboard.wall.projects`. The classic page creates and edits business
+  projects with their workflows, contacts and clauses. That is a different
+  model, so it can only retire after the two are merged.
+- **Reviews:** the live run notes that deciding stays on `/admin/graph` by
+  design (`wall-reviews.client.ts`), so F is optional.
+- **Issue letters:** the two runs use the same letters for different
+  proposals. The issue comment's list is the one to file from.
