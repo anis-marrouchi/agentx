@@ -53,7 +53,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
     var m = Math.floor(Math.max(0, ms) / 60000);
     return m < 1 ? Math.floor(Math.max(0, ms) / 1000) + ' s' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
   }
-  /** The last line a run wrote, said plainly (task.ts's stream sigils), without markers (#1443). */
+  /** The last line a run wrote, said plainly (the Task page's stream sigils, wall-task.client.ts), without markers (#1443). */
   function activityText(t) {
     var l = t.lastActivity || '', say = plainMarkerText;
     if (!l) return t.workflow && t.workflow.step ? 'Workflow step: ' + t.workflow.step : t.step ? 'Step: ' + t.step : 'Starting…';
