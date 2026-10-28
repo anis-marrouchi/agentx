@@ -279,7 +279,11 @@ Each agent card shows the agent's name, @handle, its role in the org chart when 
 
 4. Select **Save…**. A box lists each change with its old and new value. When you change the model or the engine, it also says which of the agent's recurring jobs change with it (a job that names its own model keeps it) and what the agent has spent this month against its cap. Select **Save changes**, or **Back** to keep editing.
 
+   ![The Save box: wake words and conversations at once, each with its old value struck through and its new value, then "No restart needed." with Back and Save changes](/screenshots/wall/settings-confirm.png)
+
 5. The bar says **Saved**, or why it was not saved. When a save fails, the form keeps what you typed.
+
+   ![The bar after a save: "Saved. It applies from the agent's next run."](/screenshots/wall/settings-saved.png)
 
    *Scripted demo data; your team's names and machines will differ.*
 
