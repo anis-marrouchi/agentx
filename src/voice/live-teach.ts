@@ -306,6 +306,7 @@ export class LiveTeach {
       this.emit({ type: "acted", n, error: r.error })
       this.history.push(r.error ? `Step ${n}: you tried to press ${plan.text} and it failed: ${r.error}` : `Step ${n}: you pressed ${plan.text}.`)
       if (!r.error) await this.settle()
+      this.idleSteps = 0
       return "next"
     }
 
@@ -324,6 +325,7 @@ export class LiveTeach {
       // Let the app react before the next read: a window that opens late
       // would otherwise be planned against as if it were not there.
       if (!r.error) await this.settle()
+      this.idleSteps = 0
       return "next"
     }
 
@@ -349,7 +351,8 @@ export class LiveTeach {
   private async stepBack(): Promise<"stopped"> {
     const line = "I'll leave it there. Ask me to show you again whenever you like."
     this.deps.presence.say(line)
-    // A stuck speech call must not hold open a lesson that has decided to end.
+    // A slow or stuck voice must not hold open a lesson that has ended;
+    // "stop" or the × cuts the line short.
     await Promise.race([this.deps.speech.say({ voice: this.opts.speaker.voice, text: line, agentId: this.opts.speaker.agentId, kind: "lesson" }), this.poked()])
     this.stop("the listener did not follow the steps")
     return "stopped"

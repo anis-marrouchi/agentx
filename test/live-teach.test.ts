@@ -329,6 +329,20 @@ describe("LiveTeach", () => {
     expect(s.t.state).toBe("ended")
   })
 
+  it("a stuck closing line does not hold the lesson open: stop still ends it (#1493)", async () => {
+    const WAIT = "TARGET: 1\nACTION: point\nSAY: New is up here."
+    const LINE = "I'll leave it there. Ask me to show you again whenever you like."
+    const s = setup("teach", [WAIT, WAIT, WAIT], { stuckOn: LINE })
+    const events: any[] = []
+    s.t.on((e) => events.push(e))
+    const run = s.t.run()
+    while (s.said.at(-1) !== LINE) await sleep(5)
+    s.t.door("stop")
+    await run
+    expect(s.t.state).toBe("ended")
+    expect(events.at(-1)).toEqual({ type: "end", reason: "stopped by the listener" })
+  })
+
   it("a step the listener does resets the count of undone ones", async () => {
     const WAIT = "TARGET: 1\nACTION: point\nSAY: New is up here."
     // Step 1 undone, step 2 done (the window opens), step 3 undone: still going.
@@ -589,8 +603,15 @@ describe("presence look and mode policy", () => {
     "how do I know if the deploy worked",
     "where do we go from here",
     "watch me merge PR 40",
+    // Only the wider status words keep these in talk.
+    "walk me through where we stand on hiring",
+    "walk me through how it's looking this week",
+    "guide-moi sur l'avancement",
+    "apprends-moi où on en est",
     "montre-moi où on en est",
     "explique-moi comment ça avance",
+    // \b does not see "ç" as a letter, so this needs its own boundary.
+    "montre-moi comment ça avance",
     "comment on fait pour le déploiement",
   ]
   const SHOW = [

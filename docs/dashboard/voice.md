@@ -1205,9 +1205,9 @@ Presence mode lets AgentX decide, on each question you ask through the widget, w
 Some safety rules always apply:
 
 - A lesson (`teach` or `watch`) starts only when you ask to be shown something:
-  - Asking outright is enough: "show me how…", "teach me…", "walk me through…", "coach me…", "watch me do it" or "montre-moi comment…".
+  - Asking outright is enough: "show me how to…", "show me where…", "teach me…", "walk me through…", "coach me…", "show me on screen…", "watch me do it" or "montre-moi comment…". A bare "show me how" is not: "show me how things look today" is answered by voice.
   - A "how do I…" or "where is the…" question also needs to name something on screen, such as a button, menu, tab, field or icon, or "on the screen" or "in this app". "Where is the export button?" starts a lesson; "how do I make a table?" is answered by voice.
-  - A question about work is always answered as `talk`, even if it names a control: "where are we on the HeyGen test", "how do things look today" or "where's the tab redesign PR". So is an instruction such as "merge and deploy the release".
+  - A question about work or status is always answered as `talk`, even if it starts with "show me" or "walk me through", or names a control: "where are we on the video test", "walk me through the status", "show me where we are on the release", "montre-moi où on en est" or "where's the tab redesign PR". So is an instruction such as "merge and deploy the release". Only "show me on screen…" and "watch me do…" skip this check. Because of it, "where is the merge button" is also answered by voice; ask "show me on screen where to merge" instead.
 - If the seat is unsure (below 55% confidence), takes longer than 2.5 seconds, or fails, the answer is `talk`.
 
 To switch presence mode on:
