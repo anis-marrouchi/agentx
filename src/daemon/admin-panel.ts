@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSyn
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
+import { configRelationsProblem } from "@/business/relations"
 import { cronValueOf } from "@/crons/value-line"
 import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
@@ -17,6 +18,7 @@ import { getWhatsAppState } from "./whatsapp-state"
 import { emailAccountBlock, passwordEnvFor } from "@/channels/email/settings"
 import { holdAgent, holdsRoot, readHolds, releaseAgent } from "@/agents/holds"
 import { buildOrgView } from "@/business/org-view"
+import { applyOrgEdit, orgChoices, readOrgSetup } from "@/business/org-edit"
 import type { TopbarPeer } from "./topbar"
 import { renderAdminPage } from "./ui/pages/admin"
 
@@ -47,7 +49,13 @@ export async function handleAdminConfigGet(_req: IncomingMessage, res: ServerRes
   res.end(JSON.stringify(cfg))
 }
 
-export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+export interface AdminApiOpts {
+  /** The caller is this install's owner (#1420): only the owner may set up
+   *  the org chart. Unset counts as not the owner. */
+  owner?: boolean
+}
+
+export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, path: string, opts: AdminApiOpts = {}): Promise<void> {
   try {
     // Non-JSON carve-out: the WhatsApp QR rendered as SVG. Proxies to the
     // daemon process (different memory space) where the adapter actually
@@ -63,7 +71,8 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "PATCH /api/admin/agents": () => editAgent(body),
       "DELETE /api/admin/agents": () => deleteAgent(body),
       "POST /api/admin/agents/access": () => setAgentAccess(body),
-      "GET /api/admin/org": () => getOrg(),
+      "GET /api/admin/org": () => getOrg(opts.owner === true),
+      "POST /api/admin/org/chart": () => editOrgChart(body, opts.owner === true),
       "POST /api/admin/org/hold": () => setOrgHold(body),
       "POST /api/admin/channels/telegram": () => addTelegramAccount(body),
       "DELETE /api/admin/channels/telegram": () => deleteTelegramAccount(body),
@@ -171,7 +180,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
     const result = await handler()
     sendJson(res, 200, result)
   } catch (e: any) {
-    sendJson(res, 400, { error: e.message || "admin op failed" })
+    sendJson(res, e.status ?? 400, { error: e.message || "admin op failed" })
   }
 }
 
@@ -216,11 +225,28 @@ function readConfigRaw(): any {
 
 /** The Org view (#1169): the org chart as a tree, with live status. The
  *  daemon gives working or idle; without it the status is unknown. */
-async function getOrg() {
+async function getOrg(owner: boolean) {
   const cfg = readConfigRaw()
   if (!cfg) return { exists: false }
   const live = await proxyDaemonJson("/agents").catch(() => null)
-  return { exists: true, ...buildOrgView(cfg, readHolds(holdsRoot()), Array.isArray(live) ? live : null) }
+  return {
+    exists: true,
+    ...buildOrgView(cfg, readHolds(holdsRoot()), Array.isArray(live) ? live : null),
+    // The Wall's org setup (#1420): who is in the chart, and for the owner
+    // what may be added.
+    setup: readOrgSetup(cfg),
+    canEdit: owner,
+    ...(owner ? { choices: orgChoices(cfg) } : {}),
+  }
+}
+
+/** One change to the org chart from the Wall's setup page (#1420): checked
+ *  against the whole chart, then written with a backup, and the daemon
+ *  reloads it. Owner only. */
+function editOrgChart(body: any, owner: boolean) {
+  if (!owner) throw Object.assign(new Error("Only the owner can change the org chart."), { status: 403 })
+  const { summary, backupPath } = mutateAgentxConfig((cfg) => applyOrgEdit(cfg, body))
+  return { summary, backupPath }
 }
 
 /** Pause or resume one agent from the Org view. An agent that waits for
@@ -1240,6 +1266,9 @@ async function upsertOrgEntry(body: any) {
       schedule: { days, start, end },
       utilizationTarget: utilization,
     }
+    // Refuse a bad reportsTo now, not at the next daemon start (#1427).
+    const problem = configRelationsProblem(cfg)
+    if (problem) throw new Error(problem)
     return `orgChart "${agentId}" upserted`
   })
   return { summary }

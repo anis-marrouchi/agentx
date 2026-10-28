@@ -79,6 +79,30 @@ enum PillPlacement {
                width: size.width, height: size.height)
     }
 
+    /// The open-requests list (#1455): beside the widget at `pill`, on the
+    /// side with more room (above when equal), right edges lined up unless
+    /// that leaves the screen, `gap` points clear of it. As tall as its
+    /// rows want, `height`, but no taller than the room on that side.
+    struct List: Equatable {
+        let frame: CGRect
+        /// True: the list is above the pill, its newest row at the bottom.
+        let above: Bool
+    }
+
+    static let listGap: CGFloat = 8
+
+    static func list(width: CGFloat, height: CGFloat, pill: CGRect, visible: CGRect) -> List {
+        let roomAbove = visible.maxY - pill.maxY - listGap
+        let roomBelow = pill.minY - visible.minY - listGap
+        let above = roomAbove >= roomBelow
+        let h = max(0, min(height, above ? roomAbove : roomBelow))
+        let alignRight = pill.maxX - width >= visible.minX
+        let frame = CGRect(x: alignRight ? pill.maxX - width : pill.minX,
+                           y: above ? pill.maxY + listGap : pill.minY - listGap - h,
+                           width: width, height: h)
+        return List(frame: inside(frame, visible), above: above)
+    }
+
     /// How far the bubble reaches to the right of the character's middle,
     /// and the gap above its head that the bubble's tail fills.
     static let bubbleReach: CGFloat = 64

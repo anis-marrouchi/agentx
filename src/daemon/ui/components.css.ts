@@ -398,6 +398,8 @@ export const AX_COMPONENTS_CSS = `
   border-color: color-mix(in oklch, var(--ax-warn) 30%, var(--ax-border));
   color: var(--ax-warn);
 }
+.ax-avatar--pic { padding: 0; overflow: hidden; background: var(--ax-surface-2); }
+.ax-avatar--pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ax-avatar--blue {
   background: color-mix(in oklch, var(--ax-info) 14%, var(--ax-surface));
   border-color: color-mix(in oklch, var(--ax-info) 30%, var(--ax-border));

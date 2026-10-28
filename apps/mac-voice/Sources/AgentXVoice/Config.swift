@@ -43,6 +43,15 @@ enum Config {
         set { UserDefaults.standard.set(newValue, forKey: "playMode") }
     }
 
+    /// "Play answers at once" in the menu: an answer plays as soon as it is
+    /// back, as before #1455. Off by default: it waits as "not heard" in the
+    /// open-requests list until picked. A UI choice for now; the setting in
+    /// agentx.json comes with the Settings window's Answers group.
+    static var playAnswersAtOnce: Bool {
+        get { UserDefaults.standard.bool(forKey: "playAnswersAtOnce") }
+        set { UserDefaults.standard.set(newValue, forKey: "playAnswersAtOnce") }
+    }
+
     /// Where the pill was last dragged to (its bottom-left corner, in
     /// screen points). Nil: the default corner.
     static var pillOrigin: CGPoint? {

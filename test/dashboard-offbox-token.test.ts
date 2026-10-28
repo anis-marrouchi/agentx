@@ -12,7 +12,7 @@ import { isOffBox, pageToken, sessionValue } from "../src/daemon/dashboard-sessi
 
 const TOKEN = "dash-secret"
 const OFF = { "X-Forwarded-For": "100.64.0.9" }
-const PAGES = ["/wall", "/admin", "/approvals", "/admin/graph", "/people", "/admin/agents/ops", "/admin/health", "/admin/cost", "/admin/ledger"]
+const PAGES = ["/wall", "/admin", "/approvals", "/admin/graph", "/admin/agents/ops", "/admin/health", "/admin/ledger"]
 
 let server: Server | undefined
 
@@ -52,6 +52,9 @@ describe("dashboard pages off-box (#1306)", () => {
     }
     const r = await fetch(base + "/admin", { headers: OFF, redirect: "manual" })
     expect(r.headers.get("location")).toBe("/login?next=%2Fadmin")
+    // /people moved to the Wall (#1441): off-box it still signs in first.
+    const people = await fetch(base + "/people", { headers: OFF, redirect: "manual" })
+    expect(people.headers.get("location")).toBe("/login?next=%2Fpeople")
   })
 
   it("refuses off-box /api/admin/* without a token or session", async () => {
@@ -88,6 +91,23 @@ describe("dashboard pages off-box (#1306)", () => {
       expect(body, page).not.toContain("window.AX_LOCAL_TOKEN =")
     }
     expect((await fetch(`${base}/api/admin/people`, { headers })).status).toBe(200)
+  })
+
+  it("brings a chat task link back to its Wall Task page after sign-in (#1447)", async () => {
+    const base = await start()
+    const r = await fetch(`${base}/tasks/t1?agent=ops`, { headers: OFF, redirect: "manual" })
+    expect(r.status).toBe(302)
+    const login = new URL(r.headers.get("location") || "", base)
+    expect(login.pathname).toBe("/login")
+    const next = login.searchParams.get("next") || ""
+    expect(next).toMatch(/^\/#page=task&task=t1&agent=ops&node=/)
+    // The form carries it, and signing in lands on the task, not the bare Wall.
+    expect(await (await fetch(base + login.pathname + login.search, { headers: OFF })).text()).toContain(`value="${next.replace(/&/g, "&#38;")}"`)
+    expect((await signIn(base, TOKEN, next)).headers.get("location")).toBe(next)
+    // Signed in, the link goes straight to the Wall.
+    const cookie = ((await signIn(base, TOKEN)).headers.get("set-cookie") || "").split(";")[0]
+    const direct = await fetch(`${base}/tasks/t1?agent=ops`, { headers: { ...OFF, Cookie: cookie }, redirect: "manual" })
+    expect(direct.headers.get("location")).toBe(next)
   })
 
   it("only sends a sign-in back to a path on this server", async () => {

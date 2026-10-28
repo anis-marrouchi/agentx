@@ -1,6 +1,6 @@
 // --- Shared top-chrome for every dashboard surface ---
 //
-// Four pages render in different files (live + kanban + glossary in
+// Pages render in different files (live, wall and the rest in
 // board-dashboard.ts, settings in admin-panel.ts) but must share: design
 // tokens, fonts, theme switcher, brand, primary tab nav, and a mesh-node
 // selector. This module exports the CSS + HTML snippets so each page
@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "wall" | "monitor" | "activity" | "live" | "mesh" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox" | "projects" | "approvals" | "people" | "org"
+export type TopbarTab = "wall" | "monitor" | "activity" | "live" | "mesh" | "admin" | "graph" | "workflows" | "health" | "cost" | "wiki" | "inbox" | "projects" | "approvals" | "people" | "org"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -438,9 +438,8 @@ export function renderTopbar(opts: TopbarOpts): string {
   // Deliberately NOT in the nav (all still routable by URL):
   //   /admin/ledger  /admin/cost         what happened, what it cost
   //   /workflows  /inbox              BPM surfaces
-  //   /  (boards)                       Kanban
   //   /admin/health  /admin/graph  /admin/projects
-  //   /procedures  /admin/wiki  /glossary  /processes
+  //   /admin/wiki
   //
   // The nav is the set of surfaces an operator opens on purpose, not a site
   // map. Workflows earned its way back: automation that stops running reports
@@ -460,11 +459,11 @@ export function renderTopbar(opts: TopbarOpts): string {
       name: "Mesh",
       tabs: [
         { id: "wall", label: "Wall", href: "/wall" },
-        { id: "live", label: "Live", href: "/live" },
+        { id: "live", label: "Live", href: "/wall#page=live" },
         { id: "mesh", label: "Operations", href: "/mesh" },
         { id: "monitor", label: "Monitor", href: "/monitor" },
         { id: "approvals", label: "Approvals", href: "/approvals" },
-        { id: "people", label: "People", href: "/people" },
+        { id: "people", label: "People", href: "/wall#page=people" },
         { id: "org", label: "Org", href: "/org" },
         { id: "activity", label: "Activity", href: "/activity" },
         { id: "workflows", label: "Workflows", href: "/workflows" },

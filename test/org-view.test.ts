@@ -66,6 +66,59 @@ describe("the org tree", () => {
     expect(view.roots[1].heldBy).toBe("ceo")
   })
 
+  it("returns people and typed relations, a person boss putting the agent at the top (#1418)", () => {
+    const withPeople = {
+      ...config,
+      people: [{ id: "owner", name: "The Owner", identities: ["telegram:1"] }],
+      business: {
+        ...config.business,
+        orgChart: { ...config.business.orgChart, ceo: { role: "lead", reportsTo: "person:owner" } },
+        relations: [{ from: "dev", to: "person:owner", type: "acts-for" }],
+      },
+    }
+    const view = buildOrgView(withPeople, {}, null)
+    expect(view.people).toEqual([{ id: "owner", name: "The Owner" }])
+    expect(view.relations).toContainEqual({ from: "agent:ceo", to: "person:owner", type: "reports-to" })
+    expect(view.relations).toContainEqual({ from: "agent:pm", to: "agent:ceo", type: "reports-to" })
+    expect(view.relations).toContainEqual({ from: "agent:dev", to: "person:owner", type: "acts-for" })
+    expect(view.problem).toBeUndefined()
+    expect(view.roots.map((n) => [n.id, n.reportsTo])).toEqual([["ceo", "person:owner"]])
+    const bad = buildOrgView({ ...withPeople, people: [] }, {}, null)
+    expect(bad.problem).toMatch(/"owner", which is not a person/)
+  })
+
+  it("gives a person added with no line a card with their role (#1432)", () => {
+    const placed = {
+      ...config,
+      people: [{ id: "sam", name: "Sam" }, { id: "kim", name: "Kim" }, { id: "lee", name: "Lee" }],
+      business: { ...config.business, orgPeople: { sam: { role: "eng" }, kim: {} } },
+    }
+    const view = buildOrgView(placed, {}, null)
+    expect(view.people).toEqual([
+      { id: "sam", name: "Sam", placed: true, title: "Engineer" },
+      { id: "kim", name: "Kim", placed: true },
+      { id: "lee", name: "Lee" },
+    ])
+    const persons = view.diagram.boxes.filter((b) => b.kind === "person").map((b) => [b.id, b.title])
+    expect(persons).toEqual(expect.arrayContaining([["sam", "Engineer"], ["kim", undefined]]))
+    expect(persons.map(([id]) => id)).not.toContain("lee")
+  })
+
+  it("nests an agent: ref and a reports-to from business.relations in the tree (#1418)", () => {
+    const typed = {
+      ...config,
+      business: {
+        ...config.business,
+        orgChart: { ...config.business.orgChart, pm: { role: "pm", reportsTo: "agent:ceo" }, dev: { role: "eng" } },
+        relations: [{ from: "dev", to: "agent:pm", type: "reports-to" }],
+      },
+    }
+    const view = buildOrgView(typed, {}, null)
+    const ceo = view.roots.find((n) => n.id === "ceo")!
+    expect(ceo.reports.map((n) => [n.id, n.reportsTo])).toEqual([["pm", "ceo"]])
+    expect(ceo.reports[0].reports.map((n) => [n.id, n.reportsTo])).toEqual([["dev", "pm"], ["qa", "pm"]])
+  })
+
   it("cuts a long job to one short line", () => {
     expect(firstLine("  Many\n spaces.  Second.")).toBe("Many spaces.")
     expect(firstLine("x".repeat(300))!.length).toBe(140)

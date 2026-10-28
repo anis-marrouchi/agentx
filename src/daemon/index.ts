@@ -164,6 +164,8 @@ import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOri
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
+import { AGENT_PICTURE_PATH } from "@/pictures/pictures"
+import { handleAgentPicture } from "@/daemon/pictures-panel"
 import { INTERRUPT_SETTLE_MS, describeShutdown, drainLimitMs, interruptionReason, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest, type ShutdownRequest } from "@/daemon/shutdown"
 import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type ServiceInfo } from "@/daemon/restart"
 import { detectService, readRespawn } from "@/daemon/restart-host"
@@ -476,8 +478,8 @@ export class AgentXDaemon {
     // Empty file (or missing file) is fine — operators populate it later.
     this.contacts = new ContactDirectory(process.cwd(), this.log)
 
-    // The daemon renders a few shell pages itself (/inbox, /processes) —
-    // give their topbar the same feature flags the 4202 dashboard uses.
+    // Any page the daemon renders itself gets the same topbar feature
+    // flags the 4202 dashboard uses.
     setTopbarFeatures({
       business: this.config.business?.enabled === true,
     })
@@ -2137,6 +2139,18 @@ export class AgentXDaemon {
       if (beforeSize !== afterSize) applied.push(`hooks(${afterSize})`)
     } catch (e: any) {
       this.log(`[reload] hooks reload failed: ${e.message}`)
+    }
+
+    // 6b. Org chart (#1420): who reports to whom, set from the Wall, applies
+    //     to escalation without a restart. The rest of the business layer
+    //     (schedules, day cycle) still reads its config at start.
+    if (this.business && next.business && orgShape(this.config) !== orgShape(next)) {
+      try {
+        this.business.org.replaceWith(next.business, next.people ?? [])
+        applied.push("business.org")
+      } catch (e: any) {
+        this.log(`[reload] org chart kept: ${e.message}`)
+      }
     }
 
     // 7. Landscape — cheap rebuild, always safe.
@@ -5064,7 +5078,8 @@ export class AgentXDaemon {
           }); return
         }
       if (req.method === "GET" && path === "/monitor/activity") {
-          const hours = Math.max(1, Math.min(168, parseInt(url.searchParams.get("hours") || "24", 10) || 24))
+          // Up to 30 days: the Wall's Activity page offers 24 h, 7 d and 30 d (#1429).
+          const hours = Math.max(1, Math.min(720, parseInt(url.searchParams.get("hours") || "24", 10) || 24))
           const business = ((this.config as any).business ?? {}) as BusinessShape
           const data = this.sessionMonitor.activity(Date.now() - hours * 3600_000)
           this.json(res, 200, {
@@ -5808,6 +5823,12 @@ export class AgentXDaemon {
       if (isMeshGatedPath(path)) {
         if (await this.handleMemoryApi(req, res, path, url)) return
       }
+      // An agent sets or removes its own picture (#1425), from its own run:
+      // the task or chat it names must be a running turn of that agent.
+      if (path === AGENT_PICTURE_PATH) {
+        await handleAgentPicture(req, res, url, { root: process.cwd(), provenAgent: (claimed) => this.provenAgent(this.callerProof(req), claimed) })
+        return
+      }
 
         // GET /api/n8n/workflows — the operator's own n8n workflows, so the
       // builder can offer them as steps instead of asking for a URL. Never
@@ -6321,13 +6342,6 @@ export class AgentXDaemon {
         this.json(res, 200, { ok: true, emission })
         return
       }
-      // /processes — composition-tree + SLA view of runs.
-      if (req.method === "GET" && path === "/processes") {
-        const { renderProcessesPage } = await import("./ui/pages/processes")
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-        res.end(renderProcessesPage({}))
-        return
-      }
       // Static browser call page.
       if (req.method === "GET" && path === "/call") {
         this.serveCallPage(res)
@@ -6648,9 +6662,8 @@ export class AgentXDaemon {
 
       // Persistent-process registry — operator surface (improvement plan #5,
       // persistent flavor). Returns 503 when no agent has persistentProcess
-      // enabled (registry singleton not initialized). The path lives under
-      // /api/processes so it doesn't collide with the existing /processes
-      // HTML dashboard route registered earlier in this dispatcher.
+      // enabled (registry singleton not initialized). The old /processes
+      // HTML page is retired; the dashboard redirects it to the Wall.
       //   GET  /api/processes
       //   POST /api/processes/kill   { agentId, channel, chatId, reason? }
       if (req.method === "GET" && path === "/api/processes") {
@@ -8139,7 +8152,8 @@ export class AgentXDaemon {
             const started = this.voiceTalk.startLesson(agentId, message, presence.mode, presence.app ?? undefined)
             if (started.status === 201) {
               this.voiceIntros.spoke(session, agentId)
-              const text = presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen."
+              // The way out is said up front: a lesson is never a surprise to end (#1493).
+              const text = (presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen.") + " Say stop when you're done."
               this.json(res, 200, { agentId, voice, presence, text, full: text, ui: null })
               break
             }
@@ -9339,4 +9353,10 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
     })
     req.on("error", reject)
   })
+}
+
+/** What the business layer's Organization is built from. */
+function orgShape(c: DaemonConfig): string {
+  const b = c.business
+  return JSON.stringify([b?.roles, b?.orgChart, b?.relations, b?.projects, (c.people ?? []).map((p) => p.id)])
 }

@@ -102,9 +102,9 @@
 
 **كم يكلّف.** لا شيء: الحساب والسقوف تعمل على جهازك.
 
-**أوّل نتيجة تراها.** **المتصفّح:** افتح `/admin/cost` في لوحة التحكّم. تعرض بطاقة **Monthly budgets** إنفاق كلّ وكيل مقارنةً بسقفه.
+**أوّل نتيجة تراها.** **المتصفّح:** افتح صفحة **Cost** في الـ Wall. يعرض كلّ صفّ إنفاق الوكيل مقارنةً بسقفه، وبجانبه **Set a cap** أو **Change cap**، ويعرض قسم **Monthly budgets** كلّ السقوف.
 
-![بطاقة Monthly budgets في صفحة Cost](../public/screenshots/costs/budgets.png)
+![قسم Monthly budgets في صفحة Cost على الـ Wall](../public/screenshots/costs/budgets.png)
 
 [حدّد ميزانية شهرية](../help/costs.md#set-a-monthly-budget-for-an-agent)
 

@@ -3,7 +3,7 @@ import type { ForgeReader, ParsedRef } from "@/requests/checkers/issue"
 import type { IssueState } from "@/requests/checkers"
 import { forgeCommentsOn, forgeCommentsOnChats } from "@/storage/forge-comments"
 import type { WallPost } from "./wall-api"
-import { forgeCache, isForgeError, type ForgeCacheOptions } from "./wall-forge-cache"
+import { forgeCache, isForgeError, LATE_QUICK, type ForgeCacheOptions } from "./wall-forge-cache"
 import { forgeMismatch, type ForgeMismatch } from "./wall-forge-mismatch"
 import { gitlabRefOf } from "./wall-forge-time"
 
@@ -149,8 +149,12 @@ export function forgeCommentsOfAll(
 interface ForgeStateAnswer { state: IssueState; closedBy: string | null; closedAt: number | null; milestone: string | null; assignees: string[] }
 
 export interface WallForgeStateSource {
-  /** Sets `forgeState` on every post: null when it has no forge home. */
-  annotate(posts: WallPost[]): Promise<WallPost[]>
+  /** Sets `forgeState` on every post: null when it has no forge home. A
+   *  quick read waits only briefly (#1442); the extra arguments match the
+   *  forge time source's. */
+  annotate(posts: WallPost[], now?: number, staleAfterHours?: number, quick?: boolean): Promise<WallPost[]>
+  /** True while a read started earlier has not answered yet. */
+  busy(): boolean
 }
 
 /** The cached, time-boxed source of forge state for the Wall. `github`:
@@ -166,7 +170,8 @@ export function wallForgeState(
   }, opts)
   const name = (p: ForgeHome["provider"]) => (p === "github" ? "GitHub" : "GitLab")
   return {
-    async annotate(posts) {
+    busy: cache.busy,
+    async annotate(posts, _now, _staleAfterHours, quick) {
       const refs = new Map<string, ForgeHome>()
       const homes = posts.map((post) => {
         const home = forgeHomeOf(post, forge.gitlabUrl)
@@ -175,14 +180,14 @@ export function wallForgeState(
         refs.set(key, home)
         return { home, key }
       })
-      const reads = await cache.readAll(refs)
+      const reads = await cache.readAll(refs, quick)
       posts.forEach((post, i) => {
         const h = homes[i]
         const got = h ? reads.get(h.key) : undefined
         if (!h || !got) { post.forgeState = null; return }
         const base = { provider: h.home.provider, ref: h.home.key, state: null, closedBy: null, closedAt: null, milestone: null, assignees: [], mismatch: null, checkedAt: null }
         if (got.kind === "skipped") { post.forgeState = { ...base, unknown: `not read yet (many ${name(h.home.provider)} homes); shown on a later refresh` }; return }
-        if (got.kind === "late") { post.forgeState = { ...base, unknown: `${name(h.home.provider)} did not answer in time` }; return }
+        if (got.kind === "late") { post.forgeState = { ...base, unknown: quick ? LATE_QUICK : `${name(h.home.provider)} did not answer in time` }; return }
         if (isForgeError(got.answer)) { post.forgeState = { ...base, checkedAt: got.at, unknown: got.answer.error }; return }
         post.forgeState = { ...base, ...got.answer, mismatch: forgeMismatch(post.state, got.answer.state), checkedAt: got.at, unknown: null }
       })

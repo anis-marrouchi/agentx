@@ -1,0 +1,14 @@
+{
+  "$comment": "Wall views the shared page check opens (#1454). A new Wall view adds one line: name, the hash path, and a selector that exists once the view has drawn. scripts/wall-page-check.mjs opens each at 390 px and at desktop width.",
+  "views": [
+    { "name": "feed", "path": "/wall#status=", "ready": "#wall-feed > *" },
+    { "name": "list", "path": "/wall#status=&view=list", "ready": "#wall-list > *" },
+    { "name": "projects", "path": "/wall#status=open&view=projects", "ready": "#wall-projects > *" },
+    { "name": "jobs", "path": "/wall#status=open&view=jobs", "ready": "#wall-jobs > *" },
+    { "name": "reviews", "path": "/wall#status=&view=reviews", "ready": "#wall-reviews > *" },
+    { "name": "agents", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" },
+    { "name": "org", "path": "/wall#page=org", "ready": "#wall-org > *" },
+    { "name": "org-page", "path": "/org", "ready": ".org-card" },
+    { "name": "cost", "path": "/wall#status=open&view=cost", "ready": "#wall-cost > *" }
+  ]
+}

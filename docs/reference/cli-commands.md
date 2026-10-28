@@ -355,6 +355,26 @@ Set agent capability flags (intents, maxDelegationDepth, contextReferences, cont
 | `--max-execution-minutes <n>` | — | Wall-clock cap on a single Claude Code call (1–240). |
 | `--show` | — | Just print the current capability fields. |
 
+### `agentx agent picture set <file>`
+
+Set an agent's profile picture from a PNG, JPEG or WebP file of 1 MB at most. It is cut to a square and its metadata is dropped. Run by an agent from its own terminal, it sets that agent's own picture only, and the daemon checks the request comes from a task the agent is running. See [Give agents and people a picture](../jobs/profile-pictures.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | the agent running the command | Which agent. Required when you run it yourself. An agent naming another agent is refused. |
+
+### `agentx agent picture remove`
+
+Remove an agent's picture: its initials show again. Same `--agent <id>` flag and rules as `set`.
+
+### `agentx agent picture show`
+
+Say whether an agent has a picture.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | the agent running the command | Which agent. |
+
 ### `agentx agent integrations`
 
 Manage per-agent third-party credentials (telegram-bot, hubspot, gitlab-user, gmail, etc.).
@@ -651,6 +671,16 @@ Show or change expiry, "later" and digest settings (approvals in agentx.json).
 | `--digest-time <HH:MM>` | — | When the digest goes out, 24-hour local time. |
 | `--digest-timezone <zone>` | — | IANA timezone for --digest-time; "local" for this machine's. |
 | `--digest-to <channel:chatId>` | — | Where the digest goes; "default" for notifications.destination. |
+
+### `agentx approvals mirror-report`
+
+The Reminders mirror's count: cards raised, Reminders created, cards missed, one line per day. See [Count what the mirror covered](../jobs/reminders-mirror.md#count-what-the-mirror-covered).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--start <time>` | 24 hours ago, times `--days` | When the first day starts (ISO time). |
+| `--days <n>` | `1` | How many 24-hour days. |
+| `--json` | — | Machine-readable output. |
 
 ## requests
 
@@ -2828,7 +2858,7 @@ Add or update an orgChart entry for an agent.
 | Flag | Default | What it does |
 |---|---|---|
 | `--role <role>` | required | Role title (e.g. 'PM', 'Coder', 'DevOps'). |
-| `--reports-to <agentId>` | — | Manager's agentId. |
+| `--reports-to <member>` | — | The manager: an agent id, or a person from `people` written as `person:<id>`. An id that is not in the org chart or in `people` is refused, and nothing is saved. |
 | `--start <hh:mm>` | `09:00` | Schedule start. |
 | `--end <hh:mm>` | `17:00` | Schedule end. |
 | `--days <csv>` | `mon,tue,wed,thu,fri` | Working days (mon,tue,wed,thu,fri). |
@@ -2837,6 +2867,30 @@ Add or update an orgChart entry for an agent.
 ### `agentx business orgchart remove <agentId>`
 
 Remove an orgChart entry.
+
+No flags.
+
+### `agentx business relation`
+
+Manage business.relations — typed links between people and agents (reports-to, dotted-line, acts-for). See [Org › People and kinds of relation](../dashboard/org.md#people-and-kinds-of-relation).
+
+### `agentx business relation list`
+
+List every relation, orgChart reportsTo included, and any problem with them.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--json` | — | JSON output. |
+
+### `agentx business relation add <from> <type> <to>`
+
+Link two members, e.g. `agentx business relation add agent:pm reports-to person:sam`. A member is `agent:<id>` or `person:<id>`; a bare id is an agent. Refused, and nothing saved, when a member is unknown or the link breaks a rule.
+
+No flags.
+
+### `agentx business relation remove <from> <type> <to>`
+
+Remove one relation from business.relations. Alias: `rm`. A reportsTo in orgChart is changed with `agentx business orgchart add`.
 
 No flags.
 
@@ -3890,6 +3944,18 @@ The machines paired to people's own pages (My work, Your project): state, where 
 ### `agentx people revoke-device <tokenId>`
 
 End one machine's access at once. The id is in `agentx people devices`.
+
+No flags.
+
+### `agentx people picture set <id> <file>`
+
+Set a person's profile picture from a PNG, JPEG or WebP file of 1 MB at most. The owner only: refused when run from an agent's terminal. See [Give agents and people a picture](../jobs/profile-pictures.md).
+
+No flags.
+
+### `agentx people picture remove <id>`
+
+Remove a person's picture: their initials show again. The owner only.
 
 No flags.
 
