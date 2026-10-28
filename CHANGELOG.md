@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.184.0](https://github.com/anis-marrouchi/agentx/compare/v0.183.0...v0.184.0) (2026-10-28)
+
+
+### Features
+
+* **org:** edit who reports to whom on /org, owner only ([#1420](https://github.com/anis-marrouchi/agentx/issues/1420)) ([#1432](https://github.com/anis-marrouchi/agentx/issues/1432)) ([08a366b](https://github.com/anis-marrouchi/agentx/commit/08a366b3b1792c7e226c8c29ec837d0dd6273035))
+
+
+### Bug Fixes
+
+* **memory:** keep Arabic and accented words in the BM25 tokenizer ([#1390](https://github.com/anis-marrouchi/agentx/issues/1390)) ([#1491](https://github.com/anis-marrouchi/agentx/issues/1491)) ([8d73fbb](https://github.com/anis-marrouchi/agentx/commit/8d73fbbd83de19b330daab5ebc917ec024c80058))
+* **voice:** live teach opens only on a clear show-me, says why, and can be closed ([#1493](https://github.com/anis-marrouchi/agentx/issues/1493)) ([#1494](https://github.com/anis-marrouchi/agentx/issues/1494)) ([4af1141](https://github.com/anis-marrouchi/agentx/commit/4af1141ab7f530fa4c3636266a5fe1ef4402d68a))
+* **voice:** wider status words and act-mode idle reset for live teach ([#1493](https://github.com/anis-marrouchi/agentx/issues/1493)) ([#1496](https://github.com/anis-marrouchi/agentx/issues/1496)) ([0376deb](https://github.com/anis-marrouchi/agentx/commit/0376debc01f497e40df5bcfa3acfac578895e068))
+
 ## [0.183.0](https://github.com/anis-marrouchi/agentx/compare/v0.182.0...v0.183.0) (2026-10-27)
 
 
