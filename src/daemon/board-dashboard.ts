@@ -87,14 +87,14 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallSettingsTarget, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
-import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
+import { getTopbarFeatures, headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
 import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
 import { handleAgentChatApi } from "./agent-chat-api"
 
@@ -324,7 +324,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     }
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.end(renderWallPage(wallPageOpts(req, ctx)))
     return
   }
   // Classic pages retired with no views in 30 days (#1446): each address
@@ -339,7 +339,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/wall") {
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.end(renderWallPage(wallPageOpts(req, ctx)))
     return
   }
   // Classic Live is on the Wall now (#1439): Resume, Restart when idle and
@@ -890,6 +890,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const body = method === "POST" ? await readJson(req) : {}
     const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config) })
     sendJson(res, reply!.status, reply!.body)
+    return
+  }
+  // Settings on the Wall (#1428): the classic /admin write of the same name,
+  // past the owner guard above (wall-actions.ts lists them).
+  const settingsTarget = wallSettingsTarget(method, path)
+  if (settingsTarget) {
+    await handleAdminApi(req, res, settingsTarget, { owner: isDashboardOwner(req, ctx) })
     return
   }
   // The Wall (#1180): read-only posts and threads from this node's records.
@@ -3265,6 +3272,24 @@ function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: 
     return false
   }
   return true
+}
+
+/** Is this Wall viewer the owner, who gets Settings (#1428)? The viewer
+ *  wallOwnerOk lets write: with dashboard.token set, a caller on this
+ *  machine (its page carries the token) or one the /api/admin/* gate
+ *  accepts; with none, only a caller on this machine, since writes from
+ *  off the box are refused and every save would fail. */
+function wallOwner(req: IncomingMessage, ctx: Ctx): boolean {
+  return ctx.token ? (!!pageToken(req, ctx.token) || adminTokenOk(req, ctx)) : !isOffBox(req)
+}
+
+function wallPageOpts(req: IncomingMessage, ctx: Ctx) {
+  return {
+    peers: buildTopbarPeers(ctx.config),
+    localToken: pageToken(req, ctx.token),
+    owner: wallOwner(req, ctx),
+    business: !!getTopbarFeatures().business,
+  }
 }
 
 /** The agents agentx.json lists now, so a new agent needs no restart;

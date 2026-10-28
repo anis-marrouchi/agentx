@@ -10,6 +10,10 @@
     { "name": "agents", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" },
     { "name": "org", "path": "/wall#page=org", "ready": "#wall-org > *" },
     { "name": "org-page", "path": "/org", "ready": ".org-card" },
-    { "name": "cost", "path": "/wall#status=open&view=cost", "ready": "#wall-cost > *" }
+    { "name": "cost", "path": "/wall#status=open&view=cost", "ready": "#wall-cost > *" },
+    { "name": "settings", "path": "/wall#page=settings", "ready": "#wall-settings .wst__sec" },
+    { "name": "settings-agents", "path": "/wall#page=settings&section=agents", "ready": "#wall-settings .wsa" },
+    { "name": "settings-agent", "path": "/wall#page=settings&section=agents&agent=cx", "ready": "#wall-settings #st-e-name" },
+    { "name": "settings-skills", "path": "/wall#page=settings&section=agents&agent=cx&atab=skills", "ready": "#wall-settings .wsl" }
   ]
 }

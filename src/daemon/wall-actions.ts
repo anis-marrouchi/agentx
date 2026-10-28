@@ -85,6 +85,37 @@ export function wallAnswerRoute(method: string, path: string): string | null {
   return null
 }
 
+// Settings on the Wall (#1428) writes under the prefix too, so the guard
+// keeps it the owner's. Each route is the classic /admin call of the same
+// name with /wall/settings taken out, served by the same handler
+// (admin-panel.ts), so no settings logic changes:
+//   POST   /api/admin/wall/settings/org/hold               {agent, paused}
+//   POST   /api/admin/wall/settings/agents                 a new agent
+//   PATCH  /api/admin/wall/settings/agents                 {id, patch}
+//   DELETE /api/admin/wall/settings/agents                 {id}
+//   POST   /api/admin/wall/settings/agents/access          {id, access}
+//   POST   /api/admin/wall/settings/agents/integrations    add one
+//   DELETE /api/admin/wall/settings/agents/integrations    remove one
+//   POST   /api/admin/wall/settings/agents/test            a test drive
+//   PUT    /api/admin/wall/settings/files                  save a file
+//   POST   /api/admin/wall/settings/files/skill            add a skill
+//   DELETE /api/admin/wall/settings/files/skill            delete a skill
+//   POST   /api/admin/wall/settings/wiki/curator           the wiki curator
+export const WALL_SETTINGS_PREFIX = `${WALL_ACTIONS_PREFIX}/settings`
+const WALL_SETTINGS_WRITES = new Set([
+  "POST /org/hold", "POST /agents", "PATCH /agents", "DELETE /agents", "POST /agents/access",
+  "POST /agents/integrations", "DELETE /agents/integrations", "POST /agents/test",
+  "PUT /files", "POST /files/skill", "DELETE /files/skill", "POST /wiki/curator",
+])
+
+/** The classic /api/admin path a Settings write stands for, or null when it
+ *  is not one of them. */
+export function wallSettingsTarget(method: string, path: string): string | null {
+  if (!path.startsWith(`${WALL_SETTINGS_PREFIX}/`)) return null
+  const rest = path.slice(WALL_SETTINGS_PREFIX.length)
+  return WALL_SETTINGS_WRITES.has(`${method} ${rest}`) ? `/api/admin${rest}` : null
+}
+
 const AGENT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
 const TOPIC_MAX = 200
 const CONTEXT_MAX = 1500
