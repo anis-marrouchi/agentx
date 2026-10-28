@@ -110,6 +110,17 @@ describe("dashboard pages off-box (#1306)", () => {
     expect(direct.headers.get("location")).toBe(next)
   })
 
+  it("brings an agent history link back to its Wall Activity tab after sign-in (#1447)", async () => {
+    const base = await start()
+    const r = await fetch(`${base}/agents/ops/history`, { headers: OFF, redirect: "manual" })
+    expect(r.status).toBe(302)
+    const login = new URL(r.headers.get("location") || "", base)
+    expect(login.pathname).toBe("/login")
+    const next = login.searchParams.get("next") || ""
+    expect(next).toBe("/wall#page=activity&a-agent=ops&a-period=30d")
+    expect((await signIn(base, TOKEN, next)).headers.get("location")).toBe(next)
+  })
+
   it("only sends a sign-in back to a path on this server", async () => {
     const base = await start()
     for (const next of ["//evil.example/x", "https://evil.example/", "/\\evil.example"]) {

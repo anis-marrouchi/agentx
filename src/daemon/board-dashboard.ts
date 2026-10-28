@@ -43,7 +43,6 @@ import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { classicRedirect } from "./ui/classic-routes"
-import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
@@ -537,18 +536,21 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end()
     return
   }
-  // /agents/:id/history — was a 360px drawer sliding over Live. The list is
-  // what you came to read, it wants width, and every row leads somewhere, so
-  // it needs to be linkable and back-navigable.
-  const histPage = method === "GET" && path.match(/^\/agents\/([^/]+)\/history$/)
-  if (histPage) {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderHistoryPage({
-      agentId: decodeURIComponent(histPage[1]),
-      agentName: url.searchParams.get("name") || undefined,
-      nodeUrl: url.searchParams.get("node") || ctx.config.dashboard.daemonUrl,
-      peers: buildTopbarPeers(ctx.config),
-    }))
+  // /agents/:id/history — one agent's recent runs. The agent's Activity tab
+  // on the Wall (#1429) does what this page did, so the address redirects
+  // there (#1447, classic-routes.ts); links on classic pages keep working.
+  if (method === "GET" && /^\/agents\/[^/]+\/history$/.test(path)) {
+    const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)
+    if (!to) {
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
+      res.end("<p>That agent name could not be read. Open the agent from the Wall's Agents page.</p>")
+      return
+    }
+    // Off-box with no session, sign in first with the whole Wall link as
+    // next, as /tasks/<id> does: the hash never reaches the server.
+    if (!pageAllowed(req, res, ctx, to)) return
+    res.writeHead(302, { Location: to })
+    res.end()
     return
   }
   // /graph is the canonical doc path; the page itself lives at /admin/graph.
