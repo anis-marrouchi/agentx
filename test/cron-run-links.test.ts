@@ -6,7 +6,8 @@ import { CronScheduler, runLinkIds } from "../src/crons/scheduler"
 import { readCronRunHistory } from "../src/crons/run-history"
 import { AgentRegistry } from "../src/agents/registry"
 import { MESH_OPS_SCRIPT } from "../src/daemon/ui/pages/mesh-ops.client"
-import { renderTaskPage } from "../src/daemon/ui/pages/task"
+import { classicRedirect } from "../src/daemon/ui/classic-routes"
+import { WALL_TASK_SCRIPT } from "../src/daemon/ui/pages/wall-task.client"
 
 // A scheduled run used to be a black box: the run file held the outcome and
 // a summary, but not the task that produced it, so nothing could open it,
@@ -218,9 +219,18 @@ describe("dashboard wiring", () => {
     expect(js).toContain("x.job.kind==='command'")
   })
 
+  it("redirects an archived cron run's link to the Wall Task page", () => {
+    const params = new URLSearchParams("node=http://node.test&agent=ops-agent&name=Ops&channel=cron&archived=1")
+    const to = classicRedirect("/tasks/t1", params, "http://daemon.test")
+    expect(to).not.toBeNull()
+    expect(to!.startsWith("/#")).toBe(true)
+    expect(Object.fromEntries(new URLSearchParams(to!.slice(2)))).toEqual({
+      page: "task", task: "t1", agent: "ops-agent", node: "http://node.test", ch: "cron", done: "1",
+    })
+  })
+
   it("lets an archived cron run send a follow-up that names its agent", () => {
-    const html = renderTaskPage({ taskId: "t1", agentId: "ops-agent", nodeUrl: "http://node.test", archived: true })
-    const js = scriptBody(html, "var composeEl")
+    const js = WALL_TASK_SCRIPT
     expect(() => new Function(js)).not.toThrow()
     expect(js).toContain("{ message: message, agent: agentId }")
     expect(js).toContain("rec.channel === 'cron'")

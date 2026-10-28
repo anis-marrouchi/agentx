@@ -4,7 +4,7 @@
 // esc(), avatar(), nameOf(), headers(), progressHtml(), planHtml(),
 // factsHtml(), plainPost() and plainMarkerText().
 //
-// The classic task page (task.ts) on the Wall: one run, at its own link
+// The classic task page on the Wall: one run, at its own link
 // (#page=task&task=<id>&agent=<id>&node=<url>). On top, the request and,
 // when the run belongs to a tracked request, its status strip, plan and
 // facts as in #1377. Under it, the run's conversation, streaming live
