@@ -720,6 +720,21 @@ Drop a request you no longer want.
 |---|---|---|
 | `--reason <text>` | — | Why it is dropped. |
 
+### `agentx requests contract`
+
+Measure what agents owe you when they deliver or go quiet: five numbers per agent and for this node. Read only. See [Measure what agents tell you](../jobs/open-requests.md#measure-what-agents-tell-you).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <span>` | `7d` | How far back, as 90m, 36h or 7d (up to 90d). |
+| `--agent <id>` | — | Only this agent's turns and requests. |
+| `--deliver-within <minutes>` | `10` | An output counts as delivered when you were told within this. |
+| `--rhythm <hours>` | `2` | An open request with no change you can see for this long is quiet. |
+| `--push-after <hours>` | `6` | Past this, a quiet request's status line would also be pushed. |
+| `--dry-run` | — | Also list what the next steps would have written: inherited hops, outputs, status lines. |
+| `--limit <n>` | `20` | Rows in each dry-run list. |
+| `--json` | — | Machine-readable output. |
+
 ### `agentx requests settings`
 
 Show or change the requests settings (requests in agentx.json).

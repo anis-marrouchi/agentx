@@ -233,6 +233,7 @@ What you asked agents for that is not finished: [Keep track of what you asked fo
 | `agentx requests step <id> <step> --retry\|--skip\|--done [--note]` | Move a step of a request's plan on: hand it over again, skip it, or mark it done |
 | `agentx requests done <id> --evidence <link>\|--reason <text>` | Close a request as finished, with a link to the proof, or by hand with the reason |
 | `agentx requests drop <id> [--reason]` | Drop a request you no longer want |
+| `agentx requests contract [--since 7d] [--dry-run] [--json]` | Measure what agents tell you when they deliver or go quiet: five numbers per agent and for this computer. Read only |
 | `agentx requests settings [options]` | Show or change who counts as you, the channels, the quiet time, how long closed requests are kept, the headlines (`--headlines`), the plan settings (`--plans`, `--stall-minutes`, `--max-nudges`, `--approve-kinds`, `--plans-off-for`, `--plan-for`, `--plan-over`) and the checks (`--checks`, `--check-every`) |
 
 ## Agent memory

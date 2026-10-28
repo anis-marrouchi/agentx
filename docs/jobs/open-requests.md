@@ -332,6 +332,45 @@ Every reply says `total`, the number of requests that match, and `truncated: tru
 
 `GET /requests/goals` lists every goal a request names, most recently active first (at most 50): its `title`, the counts `open`, `done` and `dropped`, `progress` (0 to 1), `costUsd`, `runs`, `unpriced` (runs that reported no cost), and its newest requests (at most 50), each with its own `costUsd`. See [Group requests under a goal](#group-requests-under-a-goal).
 
+## Measure what agents tell you
+
+Agents often hand work to each other. The second agent may hand it on again. What they make, and where the work stopped, can stay inside those agent-to-agent chats, which you never see. AgentX can measure how much of it reaches you. It reads what it has already recorded, changes nothing and tells nobody.
+
+To see it:
+
+1. **Terminal:** go to the install folder, the one that holds `agentx.json`.
+2. **Terminal:** run `agentx requests contract`. It reads the last 7 days.
+3. Read the **Five numbers** block:
+
+| Number | What it counts | Aim |
+|---|---|---|
+| Chain coverage | Turns in agent-to-agent chats that can be traced back to something you asked. Today, only the first agent asked is traced. The note says how many would be traced if every agent passed your request on. | 95 % or more |
+| Delivery reach | Answers in your request's chain that name a link or a file, and that you were told about with a link within 10 minutes. | 90 % or more |
+| Openable proof | Requests closed as done whose proof is a link you can open, not a file on the agent's computer, and not nothing. | 90 % or more |
+| Quiet breaches | Open requests where nothing you can see changed for 2 hours. | 0 |
+| Status pulls | Your own messages that ask where something stands ("what is … doing", "any update"). It is a word match, so the real number can be higher. | Going down |
+
+Below them, **Per agent** lists each agent that talked to other agents. A line in amber marks an agent with 20 or more such turns that never told you anything.
+
+To see what AgentX would write once these are fixed:
+
+1. **Terminal:** run `agentx requests contract --dry-run`.
+2. Read the three lists at the end:
+   - **Step 1**: agent-to-agent chats that would be linked to your request.
+   - **Step 2**: links and files that would be put on your request. A file is marked `path → served link`: it would become a link you can open.
+   - **Step 3**: the status line each quiet request would get. It says when the agent last worked on it, what it waits on, and its last output. `would push` means it has been quiet long enough (6 hours by default) to be sent to your phone too.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <span>` | `7d` | How far back to read, as `90m`, `36h` or `7d`. Up to `90d`. |
+| `--agent <id>` | — | Only this agent's turns and requests. |
+| `--deliver-within <minutes>` | `10` | How soon you must be told for an output to count as delivered. |
+| `--rhythm <hours>` | `2` | How long an open request can stay unchanged before it counts as quiet. |
+| `--push-after <hours>` | `6` | How long a quiet request waits before its status line would also be pushed. |
+| `--dry-run` | — | Add the three lists above. |
+| `--limit <n>` | `20` | How many rows each list shows. |
+| `--json` | — | The same numbers for a script. |
+
 ## Requests of several steps
 
 When a request takes two or more steps (build, deploy, check it is live, tell the client), the agent can write it as a plan. The daemon then follows each step, nudges a step that goes quiet, sends a message you approved once, and tells you at the end. See [Follow a request of several steps](./tracked-plans.md).
@@ -387,6 +426,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 17. Ask an agent for some work and tell it the goal, for example: "this is for the shop relaunch goal".
 18. **Browser:** open **Approvals**. Under **Open requests**, **Goals** lists the goal with `0 of 1 done`. The request's card shows **Goal:** with its title.
 19. **Terminal:** run `curl -s http://127.0.0.1:18800/requests/goals`. The goal is there, with its `open` and `done` counts and its `costUsd`.
+20. **Terminal:** run `agentx requests contract --since 1d --dry-run`. It prints **Five numbers**, the three dry-run lists, and ends with `Read only: nothing was told or written.`
 
 ## If something is wrong
 
@@ -415,4 +455,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A QA verdict is refused with `a block verdict needs a note`:** a `block` or `risk` needs a sentence that says what is wrong. Add `note`.
 - **A QA verdict is refused with `qa needs id`:** the QA agent's turn is not the request's own, so it must name the request. `agentx requests` or the agent's `list` shows the ids.
 - **A request stays in `--qa awaiting` after a verdict:** it was marked as needing QA again after that verdict, so a new one is awaited. `agentx requests show <id>` lists every verdict with its time.
+- **`agentx requests contract` shows `–` for a number:** nothing in the time you asked for counts toward it. For example, no request was closed as done. Try a longer `--since`.
+- **Chain coverage stays low with `--dry-run`:** the agent that started the hop runs on another computer, or its turn ended before the hop started. Run the command on that computer too.
+- **`--since takes a span such as 90m, 36h or 7d`:** write a number and one of `m`, `h` or `d`, with nothing else, up to `90d`.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.
