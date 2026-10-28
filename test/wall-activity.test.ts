@@ -340,9 +340,8 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
     const order = [...nav.matchAll(/data-nav="([\w]+)"|ax-wall__navlbl" aria-hidden="true">(\w+)</g)].map((m) => m[1] || m[2])
     expect(order).toEqual(["wall", "needs", "Work", "live", "running", "projects", "activity", "Automation", "jobs", "workflows", "reviews", "failures",
       "Fleet", "agents", "people", "org", "cost", "Owner", "settings", "dashboard", "creator"])
-    // Not on the Wall yet: they open their classic page until built.
-    expect(nav).toContain('data-nav="workflows" href="/workflows"')
-    // People (#1441) and Org (#1419) are on the Wall.
+    // People (#1441), Org (#1419) and Workflows (#1445) are on the Wall.
+    expect(nav).toContain('data-nav="workflows" href="#page=workflows"')
     expect(nav).toContain('data-nav="people" href="#page=people"')
     expect(nav).toContain('data-nav="org" href="#page=org"')
     expect(nav).toContain('data-nav="settings" href="#page=settings"')

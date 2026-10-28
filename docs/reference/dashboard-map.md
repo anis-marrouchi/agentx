@@ -12,7 +12,8 @@ The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 | Answer what agents ask you | **Approvals** | `/approvals` |
 | See who is connected, their machines and what they asked for: the Wall's [People](../dashboard/people.md) page | **People** | `/wall#page=people` (the old `/people` opens it too) |
 | Investigate past work | **Activity** | `/activity` |
-| Edit a workflow | **Workflows** | `/workflows` (editor: `/workflows/editor`) |
+| See workflows and their runs, start one, turn one on or off: the Wall's [Workflows](../dashboard/workflows.md) page | **Workflows** (on the Wall) | `/wall#page=workflows` |
+| Edit a workflow, follow-ups, every run of a workflow | **Workflows** | `/workflows` (editor: `/workflows/editor`) |
 | Configure agents, channels, schedules, webhooks and tokens | **Settings** | `/admin` |
 
 ## Other pages

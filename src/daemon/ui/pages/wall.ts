@@ -5,6 +5,8 @@
 // Selecting a post opens it on its own, with its thread, as on X; the nav's
 // Running now and Agents open pages of their own, each with a count (#1316).
 // Org draws the org chart from the top down (#1419, wall-org.client.ts).
+// Workflows lists every workflow with its runs and state (#1445,
+// wall-workflows.client.ts).
 //
 // Reads records the daemon already keeps (requests, plan events, task
 // traces, the live fleet snapshot). It writes only when the owner does:
@@ -32,6 +34,7 @@ import { WALL_DECIDE_CSS } from "./wall-decide.client"
 import { WALL_COST_CSS } from "./wall-cost.client"
 import { WALL_ORG_CSS } from "./wall-org.client"
 import { WALL_PEOPLE_CSS } from "./wall-people.client"
+import { WALL_WORKFLOWS_CSS } from "./wall-workflows.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_PICTURES_CSS } from "./wall-pictures.client"
@@ -97,9 +100,8 @@ interface NavItem { key: string; label: string; href: string; icon: NavIcon; cou
 
 /**
  * The nav, grouped (#1451 frame 0): one list for the left nav and the
- * phone's More sheet. Pages not on the Wall yet (Workflows) open their
- * classic page until they are built. Settings is the owner's only
- * (#1428): wallNavGroups() drops it for anyone else.
+ * phone's More sheet. Settings is the owner's only (#1428):
+ * wallNavGroups() drops it for anyone else.
  */
 export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "", items: [
@@ -114,7 +116,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   ] },
   { label: "Automation", items: [
     { key: "jobs", label: "Jobs", href: "#status=open&amp;view=jobs", icon: "jobs", count: "nav-n-jobs" },
-    { key: "workflows", label: "Workflows", href: "/workflows", icon: "workflows" },
+    { key: "workflows", label: "Workflows", href: "#page=workflows", icon: "workflows", count: "nav-n-workflows" },
     { key: "reviews", label: "Reviews", href: "#status=open&amp;view=reviews", icon: "reviews", count: "wall-rev-n" },
     { key: "failures", label: "Failures", href: "#status=open&amp;view=failures", icon: "failures", count: "wall-fail-n" },
   ] },
@@ -194,6 +196,7 @@ ${navItems}
       <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1>
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
         <span class="ax-wall__switch" id="wall-act-switch" aria-label="Show as" hidden><button type="button" class="is-on" aria-pressed="true">Feed</button><a href="/activity" title="The classic lane view, and the Map">Timeline</a></span>
+        <a class="ax-btn ax-btn--ghost wwf__new" id="wall-wf-new" href="/workflows/editor?new=1" target="_blank" rel="noopener" hidden>New in the editor ↗</a>
         <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a></div>
       <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
       <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
@@ -247,6 +250,7 @@ ${navItems}
     <section id="wall-people" class="ax-wall__people" aria-label="People who talk to the agents" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
     <section id="wall-org" class="ax-wall__org" aria-label="Org chart" hidden></section>
+    <section id="wall-workflows" class="ax-wall__workflows" aria-label="Workflows and their runs" hidden></section>
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
     <section id="wall-task" aria-label="A run: its request, conversation and steer box" hidden></section>
@@ -260,6 +264,7 @@ ${navItems}
     </section>
     <div class="wac__side" id="wall-act-side" aria-label="Activity in numbers"></div>
     <div class="wdc__side" id="wall-dec-side" aria-label="What waits on you, in short"></div>
+    <div class="wwf__side" id="wall-wf-side" aria-label="Workflows: follow-ups and settings"></div>
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
       <h2 id="wall-nodes-h">Happening now</h2>
       <div id="wall-nodes"><p class="ax-wall__empty">Loading…</p></div>
@@ -274,12 +279,13 @@ ${navItems}
       <details class="ax-wall__classicd"><summary>Dashboard pages</summary><nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav></details>
     </section>
   </aside>
+  <div id="wall-wf-dialog" hidden></div>
 </div>`
 
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS,
     scripts: token + settingsCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

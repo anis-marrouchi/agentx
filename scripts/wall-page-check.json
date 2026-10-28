@@ -14,6 +14,7 @@
     { "name": "settings", "path": "/wall#page=settings", "ready": "#wall-settings .wst__sec" },
     { "name": "settings-agents", "path": "/wall#page=settings&section=agents", "ready": "#wall-settings .wsa" },
     { "name": "settings-agent", "path": "/wall#page=settings&section=agents&agent=cx", "ready": "#wall-settings #st-e-name" },
-    { "name": "settings-skills", "path": "/wall#page=settings&section=agents&agent=cx&atab=skills", "ready": "#wall-settings .wsl" }
+    { "name": "settings-skills", "path": "/wall#page=settings&section=agents&agent=cx&atab=skills", "ready": "#wall-settings .wsl" },
+    { "name": "workflows", "path": "/wall#page=workflows", "ready": "#wall-workflows .wwf__tabs, #wall-workflows h3" }
   ]
 }

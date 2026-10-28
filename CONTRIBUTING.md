@@ -275,7 +275,7 @@ Every Wall page uses this one check; do not write your own. Every Wall write is 
 
 #### Check it worked
 
-The last line reads `14/14 passed` (seven views, two sizes each). On a pull request, the **Wall pages / Wall page check** job is green, and its **wall-pages** artifact holds the screenshots.
+The last line reads `20/20 passed` (ten views, two sizes each). On a pull request, the **Wall pages / Wall page check** job is green, and its **wall-pages** artifact holds the screenshots.
 
 #### If something is wrong
 

@@ -1516,8 +1516,11 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // button. Body shape passed through unchanged: { payload?: object, force?: bool }.
   // The daemon already enforces the trigger.manual constraint and returns
   // 409 when force is needed, which the page surfaces as a toast.
+  // It starts work, so it is the owner's, like a Wall write (#1445): the
+  // Wall's Workflows page and the classic page both send the token.
   const runMatch = method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
   if (runMatch) {
+    if (!wallOwnerOk(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
     try {
       const body = await readJson(req).catch(() => ({}))
       const headers: Record<string, string> = { "Content-Type": "application/json" }

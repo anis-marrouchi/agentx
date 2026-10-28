@@ -17,12 +17,12 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
    - **Owner:** **Settings**, for the owner only (see [Change settings](#change-settings)).
 
-   Under them, **Dashboard** opens the classic pages at **Operations**. **Workflows** opens its classic page until it is built on the Wall. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
+   Under them, **Dashboard** opens the classic pages at **Operations**. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, workflows, classifications waiting for review, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
 3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Wall's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Wall's title row: Wall, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
-4. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Operations**, **Monitor**, **Approvals**, **Org**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. Cost is a Wall page now (see [See what the fleet costs](#see-what-the-fleet-costs)), and so is Live: `/live` opens [Live](#live-sessions). People moved to the Wall: `/people` opens the Wall's [People](./people.md) page.
+4. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Operations**, **Monitor**, **Approvals**, **Org**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. Cost is a Wall page now (see [See what the fleet costs](#see-what-the-fleet-costs)), and so is Live: `/live` opens [Live](#live-sessions). People moved to the Wall: `/people` opens the Wall's [People](./people.md) page. Workflows has a Wall page too ([See your workflows](#see-your-workflows)); the classic `/workflows` page stays for the editor, **Follow-ups** and the full history of each run.
 5. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
 6. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
@@ -527,7 +527,7 @@ The Wall only shows the verdict. Giving one is done by the QA agent, and nobody 
 2. Three lists open:
    - **Agent runs**: runs that ended in an error or timed out, and webhook runs that ended without a reply. Runs that failed the same way are one line with a count. Select **last run** to open it.
    - **Cron runs**: failed scheduled jobs on every machine, with their error and a **full log** link.
-   - **Workflow runs**: failed workflow runs, with the step that failed and its error.
+   - **Workflow runs**: failed workflow runs, with the step that failed and its error. Select a workflow's name to open it on the Wall's [Workflows](#see-your-workflows) page.
 
 ### Group issues a reporting job opened
 
@@ -592,6 +592,14 @@ When the intent graph (`graph.enabled` in `agentx.json`) is not sure where a mes
 *Scripted demo data; your team's names will differ.*
 
 A skipped classification stays pending: a skip is not recorded. The wiki searches a reviewer ran are not recorded either, so the link searches the path's names instead. Classifications the graph approved by itself never went to review; the count line says how many.
+
+## See your workflows
+
+The **Workflows** page lists every workflow with what starts it, its agents and project, its last runs as squares and its state. Select **Workflows** in the nav, under **Automation**. Open a workflow to see its last run step by step; **Run…** starts one, and the switch turns it on or off. A workflow that is off and quiet for 30 days **looks stale**. The full page is described in [Workflows](./workflows.md).
+
+![The Workflows page: one row per workflow, one opened on its last run](/screenshots/wall/workflows.png)
+
+*Demo data; your workflows will differ.*
 
 ## See who talks to the agents
 
@@ -766,10 +774,12 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
 39. Needs you: with a decision card pending, select **Needs you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
 40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back.
+41. Workflows page: select **Workflows** in the nav. It lists the same workflows as the classic `/workflows` page, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
 
 ## If something is wrong
 
 - **"Not answered: Only the owner can answer this":** the browser has no dashboard key. Sign in with the key, then answer again. Nothing was changed.
+- **Workflows says "Could not read the workflows":** the dashboard could not ask the machine for them. The rest of the Wall still works; select **Try again**. See [Workflows](./workflows.md#if-something-is-wrong).
 
 - **Activity says a machine "does not answer":** the dashboard could not reach that machine's run records. Check the machine with `agentx daemon status`. The other machines' runs still show.
 - **No version on the right of the Wall's title:** the dashboard has not reached the daemon yet, or the daemon is older than this line. **Terminal:** run `agentx daemon status`.
