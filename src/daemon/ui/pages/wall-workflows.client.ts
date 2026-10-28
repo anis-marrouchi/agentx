@@ -318,7 +318,7 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
     var a = document.activeElement, key = '';
     if (a && el.contains && el.contains(a)) {
       if (a.id === 'wf-q') key = '#wf-q';
-      else ['data-wf-open', 'data-wf-toggle', 'data-wf-run', 'data-wf-again', 'data-wf-tab'].forEach(function (k) { if (!key && a.getAttribute(k) != null) key = '[' + k + '="' + a.getAttribute(k) + '"]'; });
+      else ['data-wf-open', 'data-wf-toggle', 'data-wf-run', 'data-wf-again', 'data-wf-tab'].forEach(function (k) { if (!key && a.getAttribute(k) != null) key = '[' + k + '="' + CSS.escape(a.getAttribute(k)) + '"]'; });
     }
     el.innerHTML = workflowsPageHtml();
     side.innerHTML = workflowsSideHtml();
