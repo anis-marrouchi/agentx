@@ -948,6 +948,8 @@ ${WALL_BUILD_SCRIPT}
     var list = allAgents();
     var down = ((S.live && S.live.nodes) || []).filter(nodeDown);
     var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
+    // Read-only: the org chart is edited on /org (#1420).
+    note += '<p class="ax-wall__count wag__note"><a href="/org">Open the org chart</a></p>';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
     var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
     return note + called + list.map(function (a) {

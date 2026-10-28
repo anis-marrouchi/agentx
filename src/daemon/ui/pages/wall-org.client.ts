@@ -14,13 +14,13 @@
 //     the chart zooms with its buttons or ctrl + wheel (a trackpad pinch).
 //   - On a phone the chart is an indented list with thread lines.
 //
-// Read-only. "Edit org" goes to the setup page; the Wall and its API are
-// behind the dashboard token, so whoever sees it is the owner.
+// Read-only (#1180 rule 4): the Wall has no org forms and no org writes.
+// "Open the org chart" goes to /org, where the owner edits the chart (#1420).
 
 export const WALL_ORG_SCRIPT = String.raw`
   var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '' };
   var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
-  var ORG_EDIT_HREF = '/org';
+  var ORG_CHART_HREF = '/org';
   function orgDiagram() { return S.org && S.org.diagram && S.org.diagram.boxes ? S.org.diagram : null; }
   /** Cards in the chart, for the nav; null until the org is read. */
   function orgCount() { var d = orgDiagram(); return d ? d.boxes.length : null; }
@@ -85,7 +85,7 @@ export const WALL_ORG_SCRIPT = String.raw`
         '<span class="wog__zoom" role="group" aria-label="Zoom"><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button>' +
           '<button type="button" data-org-zoom="0" title="Back to 100%">' + Math.round(ORG.zoom * 100) + '%</button>' +
           '<button type="button" data-org-zoom="1" aria-label="Zoom in">+</button></span>' +
-        '<a class="ax-btn ax-btn--ghost wog__edit" href="' + ORG_EDIT_HREF + '">Edit org</a>' +
+        '<a class="ax-btn ax-btn--ghost wog__edit" href="' + ORG_CHART_HREF + '">Open the org chart</a>' +
       '</span></div>';
   }
   /** Counts and the agents not in the chart: the side rail, or under the chart when narrow. */
@@ -105,7 +105,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     if (S.org.exists === false) return '<p class="ax-wall__empty">This machine has no agentx.json, so there is no org chart.</p>';
     var d = orgDiagram();
     if (!d || !d.boxes.length) return '<div class="wog__none"><h2>No org chart yet</h2><p>Give each agent a role and a boss, and the chart appears here.</p>' +
-      '<a class="ax-btn" href="' + ORG_EDIT_HREF + '">Edit org</a></div>' + (d ? '<div class="wog__inrail">' + orgRailHtml(d) + '</div>' : '');
+      '<a class="ax-btn" href="' + ORG_CHART_HREF + '">Open the org chart</a></div>' + (d ? '<div class="wog__inrail">' + orgRailHtml(d) + '</div>' : '');
     var hidden = orgHidden(d);
     var shown = d.boxes.filter(function (b) { return !hidden[b.key]; });
     var lay = layoutOrg(shown.map(function (b) { return { key: b.key, name: b.name }; }), d.edges);

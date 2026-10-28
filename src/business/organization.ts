@@ -69,6 +69,13 @@ export class Organization {
     }
   }
 
+  /** Take the chart from `config` in place, so every part of the business
+   *  layer that holds this object sees it at once (#1420). Throws, keeping
+   *  the old chart, when `config` is invalid. */
+  replaceWith(config: BusinessConfig, people: ReadonlyArray<{ id: string }> = []): void {
+    Object.assign(this, new Organization(config, people))
+  }
+
   get(agentId: string): EmployeeProfile | undefined {
     return this.employees.get(agentId)
   }

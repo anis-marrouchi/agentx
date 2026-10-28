@@ -935,7 +935,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (path.startsWith("/api/admin/")) {
-    await handleAdminApi(req, res, path)
+    await handleAdminApi(req, res, path, { owner: isDashboardOwner(req, ctx) })
     return
   }
   if (method === "GET" && path === "/sortable.min.js") {
@@ -3239,6 +3239,13 @@ const STREAM_PATHS = new Set(["/api/admin/logs/stream", "/api/admin/activity-gra
  *  open nothing else: every other read sends the header or the cookie. */
 function streamTicketOk(req: IncomingMessage, ctx: Ctx, method: string, path: string): boolean {
   return method === "GET" && STREAM_PATHS.has(path) && hasStreamTicket(req, ctx.token)
+}
+
+/** The owner at the dashboard (#1420). With dashboard.token set: the token,
+ *  a signed-in session, or a dashboard:write key. Without one: a caller on
+ *  this computer, never one from off the box. */
+function isDashboardOwner(req: IncomingMessage, ctx: Ctx): boolean {
+  return ctx.token ? adminTokenOk(req, ctx) : !isOffBox(req)
 }
 
 /** A page that carries AX_LOCAL_TOKEN (#1306). Off-box, a caller that has not
