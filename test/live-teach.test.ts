@@ -610,6 +610,8 @@ describe("presence look and mode policy", () => {
     "apprends-moi où on en est",
     "montre-moi où on en est",
     "explique-moi comment ça avance",
+    // \b does not see "ç" as a letter, so this needs its own boundary.
+    "montre-moi comment ça avance",
     "comment on fait pour le déploiement",
   ]
   const SHOW = [

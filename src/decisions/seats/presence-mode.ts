@@ -128,7 +128,7 @@ const ON_SCREEN =
  *  "walk me through where we are", "…what happened yesterday",
  *  "montre-moi où on en est". */
 const ABOUT_WORK =
-  /\b(pr|mr|issue|ticket|branch|commit|merge|deploy|release|status|progress|update|test|draft|task|project|client|invoice)s?\b|#\d+|\bwhere\s+we\s+(are|stand)\b|\bhow\s+we('re|\s+are)\s+doing\b|\bhow\s+(we|things|it)('re|\s+are|'s|\s+is)\s+(doing|going|looking)\b|\bwhat\s+happened\b|\bhow\s+things\s+(look|stand|are)\b|\b(is|are|'s|'re)\s+going\b|\bon\s+en\s+est\b|\bo[uù]\s+en\s+(est|sont|sommes)\b|\b[çc]a\s+avance\b|\b(statut|projet|d[ée]ploiement|facture|avancement)s?\b/i
+  /\b(pr|mr|issue|ticket|branch|commit|merge|deploy|release|status|progress|update|test|draft|task|project|client|invoice)s?\b|#\d+|\bwhere\s+we\s+(are|stand)\b|\bhow\s+we('re|\s+are)\s+doing\b|\bhow\s+(we|things|it)('re|\s+are|'s|\s+is)\s+(doing|going|looking)\b|\bwhat\s+happened\b|\bhow\s+things\s+(look|stand|are)\b|\b(is|are|'s|'re)\s+going\b|\bon\s+en\s+est\b|\bo[uù]\s+en\s+(est|sont|sommes)\b|(?:^|[^\wÀ-ÿ])[çc]a\s+avance\b|\b(statut|projet|d[ée]ploiement|facture|avancement)s?\b/i
 
 /** The listener asked to be shown, taught or coached on screen, in
  *  English or French. "Go merge PR 40", "finish the drafts" or "where are
