@@ -14,6 +14,7 @@ import { CHECK_KINDS, DEFAULT_CHECKER_SETTINGS, describeCloseWhen, type CheckKin
 import { activeStepAgentOf, STALL_GROUPS, stalledLoops, waitsOnWords } from "@/requests/loops"
 import { drift } from "./requests-drift"
 import { sprints } from "./requests-sprints"
+import { contract } from "./requests-contract"
 import { awaitingQa, describeQa, QA_FILTERS, type QaFilter } from "@/requests/qa"
 
 // --- agentx requests — what you asked for that is not finished (#356) ---
@@ -26,6 +27,7 @@ export const requests = new Command("requests")
   .description("what you asked agents for that is not finished, oldest first")
   .addCommand(drift)
   .addCommand(sprints)
+  .addCommand(contract)
 
 const STATE_LABEL: Record<string, string> = {
   in_progress: "in progress",
