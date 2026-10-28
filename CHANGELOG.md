@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.187.0](https://github.com/anis-marrouchi/agentx/compare/v0.186.0...v0.187.0) (2026-10-28)
+
+
+### Features
+
+* **dashboard:** /agents/&lt;id&gt;/history redirects to the Wall's Activity tab ([#1447](https://github.com/anis-marrouchi/agentx/issues/1447)) ([#1514](https://github.com/anis-marrouchi/agentx/issues/1514)) ([9dc047e](https://github.com/anis-marrouchi/agentx/commit/9dc047ec5684b0edf79ff8a23707090ec0cd0151))
+* **wall:** Health and agent Handovers in Settings on the Wall ([#1428](https://github.com/anis-marrouchi/agentx/issues/1428), [#1501](https://github.com/anis-marrouchi/agentx/issues/1501)) ([#1512](https://github.com/anis-marrouchi/agentx/issues/1512)) ([f7d2c38](https://github.com/anis-marrouchi/agentx/commit/f7d2c389144ca6c3e9c2f60bafb42f1374abf392))
+
 ## [0.186.0](https://github.com/anis-marrouchi/agentx/compare/v0.185.1...v0.186.0) (2026-10-28)
 
 
