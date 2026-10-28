@@ -12,14 +12,14 @@ Signing in proves **who** a person is. The [people list](../../docs/jobs/people.
 
 ## What exists today, and what it means for this design
 
-Checked on main (`831a188`).
+Checked on main (`c2d2c55`).
 
 | What | Where | What it means here |
 |---|---|---|
 | People list: `id`, `name`, `role` (owner / member / client / guest), `identities: ["channel:id"]` | `src/people/people.ts:30`, schema `src/daemon/config.ts:1700` | No email or Google field exists yet. An `email:…` identity already passes the schema and the duplicate check (`peopleProblem`, `people.ts:84`), so **no new field is needed**. `currentPeople()` reads the list again on each request, so removing a person takes effect at once. |
-| Dashboard sign-in: `/login` with `dashboard.token`, cookie `ax_session` (30 days) | `src/daemon/dashboard-session.ts` | The cookie is an HMAC of the token, the same value for everyone. It carries **no person**, and every gate that accepts it (`adminTokenOk`, `board-dashboard.ts:3154`) treats it as full owner access. It cannot be reused as is for a member or a client (see [Decision 1](#1-a-personal-session-not-the-token-cookie)). |
+| Dashboard sign-in: `/login` with `dashboard.token`, cookie `ax_session` (30 days) | `src/daemon/dashboard-session.ts` | The cookie is an HMAC of the token, the same value for everyone. It carries **no person**, and every gate that accepts it (`adminTokenOk`, `board-dashboard.ts:3240`) treats it as full owner access. It cannot be reused as is for a member or a client (see [Decision 1](#1-a-personal-session-not-the-token-cookie)). |
 | Member and client access: pairing code, approval card, a key per machine (90 days), cookie `agentx_member` | `src/members/pairing.ts`, `src/daemon/member-routes.ts` | This is the pattern to copy: a credential that names one person, a card for a new machine, the device list and **End access** on People (`people-panel.ts:138`). Members see `/member` (My work) and clients see Your project, never the Wall. |
-| Wall owner-only writes (#1454) | `wallOwnerOk`, `board-dashboard.ts:3166`; `isWallWrite`, `wall-actions.ts:78` | Writes stay owner only. Today there is **no read-only viewer**: with a token set, Wall reads need the token too; without one, anyone who reaches the address reads. Each role's view is new work. |
+| Wall owner-only writes (#1454) | `wallOwnerOk`, `board-dashboard.ts:3252`; `isWallWrite`, `wall-actions.ts:78` | Writes stay owner only. Today there is **no read-only viewer**: with a token set, Wall reads need the token too; without one, anyone who reaches the address reads. Each role's view is new work. |
 | Publishing on the network: `tailscale serve` of `/member` and `/app` paths only | `docs/jobs/members.md`, `src/commands/app.ts:243` | The dashboard trusts what reaches it from its own computer, so the whole dashboard must never be published. Sign-in needs its own small set of published paths, as the member page has. |
 | Sending mail: SMTP through nodemailer | `src/channels/email/smtp.ts:43`, accounts under `channels.email.accounts` | Every mail account belongs to an agent. There is no "system" sender yet ([question 3](#questions-for-the-owner)). |
 | Google / OAuth sign-in | none in `src/` | New code. It needs no new library: the flow is a few HTTPS calls and checks (see [Decision 3](#3-google-sign-in)). |
@@ -53,7 +53,14 @@ open the link, press
 
 The issue says to reuse `ax_session`. The proposal keeps everything around it (the `/login` address, the 30-day length, the sign-in page look, `HttpOnly` and `Secure`) but **not the cookie itself**:
 
-- Today, a valid `ax_session` means "owner" to six gates in `board-dashboard.ts`. If a member's session had the same name, one missed check would let a member change settings.
+- Today, a valid `ax_session` means "owner" to five gates in `board-dashboard.ts` (counted on `c2d2c55`). If a member's session had the same name, one missed check would let a member change settings. The gates are:
+  1. The Wall write guard: `wallOwnerOk` at line 270, before any route runs.
+  2. The peer proxy for another machine's API: `adminTokenOk` at line 663.
+  3. The admin API: `adminTokenOk` at line 790, which also issues stream tickets.
+  4. The general `/api/*` check: its own `hasSession` call at line 1232, which `/api/workflows` relies on.
+  5. Pages opened from another machine: `pageAllowed` at line 3269, used by 12 pages.
+
+  Only two places read the cookie: `adminTokenOk` (line 3244) and the `/api/*` check (line 1232). Stream tickets (`streamTicketOk`) are signed with the token, not the cookie, so they are not a sixth gate. Slice 1 counts these again and lists them in its PR.
 - A personal session is a random value. The Wall keeps only its hash, in `.agentx/wall-sessions.json`, with the person id, when it started, when it was last used, and a short label for the browser ("Chrome on a Mac"). The same as `.agentx/tokens.json` does for member keys.
 - Its cookie is `ax_person`. The gates then ask one question: "which person is this?" A token session or a local caller answers "the owner", as today. A personal session answers with its person and role.
 - An owner who signs in with Google or a link gets the owner role, so the same rights as the token today ([question 5](#questions-for-the-owner)).
@@ -142,7 +149,7 @@ None of these exist yet. Each one gets a docs page or section in the same change
 
 Small slices, each one usable and tested on its own:
 
-1. Personal sessions: the store, the `ax_person` cookie, "which person is this?" in the gates, sessions on the People page with **End access**. Covered by tests that a member session is refused by every owner gate.
+1. Personal sessions: the store, the `ax_person` cookie, "which person is this?" in the gates, sessions on the People page with **End access**. Covered by tests that a member session is refused by every owner gate in the [Decision 1](#1-a-personal-session-not-the-token-cookie) list, counted again when the slice is built.
 2. Email link sign-in, with the published `/signin` paths.
 3. Google sign-in.
 4. The read-only Wall for members on `/w` (uses the round 2 "anyone else" designs from #1451).

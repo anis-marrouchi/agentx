@@ -12,7 +12,6 @@ import { daemonConfigSchema } from "../src/daemon/config"
 import { APP_PLACES_SCRIPT } from "../src/daemon/ui/pages/app-places.client"
 import { locationErrorText } from "../src/daemon/ui/pages/app-places-logic"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
-import { renderPlacesPage } from "../src/daemon/ui/pages/places"
 
 const LIMITS: PlaceLimits = {
   minRadiusMeters: 100, maxRadiusMeters: 5000, defaultRadiusMeters: 150,
@@ -359,11 +358,5 @@ describe("pages", () => {
     it("a timeout says the position wasn't found", async () => {
       expect(await refused({ referrer: app, permission: "prompt", code: 3 })).toContain("Could not find where you are")
     })
-  })
-  it("the dashboard page renders with a parseable script", () => {
-    const html = renderPlacesPage({})
-    expect(html).toContain("Add a place")
-    const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((js) => js.includes("pl-msg"))!
-    expect(() => new Function(script)).not.toThrow()
   })
 })

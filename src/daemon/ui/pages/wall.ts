@@ -32,6 +32,7 @@ import { WALL_ORG_CSS } from "./wall-org.client"
 import { WALL_PEOPLE_CSS } from "./wall-people.client"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
+import { WALL_PICTURES_CSS } from "./wall-pictures.client"
 import { WALL_TASK_CSS } from "./wall-task.client"
 import { WALL_ACTIVITY_CSS } from "./wall-activity.client"
 import { WALL_BUILD_CSS } from "./wall-build.client"
@@ -255,7 +256,7 @@ ${navItems}
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
     scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }
@@ -315,6 +316,8 @@ const WALL_PAGE_CSS = `
 .av--sm { width: 28px; height: 28px; font-size: 11px; }
 .av--lg { width: 88px; height: 88px; font-size: 30px; border: 4px solid var(--ax-bg); cursor: default; }
 .av--person { background: var(--ax-muted); }
+.av--pic { background: var(--ax-surface-2); overflow: visible; }
+.av--pic img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .av.is-live::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: var(--ax-green); border: 2px solid var(--ax-surface); }
 
 /* Posts */

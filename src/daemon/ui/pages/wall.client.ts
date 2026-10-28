@@ -6,7 +6,8 @@
 // /api/workflows/runs (failed workflow runs), /api/admin/org (each
 // agent's role and who it reports to, #1398) and
 // /api/admin/observability/budgets (an agent's month spend vs its cap on
-// its profile, #1393, wall-spend.ts). The feed and the machines are read
+// its profile, #1393, wall-spend.ts) and /api/admin/pictures (the
+// pictures set for agents and people, #1425). The feed and the machines are read
 // first, quick (#1442): a slow peer or node reads "checking…" and the page
 // asks again; the other reads follow the first paint. Pending owner decision
 // cards (#1185) come with their post and are answered there (#1440,
@@ -49,6 +50,7 @@ import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
+import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
 import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
 import { WALL_BUILD_SCRIPT } from "./wall-build.client"
@@ -70,7 +72,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The pages the nav opens besides the Wall itself (#1316). */
   var PAGES = ['running', 'agents', 'people', 'org', 'creator', 'live', 'task', 'activity'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null };
+  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg })}
 ${WALL_REVIEWS_SCRIPT}
@@ -81,6 +83,7 @@ ${WALL_ORG_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
+${WALL_PICTURES_SCRIPT}
 ${WALL_TASK_SCRIPT}
 ${WALL_ACTIVITY_SCRIPT}
 ${WALL_BUILD_SCRIPT}
@@ -230,10 +233,18 @@ ${WALL_BUILD_SCRIPT}
     if (!words.length) return '?';
     return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
   }
-  /** A round avatar. Agents open their profile; people get a plain grey one. */
-  function avatar(id, size, person) {
-    var cls = 'av' + (size ? ' av--' + size : '') + (person ? ' av--person' : '') + (!person && agentInfo()[id] && agentInfo()[id].live ? ' is-live' : '');
-    var face = esc(initials(person ? id : nameOf(id)));
+  /** The picture set for an agent or a person on this node (#1425), or ''. */
+  function pictureOf(id, person) {
+    var p = S.pics && S.pics[person ? 'person' : 'agent'];
+    return (p && Object.prototype.hasOwnProperty.call(p, id) && p[id]) || '';
+  }
+  /** A round avatar: the picture when one is set, else the initials.
+   *  Agents open their profile; people get a plain grey one. A person's
+   *  initials come from name when given, else from the id. */
+  function avatar(id, size, person, name) {
+    var pic = pictureOf(id, person);
+    var cls = 'av' + (size ? ' av--' + size : '') + (person ? ' av--person' : '') + (pic ? ' av--pic' : '') + (!person && agentInfo()[id] && agentInfo()[id].live ? ' is-live' : '');
+    var face = pic ? '<img src="' + esc(pic) + '" alt="" loading="lazy" decoding="async">' : esc(initials(person ? name || id : nameOf(id)));
     if (person || size) return '<span class="' + cls + '" style="--av-h:' + hue(id) + '" aria-hidden="true">' + face + '</span>';
     return '<button type="button" class="' + cls + '" style="--av-h:' + hue(id) + '" data-agent="' + esc(id) + '" title="' + esc(nameOf(id)) + ': profile and posts">' + face + '</button>';
   }
@@ -692,7 +703,7 @@ ${WALL_BUILD_SCRIPT}
       '<h2>' + esc(nameOf(id)) + '</h2><div class="h">@' + esc(id) + (live ? ' · running now' : '') + '</div>' + orgLineHtml(id) +
       '<div class="wpf__stats"><span><b>' + a.open + '</b> open</span><span><b>' + a.owner + '</b> waiting on the owner</span>' +
         '<span><b>' + a.done + '</b> done in 7 days</span><span><b>' + a.runs + '</b> runs on these</span></div>' +
-      profileSpendHtml(S.budgets, id) +
+      profileSpendHtml(S.budgets, id) + pictureActsHtml(id) +
       (agentInfo()[id] ? '<div class="wpf__acts">' + agentActsHtml(id) + (S.callNote ? '<span class="wdo__n" role="status">' + esc(S.callNote) + '</span>' : '') + '</div>' : '') +
       '<div class="wpf__links"><a href="/admin/agents/' + encodeURIComponent(id) + '">Agent page</a></div>' + profileTabsHtml(id, tab) + '</div>';
   }
@@ -943,6 +954,8 @@ ${WALL_BUILD_SCRIPT}
     var list = allAgents();
     var down = ((S.live && S.live.nodes) || []).filter(nodeDown);
     var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
+    // Read-only: the org chart is edited on /org (#1420).
+    note += '<p class="ax-wall__count wag__note"><a href="/org">Open the org chart</a></p>';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
     var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
     return note + called + list.map(function (a) {
@@ -1350,6 +1363,8 @@ ${WALL_BUILD_SCRIPT}
     refreshPeople();
     // A failed read says so on the Org page; the rest of the Wall goes on.
     getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function (e) { S.org = { error: e.message }; render(); });
+    // Pictures (#1425): none set, or the read failing, keeps the initials.
+    getJson('/api/admin/pictures').then(function (d) { S.pics = d; render(); }).catch(function () { S.pics = null; });
     // Month spend vs cap for the agent profile (#1393): the same read as the Cost page.
     getJson('/api/admin/observability/budgets').then(function (d) { S.budgets = d; render(); }).catch(function () { S.budgets = null; });
     if (S.page === 'activity') loadActivity(true);

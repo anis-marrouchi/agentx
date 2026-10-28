@@ -50,8 +50,9 @@ export interface OrgView {
   outside: OrgNode[]
   /** False when the daemon did not answer: working and idle are unknown. */
   live: boolean
-  /** People from the top-level people list, name only (#1418). */
-  people: Array<{ id: string; name: string }>
+  /** People from the top-level people list (#1418). `placed` when they are in
+   *  business.orgPeople, with their role's title when it has one. */
+  people: Array<{ id: string; name: string; placed?: true; title?: string }>
   /** Typed relations, reportsTo included, members as `agent:<id>` / `person:<id>`. */
   relations: OrgRelation[]
   /** The chart for the Wall's Org page (#1419). */
@@ -74,7 +75,7 @@ export function buildOrgView(
   config: {
     agents?: Record<string, any>
     people?: Array<{ id: string; name?: string; role?: string }>
-    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; relations?: any[] }
+    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; orgPeople?: Record<string, any>; relations?: any[] }
   },
   holds: Record<string, AgentHold>,
   live: Array<{ id: string; active?: number }> | null,
@@ -82,6 +83,7 @@ export function buildOrgView(
   const agents = config.agents ?? {}
   const roles = config.business?.roles ?? {}
   const chart = config.business?.orgChart ?? {}
+  const placed = config.business?.orgPeople ?? {}
   const activeOf = new Map((live ?? []).map((a) => [a.id, a.active ?? 0]))
   const relations = orgRelations(config.business)
   // Each agent's reports-to boss from the typed relations: a bare id for an
@@ -131,20 +133,25 @@ export function buildOrgView(
   const sortDeep = (list: OrgNode[]) => { list.sort(byName); for (const n of list) sortDeep(n.reports) }
   sortDeep(roots)
   const outside = Object.keys(agents).filter((id) => !nodes.has(id)).map(node).sort(byName)
-  const people = (config.people ?? []).filter((p) => p?.id).map((p) => ({ id: p.id, name: p.name || p.id }))
+  const people = (config.people ?? []).filter((p) => p?.id).map((p) => {
+    const role = placed[p.id]?.role
+    const title = role ? roles[role]?.title || role : undefined
+    return { id: p.id, name: p.name || p.id, ...(placed[p.id] ? { placed: true as const } : {}), ...(title ? { title } : {}) }
+  })
   const problem = relationsProblem(relations, new Set(Object.keys(chart)), new Set(people.map((p) => p.id)))
-  const diagram = orgDiagram(nodes, config.people ?? [], relations)
+  const diagram = orgDiagram(nodes, config.people ?? [], people, relations)
   return { roots, outside, live: live !== null, people, relations, diagram, ...(problem ? { problem } : {}) }
 }
 
 const PERSON_TITLE: Record<string, string> = { owner: "Owner", client: "Client", guest: "Guest" }
 
-/** The chart's cards: every agent in business.orgChart, and every person a
- *  reports-to or dotted-line names. A person only acted for shows as a chip
- *  on the agent's card, not as a card. */
+/** The chart's cards: every agent in business.orgChart, every person in
+ *  business.orgPeople, and every person a reports-to or dotted-line names.
+ *  A person only acted for shows as a chip on the agent's card, not as a card. */
 function orgDiagram(
   nodes: Map<string, OrgNode>,
   people: Array<{ id: string; name?: string; role?: string }>,
+  listed: OrgView["people"],
   relations: OrgRelation[],
 ): OrgDiagram {
   const named = new Set(relations.filter((r) => r.type !== "acts-for").flatMap((r) => [r.from, r.to]))
@@ -158,9 +165,11 @@ function orgDiagram(
       ...(n.heldBy ? { heldBy: n.heldBy } : {}),
     })
   }
+  const byId = new Map(listed.map((p) => [p.id, p]))
   for (const p of people) {
-    if (!p?.id || !named.has(`person:${p.id}`)) continue
-    const title = PERSON_TITLE[p.role ?? ""]
+    const shown = p?.id ? byId.get(p.id) : undefined
+    if (!shown || !(shown.placed || named.has(`person:${p.id}`))) continue
+    const title = shown.title ?? PERSON_TITLE[p.role ?? ""]
     cards.set(`person:${p.id}`, { kind: "person", id: p.id, name: p.name || p.id, ...(title ? { title } : {}) })
   }
   const layout = layoutOrg([...cards].map(([key, c]) => ({ key, name: c.name })), relations)

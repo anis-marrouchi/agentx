@@ -7,6 +7,7 @@ import { fileURLToPath } from "url"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import { installedSkills, skillHome } from "@/agents/conventions"
 import { applyConfigMutation } from "@/daemon/config-mutator"
+import { agentPictureCommand } from "./picture"
 import { callingAgent, holdAgent, holdIfAgentCreated, holdsRoot, readHolds, releaseAgent } from "@/agents/holds"
 
 // --- agentx agent/channel/cron/mesh/skill/hook management commands ---
@@ -147,6 +148,9 @@ agent
     releaseAgent(holdsRoot(), id)
     console.log(chalk.green(`  Agent "${id}" removed from config (workspace preserved)`))
   })
+
+// Profile picture (#1425): picture.ts.
+agent.addCommand(agentPictureCommand())
 
 // Pause and resume (#1169): a paused agent starts no run until it is
 // resumed. Applies at once, no restart. The owner's commands: an agent

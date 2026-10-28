@@ -1138,7 +1138,7 @@ These switches last until the daemon restarts.
    agentx narrate helper on
    ```
    Use `off` to silence it, or `default` to go back to what `agentx.json` says. Scheduled jobs stay quiet unless the file says `"all"`.
-2. **Browser:** to narrate one task only, even a scheduled one, open the task in the dashboard. Its id is the last part of the address, after `/tasks/`.
+2. **Browser:** to narrate one task only, even a scheduled one, open the task on the Wall's **Task** page. Its id is in the address, after `task=` and before the next `&`.
 3. **Terminal:** switch narration on for that task:
    ```sh
    agentx narrate --task <task-id> on
@@ -1204,7 +1204,10 @@ Presence mode lets AgentX decide, on each question you ask through the widget, w
 
 Some safety rules always apply:
 
-- A lesson (`teach` or `watch`) starts only when you ask to be shown something, for example "show me how…", "how do I…", "where is…", "walk me through…" or "montre-moi…". An instruction such as "merge and deploy the release" is always answered as `talk`.
+- A lesson (`teach` or `watch`) starts only when you ask to be shown something:
+  - Asking outright is enough: "show me how to…", "show me where…", "teach me…", "walk me through…", "coach me…", "show me on screen…", "watch me do it" or "montre-moi comment…". A bare "show me how" is not: "show me how things look today" is answered by voice.
+  - A "how do I…" or "where is the…" question also needs to name something on screen, such as a button, menu, tab, field or icon, or "on the screen" or "in this app". "Where is the export button?" starts a lesson; "how do I make a table?" is answered by voice.
+  - A question about work or status is always answered as `talk`, even if it starts with "show me" or "walk me through", or names a control: "where are we on the video test", "walk me through the status", "show me where we are on the release", "montre-moi où on en est" or "where's the tab redesign PR". So is an instruction such as "merge and deploy the release". Only "show me on screen…" and "watch me do…" skip this check. Because of it, "where is the merge button" is also answered by voice; ask "show me on screen where to merge" instead.
 - If the seat is unsure (below 55% confidence), takes longer than 2.5 seconds, or fails, the answer is `talk`.
 
 To switch presence mode on:
@@ -1227,9 +1230,21 @@ In a live lesson, an agent teaches you how to do something in an app, one step a
 4. The agent waits for the screen to change (you did the step). In `act` mode with `allowActions` set, it does the step itself.
 5. The window is read again, and the next step starts from what is really there.
 
-As soon as a lesson starts, the agent's pointer says **Looking at** and the app's name, until the first step is ready. On a Mac that is not busy, that takes a few seconds.
+As soon as a lesson starts, the agent's pointer says **Looking at** and the app's name, until the first step is ready. On a Mac that is not busy, that takes a few seconds. When the lesson starts from your voice, the agent first says "Sure, I'll show you on screen. Say stop when you're done." (in `watch` mode: "Go ahead, I'm watching.").
+
+The pointer's bubble has three lines, so you always know why it is there and how to leave:
+
+```
+Here: “Table”
+You asked: show me how to make a table of monthly expenses
+Say “stop” or press × to end
+```
+
+The first line names the control of the current step ("this control" when it has no name), the second what you asked for. Between steps the pointer keeps the last two lines.
 
 A lesson stays in the app it started in. If you switch to another app, the agent asks you to bring it back and waits without doing anything else. After 45 seconds it ends. A lesson stops after 12 steps unless you set another limit.
+
+A lesson also ends by itself when you have not done two steps in a row: the screen did not change and you said nothing. The agent says "I'll leave it there. Ask me to show you again whenever you like." and its pointer goes.
 
 A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` or `act` for your question, or from a terminal.
 
@@ -1261,7 +1276,7 @@ A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` 
 
 To end the lesson, say **stop** the same way. A short "okay, stop now", "please stop" or "cancel" ends it too. A longer sentence that only contains the word, such as "how do I stop the recording", goes to the lesson as a question. A lesson that hears nothing for one minute after it went quiet also ends.
 
-Pressing **Command–Option–.** also ends a lesson. In the terminal where it runs, type `stop` and press Return, or press Control–C.
+Pressing **Command–Option–.** also ends a lesson. So does clicking the **×** on the agent's name tag, beside its pointer: the tag fades out and the lesson stops. In the terminal where it runs, type `stop` and press Return, or press Control–C.
 
 ### Check a running lesson in the browser
 
@@ -1278,7 +1293,7 @@ A hands-free lesson is one you start by voice, with [presence mode](#presence-mo
 1. **Terminal:** run `agentx --version`. It prints `0.94.0` or later.
 2. **Mac:** open the app you want to be taught in, for example Numbers, and leave it in front.
 3. **Mac:** click the pill, and say "show me how to make a table of monthly expenses".
-4. **Mac:** the agent says "Sure, I'll show you on screen." Within a second or two its pointer appears and says **Looking at Numbers…**. It stays until the first step is spoken, a few seconds later.
+4. **Mac:** the agent says "Sure, I'll show you on screen. Say stop when you're done." Within a second or two its pointer appears and says **Looking at Numbers…**. It stays until the first step is spoken, a few seconds later.
 5. **Mac:** after the first step, click the pill and say "it's not having any effect". The lesson goes quiet while you speak. Its next step answers what you said; the lesson does not end.
 6. **Mac:** click the pill and say "okay, stop now". The pointer goes and the lesson ends.
 7. **Terminal:** run the check:

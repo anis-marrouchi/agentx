@@ -10,6 +10,7 @@ It shows what `agentx people` already records. There is nothing to set up: with 
 2. Select **People** in the nav on the left. The number next to it is how many people are listed. On a phone, select **More** in the bottom bar, then **People**. The page's address is `/wall#page=people`. The old address, `/people`, opens this page too.
 3. Every person is one row: a round picture with their initials, their name, their handle (such as `@sara`), and their role (**Owner**, **Member**, **Client** or **Guest**). Under it, the channel identities you gave them, such as `gitlab:sara.b`, and the agents they may reach, when you limited them.
 4. The last line counts their machines, how many of those wait for your approval, and their open requests on the Wall.
+5. Under it, **Upload picture** gives them a picture in place of the initials; see [Give agents and people a picture](../jobs/profile-pictures.md).
 
 ![The People page on the Wall: one row per person with their role, identities, machines and open requests](/screenshots/wall/people.png)
 

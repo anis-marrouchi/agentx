@@ -29,14 +29,44 @@ export const STOP_WORDS = new Set([
   "please", "just", "also", "very", "much", "some", "any", "all",
 ])
 
+/** Bump when tokenize() output changes, so cached indexes on disk are rebuilt. */
+const TOKENIZER_VERSION = "4"
+
+const ARABIC = /[؀-ۿ]/
+
 /**
- * Tokenize text: lowercase, split on non-alphanumeric, drop stop words and short tokens.
+ * Arabic word normalisation (#1390): drop tashkeel, superscript alef and tatweel,
+ * turn Arabic-Indic digits into 0-9, strip the article ال (with a و/ب/ف/ك glued
+ * before it) when 3+ letters remain, then unify alef forms, ى → ي and ة → ه.
+ * A bare و/ب is never stripped: it is often part of the word (بيانات, وزارة).
+ * The article goes before alef unification so the إل in إلكتروني, إلغاء or
+ * إلهام is not taken for ال.
+ */
+function normalizeArabic(w: string): string {
+  w = w
+    .replace(/[ً-ٰٟـ]/g, "")
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
+  const article = /^[وبفك]?[اٱ]ل/.exec(w)
+  if (article && w.length - article[0].length >= 3) w = w.slice(article[0].length)
+  return w
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+}
+
+/**
+ * Tokenize text: NFKC, lowercase, fold Latin accents, split on anything that is
+ * not a letter, mark or digit in any script (marks stay so Arabic vowel signs do
+ * not cut a word), normalise Arabic words, drop stop words and short tokens.
  */
 export function tokenize(text: string): string[] {
   return text
+    .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
+    .normalize("NFD").replace(/(?<=[a-z])\p{M}+/gu, "").normalize("NFC")
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .map((w) => (ARABIC.test(w) ? normalizeArabic(w) : w))
     .filter((w) => w.length > 2 && !STOP_WORDS.has(w))
 }
 
@@ -156,6 +186,7 @@ interface SerializedIndex {
 
 function hashDocs(docs: string[]): string {
   const h = createHash("sha256")
+  h.update(`tokenizer:${TOKENIZER_VERSION}\0`)
   for (const d of docs) h.update(d)
   return h.digest("hex").slice(0, 16)
 }

@@ -7,6 +7,7 @@ import AppKit
 /// take the mouse without the arrow ever stealing a click:
 ///
 ///   drag anywhere        move it; it stays there (pinned) for this agent
+///   click ×              close: the owner ends what it was showing
 ///   double-click bubble  dismiss the bubble for the rest of this overlay
 ///   double-click name    unpin; it rides next to the arrow again
 ///
@@ -26,6 +27,10 @@ final class PresenceTag: NSView {
     /// Called with the window's new top-left once a drag ends.
     var onPin: ((NSPoint) -> Void)?
     var onUnpin: (() -> Void)?
+    /// Called when the × in the badge row is clicked.
+    var onClose: (() -> Void)?
+    /// A click that started on the × and has not moved: a close, not a drag.
+    private var pressingClose = false
     /// A double-click on the bubble hides it; later lines stay hidden too.
     private(set) var dismissed = false
 
@@ -40,7 +45,8 @@ final class PresenceTag: NSView {
         wantsLayer = true
         bubble.font = Brand.body(size: 13)
         bubble.textColor = Brand.ink
-        bubble.maximumNumberOfLines = 4
+        // A lesson's bubble says what is pointed at, why, and how to end it.
+        bubble.maximumNumberOfLines = 6
         box.wantsLayer = true
         box.layer?.backgroundColor = Brand.paper.cgColor
         box.layer?.cornerRadius = Brand.Radius.md
@@ -54,7 +60,10 @@ final class PresenceTag: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     private static let nameAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold)]
-    private var rowWidth: CGFloat { 24 + 4 + (name as NSString).size(withAttributes: PresenceTag.nameAttrs).width + 14 }
+    private var nameWidth: CGFloat { (name as NSString).size(withAttributes: PresenceTag.nameAttrs).width + 14 }
+    private var rowWidth: CGFloat { 24 + 4 + nameWidth + 4 + 18 }
+    /// The close button, right of the name pill.
+    private var closeRect: NSRect { NSRect(x: 24 + 4 + nameWidth + 4, y: bounds.maxY - 24 + 3, width: 18, height: 18) }
 
     override var fittingSize: NSSize {
         guard !box.isHidden else { return NSSize(width: rowWidth, height: PresenceTag.rowHeight) }
@@ -67,8 +76,8 @@ final class PresenceTag: NSView {
         bubble.stringValue = text
         let textW: CGFloat = 300
         bubble.preferredMaxLayoutWidth = textW
-        let fit = bubble.sizeThatFits(NSSize(width: textW, height: 90))
-        let w = min(textW, ceil(fit.width)), h = min(90, ceil(fit.height))
+        let fit = bubble.sizeThatFits(NSSize(width: textW, height: 120))
+        let w = min(textW, ceil(fit.width)), h = min(120, ceil(fit.height))
         bubble.frame = NSRect(x: 10, y: 6, width: w, height: h)
         box.frame = NSRect(x: 0, y: 0, width: w + 20, height: h + 12)
         refit()
@@ -91,14 +100,19 @@ final class PresenceTag: NSView {
         let ring = NSBezierPath(ovalIn: badge.insetBy(dx: 0.75, dy: 0.75)); ring.lineWidth = 1.5; ring.stroke()
         draw(initial, in: badge, size: 11, weight: .bold)
 
-        let nameW = (name as NSString).size(withAttributes: PresenceTag.nameAttrs).width + 14
-        let pill = NSRect(x: badge.maxX + 4, y: badge.minY + 3, width: nameW, height: 18)
+        let pill = NSRect(x: badge.maxX + 4, y: badge.minY + 3, width: nameWidth, height: 18)
         color.setFill(); NSBezierPath(roundedRect: pill, xRadius: 9, yRadius: 9).fill()
         draw(name, in: pill, size: 11, weight: .semibold)
+
+        let close = closeRect
+        Brand.paper.setFill(); NSBezierPath(ovalIn: close).fill()
+        color.setStroke()
+        let edge = NSBezierPath(ovalIn: close.insetBy(dx: 0.75, dy: 0.75)); edge.lineWidth = 1.5; edge.stroke()
+        draw("\u{00D7}", in: close, size: 13, weight: .bold, color: color)
     }
 
-    private func draw(_ s: String, in r: NSRect, size: CGFloat, weight: NSFont.Weight) {
-        let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: NSColor.white]
+    private func draw(_ s: String, in r: NSRect, size: CGFloat, weight: NSFont.Weight, color: NSColor = .white) {
+        let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color]
         let sz = (s as NSString).size(withAttributes: a)
         (s as NSString).draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2), withAttributes: a)
     }
@@ -125,6 +139,7 @@ final class PresenceTag: NSView {
             dragFrom = nil
             return
         }
+        pressingClose = closeRect.insetBy(dx: -3, dy: -3).contains(convert(event.locationInWindow, from: nil))
         dragFrom = NSEvent.mouseLocation
         windowFrom = window?.frame.origin ?? .zero
         dragged = false
@@ -140,7 +155,8 @@ final class PresenceTag: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { dragFrom = nil; dragged = false }
+        defer { dragFrom = nil; dragged = false; pressingClose = false }
+        if pressingClose && !dragged { onClose?(); return }
         guard dragged, let w = window else { return }
         onPin?(NSPoint(x: w.frame.minX, y: w.frame.maxY))
     }

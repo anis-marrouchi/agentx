@@ -1028,6 +1028,11 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
 .rowf > *{flex:1}
 .actions{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap}
 
+/* A file picker that looks like a button (#1425); the input stays focusable. */
+.ax-btn--file{position:relative;cursor:pointer;margin:0;text-transform:none;letter-spacing:normal}
+.ax-btn--file input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.ax-btn--file:focus-within{outline:2px solid var(--ax-accent);outline-offset:2px}
+
 /* --- Messages --- */
 .msg{margin:10px 0;padding:8px 12px;border-radius:4px;font-size:12px;
   display:none;line-height:1.5}
@@ -1205,7 +1210,8 @@ function showMsg(el, kind, text) {
 
 async function refresh() {
   try {
-    state = await req('GET', '/api/admin/state');
+    const [next] = await Promise.all([req('GET', '/api/admin/state'), loadPictures()]);
+    state = next;
     if (!state.exists) {
       showMsg($('global-msg'), 'warn', 'No agentx.json found. Run the setup wizard first.');
       return;
@@ -2327,6 +2333,79 @@ function avatarVariant(key) {
   return variants[h % variants.length];
 }
 
+// --- Profile pictures (#1425) ---
+// This node's pictures, from /api/admin/pictures: { agent: {id: url}, person: {...} }.
+// Set and removed on this computer only: with another node picked in the
+// top bar the initials show and the buttons are hidden.
+let pictures = { agent: {}, person: {} };
+const PICTURE_MAX = 1024 * 1024;
+const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+async function loadPictures() {
+  if (currentPeer() !== 'primary') { pictures = { agent: {}, person: {} }; return; }
+  try {
+    const headers = { 'X-Requested-With': 'agentx-admin' };
+    if (window.AX_LOCAL_TOKEN) headers['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
+    const r = await fetch('/api/admin/pictures', { headers, cache: 'no-store' });
+    if (r.ok) pictures = await r.json();
+  } catch { /* no pictures: the initials show */ }
+}
+
+function agentAvatarHtml(a) {
+  const url = currentPeer() === 'primary' && pictures.agent && pictures.agent[a.id];
+  if (url) return '<div class="ax-avatar ax-avatar--pic"><img src="' + escapeHtml(url) + '" alt="Picture of ' + escapeHtml(a.name) + '"></div>';
+  return '<div class="ax-avatar ax-avatar--' + avatarVariant(a.id) + '">' + escapeHtml(initialsOf(a.name, a.id)) + '</div>';
+}
+
+function pictureButtonsHtml(a) {
+  if (currentPeer() !== 'primary') return '';
+  const has = !!(pictures.agent && pictures.agent[a.id]);
+  return '<label class="ax-btn ax-btn--file">' + (has ? 'Replace picture' : 'Upload picture') +
+      '<input type="file" accept="image/png,image/jpeg,image/webp" data-pic-file="' + escapeHtml(a.id) + '" aria-label="Picture for ' + escapeHtml(a.name) + ': PNG, JPEG or WebP, 1 MB at most"></label>' +
+    (has ? '<button class="ax-btn" data-pic-remove="' + escapeHtml(a.id) + '">Remove picture</button>' : '');
+}
+
+function wirePictureButtons(card, a) {
+  const input = card.querySelector('[data-pic-file]');
+  if (input) input.addEventListener('change', () => { if (input.files && input.files[0]) uploadPicture('agent', a.id, a.name, input.files[0]); input.value = ''; });
+  const rm = card.querySelector('[data-pic-remove]');
+  if (rm) rm.addEventListener('click', () => removePictureOf('agent', a.id, a.name));
+}
+
+async function pictureCall(method, kind, id, file) {
+  const headers = { 'X-Requested-With': 'agentx-admin' };
+  if (window.AX_LOCAL_TOKEN) headers['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
+  if (file) headers['Content-Type'] = file.type || 'application/octet-stream';
+  const r = await fetch('/api/admin/pictures/' + kind + '/' + encodeURIComponent(id), { method, headers, body: file || undefined });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+
+async function uploadPicture(kind, id, name, file) {
+  const msg = $('global-msg');
+  // The same rules the server applies, so the answer is quick; the server decides.
+  if (PICTURE_TYPES.indexOf(file.type) < 0) { showMsg(msg, 'err', 'Use a PNG, JPEG or WebP picture' + (file.type === 'image/svg+xml' ? ': SVG is not accepted.' : '.')); return; }
+  if (file.size > PICTURE_MAX) { showMsg(msg, 'err', 'The picture is ' + (file.size / PICTURE_MAX).toFixed(1) + ' MB; the limit is 1 MB.'); return; }
+  try {
+    await pictureCall('PUT', kind, id, file);
+    showMsg(msg, 'ok', 'Picture set for ' + name + '.');
+    await loadPictures();
+    renderAgents();
+  } catch (e) { showMsg(msg, 'err', 'Could not set the picture: ' + e.message); }
+}
+
+async function removePictureOf(kind, id, name) {
+  if (!confirm('Remove the picture of ' + name + '? The initials show again.')) return;
+  const msg = $('global-msg');
+  try {
+    await pictureCall('DELETE', kind, id);
+    showMsg(msg, 'ok', 'Picture removed for ' + name + '.');
+    await loadPictures();
+    renderAgents();
+  } catch (e) { showMsg(msg, 'err', 'Could not remove the picture: ' + e.message); }
+}
+
 function renderAgents() {
   const list = $('agent-list');
   if (!state.agents.length) {
@@ -2348,7 +2427,7 @@ function renderAgents() {
     card.className = 'ax-row-card';
     card.innerHTML =
       '<div class="ax-row-card__top">' +
-        '<div class="ax-avatar ax-avatar--' + avatarVariant(a.id) + '">' + escapeHtml(initialsOf(a.name, a.id)) + '</div>' +
+        agentAvatarHtml(a) +
         '<div class="ax-row-card__info">' +
           '<div class="ax-name">' + escapeHtml(a.name) + ' ' + accessPill + '</div>' +
           '<div class="ax-sub">' +
@@ -2375,6 +2454,7 @@ function renderAgents() {
           '<button class="ax-btn" data-edit="' + escapeHtml(a.id) + '">Edit</button>' +
           '<button class="ax-btn" data-files="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '">Files</button>' +
           '<button class="ax-btn" data-toggle="' + escapeHtml(a.id) + '" data-access="' + escapeHtml(a.access) + '">' + (a.access === 'public' ? 'Make private' : 'Make public') + '</button>' +
+          pictureButtonsHtml(a) +
           '<div style="flex:1"></div>' +
           '<button class="ax-btn ax-btn--danger" data-delete="' + escapeHtml(a.id) + '">Delete</button>' +
         '</div>' +
@@ -2395,6 +2475,7 @@ function renderAgents() {
       setAgentAccess(btn.dataset.toggle, want);
     });
     card.querySelector('[data-delete]').addEventListener('click', () => deleteAgent(a.id));
+    wirePictureButtons(card, a);
     // Wire integration row actions: delete one, add via inline form.
     card.querySelectorAll('[data-int-rm]').forEach((el) => {
       el.addEventListener('click', () => {

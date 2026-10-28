@@ -139,6 +139,10 @@ export const businessConfigSchema = z.object({
    *  `person:<id>`, a bare id being an agent. An orgChart `reportsTo` is
    *  read as `reports-to`, so it needs no entry here. See relations.ts. */
   relations: z.array(relationSchema).default([]),
+  /** People placed in the org chart (#1420), keyed by an id from the
+   *  top-level `people` list, with the role they hold (a key of `roles`).
+   *  A person named in a relation is in the chart without an entry here. */
+  orgPeople: z.record(z.string(), z.object({ role: z.string().optional() })).default({}),
   /** Per-project metadata. Phase 3 — defaults to empty array, so
    *  existing agentx.json files validate without modification. */
   projects: z.array(projectSchema).default([]),

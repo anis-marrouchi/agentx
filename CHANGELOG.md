@@ -2,6 +2,64 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.184.0](https://github.com/anis-marrouchi/agentx/compare/v0.183.0...v0.184.0) (2026-10-28)
+
+
+### Features
+
+* **org:** edit who reports to whom on /org, owner only ([#1420](https://github.com/anis-marrouchi/agentx/issues/1420)) ([#1432](https://github.com/anis-marrouchi/agentx/issues/1432)) ([08a366b](https://github.com/anis-marrouchi/agentx/commit/08a366b3b1792c7e226c8c29ec837d0dd6273035))
+
+
+### Bug Fixes
+
+* **memory:** keep Arabic and accented words in the BM25 tokenizer ([#1390](https://github.com/anis-marrouchi/agentx/issues/1390)) ([#1491](https://github.com/anis-marrouchi/agentx/issues/1491)) ([8d73fbb](https://github.com/anis-marrouchi/agentx/commit/8d73fbbd83de19b330daab5ebc917ec024c80058))
+* **voice:** live teach opens only on a clear show-me, says why, and can be closed ([#1493](https://github.com/anis-marrouchi/agentx/issues/1493)) ([#1494](https://github.com/anis-marrouchi/agentx/issues/1494)) ([4af1141](https://github.com/anis-marrouchi/agentx/commit/4af1141ab7f530fa4c3636266a5fe1ef4402d68a))
+* **voice:** wider status words and act-mode idle reset for live teach ([#1493](https://github.com/anis-marrouchi/agentx/issues/1493)) ([#1496](https://github.com/anis-marrouchi/agentx/issues/1496)) ([0376deb](https://github.com/anis-marrouchi/agentx/commit/0376debc01f497e40df5bcfa3acfac578895e068))
+
+## [0.183.0](https://github.com/anis-marrouchi/agentx/compare/v0.182.0...v0.183.0) (2026-10-27)
+
+
+### Features
+
+* **dashboard:** retire unused classic pages, redirect to the Wall ([#1446](https://github.com/anis-marrouchi/agentx/issues/1446)) ([#1453](https://github.com/anis-marrouchi/agentx/issues/1453)) ([11ea7eb](https://github.com/anis-marrouchi/agentx/commit/11ea7eb61759593c874a8fc1359bedd9c8e9f5a1))
+* **org:** profile pictures for agents and people ([#1425](https://github.com/anis-marrouchi/agentx/issues/1425)) ([#1450](https://github.com/anis-marrouchi/agentx/issues/1450)) ([8c2d058](https://github.com/anis-marrouchi/agentx/commit/8c2d0582a06dec9aafd8aad15d183f4a9b01618f))
+* **wall:** classic page registry, /tasks redirect and Wall link crawl ([#1447](https://github.com/anis-marrouchi/agentx/issues/1447), part 1) ([#1456](https://github.com/anis-marrouchi/agentx/issues/1456)) ([c22a569](https://github.com/anis-marrouchi/agentx/commit/c22a569abb14863a274f6b11a3be71ba801ac7c8))
+* **wall:** port [#1465](https://github.com/anis-marrouchi/agentx/issues/1465)'s extras into [#1466](https://github.com/anis-marrouchi/agentx/issues/1466): a row's "Set a cap", README and notes ([#1423](https://github.com/anis-marrouchi/agentx/issues/1423)) ([#1474](https://github.com/anis-marrouchi/agentx/issues/1474)) ([6031c19](https://github.com/anis-marrouchi/agentx/commit/6031c19361ae190d59dc1eb1a67b2625fc22fcbc))
+
+
+### Bug Fixes
+
+* **cli:** exit 128 + signo when stopped by a signal ([#1388](https://github.com/anis-marrouchi/agentx/issues/1388)) ([#1477](https://github.com/anis-marrouchi/agentx/issues/1477)) ([6ea3bd1](https://github.com/anis-marrouchi/agentx/commit/6ea3bd10b1c2c890635fecad19d5bb42e14d8e28))
+* **dashboard:** keep a chat task link through off-box sign-in ([#1447](https://github.com/anis-marrouchi/agentx/issues/1447)) ([#1490](https://github.com/anis-marrouchi/agentx/issues/1490)) ([4ac6873](https://github.com/anis-marrouchi/agentx/commit/4ac68737a8f6abfa08e560fe6a5a66453451d07d))
+
+## [0.182.0](https://github.com/anis-marrouchi/agentx/compare/v0.181.1...v0.182.0) (2026-10-27)
+
+
+### Features
+
+* **approvals:** count the Reminders mirror trial and fall back fast without Reminders access ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062)) ([#1417](https://github.com/anis-marrouchi/agentx/issues/1417)) ([f08b12a](https://github.com/anis-marrouchi/agentx/commit/f08b12a341b1395118b46cbfff08e9187909606c))
+* **org:** people and typed relations in the org chart ([#1418](https://github.com/anis-marrouchi/agentx/issues/1418)) ([#1427](https://github.com/anis-marrouchi/agentx/issues/1427)) ([d090d1a](https://github.com/anis-marrouchi/agentx/commit/d090d1ada657506f4aa8ade40aed9a9e0a61476d))
+* **org:** relation CLI and people on the classic Org page ([#1418](https://github.com/anis-marrouchi/agentx/issues/1418)) ([#1476](https://github.com/anis-marrouchi/agentx/issues/1476)) ([b5d13dc](https://github.com/anis-marrouchi/agentx/commit/b5d13dc5db2b8f5cc75b736af30667e00e0e1d3b))
+* **voice:** send and move on, with an open-requests list ([#1455](https://github.com/anis-marrouchi/agentx/issues/1455), slice 1) ([#1473](https://github.com/anis-marrouchi/agentx/issues/1473)) ([e191944](https://github.com/anis-marrouchi/agentx/commit/e191944c08b76638e2e679bad352ef4caab9101c))
+* **wall:** Cost page in the Wall space, global and per agent ([#1423](https://github.com/anis-marrouchi/agentx/issues/1423)) ([#1434](https://github.com/anis-marrouchi/agentx/issues/1434)) ([c10bdda](https://github.com/anis-marrouchi/agentx/commit/c10bddad2ede8d7bdebb587c0e282cb26d7532af))
+* **wall:** Org page as a top-down org chart ([#1419](https://github.com/anis-marrouchi/agentx/issues/1419)) ([#1426](https://github.com/anis-marrouchi/agentx/issues/1426)) ([4af3b81](https://github.com/anis-marrouchi/agentx/commit/4af3b81054566c7dbe70315dcb1512025c3d8778))
+* **wall:** People page on the Wall; /people redirects there ([#1441](https://github.com/anis-marrouchi/agentx/issues/1441)) ([#1461](https://github.com/anis-marrouchi/agentx/issues/1461)) ([e17877b](https://github.com/anis-marrouchi/agentx/commit/e17877b27fa0aa9379677de30c091d607391838e))
+* **wall:** Resume, Restart when idle and attached sessions on Wall Live ([#1439](https://github.com/anis-marrouchi/agentx/issues/1439)) ([#1464](https://github.com/anis-marrouchi/agentx/issues/1464)) ([7f5b0bd](https://github.com/anis-marrouchi/agentx/commit/7f5b0bdbafc01c513bbcf3f905200a8dfc433937))
+* **wall:** show people and relation types in the org ([#1421](https://github.com/anis-marrouchi/agentx/issues/1421)) ([#1424](https://github.com/anis-marrouchi/agentx/issues/1424)) ([e61f067](https://github.com/anis-marrouchi/agentx/commit/e61f067cff26842d56593c3c078d37d43a825ea7))
+* **wall:** slice 1 of the round-2 designs: grouped nav, phone bar, build line, Activity ([#1429](https://github.com/anis-marrouchi/agentx/issues/1429), [#1451](https://github.com/anis-marrouchi/agentx/issues/1451)) ([#1435](https://github.com/anis-marrouchi/agentx/issues/1435)) ([7d2e2b3](https://github.com/anis-marrouchi/agentx/commit/7d2e2b392dc1b62434c8a4bb036717dea087c81c))
+* **wall:** the Cost page does all /admin/cost did; /admin/cost opens it ([#1423](https://github.com/anis-marrouchi/agentx/issues/1423)) ([#1466](https://github.com/anis-marrouchi/agentx/issues/1466)) ([831a188](https://github.com/anis-marrouchi/agentx/commit/831a1888e7ad7990be49d7fdbdb30fda2fe5c079))
+
+
+### Bug Fixes
+
+* **org:** show person bosses by name and check reportsTo on write ([#1427](https://github.com/anis-marrouchi/agentx/issues/1427) follow-ups) ([#1436](https://github.com/anis-marrouchi/agentx/issues/1436)) ([e7ad6be](https://github.com/anis-marrouchi/agentx/commit/e7ad6be3148844f6d1b169128edeb75d922a0291))
+* **wall:** no internal [agentx:…] markers in visible text ([#1443](https://github.com/anis-marrouchi/agentx/issues/1443)) ([#1457](https://github.com/anis-marrouchi/agentx/issues/1457)) ([d1b774a](https://github.com/anis-marrouchi/agentx/commit/d1b774a0e4c703148cc8cf69f0b1dc8880c9d790))
+
+
+### Performance Improvements
+
+* **wall:** quick first load, slow machines read "checking…" ([#1442](https://github.com/anis-marrouchi/agentx/issues/1442)) ([#1467](https://github.com/anis-marrouchi/agentx/issues/1467)) ([2314ee9](https://github.com/anis-marrouchi/agentx/commit/2314ee9da04954a933632806d6ddf4965d1c03d1))
+
 ## [0.181.1](https://github.com/anis-marrouchi/agentx/compare/v0.181.0...v0.181.1) (2026-10-27)
 
 

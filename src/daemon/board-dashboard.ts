@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, mkdirSync } from "fs"
 import { readFile } from "fs/promises"
 import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
-import type { DaemonConfig } from "./config"
+import { loadDaemonConfig, type DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
 import { handleLogin, hasSession, hasStreamTicket, isOffBox, pageToken, redirectToLogin, streamTicket, STREAM_TICKET_TTL_S } from "./dashboard-session"
 import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
@@ -26,6 +26,8 @@ import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
 import { handlePeoplePanel } from "./people-panel"
+import { handlePicturesPanel, servePicture } from "./pictures-panel"
+import { IMPLICIT_OWNER } from "@/people/people"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderProjectsPage } from "./ui/pages/projects"
@@ -39,12 +41,8 @@ import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
-import { renderBoardsPage } from "./ui/pages/boards"
-import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
-import { renderProceduresPage } from "./ui/pages/procedures"
-import { renderProcessesPage } from "./ui/pages/processes"
-import { renderTaskPage } from "./ui/pages/task"
+import { classicRedirect } from "./ui/classic-routes"
 import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
@@ -59,7 +57,6 @@ import { dashboardIcon } from "./app-icon"
 import { assetLinks, handleDashboardPlaces, placesDeps, type PlacesDeps } from "./app-places"
 import { pinsDeps } from "./app-pins"
 import { daemonFireDeps } from "@/places/fire"
-import { renderPlacesPage } from "./ui/pages/places"
 import { relayedPush, relayedPushHere, type AppPushDeps } from "./app-push"
 import { appAnnounceDeps } from "./app-announce"
 import { PushStore } from "@/channels/push-store"
@@ -183,13 +180,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
 
   server.listen(port, bind, () => {
     const displayHost = bind === "0.0.0.0" ? "localhost" : bind
-    if (boards.length === 0) {
-      console.log(`\n  Live dashboard: http://${displayHost}:${port}\n`)
-      console.log("  (no boards configured — '/' serves the live view; add a board with 'agentx board add')")
-    } else {
-      console.log(`\n  Kanban dashboard: http://${displayHost}:${port}\n`)
-      console.log(`  Boards: ${boards.map((b) => b.id).join(", ")}`)
-    }
+    console.log(`\n  Dashboard: http://${displayHost}:${port}\n`)
     if (bind === "127.0.0.1" && !token) {
       console.log("  (bound to localhost; no auth token — safe default)")
     } else if (bind !== "127.0.0.1" && !token) {
@@ -208,12 +199,8 @@ const DASHBOARD_PAGES = new Set([
   "/mesh",
   "/monitor",
   "/activity",
-  "/boards",
-  "/glossary",
   "/workflows",
   "/workflows/editor",
-  "/procedures",
-  "/processes",
   "/graph",
   "/setup",
   "/admin",
@@ -221,13 +208,21 @@ const DASHBOARD_PAGES = new Set([
   "/approvals",
   "/people",
   "/org",
-  "/places",
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
   "/admin/projects",
   "/admin/wiki",
 ])
+
+/** Retired classic pages and the Wall view each one now opens (#1446). */
+export const RETIRED_PAGES: Record<string, string> = {
+  "/boards": "/wall#status=open&view=projects",
+  "/glossary": "/wall",
+  "/procedures": "/wall#page=agents",
+  "/processes": "/wall#status=open&view=jobs",
+  "/places": "/wall",
+}
 
 export interface Ctx {
   boards: BoardConfig[]
@@ -299,6 +294,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(icon.body)
     return
   }
+  // A profile picture (#1425): before the token gate, as an <img> sends
+  // none; it answers only for the version the gated list names.
+  if (servePicture(req, res, path, url, process.cwd())) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -313,8 +311,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     // as a post with its thread, and what runs on each node now. Live
     // stays at /live, and every other address is unchanged. Boards used to
     // take the root whenever any were configured, which meant the landing
-    // page silently changed identity based on config; now they live at
-    // /boards like every other surface.
+    // page silently changed identity based on config. The Boards page
+    // itself is retired (#1446): /boards opens the Wall's Projects view.
     //
     // The one exception is a machine with no agents yet, where there is
     // nothing live to show and the wizard is the only useful destination.
@@ -329,9 +327,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderWallPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
-  if (method === "GET" && path === "/boards") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderBoardsPage({ peers: buildTopbarPeers(ctx.config) }))
+  // Classic pages retired with no views in 30 days (#1446): each address
+  // still works and opens the closest Wall view. The phone app keeps place
+  // reminders; only the dashboard's Places page went.
+  const retired = method === "GET" ? RETIRED_PAGES[path] : undefined
+  if (retired) {
+    res.writeHead(302, { Location: retired })
+    res.end()
     return
   }
   if (method === "GET" && path === "/wall") {
@@ -488,13 +490,6 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
-  // Places for the phone's place reminders (#676): the same store and
-  // routes the phone app uses (app-places.ts), from the dashboard.
-  if (method === "GET" && path === "/places") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderPlacesPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
   // Guest meshes (#380): the host's panel, with its data proxied to the
   // daemon's /mesh/guests (loopback-trusted there, like the other panels).
   if (method === "GET" && path === "/guests") {
@@ -517,51 +512,29 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     }
     return
   }
-  if (method === "GET" && path === "/glossary") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderGlossaryPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
   if (method === "GET" && path === "/workflows") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
-  if (method === "GET" && path === "/procedures") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderProceduresPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
-  if (method === "GET" && path === "/processes") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderProcessesPage({}))
-    return
-  }
-  // /tasks/:id — watching an agent work is a place, not a popup. Replaces the
-  // full-screen modal on Live and the right-hand drawer on the agent page,
-  // both of which streamed this same task into something you couldn't link
-  // to, reload, or keep open beside anything else.
+  // /tasks/:id — watching an agent work is a place, not a popup. The Wall's
+  // Task page (#1381) does everything this page did, so the address now
+  // redirects there (#1447, classic-routes.ts); links in chat messages,
+  // voice replies and the classic pages keep working.
   const taskPage = method === "GET" && path.match(/^\/tasks\/([^/]+)$/)
   if (taskPage) {
-    const agentId = url.searchParams.get("agent") || ""
-    const nodeUrl = url.searchParams.get("node") || ctx.config.dashboard.daemonUrl
-    if (!agentId) {
+    const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)
+    if (!to) {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
-      res.end("<p>Missing <code>?agent=</code>. Open this task from the Live page.</p>")
+      res.end("<p>Missing <code>?agent=</code>. Open this task from the Wall's Live page.</p>")
       return
     }
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderTaskPage({
-      taskId: decodeURIComponent(taskPage[1]),
-      agentId,
-      agentName: url.searchParams.get("name") || undefined,
-      channel: url.searchParams.get("channel") || undefined,
-      archived: url.searchParams.get("archived") === "1",
-      ask: url.searchParams.get("ask") || undefined,
-      askAt: url.searchParams.get("at") || undefined,
-      nodeUrl,
-      peers: buildTopbarPeers(ctx.config),
-    }))
+    // Off-box with no session, sign in first with the whole Wall link as
+    // next: the hash never reaches the server, so a sign-in reached from
+    // "/" would come back to the bare Wall.
+    if (!pageAllowed(req, res, ctx, to)) return
+    res.writeHead(302, { Location: to })
+    res.end()
     return
   }
   // /agents/:id/history — was a 360px drawer sliding over Live. The list is
@@ -949,6 +922,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderOrgPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
+  // Profile pictures (#1425): set, replace and remove, after the token gate.
+  if (await handlePicturesPanel(req, res, path, {
+    root: process.cwd(),
+    agentIds: () => Object.keys(currentAgents(ctx.config)),
+    personIds: () => [IMPLICIT_OWNER, ...currentPeople(ctx.config.people).map((p) => p.id)],
+  })) return
   if (method === "GET" && path === "/people" && !pageAllowed(req, res, ctx, path)) return
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
@@ -963,7 +942,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (path.startsWith("/api/admin/")) {
-    await handleAdminApi(req, res, path)
+    await handleAdminApi(req, res, path, { owner: isDashboardOwner(req, ctx) })
     return
   }
   if (method === "GET" && path === "/sortable.min.js") {
@@ -1507,8 +1486,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
-  // /api/actions/builtin — proxy GET to the daemon. The /procedures page
-  // reads the live built-in catalog from this endpoint; daemon owns the
+  // /api/actions/builtin — proxy GET to the daemon. Callers read the
+  // live built-in catalog from this endpoint; daemon owns the
   // typed registry, dashboard runs in a separate process.
   if (method === "GET" && path === "/api/actions/builtin") {
     try {
@@ -3269,6 +3248,13 @@ function streamTicketOk(req: IncomingMessage, ctx: Ctx, method: string, path: st
   return method === "GET" && STREAM_PATHS.has(path) && hasStreamTicket(req, ctx.token)
 }
 
+/** The owner at the dashboard (#1420). With dashboard.token set: the token,
+ *  a signed-in session, or a dashboard:write key. Without one: a caller on
+ *  this computer, never one from off the box. */
+function isDashboardOwner(req: IncomingMessage, ctx: Ctx): boolean {
+  return ctx.token ? adminTokenOk(req, ctx) : !isOffBox(req)
+}
+
 /** A page that carries AX_LOCAL_TOKEN (#1306). Off-box, a caller that has not
  *  signed in goes to /login; one that has gets the page without the token
  *  (pageToken), and its session cookie carries the page's API calls. */
@@ -3278,6 +3264,12 @@ function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: 
     return false
   }
   return true
+}
+
+/** The agents agentx.json lists now, so a new agent needs no restart;
+ *  the ones the dashboard started with when the file can't be read. */
+function currentAgents(config: DaemonConfig): DaemonConfig["agents"] {
+  try { return loadDaemonConfig().agents ?? {} } catch { return config.agents ?? {} }
 }
 
 function localNodeName(config: DaemonConfig): string {

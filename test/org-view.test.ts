@@ -87,6 +87,23 @@ describe("the org tree", () => {
     expect(bad.problem).toMatch(/"owner", which is not a person/)
   })
 
+  it("gives a person added with no line a card with their role (#1432)", () => {
+    const placed = {
+      ...config,
+      people: [{ id: "sam", name: "Sam" }, { id: "kim", name: "Kim" }, { id: "lee", name: "Lee" }],
+      business: { ...config.business, orgPeople: { sam: { role: "eng" }, kim: {} } },
+    }
+    const view = buildOrgView(placed, {}, null)
+    expect(view.people).toEqual([
+      { id: "sam", name: "Sam", placed: true, title: "Engineer" },
+      { id: "kim", name: "Kim", placed: true },
+      { id: "lee", name: "Lee" },
+    ])
+    const persons = view.diagram.boxes.filter((b) => b.kind === "person").map((b) => [b.id, b.title])
+    expect(persons).toEqual(expect.arrayContaining([["sam", "Engineer"], ["kim", undefined]]))
+    expect(persons.map(([id]) => id)).not.toContain("lee")
+  })
+
   it("nests an agent: ref and a reports-to from business.relations in the tree (#1418)", () => {
     const typed = {
       ...config,

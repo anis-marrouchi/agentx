@@ -393,7 +393,7 @@ describe("Wall home first load (#1442)", () => {
     answer({ ok: true, status: 200, json: async () => WALL })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
-    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/approvals", "/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/workflows/runs?summary=1&limit=100"])
+    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/approvals", "/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/admin/pictures", "/api/workflows/runs?summary=1&limit=100"])
   })
 
   it("shows a machine that is slow to answer as checking, not down, and asks again", async () => {
@@ -1758,7 +1758,7 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(html).toContain('data-org-dotted aria-pressed="false"')
     // A legend, and the edit link for the owner.
     expect(html).toContain("Reports to</li>")
-    expect(html).toContain('<a class="ax-btn ax-btn--ghost wog__edit" href="/org">Edit org</a>')
+    expect(html).toContain('<a class="ax-btn ax-btn--ghost wog__edit" href="/org">Open the org chart</a>')
     // No raw member keys in what a reader sees.
     expect(html.replace(/<[^>]*>/g, " ")).not.toMatch(/(agent|person):/)
   })
@@ -1829,11 +1829,31 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(w.el("wall-feed").innerHTML).toContain("Post r1")
   })
 
-  it("explains an empty chart and links to the setup", async () => {
+  it("explains an empty chart and links to /org", async () => {
     const w = openWall({ org: { exists: true, ...buildOrgView({ agents: { cx: { name: "Customer Desk" } } }, {}, null) }, hash: "#page=org" })
     await w.settle()
     expect(w.el("wall-org").innerHTML).toContain("<h2>No org chart yet</h2>")
-    expect(w.el("wall-org").innerHTML).toContain('href="/org">Edit org</a>')
+    expect(w.el("wall-org").innerHTML).toContain('href="/org">Open the org chart</a>')
+  })
+
+  // #1420, decision B: the org chart is edited on /org only; the Wall reads.
+  it("has no org edit controls, even for the owner, and links to /org from the Agents and Org pages", async () => {
+    const owner = { ...ORG, canEdit: true, setup: { members: [], relations: [] }, choices: { agents: [], people: [], roles: [], types: ["reports-to"] } }
+    const pages: string[] = []
+    for (const hash of ["#page=agents", "#page=org", "#page=orgsetup"]) {
+      const w = openWall({ org: owner, hash })
+      await w.settle()
+      w.click({ "data-agent": "cx" })
+      await w.settle()
+      pages.push(w.el("wall-agents-page").innerHTML + w.el("wall-org").innerHTML + w.el("wall-profile").innerHTML)
+      expect(w.calls.filter((c) => c.url.startsWith("/api/admin/org")).every((c) => (c.init?.method ?? "GET") === "GET")).toBe(true)
+      expect(w.calls.some((c) => c.url === "/api/admin/org/chart")).toBe(false)
+    }
+    const all = pages.join("")
+    expect(all).not.toMatch(/orgsetup|Set up the org|Edit org|data-os=|<select|<input/)
+    expect(pages[0]).toContain('<a href="/org">Open the org chart</a>')
+    expect(pages[1]).toContain('href="/org">Open the org chart</a>')
+    expect(renderWallPage()).not.toContain("wall-orgsetup")
   })
 })
 
