@@ -586,9 +586,9 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     if (server) await new Promise<void>((r) => server!.close(() => r()))
     server = undefined
   })
-  async function start(): Promise<string> {
-    const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, dashboard: { daemonUrl: "http://daemon.invalid:18800", token: TOKEN } })
-    const ctx = { boards: [], sources: new Map(), token: TOKEN, config } as unknown as Ctx
+  async function start(token: string | null = TOKEN): Promise<string> {
+    const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, dashboard: { daemonUrl: "http://daemon.invalid:18800", ...(token ? { token } : {}) } })
+    const ctx = { boards: [], sources: new Map(), token: token || undefined, config } as unknown as Ctx
     server = createServer((req, res) => { void handleBoardRequest(req, res, ctx) })
     await new Promise<void>((r) => server!.listen(0, "127.0.0.1", () => r()))
     return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -606,6 +606,15 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     expect((await fetch(`${base}/api/admin/state`, { headers: OFF })).status).toBe(401)
     expect((await fetch(`${base}/api/admin/agents`, { method: "PATCH", headers: OFF, body: "{}" })).status).toBe(401)
     expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PATCH", headers: OFF, body: "{}" })).status).toBe(401)
+  })
+
+  it("with no dashboard token, draws Settings on this machine only, as the writes allow", async () => {
+    const base = await start(null)
+    expect(await (await fetch(base + "/wall")).text()).toContain('data-nav="settings" href="#page=settings"')
+    const off = await (await fetch(base + "/wall", { headers: OFF })).text()
+    expect(off).not.toContain('data-nav="settings"')
+    expect(off).not.toContain("window.AX_WALL_SETTINGS =")
+    expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PATCH", headers: { ...OFF, "X-Requested-With": "agentx-board" }, body: "{}" })).status).toBe(401)
   })
 
   it("serves Settings' writes under /api/admin/wall/settings with the classic handlers, and nothing else there", async () => {

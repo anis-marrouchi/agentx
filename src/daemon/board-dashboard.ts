@@ -3266,13 +3266,13 @@ function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: 
   return true
 }
 
-/** Is this Wall viewer the owner, who gets Settings (#1428)? The same test
- *  the /api/admin/* gate applies, plus a caller on this machine, whose page
- *  carries the token. pageAllowed sends anyone else to /login first, so
- *  today every Wall viewer passes; the check keeps Settings off for any
- *  viewer who would not, and the APIs refuse them either way. */
+/** Is this Wall viewer the owner, who gets Settings (#1428)? With a token:
+ *  the /api/admin/* gate's test, plus a caller on this machine, whose page
+ *  carries the token. Without one: only a caller on this machine, as
+ *  wallOwnerOk, so a board bound off loopback with no token draws no
+ *  Settings whose every save would fail. */
 function wallOwner(req: IncomingMessage, ctx: Ctx): boolean {
-  return !ctx.token || !!pageToken(req, ctx.token) || adminTokenOk(req, ctx)
+  return ctx.token ? (!!pageToken(req, ctx.token) || adminTokenOk(req, ctx)) : !isOffBox(req)
 }
 
 function wallPageOpts(req: IncomingMessage, ctx: Ctx) {
