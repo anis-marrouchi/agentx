@@ -332,6 +332,19 @@ db.close()
   writeFileSync(resolve(dir, "classifications.jsonl"), rows.map((r) => JSON.stringify(r)).join("\n") + "\n")
 }
 
+// Two fictional handovers, for Settings › Agents › cx › Handovers (#1428):
+// one chat passed from cx to builder, one passed to cx from scout.
+{
+  const dir = resolve(root, ".agentx")
+  mkdirSync(dir, { recursive: true })
+  const at = new Date().toISOString()
+  const ho = (channel, chatId, fromAgent, toAgent, extra = {}) => [`${channel}::${chatId}::-`, { channel, chatId, fromAgent, toAgent, createdAt: at, createdBy: "admin-ui", ...extra }]
+  writeFileSync(resolve(dir, "handover.json"), JSON.stringify({ version: 1, overrides: Object.fromEntries([
+    ho("telegram", "demo-office", "cx", "builder", { summary: "They asked for a quote on the new shelves." }),
+    ho("whatsapp", "+10000000000", "scout", "cx", { expiresAt: "2030-01-01T00:00:00Z" }),
+  ]) }, null, 2) + "\n")
+}
+
 // One real scheduled run, for the schedule drawer's Runs today: switch the
 // morning report to every minute, wait for its first run, then put it back.
 const runsToday = async () => (await (await fetch(api + "/crons/runs")).json()).runs || []
@@ -354,4 +367,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts (one with a decision card), a webhook, a board, an action, two places, and two real scripted task runs.")
+console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts (one with a decision card), a webhook, a board, an action, two places, two handovers, and two real scripted task runs.")

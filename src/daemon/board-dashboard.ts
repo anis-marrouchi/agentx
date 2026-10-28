@@ -897,6 +897,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Settings on the Wall (#1428): the classic /admin write of the same name,
   // past the owner guard above (wall-actions.ts lists them).
   const settingsTarget = wallSettingsTarget(method, path)
+  if (settingsTarget?.startsWith("/api/admin/agent/")) {
+    await handleAgentApi(req, res, settingsTarget)
+    return
+  }
   if (settingsTarget) {
     await handleAdminApi(req, res, settingsTarget, { owner: isDashboardOwner(req, ctx) })
     return
