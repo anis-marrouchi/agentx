@@ -239,12 +239,17 @@ export const WALL_DECIDE_SCRIPT = String.raw`
       return '<button type="button" data-dkind="' + t[0] + '" class="wdc__chip' + (on ? ' is-on' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + t[1] + ' <span class="n">' + t[2] + '</span></button>';
     }).join('') + '</div>';
   }
+  /** One answered line's word, the same on the Answered tab and in Answered today. */
+  function decVerb(a) {
+    if (a.answer === 'closed') return 'Closed';
+    if (a.kind === 'memory') return a.answer === 'yes' ? 'Kept' : 'Dropped';
+    return a.answer === 'yes' ? 'Yes' : 'No';
+  }
   function decAnsweredHtml(list, since) {
     var start = since ? 'History starts ' + stamp(Date.parse(since)).slice(0, 10) + '. ' : '';
-    if (!list.length) return '<div class="wdc__empty"><h2>Nothing answered yet</h2><p>' + esc(start) + 'Your answers show here, from this page, the Desk, the phone app and the Mac card.</p></div>';
+    if (!list.length) return '<div class="wdc__empty"><h2>Nothing answered yet</h2><p>' + esc(start) + 'Your yes and no answers show here, from this page, the Desk, the phone app and the Mac card. Reviews and request replies are not listed.</p></div>';
     return '<ol class="wdc__done">' + list.map(function (a) {
-      var verb = a.answer === 'closed' ? 'Closed' : a.kind === 'memory' ? (a.answer === 'yes' ? 'Kept' : 'Dropped') : a.answer === 'yes' ? 'Yes' : 'No';
-      return '<li><b>' + verb + '</b>' + (a.choice ? ' (' + esc(a.choice) + ')' : '') + ' · ' + esc(nameOf(a.raised_by)) + ' · <span dir="auto">' + esc(a.title) + '</span>' +
+      return '<li><b>' + decVerb(a) + '</b>' + (a.choice ? ' (' + esc(a.choice) + ')' : '') + ' · ' + esc(nameOf(a.raised_by)) + ' · <span dir="auto">' + esc(a.title) + '</span>' +
         (a.text ? ' · <span dir="auto" class="k">' + esc(a.text) + '</span>' : '') + ' · <time title="' + esc(stamp(Date.parse(a.at))) + '">' + esc(stamp(Date.parse(a.at))) + '</time>' +
         '<span class="k"> by ' + esc(a.by) + '</span></li>';
     }).join('') + '</ol>';
@@ -290,9 +295,8 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     var today = new Date().toDateString();
     var done = (v.answered || []).filter(function (a) { return new Date(Date.parse(a.at)).toDateString() === today; });
     var answered = '<section class="ax-wall__box"><h2>Answered today</h2>' + (done.length ? done.slice(0, 5).map(function (a) {
-      var verb = a.kind === 'memory' ? (a.answer === 'yes' ? 'Kept' : 'Dropped') : a.answer === 'yes' ? 'Yes' : 'No';
       var t = new Date(Date.parse(a.at));
-      return '<p><b>' + verb + '</b> · ' + esc(nameOf(a.raised_by)) + ' · ' + esc(a.title) + ' · ' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + '</p>';
+      return '<p><b>' + decVerb(a) + '</b> · ' + esc(nameOf(a.raised_by)) + ' · ' + esc(a.title) + ' · ' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + '</p>';
     }).join('') : '<p class="k">Nothing yet today.</p>') + '<p><button type="button" class="wa-more" data-dtab="answered">All answered →</button></p></section>';
     var s = v.settings || {}, d = s.desk || {}, dg = s.digest || {};
     var reach = '<section class="ax-wall__box"><h2>Reaching ' + (decOwner() ? 'you' : 'the owner') + '</h2><p>Phone: ' + esc(DEC_REACH[d.phone] || 'off') + '. Computer: ' + esc(DEC_REACH[d.computer] || 'off') + '. ' +

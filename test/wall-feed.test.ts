@@ -1809,12 +1809,35 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     empty.click({ "data-dtab": "answered" })
     await empty.settle()
     expect(empty.el("wall-decide").innerHTML).toMatch(/<h2>Nothing answered yet<\/h2><p>History starts 2026-10-2[89]\. /)
+    // Reviews and request replies skip decide(), so the page does not promise them.
+    expect(empty.el("wall-decide").innerHTML).toContain("Your yes and no answers show here, from this page, the Desk, the phone app and the Mac card. Reviews and request replies are not listed.")
     const closed = { key: "card:c9", kind: "card", title: "Book the room?", raised_by: "cx", answer: "closed", text: "Owner said yes in chat", by: "cx", at: new Date(NOW - 60e3).toISOString() }
     const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, answered: [closed], answered_since: since } })
     await w.settle()
     w.click({ "data-dtab": "answered" })
     await w.settle()
     expect(w.el("wall-decide").innerHTML).toContain('<b>Closed</b> · Customer Desk · <span dir="auto">Book the room?</span> · <span dir="auto" class="k">Owner said yes in chat</span>')
+    // Answered today uses the same word, not "No".
+    expect(w.el("wall-dec-side").innerHTML).toContain("<b>Closed</b> · Customer Desk · Book the room?")
+  })
+
+  it("words each answer the same on the Answered tab and in Answered today", async () => {
+    const at = new Date(NOW - 60e3).toISOString()
+    const line = (key: string, kind: string, title: string, answer: string) => ({ key, kind, title, raised_by: "cx", answer, by: "operator", at })
+    const answered = [
+      line("card:a", "card", "Send it?", "yes"), line("card:b", "card", "Pay it?", "no"),
+      line("memory:cx/f1", "memory", "Keep this fact", "yes"), line("memory:cx/f2", "memory", "Drop this fact", "no"),
+      line("card:c", "card", "Book it?", "closed"),
+    ]
+    const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, answered } })
+    await w.settle()
+    w.click({ "data-dtab": "answered" })
+    await w.settle()
+    const tab = w.el("wall-decide").innerHTML, side = w.el("wall-dec-side").innerHTML
+    for (const [verb, title] of [["Yes", "Send it?"], ["No", "Pay it?"], ["Kept", "Keep this fact"], ["Dropped", "Drop this fact"], ["Closed", "Book it?"]]) {
+      expect(tab).toContain(`<b>${verb}</b> · Customer Desk · <span dir="auto">${title}</span>`)
+      expect(side).toContain(`<b>${verb}</b> · Customer Desk · ${title}`)
+    }
   })
 
   it("shows anyone else the same cards read only, as Needs the owner", async () => {

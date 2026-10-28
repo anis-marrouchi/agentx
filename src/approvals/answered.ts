@@ -8,8 +8,10 @@ import { logger } from "@/utils/logger"
 // memory fact, the wiki proposal, the draft). This is only the list the
 // Wall's Answered tab reads: one line per yes or no that went through
 // decide() (inbox.ts), whichever surface sent it, and one per card its
-// agent closed after the owner answered elsewhere (resolveCard, cards.ts).
-// "Later" is not an answer. It starts empty: `_answered.since` keeps the
+// agent closed (resolveCard, cards.ts). A close is the agent's word: the
+// owner may have answered elsewhere, or the agent may have withdrawn the
+// card. Reviews and request replies do not pass through decide() and are
+// not listed. "Later" is not an answer. It starts empty: `_answered.since` keeps the
 // day it started, so the page can say so.
 
 export interface AnsweredItem {
