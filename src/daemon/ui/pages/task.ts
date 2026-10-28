@@ -1,14 +1,8 @@
-import { renderShell, esc, type TopbarPeer } from ".."
-
 // --- Task page — watch one agent work ---
 //
-// Replaces the full-screen `#task-modal` on Live, which streamed this SSE
-// endpoint into a box you couldn't link to, couldn't reload, and couldn't
-// keep open next to anything else.
-//
-// (An earlier note here claimed it also replaced the agent page's `#td-panel`.
-// It doesn't — that drawer is the Test-drive sandbox, a different feature that
-// still needs its own page.)
+// The stream, steer box and Stop of the Wall's Task page (wall-task.client.ts,
+// #1381). The classic /tasks/<id> page that first carried them is gone: the
+// address redirects to the Wall (classic-routes.ts, #1447).
 //
 // A running task is a place, not a popup. Giving it a URL means it can be
 // shared, bookmarked, reopened after a refresh, and left open on a second
@@ -26,84 +20,6 @@ import { renderShell, esc, type TopbarPeer } from ".."
 //
 // Reads: GET /api/task/stream?node=&agent=&task=   (SSE: start / chunk / end)
 // Writes: POST /api/task/action?node=&task=&kind=cancel|followup
-
-export interface TaskPageOpts {
-  taskId: string
-  agentId: string
-  agentName?: string
-  nodeUrl: string
-  channel?: string
-  /** Finished task opened from history: read the stored record once instead
-   *  of holding an SSE connection open for a stream that will never arrive. */
-  archived?: boolean
-  /** The request, when the caller already knows it. A live task's stream never
-   *  replays what was asked, so Live passes it through the URL. */
-  ask?: string
-  askAt?: string
-  peers?: TopbarPeer[]
-  currentPeerId?: string
-}
-
-export function renderTaskPage(opts: TaskPageOpts): string {
-  const who = opts.agentName || opts.agentId
-
-  const body = `<div class="ax-task-page"
-     data-task-id="${esc(opts.taskId)}"
-     data-agent-id="${esc(opts.agentId)}"
-     data-node-url="${esc(opts.nodeUrl)}"
-     data-archived="${opts.archived ? "1" : ""}"
-     data-ask="${esc(opts.ask || "")}"
-     data-ask-at="${esc(opts.askAt || "")}">
-
-  <header class="ax-task-page__head">
-    <nav class="ax-crumbs" aria-label="Breadcrumb">
-      <a href="/wall#page=live">Live</a>
-      <span class="ax-crumbs__sep">/</span>
-      <a href="/agents/${esc(opts.agentId)}/history?node=${encodeURIComponent(opts.nodeUrl)}&name=${encodeURIComponent(who)}"><span class="ax-mention">@${esc(opts.agentId)}</span></a>
-      <span class="ax-crumbs__sep">/</span>
-      <span class="ax-crumbs__here">Task</span>
-    </nav>
-    <div class="ax-task-page__meta">
-      ${opts.channel ? `<span class="ax-badge ax-badge--mono ax-badge--ghost">${esc(opts.channel)}</span>` : ""}
-      <span class="ax-badge ax-badge--mono" id="task-status">connecting…</span>
-      <span class="ax-mono ax-muted" id="task-elapsed"></span>
-      <a class="ax-badge ax-badge--ghost" href="/wall?task=${encodeURIComponent(opts.taskId)}" title="This task's thread on the Wall">Wall thread</a>
-    </div>
-  </header>
-
-  <section class="ax-task-page__ask" id="task-ask" hidden>
-    <div class="ax-task-page__ask-head">
-      <span class="ax-ev__label ax-ev__label--soft">request</span>
-      <span class="ax-task-page__ask-who" id="task-ask-who"></span>
-      <span class="ax-task-page__ask-when" id="task-ask-when"></span>
-    </div>
-    <div class="ax-task-page__ask-body" id="task-ask-body"></div>
-  </section>
-
-  <div class="ax-task-page__output" id="task-output"></div>
-
-  <footer class="ax-task-page__compose"${opts.archived ? " hidden" : ""}>
-    <textarea id="task-input" class="ax-task-page__input" rows="2"
-      placeholder="Send a message to this chat — the current turn keeps running, your message dispatches as the next turn. ⌘/Ctrl+Enter to send."></textarea>
-    <div class="ax-task-page__actions">
-      <span class="ax-task-page__hint" id="task-hint"></span>
-      <button type="button" id="task-stop" class="ax-btn ax-btn--danger">✕ stop</button>
-      <button type="button" id="task-send" class="ax-btn ax-btn--primary">send →</button>
-    </div>
-  </footer>
-</div>`
-
-  return renderShell({
-    title: `AgentX · ${who}`,
-    activeTab: "live",
-    subtitle: "Task",
-    peers: opts.peers,
-    currentPeerId: opts.currentPeerId,
-    body,
-    css: TASK_PAGE_CSS,
-    scripts: `<script>${TASK_PAGE_JS}</script>`,
-  })
-}
 
 export const TASK_PAGE_CSS = `
 /* The shell gives <main> no padding, so page content butted straight against
@@ -250,7 +166,7 @@ export const TASK_PAGE_CSS = `
 `
 
 /** The page's stream, steer box and Stop, as a function of its root
- *  element, so the Wall's Task page (#1381) mounts the same code. It
+ *  element, which the Wall's Task page (#1381) mounts. It
  *  returns a function that closes the stream and the clock. opts.href
  *  (id, channel) names where a continued scheduled run's new turn opens. */
 export const TASK_MOUNT_FN = `
@@ -643,12 +559,4 @@ function mountTaskPage(root, opts) {
   });
   return close;
 }
-`
-
-const TASK_PAGE_JS = `
-${TASK_MOUNT_FN}
-(function () {
-  var root = document.querySelector('.ax-task-page');
-  if (root) mountTaskPage(root);
-})();
 `
