@@ -275,13 +275,11 @@ Each agent card shows the agent's name, @handle, its role in the org chart when 
 2. On **Overview**, change what you need: display name, wake words (the words that call it, such as `@support`), AI engine, model, conversations at once, longest task, tool permissions, whether it answers on the public API, whether the wiki absorb includes it, and its instructions.
 3. A field you changed turns blue and says what it was. A bar at the bottom says how many changes are not saved and whether they need a restart. **Discard** puts every field back.
 
-   ![One agent on Settings: its picture and switch, the tabs, two changed fields in blue and the bar saying 2 changes not saved, in the isolated demo](/screenshots/wall/settings-agent.png)
+   ![One agent on Settings: its picture and switch on top, the tabs, then the Overview form, in the isolated demo](/screenshots/wall/settings-agent.png)
 
 4. Select **Save…**. A box lists each change with its old and new value. When you change the model or the engine, it also says which of the agent's recurring jobs change with it (a job that names its own model keeps it) and what the agent has spent this month against its cap. Select **Save changes**, or **Back** to keep editing.
 
 5. The bar says **Saved**, or why it was not saved. When a save fails, the form keeps what you typed.
-
-   ![The bar after Save changes, saying Saved](/screenshots/wall/settings-saved.png)
 
    *Scripted demo data; your team's names and machines will differ.*
 
