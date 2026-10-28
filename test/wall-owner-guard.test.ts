@@ -118,6 +118,13 @@ describe("Wall owner-only write guard (#1454)", () => {
     expect(await post(withToken, "/api/admin/wall/budget", { Authorization: "Bearer tok-wall" })).toBe(400)
   })
 
+  it("starting a workflow run is the owner's too (#1445)", async () => {
+    for (const headers of [{}, { Authorization: "Bearer wrong" }]) expect(await post(withToken, "/workflows/demo/run", headers)).toBe(401)
+    expect(await post(noToken, "/workflows/demo/run", { "X-Forwarded-For": "203.0.113.7" })).toBe(401)
+    // Past the guard, the dashboard asks the daemon, which is not running here.
+    expect(await post(withToken, "/workflows/demo/run", { Authorization: "Bearer tok-wall" })).toBe(502)
+  })
+
   it("with no dashboard token, writes only from this machine", async () => {
     expect(await post(noToken, "/api/admin/wall/comment")).toBe(400)
     const open: string[] = []

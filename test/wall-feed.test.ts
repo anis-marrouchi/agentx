@@ -38,7 +38,7 @@ const APPROVALS = {
   snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
 }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown; wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -101,6 +101,11 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     if (url.startsWith("/api/admin/observability/cost?") && opts.cost === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
     if (url === "/api/admin/wall/decide" && opts.decide) return Promise.resolve({ ok: opts.decide.status < 400, status: opts.decide.status, json: async () => opts.decide!.body })
     if (url === "/api/admin/people" && opts.people === "fail") return Promise.resolve({ ok: false, status: 401, json: async () => ({}) })
+    if (opts.wfWrite && (init?.method === "PUT" || init?.method === "POST") && (url.startsWith("/api/workflows/") || /^\/workflows\/[^/]+\/run$/.test(url))) {
+      const r = opts.wfWrite(init.method, url, JSON.parse(init.body))
+      return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    }
+    if (url === "/api/workflows" && opts.workflows === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
     if (url.endsWith("/end")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) })
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live?quick=1" ? (opts.live ?? LIVE)
       : url === "/api/admin/org" ? (opts.org ?? { exists: false })
@@ -114,6 +119,12 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
       : url === "/api/admin/observability/budgets" && opts.budgets ? opts.budgets
       : url === "/api/admin/people" ? (opts.people ?? { people: [], paired: 0 })
       : url.startsWith("/api/admin/people/") && opts.person ? opts.person[decodeURIComponent(url.slice(18))]
+      : url === "/api/workflows" ? (opts.workflows ?? { workflows: [] })
+      : url.startsWith("/api/workflows/runs?") && opts.wfRuns ? opts.wfRuns
+      : url.startsWith("/api/workflows/runs/") && opts.wfRun ? { run: opts.wfRun[decodeURIComponent(url.slice(20))] }
+      : url === "/api/workflows/follow-ups" ? { groups: [{ tag: "client:demo", rows: [{ runId: "w9" }, { runId: "w8" }] }], unreachable: [] }
+      : url === "/api/workflows/required" ? { settings: { enabled: false }, agents: [] }
+      : url.startsWith("/api/workflows/") && (opts.workflows as any)?.workflows ? { workflow: (opts.workflows as any).workflows.find((w: any) => url.endsWith("/" + w.id)) }
       : url.startsWith("/api/admin/wall/throughput?") ? (opts.throughput ?? {})
       : opts.thread && url.startsWith("/api/admin/wall/thread?") ? opts.thread : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
@@ -134,6 +145,10 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   }
   /** A change on an element the script drew, such as the List's Group by. */
   const change = (id: string, value: string) => { for (const f of onDoc.change ?? []) f({ target: { id, value } }) }
+  /** An input or change on a field the script drew, carrying these attributes. */
+  const field = (type: string, target: Record<string, unknown>, attrs: Record<string, string> = {}) => {
+    for (const f of onDoc[type] ?? []) f({ target: { ...target, getAttribute: (k: string) => attrs[k] ?? null } })
+  }
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   /** The browser's hashchange, as after `location.hash = …`. */
   const hashchange = () => onWindow.hashchange?.()
@@ -141,7 +156,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const fire = (type: string, ev: unknown) => { for (const f of onDoc[type] ?? []) f(ev) }
   /** A form's submit, as the Enter key or its button sends it. */
   const submit = (attrs: Record<string, string>) => { for (const f of onDoc.submit ?? []) f({ preventDefault: () => {}, target: { hasAttribute: (k: string) => k in attrs } }) }
-  return { el, wall, calls, click, change, submit, settle, loc, hashchange, fire }
+  return { el, wall, calls, click, change, field, submit, settle, loc, hashchange, fire }
 }
 
 describe("Wall as a social feed (#1207)", () => {
@@ -397,7 +412,7 @@ describe("Wall home first load (#1442)", () => {
     answer({ ok: true, status: 200, json: async () => WALL })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
-    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/approvals?all=1&answered=1", "/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/admin/pictures", "/api/workflows/runs?summary=1&limit=100"])
+    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/approvals?all=1&answered=1", "/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/admin/pictures", "/api/workflows", "/api/workflows/runs?summary=1&limit=100"])
   })
 
   it("shows a machine that is slow to answer as checking, not down, and asks again", async () => {
@@ -2014,6 +2029,197 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(pages[0]).toContain('<a href="/org">Open the org chart</a>')
     expect(pages[1]).toContain('href="/org">Open the org chart</a>')
     expect(renderWallPage()).not.toContain("wall-orgsetup")
+  })
+})
+
+describe("The Workflows page on the Wall (#1445)", () => {
+  const iso = (ago: number) => new Date(NOW - ago).toISOString()
+  const step = (nodeId: string, status: string, extra: Record<string, unknown> = {}) => ({ at: iso(60e3), nodeId, status, inputKeys: [], idempotencyKey: nodeId, ...extra })
+  const SUPPORT = { id: "support-reply", title: "New support ticket to reply draft", state: "active", project: "Support",
+    nodes: [
+      { id: "trigger", type: "trigger.channel", config: { source: "email" } },
+      { id: "read_ticket", type: "agent", config: { agentId: "cx" } },
+      { id: "write_reply", type: "agent", config: { agentId: "reviewer" } },
+      { id: "send_to_needs_you", type: "owner.ask", config: {} },
+    ], edges: [] }
+  const HELP = { id: "help-page", title: "Publish a help page", state: "active", project: "Help centre", approval: "step",
+    nodes: [
+      { id: "trigger", type: "trigger.manual", config: { inputSchema: { properties: { title: { type: "string", title: "Page title" }, source: { type: "string", title: "Draft from", enum: ["Shipping notes", "Returns notes"] } }, required: ["title"] } } },
+      { id: "draft", type: "agent", config: { agentId: "cx" } },
+    ], edges: [] }
+  const WEEKLY = { id: "weekly", title: "Weekly report", state: "active",
+    nodes: [{ id: "trigger", type: "trigger.cron", config: { spec: "0 16 * * 5" } }, { id: "a", type: "agent", config: { agentId: "cx" } }, { id: "b", type: "agent", config: { agentId: "reviewer" } }], edges: [] }
+  const OLD = { id: "old-onboarding", title: "Old onboarding checklist", state: "disabled",
+    nodes: [{ id: "trigger", type: "trigger.manual", config: {} }], edges: [] }
+  const WORKFLOWS = { workflows: [OLD, WEEKLY, HELP, SUPPORT] }
+  const run = (id: string, workflowId: string, status: string, ago: number, history: unknown[] = []) =>
+    ({ id, workflowId, status, homeNode: "node-a", entityRef: { backend: "channel", id }, history, pending: status === "running" ? ["b"] : [], createdAt: iso(ago + 100e3), updatedAt: iso(ago) })
+  const FAILED_STEPS = [step("trigger", "ok"), step("read_ticket", "ok", { durationMs: 8000 }), step("write_reply", "failed", { note: "Reviewer was paused" })]
+  const RUNS = { runs: [
+    run("s1", "support-reply", "failed", 60e3, FAILED_STEPS),
+    ...[2, 3, 4, 5, 6, 7].map((i) => run("s" + i, "support-reply", "completed", i * 3600e3)),
+    run("w1", "weekly", "running", 30e3, [step("trigger", "ok"), step("a", "ok", { durationMs: 90e3 })]),
+    run("h1", "help-page", "completed", 86400e3, [step("trigger", "ok"), step("draft", "ok")]),
+    run("o1", "old-onboarding", "completed", 41 * 86400e3),
+  ] }
+  const S1 = { ...RUNS.runs[0], context: { trigger: { subject: "Where is my order" } } }
+
+  it("opens from the nav: one row per workflow with what starts it, agents, project, last runs and state", async () => {
+    const w = openWall({ hash: "#page=workflows", workflows: WORKFLOWS, wfRuns: RUNS })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("Workflows")
+    expect(w.el("nav-n-workflows").textContent).toBe("4")
+    expect(w.el("wall-workflows").hidden).toBe(false)
+    expect(w.el("wall-feed").hidden).toBe(true)
+    expect(w.el("wall-wf-new").hidden).toBe(false)
+    expect(w.calls.map((c) => c.url)).toContain("/api/workflows/runs?summary=1&limit=500")
+    const html = w.el("wall-workflows").innerHTML
+    expect(html).toContain("4 workflows, 3 on · ")
+    // Failing first, the off one last.
+    expect(html.indexOf("New support ticket")).toBeLessThan(html.indexOf("Weekly report"))
+    expect(html.indexOf("Weekly report")).toBeLessThan(html.indexOf("Old onboarding"))
+    expect(html).toMatch(/New support ticket to reply draft<\/button><span class="chip chip--err">Last run failed<\/span>[\s\S]*role="switch" aria-checked="true"/)
+    expect(html).toMatch(/When a message arrives by email[\s\S]*Customer Desk, Reviewer[\s\S]*Support/)
+    expect(html).toMatch(/stopped at &quot;Write reply&quot;: Reviewer was paused/)
+    expect(html).toMatch(/aria-label="Last 7 runs: completed, completed, completed, completed, completed, completed, failed"/)
+    expect(html).toMatch(/Fridays at 16:00[\s\S]*step 2 of 2/)
+    expect(html).toContain("Started by hand")
+    expect(html).toContain("no run for 41 days · looks stale")
+    expect(html).toContain('data-wf-run="help-page"')
+    expect(html).not.toContain('data-wf-run="old-onboarding"')
+    expect(html).toContain("Only the owner can start, turn on or turn off a workflow.")
+    // The side column: follow-ups and the "every task" setting.
+    const side = w.el("wall-wf-side").innerHTML
+    expect(side).toContain("<b>2</b> runs started for your requests")
+    expect(side).toContain("Off. When on, each new task runs through a workflow.")
+    expect(w.el("wall-aside").classList.contains("is-wf")).toBe(true)
+  })
+
+  it("filters by tab, text and project, kept in the link", async () => {
+    const w = openWall({ hash: "#page=workflows", workflows: WORKFLOWS, wfRuns: RUNS })
+    await w.settle()
+    expect(w.el("wall-workflows").innerHTML).toMatch(/data-wf-tab="running"[^>]*>Running <b class="wac__n is-run">1<\/b>/)
+    w.click({ "data-wf-tab": "failed" })
+    await w.settle()
+    let html = w.el("wall-workflows").innerHTML
+    expect(html).toContain("New support ticket")
+    expect(html).not.toContain("Weekly report")
+    expect(w.loc.hash).toContain("w-tab=failed")
+    w.click({ "data-wf-tab": "off" })
+    await w.settle()
+    expect(w.el("wall-workflows").innerHTML).toContain("Old onboarding")
+    w.click({ "data-wf-tab": "" })
+    w.field("input", { id: "wf-q", value: "weekly" })
+    await w.settle()
+    html = w.el("wall-workflows").innerHTML
+    expect(html).toContain("Weekly report")
+    expect(html).not.toContain("Publish a help page")
+    w.field("input", { id: "wf-q", value: "" })
+    w.change("wf-project", "Help centre")
+    await w.settle()
+    expect(w.loc.hash).toContain("w-project=Help+centre")
+    html = w.el("wall-workflows").innerHTML
+    expect(html).toContain("Publish a help page")
+    expect(html).not.toContain("Weekly report")
+  })
+
+  it("opens a workflow: its last run step by step, where it stopped, Run again, the editor and all runs", async () => {
+    const w = openWall({ hash: "#page=workflows", workflows: WORKFLOWS, wfRuns: RUNS, wfRun: { s1: S1 } })
+    await w.settle()
+    w.click({ "data-wf-open": "support-reply" })
+    await w.settle()
+    expect(w.loc.hash).toContain("w-open=support-reply")
+    expect(w.calls.map((c) => c.url)).toContain("/api/workflows/runs/s1")
+    const html = w.el("wall-workflows").innerHTML
+    expect(html).toMatch(/<b>Run at \d\d:\d\d<\/b> <span class="chip chip--err">Failed<\/span> <small>took 1 min 40 s · started when a message arrives by email · on node-a/)
+    expect(html).toMatch(/class="is-ok">[\s\S]*<b>Read ticket<\/b><small>Customer Desk · 8 s<\/small>/)
+    expect(html).toMatch(/class="is-err">[\s\S]*<b>Write reply<\/b><small>Reviewer · stopped: Reviewer was paused<\/small>/)
+    expect(html).toMatch(/class="is-todo">[\s\S]*<b>Send to needs you<\/b><small>not reached<\/small>/)
+    expect(html).toContain('data-wf-again="support-reply"')
+    expect(html).toContain('href="/workflows/editor?id=support-reply" target="_blank" rel="noopener">Open in the editor ↗</a>')
+    expect(html).toContain('href="/workflows#support-reply">All 7 runs</a>')
+  })
+
+  it("Run… asks for the inputs, says what will happen, then starts the run with the owner's token", async () => {
+    const sent: Array<{ method: string; url: string; body: any }> = []
+    const w = openWall({ hash: "#page=workflows", workflows: WORKFLOWS, wfRuns: RUNS, wfWrite: (method, url, body) => { sent.push({ method, url, body }); return { status: 200, body: { ok: true, runId: "run-123456789" } } } })
+    await w.settle()
+    w.click({ "data-wf-run": "help-page" })
+    const dlg = w.el("wall-wf-dialog")
+    expect(dlg.hidden).toBe(false)
+    expect(dlg.innerHTML).toContain('Run "Publish a help page"?')
+    expect(dlg.innerHTML).toMatch(/<label for="wfr-title">Page title <span aria-hidden="true">\*<\/span><\/label><input id="wfr-title" type="text"/)
+    expect(dlg.innerHTML).toMatch(/<select id="wfr-source" data-wfr-key="source"><option value=""><\/option><option>Shipping notes<\/option>/)
+    expect(dlg.innerHTML).toContain("<summary>Inputs as JSON</summary>")
+    expect(dlg.innerHTML).toContain("Customer Desk does the steps. A message to a person waits for your yes in Needs you.")
+    // A required input left empty is asked for; nothing is sent.
+    w.click({ "data-wf-start": "" })
+    expect(dlg.innerHTML).toContain("Fill in Page title.")
+    expect(sent).toEqual([])
+    // The other input alone is not enough.
+    w.field("change", { id: "wfr-source", value: "Returns notes" }, { "data-wfr-key": "source" })
+    w.click({ "data-wf-start": "" })
+    expect(dlg.innerHTML).toContain("Fill in Page title.")
+    expect(sent).toEqual([])
+    w.field("input", { id: "wfr-title", value: "Returns and refunds" }, { "data-wfr-key": "title" })
+    w.field("change", { id: "wfr-source", value: "Returns notes" }, { "data-wfr-key": "source" })
+    w.click({ "data-wf-start": "" })
+    await w.settle()
+    expect(dlg.hidden).toBe(true)
+    expect(sent).toEqual([{ method: "POST", url: "/workflows/help-page/run", body: { payload: { title: "Returns and refunds", source: "Returns notes" }, force: false } }])
+    const call = w.calls.find((c) => c.url === "/workflows/help-page/run")!
+    expect(call.init.headers["X-Requested-With"]).toBe("agentx-board")
+    expect(w.el("wall-workflows").innerHTML).toContain("Started &quot;Publish a help page&quot;, run run-1234.")
+    expect(w.loc.hash).toContain("w-open=help-page")
+  })
+
+  it("Run again sends the last run's input, standing in for what normally starts it", async () => {
+    const sent: any[] = []
+    const w = openWall({ hash: "#page=workflows&w-open=support-reply", workflows: WORKFLOWS, wfRuns: RUNS, wfRun: { s1: S1 }, wfWrite: (_m, url, body) => { sent.push({ url, body }); return { status: 200, body: { ok: true } } } })
+    await w.settle()
+    w.click({ "data-wf-again": "support-reply" })
+    await w.settle()
+    expect(sent).toEqual([{ url: "/workflows/support-reply/run", body: { payload: { subject: "Where is my order" }, force: true } }])
+  })
+
+  it("the switch turns a workflow off by saving it with its state flipped, and says what that does", async () => {
+    const sent: any[] = []
+    const w = openWall({ hash: "#page=workflows", workflows: WORKFLOWS, wfRuns: RUNS, wfWrite: (method, url, body) => { sent.push({ method, url, body }); return { status: 200, body: { workflow: body } } } })
+    await w.settle()
+    w.click({ "data-wf-toggle": "weekly" })
+    await w.settle()
+    expect(sent).toHaveLength(1)
+    expect(sent[0].method).toBe("PUT")
+    expect(sent[0].url).toBe("/api/workflows/weekly")
+    expect(sent[0].body).toMatchObject({ id: "weekly", state: "disabled", nodes: WEEKLY.nodes })
+    const html = w.el("wall-workflows").innerHTML
+    expect(html).toContain("&quot;Weekly report&quot; is off. It takes no new runs; runs under way go on.")
+    expect(html).toMatch(/Weekly report<\/button><span class="chip chip--ghost wwf__offchip">Off<\/span>[\s\S]*role="switch" aria-checked="false"/)
+  })
+
+  it("says so when a write is refused, and when the list cannot be read; the rest of the Wall goes on", async () => {
+    const w = openWall({ hash: "#page=workflows", workflows: WORKFLOWS, wfRuns: RUNS, wfWrite: () => ({ status: 401, body: { error: "unauthorized" } }) })
+    await w.settle()
+    w.click({ "data-wf-toggle": "weekly" })
+    await w.settle()
+    expect(w.el("wall-workflows").innerHTML).toContain("Could not turn &quot;Weekly report&quot; off: Only the owner can start, turn on or turn off a workflow.")
+    const bad = openWall({ hash: "#page=workflows", workflows: "fail" })
+    await bad.settle()
+    expect(bad.el("wall-workflows").innerHTML).toContain("Could not read the workflows: HTTP 503")
+    bad.click({ "data-view": "feed" })
+    await bad.settle()
+    expect(bad.el("wall-workflows").hidden).toBe(true)
+    expect(bad.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+
+  it("shows how to start when there is no workflow, and Failures links here", async () => {
+    const w = openWall({ hash: "#page=workflows" })
+    await w.settle()
+    expect(w.el("wall-workflows").innerHTML).toContain("No workflows yet")
+    expect(w.el("wall-workflows").innerHTML).toContain('href="/workflows/editor?new=1"')
+    const f = openWall({ hash: "#status=open&view=failures", wfRuns: RUNS })
+    await f.settle()
+    expect(f.el("wall-failures").innerHTML).toContain('href="#page=workflows&amp;w-open=support-reply"')
   })
 })
 

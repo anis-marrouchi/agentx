@@ -32,6 +32,9 @@
 // (#page=running, #page=agents), and each nav item carries its count.
 // Activity (#page=activity, #1429, wall-activity.client.ts) lists the
 // agents' runs, newest first; an agent's profile has it as a tab.
+// Workflows (#page=workflows, #1445, wall-workflows.client.ts) lists the
+// workflows with their last runs; the owner starts, turns on or turns off
+// one there.
 // Results and thread lines render their Markdown through the shared
 // renderer; links in them go to web, mail or same-site addresses only.
 //
@@ -65,6 +68,7 @@ import { WALL_COST_SCRIPT } from "./wall-cost.client"
 import { WALL_ORG_SCRIPT } from "./wall-org.client"
 import { layoutOrg } from "@/business/org-layout"
 import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
+import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -75,7 +79,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'people', 'org', 'creator', 'live', 'task', 'activity'];
+  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'creator', 'live', 'task', 'activity'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
@@ -85,6 +89,7 @@ ${WALL_DECIDE_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
 ${WALL_ORG_SCRIPT}
+${WALL_WORKFLOWS_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
@@ -305,6 +310,7 @@ ${WALL_BUILD_SCRIPT}
     S.task = S.page === 'task' ? readTask(q) : null;
     if (S.page === 'task' && !S.task) S.page = 'wall';
     if (S.page === 'activity') actRead(q);
+    if (S.page === 'workflows') wfRead(q);
     S.post = q.get('post') || '';
     settingsReadHash(q);
     return f;
@@ -322,6 +328,7 @@ ${WALL_BUILD_SCRIPT}
     if (S.page === 'task' && S.task) TASK_KEYS.forEach(function (k) { if (S.task[k]) q.set(k, S.task[k]); });
     if (S.page === 'settings') settingsHashInto(q);
     if (S.page === 'activity') actWrite(q);
+    if (S.page === 'workflows') wfWrite(q);
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
@@ -1028,7 +1035,7 @@ ${WALL_BUILD_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1170,7 +1177,7 @@ ${WALL_BUILD_SCRIPT}
     }), (S.live ? 'No failed cron runs.' : 'Loading…')) +
     block('Workflow runs, last 24 h', wfs.map(function (r) {
       var last = (r.history || []).filter(function (h) { return h.status === 'failed' || h.status === 'timeout'; }).pop();
-      return '<li><b><a href="/workflows#' + encodeURIComponent(r.workflowId) + '">' + esc(r.workflowId) + '</a></b> run ' + esc(r.id) + ', ' + when(Date.parse(r.updatedAt)) +
+      return '<li><b><a href="#page=workflows&amp;w-open=' + encodeURIComponent(r.workflowId) + '">' + esc(r.workflowId) + '</a></b> run ' + esc(r.id) + ', ' + when(Date.parse(r.updatedAt)) +
         (last ? '<div class="err">' + esc(last.nodeId + ': ' + (last.error || last.status)) + '</div>' : '') + '</li>';
     }), (S.wf ? 'No failed workflow runs.' : 'Loading…'));
   }
@@ -1293,6 +1300,8 @@ ${WALL_BUILD_SCRIPT}
     renderPeople(page);
     // The Org page (#1419): wall-org.client.ts. It needs no feed.
     renderOrg(page);
+    // The Workflows page (#1445): wall-workflows.client.ts.
+    renderWorkflows(page);
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list' || page === 'org');
     if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-decide', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     // Needs you does not wait on the feed (#1440): its list is the inbox.
@@ -1375,6 +1384,7 @@ ${WALL_BUILD_SCRIPT}
     refreshDecide();
     refreshCost();
     refreshPeople();
+    refreshWorkflows();
     // A failed read says so on the Org page; the rest of the Wall goes on.
     getJson('/api/admin/org').then(function (d) { S.org = d; render(); }).catch(function (e) { S.org = { error: e.message }; render(); });
     // Pictures (#1425): none set, or the read failing, keeps the initials.
