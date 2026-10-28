@@ -11,6 +11,8 @@ import { decideEmailDraft, listEmailDrafts, readEmailDraft, type SendEmailDraft 
 import { draftSender } from "@/channels/email/smtp"
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
+import { recordAnswered } from "./answered"
+import { logger } from "@/utils/logger"
 import { openDb } from "@/storage/sqlite"
 import { RequestStore, hasRequestTables } from "@/requests/store"
 import { PlanStore, hasPlanTables } from "@/requests/plan-store"
@@ -481,10 +483,33 @@ function stillPending(ctx: InboxContext, kind: ApprovalKind, ref: string): boole
 }
 
 /**
- * Apply the operator's answer through the source's own approve/reject.
+ * Apply the operator's answer through the source's own approve/reject,
+ * and keep a yes or no on the answered list (answered.ts).
  * Operator surfaces only: never expose this to agents.
  */
 export async function decide(ctx: InboxContext, key: string, action: InboxAction, opts: DecideOptions = {}): Promise<DecideResult> {
+  const parsed = action === "later" ? null : parseKey(key)
+  let item: InboxItem | undefined
+  if (parsed) {
+    try { item = SOURCES[parsed.kind](ctx).find((i) => i.key === key) } catch { item = undefined }
+  }
+  const r = await decideItem(ctx, key, action, opts)
+  if (r.ok && parsed && action !== "later") {
+    const choice = typeof opts.choice === "number" ? item?.choices?.[opts.choice - 1] : opts.choice
+    try {
+      recordAnswered(ctx.root, {
+        key, kind: parsed.kind, title: item?.title ?? key, raised_by: item?.raised_by ?? "",
+        answer: action, ...(choice ? { choice } : {}), by: opts.by ?? "operator", at: new Date(ctx.now ?? Date.now()).toISOString(),
+      })
+    } catch (e: any) {
+      // The answer stands: the list is a view of it, not its record.
+      logger.warn(`[approvals] answered list not written for ${key}: ${e?.message ?? e}`)
+    }
+  }
+  return r
+}
+
+async function decideItem(ctx: InboxContext, key: string, action: InboxAction, opts: DecideOptions): Promise<DecideResult> {
   const parsed = parseKey(key)
   if (!parsed) return { ok: false, error: `unknown item "${key}": use a key from \`agentx approvals list\`` }
   const { kind, ref } = parsed
