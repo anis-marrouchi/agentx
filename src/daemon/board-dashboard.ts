@@ -2281,17 +2281,30 @@ async function serveMeshFeed(res: ServerResponse, config: DaemonConfig, q: URLSe
  *  what "the fleet" means, and so the analytics drill-down proxy has the
  *  same allowlist as the task proxies. */
 export async function resolveNodeTargets(daemon: DaemonConfig, signal?: AbortSignal): Promise<NodeTarget[]> {
+  const seen = new Map<string, NodeTarget>(configNodeTargets(daemon).map((t) => [t.url, t]))
+  const [primary] = seen.values()
+  const meshPeers = await fetchMeshPeers(primary.url, primary.token, signal)
+  for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, { ...p, token: dashboardTokenForNode(daemon.dashboard, p.url) })
+  return [...seen.values()]
+}
+
+/** The machines the config names (#1479): the primary first, then
+ *  `dashboard.daemons`, then `mesh.peers` (what `agentx mesh add` writes),
+ *  one entry per address. The Wall reads this list, without asking the
+ *  primary's /mesh, so a refresh costs no extra round trip. */
+export function configNodeTargets(daemon: DaemonConfig): NodeTarget[] {
   const dash = daemon.dashboard
   const primaryUrl = dash.daemonUrl.replace(/\/+$/, "")
-  const primaryToken = dashboardTokenForNode(dash, primaryUrl)
   const seen = new Map<string, NodeTarget>()
-  seen.set(primaryUrl, { name: "primary", url: primaryUrl, token: primaryToken })
+  seen.set(primaryUrl, { name: "primary", url: primaryUrl, token: dashboardTokenForNode(dash, primaryUrl) })
   for (const d of dash.daemons) {
     const key = d.url.replace(/\/+$/, "")
     if (!seen.has(key)) seen.set(key, { name: d.name, url: key, token: dashboardTokenForNode(dash, key) })
   }
-  const meshPeers = await fetchMeshPeers(primaryUrl, primaryToken, signal)
-  for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, { ...p, token: dashboardTokenForNode(dash, p.url) })
+  for (const p of daemon.mesh?.peers ?? []) {
+    const key = p.url.replace(/\/+$/, "")
+    if (!seen.has(key)) seen.set(key, { name: p.name, url: key, token: p.token || dashboardTokenForNode(dash, key) })
+  }
   return [...seen.values()]
 }
 
@@ -3382,6 +3395,38 @@ const WALL_PEER_TIMEOUT_MS = 8_000
 const WALL_PEER_FRESH_MS = 60_000
 const WALL_PEER_STALE_MS = 10 * 60_000
 type WallPeerReply = { name: string; id: string; body?: any; error?: string; answeredMs?: number }
+type WallPeer = { id: string; name: string; dashboard: { url: string; token?: string } }
+type WallNode = { name: string; peer: string | null; mesh: string; ok: boolean; error?: string; syncedAt?: number; checking?: boolean }
+/** The owner's own mesh (#1479). Linked meshes (slice 3) are not built. */
+const OWN_MESH = "own"
+
+/** The machines the Wall reads (#1479), with each one's dashboard address
+ *  and key: a `dashboard.daemons` entry as configured, a `mesh.peers`-only
+ *  peer at its usual dashboard port with the key the live view sends it.
+ *  Where that key is refused, the machine shows with its posts left out. */
+function wallPeers(config: DaemonConfig): WallPeer[] {
+  return configNodeTargets(config).slice(1).map((t) => ({
+    id: t.url,
+    name: t.name,
+    dashboard: findPeer(t.url, config) ?? { url: resolvePeerDashboardUrl({ url: t.url }), token: t.token },
+  }))
+}
+
+function wallPeerRefusal(status: number): string {
+  return status === 401 || status === 403 ? `key refused (answered ${status})` : `answered ${status}`
+}
+
+/** One line per mesh for the header: how many of its machines answered. */
+function wallMeshes(nodes: Array<{ mesh: string; ok: boolean }>): Array<{ name: string; kind: "owner"; machines: number; online: number }> {
+  const out = new Map<string, { name: string; kind: "owner"; machines: number; online: number }>()
+  for (const n of nodes) {
+    const m = out.get(n.mesh) ?? { name: n.mesh, kind: "owner" as const, machines: 0, online: 0 }
+    m.machines++
+    if (n.ok) m.online++
+    out.set(n.mesh, m)
+  }
+  return [...out.values()]
+}
 /** Each peer's last Wall reply, by address and query: a reply or an error. */
 const lastPeerWall = new Map<string, { reply: WallPeerReply; at: number }>()
 /** One request per peer and query at a time: a page that asks again while
@@ -3423,19 +3468,15 @@ async function buildWallFleetOnce(q: URLSearchParams, ctx: Ctx): Promise<unknown
   // The peers are asked first and build their Walls while this node builds
   // its own, so the fleet takes about the slowest node's time, not the sum
   // of all of them (#1252).
-  const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
+  const peers = wallPeers(ctx.config)
   const query = `?days=${encodeURIComponent(days)}${withTimings ? "&timings=1" : ""}${quick ? "&quick=1" : ""}`
-  const askPeer = async (d: { url: string; name?: string }): Promise<WallPeerReply> => {
-    const id = d.url.replace(/\/+$/, "")
-    const name = d.name || id
-    const peer = findPeer(id, ctx.config)
-    if (!peer) return { name, id, error: "no dashboard address" }
+  const askPeer = async ({ id, name, dashboard: peer }: WallPeer): Promise<WallPeerReply> => {
     try {
       const r = await fetch(`${peer.url}${WALL_PREFIX}${query}`, {
         headers: { Accept: "application/json", "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
         signal: AbortSignal.timeout(WALL_PEER_TIMEOUT_MS),
       })
-      if (!r.ok) return { name, id, error: `answered ${r.status}` }
+      if (!r.ok) return { name, id, error: wallPeerRefusal(r.status) }
       const body = await r.json() as any
       return { name, id, body, answeredMs: ms() }
     } catch (e: any) {
@@ -3443,7 +3484,7 @@ async function buildWallFleetOnce(q: URLSearchParams, ctx: Ctx): Promise<unknown
     }
   }
   const peerReplies = Promise.all(peers.map(async (d): Promise<WallPeerReply & { checking?: boolean }> => {
-    const id = d.url.replace(/\/+$/, "")
+    const id = d.id
     const cacheKey = `${id}${query}`
     let asking = inflightPeerWall.get(cacheKey)
     if (!asking) {
@@ -3467,19 +3508,19 @@ async function buildWallFleetOnce(q: URLSearchParams, ctx: Ctx): Promise<unknown
     if (last?.reply.body && age < WALL_PEER_FRESH_MS) return last.reply
     if (last?.reply.body && age < WALL_PEER_STALE_MS) return { ...last.reply, checking: true }
     if (last?.reply.error) return last.reply
-    return { name: d.name || id, id, checking: true }
+    return { name: d.name, id, checking: true }
   }))
   // Let the peer requests go out before the local build takes the thread.
   await new Promise<void>((r) => setImmediate(r))
   const local = (await wallLocal(WALL_PREFIX, new URLSearchParams({ days, ...(withTimings ? { timings: "1" } : {}), ...(quick ? { quick: "1" } : {}) }), ctx, deps)).body as any
   const localMs = ms()
   // `checking`: the peer is still answering this read (#1442).
-  const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string; syncedAt?: number; checking?: boolean }> = [
-    { name: local.node, peer: null, ok: true, syncedAt: local.syncedAt },
+  const nodes: WallNode[] = [
+    { name: local.node, peer: null, mesh: OWN_MESH, ok: true, syncedAt: local.syncedAt },
   ]
   let pending = local.pending === true
   const tag = (items: any[], name: string, peer: string | null, daemonUrl: string | null) =>
-    items.map((x) => ({ ...x, node: { name, peer, daemonUrl } }))
+    items.map((x) => ({ ...x, node: { name, peer, daemonUrl, mesh: OWN_MESH } }))
   const posts = tag(local.posts, local.node, null, null)
   const failures = tag(local.failures, local.node, null, null)
   const reported = local.reported ? tag([local.reported], local.node, null, null) : []
@@ -3490,9 +3531,9 @@ async function buildWallFleetOnce(q: URLSearchParams, ctx: Ctx): Promise<unknown
   for (const { name, id, body, error, answeredMs, checking } of await peerReplies) {
     if (checking) pending = true
     if (body?.pending === true) pending = true
-    if (!body) { nodes.push({ name, peer: id, ok: false, ...(error ? { error } : {}), ...(checking ? { checking: true } : {}) }); continue }
+    if (!body) { nodes.push({ name, peer: id, mesh: OWN_MESH, ok: false, ...(error ? { error } : {}), ...(checking ? { checking: true } : {}) }); continue }
     const node = body.node || name
-    nodes.push({ name: node, peer: id, ok: true, syncedAt: body.syncedAt, ...(checking ? { checking: true } : {}) })
+    nodes.push({ name: node, peer: id, mesh: OWN_MESH, ok: true, syncedAt: body.syncedAt, ...(checking ? { checking: true } : {}) })
     posts.push(...tag(Array.isArray(body.posts) ? body.posts : [], node, id, id).map((p) => claimBlocker(claimPost(p, projects, now), projects)))
     failures.push(...tag(Array.isArray(body.failures) ? body.failures : [], node, id, id))
     if (Array.isArray(body.goals)) goalLists.push(body.goals)
@@ -3500,7 +3541,7 @@ async function buildWallFleetOnce(q: URLSearchParams, ctx: Ctx): Promise<unknown
     if (withTimings) peerTimingsOf[id] = { node, answeredMs, ...(body.timings ? { build: body.timings } : {}) }
   }
   posts.sort((a, b) => b.updatedAt - a.updatedAt)
-  return { node: local.node, syncedAt: Date.now(), nodes, posts, failures, ...(reported.length ? { reported } : {}), ...(pending ? { pending: true } : {}), projects: projectOverview(posts, projects?.names),
+  return { node: local.node, syncedAt: Date.now(), nodes, meshes: wallMeshes(nodes), posts, failures, ...(reported.length ? { reported } : {}), ...(pending ? { pending: true } : {}), projects: projectOverview(posts, projects?.names),
     goals: mergeGoals(goalLists),
     // Capacity (#1191): counted here over every node's posts, with this node's threshold.
     capacity: wallCapacity(posts, deps?.capacityThreshold), staleAfterHours: local.staleAfterHours,
@@ -3553,28 +3594,23 @@ async function wallLocal(path: string, q: URLSearchParams, ctx: Ctx, deps = wall
 async function buildWallThroughputFleet(ctx: Ctx): Promise<unknown> {
   const deps = wallDeps(ctx.config)
   const local = handleWallApi(`${WALL_PREFIX}/throughput`, new URLSearchParams(), deps, localNodeName(ctx.config)).body as any
-  const nodes: Array<{ name: string; peer: string | null; ok: boolean; error?: string }> = [{ name: local.node, peer: null, ok: true }]
+  const nodes: Array<{ name: string; peer: string | null; mesh: string; ok: boolean; error?: string }> = [{ name: local.node, peer: null, mesh: OWN_MESH, ok: true }]
   const closures: WallClosure[] = [...local.closures]
   const owners = new Set<string>(local.owners)
   const projects = deps?.projects ?? null
-  const peers = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
-  await Promise.all(peers.map(async (d) => {
-    const id = d.url.replace(/\/+$/, "")
-    const name = d.name || id
-    const peer = findPeer(id, ctx.config)
-    if (!peer) { nodes.push({ name, peer: id, ok: false, error: "no dashboard address" }); return }
+  await Promise.all(wallPeers(ctx.config).map(async ({ id, name, dashboard: peer }) => {
     try {
       const r = await fetch(`${peer.url}${WALL_PREFIX}/throughput`, {
         headers: { Accept: "application/json", "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
         signal: AbortSignal.timeout(8000),
       })
-      if (!r.ok) { nodes.push({ name, peer: id, ok: false, error: `answered ${r.status}` }); return }
+      if (!r.ok) { nodes.push({ name, peer: id, mesh: OWN_MESH, ok: false, error: wallPeerRefusal(r.status) }); return }
       const body = await r.json() as any
-      nodes.push({ name: body.node || name, peer: id, ok: true })
+      nodes.push({ name: body.node || name, peer: id, mesh: OWN_MESH, ok: true })
       for (const c of Array.isArray(body.closures) ? body.closures : []) closures.push(claimClosure(c, projects))
       for (const o of Array.isArray(body.owners) ? body.owners : []) owners.add(o)
     } catch (e: any) {
-      nodes.push({ name, peer: id, ok: false, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) })
+      nodes.push({ name, peer: id, mesh: OWN_MESH, ok: false, error: e?.name === "TimeoutError" ? "timed out" : String(e?.message || e).slice(0, 120) })
     }
   }))
   const now = Date.now()

@@ -674,7 +674,7 @@ Only the owner can save a budget: the dashboard checks its key, and a refusal sa
 
 ![Monthly budgets on the Cost page: all agents and one agent against their caps, and the form to set a budget](/screenshots/costs/budgets.png)
 
-The page reads the machines listed under `dashboard.daemons` in `agentx.json`, as the posts do. A machine in your mesh that this dashboard has no address for is named at the top with the reason, and its spend is not in the numbers; see [Add a second machine](../jobs/second-machine.md).
+The page reads the machines listed under `dashboard.daemons` in `agentx.json`; the posts also read `mesh.peers`. A machine in your mesh that this dashboard has no address for is named at the top with the reason, and its spend is not in the numbers; see [Add a second machine](../jobs/second-machine.md).
 
 ## See the org chart
 
@@ -709,13 +709,15 @@ Running now sits in the side column on every page. Select **Running now** in the
 
 *Scripted demo data; your team's names and machines will differ.*
 
+The first line names your mesh and how many of its machines answered, for example **Your mesh · 2 of 3 machines answer**. The Wall reads every machine listed under `dashboard.daemons` or `mesh.peers` in `agentx.json`, so a machine added with `agentx mesh add` shows without more setup.
+
 Each connected machine has a card:
 
 - **up** or **unreachable**, and the AgentX version it runs,
 - every task running on it now. Select one to watch it,
 - **Ops details**: uptime, tasks in flight, a pending restart, failed cron runs, stopped tasks and attached Claude Code sessions.
 
-When a machine does not answer, its card turns red and the Wall still shows everything else. A machine whose posts could not be read says **posts not shown**.
+When a machine does not answer, its card turns red and the Wall still shows everything else. A machine whose posts could not be read says **posts not shown**, with the reason.
 
 A machine that is only slow says **checking…** instead, in grey, never **does not answer**. The Wall asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
 
@@ -836,7 +838,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.
 - **A machine stays on "checking…":** it answers, but slower than the Wall waits (about six seconds for what runs on it). Its line fills in on a later refresh. If it stays like this, see what keeps it busy with `agentx daemon status` on that machine, and use the timings command above to see how long it takes.
-- **A machine says "posts not shown":** its dashboard is not reachable from this one. Check the machine with `agentx daemon status`, then see [Add a second machine](../jobs/second-machine.md).
+- **A machine says "posts not shown":** its dashboard is not reachable from this one. Check the machine with `agentx daemon status`, then see [Add a second machine](../jobs/second-machine.md). A machine listed only under `mesh.peers` is asked at its daemon's address with the dashboard port (4202 for a daemon on 18800, 18810 or 19900), with its `mesh.peers` token, or `MESH_TOKEN`.
+- **A machine says "key refused":** its dashboard has its own `dashboard.token` and did not accept the key sent. Add the machine under `dashboard.daemons` with its `dashboardToken` (see [dashboard settings](../reference/config-operations.md#dashboard)). The machine still shows, with its posts left out.
 - **"This post is not on the Wall":** the link names a task older than seven days, or one on a machine that did not answer. **Terminal:** run `agentx requests` on the machine that keeps it, or try again when that machine's card says **up**.
 - **A post shows `**` or `#` signs instead of formatting:** the agent wrote them in a way Markdown does not read as formatting, for example `** bold**` with a space. The words are all there.
 - **A count in the nav looks wrong:** counts cover the posts the Wall loaded, as the feed does, and ignore your filters. Select **Refresh** to read them again.

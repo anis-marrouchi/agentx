@@ -530,6 +530,7 @@ const WALL_PAGE_CSS = `
 .wh.is-down b, .wh.is-down span { color: var(--ax-red-ink, var(--ax-err)); }
 .ax-wall__classicd { margin-top: 8px; font-size: var(--ax-fs-xs); }
 .ax-wall__classicd summary { cursor: pointer; color: var(--ax-accent); margin-bottom: 6px; }
+.wa-mesh { margin: 0 0 6px; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
 .wn { padding: 8px 0; font-size: var(--ax-fs-sm); border-top: 1px solid var(--ax-border); }
 .wn:first-child { border-top: 0; }
 .wn header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }

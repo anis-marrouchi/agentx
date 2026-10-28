@@ -441,7 +441,7 @@ describe("routes", () => {
     expect(byTask.post.id).toBe("r1")
     const fleet = JSON.parse((await get("/api/admin/wall?peer=fleet")).body)
     expect(fleet.nodes[0]).toMatchObject({ name: "node-a", ok: true })
-    expect(fleet.posts[0].node).toEqual({ name: "node-a", peer: null, daemonUrl: null })
+    expect(fleet.posts[0].node).toEqual({ name: "node-a", peer: null, daemonUrl: null, mesh: "own" })
   })
 
   it("times each part of the build on request, locally and across the fleet (#1252)", async () => {
@@ -477,6 +477,40 @@ describe("routes", () => {
       }
     } finally {
       for (const s of [fleetServer, ...peers]) await new Promise<void>((r) => s.close(() => r()))
+    }
+  })
+
+  it("reads peers known only from mesh.peers, and shows a refused one with its posts left out (#1479)", async () => {
+    resetWallFleetCaches()
+    const auth: string[] = []
+    const answering = createServer((req, res) => {
+      auth.push(String(req.headers.authorization))
+      res.setHeader("Content-Type", "application/json")
+      res.end(JSON.stringify({ node: "node-b", syncedAt: 1, posts: [{ id: "pb", owner: "pm", state: "open", updatedAt: 5 }], failures: [] }))
+    })
+    const refusing = createServer((_req, res) => { res.statusCode = 401; res.end("{}") })
+    for (const s of [answering, refusing]) await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()))
+    const [bUrl, cUrl] = [answering, refusing].map((s) => `http://127.0.0.1:${(s.address() as AddressInfo).port}`)
+    const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, agents: { coder: { name: "Coder", workspace: process.cwd() } },
+      mesh: { peers: [{ name: "node-b", url: bUrl + "/", token: "mesh-b" }, { name: "node-c", url: cUrl }] } })
+    const fleetServer = createServer((req, res) => {
+      void handleBoardRequest(req, res, { boards: [], sources: new Map(), config } as unknown as Ctx)
+    })
+    await new Promise<void>((r) => fleetServer.listen(0, "127.0.0.1", () => r()))
+    const base = `http://127.0.0.1:${(fleetServer.address() as AddressInfo).port}`
+    try {
+      const fleet = await (await fetch(`${base}/api/admin/wall?peer=fleet`)).json() as any
+      expect(auth).toEqual(["Bearer mesh-b"])
+      expect(fleet.nodes.slice(1)).toEqual([
+        expect.objectContaining({ name: "node-b", peer: bUrl, mesh: "own", ok: true }),
+        expect.objectContaining({ name: "node-c", peer: cUrl, mesh: "own", ok: false, error: "key refused (answered 401)" }),
+      ])
+      expect(fleet.meshes).toEqual([{ name: "own", kind: "owner", machines: 3, online: 2 }])
+      expect(fleet.posts.find((p: any) => p.id === "pb").node).toEqual({ name: "node-b", peer: bUrl, daemonUrl: bUrl, mesh: "own" })
+      const tp = await (await fetch(`${base}/api/admin/wall/throughput?peer=fleet`)).json() as any
+      expect(tp.nodes.map((n: any) => [n.peer, n.ok])).toEqual(expect.arrayContaining([[bUrl, true], [cUrl, false]]))
+    } finally {
+      for (const s of [fleetServer, answering, refusing]) await new Promise<void>((r) => s.close(() => r()))
     }
   })
 

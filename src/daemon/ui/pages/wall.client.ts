@@ -1239,7 +1239,13 @@ ${WALL_BUILD_SCRIPT}
       cards.push(w.checking ? '<div class="wn"><header><b>' + esc(w.name) + '</b><span class="ax-badge">checking…</span></header><div class="idle">Its posts are on the way.</div></div>'
         : '<div class="wn is-down"><header><b>' + esc(w.name) + '</b><span class="ax-badge ax-badge--err">posts not shown</span></header><div class="idle">' + esc(w.error || 'unreachable') + '</div></div>');
     });
-    return cards.join('');
+    return meshesHtml() + cards.join('');
+  }
+  // One line per mesh (#1479): how many of its machines' Walls answered.
+  function meshesHtml() {
+    return ((S.data && S.data.meshes) || []).map(function (m) {
+      return '<p class="wa-mesh"><b>' + esc(m.name === 'own' ? 'Your mesh' : m.name) + '</b> · ' + m.online + ' of ' + m.machines + ' machines answer</p>';
+    }).join('');
   }
 
   // --- Render ---
