@@ -375,7 +375,7 @@ The **Activity** page lists every run of every agent on your machines, newest fi
 2. The profile stays on top, with **Activity** underlined, and the list shows only that agent's runs, each led by what it worked on. **All** and **Failed** (with how many failed) pick the result, and **24 h**, **7 d** or **30 d** the period. The line above the runs adds them up: runs, failed runs, agent time and cost.
 3. **Posts** goes back to its posts; **All agents** goes back to every agent's runs.
 
-This tab takes the place of the classic history page. The classic page still opens at `/agents/<agent>/history`.
+This tab takes the place of the classic history page. An old history address (`/agents/<agent>/history`, from a bookmark or a classic page) opens this tab, with **30 d** picked. On another device that has not signed in yet, the address asks for the dashboard token first and then opens the same tab.
 
 ![An agent's profile on a phone with its Activity tab open: All and Failed, the period, the total line, and two runs, one failed](/screenshots/wall/activity-profile.png)
 
@@ -775,6 +775,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 39. Needs you: with a decision card pending, select **Needs you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
 40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back.
 41. Workflows page: select **Workflows** in the nav. It lists the same workflows as the classic `/workflows` page, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
+42. Old history link: open `/agents/<agent>/history` in the browser, with the name of one of your agents. The Wall opens that agent's profile with **Activity** underlined and **30 d** picked.
 
 ## If something is wrong
 

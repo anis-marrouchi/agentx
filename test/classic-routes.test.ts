@@ -41,9 +41,11 @@ describe("classic routes registry", () => {
     }
   })
 
-  it("keeps /setup and /workflows/editor as tool pages", () => {
+  it("keeps /setup, /workflows/editor and the org chart editor as tool pages", () => {
     expect(classicRouteFor("/setup")?.status).toBe("tool")
     expect(classicRouteFor("/workflows/editor")?.status).toBe("tool")
+    // Owner decision on #1420: the org chart is edited on /org, the Wall reads it.
+    expect(classicRouteFor("/org")?.status).toBe("tool")
     expect(classicRouteFor("/workflows")?.status).toBe("pending")
   })
 
@@ -75,7 +77,7 @@ describe("the Wall's links (link crawl)", () => {
     // Shrinks as each child of #1449 lands; empty once #1447 is done.
     expect([...linked].sort()).toEqual([
       "/activity", "/admin", "/admin/agents/<id>", "/approvals",
-      "/mesh", "/monitor", "/org", "/workflows",
+      "/mesh", "/monitor", "/workflows",
     ])
   })
 })
@@ -93,6 +95,13 @@ describe("classic Task page redirect", () => {
     expect(new URLSearchParams(to!.slice(2)).get("node")).toBe("http://peer.test")
     expect(classicRedirect("/tasks/t1", new URLSearchParams(""), "http://daemon.test")).toBeNull()
     expect(classicRedirect("/tasks/%E0%A4%A", new URLSearchParams("agent=ops"), "http://daemon.test")).toBeNull()
+  })
+
+  it("sends an agent's history to its Activity tab on the Wall", () => {
+    const to = classicRedirect("/agents/ops%20bot/history", new URLSearchParams("node=http://peer.test&name=Ops"), "http://daemon.test")
+    expect(to).toMatch(/^\/wall#/)
+    expect(Object.fromEntries(new URLSearchParams(to!.slice("/wall#".length)))).toEqual({ page: "activity", "a-agent": "ops bot", "a-period": "30d" })
+    expect(classicRedirect("/agents/%E0%A4%A/history", new URLSearchParams(""), "http://daemon.test")).toBeNull()
   })
 
   describe("served", () => {
@@ -114,6 +123,13 @@ describe("classic Task page redirect", () => {
       const r = await fetch(`${base}/tasks/t1?agent=ops`, { redirect: "manual" })
       expect(r.status).toBe(302)
       expect(r.headers.get("location")).toBe("/#page=task&task=t1&agent=ops&node=http%3A%2F%2Fdaemon.invalid%3A18800")
+    })
+
+    it("redirects /agents/<id>/history to the Wall", async () => {
+      const base = await start()
+      const r = await fetch(`${base}/agents/ops/history?node=http://peer.test`, { redirect: "manual" })
+      expect(r.status).toBe(302)
+      expect(r.headers.get("location")).toBe("/wall#page=activity&a-agent=ops&a-period=30d")
     })
 
     it("still answers 400 without an agent", async () => {

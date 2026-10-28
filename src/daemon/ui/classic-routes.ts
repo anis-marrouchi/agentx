@@ -34,16 +34,18 @@ export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/tasks/<id>", label: "One task's run", status: "wall", wall: "/#page=task", note: "Wall Task page (#1381): stream, steer, Stop." },
   { path: "/live", label: "Live", status: "wall", wall: "/wall#page=live", note: "Redirected in board-dashboard.ts (#1439)." },
   { path: "/monitor", label: "Monitor", status: "pending", blockedBy: [1439, 1440], note: "Connect a CLI session; open actions of CLI sessions." },
-  { path: "/mesh", label: "Operations", status: "pending", blockedBy: [1429, 1439, 1446] },
-  { path: "/activity", label: "Activity", status: "pending", blockedBy: [1429], note: "Timeline and map." },
-  { path: "/agents/<id>/history", label: "Agent history", status: "pending", blockedBy: [1429] },
+  { path: "/mesh", label: "Operations", status: "pending", blockedBy: [1449], note: "Lifetime view (thread → run → step drill), Routines with stale verdicts, run analytics; no child issue yet." },
+  { path: "/activity", label: "Activity", status: "pending", blockedBy: [1449], note: "Timeline lane view and the Map; no child issue yet. Wall Activity (#1429) has the run list." },
+  { path: "/agents/<id>/history", label: "Agent history", status: "wall", wall: "/wall#page=activity", note: "The agent's profile with its Activity tab (#1429)." },
   { path: "/approvals", label: "Approvals", status: "pending", blockedBy: [1440], note: "Deciding cards and inbox items." },
   { path: "/admin", label: "Settings", status: "pending", blockedBy: [1428] },
   { path: "/admin/agents/<id>", label: "Agent settings", status: "pending", blockedBy: [1428] },
   { path: "/admin/health", label: "Observability", status: "pending", blockedBy: [1428], note: "Also /admin/observability." },
   { path: "/guests", label: "Guests", status: "pending", blockedBy: [1428] },
   { path: "/admin/cost", label: "Cost", status: "wall", wall: "/wall#status=open&view=cost", note: "Redirected in board-dashboard.ts (#1423, #1466)." },
-  { path: "/org", label: "Org", status: "pending", blockedBy: [1419, 1420, 1421] },
+  // Owner decision on #1420 (B): the org chart is edited on /org and the
+  // Wall's Org page stays read-only (#1486 closed for it).
+  { path: "/org", label: "Org chart editor", status: "tool", note: "Editing who reports to whom; the Wall's Org page reads it." },
   { path: "/people", label: "People", status: "wall", wall: "/wall#page=people", note: "Redirected in people-panel.ts (#1441)." },
   { path: "/workflows", label: "Workflows", status: "pending", blockedBy: [1445] },
   { path: "/admin/graph", label: "Reviews", status: "pending", blockedBy: [1440], note: "Approve or reject a classification. Also /graph." },
@@ -101,6 +103,19 @@ export function classicRedirect(path: string, params: URLSearchParams, daemonUrl
     if (at) q.set("at", at)
     if (params.get("archived") === "1") q.set("done", "1")
     return "/#" + q.toString()
+  }
+  const hist = path.match(/^\/agents\/([^/]+)\/history$/)
+  if (hist) {
+    // The Activity filter keys (wall-activity.client.ts ACT_KEYS). The classic
+    // page listed the agent's latest runs whatever their age: open the
+    // longest period. The Wall reads every machine, so ?node= is not needed.
+    let id: string
+    try { id = decodeURIComponent(hist[1]) } catch { return null }
+    const q = new URLSearchParams()
+    q.set("page", "activity")
+    q.set("a-agent", id)
+    q.set("a-period", "30d")
+    return "/wall#" + q.toString()
   }
   return null
 }
