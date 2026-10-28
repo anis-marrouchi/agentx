@@ -17,8 +17,10 @@
 //
 // Phase 1 of #1428: the shell (the sections grouped as in design #1451
 // frame 2, the chosen one beside them; on a phone the list is its own
-// screen) and the Agents section (wall-settings-agent.client.ts for one
-// agent). The other sections open their classic page until they are ported.
+// screen, with Health on top) and the Agents section
+// (wall-settings-agent.client.ts for one agent). Health reads the machines
+// the Wall already polls (S.live), so it writes nothing. The other sections
+// open their classic page until they are ported.
 //
 // A section repaints when it opens or after a save, never on the Wall's
 // minute refresh, so a field being typed in stays as it is. A save that
@@ -44,7 +46,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       ['tokens', 'Tokens', '/admin#tab=tokens', 'Keys for apps and scripts'],
     ]],
     ['Machines', [
-      ['health', 'Health', '/admin', 'Agents online, channels and what needs you'], ['advanced', 'Advanced', '/admin#tab=advanced', 'agentx.json itself'],
+      ['health', 'Health', '', 'Agents online, channels and what needs you'], ['advanced', 'Advanced', '/admin#tab=advanced', 'agentx.json itself'],
     ]],
   ].map(function (g) { return [g[0], g[1].filter(function (s) { return s[0] !== 'business' || (ST && ST.business); })]; });
   var ST_SECTIONS = ST_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
@@ -59,7 +61,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   var ST_RESTART = 'agentx daemon restart --when-idle';
   // Listed for everyone, so a viewer who is not the owner is told so.
   PAGES.push('settings');
-  S.st = { section: '', agent: '', tab: '', data: null, org: null, error: '', loading: false, v: 0, painted: '', key: '', notes: {}, flash: '', confirm: '', files: null, td: null, draft: null };
+  S.st = { section: '', agent: '', tab: '', data: null, org: null, tokens: null, error: '', loading: false, v: 0, painted: '', key: '', healthSig: '', notes: {}, flash: '', confirm: '', files: null, td: null, ho: null, draft: null };
 
   function settingsReadHash(q) {
     S.st.section = S.page === 'settings' && q.get('section') || '';
@@ -117,9 +119,11 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   async function settingsLoad() {
     S.st.loading = true;
     try {
-      var both = await Promise.all([stGet('/api/admin/state'), stGet('/api/admin/org').catch(function () { return null; })]);
-      S.st.data = both[0];
-      S.st.org = both[1];
+      var all = await Promise.all([stGet('/api/admin/state'), stGet('/api/admin/org').catch(function () { return null; }),
+        stGet('/api/admin/tokens').catch(function () { return null; })]);
+      S.st.data = all[0];
+      S.st.org = all[1];
+      S.st.tokens = Array.isArray(all[2]) ? all[2] : null;
       S.st.error = '';
     } catch (e) {
       S.st.error = e.status === 401 || e.status === 403 ? 'owner' : String(e.message || e);
@@ -154,13 +158,26 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       if (S.st.files && S.st.files.agent !== S.st.agent) S.st.files = null;
       if (S.st.td && S.st.td.agent !== S.st.agent) S.st.td = null;
       if (S.st.agent && (S.st.tab === 'personality' || S.st.tab === 'skills') && !S.st.files) { stLoadFiles(S.st.agent); return; }
+      // Handovers are read each time the tab opens: a chat may have moved since.
+      if (S.st.agent && S.st.tab === 'handovers') { stLoadHandovers(S.st.agent); return; }
     }
     if (!S.st.data && !S.st.error && !S.st.loading) { settingsLoad(); }
     // A new picture (#1425) repaints the agent's page; new counts repaint the
     // list, but not an agent's form being typed in.
     var painted = key + '|' + S.st.v + '|' + (S.st.agent ? JSON.stringify(pictureOf(S.st.agent) || '') : stAttention().join(','));
-    if (S.st.painted === painted) return;
+    var health = stHealthSig();
+    if (S.st.painted === painted) {
+      // The machines changed: repaint Health alone, so nothing typed is lost.
+      if (health !== S.st.healthSig) {
+        S.st.healthSig = health;
+        var hp = $('st-health-phone'), hm = $('st-health-main');
+        if (hp) hp.innerHTML = stHealthHtml(true);
+        if (hm) hm.innerHTML = stHealthHtml(false);
+      }
+      return;
+    }
     S.st.painted = painted;
+    S.st.healthSig = health;
     box.innerHTML = settingsHtml();
     stPaintTest();
   }
@@ -173,11 +190,10 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       var unset = (a.integrations || []).some(function (i) { return Object.keys(i.credStatus || {}).some(function (k) { return i.credStatus[k] === 'unset'; }); });
       return unset || stOrgNode(a.id).status === 'waiting';
     }).length;
-    var nodes = (S.live && S.live.nodes) || [];
-    var down = nodes.filter(nodeDown).length;
-    var restart = nodes.filter(function (n) { return !nodeDown(n) && n.restart && n.restart.state && n.restart.state !== 'none'; }).length;
-    return [agents, down, down + restart];
+    var down = ((S.live && S.live.nodes) || []).filter(nodeDown).length;
+    return [agents, down, stHealthIssues().length];
   }
+  function stRestartOn(n) { return !nodeDown(n) && n.restart && n.restart.state && n.restart.state !== 'none'; }
   function stCountHtml(id, att) {
     var n = id === 'agents' ? att[0] : id === 'mesh' ? att[1] : id === 'health' ? att[2] : 0;
     if (n) return '<b class="wst__n-att" title="' + n + ' need' + (n === 1 ? 's' : '') + ' you">' + n + '</b>';
@@ -197,7 +213,9 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
             '<span>' + esc(s[1]) + '<small class="wst__sub">' + esc(sub) + '</small></span>' + stCountHtml(s[0], att) + '</a>';
         }).join('');
       }).join('') + '</nav>';
-    return '<div class="wst' + (S.st.section ? ' has-section' : '') + '">' + menu +
+    // On a phone the list is its own screen, with Health on top (§2).
+    var phoneHealth = S.st.section ? '' : '<div class="wst__phonehealth" id="st-health-phone">' + stHealthHtml(true) + '</div>';
+    return '<div class="wst' + (S.st.section ? ' has-section' : '') + '"><div class="wst__side">' + phoneHealth + menu + '</div>' +
       '<div class="wst__body">' + (S.st.agent ? '' : '<a class="wst__up" href="' + esc(stHref('')) + '">← All settings</a>') + stSectionHtml(sec) + '</div></div>';
   }
   function stSectionHtml(sec) {
@@ -205,6 +223,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (S.st.error) return '<p class="wst__err">Could not load the settings: ' + esc(S.st.error) + '.</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="reload">Try again</button>';
     if (!S.st.data) return '<p class="ax-wall__empty">Loading…</p>';
     if (!S.st.data.exists) return '<p class="wst__err">This machine has no agentx.json yet. <a href="/setup">Run the setup</a> first.</p>';
+    if (sec === 'health') return '<header class="wst__h"><h2>Health</h2><p>Your machines, your channels and what needs fixing, as classic Settings shows them.</p></header>' +
+      '<div id="st-health-main">' + stHealthHtml(false) + '</div>';
     var s = ST_SECTIONS.find(function (x) { return x[0] === sec; }) || ST_SECTIONS[0];
     if (s[2]) {
       var wall = s[2].charAt(0) === '#';
@@ -213,6 +233,54 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
         '<a class="ax-btn" href="' + esc(s[2]) + '">' + (wall ? 'Open ' + esc(s[1]) : 'Open ' + esc(s[1]) + ' on the classic page') + '</a>';
     }
     return S.st.agent ? stAgentHtml(S.st.agent) : stAgentsHtml();
+  }
+
+  // --- Health: the four numbers, one line per machine, what to fix ---
+  function stHealthSig() {
+    return ((S.live && S.live.nodes) || []).map(function (n) {
+      return n.name + (nodeDown(n) ? 'd' : nodeChecking(n) ? 'c' : 'u') + (n.version || '') + (n.restart ? n.restart.state : '') + ((n.agents || []).length);
+    }).join(',') + (S.liveError ? '!' : '');
+  }
+  /** Channels set up in agentx.json, and how many of them are on. */
+  function stChannels() {
+    var d = S.st.data || {};
+    var set = ['telegram', 'whatsapp', 'slack', 'discord', 'email', 'gitlab'].filter(function (k) {
+      var c = d[k];
+      return c && (c.enabled || (c.accounts && c.accounts.length) || c.tokenRef || c.botTokenRef || c.host);
+    });
+    return { set: set.length, on: set.filter(function (k) { return d[k].enabled; }).length };
+  }
+  /** What needs fixing, each with where to fix it: a machine that does not
+   *  answer, a restart waiting. The Health count in the list is their number. */
+  function stHealthIssues() {
+    var out = [];
+    ((S.live && S.live.nodes) || []).forEach(function (n) {
+      if (nodeDown(n)) out.push({ text: n.name + ' does not answer' + (n.error ? ': ' + n.error : '') + '.', href: '#page=live', link: 'See it on Live' });
+      else if (stRestartOn(n)) out.push({ text: n.name + ' waits for a restart (' + n.restart.state + ').', href: '#page=live', link: 'Restart it on Live' });
+    });
+    return out;
+  }
+  function stHealthHtml(compact) {
+    var nodes = (S.live && S.live.nodes) || [], all = 0, up = 0;
+    nodes.forEach(function (n) { var k = (n.agents || []).length; all += k; if (!nodeDown(n) && !nodeChecking(n)) up += k; });
+    var ch = S.st.data && S.st.data.exists ? stChannels() : null, issues = stHealthIssues();
+    var tokens = S.st.tokens ? S.st.tokens.filter(function (t) { return !t.revokedAt && !(t.expiresAt && Date.parse(t.expiresAt) < Date.now()); }).length : null;
+    function stat(num, label, warn) { return '<div class="wsh__s' + (warn ? ' is-warn' : '') + '"><b>' + esc(num) + '</b><span>' + esc(label) + '</span></div>'; }
+    var strip = '<div class="wsh__strip">' +
+      stat(nodes.length ? up + ' of ' + all : '—', 'agents online') +
+      stat(ch ? ch.on + ' of ' + ch.set : '—', 'channels on') +
+      stat(String(issues.length), 'need you', issues.length > 0) +
+      stat(tokens == null ? '—' : String(tokens), 'active tokens') + '</div>';
+    var lines = nodes.length ? '<ul class="wsh__nodes">' + nodes.map(function (n) {
+      var down = nodeDown(n), checking = nodeChecking(n);
+      var what = checking ? 'checking…' : down ? (n.stale && n.staleSince ? 'not answering since ' + stamp(Date.parse(n.staleSince)) : 'not answering')
+        : 'answering' + (n.version ? ' · v' + n.version : '');
+      var restart = stRestartOn(n) ? '<span class="ax-badge ax-badge--warn">Restart ' + esc(n.restart.state) + '</span>' : '';
+      return '<li class="' + (down ? 'is-down' : checking ? 'is-check' : 'is-up') + '"><i aria-hidden="true"></i><b>' + esc(n.name) + '</b><span>' + esc(what) + '</span>' + restart + '</li>';
+    }).join('') + '</ul>' : '<p class="ax-wall__empty">' + (S.liveError ? 'Could not reach the machines just now; trying again.' : 'Loading the machines…') + '</p>';
+    var fix = issues.length ? '<ul class="wsh__fix">' + issues.map(function (x) { return '<li>' + esc(x.text) + ' <a href="' + esc(x.href) + '">' + esc(x.link) + '</a></li>'; }).join('') + '</ul>'
+      : nodes.length ? '<p class="wsh__ok">Nothing to fix.</p>' : '';
+    return '<section class="wsh' + (compact ? ' wsh--compact' : '') + '" aria-label="Health">' + (compact ? '<h2>Health</h2>' : '') + strip + lines + fix + '</section>';
   }
 
   // --- Agents: one card each, then add one, then the wiki page curator ---
@@ -421,6 +489,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       await settingsLoad();
       return;
     }
+    if (key.indexOf('ho:') === 0) { await stReleaseHandover(id, key); return; }
     if (key.indexOf('skill:') === 0) {
       var s = S.st.files && S.st.files.overview && S.st.files.overview.skills[+key.slice(6)];
       stPaint();
@@ -520,6 +589,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     else if (a === 'save-file') stSaveFile();
     else if (a === 'revert-file') { if (S.st.files) { S.st.files.text = S.st.files.original; S.st.notes.file = { kind: '', text: '' }; stPaint(); } }
     else if (a === 'td-send') stSendTest(id);
+    else if (a === 'ho-load') stLoadHandovers(S.st.agent);
   });
   document.addEventListener('submit', function (ev) {
     var form = ev.target && ev.target.closest && ev.target.closest('[data-st-form]');
@@ -532,6 +602,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     else if (kind === 'curator') stSaveCurator();
     else if (kind === 'int') stAddInt(id);
     else if (kind === 'skill') stAddSkill();
+    else if (kind === 'ho') stAddHandover(S.st.agent);
   });
   document.addEventListener('input', function (ev) {
     if (ev.target && ev.target.id === 'st-f-text' && S.st.files) S.st.files.text = ev.target.value;
@@ -569,7 +640,9 @@ ${WALL_SETTINGS_AGENT_SCRIPT}
 export const WALL_SETTINGS_CSS = `
 /* Settings (#1428): the sections beside the chosen one; on a phone, one at a time. */
 .wst { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: start; }
-.wst__menu { position: sticky; top: 0; display: flex; flex-direction: column; padding: 8px 0; border-right: 1px solid var(--ax-border); min-height: 60vh; }
+.wst__side { position: sticky; top: 0; border-right: 1px solid var(--ax-border); min-height: 60vh; }
+.wst__menu { display: flex; flex-direction: column; padding: 8px 0; }
+.wst__phonehealth { display: none; }
 .wst__lead { margin: 4px 12px 8px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wst__sec { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 10px 12px; color: var(--ax-text); text-decoration: none; font-weight: 600; border-left: 3px solid transparent; }
 .wst__sec:hover { background: var(--ax-surface); }
@@ -599,6 +672,26 @@ export const WALL_SETTINGS_CSS = `
 .wst__n.is-warn { color: var(--ax-amber-ink); }
 .wst__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .av--md { cursor: default; }
+
+/* Health: the four numbers, one line per machine, what to fix. */
+.wsh { display: flex; flex-direction: column; gap: 12px; }
+.wsh h2 { margin: 0; font-size: 18px; font-weight: 800; }
+.wsh__strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.wsh__s { border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); padding: 10px 12px; display: flex; flex-direction: column; }
+.wsh__s b { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.wsh__s span { color: var(--ax-muted); font-size: var(--ax-fs-sm); }
+.wsh__s.is-warn b { color: var(--ax-amber-ink); }
+.wsh__nodes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wsh__nodes li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--ax-fs-sm); }
+.wsh__nodes i { width: 10px; height: 10px; border-radius: 50%; background: var(--ax-green); flex: none; }
+.wsh__nodes li.is-down i { background: var(--ax-red); }
+.wsh__nodes li.is-down span { color: var(--ax-red-ink); }
+.wsh__nodes li.is-check i { background: var(--ax-border-2); }
+.wsh__nodes span { color: var(--ax-muted); }
+.wsh__nodes .ax-badge { margin-left: auto; }
+.wsh__fix { margin: 0; padding-left: 18px; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
+.wsh__fix a { color: var(--ax-accent); }
+.wsh__ok { margin: 0; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
 
 /* Agent cards: the whole card opens the agent; the switch keeps its own job. */
 .wsa-list { display: flex; flex-direction: column; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); overflow: hidden; }
@@ -673,16 +766,20 @@ export const WALL_SETTINGS_CSS = `
 .wtd__m.is-wait { align-self: flex-start; color: var(--ax-muted); }
 .wtd__m.is-err { align-self: flex-start; background: var(--ax-red-t); color: var(--ax-red-ink); }
 
+@media (max-width: 900px) {
+  .wsh__strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 640px) {
   .wst { grid-template-columns: minmax(0, 1fr); }
-  .wst__menu { position: static; border-right: 0; min-height: 0; }
+  .wst__side { position: static; border-right: 0; min-height: 0; }
+  .wst__phonehealth { display: block; padding: 12px 16px 16px; border-bottom: 1px solid var(--ax-border); }
   .wst__sec { padding: 14px 16px; border-left: 0; border-top: 1px solid var(--ax-border); }
   .wst__sec.is-on { background: none; }
   .wst__sec { align-items: center; }
   .wst__sec::after { content: "›"; color: var(--ax-muted); padding-left: 8px; }
   .wst__sec > span { flex: 1; }
   .wst__sub { display: block; margin-top: 2px; }
-  .wst:not(.has-section) .wst__body, .wst.has-section .wst__menu { display: none; }
+  .wst:not(.has-section) .wst__body, .wst.has-section .wst__side { display: none; }
   .wst__up { display: inline; }
   .wst__body { padding: 12px; }
   .wsl { grid-template-columns: minmax(0, 1fr); }

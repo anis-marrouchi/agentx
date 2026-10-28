@@ -210,8 +210,8 @@ describe("Wall Settings: the shell (#1428)", () => {
       ["Machines", ["Health", "Advanced"]],
     ])
     expect(html).toContain("3 agents, their pictures, models and on/off")
-    // Only Agents is built: the rest say they open their classic page.
-    expect(html.match(/is-classic/g)).toHaveLength(12)
+    // Agents and Health are built: the rest say they open their classic page.
+    expect(html.match(/is-classic/g)).toHaveLength(11)
     // No section in the link: on a phone the list is the screen.
     expect(html).toContain('<div class="wst">')
     await w.go("#page=settings&section=channels")
@@ -252,6 +252,47 @@ describe("Wall Settings: the shell (#1428)", () => {
     expect(count("Mesh")).toBe("1")
     expect(count("Health")).toBe("2")
     expect(count("Channels")).toBeUndefined()
+  })
+})
+
+describe("Wall Settings: Health (#1428)", () => {
+  const TOKENS = [{ id: "t1", name: "ci" }, { id: "t2", name: "old", revokedAt: "2026-01-01T00:00:00Z" }, { id: "t3", name: "gone", expiresAt: "2020-01-01T00:00:00Z" }]
+  const twoNodes = (u: string) => u.startsWith("/api/live?") ? { status: 200, body: { nodes: [
+    { ...LIVE.nodes[0], version: "1.2.3", restart: { state: "pending" } }, { name: "node-b", url: "http://node-b", reachable: false, error: "timed out", agents: [{ id: "far", runningTasks: [] }] },
+  ] } } : u === "/api/admin/tokens" ? { status: 200, body: TOKENS }
+    : u === "/api/admin/state" ? { status: 200, body: { ...STATE, telegram: { enabled: true, accounts: [{ id: "default" }] }, slack: { enabled: false, botTokenRef: "SLACK_TOKEN" } } }
+    : undefined
+
+  it("shows the four numbers, one line per machine and what to fix, on the Wall", async () => {
+    const w = openWall({ hash: "#page=settings&section=health", route: twoNodes })
+    await w.settle()
+    const html = settingsHtml(w)
+    expect(html).not.toContain('href="/admin"')
+    const nums = [...html.matchAll(/<div class="wsh__s[^"]*"><b>([^<]+)<\/b><span>([^<]+)<\/span>/g)].map((m) => [m[1], m[2]])
+    expect(nums).toEqual([["2 of 3", "agents online"], ["1 of 2", "channels on"], ["2", "need you"], ["1", "active tokens"]])
+    expect(html).toContain('<li class="is-up"><i aria-hidden="true"></i><b>node-a</b><span>answering · v1.2.3</span><span class="ax-badge ax-badge--warn">Restart pending</span></li>')
+    expect(html).toContain("<b>node-b</b><span>not answering</span>")
+    expect(html).toContain('node-b does not answer: timed out. <a href="#page=live">See it on Live</a>')
+    expect(html).toContain('node-a waits for a restart (pending). <a href="#page=live">Restart it on Live</a>')
+    expect(w.writes()).toEqual([])
+  })
+
+  it("says nothing needs fixing when every machine answers", async () => {
+    const w = openWall({ hash: "#page=settings&section=health" })
+    await w.settle()
+    expect(settingsHtml(w)).toContain('<p class="wsh__ok">Nothing to fix.</p>')
+    // No token list (refused or not read): a dash, not a zero.
+    expect(settingsHtml(w)).toContain("<b>—</b><span>active tokens</span>")
+  })
+
+  it("puts Health on top of the section list, the phone's first screen, and not inside a section", async () => {
+    const w = openWall({ hash: "#page=settings", route: twoNodes })
+    await w.settle()
+    const side = settingsHtml(w).split('<div class="wst__body">')[0]
+    expect(side).toContain('<div class="wst__phonehealth" id="st-health-phone"><section class="wsh wsh--compact" aria-label="Health"><h2>Health</h2>')
+    expect(side.indexOf("wst__phonehealth")).toBeLessThan(side.indexOf("wst__menu"))
+    await w.go("#page=settings&section=agents")
+    expect(settingsHtml(w)).not.toContain("wst__phonehealth")
   })
 })
 
@@ -535,6 +576,53 @@ describe("Wall Settings: Agents (#1428)", () => {
     expect(w.writes()[1]).toEqual({ url: "/api/admin/wall/settings/files/skill", method: "DELETE", body: { agent: "cx", slug: "report" } })
   })
 
+  it("lists an agent's handovers both ways, releases one after asking, and hands a chat over", async () => {
+    const HO = {
+      outgoing: [{ channel: "telegram", chatId: "1001", fromAgent: "cx", toAgent: "ops", summary: "Pricing question", createdAt: "2026-10-01T00:00:00Z" }],
+      incoming: [{ channel: "whatsapp", chatId: "+10000000000", accountId: "main", fromAgent: "new", toAgent: "cx", expiresAt: "2026-12-01", createdAt: "2026-10-02T00:00:00Z" }],
+    }
+    let reads = 0
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx&atab=handovers", route: (u, init) =>
+      u === "/api/admin/agent/cx/handovers" && !init.method ? (reads++, { status: 200, body: HO }) : undefined })
+    await w.settle()
+    expect(reads).toBe(1)
+    const html = settingsHtml(w)
+    expect(html).not.toContain("Open the classic agent page")
+    expect(html.split("<h4>Routed to")[0]).toContain("<b>telegram · 1001</b><small>handed to @ops · no end · note not read yet</small>")
+    expect(html.split("<h4>Routed to")[1]).toContain("<b>whatsapp · +10000000000 · main</b><small>from @new · until 2026-12-01</small>")
+    // Hand to lists the other agents only.
+    expect(html).toContain('<option value="ops">Night Shift (ops)</option>')
+    expect(html).not.toContain('<option value="cx">')
+    await w.click({ "data-st-act": "ask", "data-key": "ho:in:0" })
+    expect(w.writes()).toEqual([])
+    expect(settingsHtml(w)).toContain("Release whatsapp +10000000000? Its next message goes where agentx.json routes it.")
+    await w.click({ "data-st-act": "confirm", "data-key": "ho:in:0" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/agent/cx/handovers", method: "DELETE", body: { channel: "whatsapp", chatId: "+10000000000", accountId: "main" } }])
+    expect(reads).toBe(2)
+    expect(settingsHtml(w)).toContain("Released whatsapp +10000000000.")
+    // A chat id and an agent are needed before any call.
+    await w.submit({ "data-st-form": "ho" })
+    expect(w.writes()).toHaveLength(1)
+    expect(w.el("st-n-ho-add").textContent).toBe("Write the chat id and pick the agent that takes it.")
+    w.el("st-h-chat").value = " 2002 "; w.el("st-h-to").value = "ops"; w.el("st-h-note").value = "They asked for a quote."
+    await w.submit({ "data-st-form": "ho" })
+    expect(w.writes()[1]).toEqual({ url: "/api/admin/wall/settings/agent/cx/handovers", method: "POST",
+      body: { channel: "telegram", chatId: "2002", toAgent: "ops", summary: "They asked for a quote." } })
+    expect(settingsHtml(w)).toContain("Handed telegram 2002 to @ops.")
+  })
+
+  it("shows why the handovers could not be read, with a way to try again", async () => {
+    let fail = true
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx&atab=handovers", route: (u) =>
+      u === "/api/admin/agent/cx/handovers" ? (fail ? { status: 400, body: { error: "store locked" } } : { status: 200, body: { incoming: [], outgoing: [] } }) : undefined })
+    await w.settle()
+    expect(settingsHtml(w)).toContain("Could not read the handovers: store locked")
+    fail = false
+    await w.click({ "data-st-act": "ho-load" })
+    expect(settingsHtml(w)).toContain("No chat is routed away from Customer Desk.")
+    expect(settingsHtml(w)).toContain("No chat is routed to Customer Desk.")
+  })
+
   it("test-drives an agent and shows its answer or its error", async () => {
     let fail = false
     const w = openWall({ hash: "#page=settings&section=agents&agent=cx", route: (u, i) =>
@@ -627,5 +715,12 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     // A classic admin route that Settings does not use is not reachable through the Wall's prefix.
     expect((await fetch(`${base}/api/admin/wall/settings/boards`, { method: "POST", headers: auth, body: "{}" })).status).toBe(404)
     expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PUT", headers: auth, body: "{}" })).status).toBe(404)
+    // Handovers go to the classic agent page's handler: a release with no chat is its own 400.
+    const ho = await fetch(`${base}/api/admin/wall/settings/agent/cx/handovers`, { method: "DELETE", headers: auth, body: "{}" })
+    expect(ho.status).toBe(400)
+    expect((await ho.json()).error).toBe("channel and chatId required")
+    // Its other routes, and a read, are not under the prefix.
+    expect((await fetch(`${base}/api/admin/wall/settings/agent/cx/mcp`, { method: "POST", headers: auth, body: "{}" })).status).toBe(404)
+    expect((await fetch(`${base}/api/admin/wall/settings/agent/cx`, { method: "PATCH", headers: auth, body: "{}" })).status).toBe(404)
   })
 })

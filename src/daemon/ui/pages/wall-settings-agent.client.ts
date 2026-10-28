@@ -14,6 +14,10 @@
 // The draft lives in S.st.draft, not in the fields, so a repaint (the
 // Wall's refresh, a tab switch, the switch) keeps what was typed, and a
 // failed save leaves the form as it was.
+//
+// Handovers lists the chats routed to and away from the agent, releases one
+// after a confirm, and hands a chat to another agent, with the classic agent
+// page's calls (agent-panel.ts) under the Settings prefix.
 
 export const WALL_SETTINGS_AGENT_SCRIPT = String.raw`
   var ST_TABS = [['overview', 'Overview'], ['personality', 'Personality'], ['skills', 'Skills'], ['channels', 'Channels'], ['handovers', 'Handovers']];
@@ -72,7 +76,7 @@ export const WALL_SETTINGS_AGENT_SCRIPT = String.raw`
     }).join('') + '</nav>';
     var body = tab === 'personality' ? stFilesHtml(a, 'identity') : tab === 'skills' ? stFilesHtml(a, 'skills')
       : tab === 'channels' ? stIntegrationsHtml(a) + stClassicHtml(a, 'Which chats and bots reach @' + a.id + ' (its Telegram bots and routes)')
-      : tab === 'handovers' ? stClassicHtml(a, 'Handovers (routing work to and from @' + a.id + ')')
+      : tab === 'handovers' ? stHandoversHtml(a)
       : stEditHtml(a) + stTestHtml(a) + stDeleteHtml(a);
     return up + '<header class="wsa-head">' + avatar(id, 'lg') + '<div class="wsa__b"><h2>' + esc(a.name || a.id) + '</h2>' +
         '<small>@' + esc(a.id) + (o.title ? ' · ' + esc(o.title) : '') + '</small>' + pictureActsHtml(id) + stNoteHtml('hold-' + a.id) + '</div>' + stSwitchHtml(a) + '</header>' +
@@ -83,6 +87,66 @@ export const WALL_SETTINGS_AGENT_SCRIPT = String.raw`
   function stClassicHtml(a, what) {
     return '<section class="wsc"><p class="wst__todo">' + esc(what) + ' is not on the Wall yet: it comes in a later step of #1428.</p>' +
       '<a class="ax-btn ax-btn--ghost" href="/admin/agents/' + encodeURIComponent(a.id) + '">Open the classic agent page</a></section>';
+  }
+
+  // --- Handovers: chats routed to or from this agent ---
+  function stHandoversHtml(a) {
+    var h = S.st.ho && S.st.ho.agent === a.id ? S.st.ho : null, name = a.name || a.id;
+    var head = '<section class="wsc"><h3>Handovers</h3><p class="wsf__hint">Pass a chat to another agent. Every message from that chat goes to the new agent until you release the handover.</p>';
+    if (!h || (!h.data && !h.error)) return head + '<p class="ax-wall__empty" aria-busy="true">Loading…</p></section>';
+    if (h.error) return head + '<p class="wst__err">Could not read the handovers: ' + esc(h.error) + '</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="ho-load">Try again</button></section>';
+    function rows(list, dir) {
+      if (!list.length) return '<p class="ax-wall__empty">' + (dir === 'out' ? 'No chat is routed away from ' + esc(name) + '.' : 'No chat is routed to ' + esc(name) + '.') + '</p>';
+      return '<ul class="wsi-list">' + list.map(function (o, n) {
+        var key = 'ho:' + dir + ':' + n;
+        return '<li class="wsi"><div><b>' + esc(o.channel) + ' · ' + esc(o.chatId) + (o.accountId ? ' · ' + esc(o.accountId) : '') + '</b><small>' +
+          (dir === 'out' ? 'handed to @' + esc(o.toAgent) : 'from @' + esc(o.fromAgent)) + ' · ' + (o.expiresAt ? 'until ' + esc(o.expiresAt) : 'no end') +
+          (o.summary ? (o.summaryConsumedAt ? ' · note read' : ' · note not read yet') : '') + '</small></div>' +
+          '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="ask" data-key="' + key + '">Release</button>' +
+          stConfirmHtml(key, 'Release ' + esc(o.channel) + ' ' + esc(o.chatId) + '? Its next message goes where agentx.json routes it.', 'Release') + '</li>';
+      }).join('') + '</ul>';
+    }
+    var others = (S.st.data.agents || []).filter(function (x) { return x.id !== a.id; }).map(function (x) { return [x.id, (x.name || x.id) + ' (' + x.id + ')']; });
+    return head + stNoteHtml('ho') +
+      '<h4>Routed away from ' + esc(name) + '</h4>' + rows(h.data.outgoing || [], 'out') +
+      '<h4>Routed to ' + esc(name) + '</h4>' + rows(h.data.incoming || [], 'in') +
+      '<details class="wsx"><summary>Hand a chat to another agent</summary><form class="wsf" data-st-form="ho">' +
+        '<div class="wsf__row"><label>Channel<select id="st-h-ch">' + stOptions([['telegram', 'Telegram'], ['whatsapp', 'WhatsApp']], 'telegram') + '</select></label>' +
+        '<label><span>Chat id <small>the person or group</small></span><input id="st-h-chat" autocomplete="off"></label></div>' +
+        '<div class="wsf__row"><label>Hand to<select id="st-h-to">' + stOptions([['', 'Pick an agent']].concat(others), '') + '</select></label>' +
+        '<label><span>Bot account <small>optional, when the channel has several</small></span><input id="st-h-acct" placeholder="default"></label></div>' +
+        '<label><span>A note for the agent that takes it <small>optional, read once with the next message</small></span><textarea id="st-h-note" rows="3"></textarea></label>' +
+        '<label><span>Until <small>optional date, such as 2026-12-01; empty means until you release it</small></span><input id="st-h-until"></label>' +
+        '<div class="wsf__foot"><button type="submit" class="ax-btn">Hand over</button>' + stNoteHtml('ho-add') + '</div>' +
+      '</form></details></section>';
+  }
+  async function stLoadHandovers(id) {
+    S.st.ho = { agent: id, data: null, error: '' };
+    stPaint();
+    try { S.st.ho.data = await stGet('/api/admin/agent/' + encodeURIComponent(id) + '/handovers'); }
+    catch (e) { S.st.ho.error = String(e.message || e); }
+    stPaint();
+  }
+  async function stAddHandover(id) {
+    var body = { channel: stVal('st-h-ch') || 'telegram', chatId: stVal('st-h-chat').trim(), toAgent: stVal('st-h-to'), accountId: stVal('st-h-acct').trim() || undefined,
+      summary: stVal('st-h-note').trim() || undefined, expiresAt: stVal('st-h-until').trim() || undefined };
+    if (!body.chatId || !body.toAgent) { stNote('ho-add', 'err', 'Write the chat id and pick the agent that takes it.'); return; }
+    stNote('ho-add', '', 'Handing over…');
+    var r = await act('POST', '/api/admin/wall/settings/agent/' + encodeURIComponent(id) + '/handovers', body);
+    if (!r.ok) { stNote('ho-add', 'err', 'Not handed over: ' + r.error); return; }
+    S.st.notes.ho = { kind: 'ok', text: 'Handed ' + body.channel + ' ' + body.chatId + ' to @' + body.toAgent + '.' };
+    await stLoadHandovers(id);
+  }
+  /** Release the handover a confirm named ('ho:out:0'), then read the list again. */
+  async function stReleaseHandover(id, key) {
+    var parts = key.split(':'), list = S.st.ho && S.st.ho.data && S.st.ho.data[parts[1] === 'out' ? 'outgoing' : 'incoming'], o = list && list[+parts[2]];
+    stPaint();
+    if (!o) return;
+    stNote('ho', '', 'Releasing…');
+    var r = await act('DELETE', '/api/admin/wall/settings/agent/' + encodeURIComponent(id) + '/handovers', { channel: o.channel, chatId: o.chatId, accountId: o.accountId || undefined });
+    if (!r.ok) { stNote('ho', 'err', 'Not released: ' + r.error); return; }
+    S.st.notes.ho = { kind: 'ok', text: 'Released ' + o.channel + ' ' + o.chatId + '. Its next message goes where agentx.json routes it.' };
+    await stLoadHandovers(id);
   }
 
   // --- Overview: the form, saved all at once ---

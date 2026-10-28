@@ -63,6 +63,8 @@ const shots = [
   { name: "wall/settings-saved", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { click: "[data-st-act=review]" }, { click: "#st-dlg-save" }, { waitText: ["#st-n-edit", "Saved"] }], clipTo: "#st-bar" },
   { name: "wall/settings-phone", path: "/wall#page=settings", wait: ".wst__sec", phone: true },
   { name: "wall/settings-phone-agents", path: "/wall#page=settings&section=agents", wait: ".wsa", phone: true },
+  { name: "wall/settings-health", path: "/wall#page=settings&section=health", wait: ".wsh__nodes" },
+  { name: "wall/settings-handovers", path: "/wall#page=settings&section=agents&agent=cx&atab=handovers", wait: ".wsa-tab h4", steps: [{ click: ".wsa-tab .wsx > summary" }, { wait: "#st-h-chat" }] },
   // #1355: the status tabs with the filters open, and the composer.
   { name: "wall/filters", path: "/wall#status=waiting", wait: ".wp", steps: [{ click: "#wall-search" }, { wait: "#wall-filters.is-open" }] },
   { name: "wall/compose", path: "/wall", wait: ".wp", steps: [{ type: "#wc-text", text: "@cx please summarise the open support tickets" }], clipTo: "#wall-compose" },
