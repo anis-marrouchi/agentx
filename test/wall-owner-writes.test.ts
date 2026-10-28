@@ -7,6 +7,9 @@ import type { AddressInfo } from "net"
 import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { listCards, saveCard, type DecisionCard } from "../src/approvals/cards"
+import { closeDb, openDb } from "../src/storage/sqlite"
+import { RequestStore } from "../src/requests/store"
+import { RequestTracker } from "../src/requests/tracker"
 
 // #1440: the Wall answers what waits on the owner under /api/admin/wall
 // (#1454's guard), served by the calls the classic pages make. Only the
@@ -19,6 +22,7 @@ const TOKEN = "demo-dashboard-token"
 const home = process.cwd()
 let server: Server
 let base: string
+let requests: RequestStore
 
 const card = (id: string): DecisionCard => ({
   id, title: "Send the newsletter?", ask: "Send it today?", recommend: "Yes: it is ready", if_silent: "keep",
@@ -35,8 +39,17 @@ function post(path: string, body: unknown, headers: Record<string, string> = {})
 
 beforeAll(async () => {
   process.chdir(mkdtempSync(join(tmpdir(), "agentx-wall-owner-")))
-  writeFileSync("agentx.json", JSON.stringify({ agents: { writer: { name: "Writer" } } }))
+  writeFileSync("agentx.json", JSON.stringify({ agents: { writer: { name: "Writer" }, coder: { name: "Coder" } }, requests: { enabled: true } }))
   saveCard(process.cwd(), card("c-1"))
+  // Three open requests in the folder's own database, as the daemon keeps them.
+  const db = openDb({ quiet: true })!
+  db.exec("CREATE TABLE IF NOT EXISTS task_traces (task_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, final_response TEXT)")
+  requests = new RequestStore(db)
+  const tracker = new RequestTracker(requests, () => ({ enabled: true, channels: [], from: [], staleAfterHours: 24, retentionDays: 90 }), () => {}, () => Date.now())
+  for (const taskId of ["t1", "t2", "t3"]) {
+    tracker.taskStarted({ agentId: "writer", channel: "voice", chatId: "mac", taskId, messagePreview: "", fullMessage: "Build the weekly report.", at: "", humanRoot: true, operator: true } as any)
+    tracker.taskCompleted({ agentId: "writer", channel: "voice", chatId: "mac", taskId, durationMs: 1, error: "Task timed out after 60 minutes", at: "" } as any)
+  }
   const config = daemonConfigSchema.parse({
     node: { id: "node-a", name: "node-a" },
     dashboard: { daemonUrl: "http://daemon.invalid:18800", token: TOKEN },
@@ -49,6 +62,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((r) => server.close(() => r()))
+  closeDb()
   process.chdir(home)
 })
 
@@ -66,18 +80,29 @@ describe("owner-only answers from the Wall (#1440)", () => {
     expect((await post("/api/admin/wall/review/reject", { msgHash: "m-1" })).status).toBe(401)
   })
 
-  it("refuses a request reply, hand-off or close without the dashboard token", async () => {
-    expect((await post("/api/admin/wall/request/reply", { id: "r-1", text: "go on" })).status).toBe(401)
-    expect((await post("/api/admin/wall/request/handoff", { id: "r-1", agentId: "writer" })).status).toBe(401)
-    expect((await post("/api/admin/wall/request/close", { id: "r-1", action: "drop" })).status).toBe(401)
-  })
+  // One per alias: refused for anyone but the owner, and served by the
+  // Open requests call of /approvals for the owner.
+  const ALIASES = [
+    { act: "reply", body: { id: "req-t1", text: "Send me the file." }, message: "Reply sent: Writer will go on with req-t1", state: "in_progress" },
+    { act: "handoff", body: { id: "req-t2", agentId: "coder" }, message: "Coder has req-t2 now", state: "in_progress" },
+    { act: "close", body: { id: "req-t3", action: "drop" }, message: "req-t3 dropped", state: "dropped" },
+  ]
+  for (const a of ALIASES) {
+    it(`refuses /wall/request/${a.act} to anyone but the owner, and the request stays as it was`, async () => {
+      const before = requests.get(a.body.id)
+      expect((await post(`/api/admin/wall/request/${a.act}`, a.body)).status).toBe(401)
+      expect((await post(`/api/admin/wall/request/${a.act}`, a.body, { Authorization: "Bearer not-the-token" })).status).toBe(401)
+      expect((await post(`/api/admin/wall/request/${a.act}`, a.body, { "X-Agentx-Peer": "node-b" })).status).toBe(401)
+      expect(requests.get(a.body.id)).toEqual(before)
+    })
 
-  it("serves a request action with the owner's token through the /approvals call", async () => {
-    // No request store in this folder: the /approvals handler's own answer.
-    const r = await post("/api/admin/wall/request/close", { id: "r-1", action: "drop" }, { Authorization: `Bearer ${TOKEN}` })
-    expect(r.status).toBe(404)
-    expect((await r.json()).error).toContain('no request "r-1"')
-  })
+    it(`serves /wall/request/${a.act} for the owner through the /approvals call`, async () => {
+      const r = await post(`/api/admin/wall/request/${a.act}`, a.body, { Authorization: `Bearer ${TOKEN}` })
+      expect(r.status).toBe(200)
+      expect((await r.json()).message).toContain(a.message)
+      expect(requests.get(a.body.id)!.state).toBe(a.state)
+    })
+  }
 
   it("tells the page whether it is the owner", async () => {
     const get = (h: Record<string, string>) => fetch(base + "/api/admin/approvals", { headers: h }).then((r) => r.json())

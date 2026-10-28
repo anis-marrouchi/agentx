@@ -12,7 +12,6 @@ import { draftSender } from "@/channels/email/smtp"
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
 import { recordAnswered } from "./answered"
-import { logger } from "@/utils/logger"
 import { openDb } from "@/storage/sqlite"
 import { RequestStore, hasRequestTables } from "@/requests/store"
 import { PlanStore, hasPlanTables } from "@/requests/plan-store"
@@ -496,15 +495,11 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
   const r = await decideItem(ctx, key, action, opts)
   if (r.ok && parsed && action !== "later") {
     const choice = typeof opts.choice === "number" ? item?.choices?.[opts.choice - 1] : opts.choice
-    try {
-      recordAnswered(ctx.root, {
-        key, kind: parsed.kind, title: item?.title ?? key, raised_by: item?.raised_by ?? "",
-        answer: action, ...(choice ? { choice } : {}), by: opts.by ?? "operator", at: new Date(ctx.now ?? Date.now()).toISOString(),
-      })
-    } catch (e: any) {
-      // The answer stands: the list is a view of it, not its record.
-      logger.warn(`[approvals] answered list not written for ${key}: ${e?.message ?? e}`)
-    }
+    recordAnswered(ctx.root, {
+      key, kind: parsed.kind, title: item?.title ?? key, raised_by: item?.raised_by ?? "",
+      answer: action, ...(choice ? { choice } : {}), ...(opts.text ? { text: opts.text } : {}),
+      by: opts.by ?? "operator", at: new Date(ctx.now ?? Date.now()).toISOString(),
+    })
   }
   return r
 }

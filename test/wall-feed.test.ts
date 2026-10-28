@@ -1788,6 +1788,35 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     expect(JSON.parse(sent[0].init.body)).toEqual({ msgHash: "m1" })
   })
 
+  it("keeps the total equal to the /approvals count, with reviews waiting", async () => {
+    const second = { ...APPROVALS.items[0], key: "card:c2", title: "Renew the domain?" }
+    const approvals = { ...APPROVALS, items: [APPROVALS.items[0], second], desk: { count: 2, later: 0, items: [] } }
+    const reviews = { reviews: ["m1", "m2", "m3"].map((id) => ({ id, status: "pending", path: ["work"], message: "", proposedAt: new Date(NOW).toISOString(), source: "classifier" })), counts: { pending: 3 } }
+    const w = openWall({ hash: "#status=open&view=decide", approvals, reviews })
+    await w.settle()
+    const html = w.el("wall-decide").innerHTML
+    // The count the Desk, the digest and /approvals give: reviews are not in it.
+    expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="n">2<\/span>/)
+    expect(html).toContain("All <span class=\"n\">2</span>")
+    expect(html).toContain("Reviews <span class=\"n\">3</span>")
+    expect(w.el("nav-n-needs").textContent).toBe(String(approvals.desk.count))
+  })
+
+  it("says when the answered list started, and shows a card its agent closed", async () => {
+    const since = "2026-10-28T09:00:00.000Z"
+    const empty = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, answered: [], answered_since: since } })
+    await empty.settle()
+    empty.click({ "data-dtab": "answered" })
+    await empty.settle()
+    expect(empty.el("wall-decide").innerHTML).toMatch(/<h2>Nothing answered yet<\/h2><p>History starts 2026-10-2[89]\. /)
+    const closed = { key: "card:c9", kind: "card", title: "Book the room?", raised_by: "cx", answer: "closed", text: "Owner said yes in chat", by: "cx", at: new Date(NOW - 60e3).toISOString() }
+    const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, answered: [closed], answered_since: since } })
+    await w.settle()
+    w.click({ "data-dtab": "answered" })
+    await w.settle()
+    expect(w.el("wall-decide").innerHTML).toContain('<b>Closed</b> · Customer Desk · <span dir="auto">Book the room?</span> · <span dir="auto" class="k">Owner said yes in chat</span>')
+  })
+
   it("shows anyone else the same cards read only, as Needs the owner", async () => {
     const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, owner: false } })
     await w.settle()

@@ -239,11 +239,13 @@ export const WALL_DECIDE_SCRIPT = String.raw`
       return '<button type="button" data-dkind="' + t[0] + '" class="wdc__chip' + (on ? ' is-on' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + t[1] + ' <span class="n">' + t[2] + '</span></button>';
     }).join('') + '</div>';
   }
-  function decAnsweredHtml(list) {
-    if (!list.length) return '<div class="wdc__empty"><h2>Nothing answered yet</h2><p>Your answers show here, from this page, the Desk, the phone app and the Mac card.</p></div>';
+  function decAnsweredHtml(list, since) {
+    var start = since ? 'History starts ' + stamp(Date.parse(since)).slice(0, 10) + '. ' : '';
+    if (!list.length) return '<div class="wdc__empty"><h2>Nothing answered yet</h2><p>' + esc(start) + 'Your answers show here, from this page, the Desk, the phone app and the Mac card.</p></div>';
     return '<ol class="wdc__done">' + list.map(function (a) {
-      var verb = a.kind === 'memory' ? (a.answer === 'yes' ? 'Kept' : 'Dropped') : a.answer === 'yes' ? 'Yes' : 'No';
-      return '<li><b>' + verb + '</b>' + (a.choice ? ' (' + esc(a.choice) + ')' : '') + ' · ' + esc(nameOf(a.raised_by)) + ' · <span dir="auto">' + esc(a.title) + '</span> · <time title="' + esc(stamp(Date.parse(a.at))) + '">' + esc(stamp(Date.parse(a.at))) + '</time>' +
+      var verb = a.answer === 'closed' ? 'Closed' : a.kind === 'memory' ? (a.answer === 'yes' ? 'Kept' : 'Dropped') : a.answer === 'yes' ? 'Yes' : 'No';
+      return '<li><b>' + verb + '</b>' + (a.choice ? ' (' + esc(a.choice) + ')' : '') + ' · ' + esc(nameOf(a.raised_by)) + ' · <span dir="auto">' + esc(a.title) + '</span>' +
+        (a.text ? ' · <span dir="auto" class="k">' + esc(a.text) + '</span>' : '') + ' · <time title="' + esc(stamp(Date.parse(a.at))) + '">' + esc(stamp(Date.parse(a.at))) + '</time>' +
         '<span class="k"> by ' + esc(a.by) + '</span></li>';
     }).join('') + '</ol>';
   }
@@ -266,7 +268,7 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     var head = '<p class="ax-wall__count wdc__head">' + decideCount() + ' waiting for ' + (decOwner() ? 'you' : 'the owner') + (decLater() ? ', ' + decLater() + ' put off for later' : '') +
       '<span class="k">Same count as the Desk and the digest</span></p>';
     var ro = decOwner() ? '' : '<p class="wdc__ro">Only the owner can answer these. You see them read only.</p>';
-    if (D.tab === 'answered') return note + head + decTabs() + ro + decAnsweredHtml(v.answered || []);
+    if (D.tab === 'answered') return note + head + decTabs() + ro + decAnsweredHtml(v.answered || [], v.answered_since);
     var tabList = all.filter(function (o) { return D.tab === 'later' ? o.snoozed : !o.snoozed; });
     var shown = D.kind === 'reviews' ? (D.tab === 'waiting' ? reviews : []) : tabList.filter(function (o) { return !D.kind || decChipOf(o) === D.kind; });
     var reviewNote = D.kind === 'reviews' && R.data && R.data.error ? '<div class="wdc__err is-part"><p>Could not read the reviews: ' + esc(R.data.error) + '.</p></div>' : '';
