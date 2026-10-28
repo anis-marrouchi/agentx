@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.185.1](https://github.com/anis-marrouchi/agentx/compare/v0.185.0...v0.185.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **wall:** one word for each answer, and say what Answered lists ([#1440](https://github.com/anis-marrouchi/agentx/issues/1440)) ([#1508](https://github.com/anis-marrouchi/agentx/issues/1508)) ([c7e541b](https://github.com/anis-marrouchi/agentx/commit/c7e541bdc383045ac1c51f2247871bd136272827))
+
 ## [0.185.0](https://github.com/anis-marrouchi/agentx/compare/v0.184.0...v0.185.0) (2026-10-28)
 
 
