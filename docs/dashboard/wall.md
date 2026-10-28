@@ -112,13 +112,12 @@ A card on the Wall shows:
 
 Only the owner answers on the Wall: the dashboard asks for its key. To answer:
 
-1. **Browser:** select **Needs you** in the nav. It lists what waits on you, the same list and count as the Approvals page and the phone app's Desk: cards, schedules, new agents, memory facts, wiki lessons, replies, posts and requests. The tabs at the top narrow it to one kind.
-2. On a card with choices, the one the agent advised is already picked. Pick another if you want, and change the message if you need to.
-3. Select **Yes**, **No** or **Later**. With the Mac popup on, **Show on Mac** shows it there instead. The note over the list says what happens next, and the item leaves the list.
-4. A card raised while working on a task is also on that task's post. You can answer it there with the same buttons; the post shows it no more.
-5. Under the list, **Posts waiting on you** shows the open posts that asked you a question.
+1. **Browser:** select **Needs you** in the nav. It lists what waits on you, with the same count as the phone app's Desk and the daily digest. **Waiting**, **Put off** and **Answered** are the tabs, and the chips narrow the list to one kind: Decisions, Schedules, Memory, Wiki, Drafts, Requests and Reviews.
+2. On a card with choices, the one the agent advised is already picked. Pick another if you want. The draft and what Yes and No do are folded under the card.
+3. Select **Yes**, **No** or **Later** (**Keep** or **Drop** for a memory fact). A line opens that says exactly what is sent; select **Confirm**. The card leaves the list, and its post updates without a reload.
+4. A card raised while working on a task is also on that task's post, with the same buttons and confirm.
 
-Something you put off with **Later** is hidden; select **Show them** to list it again. A request whose agent asked a question has **Answer on its post**, which opens the post. The Approvals page keeps the approval settings and the actions on open requests. See [Approvals](./approvals.md).
+Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Wall](./approvals.md#answer-on-the-wall).
 
 To see the waiting tasks in the feed instead:
 
@@ -698,7 +697,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Wall** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
-39. Needs you: with a decision card pending, select **Needs you**. Its count matches the Approvals page. Select **Later** on the card: it leaves the list, and on the Approvals page it shows as put off. In a private window without the dashboard key, the same answer says **Only the owner can answer this** and the card stays.
+39. Needs you: with a decision card pending, select **Needs you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
 
 ## If something is wrong
 
@@ -749,7 +748,9 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **"Couldn't read …" under Reported issues:** this machine could not list that project's issues. "not found" usually means the token cannot see the project or the `project` path is wrong; "did not answer in time" clears on the next refresh.
 - **An agent's profile has no org line, or no dotted-line or acts-for relation:** the Wall could not read the org chart, or the agent has no entry or relation there. Open **Org** to check; relations are set up there, not on the Wall.
 - **No Reported issues list on Failures:** `wall.reportedIssues` is not set on any machine, or the dashboard was not restarted after you set it.
-- **A card is on the Approvals page but not on the Wall:** it was raised outside a task, or it was already answered or expired. Only pending cards that belong to a task show on a post.
+- **A card is on Needs you but not on a post:** it was raised outside a task. Only pending cards that belong to a task show on a post; every pending card is on **Needs you**.
+- **Needs you reads Needs the owner and has no buttons:** the browser has no dashboard key. Sign in with the key; the buttons come back.
+- **Answering unblocks names no run:** runs show there only when they were paused on that card by a workflow's owner-decision step, on a machine that answered within five seconds.
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
 - **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.
 - **The portfolio shows "Untitled request" a lot:** those tasks have no headline yet and no issue or merge request as their home. The text of the task is never used as a title there.

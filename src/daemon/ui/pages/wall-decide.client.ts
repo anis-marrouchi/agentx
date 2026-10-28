@@ -498,7 +498,7 @@ export const WALL_DECIDE_CSS = `
 .wdc__acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
 .wdc__acts .ax-btn { min-height: 40px; min-width: 72px; border-radius: var(--ax-radius-pill); }
 .wdc__acts .ax-btn.is-on { outline: 2px solid var(--ax-accent); outline-offset: 1px; }
-.wdc__alt { margin-left: auto; }
+.wdc__alt { margin-left: auto; white-space: nowrap; }
 .wdc__hand { font: inherit; min-height: 40px; padding: 0 12px; border-radius: var(--ax-radius-pill); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); }
 .wdc__confirm { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 8px; padding: 10px 14px; border: 1px solid var(--ax-accent); border-radius: var(--ax-radius-lg); background: var(--ax-accent-t, var(--ax-surface)); }
 .wdc__confirm p { flex: 1 1 260px; margin: 0; overflow-wrap: anywhere; }
@@ -529,12 +529,15 @@ export const WALL_DECIDE_CSS = `
 .wdc__side { display: none; }
 .ax-wall__aside.is-dec > :not(.wdc__side) { display: none; }
 .ax-wall__aside.is-dec > .wdc__side { display: block; }
+/* Under 1180 px the side column would stack over the list: the count line
+   under the title says what waits instead, as on the phone frame. */
+@media (max-width: 1180px) { .ax-wall__aside.is-dec > .wdc__side { display: none; } }
 /* A card on its post answers in place (#1440). */
 .wc .wdc__acts { margin-top: 8px; }
 @media (max-width: 560px) {
   .wdc__tabs .n { display: none; }
   .wdc__acts .ax-btn { flex: 1 1 0; }
-  .wdc__alt { margin-left: 0; }
+  .wdc__alt { margin-left: 0; flex-basis: 100%; }
   .wdc__exp { margin-left: 0; flex-basis: 100%; }
 }
 `
