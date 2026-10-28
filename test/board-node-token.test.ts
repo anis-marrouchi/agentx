@@ -57,4 +57,20 @@ describe("resolveNodeTargets", () => {
       headers: { Authorization: "Bearer mesh-secret" },
     }))
   })
+
+  it("adds the config's mesh.peers with their own token, once per address (#1479)", async () => {
+    vi.stubEnv("MESH_TOKEN", "mesh-secret")
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([{ peer: "vps", peerUrl: "http://vps:18800" }]))))
+    const daemon = {
+      dashboard: { daemonUrl: "http://127.0.0.1:18800", token: "", daemons: [{ name: "mini", url: "http://mini:18800", token: "mini-token" }] },
+      mesh: { peers: [{ name: "mini-again", url: "http://mini:18800/" }, { name: "vps", url: "http://vps:18800", token: "vps-token" }, { name: "pi", url: "http://pi:18800" }] },
+    } as any
+
+    expect(await resolveNodeTargets(daemon)).toEqual([
+      { name: "primary", url: "http://127.0.0.1:18800", token: "mesh-secret" },
+      { name: "mini", url: "http://mini:18800", token: "mini-token" },
+      { name: "vps", url: "http://vps:18800", token: "vps-token" },
+      { name: "pi", url: "http://pi:18800", token: "mesh-secret" },
+    ])
+  })
 })
