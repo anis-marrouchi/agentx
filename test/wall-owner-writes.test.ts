@@ -66,11 +66,32 @@ describe("owner-only answers from the Wall (#1440)", () => {
     expect((await post("/api/admin/wall/review/reject", { msgHash: "m-1" })).status).toBe(401)
   })
 
+  it("refuses a request reply, hand-off or close without the dashboard token", async () => {
+    expect((await post("/api/admin/wall/request/reply", { id: "r-1", text: "go on" })).status).toBe(401)
+    expect((await post("/api/admin/wall/request/handoff", { id: "r-1", agentId: "writer" })).status).toBe(401)
+    expect((await post("/api/admin/wall/request/close", { id: "r-1", action: "drop" })).status).toBe(401)
+  })
+
+  it("serves a request action with the owner's token through the /approvals call", async () => {
+    // No request store in this folder: the /approvals handler's own answer.
+    const r = await post("/api/admin/wall/request/close", { id: "r-1", action: "drop" }, { Authorization: `Bearer ${TOKEN}` })
+    expect(r.status).toBe(404)
+    expect((await r.json()).error).toContain('no request "r-1"')
+  })
+
+  it("tells the page whether it is the owner", async () => {
+    const get = (h: Record<string, string>) => fetch(base + "/api/admin/approvals", { headers: h }).then((r) => r.json())
+    expect((await get({ Authorization: `Bearer ${TOKEN}` })).owner).toBe(true)
+  })
+
   it("takes the owner's answer, with the same record /approvals writes", async () => {
     const r = await post("/api/admin/wall/decide", { key: "card:c-1", action: "yes" }, { Authorization: `Bearer ${TOKEN}` })
     expect(r.status).toBe(200)
     expect((await r.json()).message).toContain("writer will be told yes")
     const done = listCards(process.cwd(), "decided").find((c) => c.id === "c-1")!
     expect(done).toMatchObject({ verdict: "yes", decided_by: "operator (dashboard)" })
+    // And it is on the answered list the Answered tab reads.
+    const list = await fetch(base + "/api/admin/approvals?answered=1", { headers: { Authorization: `Bearer ${TOKEN}` } }).then((r) => r.json())
+    expect(list.answered[0]).toMatchObject({ key: "card:c-1", kind: "card", title: "Send the newsletter?", raised_by: "writer", answer: "yes", by: "operator (dashboard)" })
   })
 })

@@ -908,6 +908,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (path.startsWith("/api/admin/approvals") || answerRoute) {
     await handleApprovalsPanelApi(req, res, answerRoute ?? path, url, {
       node: { url: ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), name: ctx.config.node?.name || "this computer" },
+      owner: wallOwnerOk(req, ctx),
     })
     return
   }

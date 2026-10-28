@@ -50,6 +50,11 @@ import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests
 //        page's /api/admin/graph/classifications/approve|reject
 //        (graph-panel.ts). These answers sit here so the guard keeps them
 //        the owner's (#1454); the old routes stay for /approvals and /graph.
+//   POST /api/admin/wall/request/reply   {id, text}
+//   POST /api/admin/wall/request/handoff {id, agentId, note?}
+//   POST /api/admin/wall/request/close   {id, action: done|drop}  a request
+//        on Needs you (#1440): the Open requests calls of /approvals
+//        (requests-panel.ts), under the same guard.
 //
 // A comment and a call go to the node that keeps the post (the client
 // sends the post's peer, and the dashboard proxy forwards). A Space always
@@ -65,6 +70,7 @@ export const WALL_BUDGET_PATH = `${WALL_ACTIONS_PREFIX}/budget`
 export const WALL_DECIDE_PATH = `${WALL_ACTIONS_PREFIX}/decide`
 export const WALL_DECIDE_POPUP_PATH = `${WALL_DECIDE_PATH}/popup`
 export const WALL_REVIEW_PATH = `${WALL_ACTIONS_PREFIX}/review`
+export const WALL_REQUEST_PATH = `${WALL_ACTIONS_PREFIX}/request`
 
 /** The Approvals or graph route a Wall answer is served by, or null (#1440). */
 export function wallAnswerRoute(method: string, path: string): string | null {
@@ -73,6 +79,9 @@ export function wallAnswerRoute(method: string, path: string): string | null {
   if (path === WALL_DECIDE_POPUP_PATH) return "/api/admin/approvals/popup"
   if (path === `${WALL_REVIEW_PATH}/approve`) return "/api/admin/graph/classifications/approve"
   if (path === `${WALL_REVIEW_PATH}/reject`) return "/api/admin/graph/classifications/reject"
+  for (const act of ["reply", "handoff", "close"]) {
+    if (path === `${WALL_REQUEST_PATH}/${act}`) return `/api/admin/approvals/requests/${act}`
+  }
   return null
 }
 
