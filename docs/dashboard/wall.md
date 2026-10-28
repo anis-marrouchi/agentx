@@ -248,7 +248,7 @@ Avatars show an agent's or a person's profile picture when one is set on the mac
 
 **Settings** on the Wall is where you, the owner, change your agents. It is the only Wall page that changes settings; every other Wall page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
 
-It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents** section; each other section opens its classic page.
+It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents** and **Health** sections; each other section opens its classic page.
 
 1. **Browser:** in the nav, select **Settings**, under **Owner**. On a phone, select **More**, then **Settings**.
 2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Advanced). The one you picked is on the right; **Agents** opens first.
@@ -257,7 +257,7 @@ It saves to `agentx.json`, the AgentX settings file on the machine that serves t
    ![Settings on the Wall: the grouped sections on the left and one card per agent, in the isolated demo](/screenshots/wall/settings.png)
 
    *Scripted demo data; your team's names and machines will differ.*
-4. On a phone, the list of sections fills the screen, each with a line on what it holds. Tap a section to open it, and **← All settings** to go back.
+4. On a phone, the list of sections fills the screen, with **Health** on top of it and a line under each section on what it holds. Tap a section to open it, and **← All settings** to go back.
 
    ![Settings on a phone: the grouped list of sections, each with an arrow](/screenshots/wall/settings-phone.png)
 
@@ -299,7 +299,7 @@ The other tabs:
 - **Personality**: its instruction files. Select one, change it and select **Save**. **Load a file** puts a file from your computer in the editor; nothing is written until you select **Save**.
 - **Skills**: its skills, edited the same way. **Add a skill** makes a new one. **Delete** asks you first.
 - **Channels**: the outside services it has credentials for (its integrations). You give the name of an environment variable that holds the secret, never the secret itself. **Remove** asks you first. Which chats and bots reach it is still on the classic agent page.
-- **Handovers**: not on the Wall yet; it opens the classic agent page.
+- **Handovers**: the chats passed to another agent. A handover sends every message from one chat to another agent until you release it. See [Hand a chat to another agent](#hand-a-chat-to-another-agent).
 
 **Overview** also has **Test drive** (send it a message and read its answer on the page; it is a real run, so it can cost money) and **Delete**, which removes the agent from `agentx.json` after asking you. Its workspace folder stays on disk, and the daemon stops it after a restart.
 
@@ -311,6 +311,34 @@ The other tabs:
 4. **Terminal:** run `agentx daemon restart --when-idle`. The new agent starts working after the restart.
 
 **Wiki page curator**, under **Add an agent**, picks which agent answers the chat bubble on wiki pages, as in classic Settings.
+
+### Hand a chat to another agent
+
+1. **Browser:** in **Settings** › **Agents**, select the agent that has the chat now, then the **Handovers** tab.
+2. **Routed away from** lists the chats this agent has passed on; **Routed to** lists the chats other agents passed to it. Each line says the channel, the chat id, the other agent, until when, and whether the note was read.
+3. To pass a chat on, open **Hand a chat to another agent**.
+4. Pick the channel (Telegram or WhatsApp) and type the chat id: the person or group, as the channel numbers it.
+5. Pick the agent that takes it in **Hand to**. It lists the other agents on this machine.
+6. Optional: type a note for that agent. It reads it once, with the next message from the chat.
+7. Optional: type a date in **Until**. Leave it empty to keep the handover until you release it.
+8. Select **Hand over**. The line under **Handovers** says **Handed …**, or why not.
+
+   ![The Handovers tab: the chats routed away from and to the agent, then Hand a chat to another agent, in the isolated demo](/screenshots/wall/settings-handovers.png)
+
+To end a handover, select **Release** on its line, then **Release** again to confirm. The chat's next message goes where `agentx.json` sends it.
+
+### Check the machines' health
+
+1. **Browser:** in **Settings**, select **Health**, under **Machines**. On a phone, Health is on top of the list of sections.
+2. Four numbers sit on top: **agents online** (on machines that answer, out of all agents), **channels on** (out of the chat apps set up in `agentx.json`), **need you**, and **active tokens** (keys for apps and scripts that are neither revoked nor expired).
+3. Below them, one line per machine: green when it answers, with its version; red when it does not, with since when; **Restart pending** when it waits for one.
+4. Last, what to fix: each machine that does not answer and each one waiting for a restart, with a link to [Live](#live-sessions), where you can restart it. **Nothing to fix.** means every machine answers.
+
+   ![Health on the Wall: four numbers, one line per machine and what to fix, in the isolated demo](/screenshots/wall/settings-health.png)
+
+   *Scripted demo data; your team's names and machines will differ.*
+
+Health only reads. It refreshes with the Wall, without losing what you are typing in another section.
 
 ## Live sessions
 
@@ -773,7 +801,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
 39. Needs you: with a decision card pending, select **Needs you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
-40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back.
+40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back. Select **Health**: **agents online** matches the agents on [Live](#live-sessions), and a machine you stop turns red within a minute. Open an agent's **Handovers** tab and hand a test chat to another agent: it is listed under **Routed away from**, and under **Routed to** on the other agent's tab. Select **Release**, then **Release** again: it leaves both lists.
 41. Workflows page: select **Workflows** in the nav. It lists the same workflows as the classic `/workflows` page, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
 
 ## If something is wrong
@@ -848,4 +876,6 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **"Not saved: …" in Settings:** the value was refused, for example an agent id with capitals or no wake word. The form keeps what you typed. Fix it as the message says and select **Save…** again; nothing was written.
 - **Save… does nothing:** no field differs from what is saved. A field you changed is blue; if none is, there is nothing to save.
 - **A saved change does not show in the agent's work:** a new engine, model or permission mode, and a new or deleted agent, need `agentx daemon restart --when-idle`. Other changes apply from its next run; a run going on finishes as it started.
+- **Health shows a dash instead of a number:** that number could not be read just now, for example the token list. Reload the page; the other numbers still hold.
+- **"Not handed over: …" in Handovers:** the chat id or the agent is missing, or the date is not one AgentX reads. Fix it and select **Hand over** again.
 - **A Settings section says "not on the Wall yet":** that section is still on its classic page. Its button opens it there.

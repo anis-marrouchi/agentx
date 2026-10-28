@@ -101,19 +101,25 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 //   POST   /api/admin/wall/settings/files/skill            add a skill
 //   DELETE /api/admin/wall/settings/files/skill            delete a skill
 //   POST   /api/admin/wall/settings/wiki/curator           the wiki curator
+//   POST   /api/admin/wall/settings/agent/<id>/handovers   hand a chat over
+//   DELETE /api/admin/wall/settings/agent/<id>/handovers   release one
+// (the last two are the classic agent page's, served by agent-panel.ts)
 export const WALL_SETTINGS_PREFIX = `${WALL_ACTIONS_PREFIX}/settings`
 const WALL_SETTINGS_WRITES = new Set([
   "POST /org/hold", "POST /agents", "PATCH /agents", "DELETE /agents", "POST /agents/access",
   "POST /agents/integrations", "DELETE /agents/integrations", "POST /agents/test",
   "PUT /files", "POST /files/skill", "DELETE /files/skill", "POST /wiki/curator",
 ])
+/** An agent's handovers, written from its Handovers tab (agent-panel.ts's id shape). */
+const WALL_SETTINGS_HANDOVERS = /^\/agent\/[a-z0-9][a-z0-9_-]*\/handovers$/
 
 /** The classic /api/admin path a Settings write stands for, or null when it
  *  is not one of them. */
 export function wallSettingsTarget(method: string, path: string): string | null {
   if (!path.startsWith(`${WALL_SETTINGS_PREFIX}/`)) return null
   const rest = path.slice(WALL_SETTINGS_PREFIX.length)
-  return WALL_SETTINGS_WRITES.has(`${method} ${rest}`) ? `/api/admin${rest}` : null
+  if (WALL_SETTINGS_WRITES.has(`${method} ${rest}`)) return `/api/admin${rest}`
+  return (method === "POST" || method === "DELETE") && WALL_SETTINGS_HANDOVERS.test(rest) ? `/api/admin${rest}` : null
 }
 
 const AGENT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
