@@ -40,6 +40,21 @@ import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests
 //        a monthly budget from the Cost page (#1423): the same handler as
 //        POST /api/admin/budgets in board-dashboard.ts, here so the guard
 //        keeps it the owner's
+//   POST /api/admin/wall/decide       {key, action, …}  an answer on Needs
+//        you or on a post (#1440): the body and handler of POST
+//        /api/admin/approvals/decide (approvals-panel.ts)
+//   POST /api/admin/wall/decide/popup {key}  show it on the Mac: POST
+//        /api/admin/approvals/popup
+//   POST /api/admin/wall/review/approve {msgHash}  decide a pending review
+//   POST /api/admin/wall/review/reject  {msgHash}  (#1440): the graph
+//        page's /api/admin/graph/classifications/approve|reject
+//        (graph-panel.ts). These answers sit here so the guard keeps them
+//        the owner's (#1454); the old routes stay for /approvals and /graph.
+//   POST /api/admin/wall/request/reply   {id, text}
+//   POST /api/admin/wall/request/handoff {id, agentId, note?}
+//   POST /api/admin/wall/request/close   {id, action: done|drop}  a request
+//        on Needs you (#1440): the Open requests calls of /approvals
+//        (requests-panel.ts), under the same guard.
 //
 // A comment and a call go to the node that keeps the post (the client
 // sends the post's peer, and the dashboard proxy forwards). A Space always
@@ -52,6 +67,23 @@ export const WALL_CALL_PATH = `${WALL_ACTIONS_PREFIX}/call`
 export const WALL_POST_PATH = `${WALL_ACTIONS_PREFIX}/post`
 export const WALL_SPACE_PATH = `${WALL_ACTIONS_PREFIX}/space`
 export const WALL_BUDGET_PATH = `${WALL_ACTIONS_PREFIX}/budget`
+export const WALL_DECIDE_PATH = `${WALL_ACTIONS_PREFIX}/decide`
+export const WALL_DECIDE_POPUP_PATH = `${WALL_DECIDE_PATH}/popup`
+export const WALL_REVIEW_PATH = `${WALL_ACTIONS_PREFIX}/review`
+export const WALL_REQUEST_PATH = `${WALL_ACTIONS_PREFIX}/request`
+
+/** The Approvals or graph route a Wall answer is served by, or null (#1440). */
+export function wallAnswerRoute(method: string, path: string): string | null {
+  if (method !== "POST") return null
+  if (path === WALL_DECIDE_PATH) return "/api/admin/approvals/decide"
+  if (path === WALL_DECIDE_POPUP_PATH) return "/api/admin/approvals/popup"
+  if (path === `${WALL_REVIEW_PATH}/approve`) return "/api/admin/graph/classifications/approve"
+  if (path === `${WALL_REVIEW_PATH}/reject`) return "/api/admin/graph/classifications/reject"
+  for (const act of ["reply", "handoff", "close"]) {
+    if (path === `${WALL_REQUEST_PATH}/${act}`) return `/api/admin/approvals/requests/${act}`
+  }
+  return null
+}
 
 // Settings on the Wall (#1428) writes under the prefix too, so the guard
 // keeps it the owner's. Each route is the classic /admin call of the same

@@ -1,5 +1,6 @@
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { recordAnswered } from "./answered"
 import { answerLines, buildChoices, draftFor, resolveAnswer, type CardChoices } from "./choices"
 import { isRetroOrigin, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
 import { cardRuleBreak, FOLLOWUP_KINDS, followupBudgetRefusal, type FollowupKind } from "./screen-gate"
@@ -420,6 +421,11 @@ export function resolveCard(
     agent_notified_at: at,
   }
   saveCard(root, resolved)
+  // On the Wall's Answered tab too, whichever way the close came (#1440).
+  recordAnswered(root, {
+    key: `card:${id}`, kind: "card", title: card.title, raised_by: card.raised_by, answer: "closed",
+    text: resolved.resolution, by: opts.node ? `${opts.by} on ${opts.node}` : opts.by, at,
+  })
   return { ok: true, card: resolved }
 }
 

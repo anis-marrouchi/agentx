@@ -87,7 +87,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, isWallWrite, wallSettingsTarget, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallSettingsTarget, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -905,9 +905,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     sendJson(res, reply.status, reply.body)
     return
   }
-  if (path.startsWith("/api/admin/approvals")) {
-    await handleApprovalsPanelApi(req, res, path, url, {
+  // A Wall answer (#1440) is served by the Approvals or graph route it
+  // stands for; its own path keeps it under the Wall's guard (#1454).
+  const answerRoute = wallAnswerRoute(method, path)
+  if (answerRoute?.startsWith("/api/admin/graph/")) {
+    await handleGraphApi(req, res, answerRoute)
+    return
+  }
+  if (path.startsWith("/api/admin/approvals") || answerRoute) {
+    await handleApprovalsPanelApi(req, res, answerRoute ?? path, url, {
       node: { url: ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), name: ctx.config.node?.name || "this computer" },
+      owner: wallOwnerOk(req, ctx),
     })
     return
   }

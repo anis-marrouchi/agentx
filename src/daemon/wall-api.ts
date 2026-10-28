@@ -92,6 +92,11 @@ export interface WallOwnerCard {
   raisedBy: string
   createdAt: number
   source: string | null
+  /** The ready-made answers on offer; a yes picks one by its number
+   *  (#1440). Empty: a plain yes or no. */
+  choices: string[]
+  /** The suggested message, `{choice}` not yet filled in. Null: none. */
+  draft: string | null
 }
 
 export interface WallRun {
@@ -538,6 +543,8 @@ export function ownerCardsOf(requestId: string, deps: WallDeps): WallOwnerCard[]
         raisedBy: c.raised_by,
         createdAt: Date.parse(c.created_at),
         source: c.source ? redactSecrets(c.source) : null,
+        choices: (c.choices ?? []).map((x) => redactSecrets(x)),
+        draft: c.draft ? redactSecrets(c.draft) : null,
       })
       map.set(id, list)
     }

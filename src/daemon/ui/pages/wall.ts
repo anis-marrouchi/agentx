@@ -6,10 +6,11 @@
 // Running now and Agents open pages of their own, each with a count (#1316).
 // Org draws the org chart from the top down (#1419, wall-org.client.ts).
 //
-// Read-only over records the daemon already keeps (requests, plan events,
-// task traces, the live fleet snapshot). It writes, owner-only, where a
-// classic page wrote (#1449): an open post's actions and Settings (#1428),
-// drawn only when `owner` is set (wall-settings.client.ts).
+// Reads records the daemon already keeps (requests, plan events, task
+// traces, the live fleet snapshot). It writes only when the owner does:
+// a post, a comment, a call, a Space, an answer on Needs you (#1440), or,
+// owner-only where a classic page wrote (#1449), Settings (#1428), drawn
+// only when `owner` is set (wall-settings.client.ts).
 //
 // It reads like a social feed (#1207): each post carries its agent's
 // avatar, name and @handle, with an action row under it; tapping an agent
@@ -27,6 +28,7 @@ import { WALL_PAGE_SCRIPT } from "./wall.client"
 import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
+import { WALL_DECIDE_CSS } from "./wall-decide.client"
 import { WALL_COST_CSS } from "./wall-cost.client"
 import { WALL_ORG_CSS } from "./wall-org.client"
 import { WALL_PEOPLE_CSS } from "./wall-people.client"
@@ -103,7 +105,7 @@ interface NavItem { key: string; label: string; href: string; icon: NavIcon; cou
 export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "", items: [
     { key: "wall", label: "Wall", href: "#status=open&amp;view=feed", icon: "wall", count: "nav-n-wall" },
-    { key: "needs", label: "Needs you", href: "#status=waiting_owner&amp;view=feed", icon: "needs", count: "nav-n-needs" },
+    { key: "needs", label: "Needs you", href: "#status=open&amp;view=decide", icon: "needs", count: "nav-n-needs" },
   ] },
   { label: "Work", items: [
     { key: "live", label: "Live", href: "#page=live", icon: "space", count: "nav-n-live" },
@@ -183,7 +185,7 @@ ${navItems}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
     <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
     <div class="ax-wall__navfoot">
-      <span>The Wall shows the work. It sends something only when you post, comment, call or start a Space.</span>
+      <span>The Wall shows the work. It sends something only when you post, comment, call, start a Space or answer.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button" data-wall-theme>Light / dark</button>
     </div>
   </nav>
@@ -239,6 +241,7 @@ ${navItems}
     <section id="wall-failures" class="ax-wall__failures" aria-label="Failures" hidden></section>
     <section id="wall-jobs" class="ax-wall__failures" aria-label="Recurring jobs" hidden></section>
     <section id="wall-reviews" class="ax-wall__reviews" aria-label="Review queue" hidden></section>
+    <section id="wall-decide" class="ax-wall__decide" aria-label="Waiting for your answer" hidden></section>
     <section id="wall-cost" class="ax-wall__cost" aria-label="Cost: global and per agent" hidden></section>
     <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
     <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
@@ -257,6 +260,7 @@ ${navItems}
       <div id="wall-org-rail-body"></div>
     </section>
     <div class="wac__side" id="wall-act-side" aria-label="Activity in numbers"></div>
+    <div class="wdc__side" id="wall-dec-side" aria-label="What waits on you, in short"></div>
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
       <h2 id="wall-nodes-h">Happening now</h2>
       <div id="wall-nodes"><p class="ax-wall__empty">Loading…</p></div>
@@ -276,7 +280,7 @@ ${navItems}
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS,
     scripts: token + settingsCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }

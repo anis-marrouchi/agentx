@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { decide, listInbox, type InboxAction, type InboxContext } from "@/approvals/inbox"
+import { answeredSince, readAnswered } from "@/approvals/answered"
 import { popAgain } from "@/approvals/popup-runner"
 import { parseDestination, readApprovalSettings, readDeskRouting, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
 import { readOwnerList } from "@/desk/owner-list"
@@ -19,7 +20,10 @@ import type { TopbarPeer } from "./topbar"
 //   GET  /approvals                        the page
 //   GET  /api/admin/approvals[?all=1]      inbox + settings, and `desk`: the
 //                                          owner's one list with its count
-//                                          (desk/owner-list.ts, #1138 step C)
+//                                          (desk/owner-list.ts, #1138 step C);
+//                                          ?answered=1 adds what was answered,
+//                                          newest first, and answered_since
+//                                          (answered.ts, #1440)
 //   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force?, choice?, text?, seen? }
 //   POST /api/admin/approvals/popup        { key }: show the card on the Mac again
 //   POST /api/admin/approvals/settings     settings form
@@ -69,6 +73,9 @@ export interface ApprovalsPanelOpts {
   reload?: boolean
   /** How this node is named on the owner's list. */
   node?: { url: string; name: string }
+  /** The Wall's owner check (#1440): sent back as `owner`, so the page
+   *  shows read-only cards to anyone else. The guard still decides. */
+  owner?: boolean
 }
 
 /** Returns false when the path isn't one of ours. */
@@ -98,7 +105,9 @@ export async function handleApprovalsPanelApi(
     if (method === "GET" && path === "/api/admin/approvals") {
       const listing = listInbox(ctx, { includeSnoozed: url.searchParams.get("all") === "1" })
       const desk = readOwnerList(ctx, opts.node ?? { url: "", name: "this computer" })
-      sendJson(res, 200, { ...listing, desk, settings: { ...readApprovalSettings(ctx.configPath), desk: readDeskRouting(ctx.configPath) } })
+      const answered = url.searchParams.get("answered") === "1" ? { answered: readAnswered(ctx.root), answered_since: answeredSince(ctx.root) } : {}
+      const owner = opts.owner === undefined ? {} : { owner: opts.owner }
+      sendJson(res, 200, { ...listing, desk, ...answered, ...owner, settings: { ...readApprovalSettings(ctx.configPath), desk: readDeskRouting(ctx.configPath) } })
       return true
     }
 

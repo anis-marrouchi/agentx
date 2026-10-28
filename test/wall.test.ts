@@ -243,7 +243,7 @@ describe("owner decision cards (#1185)", () => {
     // c-free: tied to no request. c-done: already answered.
     saveCard(process.cwd(), card("c-r2", { source: "https://gitlab.example.com/acme/web/-/merge_requests/3?token=supersecretvalue123" }))
     store.link("r2", "card", "c-r2", T0 + 7000)
-    saveCard(process.cwd(), card("c-plan", { if_silent: "pause", origin: { kind: "plan-step", requestId: "r1", step: 1 } }))
+    saveCard(process.cwd(), card("c-plan", { if_silent: "pause", origin: { kind: "plan-step", requestId: "r1", step: 1 }, choices: ["Friday", "Monday"], draft: "Ship on {choice}." }))
     saveCard(process.cwd(), card("c-free"))
     saveCard(process.cwd(), card("c-done", { status: "decided", verdict: "yes" }))
     store.link("r3", "card", "c-done", T0 + 8000)
@@ -286,11 +286,20 @@ describe("owner decision cards (#1185)", () => {
     expect(list.posts.find((p: any) => p.id === "r2").ownerCards[0].id).toBe("c-r2")
   })
 
-  it("offers a waiting-on-the-owner filter and no answer buttons", () => {
+  it("offers a waiting-on-the-owner filter, and answers the card on its post (#1440)", () => {
     const html = renderWallPage()
     expect(html).toContain('<option value="waiting_owner">Waiting on the owner</option>')
-    expect(html).toContain("Answer it on the Desk")
-    expect(html).not.toMatch(/data-decide|data-verdict/)
+    // The owner answers on the Wall now: no hand-off to the classic page.
+    expect(html).not.toContain("Answer it on the Desk")
+    expect(html).toContain("decBtn('yes', yesL, true, o)")
+    expect(html).toContain("data-dgo")
+    expect(html).toContain("/api/admin/wall/decide")
+  })
+
+  it("carries a card's choices and suggested message, so the post can answer it (#1440)", async () => {
+    const list = JSON.parse((await get("/api/admin/wall")).body)
+    expect(list.posts.find((p: any) => p.id === "r1").ownerCards[0]).toMatchObject({ choices: ["Friday", "Monday"], draft: "Ship on {choice}." })
+    expect(list.posts.find((p: any) => p.id === "r2").ownerCards[0]).toMatchObject({ choices: [], draft: null })
   })
 })
 

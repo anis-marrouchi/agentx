@@ -10,8 +10,8 @@
 // pictures set for agents and people, #1425). The feed and the machines are read
 // first, quick (#1442): a slow peer or node reads "checking…" and the page
 // asks again; the other reads follow the first paint. Pending owner decision
-// cards (#1185) come with their post and are shown without buttons:
-// answering stays on the Desk. Filters live in the URL
+// cards (#1185) come with their post and are answered there (#1440,
+// wall-decide.client.ts). Filters live in the URL
 // hash, so a view is a link; "Save as my view" keeps that link in this
 // browser only. The only writes are an open post's actions (below). The Projects view
 // (#1190) shows the overview rows the reply carries, one per project;
@@ -23,7 +23,8 @@
 // goal, under one line with the goal's progress and cost from the reply's
 // goal rows (every node's, added up).
 //
-// The Reviews view (#1182) lives in wall-reviews.client.ts.
+// The Reviews view (#1182) lives in wall-reviews.client.ts; Needs you, the
+// Approvals inbox answered on the Wall (#1440), in wall-decide.client.ts.
 //
 // Pages (#1316): selecting a post opens it on its own, with its thread, as
 // on X (#post=<id> in the hash, so a post is a link and Back returns to the
@@ -34,10 +35,12 @@
 // Results and thread lines render their Markdown through the shared
 // renderer; links in them go to web, mail or same-site addresses only.
 //
-// The only writes (#1316, wall-actions.ts), from an open post: a comment
+// The writes (#1316, wall-actions.ts), from an open post: a comment
 // that reaches the agent on the post (sent to the node that keeps it), a
 // voice call from that agent, and a Space: two agents talk about the post
-// out loud on this computer, with the owner's words going into it.
+// out loud on this computer, with the owner's words going into it. And the
+// owner's answers (#1440): Yes, No or Later on what waits for them, and a
+// review's Approve or Reject, through the same calls the classic pages make.
 //
 // Settings (#1428, wall-settings.client.ts) changes settings, for the owner
 // only: the owner replaced #1180's rule 4, so the Wall may write wherever a
@@ -48,6 +51,7 @@ import { injectFns } from "../inject"
 import { plainMarkerText } from "../marker-text"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
+import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
@@ -77,6 +81,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg })}
 ${WALL_REVIEWS_SCRIPT}
+${WALL_DECIDE_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
 ${WALL_ORG_SCRIPT}
@@ -423,11 +428,12 @@ ${WALL_BUILD_SCRIPT}
       (o.to ? ' to ' + when(o.to) : ', both still running') + '</span>';
   }
 
-  // --- Owner decision cards (#1185): read-only, answered on the Desk ---
-  function cardHtml(c) {
+  // --- Owner decision cards (#1185): answered on the post (#1440) ---
+  function cardHtml(c, p) {
     var expired = c.expiresAt <= Date.now();
     var soon = !expired && c.expiresAt - Date.now() < 864e5;
-    return '<section class="wc' + (soon || expired ? ' is-soon' : '') + '" aria-label="Waiting on the owner: ' + esc(c.title) + '">' +
+    var key = 'card:' + c.id;
+    return '<section class="wc' + (soon || expired ? ' is-soon' : '') + '"' + decAttrs(key, p.node && p.node.peer, '', c.title) + ' aria-label="Waiting on the owner: ' + esc(c.title) + '">' +
       '<div class="wc__head"><span class="ax-badge ax-badge--warn">Waiting on the owner</span> <b>' + esc(c.title) + '</b></div>' +
       (c.ask && c.ask !== c.title ? '<p class="wc__ask">' + esc(c.ask) + '</p>' : '') +
       '<dl class="wc__facts">' +
@@ -436,9 +442,9 @@ ${WALL_BUILD_SCRIPT}
         '<dt>Expires</dt><dd>' + (expired ? 'Passed; the default applies at the next check. ' : until(c.expiresAt) + ', ') +
           '<time datetime="' + esc(new Date(c.expiresAt).toISOString()) + '">' + esc(stamp(c.expiresAt)) + '</time></dd>' +
       '</dl>' +
-      '<div class="wc__foot"><span>Raised by <b>' + esc(c.raisedBy) + '</b> ' + when(c.createdAt) + '</span>' +
-        (c.source ? '<span>Source: ' + linkOrText(c.source) + '</span>' : '') +
-        '<span>Answer it on the Desk: <a href="/approvals">Approvals</a></span></div>' +
+      decFormHtml({ key: key, kind: 'card', title: c.title, agent: c.raisedBy, choices: c.choices || [], recommend: c.recommend, draft: c.draft }) +
+      '<div class="wc__foot"><span>Raised by <b>' + esc(nameOf(c.raisedBy)) + '</b> ' + when(c.createdAt) + '</span>' +
+        (c.source ? '<span>Source: ' + linkOrText(c.source) + '</span>' : '') + '</div>' +
       '</section>';
   }
 
@@ -530,7 +536,7 @@ ${WALL_BUILD_SCRIPT}
       (forgeOpenClosed(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says open, but this post is ' + esc(p.state) + '. Close it there or reopen it here.</div>' : '') +
       (forgeFlags(p).length ? '<div class="wp__flag">GitLab time: ' + esc(forgeFlags(p).join('; ')) + '</div>' : '') +
       conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
-      cardsOf(p).map(cardHtml).join('') +
+      cardsOf(p).map(function (c) { return cardHtml(c, p); }).join('') +
       (qaText(p) ? '<div class="wp__qa">QA: ' + esc(qaText(p)) + (p.awaitingQa && p.qa ? ' — new verdict asked' : '') + '</div>' : '') +
       factsHtml(p) +
       '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
@@ -996,8 +1002,8 @@ ${WALL_BUILD_SCRIPT}
     return n;
   }
   function navHtml(page, f) {
-    var side = ['projects', 'jobs', 'reviews', 'failures', 'cost'].indexOf(S.view) >= 0;
-    var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'wall' ? (side ? S.view : f.status === 'waiting_owner' ? 'needs' : 'wall') : page;
+    var side = ['projects', 'jobs', 'reviews', 'failures', 'cost', 'decide'].indexOf(S.view) >= 0;
+    var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'wall' ? (S.view === 'decide' || f.status === 'waiting_owner' ? 'needs' : side ? S.view : 'wall') : page;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       var me = a.getAttribute('data-nav') === on;
       a.classList.toggle('is-on', me);
@@ -1006,14 +1012,15 @@ ${WALL_BUILD_SCRIPT}
     var posts = S.data && S.data.posts;
     var counts = {
       wall: posts ? posts.filter(isOpen).length : null,
-      needs: posts ? posts.filter(waitsOnOwner).length : null,
+      // What waits for an answer, as /approvals counts it (#1440).
+      needs: decideCount() != null ? decideCount() : posts ? posts.filter(waitsOnOwner).length : null,
       running: S.live ? runningCount() : null,
       agents: S.live || posts ? allAgents().length : null,
       projects: S.data && S.data.projects ? S.data.projects.length : null,
       jobs: S.live ? jobCount() : null,
       live: liveCount(),
     };
-    var title = { wall: 'open posts', needs: 'posts waiting on you', running: 'tasks running now', agents: 'agents', projects: 'projects with open work', jobs: 'recurring jobs', live: 'live sessions' };
+    var title = { wall: 'open posts', needs: 'waiting for your answer', running: 'tasks running now', agents: 'agents', projects: 'projects with open work', jobs: 'recurring jobs', live: 'live sessions' };
     Object.keys(counts).forEach(function (k) {
       var el = $('nav-n-' + k), n = counts[k];
       el.textContent = n == null ? '' : String(n);
@@ -1263,6 +1270,8 @@ ${WALL_BUILD_SCRIPT}
     $('wall-act-switch').hidden = page !== 'activity';
     // Activity has a side column of its own (#1451 frame 3).
     $('wall-aside').classList.toggle('is-act', page === 'activity');
+    // Needs you has one too (#1440, round-2 frame 01).
+    $('wall-aside').classList.toggle('is-dec', onWall && S.view === 'decide');
     if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
     paintTask(page);
     followLive(page);
@@ -1285,7 +1294,9 @@ ${WALL_BUILD_SCRIPT}
     // The Org page (#1419): wall-org.client.ts. It needs no feed.
     renderOrg(page);
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list' || page === 'org');
-    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
+    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-decide', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
+    // Needs you does not wait on the feed (#1440): its list is the inbox.
+    if (onWall && S.view === 'decide') renderDecide('decide');
     if (!S.data) return;
     var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
@@ -1299,8 +1310,8 @@ ${WALL_BUILD_SCRIPT}
     $('wall-synced').textContent = stamp(synced);
     $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
     $('wall-synced').parentNode.classList.toggle('is-stale', Date.now() - synced > 120000);
-    if (!onWall) { renderReviews(''); renderCost(''); return; }
-    var side = S.view === 'failures' || S.view === 'projects' || S.view === 'jobs';
+    if (!onWall) { renderReviews(''); renderDecide(''); renderCost(''); return; }
+    var side = S.view === 'failures' || S.view === 'projects' || S.view === 'jobs' || S.view === 'decide';
     $('wall-profile').hidden = !f.owner || side;
     if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
     $('wall-goal').hidden = !f.goal || side;
@@ -1319,6 +1330,7 @@ ${WALL_BUILD_SCRIPT}
     // Recurring jobs with their value line (#1183): cron-value.ts.
     if (S.view === 'jobs') $('wall-jobs').innerHTML = jobsPageHtml();
     renderReviews(S.view);
+    renderDecide(S.view);
     // The Cost page (#1423): wall-cost.client.ts.
     renderCost(S.view);
   }
@@ -1360,6 +1372,7 @@ ${WALL_BUILD_SCRIPT}
   // The reads the home does not need for its first paint (#1442): after it.
   function loadRest() {
     refreshReviews();
+    refreshDecide();
     refreshCost();
     refreshPeople();
     // A failed read says so on the Org page; the rest of the Wall goes on.

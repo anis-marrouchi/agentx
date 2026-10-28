@@ -30,7 +30,15 @@ const LIVE = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agen
   { id: "reviewer", name: "Reviewer", runningTasks: [] },
 ] }] }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean } = {}) {
+/** What /api/admin/approvals answers (#1440): one card waits, the owner's list counts it. */
+const APPROVALS = {
+  items: [{ key: "card:c1", kind: "card", title: "Send the newsletter?", ask: "Send it today?", yes: "tell cx yes", no: "tell cx no",
+    recommend: "Tuesday: the open rate is best", if_silent: "keep", expires: new Date(NOW + 3 * 3600e3).toISOString(), raised_by: "cx",
+    created_at: new Date(NOW - 600e3).toISOString(), choices: ["Monday", "Tuesday"], draft: "Send it on {choice}." }],
+  snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
+}
+
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -91,10 +99,17 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     }
     if (url === "/api/admin/org" && opts.org === "fail") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
     if (url.startsWith("/api/admin/observability/cost?") && opts.cost === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
+    if (url === "/api/admin/wall/decide" && opts.decide) return Promise.resolve({ ok: opts.decide.status < 400, status: opts.decide.status, json: async () => opts.decide!.body })
     if (url === "/api/admin/people" && opts.people === "fail") return Promise.resolve({ ok: false, status: 401, json: async () => ({}) })
     if (url.endsWith("/end")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) })
     const body = url.startsWith("/api/admin/wall?") ? (opts.data ?? WALL) : url === "/api/live?quick=1" ? (opts.live ?? LIVE)
       : url === "/api/admin/org" ? (opts.org ?? { exists: false })
+      : url.startsWith("/api/admin/approvals?") || url === "/api/admin/approvals" ? structuredClone(opts.approvals ?? APPROVALS)
+      : url === "/api/admin/wall/decide" ? { ok: true, message: "card:c1: cx will be told yes (Tuesday, the suggested option)" }
+      : url.startsWith("/api/admin/wall/reviews") && opts.reviews ? opts.reviews
+      : url === "/api/admin/approvals/requests" && opts.requests ? opts.requests
+      : url.startsWith("/api/workflows/runs") && opts.runs ? opts.runs
+      : url.startsWith("/api/admin/wall/request/") || url.startsWith("/api/admin/wall/review/") ? { ok: true, message: "Done." }
       : url.startsWith("/api/admin/observability/cost?") ? (opts.cost ?? { days: [] })
       : url === "/api/admin/observability/budgets" && opts.budgets ? opts.budgets
       : url === "/api/admin/people" ? (opts.people ?? { people: [], paired: 0 })
@@ -122,9 +137,11 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   /** The browser's hashchange, as after `location.hash = …`. */
   const hashchange = () => onWindow.hashchange?.()
+  /** Any document event, with a target the test builds (#1440). */
+  const fire = (type: string, ev: unknown) => { for (const f of onDoc[type] ?? []) f(ev) }
   /** A form's submit, as the Enter key or its button sends it. */
   const submit = (attrs: Record<string, string>) => { for (const f of onDoc.submit ?? []) f({ preventDefault: () => {}, target: { hasAttribute: (k: string) => k in attrs } }) }
-  return { el, wall, calls, click, change, submit, settle, loc, hashchange }
+  return { el, wall, calls, click, change, submit, settle, loc, hashchange, fire }
 }
 
 describe("Wall as a social feed (#1207)", () => {
@@ -380,7 +397,7 @@ describe("Wall home first load (#1442)", () => {
     answer({ ok: true, status: 200, json: async () => WALL })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
-    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/admin/pictures", "/api/workflows/runs?summary=1&limit=100"])
+    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/approvals?all=1&answered=1", "/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/admin/pictures", "/api/workflows/runs?summary=1&limit=100"])
   })
 
   it("shows a machine that is slow to answer as checking, not down, and asks again", async () => {
@@ -1590,6 +1607,244 @@ describe("The Cost page on the Wall (#1423)", () => {
     await w.settle()
     expect(w.el("wall-cost").hidden).toBe(true)
     expect(w.el("wall-feed").innerHTML).toContain("Post r1")
+  })
+})
+
+describe("Needs you: answer on the Wall (#1440)", () => {
+  /** An item on the page, as closest("[data-dkey]") finds it. */
+  function item(key: string, picked: string | null, peer: string | null = null, choices = true) {
+    return {
+      getAttribute: (k: string) => (k === "data-dkey" ? key : k === "data-dpeer" ? peer : k === "data-dtitle" ? "Send the newsletter?" : null),
+      // A card with choices has radios; picked is the checked one, if any.
+      querySelector: (sel: string) => (!choices ? null : sel.endsWith(":checked") ? (picked == null ? null : { value: picked }) : { focus: () => {} }),
+      querySelectorAll: () => [],
+    }
+  }
+  /** A click on a button with this attribute inside the item. */
+  function press(w: ReturnType<typeof openWall>, it: ReturnType<typeof item>, attr: string, value = "") {
+    const btn = { hasAttribute: (k: string) => k === attr, getAttribute: () => value, closest: (sel: string) => (sel === "[data-dkey]" ? it : null) }
+    w.fire("click", { target: { closest: (sel: string) => (sel.includes(`[${attr}]`) ? btn : null) } })
+  }
+  /** An answer: the button, then Confirm on the line it opens. */
+  function answer(w: ReturnType<typeof openWall>, key: string, action: string, picked: string | null, peer: string | null = null, choices = true) {
+    const it = item(key, picked, peer, choices)
+    press(w, it, "data-decide", action)
+    press(w, it, "data-dgo")
+  }
+  const decideCalls = (w: ReturnType<typeof openWall>) => w.calls.filter((c) => c.url === "/api/admin/wall/decide")
+
+  it("opens from the nav as the owner's list, with the same count, tabs and kind chips", async () => {
+    const page = renderWallPage()
+    expect(page).toContain('data-nav="needs" href="#status=open&amp;view=decide"')
+    const w = openWall({ hash: "#status=open&view=decide" })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("Needs you")
+    expect(w.el("nav-n-needs").textContent).toBe("1")
+    expect(w.el("wall-decide").hidden).toBe(false)
+    expect(w.el("wall-feed").hidden).toBe(true)
+    const html = w.el("wall-decide").innerHTML
+    expect(html).toContain("1 waiting for you")
+    expect(html).toContain("Same count as the Desk and the digest")
+    expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="n">1<\/span>[\s\S]*data-dtab="later"[^>]*>Put off<[\s\S]*data-dtab="answered"[^>]*>Answered</)
+    expect(html).toContain('data-dkind="" class="wdc__chip is-on" aria-pressed="true">All <span class="n">1</span>')
+    for (const chip of ["Decisions <span class=\"n\">1", "Schedules <span class=\"n\">0", "Memory", "Wiki", "Drafts", "Requests", "Reviews <span class=\"n\">0"]) expect(html).toContain(chip)
+    expect(html).toContain("Send the newsletter?")
+    expect(html).toContain('<span class="wdc__badge is-card">Decision</span>')
+    // The advised choice comes picked; the draft is folded, filled with it.
+    expect(html).toContain('value="1" checked><span>Tuesday <em>advised</em>')
+    expect(html).toContain("<summary>The draft, and what Yes and No do</summary>")
+    expect(html).toContain("Send it on Tuesday.</textarea>")
+    expect(html).toContain("Unblocks: nothing waits on it.")
+    expect(html).toMatch(/data-decide="yes"[\s\S]*data-decide="no"[\s\S]*data-decide="later"/)
+    // No raw keys or commands in the text.
+    expect(html).not.toContain("agentx approvals")
+    expect(html).not.toMatch(/>[^<]*card:c1/)
+  })
+
+  it("asks to confirm, naming what is sent, then sends a yes as /approvals does", async () => {
+    const w = openWall({ hash: "#status=open&view=decide" })
+    await w.settle()
+    press(w, item("card:c1", "1"), "data-decide", "yes")
+    await w.settle()
+    expect(decideCalls(w)).toHaveLength(0)
+    expect(w.el("wall-decide").innerHTML).toContain("<b>Send Customer Desk: Yes, Tuesday.</b> It is recorded as your answer, as on the Desk, and cannot be taken back.")
+    press(w, item("card:c1", "1"), "data-dgo")
+    await w.settle()
+    const sent = decideCalls(w)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].init.method).toBe("POST")
+    expect(sent[0].init.headers["X-Requested-With"]).toBe("agentx-board")
+    // The choice by its number; no text, since the message was not edited.
+    expect(JSON.parse(sent[0].init.body)).toEqual({ key: "card:c1", action: "yes", choice: 2 })
+    // The note names the item by its title, not its key.
+    expect(w.el("wall-decide").innerHTML).toContain("“Send the newsletter?”: cx will be told yes")
+    expect(w.el("wall-decide").innerHTML).not.toContain("card:c1:")
+  })
+
+  it("sends nothing on Back", async () => {
+    const w = openWall({ hash: "#status=open&view=decide" })
+    await w.settle()
+    press(w, item("card:c1", "1"), "data-decide", "no")
+    press(w, item("card:c1", "1"), "data-dback")
+    await w.settle()
+    expect(decideCalls(w)).toHaveLength(0)
+    expect(w.el("wall-decide").innerHTML).not.toContain("wdc__confirm")
+  })
+
+  it("asks for a pick before a yes on a card with choices", async () => {
+    const w = openWall({ hash: "#status=open&view=decide" })
+    await w.settle()
+    answer(w, "card:c1", "yes", null)
+    expect(decideCalls(w)).toHaveLength(0)
+    expect(w.el("wall-decide").innerHTML).not.toContain("wdc__confirm")
+  })
+
+  it("says only the owner can answer when the dashboard refuses", async () => {
+    const w = openWall({ hash: "#status=open&view=decide", decide: { status: 401, body: { error: "unauthorized" } } })
+    await w.settle()
+    answer(w, "card:c1", "no", "1")
+    await w.settle()
+    expect(decideCalls(w)).toHaveLength(1)
+    expect(w.el("wall-decide").innerHTML).toContain("Not answered: Only the owner can answer this.")
+    expect(w.el("wall-decide").innerHTML).toContain("Send the newsletter?")
+  })
+
+  it("answers a request in place: a reply, hand it on, done or drop, under the Wall guard", async () => {
+    const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, items: [], desk: { count: 1, later: 0, items: [{ key: "request:r2", title: "Which logo?", ask: "The round one or the square one?", agent: "cx" }] } },
+      requests: { items: [{ id: "r2", stall: { group: "owner", who: "owner", why: "1 day" } }], agents: [{ id: "cx", name: "cx" }, { id: "reviewer", name: "Reviewer" }] } })
+    await w.settle()
+    const html = w.el("wall-decide").innerHTML
+    expect(html).toContain("Which logo?")
+    expect(html).toContain('<span class="wdc__badge is-warn">Stalled on you</span>')
+    expect(html).toContain('placeholder="Write a reply to Customer Desk"')
+    expect(html).toMatch(/data-decide="reply"[^>]*>Send reply[\s\S]*<option value="reviewer">Reviewer<\/option>[\s\S]*data-decide="done"[\s\S]*data-decide="drop"/)
+    const it = item("request:r2", null, null, false)
+    w.fire("input", { target: { hasAttribute: (k: string) => k === "data-dreply", value: "The round one.", closest: () => it } })
+    answer(w, "request:r2", "reply", null, null, false)
+    await w.settle()
+    const sent = w.calls.filter((c) => c.url === "/api/admin/wall/request/reply")
+    expect(sent).toHaveLength(1)
+    expect(JSON.parse(sent[0].init.body)).toEqual({ id: "r2", text: "The round one." })
+    answer(w, "request:r2", "drop", null, null, false)
+    await w.settle()
+    expect(JSON.parse(w.calls.filter((c) => c.url === "/api/admin/wall/request/close")[0].init.body)).toEqual({ id: "r2", action: "drop" })
+  })
+
+  it("shows the empty state from the frame", async () => {
+    const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, items: [], desk: { count: 0, later: 0, items: [] },
+      answered: [{ key: "card:x", kind: "card", title: "Old", raised_by: "cx", answer: "yes", by: "operator", at: new Date(NOW - 3600e3).toISOString() }] } })
+    await w.settle()
+    expect(w.el("wall-decide").innerHTML).toContain("<h2>Nothing needs you</h2><p>When an agent asks you something, it shows here. 1 answered this week.</p>")
+    expect(w.el("nav-n-needs").textContent).toBe("0")
+  })
+
+  it("keeps put-off items on Put off, and lists what was answered", async () => {
+    const snoozed = { ...APPROVALS.items[0], key: "card:c2", title: "Renew the domain?", snoozed_until: new Date(NOW + 864e5).toISOString() }
+    const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, items: [APPROVALS.items[0], snoozed], desk: { count: 1, later: 1, items: [] },
+      answered: [{ key: "memory:cx/f1", kind: "memory", title: "Invoices go out on the 1st", raised_by: "cx", answer: "yes", by: "operator (dashboard)", at: new Date(NOW - 60e3).toISOString() }] } })
+    await w.settle()
+    expect(w.el("wall-decide").innerHTML).toContain("1 waiting for you, 1 put off for later")
+    expect(w.el("wall-decide").innerHTML).not.toContain("Renew the domain?")
+    w.click({ "data-dtab": "later" })
+    await w.settle()
+    expect(w.el("wall-decide").innerHTML).toContain("Renew the domain?")
+    expect(w.el("wall-decide").innerHTML).not.toContain("Send the newsletter?")
+    w.click({ "data-dtab": "answered" })
+    await w.settle()
+    expect(w.el("wall-decide").innerHTML).toContain("<b>Kept</b> · Customer Desk · <span dir=\"auto\">Invoices go out on the 1st</span>")
+    // The side column: what waits, answered today, how it reaches you.
+    const side = w.el("wall-dec-side").innerHTML
+    expect(side).toContain("What waits on you")
+    expect(side).toContain("<b>Kept</b> · Customer Desk · Invoices go out on the 1st")
+    expect(side).toContain("Reaching you</h2><p>Phone: off. Computer: off. No daily digest.")
+  })
+
+  it("names what an answer unblocks: the post the card is on and the runs paused on it", async () => {
+    const card = { id: "c1", title: "Send the newsletter?", ask: "", recommend: "Tuesday", expiresAt: NOW + 3600e3, silence: "", ifSilent: "keep", raisedBy: "cx", createdAt: NOW - 600e3, source: null, choices: [], draft: null }
+    const data = { ...WALL, posts: [post("r9", "cx", "waiting_owner", { headline: "October newsletter", ownerCards: [card] })] }
+    const runs = { runs: [{ id: "run1", status: "paused", homeNode: "mini", pausedAt: { kind: "ownerDecision", cardId: "c1" }, updatedAt: new Date(NOW).toISOString() }] }
+    const w = openWall({ hash: "#status=open&view=decide", data, runs })
+    await w.settle()
+    const html = w.el("wall-decide").innerHTML
+    expect(html).toContain("<h3>Answering unblocks</h3><p>The post <a href=")
+    expect(html).toContain('data-open="r9">October newsletter</a> (waiting 10m) and 1 run on mini, paused until you answer.')
+    expect(html).toContain('data-open="r9">Reply instead</a>')
+    expect(w.el("wall-dec-side").innerHTML).toContain("<b>1 run</b> held on mini")
+  })
+
+  it("decides a classifier review from the Reviews chip, outside the count", async () => {
+    const reviews = { reviews: [{ id: "m1", status: "pending", path: ["work", "billing"], message: "Invoice for March", proposedAt: new Date(NOW - 60e3).toISOString(), source: "classifier" }], counts: { pending: 1 } }
+    const w = openWall({ hash: "#status=open&view=decide", reviews })
+    await w.settle()
+    expect(w.el("wall-decide").innerHTML).toContain("All <span class=\"n\">1</span>")
+    expect(w.el("wall-decide").innerHTML).toContain("Reviews <span class=\"n\">1</span>")
+    expect(w.el("nav-n-needs").textContent).toBe("1")
+    w.click({ "data-dkind": "reviews" })
+    await w.settle()
+    expect(w.el("wall-decide").innerHTML).toContain("work › billing")
+    answer(w, "review:m1", "approve", null, null, false)
+    await w.settle()
+    const sent = w.calls.filter((c) => c.url === "/api/admin/wall/review/approve")
+    expect(JSON.parse(sent[0].init.body)).toEqual({ msgHash: "m1" })
+  })
+
+  it("keeps the total equal to the /approvals count, with reviews waiting", async () => {
+    const second = { ...APPROVALS.items[0], key: "card:c2", title: "Renew the domain?" }
+    const approvals = { ...APPROVALS, items: [APPROVALS.items[0], second], desk: { count: 2, later: 0, items: [] } }
+    const reviews = { reviews: ["m1", "m2", "m3"].map((id) => ({ id, status: "pending", path: ["work"], message: "", proposedAt: new Date(NOW).toISOString(), source: "classifier" })), counts: { pending: 3 } }
+    const w = openWall({ hash: "#status=open&view=decide", approvals, reviews })
+    await w.settle()
+    const html = w.el("wall-decide").innerHTML
+    // The count the Desk, the digest and /approvals give: reviews are not in it.
+    expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="n">2<\/span>/)
+    expect(html).toContain("All <span class=\"n\">2</span>")
+    expect(html).toContain("Reviews <span class=\"n\">3</span>")
+    expect(w.el("nav-n-needs").textContent).toBe(String(approvals.desk.count))
+  })
+
+  it("says when the answered list started, and shows a card its agent closed", async () => {
+    const since = "2026-10-28T09:00:00.000Z"
+    const empty = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, answered: [], answered_since: since } })
+    await empty.settle()
+    empty.click({ "data-dtab": "answered" })
+    await empty.settle()
+    expect(empty.el("wall-decide").innerHTML).toMatch(/<h2>Nothing answered yet<\/h2><p>History starts 2026-10-2[89]\. /)
+    const closed = { key: "card:c9", kind: "card", title: "Book the room?", raised_by: "cx", answer: "closed", text: "Owner said yes in chat", by: "cx", at: new Date(NOW - 60e3).toISOString() }
+    const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, answered: [closed], answered_since: since } })
+    await w.settle()
+    w.click({ "data-dtab": "answered" })
+    await w.settle()
+    expect(w.el("wall-decide").innerHTML).toContain('<b>Closed</b> · Customer Desk · <span dir="auto">Book the room?</span> · <span dir="auto" class="k">Owner said yes in chat</span>')
+  })
+
+  it("shows anyone else the same cards read only, as Needs the owner", async () => {
+    const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, owner: false } })
+    await w.settle()
+    expect(w.el("wall-title").textContent).toBe("Needs the owner")
+    const html = w.el("wall-decide").innerHTML
+    expect(html).toContain("Only the owner can answer these. You see them read only.")
+    expect(html).toContain("Send the newsletter?")
+    expect(html).toContain("Advice: <span>Tuesday: the open rate is best</span>")
+    expect(html).not.toContain("data-decide")
+    expect(html).not.toContain("wdc__chips")
+  })
+
+  it("answers a card on its post, at the node that keeps the post", async () => {
+    const card = { id: "c9", title: "Ship it?", ask: "Ship it?", recommend: "Yes", expiresAt: NOW + 3600e3, silence: "nothing is approved", ifSilent: "keep",
+      raisedBy: "cx", createdAt: NOW - 600e3, source: null, choices: [], draft: null }
+    const data = { ...WALL, posts: [post("r2", "cx", "waiting_owner", { node: { name: "node-b", peer: "https://node-b.example", daemonUrl: null }, ownerCards: [card] })] }
+    const w = openWall({ hash: "#post=r2", data })
+    await w.settle()
+    const page = w.el("wall-post").innerHTML
+    expect(page).toContain('data-dkey="card:c9" data-dpeer="https://node-b.example"')
+    expect(page).not.toContain("Answer it on the Desk")
+    answer(w, "card:c9", "yes", null, "https://node-b.example", false)
+    await w.settle()
+    const sent = decideCalls(w)
+    expect(sent[0].init.headers["X-Agentx-Peer"]).toBe("https://node-b.example")
+    expect(JSON.parse(sent[0].init.body)).toEqual({ key: "card:c9", action: "yes" })
+    // The post updates without a reload: the card is gone from it.
+    expect(w.el("wall-post").innerHTML).not.toContain('data-dkey="card:c9"')
   })
 })
 
