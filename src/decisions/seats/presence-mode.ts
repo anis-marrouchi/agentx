@@ -16,7 +16,7 @@ import type { AnswersFor, ChoiceAnswer, NoulAnswer, StateValue } from "../types"
 //     request to do something is answered and done by the agent's turn,
 //     never turned into a lesson the listener did not ask for;
 //   - teach and watch only when the listener asked to be shown or
-//     coached (ASKS_TO_BE_SHOWN), else talk: a lesson takes the screen
+//     coached (asksToBeShown), else talk: a lesson takes the screen
 //     and the door, so it is never the seat's guess alone;
 //   - click and type only in act, else highlight.
 
@@ -96,10 +96,48 @@ export interface PresenceDecision {
 
 export const TALK: PresenceDecision = { mode: "talk", persist: false, nextAction: "speak", chose: null, probability: 0, override: "no-decision" }
 
-/** The listener asked to be shown, taught or coached, in English or French.
- *  "Go merge PR 40" or "finish the drafts" never match: those are work. */
-export const ASKS_TO_BE_SHOWN =
-  /\b(show|teach|guide|walk|coach|watch)\s+(me|us)\b|\bhow\s+(do|can|would|should|to)\b|\bwhere\s+(is|are|do|can|'s)\b|\bwhere's\b|\bstep\s+by\s+step\b|\b(tutorial|lesson)\b|\b(montre|explique|guide)[- ]moi\b|\bcomment\s+(on|je|faire)\b|\bo[uù]\s+(est|sont|se\s+trouve)\b/i
+// Teach and watch take the screen, so the listener has to ask for that in
+// so many words. A bare "how do" or "where are" is not enough: "where are
+// we on the HeyGen test" and "how do things look today" are status
+// questions, answered by voice (#1493).
+
+/** Asking outright to be shown, taught or coached: "show me how to…",
+ *  "teach me…", "walk me through…", and French. "show me how things look"
+ *  is not a how-to, and "walk me through the status" is about work, so
+ *  these still need !ABOUT_WORK. */
+const SHOW_ME =
+  /\b(show|guide)\s+(me|us)\s+(how\s+(to|i|we)\b|where\b)|\bteach\s+(me|us)\b|\b(walk|guide)\s+(me|us)\s+through\b|\bcoach\s+(me|us)\b|\bmontre[- ]?(moi|nous)\s+(comment|o[uù])\b|\bapprends[- ]?(moi|nous)\b|\bguide[- ]?(moi|nous)\b/i
+
+/** Asks that name the screen or the listener's own doing: "show me on
+ *  screen…", "watch me do it". These open a lesson whatever they are about. */
+const SHOW_ON_SCREEN =
+  /\b(show|guide)\s+(me|us)\s+on\s+(the\s+)?screen\b|\bwatch\s+(me|us)\s+(do|try|while|as)\b/i
+
+/** A how-to or where-is question about the listener's own hands: "how do
+ *  I…", "how to…", "where is the…", "où est le…". "where are we",
+ *  "how do things" and "how is it" are not. */
+const HOW_OR_WHERE =
+  /\bhow\s+(do|can|would|should)\s+(i|we)\b|\bhow\s+to\b|\bwhere\s+(is|are|'s)\s+(the|my|this|that)\b|\bwhere's\s+(the|my|this|that)\b|\bwhere\s+(do|can)\s+(i|we)\s+(find|click|set|change|turn)\b|\bcomment\s+(je|on|faire)\b|\bo[uù]\s+(est|sont|se\s+trouvent?)\s+(le|la|les|l'|mon|ma|mes|ce|cette)/i
+
+/** …which only counts when it names something on screen. */
+const ON_SCREEN =
+  /\b(button|menu|toolbar|sidebar|tab|field|icon|checkbox|toggle|dropdown|shortcut)s?\b|\bon\s+(the\s+|my\s+|this\s+)?screen\b|\bin\s+this\s+(app|window|page|tab)\b|\b(bouton|menu|onglet|champ|ic[oô]ne|raccourci)s?\b|\b[àa]\s+l'[ée]cran\b|\bsur\s+l'[ée]cran\b|\bdans\s+cette\s+(app|appli|fen[eê]tre|page)\b/i
+
+/** Words that make a how or where question about work, not about a
+ *  control: "where's the tab redesign PR", "where is the menu fix deploy",
+ *  "walk me through where we are", "…what happened yesterday". */
+const ABOUT_WORK =
+  /\b(pr|mr|issue|ticket|branch|commit|merge|deploy|release|status|progress|update|test|draft|task|project|client|invoice)s?\b|#\d+|\bwhere\s+we\s+are\b|\bhow\s+we('re|\s+are)\s+doing\b|\bwhat\s+happened\b|\bhow\s+things\s+(look|stand|are)\b|\b(is|are)\s+going\b/i
+
+/** The listener asked to be shown, taught or coached on screen, in
+ *  English or French. "Go merge PR 40", "finish the drafts" or "where are
+ *  we on X" never match: those are work and status. */
+export function asksToBeShown(request: string): boolean {
+  const said = request.replace(/[‘’]/g, "'")
+  if (SHOW_ON_SCREEN.test(said)) return true
+  if (ABOUT_WORK.test(said)) return false
+  return SHOW_ME.test(said) || (HOW_OR_WHERE.test(said) && ON_SCREEN.test(said))
+}
 
 /** Apply the policy to the seat's answers; null answers mean talk.
  *  `request` is what the listener said; teach and watch need it to ask. */
@@ -115,7 +153,7 @@ export function toPresence(answers: PresenceModeAnswers | null, actionsAllowed: 
   let nextAction = next.choice
   let override: PresenceDecision["override"]
   if (chosen === "act" && !actionsAllowed) { chosen = "talk"; override = "actions-not-allowed" }
-  if ((chosen === "teach" || chosen === "watch") && !ASKS_TO_BE_SHOWN.test(request)) { chosen = "talk"; override = "not-asked-to-show" }
+  if ((chosen === "teach" || chosen === "watch") && !asksToBeShown(request)) { chosen = "talk"; override = "not-asked-to-show" }
   if ((nextAction === "click" || nextAction === "type") && chosen !== "act") nextAction = "highlight"
   if (chosen === "talk" || chosen === "quiet") nextAction = "speak"
   return { mode: chosen, persist: chosen !== "quiet" && persist, nextAction, chose, probability, ...(override ? { override } : {}) }

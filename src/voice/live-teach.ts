@@ -68,6 +68,9 @@ export interface LiveTeachOpts {
   /** Plans thrown away in a row, because the screen changed before they
    *  were carried out, before the lesson gives up. */
   maxReplans?: number
+  /** Steps in a row the listener left undone (nothing changed, nothing
+   *  said) before the lesson ends itself: it was not wanted, or not now. */
+  maxIdleSteps?: number
 }
 
 export type TeachEvent =
@@ -108,9 +111,13 @@ export class LiveTeach {
   private readonly listener: string
   /** How long the last screen read and plan took, for the step's log line. */
   private took = { readMs: 0, planMs: 0 }
+  /** Steps in a row the listener left undone. */
+  private idleSteps = 0
 
   constructor(private opts: LiveTeachOpts, private deps: TeachDeps) {
     this.listener = opts.listener ?? DEFAULT_LISTENER
+    // The × on the agent's name tag ends the lesson, like saying "stop".
+    deps.presence.onDismiss?.(() => this.stop("dismissed on screen"))
   }
 
   on(fn: (e: TeachEvent) => void): void { this.listeners.push(fn) }
@@ -147,7 +154,7 @@ export class LiveTeach {
     const max = this.opts.maxSteps ?? 12
     let replans = 0
     // Seen from the first second: the first plan takes a few seconds.
-    this.deps.presence.say(`Looking at ${this.opts.app ?? "the screen"}…`)
+    this.deps.presence.say(`Looking at ${this.opts.app ?? "the screen"}…\n${bubbleText(null, this.opts.goal)}`)
     try {
       while (!this.is("ended") && this.step < max) {
         await this.waitOutHush()
@@ -277,7 +284,7 @@ export class LiveTeach {
     const { presence, speech } = this.deps
     if (rect) presence.moveTo(rect, { highlight: action !== "point" })
     // The voice carries the sentence; the bubble only names what is pointed at.
-    presence.say(bubbleText(rect ? label : null))
+    presence.say(bubbleText(rect ? label : null, this.opts.goal))
     this.lastSay = plan.say
     await this.speaking
     const spoken = plan.say ? speech.say({ voice: this.opts.speaker.voice, text: plan.say, agentId: this.opts.speaker.agentId, kind: "lesson" }) : Promise.resolve(true)
@@ -322,13 +329,30 @@ export class LiveTeach {
 
     // Everything else waits for the listener to act on the step.
     const changed = await this.waitForChange()
-    // Hand control back: the cursor returns to the listener's own pointer.
-    presence.say("")
+    // Hand control back: the cursor returns to the listener's own pointer,
+    // still saying what the lesson is for and how to end it.
+    presence.say(bubbleText(null, this.opts.goal))
     presence.park()
     this.emit({ type: "changed", n, changed })
     this.history.push(`Step ${n}: you said "${plan.say}"${label ? ` about "${label}"` : ""}. ` +
       (changed ? `${this.listener} did something; the screen changed.` : `Nothing changed on screen.`))
+    // Undone and unanswered: a wait that ran out, not one the door or a
+    // hush cut short. Enough of those in a row and the lesson steps back.
+    const idle = !changed && this.is("running") && !this.doorQueue.length
+    this.idleSteps = idle ? this.idleSteps + 1 : 0
+    if (this.idleSteps >= (this.opts.maxIdleSteps ?? 2)) return this.stepBack()
     return "next"
+  }
+
+  /** The listener has not followed the last steps: say so and end, rather
+   *  than keep pointing at a screen nobody is using. */
+  private async stepBack(): Promise<"stopped"> {
+    const line = "I'll leave it there. Ask me to show you again whenever you like."
+    this.deps.presence.say(line)
+    // A stuck speech call must not hold open a lesson that has decided to end.
+    await Promise.race([this.deps.speech.say({ voice: this.opts.speaker.voice, text: line, agentId: this.opts.speaker.agentId, kind: "lesson" }), this.poked()])
+    this.stop("the listener did not follow the steps")
+    return "stopped"
   }
 
   /** A key that would leave the lesson's app: say so and stop, pressing nothing. */

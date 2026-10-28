@@ -52,6 +52,9 @@ export interface Presence {
   ping?(): void
   /** False once the overlay's process has gone. */
   readonly alive?: boolean
+  /** Called when the person closes the overlay themselves (the × on the
+   *  name tag); its owner ends what it was showing. */
+  onDismiss?(fn: () => void): void
 }
 
 /** Nothing on screen: what a lesson gets when `voice.pointer` is off. */
@@ -130,9 +133,18 @@ export function reapPresence(dir = presenceDir(), ps: ProcessOps = systemProcess
   return n
 }
 
+/** The event in one line of the helper's stdout, or null. */
+export function presenceEvent(line: string): string | null {
+  try {
+    const o = JSON.parse(line)
+    return o && typeof o.event === "string" ? o.event : null
+  } catch { return null }
+}
+
 /** The mac-helper overlay process for one agent, the only one on this machine. */
 export class PresenceOverlay implements Presence {
   private child: ChildProcessWithoutNullStreams | null
+  private dismissed: Array<() => void> = []
 
   constructor(look: PresenceLook, helper: string, agentId: string, dir = presenceDir()) {
     if (!existsSync(helper)) { this.child = null; return }
@@ -155,6 +167,23 @@ export class PresenceOverlay implements Presence {
     child.on("error", gone)
     child.on("exit", gone)
     child.stdin.on("error", () => {})
+    // The helper reports the person's own gestures on stdout, one JSON
+    // object per line: {"event":"dismiss"} when the × is pressed.
+    let pending = ""
+    child.stdout?.on("data", (d: Buffer) => {
+      pending += d.toString("utf8")
+      const lines = pending.split("\n")
+      pending = lines.pop() ?? ""
+      for (const line of lines) if (presenceEvent(line) === "dismiss") this.fireDismiss()
+    })
+  }
+
+  onDismiss(fn: () => void): void { this.dismissed.push(fn) }
+
+  private fireDismiss(): void {
+    for (const fn of this.dismissed.splice(0)) {
+      try { fn() } catch { /* the owner's handler must not break the overlay */ }
+    }
   }
 
   get alive(): boolean { return this.child !== null }
