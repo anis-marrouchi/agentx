@@ -25,6 +25,53 @@ describe("BM25", () => {
     it("handles empty string", () => {
       expect(tokenize("")).toEqual([])
     })
+
+    it("keeps Arabic words and normalises them", () => {
+      // tashkeel and tatweel go, أ → ا, ة → ه, ال is stripped
+      expect(tokenize("المُــدِيرة")).toEqual(["مديره"])
+      expect(tokenize("أحمد")).toEqual(["احمد"])
+      expect(tokenize("الفاتورة")).toEqual(tokenize("فاتورة"))
+      // short words keep their first letter: ال only goes if 3+ letters remain
+      expect(tokenize("الله")).toEqual(["الله"])
+      expect(tokenize("فاتورة ٢٠٤١")).toEqual(["فاتوره", "2041"])
+    })
+
+    it("gives a bare Arabic word and its ال form the same token", () => {
+      for (const w of ["بيانات", "برنامج", "وزارة"]) {
+        expect(tokenize(w)).toEqual(tokenize(`ال${w}`))
+        expect(tokenize(w)[0].length).toBe(w.length)
+      }
+      // و/ب/ف/ك go only when glued to ال
+      expect(tokenize("والبيانات بالبرنامج فالوزارة كالبيانات")).toEqual(["بيانات", "برنامج", "وزاره", "بيانات"])
+    })
+
+    it("does not take إل at the start of a word for the article", () => {
+      expect(tokenize("بريد إلكتروني")).toEqual(tokenize("البريد الإلكتروني"))
+      expect(tokenize("إلكتروني")).toEqual(["الكتروني"])
+      expect(tokenize("إلغاء")).toEqual(tokenize("الإلغاء"))
+      expect(tokenize("إلغاء")).toEqual(["الغاء"])
+      expect(tokenize("إلهام")).toEqual(["الهام"])
+      expect(tokenize("إلهام")).not.toEqual(tokenize("هام"))
+    })
+
+    it("finds a note with البيانات for the query بيانات", () => {
+      const index = buildIndex(["تحديث قاعدة البيانات", "deploy staging server"])
+      expect(scoreAll("بيانات", index).map((r) => r.docIndex)).toEqual([0])
+    })
+
+    it("matches an Arabic query against an Arabic note", () => {
+      const index = buildIndex(["تم إرسال الفاتورة إلى العميل", "deploy staging server"])
+      const results = scoreAll("فاتورة العميل", index)
+      expect(results.map((r) => r.docIndex)).toEqual([0])
+    })
+
+    it("keeps accented Latin words whole and folds the accents", () => {
+      expect(tokenize("Réunion déployée")).toEqual(["reunion", "deployee"])
+    })
+
+    it("still splits English on punctuation and underscores", () => {
+      expect(tokenize("deploy_staging-server.ts")).toEqual(["deploy", "staging", "server"])
+    })
   })
 
   describe("buildIndex", () => {
