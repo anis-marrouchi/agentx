@@ -7,7 +7,9 @@
 // Org draws the org chart from the top down (#1419, wall-org.client.ts).
 //
 // Read-only over records the daemon already keeps (requests, plan events,
-// task traces, the live fleet snapshot). Nothing here writes or notifies.
+// task traces, the live fleet snapshot). It writes, owner-only, where a
+// classic page wrote (#1449): an open post's actions and Settings (#1428),
+// drawn only when `owner` is set (wall-settings.client.ts).
 //
 // It reads like a social feed (#1207): each post carries its agent's
 // avatar, name and @handle, with an action row under it; tapping an agent
@@ -32,6 +34,7 @@ import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_PICTURES_CSS } from "./wall-pictures.client"
 import { WALL_TASK_CSS } from "./wall-task.client"
+import { WALL_SETTINGS_CSS } from "./wall-settings.client"
 import { WALL_ACTIVITY_CSS } from "./wall-activity.client"
 import { WALL_BUILD_CSS } from "./wall-build.client"
 import { TASK_PAGE_CSS } from "./task"
@@ -40,6 +43,11 @@ export interface WallPageOpts {
   peers?: TopbarPeer[]
   currentPeerId?: string
   localToken?: string
+  /** The viewer is the owner: draw Settings (#1428). Off, the page has no
+   *  Settings entry, section or script config at all. */
+  owner?: boolean
+  /** config.business.enabled: Settings lists the Business section. */
+  business?: boolean
 }
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
@@ -88,9 +96,9 @@ interface NavItem { key: string; label: string; href: string; icon: NavIcon; cou
 
 /**
  * The nav, grouped (#1451 frame 0): one list for the left nav and the
- * phone's More sheet. Pages not on the Wall yet (Workflows, Settings)
- * open their classic page until they are built. The Wall is
- * the owner's dashboard (members have /member), so Settings is listed.
+ * phone's More sheet. Pages not on the Wall yet (Workflows) open their
+ * classic page until they are built. Settings is the owner's only
+ * (#1428): wallNavGroups() drops it for anyone else.
  */
 export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "", items: [
@@ -116,9 +124,17 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     { key: "cost", label: "Cost", href: "#status=open&amp;view=cost", icon: "cost", count: "wall-cost-n" },
   ] },
   { label: "Owner", items: [
-    { key: "settings", label: "Settings", href: "/admin", icon: "settings" },
+    { key: "settings", label: "Settings", href: "#page=settings", icon: "settings" },
   ] },
 ]
+
+/** Where the owner's Settings links go (#1428, #1449). */
+const WALL_SETTINGS_HREF = "#page=settings"
+
+/** The nav for this viewer: without Settings (and its Owner group) unless owner. */
+function wallNavGroups(owner: boolean): typeof WALL_NAV_GROUPS {
+  return owner ? WALL_NAV_GROUPS : WALL_NAV_GROUPS.filter((g) => g.label !== "Owner")
+}
 
 /** The four pages in the phone's bottom bar; More holds the rest (#1355). */
 export const WALL_BAR_KEYS = ["wall", "needs", "running", "projects"]
@@ -130,8 +146,8 @@ function navItemHtml(i: NavItem): string {
 }
 
 /** The phone's More sheet: every page not in the bar, in the same groups. */
-function moreSheetHtml(): string {
-  const groups = WALL_NAV_GROUPS.filter((g) => g.label && g.label !== "Owner").map((g) => {
+function moreSheetHtml(navGroups: typeof WALL_NAV_GROUPS, owner: boolean): string {
+  const groups = navGroups.filter((g) => g.label && g.label !== "Owner").map((g) => {
     const items = g.items.filter((i) => !WALL_BAR_KEYS.includes(i.key))
     return `<h2 class="ax-wall__navlbl">${g.label}</h2><div class="ax-wall__moregrid">${items.map((i) =>
       `<a class="ax-wall__moreitem" data-nav="${i.key}" href="${i.href}">${i.label}${i.count ? `<b class="ax-wall__moren" data-n-for="${i.count}" hidden></b>` : ""}</a>`).join("")}</div>`
@@ -141,17 +157,23 @@ function moreSheetHtml(): string {
     <section class="ax-wall__moresheet" role="dialog" aria-modal="true" aria-label="More pages">
       <span class="ax-wall__grab" aria-hidden="true"></span>
       ${groups}
-      <div class="ax-wall__morefoot"><a class="ax-btn ax-btn--ghost" data-nav="settings" href="/admin">Settings</a><a class="ax-btn ax-btn--ghost" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}">Dashboard</a><button type="button" class="ax-btn ax-btn--ghost" data-wall-theme>Light / dark</button></div>
+      <div class="ax-wall__morefoot">${owner ? `<a class="ax-btn ax-btn--ghost" data-nav="settings" href="${WALL_SETTINGS_HREF}">Settings</a>` : ""}<a class="ax-btn ax-btn--ghost" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}">Dashboard</a><button type="button" class="ax-btn ax-btn--ghost" data-wall-theme>Light / dark</button></div>
     </section>
   </div>`
 }
 
 export function renderWallPage(opts: WallPageOpts = {}): string {
   const token = opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : ""
-  const navItems = WALL_NAV_GROUPS.map((g) =>
+  // Settings (#1428): only the owner gets its nav entry and config. Anyone
+  // else who opens #page=settings is told it is for the owner.
+  const owner = !!opts.owner
+  const settingsCfg = owner ? `<script>window.AX_WALL_SETTINGS = ${JSON.stringify({ business: !!opts.business })};</script>` : ""
+  const groups = wallNavGroups(owner)
+  const navItems = groups.map((g) =>
     (g.label ? `    <span class="ax-wall__navlbl" aria-hidden="true">${g.label}</span>\n` : "") + g.items.map((i) => `    ${navItemHtml(i)}`).join("\n"),
   ).join("\n") + `\n    <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
-  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")
+  // The owner's Settings link stays on the Wall (#1428, #1449).
+  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${owner && label === "Settings" ? WALL_SETTINGS_HREF : href}">${label}</a>`).join("")
   // Take B's three columns (#1242): a nav on the left, the feed in the
   // middle, Running now, Agents and the dashboard links on the right.
   const body = `<div class="ax-wall">
@@ -165,7 +187,7 @@ ${navItems}
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button" data-wall-theme>Light / dark</button>
     </div>
   </nav>
-  ${moreSheetHtml()}
+  ${moreSheetHtml(groups, owner)}
   <div class="ax-wall__main">
     <header class="ax-wall__head">
       <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1>
@@ -226,6 +248,7 @@ ${navItems}
     <section id="wall-creator" aria-label="New post: give an agent a task" hidden></section>
     <section id="wall-live" aria-label="Live sessions" hidden></section>
     <section id="wall-task" aria-label="A run: its request, conversation and steer box" hidden></section>
+    <section id="wall-settings" aria-label="Settings" hidden></section>
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
   </div>
   <aside class="ax-wall__aside" id="wall-aside">
@@ -253,8 +276,8 @@ ${navItems}
   return renderWallDocument({
     title: "AgentX · Wall",
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS,
-    scripts: token + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + TASK_PAGE_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS,
+    scripts: token + settingsCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
   })
 }
 

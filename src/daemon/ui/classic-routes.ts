@@ -55,6 +55,8 @@ export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/procedures", label: "Procedures", status: "wall", wall: "/wall#page=agents", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
   { path: "/places", label: "Places", status: "wall", wall: "/wall", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
   { path: "/setup", label: "First-run setup", status: "tool" },
+  // Settings (#1428) sends a viewer who is not the owner here to sign in.
+  { path: "/login", label: "Sign in (#1306)", status: "tool" },
   { path: "/workflows/editor", label: "Workflow editor", status: "tool" },
 ]
 
