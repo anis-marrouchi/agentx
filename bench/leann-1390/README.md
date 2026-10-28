@@ -10,6 +10,8 @@ Measures how often memory and wiki search find the right note for Arabic, French
 
 The plan, the decision rule and what is out of scope are in [notes/architecture/leann-vs-bm25-spike.md](../../notes/architecture/leann-vs-bm25-spike.md).
 
+**Closed.** Arm B's tokenizer shipped in `src/memory/bm25.ts` (#1491, 0.184.0) and no LEANN work remains. Arm A now runs that fixed tokenizer; to reproduce the old baseline, run on a commit before `8d73fbbd`. See [Outcome](../../notes/architecture/leann-vs-bm25-spike.md#outcome).
+
 Every run leaves three things in the state folder, and anything said about the spike must trace back to them:
 
 - `results-<run_id>.jsonl`: one line per question with a timestamp, the note ids and scores returned, and the rank of the right note. No note or question text.

@@ -1,6 +1,17 @@
 # Spike plan: LEANN vs BM25 for memory and wiki recall (AR/FR/EN)
 
-Issue: #1390. Status: **approved 2026-10-26 for arms A, B and C** (see [Approved scope](#approved-scope)). Harness: [bench/leann-1390/](../../bench/leann-1390/README.md).
+Issue: #1390. Status: **closed 2026-10-28, only the Arabic fix shipped** (see [Outcome](#outcome)). It was approved on 2026-10-26 for arms A, B and C (see [Approved scope](#approved-scope)). Harness: [bench/leann-1390/](../../bench/leann-1390/README.md).
+
+## Outcome
+
+Decided by the maintainer on 2026-10-27: "Only fix Arabic".
+
+- Arm B's tokenizer shipped in `src/memory/bm25.ts` with #1491 (commit `8d73fbbd`), released in 0.184.0. Arabic and accented words are now kept, so Arabic notes can be found and French accents no longer cut words in two.
+- On the spike's questions, arm B moved recall@5 from 30.0 to 43.3 overall, and from 0 to 40 for Arabic.
+- No LEANN work remains. Arms C, D and C′ will not be run, and no semantic search setting is planned.
+- The harness in `bench/leann-1390/` stays as a record. Its arm A now runs the fixed tokenizer, because it calls `src/memory/bm25.ts` as shipped. To reproduce the old baseline, run it on a commit before `8d73fbbd`.
+
+The sections below are the original plan, kept unchanged for the record.
 
 ## Question
 
