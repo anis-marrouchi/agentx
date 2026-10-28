@@ -6,30 +6,48 @@
 // The Wall page that changes settings. The owner replaced rule 4 of #1180
 // ("the Wall writes nothing"): the Wall may write, owner-only, wherever a
 // classic page wrote (#1449). This page writes what classic /admin wrote,
-// with the endpoints it calls (admin-panel.ts), so no settings logic lives
-// here; the /api/admin/* gate checks the owner server-side.
+// with the handlers it calls (admin-panel.ts), so no settings logic lives
+// here. Each write goes to /api/admin/wall/settings/<the classic path>
+// (wall-actions.ts), so the Wall's owner guard (#1454) holds every one.
 //
 // The server says who the owner is: it sets window.AX_WALL_SETTINGS and
-// draws the nav entry only for them (wall.ts). Without it, #page=settings
-// is the Wall, and the APIs refuse anyone else as they always have.
+// draws the nav entry only for them (wall.ts). Anyone else who opens
+// #page=settings reads "Settings are for the owner", and the APIs refuse
+// them as they always have.
 //
-// Phase 1 of #1428: the shell (a list of sections, the chosen one beside
-// it; on a phone the list is its own screen) and the Agents section. The
-// other sections link to their classic tab until they are ported.
+// Phase 1 of #1428: the shell (the sections grouped as in design #1451
+// frame 2, the chosen one beside them; on a phone the list is its own
+// screen) and the Agents section (wall-settings-agent.client.ts for one
+// agent). The other sections open their classic page until they are ported.
 //
 // A section repaints when it opens or after a save, never on the Wall's
 // minute refresh, so a field being typed in stays as it is. A save that
 // fails only writes its note line, keeping what was typed.
 
+import { WALL_SETTINGS_AGENT_CSS, WALL_SETTINGS_AGENT_SCRIPT } from "./wall-settings-agent.client"
+
 export const WALL_SETTINGS_SCRIPT = String.raw`
   // --- Settings (#1428) ---
   var ST = window.AX_WALL_SETTINGS || null;
-  /** Section id, label, classic /admin tab ('' once it is on the Wall). */
-  var ST_SECTIONS = [
-    ['agents', 'Agents', ''], ['channels', 'Channels', 'channels'], ['schedules', 'Schedules', 'crons'],
-    ['webhooks', 'Webhooks', 'webhooks'], ['mesh', 'Mesh', 'mesh'], ['business', 'Business', 'business'],
-    ['boards', 'Boards', 'boards-cfg'], ['actions', 'Actions', 'actions'], ['tokens', 'Tokens', 'tokens'], ['advanced', 'Advanced', 'advanced'],
-  ].filter(function (s) { return s[0] !== 'business' || (ST && ST.business); });
+  /** The sections in their groups: id, label, where it lives until it is on
+   *  the Wall ('' once it is), and the line a phone shows under it. */
+  var ST_GROUPS = [
+    ['Fleet', [
+      ['agents', 'Agents', '', ''], ['channels', 'Channels', '/admin#tab=channels', 'Chat apps and developer tools'],
+      ['schedules', 'Schedules', '/admin#tab=crons', 'Recurring jobs'], ['webhooks', 'Webhooks', '/admin#tab=webhooks', 'Calls from other services'],
+      ['mesh', 'Mesh', '/admin#tab=mesh', 'Your other machines'], ['business', 'Business', '/admin#tab=business', 'Org chart and business settings'],
+      ['boards', 'Boards', '/admin#tab=boards-cfg', 'Task boards'], ['actions', 'Actions', '/admin#tab=actions', 'Buttons that start a task'],
+      ['inbox', 'Inbox', '/admin#tab=channels', 'How the inbox reaches you'],
+    ]],
+    ['Access', [
+      ['guests', 'Guests', '/guests', 'Who else may use your agents'], ['people', 'People', '#page=people', 'The people your agents work with'],
+      ['tokens', 'Tokens', '/admin#tab=tokens', 'Keys for apps and scripts'],
+    ]],
+    ['Machines', [
+      ['health', 'Health', '/admin', 'Agents online, channels and what needs you'], ['advanced', 'Advanced', '/admin#tab=advanced', 'agentx.json itself'],
+    ]],
+  ].map(function (g) { return [g[0], g[1].filter(function (s) { return s[0] !== 'business' || (ST && ST.business); })]; });
+  var ST_SECTIONS = ST_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
   var ST_ENGINES = [['claude-code', 'Claude Code'], ['codex-cli', 'Codex CLI'], ['opencode', 'OpenCode'], ['sdk', 'Anthropic API (SDK)'], ['orchestrator', 'Orchestrator']];
   var ST_PERMS = ['default', 'bypassPermissions', 'plan'];
   var ST_INT_KINDS = ['telegram-bot', 'whatsapp', 'slack-bot', 'discord-bot', 'gitlab-user', 'github-user', 'gmail', 'hotmail', 'smtp',
@@ -39,19 +57,23 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   /** Agent fields the daemon applies only after a restart (detectAgentRestartFields in daemon/index.ts). */
   var ST_RESTART_FIELDS = [['tier', 'engine'], ['model', 'model'], ['permissionMode', 'permission mode']];
   var ST_RESTART = 'agentx daemon restart --when-idle';
-  if (ST) PAGES.push('settings');
-  S.st = { section: '', agent: '', data: null, org: null, error: '', loading: false, v: 0, painted: '', key: '', notes: {}, flash: '', confirm: '', files: null, td: null };
+  // Listed for everyone, so a viewer who is not the owner is told so.
+  PAGES.push('settings');
+  S.st = { section: '', agent: '', tab: '', data: null, org: null, error: '', loading: false, v: 0, painted: '', key: '', notes: {}, flash: '', confirm: '', files: null, td: null, draft: null };
 
   function settingsReadHash(q) {
     S.st.section = S.page === 'settings' && q.get('section') || '';
     S.st.agent = S.page === 'settings' && S.st.section === 'agents' && q.get('agent') || '';
+    S.st.tab = S.st.agent && q.get('atab') || '';
   }
   function settingsHashInto(q) {
     if (S.st.section) q.set('section', S.st.section);
     if (S.st.agent) q.set('agent', S.st.agent);
+    if (S.st.tab) q.set('atab', S.st.tab);
   }
-  function stHref(section, agent) {
-    return '#page=settings' + (section ? '&section=' + encodeURIComponent(section) : '') + (agent ? '&agent=' + encodeURIComponent(agent) : '');
+  function stHref(section, agent, tab) {
+    return '#page=settings' + (section ? '&section=' + encodeURIComponent(section) : '') + (agent ? '&agent=' + encodeURIComponent(agent) : '') +
+      (tab && tab !== 'overview' ? '&atab=' + encodeURIComponent(tab) : '');
   }
   /** An agent's settings link: its Wall Settings page for the owner when it
    *  is on this machine (this node's org view lists it), else the classic page. */
@@ -109,36 +131,71 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
 
   /** Called from render(): paints only when the section, the agent or the data changed. */
   function settingsShow() {
-    if (!ST || S.page !== 'settings' || S.post) return;
+    if (S.page !== 'settings' || S.post) return;
     var box = $('wall-settings');
-    var key = S.st.section + '|' + S.st.agent;
+    if (!ST) {
+      // Not the owner (#1451 frame 2): say so instead of the sections.
+      if (box.innerHTML) return;
+      box.innerHTML = '<div class="wst-owner"><h2>Settings are for the owner</h2>' +
+        '<p>Only the owner of this dashboard sees and changes settings. Open the Wall on the machine that serves it, or <a href="/login">sign in</a> with the dashboard token.</p>' +
+        '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=feed">Back to the Wall</a></div>';
+      return;
+    }
+    var key = S.st.section + '|' + S.st.agent + '|' + S.st.tab;
     if (key !== S.st.key) {
-      // A new section or agent starts clean: no notes, no open confirmation.
+      // A new section, agent or tab starts clean: no notes, no open confirmation.
       S.st.key = key;
       // A delete's note rides along to the list it returns to.
       S.st.notes = S.st.flash ? { list: { kind: 'ok', text: S.st.flash } } : {};
       S.st.flash = '';
       S.st.confirm = '';
+      // The draft of an agent's form stays across its tabs, not to another agent.
+      if (S.st.draft && S.st.draft.agent !== S.st.agent) S.st.draft = null;
       if (S.st.files && S.st.files.agent !== S.st.agent) S.st.files = null;
       if (S.st.td && S.st.td.agent !== S.st.agent) S.st.td = null;
+      if (S.st.agent && (S.st.tab === 'personality' || S.st.tab === 'skills') && !S.st.files) { stLoadFiles(S.st.agent); return; }
     }
     if (!S.st.data && !S.st.error && !S.st.loading) { settingsLoad(); }
-    var painted = key + '|' + S.st.v;
+    // A new picture (#1425) repaints the agent's page; new counts repaint the
+    // list, but not an agent's form being typed in.
+    var painted = key + '|' + S.st.v + '|' + (S.st.agent ? JSON.stringify(pictureOf(S.st.agent) || '') : stAttention().join(','));
     if (S.st.painted === painted) return;
     S.st.painted = painted;
     box.innerHTML = settingsHtml();
     stPaintTest();
   }
 
+  /** What needs the owner, per section, from what the Wall already has: an
+   *  agent waiting for approval or missing a credential, a machine that does
+   *  not answer, a restart pending. [agents, mesh, health] */
+  function stAttention() {
+    var agents = ((S.st.data && S.st.data.agents) || []).filter(function (a) {
+      var unset = (a.integrations || []).some(function (i) { return Object.keys(i.credStatus || {}).some(function (k) { return i.credStatus[k] === 'unset'; }); });
+      return unset || stOrgNode(a.id).status === 'waiting';
+    }).length;
+    var nodes = (S.live && S.live.nodes) || [];
+    var down = nodes.filter(nodeDown).length;
+    var restart = nodes.filter(function (n) { return !nodeDown(n) && n.restart && n.restart.state && n.restart.state !== 'none'; }).length;
+    return [agents, down, down + restart];
+  }
+  function stCountHtml(id, att) {
+    var n = id === 'agents' ? att[0] : id === 'mesh' ? att[1] : id === 'health' ? att[2] : 0;
+    if (n) return '<b class="wst__n-att" title="' + n + ' need' + (n === 1 ? 's' : '') + ' you">' + n + '</b>';
+    if (id === 'agents' && S.st.data && S.st.data.agents) return '<b class="wst__n-all" title="Agents on this machine">' + S.st.data.agents.length + '</b>';
+    return '';
+  }
   function settingsHtml() {
-    var sec = S.st.section || 'agents';
-    var count = S.st.data && S.st.data.agents ? S.st.data.agents.length : null;
+    var sec = S.st.section || 'agents', att = stAttention();
+    var n = S.st.data && S.st.data.agents ? S.st.data.agents.length : 0;
     var menu = '<nav class="wst__menu" aria-label="Settings sections">' +
       '<p class="wst__lead">Only you, the owner, see this page. Changes save to this machine\'s agentx.json.</p>' +
-      ST_SECTIONS.map(function (s) {
-        var on = s[0] === sec;
-        return '<a href="' + esc(stHref(s[0])) + '" class="wst__sec' + (on ? ' is-on' : '') + '"' + (on ? ' aria-current="page"' : '') + '>' +
-          '<span>' + esc(s[1]) + '</span>' + (s[2] ? '<small>classic</small>' : count != null ? '<small>' + count + '</small>' : '') + '</a>';
+      ST_GROUPS.map(function (g) {
+        return '<h3 class="wst__grp">' + esc(g[0]) + '</h3>' + g[1].map(function (s) {
+          var on = s[0] === sec, sub = s[0] === 'agents' ? n + (n === 1 ? ' agent' : ' agents') + ', their pictures, models and on/off' : s[3];
+          return '<a href="' + esc(stHref(s[0])) + '" class="wst__sec' + (on ? ' is-on' : '') + (s[2] ? ' is-classic' : '') + '"' + (on ? ' aria-current="page"' : '') +
+            (s[2] ? ' title="Not on the Wall yet: opens its classic page"' : '') + '>' +
+            '<span>' + esc(s[1]) + '<small class="wst__sub">' + esc(sub) + '</small></span>' + stCountHtml(s[0], att) + '</a>';
+        }).join('');
       }).join('') + '</nav>';
     return '<div class="wst' + (S.st.section ? ' has-section' : '') + '">' + menu +
       '<div class="wst__body">' + (S.st.agent ? '' : '<a class="wst__up" href="' + esc(stHref('')) + '">← All settings</a>') + stSectionHtml(sec) + '</div></div>';
@@ -150,9 +207,10 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (!S.st.data.exists) return '<p class="wst__err">This machine has no agentx.json yet. <a href="/setup">Run the setup</a> first.</p>';
     var s = ST_SECTIONS.find(function (x) { return x[0] === sec; }) || ST_SECTIONS[0];
     if (s[2]) {
+      var wall = s[2].charAt(0) === '#';
       return '<header class="wst__h"><h2>' + esc(s[1]) + '</h2></header>' +
-        '<p class="wst__todo">' + esc(s[1]) + ' is not on the Wall yet: it comes in a later step of #1428. Until then, change it in classic Settings.</p>' +
-        '<a class="ax-btn" href="/admin#tab=' + esc(s[2]) + '">Open ' + esc(s[1]) + ' in classic Settings</a>';
+        '<p class="wst__todo">' + (wall ? esc(s[1]) + ' has its own page on the Wall.' : esc(s[1]) + ' is not on the Wall yet: it comes in a later step of #1428. Until then, change it on its classic page.') + '</p>' +
+        '<a class="ax-btn" href="' + esc(s[2]) + '">' + (wall ? 'Open ' + esc(s[1]) : 'Open ' + esc(s[1]) + ' on the classic page') + '</a>';
     }
     return S.st.agent ? stAgentHtml(S.st.agent) : stAgentsHtml();
   }
@@ -207,41 +265,6 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       '</form></details>';
   }
 
-  // --- One agent: its settings, integrations, files, test drive, delete ---
-  function stAgentHtml(id) {
-    var a = stAgentOf(id);
-    if (!a) return '<a class="wst__up wst__up--all" href="' + esc(stHref('agents')) + '">← Agents</a><p class="ax-wall__empty">No agent @' + esc(id) + ' on this machine.</p>';
-    var o = stOrgNode(id);
-    return '<a class="wst__up wst__up--all" href="' + esc(stHref('agents')) + '">← Agents</a>' +
-      '<header class="wsa-head">' + avatar(id, 'md') + '<div class="wsa__b"><h2>' + esc(a.name || a.id) + '</h2>' +
-        '<small>@' + esc(a.id) + (o.title ? ' · ' + esc(o.title) : '') + '</small>' + stNoteHtml('hold-' + a.id) + '</div>' + stSwitchHtml(a) + '</header>' +
-      stEditHtml(a) + stAccessHtml(a) + stIntegrationsHtml(a) + stFilesHtml(a) + stTestHtml(a) + stDeleteHtml(a) +
-      '<p class="wsf__hint"><a href="/admin/agents/' + encodeURIComponent(a.id) + '">The full agent page</a> has the same files with a Markdown preview.</p>';
-  }
-  function stEditHtml(a) {
-    return '<form class="wsf wsc" data-st-form="edit" data-id="' + esc(a.id) + '"><h3>Settings</h3>' +
-      '<label>Name<input id="st-e-name" maxlength="80" value="' + esc(a.name || '') + '"></label>' +
-      '<div class="wsf__row"><label>AI engine<select id="st-e-tier">' + stOptions(ST_ENGINES, a.tier || 'claude-code') + '</select></label>' +
-      '<label><span>Model <small>optional</small></span><input id="st-e-model" placeholder="the engine\'s default" value="' + esc(a.model || '') + '"></label></div>' +
-      '<p class="wsf__hint">Changing the engine, the model or the permission mode needs a daemon restart before it applies. A schedule of this agent that names its own model keeps that model: check its schedules so they match.</p>' +
-      '<label><span>Trigger words <small>comma or space separated</small></span><input id="st-e-triggers" value="' + esc((a.mentions || []).join(', ')) + '"></label>' +
-      '<label>Personality / instructions<textarea id="st-e-personality" rows="6">' + esc(a.systemPrompt || '') + '</textarea></label>' +
-      '<div class="wsf__row"><label>Tasks at once<input id="st-e-max-concurrent" type="number" min="1" max="20" value="' + esc(a.maxConcurrent || 1) + '"></label>' +
-      '<label>Longest run, minutes<input id="st-e-max-exec" type="number" min="1" max="240" value="' + esc(a.maxExecutionMinutes || 20) + '"></label></div>' +
-      '<label>Permission mode<select id="st-e-perm">' + stOptions(ST_PERMS, a.permissionMode || 'default') + '</select></label>' +
-      '<label class="wsf__check"><input type="checkbox" id="st-e-access"' + (a.access === 'public' ? ' checked' : '') + '> Answer on the public API</label>' +
-      '<label class="wsf__check"><input type="checkbox" id="st-e-wiki"' + (a.wikiAbsorb !== false ? ' checked' : '') + '> Include in the wiki absorb <small>off: agentx wiki absorb skips this agent; its conversations are still kept</small></label>' +
-      '<div class="wsf__foot"><button type="submit" class="ax-btn">Save</button>' + stNoteHtml('edit') + '</div>' +
-      '<p class="wsf__hint">The other fields need no restart: the daemon reloads agentx.json, and they apply from the agent\'s next run.</p>' +
-    '</form>';
-  }
-  function stAccessHtml(a) {
-    var pub = a.access === 'public';
-    return '<section class="wsc"><h3>Public API</h3><p class="wsf__hint">' + (pub
-      ? 'On: a token with agent:' + esc(a.id) + ' scope can send it messages.'
-      : 'Off: only this dashboard, its channels and the mesh reach it.') + '</p>' +
-      '<div class="wsf__foot"><button type="button" class="ax-btn ax-btn--ghost" data-st-act="access" data-id="' + esc(a.id) + '" data-access="' + (pub ? 'private' : 'public') + '">' + (pub ? 'Make private' : 'Make public') + '</button>' + stNoteHtml('access') + '</div></section>';
-  }
   function stConfirmHtml(key, text, yes) {
     if (S.st.confirm !== key) return '';
     return '<div class="wsk" role="alertdialog" aria-label="Confirm"><p>' + text + '</p>' +
@@ -274,28 +297,30 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       '</form></details></section>';
   }
   function stFmtBytes(n) { return !n ? '0 B' : n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1).replace(/\.0$/, '') + ' KB' : (n / 1048576).toFixed(2) + ' MB'; }
-  function stFilesHtml(a) {
-    var f = S.st.files;
-    var head = '<section class="wsc" id="st-files"><h3>Files and skills</h3><p class="wsf__hint">The agent\'s instruction files and its skills, in its workspace.</p>';
-    if (!f) return head + '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="files" data-id="' + esc(a.id) + '">Show files</button></section>';
-    if (f.error) return head + '<p class="wst__err">Could not list the files: ' + esc(f.error) + '</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="files" data-id="' + esc(a.id) + '">Try again</button></section>';
+  /** The Personality tab (part 'identity': its instruction files) or the
+   *  Skills tab (part 'skills'), each with the open file's editor. */
+  function stFilesHtml(a, part) {
+    var f = S.st.files, skillsTab = part === 'skills';
+    var head = '<section class="wsc" id="st-files"><h3>' + (skillsTab ? 'Skills' : 'Instruction files') + '</h3><p class="wsf__hint">' +
+      (skillsTab ? 'What @' + esc(a.id) + ' knows how to do, one folder with a SKILL.md each, in its workspace.' : 'The files that tell @' + esc(a.id) + ' who it is and how it works, in its workspace.') + '</p>';
+    if (!f || f.error) return head + (f ? '<p class="wst__err">Could not list the files: ' + esc(f.error) + '</p>' : '') + '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="files" data-id="' + esc(a.id) + '">' + (f ? 'Try again' : 'Show files') + '</button></section>';
     if (!f.overview) return head + '<p class="ax-wall__empty">Loading…</p></section>';
-    var ov = f.overview;
-    var ident = (ov.identity || []).map(function (x) {
-      return '<li><button type="button" class="wsl__f' + (f.path === x.path ? ' is-on' : '') + '" data-st-act="open-file" data-path="' + esc(x.path) + '">' + esc(x.title) + '<small>' + (x.exists ? stFmtBytes(x.size) : 'not made yet') + '</small></button></li>';
+    var ov = f.overview, mine = (skillsTab ? ov.skills : ov.identity) || [];
+    var items = mine.map(function (x, n) {
+      return '<li><button type="button" class="wsl__f' + (f.path === x.path ? ' is-on' : '') + '" data-st-act="open-file" data-path="' + esc(x.path) + '">' + esc(x.title) +
+        '<small>' + (skillsTab ? esc(x.slug) : x.exists ? stFmtBytes(x.size) : 'not made yet') + '</small></button>' +
+        (skillsTab ? '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="ask" data-key="skill:' + n + '">Delete</button>' +
+          stConfirmHtml('skill:' + n, 'Delete the skill "' + esc(x.slug) + '"? Its folder and SKILL.md are removed from disk.', 'Delete') : '') + '</li>';
     }).join('');
-    var skills = (ov.skills || []).map(function (x, n) {
-      return '<li><button type="button" class="wsl__f' + (f.path === x.path ? ' is-on' : '') + '" data-st-act="open-file" data-path="' + esc(x.path) + '">' + esc(x.title) + '<small>' + esc(x.slug) + '</small></button>' +
-        '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="ask" data-key="skill:' + n + '">Delete</button>' +
-        stConfirmHtml('skill:' + n, 'Delete the skill "' + esc(x.slug) + '"? Its folder and SKILL.md are removed from disk.', 'Delete') + '</li>';
-    }).join('');
-    var editor = f.path ? '<div class="wse"><p class="wse__p"><code>' + esc(f.path) + '</code></p>' +
+    var open = f.path && mine.some(function (x) { return x.path === f.path; });
+    var editor = open ? '<div class="wse"><p class="wse__p"><code>' + esc(f.path) + '</code></p>' +
         '<textarea id="st-f-text" rows="14" spellcheck="false" aria-label="' + esc(f.path) + '">' + esc(f.text) + '</textarea>' +
         '<div class="wsf__foot"><button type="button" class="ax-btn" data-st-act="save-file">Save</button>' +
         '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="revert-file">Revert</button>' +
         '<label class="ax-btn ax-btn--ghost wse__up">Load a file<input type="file" id="st-f-up" accept=".md,.markdown,.txt,text/markdown,text/plain"></label>' + stNoteHtml('file') + '</div></div>' : '';
-    return head + '<div class="wsl"><div><h4>Instruction files</h4><ul>' + (ident || '<li class="ax-wall__empty">None.</li>') + '</ul>' +
-        '<h4>Skills</h4><ul>' + (skills || '<li class="ax-wall__empty">No skills yet.</li>') + '</ul></div>' + editor + '</div>' +
+    var list = '<div class="wsl"><div><ul>' + (items || '<li class="ax-wall__empty">' + (skillsTab ? 'No skills yet.' : 'None.') + '</li>') + '</ul></div>' + editor + '</div>';
+    if (!skillsTab) return head + list + (open ? '' : stNoteHtml('file')) + '</section>';
+    return head + list + (open ? '' : stNoteHtml('file')) +
       '<details class="wsx"><summary>Add a skill</summary><form class="wsf" data-st-form="skill">' +
         '<div class="wsf__row"><label><span>Slug <small>lowercase</small></span><input id="st-s-slug" maxlength="60" placeholder="weekly-report"></label>' +
         '<label><span>Title <small>optional</small></span><input id="st-s-title" maxlength="120"></label></div>' +
@@ -325,41 +350,23 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   async function stHold(id) {
     var pause = stOrgNode(id).status !== 'paused';
     stNote('hold-' + id, '', pause ? 'Turning off…' : 'Turning on…');
-    var r = await act('POST', '/api/admin/org/hold', { agent: id, paused: pause });
+    var r = await act('POST', '/api/admin/wall/settings/org/hold', { agent: id, paused: pause });
     if (!r.ok) { stNote('hold-' + id, 'err', 'Not changed: ' + r.error); return; }
     S.st.notes['hold-' + id] = { kind: 'ok', text: pause ? 'Off: it starts no run until you turn it back on.' : 'On: it works again.' };
     await settingsLoad();
   }
   function stList(xs) { return xs.length > 1 ? xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1] : xs.join(''); }
-  function stInt(id) { var n = parseInt(stVal(id), 10); return isFinite(n) ? n : undefined; }
-  async function stSaveEdit(id) {
-    var patch = {
-      name: stVal('st-e-name').trim(), tier: stVal('st-e-tier'), model: stVal('st-e-model').trim(),
-      triggerWords: stVal('st-e-triggers').trim(), systemPrompt: stVal('st-e-personality'),
-      maxConcurrent: stInt('st-e-max-concurrent'), maxExecutionMinutes: stInt('st-e-max-exec'),
-      permissionMode: stVal('st-e-perm'), access: stChecked('st-e-access') ? 'public' : 'private', wikiAbsorb: stChecked('st-e-wiki'),
-    };
-    if (!patch.name) { stNote('edit', 'err', 'Not saved: the name cannot be empty.'); return; }
-    stNote('edit', '', 'Saving…');
-    var r = await act('PATCH', '/api/admin/agents', { id: id, patch: patch });
-    if (!r.ok) { stNote('edit', 'err', 'Not saved: ' + r.error); return; }
-    var a = stAgentOf(id) || {}, restart = ST_RESTART_FIELDS.filter(function (f) { return (patch[f[0]] || '') !== (a[f[0]] || (f[0] === 'permissionMode' ? 'default' : '')); });
-    S.st.notes.edit = restart.length
-      ? { kind: 'warn', text: 'Saved. Restart the daemon for the new ' + stList(restart.map(function (f) { return f[1]; })) + ' to apply: ' + ST_RESTART + '.' }
-      : { kind: 'ok', text: 'Saved. It applies from the agent\'s next run.' };
-    await settingsLoad();
-  }
   async function stAdd() {
     var body = {
       id: stVal('st-a-id').trim(), name: stVal('st-a-name').trim(), triggerWords: stVal('st-a-triggers').trim(), tier: stVal('st-a-tier') || 'claude-code',
       model: stVal('st-a-model').trim() || undefined, personality: stVal('st-a-personality').trim() || undefined, access: stChecked('st-a-public') ? 'public' : 'private',
     };
     stNote('add', '', 'Adding…');
-    var r = await act('POST', '/api/admin/agents', body);
+    var r = await act('POST', '/api/admin/wall/settings/agents', body);
     if (!r.ok) { stNote('add', 'err', 'Not added: ' + r.error); return; }
     var note = 'Added @' + body.id + '. It starts working after a daemon restart: ' + ST_RESTART + '.';
     if (body.access === 'public') {
-      var p = await act('POST', '/api/admin/agents/access', { id: body.id, access: 'public' });
+      var p = await act('POST', '/api/admin/wall/settings/agents/access', { id: body.id, access: 'public' });
       if (!p.ok) note += ' It stays private: ' + p.error;
     }
     S.st.addOpen = true;
@@ -368,17 +375,10 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   }
   async function stSaveCurator() {
     stNote('curator', '', 'Saving…');
-    var r = await act('POST', '/api/admin/wiki/curator', { enabled: stChecked('st-wc-on'), agent: stVal('st-wc-agent') });
+    var r = await act('POST', '/api/admin/wall/settings/wiki/curator', { enabled: stChecked('st-wc-on'), agent: stVal('st-wc-agent') });
     if (!r.ok) { stNote('curator', 'err', 'Not saved: ' + r.error); return; }
     S.st.curatorOpen = true;
     S.st.notes.curator = { kind: 'ok', text: 'Saved.' };
-    await settingsLoad();
-  }
-  async function stAccess(id, access) {
-    stNote('access', '', 'Saving…');
-    var r = await act('POST', '/api/admin/agents/access', { id: id, access: access });
-    if (!r.ok) { stNote('access', 'err', 'Not changed: ' + r.error); return; }
-    S.st.notes.access = { kind: 'ok', text: access === 'public' ? 'Public: it answers on the public API.' : 'Private.' };
     await settingsLoad();
   }
   async function stAddInt(id) {
@@ -391,7 +391,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       if (k) metadata[k] = i < 0 ? '' : pair.slice(i + 1).trim();
     });
     stNote('int-add', '', 'Adding…');
-    var r = await act('POST', '/api/admin/agents/integrations', { agentId: id, kind: kind, label: label, credentials: { tokenEnv: env }, metadata: metadata });
+    var r = await act('POST', '/api/admin/wall/settings/agents/integrations', { agentId: id, kind: kind, label: label, credentials: { tokenEnv: env }, metadata: metadata });
     if (!r.ok) { stNote('int-add', 'err', 'Not added: ' + r.error); return; }
     S.st.notes.int = { kind: 'ok', text: 'Added ' + kind + ' "' + label + '".' };
     await settingsLoad();
@@ -402,7 +402,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (key === 'delete') {
       stPaint();
       stNote('delete', '', 'Deleting…');
-      var r = await act('DELETE', '/api/admin/agents', { id: id });
+      var r = await act('DELETE', '/api/admin/wall/settings/agents', { id: id });
       if (!r.ok) { stNote('delete', 'err', 'Not deleted: ' + r.error); return; }
       S.st.flash = 'Deleted @' + id + '. Its workspace folder is still on disk. Restart the daemon to stop it: ' + ST_RESTART + '.';
       S.st.data = null;
@@ -415,7 +415,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       stPaint();
       if (!i) return;
       stNote('int', '', 'Removing…');
-      var ri = await act('DELETE', '/api/admin/agents/integrations', { agentId: id, kind: i.kind, label: i.label });
+      var ri = await act('DELETE', '/api/admin/wall/settings/agents/integrations', { agentId: id, kind: i.kind, label: i.label });
       if (!ri.ok) { stNote('int', 'err', 'Not removed: ' + ri.error); return; }
       S.st.notes.int = { kind: 'ok', text: 'Removed ' + i.kind + ' "' + i.label + '".' };
       await settingsLoad();
@@ -426,7 +426,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       stPaint();
       if (!s) return;
       stNote('file', '', 'Deleting…');
-      var rs = await act('DELETE', '/api/admin/files/skill', { agent: id, slug: s.slug });
+      var rs = await act('DELETE', '/api/admin/wall/settings/files/skill', { agent: id, slug: s.slug });
       if (!rs.ok) { stNote('file', 'err', 'Not deleted: ' + rs.error); return; }
       if (S.st.files.path && S.st.files.path.indexOf('/' + s.slug + '/') >= 0) S.st.files.path = '';
       await stLoadFiles(id);
@@ -454,7 +454,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (!f || !f.path) return;
     f.text = stVal('st-f-text');
     stNote('file', '', 'Saving…');
-    var r = await act('PUT', '/api/admin/files', { agent: f.agent, path: f.path, content: f.text });
+    var r = await act('PUT', '/api/admin/wall/settings/files', { agent: f.agent, path: f.path, content: f.text });
     if (!r.ok) { stNote('file', 'err', 'Not saved: ' + r.error); return; }
     f.original = f.text;
     S.st.notes.file = { kind: 'ok', text: r.body.summary || 'Saved.' };
@@ -479,7 +479,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     var body = { agent: f.agent, slug: slug, title: title };
     if (content != null) body.content = content;
     stNote('skill', '', 'Adding…');
-    var r = await act('POST', '/api/admin/files/skill', body);
+    var r = await act('POST', '/api/admin/wall/settings/files/skill', body);
     if (!r.ok) { stNote('skill', 'err', 'Not added: ' + r.error); return; }
     S.st.notes.file = { kind: 'ok', text: r.body.summary || 'Skill added.' };
     await stLoadFiles(f.agent);
@@ -493,7 +493,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     t.msgs.push({ kind: 'you', text: text }, { kind: 'wait', text: 'Thinking…' });
     t.busy = true;
     stPaintTest();
-    var r = await act('POST', '/api/admin/agents/test', { agent: id, message: text, chatId: t.chatId });
+    var r = await act('POST', '/api/admin/wall/settings/agents/test', { agent: id, message: text, chatId: t.chatId });
     t.busy = false;
     t.msgs.pop();
     var reply = r.ok ? (r.body.response && (r.body.response.content || r.body.response.error)) || '(no answer)' : r.error;
@@ -511,7 +511,10 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     else if (a === 'ask') { S.st.confirm = t.getAttribute('data-key'); stPaint(); }
     else if (a === 'cancel') { S.st.confirm = ''; stPaint(); }
     else if (a === 'confirm') stConfirmed(t.getAttribute('data-key'));
-    else if (a === 'access') stAccess(id, t.getAttribute('data-access'));
+    else if (a === 'discard') stDiscard();
+    else if (a === 'review') stReview();
+    else if (a === 'back') stCloseDialog();
+    else if (a === 'save') stSaveEdit();
     else if (a === 'files') stLoadFiles(id);
     else if (a === 'open-file') stOpenFile(t.getAttribute('data-path'));
     else if (a === 'save-file') stSaveFile();
@@ -523,7 +526,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (!form) return;
     ev.preventDefault();
     var kind = form.getAttribute('data-st-form'), id = form.getAttribute('data-id');
-    if (kind === 'edit') stSaveEdit(id);
+    // Enter in the agent's form opens Save…, as the button does.
+    if (kind === 'edit') stReview();
     else if (kind === 'add') stAdd();
     else if (kind === 'curator') stSaveCurator();
     else if (kind === 'int') stAddInt(id);
@@ -531,9 +535,11 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   });
   document.addEventListener('input', function (ev) {
     if (ev.target && ev.target.id === 'st-f-text' && S.st.files) S.st.files.text = ev.target.value;
+    else if (S.page === 'settings' && ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-st-f')) stOnField(ev.target);
   });
   document.addEventListener('change', function (ev) {
     var t = ev.target;
+    if (S.page === 'settings' && t && t.hasAttribute && t.hasAttribute('data-st-f')) { stOnField(t); return; }
     if (!t || t.id !== 'st-f-up' || !S.st.files) return;
     var file = t.files && t.files[0];
     if (!file) return;
@@ -548,6 +554,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (S.page !== 'settings' || !ev.target) return;
     if (ev.target.id === 'st-td-text' && ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); stSendTest(S.st.agent); }
     else if (ev.target.id === 'st-f-text' && ev.key === 's' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); stSaveFile(); }
+    else if (ev.key === 'Escape' && $('st-dlg') && $('st-dlg').innerHTML) stCloseDialog();
     else if (ev.key === 'Escape' && S.st.confirm) { S.st.confirm = ''; stPaint(); }
   });
   // The open Add and curator boxes stay open across a repaint.
@@ -556,6 +563,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (k === 'add') S.st.addOpen = d.open;
     else if (k === 'curator') S.st.curatorOpen = d.open;
   }, true);
+${WALL_SETTINGS_AGENT_SCRIPT}
 `
 
 export const WALL_SETTINGS_CSS = `
@@ -566,10 +574,19 @@ export const WALL_SETTINGS_CSS = `
 .wst__sec { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 10px 12px; color: var(--ax-text); text-decoration: none; font-weight: 600; border-left: 3px solid transparent; }
 .wst__sec:hover { background: var(--ax-surface); }
 .wst__sec.is-on { border-left-color: var(--ax-accent); background: var(--ax-surface); }
-.wst__sec small { color: var(--ax-muted); font-weight: 400; font-size: var(--ax-fs-xs); }
+.wst__sec > span { display: flex; flex-direction: column; min-width: 0; }
+.wst__sub { display: none; color: var(--ax-muted); font-weight: 400; font-size: var(--ax-fs-xs); }
+.wst__sec.is-classic { font-weight: 400; color: var(--ax-text-2); }
+.wst__grp { margin: 14px 12px 4px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ax-muted); }
+.wst__n-att, .wst__n-all { min-width: 22px; padding: 1px 7px; border-radius: var(--ax-radius-pill); font-size: 12px; text-align: center; }
+.wst__n-att { background: var(--ax-amber-t); color: var(--ax-amber-ink); }
+.wst__n-all { background: var(--ax-surface-2, var(--ax-border)); color: var(--ax-text-2); }
+.wst__sec.is-on .wst__n-all { background: var(--ax-accent); color: #fff; }
+.wst-owner { max-width: 520px; padding: 24px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.wst-owner h2 { margin: 0; font-size: 20px; font-weight: 800; }
+.wst-owner p { margin: 0; color: var(--ax-text-2); }
 .wst__body { padding: 12px 16px 32px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .wst__up { display: none; color: var(--ax-accent); text-decoration: none; font-size: var(--ax-fs-sm); }
-.wst__up--all { display: inline; }
 .wst__h h2, .wsa-head h2 { margin: 0; font-size: 20px; font-weight: 800; }
 .wst__h p { margin: 4px 0 0; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
 .wst__err { margin: 0; padding: 10px 12px; border-radius: var(--ax-radius); background: var(--ax-red-t); color: var(--ax-red-ink); font-size: var(--ax-fs-sm); }
@@ -602,7 +619,6 @@ export const WALL_SETTINGS_CSS = `
 .wsa__sw[aria-checked="true"] i::after { transform: translateX(16px); }
 .wsa__sw:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; border-radius: var(--ax-radius); }
 .wsa__wait { text-decoration: none; }
-.wsa-head { display: flex; gap: 12px; align-items: center; }
 
 /* Forms and boxes */
 .wsc { border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -662,11 +678,14 @@ export const WALL_SETTINGS_CSS = `
   .wst__menu { position: static; border-right: 0; min-height: 0; }
   .wst__sec { padding: 14px 16px; border-left: 0; border-top: 1px solid var(--ax-border); }
   .wst__sec.is-on { background: none; }
-  .wst__sec::after { content: "›"; color: var(--ax-muted); margin-left: auto; padding-left: 8px; }
+  .wst__sec { align-items: center; }
+  .wst__sec::after { content: "›"; color: var(--ax-muted); padding-left: 8px; }
+  .wst__sec > span { flex: 1; }
+  .wst__sub { display: block; margin-top: 2px; }
   .wst:not(.has-section) .wst__body, .wst.has-section .wst__menu { display: none; }
   .wst__up { display: inline; }
   .wst__body { padding: 12px; }
   .wsl { grid-template-columns: minmax(0, 1fr); }
   .wsa { padding: 12px 10px; }
 }
-`
+` + WALL_SETTINGS_AGENT_CSS

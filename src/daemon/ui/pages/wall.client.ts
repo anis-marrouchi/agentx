@@ -1255,8 +1255,8 @@ ${WALL_BUILD_SCRIPT}
     $('wall-creator').hidden = page !== 'creator';
     $('wall-live').hidden = page !== 'live';
     $('wall-task').hidden = page !== 'task';
-    // Settings (#1428): drawn only for the owner, so it may not be on the page.
-    if (ST) $('wall-settings').hidden = page !== 'settings';
+    // Settings (#1428): the owner's sections, or for anyone else a line saying it is the owner's.
+    $('wall-settings').hidden = page !== 'settings';
     document.querySelector('.ax-wall').classList.toggle('is-settings', page === 'settings');
     if (page === 'settings') settingsShow();
     $('wall-activity').hidden = page !== 'activity';

@@ -359,6 +359,9 @@ function getAdminState() {
     id,
     schedule: c.schedule,
     agent: c.agent,
+    // Its own model, when it names one (#1428): without it, the job follows
+    // the agent's model, which Settings says before a model change saves.
+    model: c.model || "",
     prompt: (c.prompt || "").slice(0, 200),
     enabled: c.enabled !== false,
     value: cronValueOf(c.value),

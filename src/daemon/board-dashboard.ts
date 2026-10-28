@@ -87,7 +87,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, isWallWrite, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, wallSettingsTarget, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -890,6 +890,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const body = method === "POST" ? await readJson(req) : {}
     const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config) })
     sendJson(res, reply!.status, reply!.body)
+    return
+  }
+  // Settings on the Wall (#1428): the classic /admin write of the same name,
+  // past the owner guard above (wall-actions.ts lists them).
+  const settingsTarget = wallSettingsTarget(method, path)
+  if (settingsTarget) {
+    await handleAdminApi(req, res, settingsTarget, { owner: isDashboardOwner(req, ctx) })
     return
   }
   // The Wall (#1180): read-only posts and threads from this node's records.

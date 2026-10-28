@@ -15,9 +15,9 @@ The Wall shows the records AgentX already keeps: tasks, plans and run history. O
    - **Work:** **Live**, **Running now**, **Projects** and **Activity**.
    - **Automation:** **Jobs**, **Workflows**, **Reviews** and **Failures**.
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
-   - **Owner:** **Settings**.
+   - **Owner:** **Settings**, for the owner only (see [Change settings](#change-settings)).
 
-   Under them, **Dashboard** opens the classic pages at **Operations**. **Workflows** and **Settings** open their classic page until they are built on the Wall. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
+   Under them, **Dashboard** opens the classic pages at **Operations**. **Workflows** opens its classic page until it is built on the Wall. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, classifications waiting for review, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
 3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Wall's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Wall's title row: Wall, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
@@ -245,19 +245,20 @@ When a machine does not answer, the page names it at the top: agents that run on
 Avatars show an agent's or a person's profile picture when one is set on the machine that serves this dashboard, and the coloured circle with initials otherwise. An agent's profile has **Upload picture**, **Replace picture** and **Remove picture** for the agents this machine runs. See [Give agents and people a picture](../jobs/profile-pictures.md).
 ## Change settings
 
-**Settings** on the Wall is where you, the owner, change your agents. It is the only Wall page that changes settings; every other Wall page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry, and the settings API refuses them.
+**Settings** on the Wall is where you, the owner, change your agents. It is the only Wall page that changes settings; every other Wall page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
 
-It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same calls as the classic [Settings](./settings.md) page. For now it has the **Agents** section; the other sections open their tab in classic Settings.
+It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents** section; each other section opens its classic page.
 
-1. **Browser:** in the nav, select **Settings**, at the bottom under **New post**. On a phone, select **More**, then **Settings**.
-2. The sections are listed on the left, and the one you picked on the right. **Agents** opens first.
+1. **Browser:** in the nav, select **Settings**, under **Owner**. On a phone, select **More**, then **Settings**.
+2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Advanced). The one you picked is on the right; **Agents** opens first.
+3. An amber number on a section counts what needs you there: on **Agents**, agents waiting for your approval or missing a credential; on **Mesh**, machines that do not answer; on **Health**, those machines plus the ones waiting for a restart. Without one, **Agents** shows how many agents this machine has.
 
-   ![Settings on the Wall: the sections on the left and one card per agent, in the isolated demo](/screenshots/wall/settings.png)
+   ![Settings on the Wall: the grouped sections on the left and one card per agent, in the isolated demo](/screenshots/wall/settings.png)
 
    *Scripted demo data; your team's names and machines will differ.*
-3. On a phone, the list of sections fills the screen. Tap a section to open it, and **← All settings** to go back.
+4. On a phone, the list of sections fills the screen, each with a line on what it holds. Tap a section to open it, and **← All settings** to go back.
 
-   ![Settings on a phone: the list of sections, each with an arrow](/screenshots/wall/settings-phone.png)
+   ![Settings on a phone: the grouped list of sections, each with an arrow](/screenshots/wall/settings-phone.png)
 
    ![Settings on a phone: the Agents section with one agent card and its on/off switch](/screenshots/wall/settings-phone-agents.png)
 
@@ -265,36 +266,41 @@ Each agent card shows the agent's name, @handle, its role in the org chart when 
 
 ### Turn an agent off or on
 
-1. **Browser:** in **Settings** › **Agents**, select the agent's switch.
+1. **Browser:** in **Settings** › **Agents**, select the agent's switch, on its card or at the top of its page.
 2. **Off** means the agent starts no new run until you turn it back on. A run already going on finishes. This is the same pause as on the [Org](./org.md) page.
 
 ### Change an agent
 
-1. **Browser:** in **Settings** › **Agents**, select the agent's card.
-2. Change what you need under **Settings**: name, AI engine, model, trigger words (the words that call it, such as `@support`), instructions, how many tasks it takes at once, its longest run, permission mode, whether it answers on the public API, and whether the wiki absorb includes it.
-3. Select **Save**. A line next to **Save** says **Saved**, or why it was not saved. What you typed stays in the form when a save fails.
+1. **Browser:** in **Settings** › **Agents**, select the agent's card. Its page has its picture (**Upload picture**, **Replace picture**, **Remove picture**) and its switch on top, then the tabs of the classic agent page: **Overview**, **Personality**, **Skills**, **Channels** and **Handovers**.
+2. On **Overview**, change what you need: display name, wake words (the words that call it, such as `@support`), AI engine, model, conversations at once, longest task, tool permissions, whether it answers on the public API, whether the wiki absorb includes it, and its instructions.
+3. A field you changed turns blue and says what it was. A bar at the bottom says how many changes are not saved and whether they need a restart. **Discard** puts every field back.
 
-   ![The agent's settings after Save, with the Saved line next to the button](/screenshots/wall/settings-saved.png)
+   ![One agent on Settings: its picture and switch, the tabs, two changed fields in blue and the bar saying 2 changes not saved, in the isolated demo](/screenshots/wall/settings-agent.png)
 
-Most changes apply from the agent's next run, with no restart. A new engine, model or permission mode applies only after a daemon restart; the form says so before you save, and the **Saved** line names the command. **Terminal**, on that machine:
+4. Select **Save…**. A box lists each change with its old and new value. When you change the model or the engine, it also says which of the agent's recurring jobs change with it (a job that names its own model keeps it) and what the agent has spent this month against its cap. Select **Save changes**, or **Back** to keep editing.
+
+   ![The Save box: each change before and after, and what else moves](/screenshots/wall/settings-confirm.png)
+
+5. The bar says **Saved**, or why it was not saved. When a save fails, the form keeps what you typed.
+
+   ![The bar after Save changes, saying Saved](/screenshots/wall/settings-saved.png)
+
+   *Scripted demo data; your team's names and machines will differ.*
+
+Most changes apply from the agent's next run, with no restart. A new engine, model or permission mode applies only after a daemon restart; the bar says so before you save, and the **Saved** line names the command. **Terminal**, on that machine:
 
 ```bash
 agentx daemon restart --when-idle
 ```
 
-A schedule that names its own model keeps it when you change the agent's model. Check the agent's schedules on the **Jobs** page so they match.
+The other tabs:
 
-![One agent on Settings: its switch, then the settings form, in the isolated demo](/screenshots/wall/settings-agent.png)
+- **Personality**: its instruction files. Select one, change it and select **Save**. **Load a file** puts a file from your computer in the editor; nothing is written until you select **Save**.
+- **Skills**: its skills, edited the same way. **Add a skill** makes a new one. **Delete** asks you first.
+- **Channels**: the outside services it has credentials for (its integrations). You give the name of an environment variable that holds the secret, never the secret itself. **Remove** asks you first. Which chats and bots reach it is still on the classic agent page.
+- **Handovers**: not on the Wall yet; it opens the classic agent page.
 
-*Scripted demo data; your team's names and machines will differ.*
-
-Under the form, the agent's page also has:
-
-- **Public API**: **Make public** lets a token with the `agent:<id>` scope send it messages; **Make private** stops that.
-- **Integrations**: the outside services it has credentials for. You give the name of an environment variable that holds the secret, never the secret itself. **Remove** asks you first.
-- **Files and skills**: select **Show files** to open its instruction files and skills, change one and select **Save**. **Load a file** puts a file from your computer in the editor; nothing is written until you select **Save**. **Add a skill** makes a new one. **Delete** asks you first.
-- **Test drive**: send it a message and read its answer on the page. It is a real run, so it can cost money.
-- **Delete**: removes the agent from `agentx.json`. It asks you first. Its workspace folder stays on disk, and the daemon stops it after a restart.
+**Overview** also has **Test drive** (send it a message and read its answer on the page; it is a real run, so it can cost money) and **Delete**, which removes the agent from `agentx.json` after asking you. Its workspace folder stays on disk, and the daemon stops it after a restart.
 
 ### Add an agent
 
@@ -756,6 +762,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Wall** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
+39. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back.
 
 ## If something is wrong
 
@@ -819,8 +826,9 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **A person is missing from the Org page:** a person gets a card only when a **reports to** or **dotted line** names them. A person an agent only acts for shows on that agent's card as **acts for** *name*.
 - **The org chart is cut off on the right:** it is wider than the screen. Scroll it sideways, or select **−** to zoom out.
 - **A link from the old home page stopped working:** only `/` changed. Every other address works as before; `/live` opens the Wall's **Live** page.
-- **No Settings in the nav:** the dashboard does not see you as the owner. Open it on the machine that serves it, or sign in with the dashboard token, then reload.
+- **No Settings in the nav, or "Settings are for the owner":** the dashboard does not see you as the owner. Open it on the machine that serves it, or sign in with the dashboard token, then reload.
 - **Settings says "Only the owner can change settings":** your sign-in ended or the dashboard token changed. Sign in again at `/login`.
-- **"Not saved: …" in Settings:** the value was refused, for example an agent id with capitals or no trigger word. Fix it as the message says and select **Save** again; nothing was written.
+- **"Not saved: …" in Settings:** the value was refused, for example an agent id with capitals or no wake word. The form keeps what you typed. Fix it as the message says and select **Save…** again; nothing was written.
+- **Save… does nothing:** no field differs from what is saved. A field you changed is blue; if none is, there is nothing to save.
 - **A saved change does not show in the agent's work:** a new engine, model or permission mode, and a new or deleted agent, need `agentx daemon restart --when-idle`. Other changes apply from its next run; a run going on finishes as it started.
-- **A Settings section says "not on the Wall yet":** that section is still on classic Settings. Its button opens the right tab there.
+- **A Settings section says "not on the Wall yet":** that section is still on its classic page. Its button opens it there.

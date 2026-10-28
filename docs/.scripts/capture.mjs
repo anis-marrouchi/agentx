@@ -55,8 +55,10 @@ const shots = [
   { name: "wall/phone-dark", path: "/wall", wait: ".wp", phone: true, dark: true },
   // Settings on the Wall (#1428): the Agents section, one agent, a save, and a phone.
   { name: "wall/settings", path: "/wall#page=settings&section=agents", wait: ".wsa" },
-  { name: "wall/settings-agent", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name" },
-  { name: "wall/settings-saved", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ click: "[data-st-form=edit] button[type=submit]" }, { waitText: ["#st-n-edit", "Saved"] }], clipTo: "[data-st-form=edit]" },
+  // #1428 / #1451 frame 2: two changes not saved, then Save… open, then Saved.
+  { name: "wall/settings-agent", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { fill: "#st-e-triggerWords", text: "@cx, desk" }, { wait: "#st-bar:not([hidden])" }] },
+  { name: "wall/settings-confirm", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { fill: "#st-e-triggerWords", text: "@cx, desk" }, { click: "[data-st-act=review]" }, { wait: ".wsd" }] },
+  { name: "wall/settings-saved", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { click: "[data-st-act=review]" }, { click: "#st-dlg-save" }, { waitText: ["#st-n-edit", "Saved"] }], clipTo: "#st-bar" },
   { name: "wall/settings-phone", path: "/wall#page=settings", wait: ".wst__sec", phone: true },
   { name: "wall/settings-phone-agents", path: "/wall#page=settings&section=agents", wait: ".wsa", phone: true },
   // #1355: the status tabs with the filters open, and the composer.

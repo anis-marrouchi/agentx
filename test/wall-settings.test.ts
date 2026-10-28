@@ -22,7 +22,13 @@ const STATE = {
     { id: "new", name: "New Hire", tier: "claude-code", mentions: ["@new"], access: "private", maxConcurrent: 1, maxExecutionMinutes: 20, permissionMode: "default", wikiAbsorb: true, integrations: [] },
   ],
   wikiCurator: { enabled: true, agent: "" },
+  crons: [
+    { id: "digest", schedule: "0 9 * * *", agent: "cx", model: "", enabled: true },
+    { id: "audit", schedule: "0 3 * * 1", agent: "cx", model: "model-z", enabled: true },
+    { id: "night", schedule: "0 1 * * *", agent: "ops", model: "", enabled: true },
+  ],
 }
+const BUDGETS = { agents: [{ agentId: "cx", spentUsd: 12.5, capUsd: 40, state: "ok" }], agentIds: ["cx", "ops", "new"] }
 const ORG = {
   roots: [{ id: "cx", name: "Customer Desk", title: "Support lead", status: "idle", reports: [{ id: "ops", name: "Night Shift", status: "paused", heldBy: "the owner", reports: [] }] }],
   outside: [{ id: "new", name: "New Hire", status: "waiting", reports: [] }],
@@ -88,7 +94,8 @@ function openWall(opts: { hash: string; owner?: boolean; business?: boolean; rou
     const r = opts.route?.(url, init)
       ?? (url === "/api/admin/state" ? { status: 200, body: STATE }
         : url === "/api/admin/org" ? { status: 200, body: ORG }
-        : url === "/api/live" ? { status: 200, body: LIVE }
+        : url.startsWith("/api/live?") ? { status: 200, body: LIVE }
+        : url === "/api/admin/observability/budgets" ? { status: 200, body: BUDGETS }
         : url.startsWith("/api/admin/wall?") ? { status: 200, body: { node: "node-a", syncedAt: Date.now(), nodes: [{ name: "node-a", ok: true }], failures: [], posts: [] } }
         : method !== "GET" ? { status: 200, body: { summary: "ok" } }
         : { status: 200, body: { runs: [] } })
@@ -115,31 +122,49 @@ function openWall(opts: { hash: string; owner?: boolean; business?: boolean; rou
     for (const f of onDoc.submit ?? []) f({ target: { closest: () => form }, preventDefault() {} })
     await settle()
   }
+  /** Typing in a field, or ticking a box: the field changes, then its input event. */
+  const type = async (id: string, v: string | boolean) => {
+    const t = el(id)
+    if (typeof v === "boolean") t.checked = v
+    else t.value = v
+    for (const f of onDoc.input ?? []) f({ target: t })
+    await settle()
+  }
+  const key = async (k: string) => {
+    for (const f of onDoc.keydown ?? []) f({ key: k, target: { id: "" }, preventDefault() {} })
+    await settle()
+  }
   const writes = () => calls.filter((c) => c.method !== "GET")
-  return { page, el, calls, writes, settle, go, click, submit, paints: () => paints, wall }
+  return { page, el, calls, writes, settle, go, click, submit, type, key, paints: () => paints, wall }
 }
 
 const settingsHtml = (w: ReturnType<typeof openWall>) => w.el("wall-settings")!.innerHTML as string
 
 describe("Wall Settings: owner only (#1428)", () => {
-  it("draws the Settings entry, section and config only for the owner", () => {
+  it("draws the Settings nav entry and config only for the owner", () => {
     const owner = renderWallPage({ owner: true })
     expect(owner).toContain('data-nav="settings" href="#page=settings"')
     expect(owner).toContain('<section id="wall-settings"')
     expect(owner).toContain('window.AX_WALL_SETTINGS = {"business":false}')
+    // In the grouped nav (#1435), under Owner.
+    expect(owner).toMatch(/>Owner<\/span>\s*<a class="ax-wall__item" data-nav="settings"/)
     const other = renderWallPage({ owner: false })
-    expect(other).not.toContain('data-nav="settings" href')
-    expect(other).not.toContain('id="wall-settings"')
+    expect(other).not.toContain('data-nav="settings"')
+    expect(other).not.toContain(">Owner</span>")
     expect(other).not.toContain("window.AX_WALL_SETTINGS =")
     // The default is no Settings: a caller must say the viewer is the owner.
-    expect(renderWallPage()).not.toContain('data-nav="settings" href')
+    expect(renderWallPage()).not.toContain('data-nav="settings"')
   })
 
-  it("opens the Wall, not Settings, for a viewer who is not the owner", async () => {
-    const w = openWall({ hash: "#page=settings", owner: false })
+  it("tells a viewer who is not the owner that Settings are the owner's, and reads nothing", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents", owner: false })
     await w.settle()
-    expect(w.el("wall-title").textContent).toBe("Wall")
+    expect(w.el("wall-title").textContent).toBe("Settings")
+    expect(w.el("wall-settings").hidden).toBe(false)
+    expect(settingsHtml(w)).toContain("<h2>Settings are for the owner</h2>")
+    expect(settingsHtml(w)).not.toContain("wst__menu")
     expect(w.calls.some((c) => c.url === "/api/admin/state")).toBe(false)
+    expect(w.writes()).toEqual([])
   })
 
   it("says so when the API refuses the viewer", async () => {
@@ -171,15 +196,22 @@ describe("Wall Settings: the shell (#1428)", () => {
     expect(html).not.toContain('href="/admin/agents/cx"')
   })
 
-  it("lists every section, the chosen one first on a phone, and links unported ones to classic Settings", async () => {
+  it("lists every section in its group, the chosen one first on a phone, and links unported ones to their classic page", async () => {
     const w = openWall({ hash: "#page=settings" })
     await w.settle()
     expect(w.el("wall-title").textContent).toBe("Settings")
     expect(w.el("wall-settings").hidden).toBe(false)
     expect(w.wall.classList.contains("is-settings")).toBe(true)
     const html = settingsHtml(w)
-    for (const s of ["Agents", "Channels", "Schedules", "Webhooks", "Mesh", "Boards", "Actions", "Tokens", "Advanced"]) expect(html).toContain(`<span>${s}</span>`)
-    expect(html).not.toContain("<span>Business</span>")
+    const groups = html.split("</nav>")[0].split('<h3 class="wst__grp">').slice(1).map((g) => [g.split("<")[0], [...g.matchAll(/<span>([^<]+)<small/g)].map((m) => m[1])])
+    expect(groups).toEqual([
+      ["Fleet", ["Agents", "Channels", "Schedules", "Webhooks", "Mesh", "Boards", "Actions", "Inbox"]],
+      ["Access", ["Guests", "People", "Tokens"]],
+      ["Machines", ["Health", "Advanced"]],
+    ])
+    expect(html).toContain("3 agents, their pictures, models and on/off")
+    // Only Agents is built: the rest say they open their classic page.
+    expect(html.match(/is-classic/g)).toHaveLength(12)
     // No section in the link: on a phone the list is the screen.
     expect(html).toContain('<div class="wst">')
     await w.go("#page=settings&section=channels")
@@ -187,12 +219,39 @@ describe("Wall Settings: the shell (#1428)", () => {
     expect(settingsHtml(w)).toContain('href="/admin#tab=channels"')
     await w.go("#page=settings&section=schedules")
     expect(settingsHtml(w)).toContain('href="/admin#tab=crons"')
+    await w.go("#page=settings&section=guests")
+    expect(settingsHtml(w)).toContain('href="/guests"')
+    await w.go("#page=settings&section=people")
+    expect(settingsHtml(w)).toContain("People has its own page on the Wall.")
+    expect(settingsHtml(w)).toContain('href="#page=people"')
   })
 
   it("lists Business only when the business layer is on", async () => {
-    const w = openWall({ hash: "#page=settings", business: true })
+    const w = openWall({ hash: "#page=settings" })
     await w.settle()
-    expect(settingsHtml(w)).toContain("<span>Business</span>")
+    expect(settingsHtml(w)).not.toContain("<span>Business<small")
+    const b = openWall({ hash: "#page=settings", business: true })
+    await b.settle()
+    expect(settingsHtml(b)).toContain("<span>Business<small")
+  })
+
+  it("puts an amber count on the sections that need the owner", async () => {
+    const calm = openWall({ hash: "#page=settings", route: (u) => u === "/api/admin/state" ? { status: 200, body: { ...STATE, agents: STATE.agents.map((a) => ({ ...a, integrations: [] })) } }
+      : u === "/api/admin/org" ? { status: 200, body: { ...ORG, outside: [] } } : undefined })
+    await calm.settle()
+    expect(settingsHtml(calm)).not.toContain("wst__n-att")
+    expect(settingsHtml(calm)).toContain('<b class="wst__n-all" title="Agents on this machine">3</b>')
+    // cx misses a credential and new waits for approval; node-b does not answer, node-a waits for a restart.
+    const w = openWall({ hash: "#page=settings", route: (u) => u.startsWith("/api/live?") ? { status: 200, body: { nodes: [
+      { ...LIVE.nodes[0], restart: { state: "pending" } }, { name: "node-b", url: "http://node-b", reachable: false, agents: [] },
+    ] } } : undefined })
+    await w.settle()
+    const html = settingsHtml(w)
+    const count = (s: string) => (html.split(`<span>${s}<small`)[1].split("</a>")[0].match(/wst__n-att[^>]*>(\d+)</) || [])[1]
+    expect(count("Agents")).toBe("2")
+    expect(count("Mesh")).toBe("1")
+    expect(count("Health")).toBe("2")
+    expect(count("Channels")).toBeUndefined()
   })
 })
 
@@ -221,69 +280,169 @@ describe("Wall Settings: Agents (#1428)", () => {
     const w = openWall({ hash: "#page=settings&section=agents" })
     await w.settle()
     await w.click({ "data-st-hold": "cx" })
-    expect(w.writes()).toEqual([{ url: "/api/admin/org/hold", method: "POST", body: { agent: "cx", paused: true } }])
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/org/hold", method: "POST", body: { agent: "cx", paused: true } }])
     await w.click({ "data-st-hold": "ops" })
     expect(w.writes()[1].body).toEqual({ agent: "ops", paused: false })
     expect(settingsHtml(w)).toContain("On: it works again.")
   })
 
   it("shows the hold error and keeps the switch as it was", async () => {
-    const w = openWall({ hash: "#page=settings&section=agents", route: (u, i) => (u === "/api/admin/org/hold" && i.method === "POST" ? { status: 400, body: { error: "Unknown agent" } } : undefined) })
+    const w = openWall({ hash: "#page=settings&section=agents", route: (u, i) => (u === "/api/admin/wall/settings/org/hold" && i.method === "POST" ? { status: 400, body: { error: "Unknown agent" } } : undefined) })
     await w.settle()
     await w.click({ "data-st-hold": "cx" })
     expect(w.el("st-n-hold-cx").textContent).toBe("Not changed: Unknown agent")
     expect(w.el("st-n-hold-cx").className).toBe("wst__n is-err")
   })
 
-  it("saves an agent's settings with the classic PATCH and reloads them", async () => {
-    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+  it("draws one agent with its picture, its switch on top and the classic tabs", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx", route: (u) =>
+      u === "/api/admin/pictures" ? { status: 200, body: { agents: {}, people: {}, editable: { agent: ["cx"], person: [] } } } : undefined })
     await w.settle()
     const html = settingsHtml(w)
-    expect(html).toContain('<form class="wsf wsc" data-st-form="edit" data-id="cx">')
-    expect(html).toContain('id="st-e-name" maxlength="80" value="Customer Desk"')
-    expect(html).toContain("needs a daemon restart before it applies")
-    const set = (id: string, v: string) => { w.el(id).value = v }
-    set("st-e-name", "Help Desk"); set("st-e-tier", "codex-cli"); set("st-e-model", ""); set("st-e-triggers", "@help, help")
-    set("st-e-personality", "Be brief."); set("st-e-max-concurrent", "3"); set("st-e-max-exec", "30"); set("st-e-perm", "plan")
-    w.el("st-e-access").checked = true
-    w.el("st-e-wiki").checked = false
+    expect(html).toContain('<nav class="wsa-crumb" aria-label="Breadcrumb"><a href="#page=settings&amp;section=agents">Agents</a> › <span>Customer Desk</span></nav>')
+    const head = html.split('<header class="wsa-head">')[1].split("</header>")[0]
+    expect(head).toContain("@cx · Support lead")
+    expect(head).toContain('role="switch" aria-checked="true" data-st-hold="cx"')
+    expect(head).toContain('data-pic-set="cx"')
+    expect([...html.matchAll(/<nav class="wsa-tabs"[^>]*>(.*?)<\/nav>/g)][0][1].match(/>([A-Z][a-z]+)<\/a>/g)).toEqual(
+      [">Overview</a>", ">Personality</a>", ">Skills</a>", ">Channels</a>", ">Handovers</a>"])
+    expect(html).toContain('href="#page=settings&amp;section=agents&amp;agent=cx&amp;atab=skills"')
+    expect(html).toContain('id="st-e-name" data-st-f="name" value="Customer Desk"')
+    // Nothing changed yet: no bar.
+    expect(w.el("st-bar").hidden).toBe(true)
+  })
+
+  it("marks a changed field blue with its old value and counts the changes in the bar", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    await w.settle()
+    await w.type("st-e-maxConcurrent", "3")
+    expect(w.el("st-fw-maxConcurrent").classList.contains("is-changed")).toBe(true)
+    expect(w.el("st-fh-maxConcurrent").textContent).toBe("Changed from 2.")
+    expect(w.el("st-bar").hidden).toBe(false)
+    expect(w.el("st-bar").innerHTML).toContain("1 change not saved. It applies without a restart.")
+    await w.type("st-e-model", "model-b")
+    expect(w.el("st-fh-model").textContent).toBe("Changed from model-a.")
+    expect(w.el("st-bar").innerHTML).toContain("2 changes not saved. The new model needs a daemon restart.")
+    expect(w.el("st-bar").innerHTML).toContain('data-st-act="discard">Discard</button>')
+    expect(w.el("st-bar").innerHTML).toContain('data-st-act="review">Save…</button>')
+    // Typing it back unmarks it; nothing is written while typing.
+    await w.type("st-e-maxConcurrent", "2")
+    expect(w.el("st-fw-maxConcurrent").classList.contains("is-changed")).toBe(false)
+    expect(w.el("st-bar").innerHTML).toContain("1 change not saved.")
+    expect(w.writes()).toEqual([])
+  })
+
+  it("keeps the draft across the agent's tabs and a repaint, and Discard drops it", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    await w.settle()
+    await w.type("st-e-name", "Help Desk")
+    await w.go("#page=settings&section=agents&agent=cx&atab=channels")
+    expect(settingsHtml(w)).toContain("1 change not saved.")
+    await w.go("#page=settings&section=agents&agent=cx")
+    expect(settingsHtml(w)).toContain('id="st-e-name" data-st-f="name" value="Help Desk"')
+    expect(settingsHtml(w)).toContain('class="wsf__f is-changed" id="st-fw-name"')
+    await w.click({ "data-st-act": "discard" })
+    expect(settingsHtml(w)).toContain('id="st-e-name" data-st-f="name" value="Customer Desk"')
+    expect(settingsHtml(w)).toContain('id="st-bar" role="region" aria-label="Changes not saved" hidden>')
+    expect(w.writes()).toEqual([])
+  })
+
+  it("Save… shows each change before and after, with the jobs that follow the model and the spend against the cap", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    await w.settle()
+    await w.type("st-e-model", "model-b")
+    await w.type("st-e-maxConcurrent", "3")
+    await w.click({ "data-st-act": "review" })
+    const dlg = w.el("st-dlg").innerHTML as string
+    expect(dlg).toContain('role="dialog" aria-modal="true"')
+    expect(dlg).toContain("Save 2 changes to Customer Desk?")
+    expect(dlg).toContain('<tr><th scope="row">Model</th><td><s>model-a</s> → <b>model-b</b></td></tr>')
+    expect(dlg).toContain('<tr><th scope="row">Conversations at once</th><td><s>2</s> → <b>3</b></td></tr>')
+    expect(dlg).toContain("1 of Customer Desk&#39;s recurring jobs follow the agent&#39;s model and change too; 1 name their own model and keep it.")
+    expect(dlg).toContain("Spend may change: Customer Desk has spent $12.50 of its $40.00 cap this month.")
+    expect(dlg).toContain("The new model applies after a daemon restart: agentx daemon restart --when-idle.")
+    expect(w.writes()).toEqual([])
+    // Back keeps the form as typed.
+    await w.click({ "data-st-act": "back" })
+    expect(w.el("st-dlg").innerHTML).toBe("")
+    expect(w.el("st-bar").innerHTML).toContain("2 changes not saved.")
+  })
+
+  it("says a change that leaves the model alone moves no job and needs no restart", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    await w.settle()
+    await w.type("st-e-access", true)
+    await w.click({ "data-st-act": "review" })
+    const dlg = w.el("st-dlg").innerHTML as string
+    expect(dlg).toContain("<s>Off</s> → <b>On</b>")
+    expect(dlg).not.toContain("recurring")
+    expect(dlg).toContain("No restart needed.")
+  })
+
+  it("saves every field in one PATCH under the Wall's guard, then shows Saved", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    await w.settle()
+    await w.type("st-e-name", "Help Desk"); await w.type("st-e-tier", "codex-cli"); await w.type("st-e-model", "")
+    await w.type("st-e-triggerWords", "@help, help"); await w.type("st-e-systemPrompt", "Be brief.")
+    await w.type("st-e-maxConcurrent", "3"); await w.type("st-e-maxExecutionMinutes", "30"); await w.type("st-e-permissionMode", "plan")
+    await w.type("st-e-access", true); await w.type("st-e-wikiAbsorb", false)
+    expect(w.el("st-bar").innerHTML).toContain("10 changes not saved. The new engine, model and permission mode needs a daemon restart.")
     const before = w.calls.filter((c) => c.url === "/api/admin/state").length
-    await w.submit({ "data-st-form": "edit", "data-id": "cx" })
-    expect(w.writes()).toEqual([{ url: "/api/admin/agents", method: "PATCH", body: { id: "cx", patch: {
+    await w.click({ "data-st-act": "review" })
+    expect(w.el("st-dlg").innerHTML).toContain("<s>21 characters</s> → <b>9 characters</b>")
+    await w.click({ "data-st-act": "save" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/agents", method: "PATCH", body: { id: "cx", patch: {
       name: "Help Desk", tier: "codex-cli", model: "", triggerWords: "@help, help", systemPrompt: "Be brief.",
       maxConcurrent: 3, maxExecutionMinutes: 30, permissionMode: "plan", access: "public", wikiAbsorb: false,
     } } }])
     expect(w.calls.filter((c) => c.url === "/api/admin/state").length).toBe(before + 1)
+    expect(w.el("st-dlg").innerHTML).toBe("")
     expect(settingsHtml(w)).toContain("Saved. Restart the daemon for the new engine, model and permission mode to apply: agentx daemon restart --when-idle.")
   })
 
   it("says a save of hot-applied fields needs no restart", async () => {
     const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
     await w.settle()
-    const set = (id: string, v: string) => { w.el(id).value = v }
-    set("st-e-name", "Help Desk"); set("st-e-tier", "claude-code"); set("st-e-model", "model-a"); set("st-e-perm", "default"); set("st-e-max-concurrent", "2"); set("st-e-max-exec", "20")
-    await w.submit({ "data-st-form": "edit", "data-id": "cx" })
+    await w.type("st-e-name", "Help Desk")
+    await w.click({ "data-st-act": "review" })
+    await w.click({ "data-st-act": "save" })
+    expect(w.writes()[0].body.patch).toMatchObject({ name: "Help Desk", tier: "claude-code", model: "model-a", maxConcurrent: 2, access: "private", wikiAbsorb: true })
     expect(settingsHtml(w)).toContain("Saved. It applies from the agent&#39;s next run.")
   })
 
-  it("shows a save error in place, without repainting what was typed", async () => {
-    const w = openWall({ hash: "#page=settings&section=agents&agent=cx", route: (u, i) => (u === "/api/admin/agents" && i.method === "PATCH" ? { status: 400, body: { error: 'Agent "cx" not found.' } } : undefined) })
+  it("shows a save error with the form kept as typed", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx", route: (u, i) => (u === "/api/admin/wall/settings/agents" && i.method === "PATCH" ? { status: 400, body: { error: 'Agent "cx" not found.' } } : undefined) })
     await w.settle()
-    w.el("st-e-name").value = "Typed name"
+    await w.type("st-e-name", "Typed name")
     const paints = w.paints()
-    await w.submit({ "data-st-form": "edit", "data-id": "cx" })
-    expect(w.el("st-n-edit").textContent).toBe('Not saved: Agent "cx" not found.')
+    await w.click({ "data-st-act": "review" })
+    await w.click({ "data-st-act": "save" })
+    expect(w.el("st-dlg").innerHTML).toBe("")
+    expect(w.el("st-n-edit").textContent).toBe('Not saved: Agent "cx" not found. The form keeps what you typed.')
     expect(w.paints()).toBe(paints)
+    expect(w.el("st-bar").innerHTML).toContain("1 change not saved.")
     expect(w.el("st-e-name").value).toBe("Typed name")
   })
 
   it("does not send an empty name", async () => {
     const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
     await w.settle()
-    w.el("st-e-name").value = "  "
-    await w.submit({ "data-st-form": "edit", "data-id": "cx" })
+    await w.type("st-e-name", "  ")
+    await w.click({ "data-st-act": "review" })
+    await w.click({ "data-st-act": "save" })
     expect(w.writes()).toEqual([])
-    expect(w.el("st-n-edit").textContent).toContain("the name cannot be empty")
+    expect(w.el("st-n-dlg").textContent).toContain("the display name cannot be empty")
+  })
+
+  it("closes the dialog on Escape without saving", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    await w.settle()
+    await w.type("st-e-name", "Help Desk")
+    await w.click({ "data-st-act": "review" })
+    expect(w.el("st-dlg").innerHTML).toContain("Save 1 change to Customer Desk?")
+    await w.key("Escape")
+    expect(w.el("st-dlg").innerHTML).toBe("")
+    expect(w.writes()).toEqual([])
   })
 
   it("adds an agent, then makes it public, as classic Settings does", async () => {
@@ -293,14 +452,14 @@ describe("Wall Settings: Agents (#1428)", () => {
     w.el("st-a-tier").value = "claude-code"; w.el("st-a-public").checked = true
     await w.submit({ "data-st-form": "add" })
     expect(w.writes()).toEqual([
-      { url: "/api/admin/agents", method: "POST", body: { id: "sales", name: "Sales Desk", triggerWords: "@sales", tier: "claude-code", access: "public" } },
-      { url: "/api/admin/agents/access", method: "POST", body: { id: "sales", access: "public" } },
+      { url: "/api/admin/wall/settings/agents", method: "POST", body: { id: "sales", name: "Sales Desk", triggerWords: "@sales", tier: "claude-code", access: "public" } },
+      { url: "/api/admin/wall/settings/agents/access", method: "POST", body: { id: "sales", access: "public" } },
     ])
     expect(settingsHtml(w)).toContain("Added @sales. It starts working after a daemon restart")
   })
 
   it("shows why an agent was not added", async () => {
-    const w = openWall({ hash: "#page=settings&section=agents", route: (u, i) => (u === "/api/admin/agents" && i.method === "POST" ? { status: 400, body: { error: "At least one trigger word is required." } } : undefined) })
+    const w = openWall({ hash: "#page=settings&section=agents", route: (u, i) => (u === "/api/admin/wall/settings/agents" && i.method === "POST" ? { status: 400, body: { error: "At least one trigger word is required." } } : undefined) })
     await w.settle()
     await w.submit({ "data-st-form": "add" })
     expect(w.el("st-n-add").textContent).toBe("Not added: At least one trigger word is required.")
@@ -311,7 +470,7 @@ describe("Wall Settings: Agents (#1428)", () => {
     await w.settle()
     w.el("st-wc-on").checked = false; w.el("st-wc-agent").value = "cx"
     await w.submit({ "data-st-form": "curator" })
-    expect(w.writes()).toEqual([{ url: "/api/admin/wiki/curator", method: "POST", body: { enabled: false, agent: "cx" } }])
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/wiki/curator", method: "POST", body: { enabled: false, agent: "cx" } }])
   })
 
   it("asks before deleting an agent, then deletes it and goes back to the list", async () => {
@@ -324,28 +483,28 @@ describe("Wall Settings: Agents (#1428)", () => {
     expect(settingsHtml(w)).not.toContain("Delete @cx for good?")
     await w.click({ "data-st-act": "ask", "data-key": "delete" })
     await w.click({ "data-st-act": "confirm", "data-key": "delete" })
-    expect(w.writes()).toEqual([{ url: "/api/admin/agents", method: "DELETE", body: { id: "cx" } }])
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/agents", method: "DELETE", body: { id: "cx" } }])
     await w.settle()
     expect(settingsHtml(w)).toContain("Deleted @cx. Its workspace folder is still on disk.")
     expect(settingsHtml(w)).not.toContain("data-st-form=\"edit\"")
   })
 
   it("adds and, after asking, removes an integration with only an env var name", async () => {
-    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx&atab=channels" })
     await w.settle()
     expect(settingsHtml(w)).toContain("tokenEnv not set")
     w.el("st-i-kind").value = "linear"; w.el("st-i-label").value = "Tracker"; w.el("st-i-env").value = "LINEAR_TOKEN"; w.el("st-i-meta").value = "team=core, region"
     await w.submit({ "data-st-form": "int", "data-id": "cx" })
-    expect(w.writes()[0]).toEqual({ url: "/api/admin/agents/integrations", method: "POST",
+    expect(w.writes()[0]).toEqual({ url: "/api/admin/wall/settings/agents/integrations", method: "POST",
       body: { agentId: "cx", kind: "linear", label: "Tracker", credentials: { tokenEnv: "LINEAR_TOKEN" }, metadata: { team: "core", region: "" } } })
     await w.click({ "data-st-act": "ask", "data-key": "int:0" })
     expect(w.writes()).toHaveLength(1)
     await w.click({ "data-st-act": "confirm", "data-key": "int:0" })
-    expect(w.writes()[1]).toEqual({ url: "/api/admin/agents/integrations", method: "DELETE", body: { agentId: "cx", kind: "custom", label: "Team CRM" } })
+    expect(w.writes()[1]).toEqual({ url: "/api/admin/wall/settings/agents/integrations", method: "DELETE", body: { agentId: "cx", kind: "custom", label: "Team CRM" } })
   })
 
   it("refuses an integration with no token variable before calling the API", async () => {
-    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx&atab=channels" })
     await w.settle()
     w.el("st-i-kind").value = "linear"; w.el("st-i-label").value = "Tracker"
     await w.submit({ "data-st-form": "int", "data-id": "cx" })
@@ -355,33 +514,36 @@ describe("Wall Settings: Agents (#1428)", () => {
 
   it("lists, opens and saves an agent's files, and asks before deleting a skill", async () => {
     const files = { identity: [{ path: "CLAUDE.md", title: "CLAUDE.md", exists: true, size: 2048 }], skills: [{ path: ".claude/skills/report/SKILL.md", slug: "report", title: "Weekly report" }] }
-    const w = openWall({ hash: "#page=settings&section=agents&agent=cx", route: (u) =>
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx&atab=personality", route: (u) =>
       u.startsWith("/api/admin/files?") ? { status: 200, body: files }
       : u.startsWith("/api/admin/files/read?") ? { status: 200, body: { content: "# Customer Desk" } } : undefined })
     await w.settle()
-    await w.click({ "data-st-act": "files", "data-id": "cx" })
+    // Personality opens with the instruction files listed; the skills are on Skills.
     expect(settingsHtml(w)).toContain("CLAUDE.md<small>2 KB</small>")
+    expect(settingsHtml(w)).not.toContain("Weekly report")
     await w.click({ "data-st-act": "open-file", "data-path": "CLAUDE.md" })
     expect(w.calls.some((c) => c.url === "/api/admin/files/read?agent=cx&path=CLAUDE.md")).toBe(true)
     expect(settingsHtml(w)).toContain("# Customer Desk</textarea>")
     w.el("st-f-text").value = "# Help Desk"
     await w.click({ "data-st-act": "save-file" })
-    expect(w.writes()).toEqual([{ url: "/api/admin/files", method: "PUT", body: { agent: "cx", path: "CLAUDE.md", content: "# Help Desk" } }])
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/files", method: "PUT", body: { agent: "cx", path: "CLAUDE.md", content: "# Help Desk" } }])
+    await w.go("#page=settings&section=agents&agent=cx&atab=skills")
+    expect(settingsHtml(w)).toContain("Weekly report<small>report</small>")
     await w.click({ "data-st-act": "ask", "data-key": "skill:0" })
     expect(settingsHtml(w)).toContain('Delete the skill "report"?')
     await w.click({ "data-st-act": "confirm", "data-key": "skill:0" })
-    expect(w.writes()[1]).toEqual({ url: "/api/admin/files/skill", method: "DELETE", body: { agent: "cx", slug: "report" } })
+    expect(w.writes()[1]).toEqual({ url: "/api/admin/wall/settings/files/skill", method: "DELETE", body: { agent: "cx", slug: "report" } })
   })
 
   it("test-drives an agent and shows its answer or its error", async () => {
     let fail = false
     const w = openWall({ hash: "#page=settings&section=agents&agent=cx", route: (u, i) =>
-      u === "/api/admin/agents/test" && i.method === "POST" ? (fail ? { status: 400, body: { error: "agent is busy" } } : { status: 200, body: { response: { content: "Hello there" } } }) : undefined })
+      u === "/api/admin/wall/settings/agents/test" && i.method === "POST" ? (fail ? { status: 400, body: { error: "agent is busy" } } : { status: 200, body: { response: { content: "Hello there" } } }) : undefined })
     await w.settle()
     w.el("st-td-text").value = "Hi"
     await w.click({ "data-st-act": "td-send", "data-id": "cx" })
     const sent = w.writes()[0]
-    expect(sent.url).toBe("/api/admin/agents/test")
+    expect(sent.url).toBe("/api/admin/wall/settings/agents/test")
     expect(sent.body.agent).toBe("cx")
     expect(sent.body.message).toBe("Hi")
     expect(w.el("st-td-log").innerHTML).toContain('<li class="wtd__m is-agent">Hello there</li>')
@@ -394,7 +556,7 @@ describe("Wall Settings: Agents (#1428)", () => {
 })
 
 describe("Every other Wall page sends no settings write (#1428)", () => {
-  const SETTINGS_WRITES = ["/api/admin/agents", "/api/admin/org/hold", "/api/admin/wiki/curator", "/api/admin/files"]
+  const SETTINGS_WRITES = ["/api/admin/wall/settings/", "/api/admin/agents", "/api/admin/org/hold", "/api/admin/wiki/curator", "/api/admin/files"]
   const PAGES = ["#status=open", "#status=waiting_owner", "#page=running", "#page=agents", "#page=live", "#page=creator",
     "#status=open&view=list", "#status=open&view=projects", "#status=open&view=jobs", "#status=open&view=reviews", "#status=open&view=failures"]
 
@@ -443,5 +605,18 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     expect(await stranger.text()).not.toContain("AX_WALL_SETTINGS")
     expect((await fetch(`${base}/api/admin/state`, { headers: OFF })).status).toBe(401)
     expect((await fetch(`${base}/api/admin/agents`, { method: "PATCH", headers: OFF, body: "{}" })).status).toBe(401)
+    expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PATCH", headers: OFF, body: "{}" })).status).toBe(401)
+  })
+
+  it("serves Settings' writes under /api/admin/wall/settings with the classic handlers, and nothing else there", async () => {
+    const base = await start()
+    const auth = { Authorization: `Bearer ${TOKEN}`, "X-Requested-With": "agentx-board", "Content-Type": "application/json" }
+    // An empty edit: the classic handler answers it (no 404, no 401).
+    const r = await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PATCH", headers: auth, body: "{}" })
+    expect(r.status).toBe(400)
+    expect((await r.json()).error).not.toMatch(/unknown|not found/)
+    // A classic admin route that Settings does not use is not reachable through the Wall's prefix.
+    expect((await fetch(`${base}/api/admin/wall/settings/boards`, { method: "POST", headers: auth, body: "{}" })).status).toBe(404)
+    expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PUT", headers: auth, body: "{}" })).status).toBe(404)
   })
 })
