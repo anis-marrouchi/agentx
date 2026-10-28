@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.185.0](https://github.com/anis-marrouchi/agentx/compare/v0.184.0...v0.185.0) (2026-10-28)
+
+
+### Features
+
+* **wall:** answer what waits on the owner on the Wall ([#1440](https://github.com/anis-marrouchi/agentx/issues/1440)) ([#1459](https://github.com/anis-marrouchi/agentx/issues/1459)) ([64c0bd0](https://github.com/anis-marrouchi/agentx/commit/64c0bd085b16a781de0af1ac6e1495b3f48587e4))
+* **wall:** Settings page with the Agents section, owner only ([#1428](https://github.com/anis-marrouchi/agentx/issues/1428), phase 1) ([#1452](https://github.com/anis-marrouchi/agentx/issues/1452)) ([e458006](https://github.com/anis-marrouchi/agentx/commit/e458006fb93dddcf496c89edf769eee640756ff1))
+
 ## [0.184.0](https://github.com/anis-marrouchi/agentx/compare/v0.183.0...v0.184.0) (2026-10-28)
 
 
