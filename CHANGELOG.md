@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.186.0](https://github.com/anis-marrouchi/agentx/compare/v0.185.1...v0.186.0) (2026-10-28)
+
+
+### Features
+
+* **requests:** measure the hand-back contract with `agentx requests contract` ([#1509](https://github.com/anis-marrouchi/agentx/issues/1509), step 0) ([#1511](https://github.com/anis-marrouchi/agentx/issues/1511)) ([1024bf2](https://github.com/anis-marrouchi/agentx/commit/1024bf28228a7dd294df239ef70fc983a498c39b))
+* **wall:** Workflows page with runs and status ([#1445](https://github.com/anis-marrouchi/agentx/issues/1445)) ([#1500](https://github.com/anis-marrouchi/agentx/issues/1500)) ([fec7fb7](https://github.com/anis-marrouchi/agentx/commit/fec7fb7ed3a9c202213cdb22cda703409c990f1f))
+
 ## [0.185.1](https://github.com/anis-marrouchi/agentx/compare/v0.185.0...v0.185.1) (2026-10-28)
 
 
