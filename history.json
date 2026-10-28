@@ -196,5 +196,16 @@
       "install.sh": "success",
       "docker": "success"
     }
+  },
+  {
+    "at": "2026-10-28T08:19:48.119Z",
+    "version": "0.185.1",
+    "ok": true,
+    "run": "https://github.com/anis-marrouchi/agentx/actions/runs/40654648085",
+    "cells": {
+      "npm": "success",
+      "install.sh": "success",
+      "docker": "success"
+    }
   }
 ]
