@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.188.0](https://github.com/anis-marrouchi/agentx/compare/v0.187.0...v0.188.0) (2026-10-28)
+
+
+### Features
+
+* **wall:** read mesh.peers so mesh-added machines show on the Wall ([#1518](https://github.com/anis-marrouchi/agentx/issues/1518)) ([0bfd23c](https://github.com/anis-marrouchi/agentx/commit/0bfd23c7c1c5951e34a47e850a16d560d87874f0)), closes [#1479](https://github.com/anis-marrouchi/agentx/issues/1479)
+
 ## [0.187.0](https://github.com/anis-marrouchi/agentx/compare/v0.186.0...v0.187.0) (2026-10-28)
 
 
