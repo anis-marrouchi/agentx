@@ -291,7 +291,8 @@ describe("owner decision cards (#1185)", () => {
     expect(html).toContain('<option value="waiting_owner">Waiting on the owner</option>')
     // The owner answers on the Wall now: no hand-off to the classic page.
     expect(html).not.toContain("Answer it on the Desk")
-    expect(html).toContain('data-decide="yes"')
+    expect(html).toContain("decBtn('yes', yesL, true, o)")
+    expect(html).toContain("data-dgo")
     expect(html).toContain("/api/admin/wall/decide")
   })
 

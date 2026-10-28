@@ -237,6 +237,7 @@ ${navItems}
       <div id="wall-org-rail-body"></div>
     </section>
     <div class="wac__side" id="wall-act-side" aria-label="Activity in numbers"></div>
+    <div class="wdc__side" id="wall-dec-side" aria-label="What waits on you, in short"></div>
     <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
       <h2 id="wall-nodes-h">Happening now</h2>
       <div id="wall-nodes"><p class="ax-wall__empty">Loading…</p></div>

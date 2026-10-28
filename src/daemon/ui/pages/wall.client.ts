@@ -434,7 +434,7 @@ ${WALL_BUILD_SCRIPT}
         '<dt>Expires</dt><dd>' + (expired ? 'Passed; the default applies at the next check. ' : until(c.expiresAt) + ', ') +
           '<time datetime="' + esc(new Date(c.expiresAt).toISOString()) + '">' + esc(stamp(c.expiresAt)) + '</time></dd>' +
       '</dl>' +
-      decFormHtml({ key: key, kind: 'card', choices: c.choices || [], recommend: c.recommend, draft: c.draft }) +
+      decFormHtml({ key: key, kind: 'card', title: c.title, agent: c.raisedBy, choices: c.choices || [], recommend: c.recommend, draft: c.draft }) +
       '<div class="wc__foot"><span>Raised by <b>' + esc(nameOf(c.raisedBy)) + '</b> ' + when(c.createdAt) + '</span>' +
         (c.source ? '<span>Source: ' + linkOrText(c.source) + '</span>' : '') + '</div>' +
       '</section>';
