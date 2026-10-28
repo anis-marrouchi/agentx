@@ -53,10 +53,14 @@ const shots = [
   { name: "wall/creator", path: "/wall#page=creator", wait: ".wcr__a", steps: [{ click: ".wcr__a" }, { wait: ".wcr__a.is-on" }, { type: "#cr-text", text: "Summarise the open support tickets by topic" }, { type: "#cr-done", text: "A short list in the post" }] },
   { name: "wall/comment", path: "/wall#status=&post=req-docs-wall-done", wait: "#wdo-text", steps: [{ type: "#wdo-text", text: "Thanks. @builder please add the delivery times to the shop page too" }], clipTo: ".wdo" },
   { name: "wall/phone-dark", path: "/wall", wait: ".wp", phone: true, dark: true },
-  // Settings on the Wall (#1428): the Agents section, one agent, a save, and a phone.
+  // Settings on the Wall (#1428): Agents, one agent, its edit state, the confirm, a save, Health and a phone.
   { name: "wall/settings", path: "/wall#page=settings&section=agents", wait: ".wsa" },
   { name: "wall/settings-agent", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name" },
-  { name: "wall/settings-saved", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ click: "[data-st-form=edit] button[type=submit]" }, { waitText: ["#st-n-edit", "Saved"] }], clipTo: "[data-st-form=edit]" },
+  // The edit state, then the confirm with its before and after (design #1451 frame 2).
+  { name: "wall/settings-changed", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { fill: "#st-e-name", text: "Customer Help" }, { wait: ".wsb.is-dirty" }], clipTo: "[data-st-form=edit]" },
+  { name: "wall/settings-confirm", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { fill: "#st-e-name", text: "Customer Help" }, { click: "[data-st-act=review]" }, { wait: ".wsd" }] },
+  { name: "wall/settings-saved", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { click: "[data-st-act=review]" }, { click: "[data-st-act=save]" }, { waitText: ["#st-bar", "Saved"] }, { fill: "#st-e-maxConcurrent", text: "2" }, { click: "[data-st-act=review]" }, { click: "[data-st-act=save]" }, { waitText: ["#st-bar", "Saved"] }], clipTo: "[data-st-form=edit]" },
+  { name: "wall/settings-health", path: "/wall#page=settings&section=health", wait: ".wsh__nodes" },
   { name: "wall/settings-phone", path: "/wall#page=settings", wait: ".wst__sec", phone: true },
   { name: "wall/settings-phone-agents", path: "/wall#page=settings&section=agents", wait: ".wsa", phone: true },
   // #1355: the status tabs with the filters open, and the composer.

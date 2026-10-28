@@ -334,28 +334,35 @@ describe("Wall Activity, design #1451 frame 3", () => {
 
 describe("Wall nav and phone bar, design #1451 frame 0", () => {
   it("groups the nav under Work, Automation, Fleet and Owner, with the new pages", () => {
-    const page = renderWallPage()
+    const page = renderWallPage({ owner: true })
     const nav = page.slice(page.indexOf('<nav class="ax-wall__nav"'), page.indexOf("</nav>"))
     const order = [...nav.matchAll(/data-nav="([\w]+)"|ax-wall__navlbl" aria-hidden="true">(\w+)</g)].map((m) => m[1] || m[2])
     expect(order).toEqual(["wall", "needs", "Work", "live", "running", "projects", "activity", "Automation", "jobs", "workflows", "reviews", "failures",
       "Fleet", "agents", "people", "org", "cost", "Owner", "settings", "dashboard", "creator"])
+    // Settings is the owner's (#1428): anyone else gets no Owner group.
+    const other = renderWallPage()
+    const otherNav = other.slice(other.indexOf('<nav class="ax-wall__nav"'), other.indexOf("</nav>"))
+    expect(otherNav).not.toContain('data-nav="settings"')
+    expect(otherNav).not.toContain(">Owner<")
     // Not on the Wall yet: they open their classic page until built.
     expect(nav).toContain('data-nav="workflows" href="/workflows"')
     // People (#1441) and Org (#1419) are on the Wall.
     expect(nav).toContain('data-nav="people" href="#page=people"')
     expect(nav).toContain('data-nav="org" href="#page=org"')
-    expect(nav).toContain('data-nav="settings" href="/admin"')
+    expect(nav).toContain('data-nav="settings" href="#page=settings"')
   })
 
   it("keeps four pages in the phone bar and puts the rest in the More sheet, in the same groups", () => {
-    const page = renderWallPage()
+    const page = renderWallPage({ owner: true })
     for (const k of ["wall", "needs", "running", "projects"]) expect(page).toMatch(new RegExp(`data-nav="${k}" href="[^"]*" data-bar`))
     expect(page).toContain(".ax-wall__nav > .ax-wall__item:not([data-bar]):not(.ax-wall__morebtn)")
     const sheet = page.slice(page.indexOf('id="wall-more"'), page.indexOf('<div class="ax-wall__main">'))
     expect([...sheet.matchAll(/<h2 class="ax-wall__navlbl">(\w+)<\/h2>/g)].map((m) => m[1])).toEqual(["Work", "Automation", "Fleet"])
     expect([...sheet.matchAll(/class="ax-wall__moreitem" data-nav="(\w+)"/g)].map((m) => m[1])).toEqual(["live", "activity", "jobs", "workflows", "reviews", "failures", "agents", "people", "org", "cost"])
     expect(sheet).toContain('data-n-for="nav-n-live"')
-    expect(sheet).toContain('data-nav="settings" href="/admin">Settings</a>')
+    expect(sheet).toContain('data-nav="settings" href="#page=settings">Settings</a>')
+    const other = renderWallPage()
+    expect(other.slice(other.indexOf('id="wall-more"'), other.indexOf('<div class="ax-wall__main">'))).not.toContain('data-nav="settings"')
     expect(sheet).toContain("data-wall-theme>Light / dark</button>")
     expect(page).toMatch(/@media \(max-width: 640px\) \{\n {2}\.wac__bar/)
   })

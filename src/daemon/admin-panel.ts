@@ -359,6 +359,8 @@ function getAdminState() {
     id,
     schedule: c.schedule,
     agent: c.agent,
+    // A job's own model, which it keeps when its agent's model changes (#1428).
+    model: typeof c.model === "string" && c.model ? c.model : undefined,
     prompt: (c.prompt || "").slice(0, 200),
     enabled: c.enabled !== false,
     value: cronValueOf(c.value),

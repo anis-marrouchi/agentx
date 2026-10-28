@@ -56,8 +56,9 @@ button, input, select { font-family: inherit; }
 /* Three columns: nav, feed, side. */
 .ax-wall { display: grid; grid-template-columns: 240px minmax(0, 600px) 350px; justify-content: center; align-items: start; min-height: 100vh; }
 .ax-wall.is-wide { grid-template-columns: 240px minmax(0, 1fr) 300px; }
-/* Settings (#1428) has its section list inside the middle column: wider. */
-.ax-wall.is-settings { grid-template-columns: 240px minmax(0, 860px) 300px; }
+/* Settings (#1428) has its section list inside the middle column, and no side column (#1451 frame 2). */
+.ax-wall.is-settings { grid-template-columns: 240px minmax(0, 1100px); }
+.ax-wall.is-settings .ax-wall__aside { display: none; }
 .ax-wall__nav { grid-column: 1; grid-row: 1 / span 4; position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
 .ax-wall__logo { font-weight: 800; font-size: 22px; padding: 8px 12px 16px; color: var(--ax-text); text-decoration: none; }
 .ax-wall__logo small { font-weight: 400; color: var(--ax-muted); font-size: 13px; margin-left: 4px; }
@@ -106,7 +107,6 @@ button, input, select { font-family: inherit; }
 @media (max-width: 1180px) {
   .ax-wall, .ax-wall.is-wide { grid-template-columns: 72px minmax(0, 600px); }
   .ax-wall.is-settings { grid-template-columns: 72px minmax(0, 1fr); }
-  .ax-wall.is-settings .ax-wall__aside { display: none; }
   .ax-wall__nav { padding: 12px 8px; align-items: center; }
   .ax-wall__logo small, .ax-wall__item span, .ax-wall__navfoot { display: none; }
   .ax-wall__nav > .ax-wall__navlbl { font-size: 0; padding: 0; height: 1px; width: 32px; background: var(--ax-border-2); margin: 8px 0; }

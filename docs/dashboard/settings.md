@@ -20,7 +20,7 @@ Settings is where you manage agents, the apps they answer from, schedules and ac
 
 A **Business** tab (org chart, projects, and which chat belongs to which client) appears only when the business features are switched on (`business.enabled` in `agentx.json`).
 
-Settings is moving to the Wall: its **Agents** tab is already there, with the same saves. See [Change settings](./wall.md#change-settings). This page stays until every tab is on the Wall. `/admin#tab=` followed by a tab's name, such as `/admin#tab=channels`, opens that tab directly.
+Settings is moving to the Wall: its **Agents** tab and the health numbers at the top are already there, with the same saves. See [Change settings](./wall.md#change-settings). This page stays until every tab is on the Wall. `/admin#tab=` followed by a tab's name, such as `/admin#tab=channels`, opens that tab directly.
 
 ## Try an agent
 

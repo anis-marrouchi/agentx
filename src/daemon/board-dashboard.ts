@@ -87,7 +87,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, isWallWrite, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, WALL_BUDGET_PATH, wallSettingsTarget, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -237,7 +237,7 @@ export interface Ctx {
 /** Exported for tests only; production requests come through startBoardDashboard. */
 export async function handleBoardRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost")
-  const path = url.pathname
+  let path = url.pathname
   const method = (req.method || "GET").toUpperCase()
 
   // Every route below matches `path`, which has dot segments folded and
@@ -266,6 +266,14 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     sendJson(res, 401, { error: "Only the owner writes on the Wall: sign in, or send the dashboard token." })
     return
   }
+  // Settings on the Wall (#1428) writes under the guard above; past it, the
+  // write is the classic /api/admin/* route it names, with that route's gates.
+  const settingsTarget = wallSettingsTarget(method, path)
+  if (settingsTarget === null) {
+    sendJson(res, 404, { error: "not a Settings route" })
+    return
+  }
+  if (settingsTarget) path = settingsTarget
   // Sign-in for a browser on another machine (#1306, dashboard-session.ts).
   if (await handleLogin(req, res, url, method, ctx.token)) return
 

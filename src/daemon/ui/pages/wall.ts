@@ -191,7 +191,7 @@ ${navItems}
   ${moreSheetHtml(owner)}
   <div class="ax-wall__main">
     <header class="ax-wall__head">
-      <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1>
+      <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1><span class="ax-badge wst__chip" id="wall-st-chip" hidden>Settings · owner only</span>
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
         <span class="ax-wall__switch" id="wall-act-switch" aria-label="Show as" hidden><button type="button" class="is-on" aria-pressed="true">Feed</button><a href="/activity" title="The classic lane view, and the Map">Timeline</a></span>
         <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a></div>
@@ -287,7 +287,8 @@ const WALL_PAGE_CSS = `
 .ax-wall [hidden] { display: none !important; }
 /* The three-column layout lives in wall-space.ts (#1242). */
 .ax-wall__empty, .ax-wall__count { color: var(--ax-muted); font-size: var(--ax-fs-sm); margin: 0; }
-.ax-wall__feed .ax-wall__empty, .ax-wall__list > .ax-wall__empty { padding: 32px 16px; text-align: center; }
+.ax-wall__feed .ax-wall__empty, .ax-wall__list > .ax-wall__empty, .wst__notowner { padding: 32px 16px; text-align: center; }
+.wst__chip { margin-left: 10px; flex: none; }
 
 /* Sticky header: title, post count and sync, then the views as underlined tabs. */
 .ax-wall__head { position: sticky; top: 0; z-index: 3; background: color-mix(in srgb, var(--ax-bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--ax-border); }

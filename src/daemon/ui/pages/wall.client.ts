@@ -1021,7 +1021,7 @@ ${WALL_SETTINGS_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? settingsTitle() : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1260,8 +1260,9 @@ ${WALL_SETTINGS_SCRIPT}
     // Activity has a side column of its own (#1451 frame 3).
     $('wall-aside').classList.toggle('is-act', page === 'activity');
     if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
-    // Settings (#1428): drawn only for the owner, so it may not be on the page.
-    if (ST) $('wall-settings').hidden = page !== 'settings';
+    // Settings (#1428): anyone else gets the server's one line there.
+    $('wall-settings').hidden = page !== 'settings';
+    $('wall-st-chip').hidden = page !== 'settings';
     document.querySelector('.ax-wall').classList.toggle('is-settings', page === 'settings');
     if (page === 'settings') settingsShow();
     paintTask(page);

@@ -40,6 +40,10 @@ import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests
 //        a monthly budget from the Cost page (#1423): the same handler as
 //        POST /api/admin/budgets in board-dashboard.ts, here so the guard
 //        keeps it the owner's
+//   POST|PUT|PATCH|DELETE /api/admin/wall/settings/<route>
+//        Settings on the Wall (#1428): the classic /api/admin/<route> write
+//        it names (WALL_SETTINGS_ROUTES), here so the guard keeps it the
+//        owner's. board-dashboard.ts runs the classic handler after the guard.
 //
 // A comment and a call go to the node that keeps the post (the client
 // sends the post's peer, and the dashboard proxy forwards). A Space always
@@ -52,6 +56,28 @@ export const WALL_CALL_PATH = `${WALL_ACTIONS_PREFIX}/call`
 export const WALL_POST_PATH = `${WALL_ACTIONS_PREFIX}/post`
 export const WALL_SPACE_PATH = `${WALL_ACTIONS_PREFIX}/space`
 export const WALL_BUDGET_PATH = `${WALL_ACTIONS_PREFIX}/budget`
+export const WALL_SETTINGS_PREFIX = `${WALL_ACTIONS_PREFIX}/settings`
+
+/** The classic Settings writes the Wall's Settings sends (#1428): method and
+ *  the path under /api/admin/. Nothing else under the prefix is served. */
+const WALL_SETTINGS_ROUTES: Array<[string, RegExp]> = [
+  ["POST", /^agents$/], ["PATCH", /^agents$/], ["DELETE", /^agents$/], ["POST", /^agents\/access$/], ["POST", /^agents\/test$/],
+  ["POST", /^agents\/integrations$/], ["DELETE", /^agents\/integrations$/],
+  ["POST", /^org\/hold$/], ["POST", /^wiki\/curator$/],
+  ["PUT", /^files$/], ["POST", /^files\/skill$/], ["DELETE", /^files\/skill$/],
+  ["POST", /^agent\/[a-z0-9][a-z0-9_-]*\/handovers$/], ["DELETE", /^agent\/[a-z0-9][a-z0-9_-]*\/handovers$/],
+]
+
+/**
+ * The classic route a Settings write names: "/api/admin/agents" for
+ * PATCH /api/admin/wall/settings/agents. Undefined off the prefix; null for
+ * a path or method under it that Settings does not send.
+ */
+export function wallSettingsTarget(method: string, path: string): string | null | undefined {
+  if (!path.startsWith(`${WALL_SETTINGS_PREFIX}/`)) return undefined
+  const rest = path.slice(WALL_SETTINGS_PREFIX.length + 1)
+  return WALL_SETTINGS_ROUTES.some(([m, re]) => m === method && re.test(rest)) ? `/api/admin/${rest}` : null
+}
 
 const AGENT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
 const TOPIC_MAX = 200
