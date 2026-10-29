@@ -84,12 +84,13 @@ export async function saveWorkflow(
   }
 }
 
-export async function saveLayout(id: string, layout: WorkflowLayout): Promise<void> {
-  await fetch("/api/workflows/" + encodeURIComponent(id) + "/layout", {
+export async function saveLayout(id: string, layout: WorkflowLayout): Promise<boolean> {
+  const r = await fetch("/api/workflows/" + encodeURIComponent(id) + "/layout", {
     method: "PUT",
     headers: headers(),
     body: JSON.stringify(layout),
   })
+  return r.ok
 }
 
 export async function deleteWorkflow(id: string): Promise<boolean> {

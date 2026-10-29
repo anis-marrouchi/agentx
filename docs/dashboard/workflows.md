@@ -137,6 +137,8 @@ A workflow that has never been laid out (for example one written as a file) is a
 2. Change what you need. The status next to the title turns to **unsaved**.
 3. Select **Save**, or press ⌘S (Ctrl+S on Windows and Linux). The status turns to **saved**.
 
+Save writes only what you changed. The rest of the workflow file stays as it was, including settings the editor does not show (such as its tags or the agent that owns it) and the date it was created. Where the steps sit on the canvas is kept in a separate layout file, so moving or arranging steps does not change the workflow file at all.
+
 ![A choice selected: its cases in the side menu, and one named dot per case on the box](/screenshots/workflows/editor-step.png)
 
 To see the whole workflow's settings again, select an empty spot on the canvas. The tab then reads **Workflow**.
@@ -209,6 +211,8 @@ Only the owner saves, deletes or lays out a workflow, and only the owner can use
 - **"Could not start …: workflow … is disabled":** the workflow is off. Turn it on with its switch first.
 - **No switch and no Run… on a row:** you are on a phone (use a computer), or the workflow is **Held** (fix the clash in the editor).
 - **Save fails with a message:** the workflow has a mistake, such as a step with no agent. Fix the step the message names and save again.
+- **"Saved, but the step positions were not":** the workflow was saved, but the machine refused the layout. Select **Arrange** or move a step, then save again.
+- **"Not saved: …" with a network error:** the machine did not answer. Nothing was written. Check it with `agentx daemon status` (in a **Terminal** on that machine), then save again.
 - **There is no Save button, and the side menu says only the owner can change the workflow:** you opened the Wall from another computer without signing in. Sign in with the dashboard token, or open the Wall on the machine itself.
 - **The editor says "The editor could not be loaded":** the page could not fetch the editor. Refresh the page. If it keeps happening after an update, run `pnpm build` (from a source checkout) and restart the daemon.
 - **The canvas looks empty:** the steps are outside the view. Press `F` or select the fit button.

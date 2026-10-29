@@ -6,6 +6,7 @@ import {
   lintWorkflow,
   workflowSchema,
   type WorkflowLayout,
+  type Workflow,
   type WorkflowRun,
 } from "@/workflows"
 import type { WorkflowDispatcher } from "@/workflows/dispatcher"
@@ -183,18 +184,95 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
 
 // -------------------- save (create/update) --------------------
 
-// Top-level workflow keys the editor doesn't yet have UI controls for. When
-// the editor saves a workflow without these keys present in the raw payload
-// (typical when an older cached IIFE bundle is in the user's browser), we
-// preserve the on-disk value instead of letting Zod's default silently flip
-// the field back. Without this guard, server-only behaviours like
-// `mesh.allowRemote: true` get reset on every Save until the user
-// hard-refreshes — see 2026-04-23 incident where a cached editor repeatedly
-// stripped mesh and broke the cross-mesh broadcast.
+// What an editor save may change on a stored workflow (#1538). The editor
+// sends a whole workflow, filled out with schema defaults and missing the
+// keys it has no controls for (owner agent, tags, state, ...). Writing that
+// payload over the file dropped those keys and wrote every default. So an
+// update merges instead: it starts from the file as written and takes a key
+// from the payload only where the value differs from what is stored.
 //
-// Add new keys here when you ship a server-side workflow feature ahead of
-// matching editor UI; remove a key once the editor sends it.
-const EDITOR_BLIND_KEYS = ["mesh"] as const
+// Keys the editor owns count even when the payload leaves them out: that is
+// how it clears an optional one (description). Any other key counts only
+// when the payload carries it, so an editor that does not know a key (an
+// older cached bundle, a key shipped ahead of its control) keeps it as is.
+const EDITOR_OWNED_KEYS = ["title", "description", "priority", "fanOut", "envAllow", "retention"]
+// Never taken from the payload: id is the path's, and the dates are the
+// server's to keep.
+const STORED_KEYS = new Set(["id", "version", "created", "updated", "nodes", "edges"])
+
+/** The stored workflow with an editor save applied, and whether it changed. */
+export function mergeEditorSave(
+  stored: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  next: Workflow,
+  today: string,
+): { doc: Record<string, unknown>; changed: boolean } {
+  const current = workflowSchema.parse(stored)
+  const doc: Record<string, unknown> = { ...stored }
+  let changed = false
+  const keys = new Set([...EDITOR_OWNED_KEYS, ...Object.keys(payload)])
+  for (const key of keys) {
+    if (STORED_KEYS.has(key)) continue
+    const value = (next as Record<string, unknown>)[key]
+    if (sameValue(value, (current as Record<string, unknown>)[key])) continue
+    if (value === undefined) delete doc[key]
+    else doc[key] = value
+    changed = true
+  }
+
+  // Positions live in the layout file. A node keeps one inline only when
+  // its stored copy has one, since an inline position wins on load. An
+  // unchanged node is written back as stored; a changed one takes what the
+  // payload sent over its stored keys, so keys the editor does not send
+  // (retry, ...) stay and no node defaults are written.
+  const storedNodes = Array.isArray(stored.nodes) ? (stored.nodes as Array<Record<string, unknown>>) : []
+  const sentNodes = Array.isArray(payload.nodes) ? (payload.nodes as Array<Record<string, unknown>>) : []
+  const rawById = new Map(storedNodes.map((n) => [n.id, n]))
+  const sentById = new Map(sentNodes.map((n) => [n.id, n]))
+  const parsedById = new Map(current.nodes.map((n) => [n.id, n]))
+  const nodes = next.nodes.map((n) => {
+    const raw = rawById.get(n.id)
+    const was = parsedById.get(n.id)
+    const inline = !!raw && "position" in raw
+    const node = inline ? n : withoutPosition(n)
+    if (raw && was && sameValue(node, inline ? was : withoutPosition(was))) return raw
+    const sent = Object.keys(sentById.get(n.id) ?? n)
+    const taken = Object.fromEntries(sent.map((k) => [k, (node as Record<string, unknown>)[k]]).filter(([, v]) => v !== undefined))
+    return { ...raw, ...taken }
+  })
+  if (nodes.length !== storedNodes.length || nodes.some((n, i) => n !== storedNodes[i])) {
+    doc.nodes = nodes
+    changed = true
+  }
+  if (!sameValue(next.edges, current.edges)) {
+    doc.edges = next.edges
+    changed = true
+  }
+
+  if (changed) doc.updated = today
+  return { doc, changed }
+}
+
+function withoutPosition<T extends { position?: unknown }>(n: T): Omit<T, "position"> {
+  const { position: _position, ...rest } = n
+  return rest
+}
+
+/** Deep equality on JSON values: key order and undefined keys ignored. */
+function sameValue(a: unknown, b: unknown): boolean {
+  return canonical(a) === canonical(b)
+}
+
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return "[" + v.map(canonical).join(",") + "]"
+  if (v && typeof v === "object") {
+    const entries = Object.entries(v as Record<string, unknown>)
+      .filter(([, x]) => x !== undefined)
+      .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))
+    return "{" + entries.map(([k, x]) => JSON.stringify(k) + ":" + canonical(x)).join(",") + "}"
+  }
+  return JSON.stringify(v) ?? "null"
+}
 
 function handleSave(
   res: ServerResponse,
@@ -226,19 +304,17 @@ function handleSave(
     return sendJson(res, 409, { error: `workflow "${wf.id}" already exists` })
   }
 
-  // Preserve editor-blind keys from disk. We check the RAW payload (not the
-  // parsed one — Zod has already filled defaults) to distinguish "editor
-  // omitted this field" from "editor explicitly set the default value".
-  if (opts.mode === "update" && body && typeof body === "object") {
-    const raw = body as Record<string, unknown>
-    const existing = deps.store.get(opts.id)
-    if (existing) {
-      for (const key of EDITOR_BLIND_KEYS) {
-        if (!(key in raw) && key in existing) {
-          ;(wf as Record<string, unknown>)[key] = (existing as Record<string, unknown>)[key]
-        }
-      }
+  // An update merges into the stored file (see mergeEditorSave). A save
+  // that changes nothing writes nothing: the layout has its own route.
+  const stored = opts.mode === "update" ? deps.store.getStored(opts.id) : null
+  let merged: { doc: Record<string, unknown>; changed: boolean } | null = null
+  if (stored) {
+    try {
+      merged = mergeEditorSave(stored, body as Record<string, unknown>, wf, new Date().toISOString().slice(0, 10))
+    } catch (e: any) {
+      return sendJson(res, 500, { error: e?.message || String(e), kind: "save-failed" })
     }
+    if (!merged.changed) return sendJson(res, 200, { workflow: deps.store.get(wf.id) })
   }
 
   // store.save() round-trips YAML-authored workflows back to YAML
@@ -251,7 +327,9 @@ function handleSave(
   // `req.on("end")` callback and taking the dashboard down with it.
   let saved
   try {
-    saved = deps.store.save(wf, { convertFromYaml: opts.convertFromYaml })
+    saved = merged
+      ? deps.store.saveStored(merged.doc, { convertFromYaml: opts.convertFromYaml })
+      : deps.store.save(wf, { convertFromYaml: opts.convertFromYaml })
   } catch (e: any) {
     const message: string = e?.message || String(e)
     const yamlPath: string | undefined = e?.yamlPath

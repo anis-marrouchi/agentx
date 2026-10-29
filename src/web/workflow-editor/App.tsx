@@ -423,43 +423,50 @@ export function App(props: EditorProps) {
     const snap = stateRef.current
     const { workflow, layout } = graphToWorkflow({ meta: snap.meta, nodes: snap.nodes, edges: snap.edges })
     setBusy("is-validating")
-    const v = await validate(workflow)
-    if (!v.ok) {
-      setBusy("")
-      showToast(v.issues[0]?.message ? `Not saved: ${v.issues[0].message}` : `${v.issues.length} problem${v.issues.length === 1 ? "" : "s"} to fix first`, "err")
-      return
-    }
-    let res = await saveWorkflow(workflow, { create: snap.isNew })
-    // YAML-authored workflows refuse JSON overwrite by default. Surface the
-    // path + comment-loss warning, then retry with the explicit convert flag
-    // if the user agrees.
-    if (!res.ok && (res as { kind?: string }).kind === "yaml-authored") {
-      const yamlPath = (res as { path?: string }).path || "(unknown path)"
-      const proceed = confirm(
-        `This workflow is YAML-authored on disk:\n\n  ${yamlPath}\n\n` +
-        `Saving from the editor will overwrite the YAML as JSON and discard any comments in the YAML file.\n\n` +
-        `Continue and convert to JSON?`,
-      )
-      if (!proceed) {
+    // A request that fails outright (the node went away mid-save) must
+    // still end in a message, not a silent "checking…" (#1538).
+    try {
+      const v = await validate(workflow)
+      if (!v.ok) {
         setBusy("")
-        showToast("Not saved: the YAML file is kept as it is", "err")
+        showToast(v.issues[0]?.message ? `Not saved: ${v.issues[0].message}` : `${v.issues.length} problem${v.issues.length === 1 ? "" : "s"} to fix first`, "err")
         return
       }
-      res = await saveWorkflow(workflow, { create: snap.isNew, convertFromYaml: true })
-    }
-    setBusy("")
-    if (!res.ok) {
-      showToast(res.issues?.[0]?.message ?? "Save failed", "err")
-      return
-    }
-    try { await saveLayout(workflow.id, layout) } catch { /* non-fatal */ }
-    const next = { ...snap, isNew: false }
-    setSaved(snapshotOf(next))
-    showToast("Saved", "ok")
-    if (snap.isNew) {
-      // Later saves update instead of create.
-      forceReset(next)
-      props.onSaved?.(workflow.id)
+      let res = await saveWorkflow(workflow, { create: snap.isNew })
+      // YAML-authored workflows refuse JSON overwrite by default. Surface the
+      // path + comment-loss warning, then retry with the explicit convert flag
+      // if the user agrees.
+      if (!res.ok && (res as { kind?: string }).kind === "yaml-authored") {
+        const yamlPath = (res as { path?: string }).path || "(unknown path)"
+        const proceed = confirm(
+          `This workflow is YAML-authored on disk:\n\n  ${yamlPath}\n\n` +
+          `Saving from the editor will overwrite the YAML as JSON and discard any comments in the YAML file.\n\n` +
+          `Continue and convert to JSON?`,
+        )
+        if (!proceed) {
+          setBusy("")
+          showToast("Not saved: the YAML file is kept as it is", "err")
+          return
+        }
+        res = await saveWorkflow(workflow, { create: snap.isNew, convertFromYaml: true })
+      }
+      setBusy("")
+      if (!res.ok) {
+        showToast(res.issues?.[0]?.message ?? "Save failed", "err")
+        return
+      }
+      const placed = await saveLayout(workflow.id, layout).catch(() => false)
+      const next = { ...snap, isNew: false }
+      setSaved(snapshotOf(next))
+      showToast(placed ? "Saved" : "Saved, but the step positions were not", placed ? "ok" : "err")
+      if (snap.isNew) {
+        // Later saves update instead of create.
+        forceReset(next)
+        props.onSaved?.(workflow.id)
+      }
+    } catch (e: any) {
+      setBusy("")
+      showToast(`Not saved: ${e?.message ?? e}`, "err")
     }
   }, [owner, forceReset])
 
