@@ -1867,6 +1867,55 @@ export const wallConfigSchema = z.object({
   }).optional(),
 }).default({})
 
+const admissionPriority = z.enum(["owner", "critical", "normal", "background"])
+
+export const admissionConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Live sessions at once on this machine. Unset: worked out from the
+   *  memory (one per GB above the first 2 GB, at least 2, at most 24). */
+  maxSessions: z.number().int().min(1).optional(),
+  /** Extra sessions a delegated run may use above maxSessions, so a run
+   *  waiting on its helper can't hold every slot and wait forever. */
+  delegationHeadroom: z.number().int().min(0).default(2),
+  /** Agent kinds (tiers) that start a session and so wait in the queue. */
+  tiers: z.array(z.string()).default(["claude-code", "codex-cli", "opencode"]),
+  /** The gate stays closed while any of these is crossed. */
+  thresholds: z.object({
+    /** Unset: 10% of the memory, between 512 and 2048 MB. */
+    minAvailableMemoryMB: z.number().min(0).optional(),
+    maxSwapUsedPercent: z.number().min(0).max(100).default(60),
+    minDiskFreeMB: z.number().min(0).default(1024),
+    /** 1-minute load average divided by the CPU count. */
+    maxLoadPerCpu: z.number().min(0).default(1.5),
+  }).default({}),
+  /** Smaller caps for kinds of work, e.g. one browser job at a time. A run
+   *  is in a class when its agent or its channel is listed. */
+  classes: z.record(z.string(), z.object({
+    max: z.number().int().min(1),
+    agents: z.array(z.string()).default([]),
+    channels: z.array(z.string()).default([]),
+  })).default({}),
+  /** Priority overrides by channel and by agent; the agent wins. */
+  priorities: z.object({
+    channels: z.record(z.string(), admissionPriority).default({}),
+    agents: z.record(z.string(), admissionPriority).default({}),
+  }).default({}),
+  /** Seconds between two session starts, so memory use shows up before the
+   *  next start is checked. */
+  startGapSeconds: z.number().min(0).default(2),
+  /** After the daemon starts, at most `batch` sessions start per
+   *  `intervalSeconds`, for `minutes`. */
+  warmup: z.object({
+    minutes: z.number().min(0).default(5),
+    batch: z.number().int().min(1).default(2),
+    intervalSeconds: z.number().min(1).default(30),
+  }).default({}),
+  /** A run that waits longer than this is refused with a plain message. */
+  maxWaitMinutes: z.number().min(1).default(120),
+}).default({})
+
+export type AdmissionConfig = z.infer<typeof admissionConfigSchema>
+
 export const daemonConfigSchema = z.object({
   node: z.object({
     id: z.string(),
@@ -2083,6 +2132,10 @@ export const daemonConfigSchema = z.object({
       forbidOnTimeoutRestart: z.boolean().default(false),
     }).default({}),
   }).default({}),
+  /** Node-wide admission gate for agent sessions (agents/admission, #1521).
+   *  Every run that would start a CLI session waits in one queue, ordered
+   *  by priority then age, and starts only when the machine has room. */
+  admission: admissionConfigSchema,
   /** What happens to runs a restart cuts off (agents/resume). Chat messages
    *  are resumed in their chat; scheduled jobs never are (the next run
    *  covers them); everything else is reported unless its channel is in
