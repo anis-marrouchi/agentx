@@ -59,7 +59,8 @@ export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/setup", label: "First-run setup", status: "tool" },
   // Settings (#1428) sends a viewer who is not the owner here to sign in.
   { path: "/login", label: "Sign in (#1306)", status: "tool" },
-  { path: "/workflows/editor", label: "Workflow editor", status: "tool" },
+  // Owner decision on #1449 (2026-10-29): the editor is a Wall page now (#1524).
+  { path: "/workflows/editor", label: "Workflow editor", status: "wall", wall: "/wall#page=editor", note: "The Wall's editor page (#1524): two columns, a side menu that folds away, auto-arrange." },
 ]
 
 function pattern(path: string): RegExp {
@@ -103,6 +104,16 @@ export function classicRedirect(path: string, params: URLSearchParams, daemonUrl
     if (at) q.set("at", at)
     if (params.get("archived") === "1") q.set("done", "1")
     return "/#" + q.toString()
+  }
+  if (path === "/workflows/editor" || path === "/workflows/editor/") {
+    // The editor's page keys (wall-editor.client.ts): e-wf names the
+    // workflow, e-new starts one. With neither, the Workflows page.
+    const q = new URLSearchParams()
+    const id = params.get("id")
+    if (params.get("new") === "1") { q.set("page", "editor"); q.set("e-new", "1") }
+    else if (id) { q.set("page", "editor"); q.set("e-wf", id.slice(0, 200)) }
+    else q.set("page", "workflows")
+    return "/wall#" + q.toString()
   }
   const hist = path.match(/^\/agents\/([^/]+)\/history$/)
   if (hist) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { renderWorkflowEditorPage } from "../src/daemon/ui/pages/workflow-editor"
 import { renderWorkflowsPage } from "../src/daemon/ui/pages/workflows"
+import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { PALETTE } from "../src/web/workflow-editor/data"
 import { NODE_HANDLERS } from "../src/workflows/nodes/handlers"
 
@@ -42,19 +42,41 @@ describe("workflow editor", () => {
     expect(labels).toContain("A time of day")
   })
 
-  it("is reachable from the workflows page and mounts its bundle", () => {
-    expect(renderWorkflowsPage()).toContain("/workflows/editor?new=1")
-    const html = renderWorkflowEditorPage()
-    expect(html).toContain('id="wfe-root"')
+  it("is a Wall page, reachable from both workflows pages, that loads its bundle (#1524)", () => {
+    expect(renderWorkflowsPage()).toContain("/wall#page=editor&amp;e-new=1")
+    const html = renderWallPage({ owner: true })
+    expect(html).toContain('<section id="wall-editor"')
+    expect(html).toContain("window.AX_WALL_EDITOR = ")
     expect(html).toContain("/assets/workflow-editor")
+    expect(html).toContain('"owner":true')
+    expect(renderWallPage({})).toContain('"owner":false')
   })
 
   it("wears the dashboard's tokens instead of its own palette", async () => {
     const css = (await import("fs")).readFileSync("src/web/workflow-editor/redesign.css", "utf-8")
-    // The bridge has to beat :root[data-theme="dark"] from the original theme.
-    expect(css).toContain(':root, :root[data-theme][data-theme]')
+    // The bridge has to beat :root[data-theme="dark"] #wfe-root from the original theme.
+    expect(css).toContain(':root[data-theme][data-theme] #wfe-root {')
     expect(css).toContain("--surface:    var(--ax-surface)")
     expect(css).toContain("--ink:        var(--ax-text)")
+  })
+
+  it("keeps every rule inside the editor, so the Wall around it is untouched (#1524)", async () => {
+    const css = (await import("fs")).readFileSync("src/web/workflow-editor/redesign.css", "utf-8")
+    const noComments = css.replace(/\/\*[\s\S]*?\*\//g, "")
+    // Top-level selectors and those inside @media; keyframe steps aside.
+    const outside: string[] = []
+    let depth = 0, frames = 0, buf = ""
+    for (const ch of noComments) {
+      if (ch === "{") {
+        const sel = buf.slice(Math.max(buf.lastIndexOf("}"), buf.lastIndexOf(";")) + 1).trim()
+        if (sel.startsWith("@keyframes")) frames = depth + 1
+        else if (!sel.startsWith("@") && !(frames && depth >= frames)) {
+          for (const part of sel.split(",").map((x) => x.trim())) if (!/#wfe-root\b/.test(part)) outside.push(part)
+        }
+        depth++; buf = ""
+      } else if (ch === "}") { depth--; if (frames && depth < frames) frames = 0; buf = "" } else buf += ch
+    }
+    expect(outside).toEqual([])
   })
 })
 
@@ -92,20 +114,22 @@ describe("n8n inside the builder", () => {
     expect(nodeSummary("end", {})).toBe("")
   })
 
-  it("follows the dashboard theme instead of keeping its own", async () => {
+  it("follows the Wall's theme and never sets one of its own", async () => {
     const app = (await import("fs")).readFileSync("src/web/workflow-editor/App.tsx", "utf-8")
     // Two stores writing one data-theme attribute meant opening the editor
-    // could flip the whole product's theme under the user.
+    // could flip the whole product's theme under the user. On the Wall
+    // (#1524) the Wall's light/dark switch is the only writer.
     expect(app).not.toContain("wfe.theme")
-    expect(app).toContain('localStorage.setItem("ax-theme", theme)')
-    expect(app).toContain('document.documentElement.getAttribute("data-theme")')
+    expect(app).not.toContain("ax-theme")
+    expect(app).not.toMatch(/dataset\.theme\s*=|setAttribute\("data-theme"/)
   })
 
   it("wears no colour the design system does not define", async () => {
     const css = (await import("fs")).readFileSync("src/web/workflow-editor/redesign.css", "utf-8")
     // Variable definitions may hold literals; rules must not, or they render
     // an off-system colour whenever the variable they name does not exist.
-    const rules = css.replace(/:root[^{]*\{[^}]*\}/g, "")
+    // Comments name issues (#1524), which read like a colour.
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/:root[^{]*\{[^}]*\}/g, "")
     expect(rules.match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull()
   })
 
@@ -113,7 +137,7 @@ describe("n8n inside the builder", () => {
     const { assetUrl } = await import("../src/daemon/ui/asset-url")
     const url = assetUrl("workflow-editor.global.js")
     expect(url).toMatch(/^\/assets\/workflow-editor\.global\.js(\?v=[0-9a-f]+)?$/)
-    expect(renderWorkflowEditorPage()).toContain(url)
+    expect(renderWallPage({})).toContain(JSON.stringify(url))
   })
 })
 

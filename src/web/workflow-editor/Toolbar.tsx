@@ -8,8 +8,6 @@ export interface ToolbarProps {
   setTitle: (v: string) => void
   status: SaveStatus
   statusLabel?: string
-  theme: "dark" | "light"
-  setTheme: (t: "dark" | "light") => void
   canUndo: boolean
   canRedo: boolean
   onUndo: () => void
@@ -17,64 +15,49 @@ export interface ToolbarProps {
   onSave: () => void
   onRun: () => void
   running: boolean
-  tweaksOpen: boolean
-  setTweaksOpen: (v: boolean) => void
   onHelp: () => void
   onLayout: () => void
-  workflowIdLabel: string
-  paletteOpen: boolean
-  setPaletteOpen: (v: boolean) => void
-  inspectorOpen: boolean
-  setInspectorOpen: (v: boolean) => void
-  /** True when editing a draft — gates the "Promote" button and changes the
-   *  brand label so the operator sees they're not on the active store. */
+  onFit: () => void
+  /** Back to the Wall's Workflows page. */
+  onBack: () => void
+  menuOpen: boolean
+  setMenuOpen: (v: boolean) => void
+  /** False for a viewer who is not the owner: no Save. */
+  canSave: boolean
 }
 
+// One bar over both columns (#1524). The Wall around it has the logo, the
+// nav and the light/dark switch, so the editor no longer draws its own.
 export function Toolbar(p: ToolbarProps) {
   return (
-    <div className="tb">
-      <div className="tb__brand">
-        <div className="tb__mark">✦</div>
-        <div>
-          <div className="tb__brand-label">Workflow Editor</div>
-          <div className="tb__brand-sub">{p.workflowIdLabel}</div>
-        </div>
-      </div>
-
+    <div className="tb" role="toolbar" aria-label="Workflow editor">
       <div className="tb__main">
+        <button type="button" className={"btn btn--ghost-icon tb__menu" + (p.menuOpen ? " is-active" : "")}
+                aria-expanded={p.menuOpen} aria-controls="wfe-menu"
+                title={(p.menuOpen ? "Hide" : "Show") + " the side menu ([)"}
+                aria-label={(p.menuOpen ? "Hide" : "Show") + " the side menu"}
+                onClick={() => p.setMenuOpen(!p.menuOpen)}><Icon.panelLeft /></button>
         <div className="tb__crumbs">
-          <a href="/workflows">Workflows</a>
-          <span className="sep">/</span>
-          <input value={p.title} onChange={(e) => p.setTitle(e.target.value)} />
+          <button type="button" className="tb__back" onClick={p.onBack} title="Back to Workflows">Workflows</button>
+          <span className="sep" aria-hidden="true">/</span>
+          <input value={p.title} aria-label="Workflow title" onChange={(e) => p.setTitle(e.target.value)} />
         </div>
-        <span className="tb__sep" />
-        <div className={"tb__status " + (p.status)}>
+        <div className={"tb__status " + (p.status)} role="status">
           <span className="dot" />
-          {p.statusLabel ?? (p.status === "is-dirty" ? "unsaved" : p.status === "is-running" ? "running" : p.status === "is-validating" ? "validating…" : "saved")}
+          {p.statusLabel ?? (p.status === "is-dirty" ? "unsaved" : p.status === "is-running" ? "running" : p.status === "is-validating" ? "checking…" : "saved")}
         </div>
         <div className="tb__spacer" />
-
-        <button className={"btn btn--ghost-icon" + (p.paletteOpen ? " is-active" : "")}
-                title={p.paletteOpen ? "Hide palette" : "Show palette"}
-                onClick={() => p.setPaletteOpen(!p.paletteOpen)}><Icon.panelLeft /></button>
-        <button className={"btn btn--ghost-icon" + (p.inspectorOpen ? " is-active" : "")}
-                title={p.inspectorOpen ? "Hide inspector" : "Show inspector"}
-                onClick={() => p.setInspectorOpen(!p.inspectorOpen)}><Icon.panelRight /></button>
-        <span className="tb__sep" />
-        <button className="btn btn--ghost-icon" title="Undo (⌘Z)" onClick={p.onUndo} disabled={!p.canUndo}><Icon.undo /></button>
-        <button className="btn btn--ghost-icon" title="Redo (⌘⇧Z)" onClick={p.onRedo} disabled={!p.canRedo}><Icon.redo /></button>
-        <button className="btn btn--ghost-icon" title="Auto layout" onClick={p.onLayout}><Icon.layout /></button>
-        <button className="btn btn--ghost-icon" title="Keyboard shortcuts" onClick={p.onHelp}><Icon.kbd /></button>
-        <button className={"btn btn--ghost-icon" + (p.tweaksOpen ? " is-active" : "")} title="Tweaks" onClick={() => p.setTweaksOpen(!p.tweaksOpen)}><Icon.gear /></button>
-        <button className="btn btn--ghost-icon" title="Toggle theme" onClick={() => p.setTheme(p.theme === "dark" ? "light" : "dark")}>
-          {p.theme === "dark" ? <Icon.sun /> : <Icon.moon />}
-        </button>
+        <button type="button" className="btn btn--ghost-icon tb__opt" title="Undo (⌘Z)" aria-label="Undo" onClick={p.onUndo} disabled={!p.canUndo}><Icon.undo /></button>
+        <button type="button" className="btn btn--ghost-icon tb__opt" title="Redo (⌘⇧Z)" aria-label="Redo" onClick={p.onRedo} disabled={!p.canRedo}><Icon.redo /></button>
+        <button type="button" className="btn btn--ghost tb__arrange" title="Arrange the steps left to right (L)" onClick={p.onLayout}><Icon.layout /><span>Arrange</span></button>
+        <button type="button" className="btn btn--ghost-icon tb__opt" title="Fit the workflow in view (F)" aria-label="Fit in view" onClick={p.onFit}><Icon.fit /></button>
+        <button type="button" className="btn btn--ghost-icon tb__opt" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" onClick={p.onHelp}><Icon.kbd /></button>
       </div>
 
       <div className="tb__actions">
-        <button className="btn btn--outline" onClick={p.onSave}><Icon.save /> Save</button>
-        <button className="btn btn--primary" onClick={p.onRun}>
-          {p.running ? <><Icon.stop2 /> Stop</> : <><Icon.run /> Run preview</>}
+        {p.canSave && <button type="button" className="btn btn--outline" onClick={p.onSave}><Icon.save /> <span>Save</span></button>}
+        <button type="button" className="btn btn--primary tb__run" onClick={p.onRun} title="Walk through the steps without running them">
+          {p.running ? <><Icon.stop2 /> <span>Stop</span></> : <><Icon.run /> <span>Preview</span></>}
         </button>
       </div>
     </div>
@@ -134,84 +117,23 @@ export function RunPanel({ running, script, cursor, onStop }: RunPanelProps) {
   )
 }
 
-// --- Tweaks panel -------------------------------------------
-
-const HUES = [
-  { h: 255, name: "indigo" },
-  { h: 220, name: "blue" },
-  { h: 180, name: "teal" },
-  { h: 145, name: "green" },
-  { h: 70,  name: "amber" },
-  { h: 28,  name: "orange" },
-  { h: 330, name: "pink" },
-]
-
-export interface TweaksProps {
-  open: boolean
-  setOpen: (v: boolean) => void
-  theme: "dark" | "light"
-  setTheme: (t: "dark" | "light") => void
-  density: "compact" | "cozy" | "roomy"
-  setDensity: (d: "compact" | "cozy" | "roomy") => void
-  hue: number
-  setHue: (h: number) => void
-}
-
-export function Tweaks(p: TweaksProps) {
-  if (!p.open) return null
-  return (
-    <div className="tweaks">
-      <div className="tweaks__head">
-        <span>Tweaks</span>
-        <button className="btn btn--ghost-icon" style={{ height: 22, width: 22 }} onClick={() => p.setOpen(false)}><Icon.x /></button>
-      </div>
-      <div className="tweaks__body">
-        <div className="tweaks__row">
-          <label>Theme</label>
-          <div className="tweaks__opts">
-            {(["dark", "light"] as const).map((t) => (
-              <button key={t} className={p.theme === t ? "on" : ""} onClick={() => p.setTheme(t)}>{t}</button>
-            ))}
-          </div>
-        </div>
-        <div className="tweaks__row">
-          <label>Density</label>
-          <div className="tweaks__opts">
-            {(["compact", "cozy", "roomy"] as const).map((d) => (
-              <button key={d} className={p.density === d ? "on" : ""} onClick={() => p.setDensity(d)}>{d}</button>
-            ))}
-          </div>
-        </div>
-        <div className="tweaks__row" style={{ alignItems: "flex-start", flexDirection: "column", gap: 6 }}>
-          <label>Accent hue</label>
-          <div className="tweaks__hue">
-            {HUES.map((h) => (
-              <button key={h.h} title={h.name}
-                className={p.hue === h.h ? "on" : ""}
-                style={{ background: `oklch(0.70 0.16 ${h.h})` }}
-                onClick={() => p.setHue(h.h)} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // --- Keyboard-shortcut overlay ------------------------------
 
 export function KbdOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null
   const rows: Array<[string, string]> = [
     ["Save workflow", "⌘S"], ["Undo / Redo", "⌘Z / ⌘⇧Z"],
-    ["Delete selection", "Delete"], ["Duplicate node", "⌘D"],
-    ["Run preview", "⌘⏎"],
-    ["Focus search", "/"], ["Fit view", "F"],
-    ["Close panels", "Esc"],
+    ["Delete selection", "Delete"], ["Duplicate step", "⌘D"],
+    ["Move the selected step", "← → ↑ ↓"],
+    ["Arrange the steps", "L"], ["Fit in view", "F"],
+    ["Show or hide the side menu", "["],
+    ["Preview", "⌘⏎"],
+    ["Find a step to add", "/"],
+    ["Close this", "Esc"],
   ]
   return (
     <div className="kbd-overlay" onClick={onClose}>
-      <div className="kbd-card" onClick={(e) => e.stopPropagation()}>
+      <div className="kbd-card" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onClick={(e) => e.stopPropagation()}>
         <h3>Keyboard shortcuts</h3>
         {rows.map(([l, k]) => (
           <div className="row" key={l}>

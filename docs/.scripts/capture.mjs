@@ -111,6 +111,14 @@ const shots = [
   { name: "editor-chat-closed", path: "/workflows/editor?id=demo-report", wait: ".ax-chat__pill" },
   { name: "editor-chat-reply", path: "/workflows/editor?id=demo-report", wait: ".ax-chat__pill", steps: askSteps },
   { name: "editor-canvas", path: "/workflows/editor?id=demo-report", wait: ".ax-chat__pill", steps: [...askSteps, { click: ".ax-chat__applybtn" }, { click: 'button[title="Collapse"]' }] },
+  // The editor on the Wall (#1524): two columns, a step's settings, the side
+  // menu folded away (last: the editor remembers it), and a phone. The old
+  // address redirects there, and loads the page afresh for each shot.
+  { name: "workflows/editor", path: "/workflows/editor?id=demo-whatsapp-intake", wait: "#wfe-root .node" },
+  { name: "workflows/editor-step", path: "/workflows/editor?id=demo-whatsapp-intake", wait: "#wfe-root .node", steps: [{ click: '#wfe-root .node[data-node="route"]' }, { wait: "#wfe-root .node.is-selected" }] },
+  { name: "workflows/editor-loop", path: "/workflows/editor?id=demo-merge-verify", wait: "#wfe-root .node[data-node=verify]" },
+  { name: "workflows/editor-phone", path: "/workflows/editor?id=demo-whatsapp-intake", wait: "#wfe-root .node", phone: true },
+  { name: "workflows/editor-menu-closed", path: "/workflows/editor?id=demo-whatsapp-intake", wait: "#wfe-root .node", steps: [{ click: "#wfe-root .tb__menu" }, { wait: '#wfe-root .app[data-menu="closed"]' }] },
   { name: "activity/map", path: "/activity", wait: ".ac-row", steps: [{ clickText: "Map" }, { wait: ".subbar__lbl" }] },
   { name: "chat/panel", path: "/monitor", wait: "#you .bf-act", steps: [{ click: "#ax-as-handle" }, { type: "#ax-as-bar-input", text: "Summarize what needs my attention on this page." }, { click: "#ax-as-bar-send" }, { wait: ".ax-as__msg--them.ax-as__md" }] },
   { name: "operations/schedule-drawer", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-runs .mx-item" }, { click: "#mx-runs .mx-item" }, { wait: "#mx-drawer.is-open" }] },

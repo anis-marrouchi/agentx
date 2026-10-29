@@ -41,9 +41,10 @@ describe("classic routes registry", () => {
     }
   })
 
-  it("keeps /setup, /workflows/editor and the org chart editor as tool pages", () => {
+  it("keeps /setup and the org chart editor as tool pages; the workflow editor is on the Wall (#1524)", () => {
     expect(classicRouteFor("/setup")?.status).toBe("tool")
-    expect(classicRouteFor("/workflows/editor")?.status).toBe("tool")
+    expect(classicRouteFor("/workflows/editor")?.status).toBe("wall")
+    expect(classicRouteFor("/workflows/editor")?.wall).toBe("/wall#page=editor")
     // Owner decision on #1420: the org chart is edited on /org, the Wall reads it.
     expect(classicRouteFor("/org")?.status).toBe("tool")
     expect(classicRouteFor("/workflows")?.status).toBe("pending")
@@ -104,6 +105,14 @@ describe("classic Task page redirect", () => {
     expect(classicRedirect("/agents/%E0%A4%A/history", new URLSearchParams(""), "http://daemon.test")).toBeNull()
   })
 
+  it("sends the workflow editor to its Wall page (#1524)", () => {
+    const keys = (to: string | null) => Object.fromEntries(new URLSearchParams(to!.slice("/wall#".length)))
+    expect(keys(classicRedirect("/workflows/editor", new URLSearchParams("id=deploy"), "http://daemon.test"))).toEqual({ page: "editor", "e-wf": "deploy" })
+    expect(keys(classicRedirect("/workflows/editor", new URLSearchParams("new=1"), "http://daemon.test"))).toEqual({ page: "editor", "e-new": "1" })
+    // Nothing named: the Workflows page.
+    expect(keys(classicRedirect("/workflows/editor", new URLSearchParams(""), "http://daemon.test"))).toEqual({ page: "workflows" })
+  })
+
   describe("served", () => {
     let server: Server | undefined
     afterEach(async () => {
@@ -130,6 +139,15 @@ describe("classic Task page redirect", () => {
       const r = await fetch(`${base}/agents/ops/history?node=http://peer.test`, { redirect: "manual" })
       expect(r.status).toBe(302)
       expect(r.headers.get("location")).toBe("/wall#page=activity&a-agent=ops&a-period=30d")
+    })
+
+    it("redirects /workflows/editor to the Wall's editor page (#1524)", async () => {
+      const base = await start()
+      const r = await fetch(`${base}/workflows/editor?id=github-sweep`, { redirect: "manual" })
+      expect(r.status).toBe(302)
+      expect(r.headers.get("location")).toBe("/wall#page=editor&e-wf=github-sweep")
+      const n = await fetch(`${base}/workflows/editor?new=1`, { redirect: "manual" })
+      expect(n.headers.get("location")).toBe("/wall#page=editor&e-new=1")
     })
 
     it("still answers 400 without an agent", async () => {

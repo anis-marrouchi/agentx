@@ -1,13 +1,18 @@
 import redesignCss from "./redesign.css"
-import { createRoot } from "react-dom/client"
-import { App } from "./App"
+import { createRoot, type Root } from "react-dom/client"
+import { App, type EditorProps } from "./App"
 
 // --- Bundle entry point ---
 //
-// The CSS is imported as a string via tsup's `loader: { ".css": "text" }`
-// config and injected at boot. Font-face links live in the host page
-// shell (src/daemon/ui/pages/workflow-editor.ts) so they're fetched while
-// this bundle is still parsing.
+// The editor is a Wall page (#1524): the Wall loads this bundle the first
+// time #page=editor opens and mounts it with window.AXWorkflowEditor.mount
+// (wall-editor.client.ts). The CSS is imported as a string via tsup's
+// `loader: { ".css": "text" }` config and injected once; every rule in it
+// is scoped to #wfe-root so it cannot restyle the Wall around it.
+
+export interface MountedEditor {
+  unmount(): void
+}
 
 function injectStyles(id: string, css: string): void {
   if (document.getElementById(id)) return
@@ -17,18 +22,19 @@ function injectStyles(id: string, css: string): void {
   document.head.appendChild(style)
 }
 
-function boot(): void {
+function mount(el: HTMLElement, props: EditorProps): MountedEditor {
   injectStyles("wfe-redesign-css", redesignCss as unknown as string)
-  const container = document.getElementById("wfe-root")
-  if (!container) {
-    console.error("[wfe] #wfe-root missing — editor cannot mount")
-    return
-  }
-  createRoot(container).render(<App />)
+  // The scope every editor style is written under (redesign.css).
+  el.id = "wfe-root"
+  const root: Root = createRoot(el)
+  root.render(<App {...props} />)
+  return { unmount: () => root.unmount() }
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", boot)
-} else {
-  boot()
+declare global {
+  interface Window { AXWorkflowEditor?: { mount: typeof mount } }
 }
+
+window.AXWorkflowEditor = { mount }
+// The Wall may have asked before the script arrived.
+document.dispatchEvent(new Event("ax:workflow-editor-ready"))

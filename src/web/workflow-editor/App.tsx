@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { Canvas, type RunState, type Selection, type ViewBox } from "./Canvas"
 import { Inspector } from "./Inspector"
 import { Palette } from "./Palette"
-import { KbdOverlay, RunPanel, Toolbar, Tweaks, type RunStep, type SaveStatus } from "./Toolbar"
+import { Icon } from "./Icons"
+import { KbdOverlay, RunPanel, Toolbar, type RunStep, type SaveStatus } from "./Toolbar"
 import { ChatWidget } from "./ChatWidget"
 import { blankGraph, graphToWorkflow, type GraphEdge, type GraphModel, type GraphNode, workflowToGraph, TRIGGER_NODE_ID } from "./graph"
 import { deleteWorkflow, fetchAgents, fetchLayout, fetchWorkflow, saveLayout, saveWorkflow, validate, type AgentSummary } from "./api"
 import { MOCK_AGENTS, type AgentInfo, type PaletteItem, type TemplateCard } from "./data"
+import { arrange, needsArrange } from "./geometry"
 import type { Workflow } from "./types"
 
 // --- Editor state ---------------------------------------------------------
@@ -30,7 +32,7 @@ type Action =
   | { type: "patchNodeData"; id: string; patch: Record<string, unknown> }
   | { type: "patchEdge"; id: string; patch: Partial<GraphEdge> }
   | { type: "addNode"; item: PaletteItem; x: number; y: number }
-  | { type: "connect"; conn: { from: string; fromPort: string; to: string; toPort: string } }
+  | { type: "connect"; conn: { from: string; fromPort: string | undefined; to: string } }
   | { type: "delete"; selection?: Selection }
   | { type: "duplicate"; selection?: Selection }
   | { type: "layout" }
@@ -72,16 +74,12 @@ function reducer(state: EditorState, action: Action): EditorState {
     case "connect": {
       if (action.conn.from === action.conn.to) return state
       const id = "e-" + Math.random().toString(36).slice(2, 8)
-      const sourceNode = state.nodes.find((n) => n.id === action.conn.from)
-      // V2 carries branch-port info in `fromPort` ("true" | "false" | other);
-      // there's no separate `branch` flag.
-      const portLabel = action.conn.fromPort === "true" || action.conn.fromPort === "false" ? action.conn.fromPort : ""
-      const edge: GraphEdge = {
-        id, from: action.conn.from, fromPort: action.conn.fromPort,
-        to: action.conn.to, toPort: "in",
-        label: portLabel || (sourceNode?.type?.startsWith("trigger.") ? "start" : ""),
-      }
-      if (state.edges.some((e) => e.from === edge.from && e.fromPort === edge.fromPort && e.to === edge.to)) return state
+      // The port is the edge's fromPort (ports.ts); the main port has none,
+      // which is what the engine fires for a plain step or a follow-up's
+      // main answer. The node draws its port names, so no label is needed.
+      const edge: GraphEdge = { id, from: action.conn.from, to: action.conn.to }
+      if (action.conn.fromPort !== undefined) edge.fromPort = action.conn.fromPort
+      if (state.edges.some((e) => e.from === edge.from && (e.fromPort ?? "") === (edge.fromPort ?? "") && e.to === edge.to)) return state
       return { ...state, edges: [...state.edges, edge] }
     }
     case "delete": {
@@ -114,8 +112,8 @@ function reducer(state: EditorState, action: Action): EditorState {
       return { ...state, nodes: [...state.nodes, newNode], selection: { kind: "node", id } }
     }
     case "layout": {
-      const levels = autoLayoutColumns(state.nodes, state.edges)
-      return { ...state, nodes: state.nodes.map((n) => ({ ...n, ...(levels[n.id] ?? {}) })) }
+      const pos = arrange(state.nodes, state.edges)
+      return { ...state, nodes: state.nodes.map((n) => (pos[n.id] ? { ...n, position: pos[n.id] } : n)) }
     }
     case "setAll":
       return action.state
@@ -173,26 +171,6 @@ function defaultConfigFor(item: PaletteItem): Record<string, unknown> {
   return {}
 }
 
-function autoLayoutColumns(nodes: GraphNode[], edges: GraphEdge[]): Record<string, { x: number; y: number }> {
-  const byId = Object.fromEntries(nodes.map((n) => [n.id, n] as const))
-  const inc: Record<string, number> = {}
-  nodes.forEach((n) => { inc[n.id] = 0 })
-  edges.forEach((e) => { if (byId[e.to]) inc[e.to] = (inc[e.to] ?? 0) + 1 })
-  const levels: Record<string, number> = {}
-  const assign = (id: string, lvl: number) => {
-    levels[id] = Math.max(levels[id] ?? 0, lvl)
-    edges.filter((e) => e.from === id).forEach((e) => assign(e.to, lvl + 1))
-  }
-  nodes.filter((n) => (inc[n.id] ?? 0) === 0).forEach((n) => assign(n.id, 0))
-  const cols: Record<number, string[]> = {}
-  Object.entries(levels).forEach(([id, l]) => { (cols[l] ??= []).push(id) })
-  const out: Record<string, { x: number; y: number }> = {}
-  Object.entries(cols).forEach(([l, ids]) => {
-    ids.forEach((id, i) => { out[id] = { x: 80 + Number(l) * 280, y: 120 + i * 170 } })
-  })
-  return out
-}
-
 // --- Undo/redo wrapper ----------------------------------------------------
 
 function useUndoable(init: EditorState) {
@@ -228,13 +206,25 @@ function useUndoable(init: EditorState) {
     dispatch({ type: "setAll", state: next })
   }, [])
 
+  // A drag is many moveNode actions; it becomes one undo step when it ends.
+  const moveStart = useRef<EditorState | null>(null)
+  const beginMove = useCallback(() => { if (!moveStart.current) moveStart.current = last.current }, [])
+  const endMove = useCallback(() => {
+    const start = moveStart.current
+    moveStart.current = null
+    if (!start || start === last.current) return
+    past.current.push(start)
+    if (past.current.length > 50) past.current.shift()
+    future.current = []
+  }, [])
+
   const forceReset = useCallback((next: EditorState) => {
     past.current = []
     future.current = []
     dispatch({ type: "setAll", state: next })
   }, [])
 
-  return { state, dispatch: wrapped, undo, redo, forceReset, canUndo: past.current.length > 0, canRedo: future.current.length > 0 }
+  return { state, dispatch: wrapped, undo, redo, forceReset, beginMove, endMove, canUndo: past.current.length > 0, canRedo: future.current.length > 0 }
 }
 
 // --- Validation (client-side lint; server-side is authoritative) ----------
@@ -294,43 +284,82 @@ function makeDemoRun(state: EditorState): RunStep[] {
 
 // --- App ------------------------------------------------------------------
 
-export function App() {
+/** How the Wall opens the editor (main.tsx, wall-editor.client.ts). */
+export interface EditorProps {
+  /** The workflow to open; for a new one, the id it starts with. */
+  workflowId: string
+  isNew: boolean
+  /** The owner saves and deletes; anyone else looks (#1454). The server
+   *  refuses their writes either way (board-dashboard.ts). */
+  owner: boolean
+  /** Back to the Wall's Workflows page; `gone` after a delete. */
+  onBack: (gone?: boolean) => void
+  /** A new workflow was saved for the first time under this id. */
+  onSaved?: (id: string) => void
+  /** Unsaved changes appeared or went away. */
+  onDirty?: (dirty: boolean) => void
+}
+
+type MenuTab = "add" | "edit"
+
+const MENU_KEY = "wfe.menu"
+/** Narrower than this, the side menu opens over the canvas, closed at first. */
+const NARROW = "(max-width: 900px)"
+
+function readMenuOpen(): boolean {
+  try {
+    const saved = localStorage.getItem(MENU_KEY)
+    if (window.matchMedia(NARROW).matches) return false
+    return saved !== "closed"
+  } catch { return true }
+}
+
+/** The comparable part of the editor's state: what Save would write. */
+function snapshotOf(s: { meta: GraphModel["meta"]; nodes: GraphNode[]; edges: GraphEdge[] }): string {
+  return JSON.stringify([s.meta, s.nodes, s.edges])
+}
+
+export function App(props: EditorProps) {
   // Kick off with an empty state; the load effect replaces it via hydrate.
-  const { state, dispatch, undo, redo, forceReset, canUndo, canRedo } = useUndoable({
+  const { state, dispatch, undo, redo, forceReset, beginMove, endMove, canUndo, canRedo } = useUndoable({
     meta: { id: "loading", version: 2, title: "Loading…", priority: 0, fanOut: false, envAllow: [], retention: { maxRuns: 500, maxDays: 90 } },
     nodes: [], edges: [], selection: null, isNew: true,
   })
   const { meta, nodes, edges, selection, isNew } = state
+  const owner = props.owner
 
   const stateRef = useRef(state)
   useEffect(() => { stateRef.current = state }, [state])
 
-  // --- Persisted UI prefs -------------------------------------------------
-  // Follow the dashboard. The shell sets data-theme from `ax-theme` before
-  // this bundle mounts; keeping a second store here meant two writers on one
-  // attribute and an editor that could disagree with the rest of the product.
-  const [theme, setThemeState] = useState<"dark" | "light">(
-    () => (document.documentElement.getAttribute("data-theme") as "dark" | "light") ?? "dark")
-  const [density, setDensity] = useState<"compact" | "cozy" | "roomy">(() => (localStorage.getItem("wfe.density") as "compact" | "cozy" | "roomy") ?? "cozy")
-  const [hue, setHue] = useState<number>(() => Number(localStorage.getItem("wfe.hue") ?? 255))
-  const [paletteOpen, setPaletteOpen] = useState<boolean>(() => localStorage.getItem("wfe.paletteOpen") !== "0")
-  const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => localStorage.getItem("wfe.inspectorOpen") !== "0")
+  // --- Layout: two columns, the side menu and the canvas (#1524) ----------
+  // The theme is the Wall's: redesign.css maps the editor's colours onto the
+  // dashboard tokens, which follow data-theme on the document.
+  const [menuOpen, setMenuOpenState] = useState<boolean>(readMenuOpen)
+  const [tab, setTab] = useState<MenuTab>(props.isNew ? "add" : "edit")
   const [viewBox, setViewBox] = useState<ViewBox>({ zoom: 0.75, tx: 40, ty: 60 })
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("ax-theme", theme) }, [theme])
-  useEffect(() => { localStorage.setItem("wfe.density", density) }, [density])
-  useEffect(() => { document.documentElement.style.setProperty("--accent-hue", String(hue)); localStorage.setItem("wfe.hue", String(hue)) }, [hue])
-  useEffect(() => { localStorage.setItem("wfe.paletteOpen", paletteOpen ? "1" : "0") }, [paletteOpen])
-  useEffect(() => { localStorage.setItem("wfe.inspectorOpen", inspectorOpen ? "1" : "0") }, [inspectorOpen])
-  const setTheme = (t: "dark" | "light") => setThemeState(t)
+  const [fitSignal, setFitSignal] = useState(0)
+  const fitSoon = () => setFitSignal((n) => n + 1)
+  const setMenuOpen = useCallback((open: boolean) => {
+    setMenuOpenState(open)
+    try { if (!window.matchMedia(NARROW).matches) localStorage.setItem(MENU_KEY, open ? "open" : "closed") } catch { /* private window */ }
+  }, [])
+  // The canvas grows into the space the menu leaves: refit once it has.
+  const firstMenu = useRef(true)
+  useEffect(() => {
+    if (firstMenu.current) { firstMenu.current = false; return }
+    const t = window.setTimeout(fitSoon, 180)
+    return () => window.clearTimeout(t)
+  }, [menuOpen])
 
   // --- Overlays -----------------------------------------------------------
-  const [tweaksOpen, setTweaksOpen] = useState(false)
-  const [helpOpen,   setHelpOpen]   = useState(false)
-  const [toast,      setToast]      = useState<{ msg: string; kind: "ok" | "err" } | null>(null)
-  const [status,     setStatus]     = useState<SaveStatus>("is-saved")
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [toast, setToast] = useState<{ msg: string; kind: "ok" | "err" } | null>(null)
+  const [busy, setBusy] = useState<"" | "is-validating" | "is-running">("")
+  const toastTimer = useRef<number | null>(null)
   const showToast = (msg: string, kind: "ok" | "err" = "ok") => {
     setToast({ msg, kind })
-    setTimeout(() => setToast(null), 2000)
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToast(null), kind === "err" ? 5000 : 2000)
   }
 
   // --- Agents -------------------------------------------------------------
@@ -350,40 +379,54 @@ export function App() {
   }, [])
 
   // --- Load / save --------------------------------------------------------
+  // `saved` is what is on disk; the editor is dirty when its state differs.
+  // A workflow with no saved places is arranged on open, and that arranged
+  // state counts as clean: nothing the author did is lost by leaving.
+  const [saved, setSaved] = useState<string>("")
+  const open = (graph: GraphModel, fresh: boolean) => {
+    let g = graph
+    if (needsArrange(g.nodes)) {
+      const pos = arrange(g.nodes, g.edges)
+      g = { ...g, nodes: g.nodes.map((n) => (pos[n.id] ? { ...n, position: pos[n.id] } : n)) }
+    }
+    const next = graphToState(g, fresh)
+    forceReset(next)
+    setSaved(fresh ? "" : snapshotOf(next))
+    fitSoon()
+  }
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    const isNewParam = params.get("new") === "1"
-    const id = params.get("id") || "new-workflow"
-
-    if (isNewParam) {
-      forceReset(graphToState(blankGraph(id), true))
-      return
-    }
+    const id = props.workflowId || "new-workflow"
+    if (props.isNew) { open(blankGraph(id), true); return }
+    let alive = true
     ;(async () => {
       try {
         const [wf, layout] = await Promise.all([fetchWorkflow(id), fetchLayout(id)])
-        const graph = workflowToGraph(wf, layout)
-        forceReset(graphToState(graph, false))
+        if (alive) open(workflowToGraph(wf, layout), false)
       } catch (e: any) {
-        showToast(`Failed to load "${id}": ${e.message}`, "err")
-        forceReset(graphToState(blankGraph(id), true))
+        if (!alive) return
+        showToast(`Could not open "${id}": ${e.message}`, "err")
+        open(blankGraph(id), true)
       }
     })()
+    return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [props.workflowId, props.isNew])
 
-  // Mark dirty on any structural mutation.
-  useEffect(() => { if (meta.id !== "loading") setStatus("is-dirty") }, [nodes, edges, meta])
+  const loaded = meta.id !== "loading"
+  const dirty = loaded && snapshotOf({ meta, nodes, edges }) !== saved
+  useEffect(() => { props.onDirty?.(dirty) }, [dirty])
+  const status: SaveStatus = busy || (dirty ? "is-dirty" : "is-saved")
 
   const save = useCallback(async () => {
+    if (!owner) { showToast("Only the owner can save a workflow", "err"); return }
     const snap = stateRef.current
     const { workflow, layout } = graphToWorkflow({ meta: snap.meta, nodes: snap.nodes, edges: snap.edges })
-    setStatus("is-validating")
+    setBusy("is-validating")
     const v = await validate(workflow)
     if (!v.ok) {
-      setStatus("is-dirty")
-      showToast(`${v.issues.length} validation issue${v.issues.length === 1 ? "" : "s"}`, "err")
+      setBusy("")
+      showToast(v.issues[0]?.message ? `Not saved: ${v.issues[0].message}` : `${v.issues.length} problem${v.issues.length === 1 ? "" : "s"} to fix first`, "err")
       return
     }
     let res = await saveWorkflow(workflow, { create: snap.isNew })
@@ -398,40 +441,52 @@ export function App() {
         `Continue and convert to JSON?`,
       )
       if (!proceed) {
-        setStatus("is-dirty")
-        showToast("Save canceled — YAML preserved on disk", "err")
+        setBusy("")
+        showToast("Not saved: the YAML file is kept as it is", "err")
         return
       }
       res = await saveWorkflow(workflow, { create: snap.isNew, convertFromYaml: true })
     }
+    setBusy("")
     if (!res.ok) {
-      setStatus("is-dirty")
       showToast(res.issues?.[0]?.message ?? "Save failed", "err")
       return
     }
     try { await saveLayout(workflow.id, layout) } catch { /* non-fatal */ }
-    setStatus("is-saved")
+    const next = { ...snap, isNew: false }
+    setSaved(snapshotOf(next))
     showToast("Saved", "ok")
     if (snap.isNew) {
-      dispatch({ type: "patchMeta", patch: {} })  // no-op patch to clear isNew below
-      // Flip URL so subsequent saves update instead of create.
-      const u = new URL(location.href)
-      u.searchParams.delete("new")
-      u.searchParams.set("id", workflow.id)
-      history.replaceState(null, "", u.toString())
-      // Update the isNew flag via a hydrate so undo stack doesn't accumulate
-      // meaningless entries for the create→update switch.
-      forceReset({ ...snap, isNew: false })
+      // Later saves update instead of create.
+      forceReset(next)
+      props.onSaved?.(workflow.id)
     }
-  }, [dispatch, forceReset])
+  }, [owner, forceReset])
 
-  
   const onDelete = useCallback((sel: Selection) => dispatch({ type: "delete", selection: sel }), [dispatch])
   const onDuplicate = useCallback((sel: Selection) => dispatch({ type: "duplicate", selection: sel }), [dispatch])
-  const onAddNode = useCallback((item: PaletteItem, x: number, y: number) => dispatch({ type: "addNode", item, x, y }), [dispatch])
-  const onConnect = useCallback((conn: { from: string; fromPort: string; to: string; toPort: string }) => dispatch({ type: "connect", conn }), [dispatch])
-  const onMoveNode = useCallback((id: string, x: number, y: number) => dispatch({ type: "moveNode", id, x, y }), [dispatch])
-  const setSelection = useCallback((sel: Selection | null) => dispatch({ type: "select", selection: sel, commit: true }), [dispatch])
+  const onAddNode = useCallback((item: PaletteItem, x: number, y: number) => {
+    dispatch({ type: "addNode", item, x: Math.round(x), y: Math.round(y) })
+    setTab("edit")
+  }, [dispatch])
+  const onConnect = useCallback((conn: { from: string; fromPort: string | undefined; to: string }) => dispatch({ type: "connect", conn }), [dispatch])
+  const onMoveNode = useCallback((id: string, x: number, y: number) => { beginMove(); dispatch({ type: "moveNode", id, x, y }) }, [dispatch, beginMove])
+  const setSelection = useCallback((sel: Selection | null) => {
+    dispatch({ type: "select", selection: sel, commit: true })
+    if (sel) setTab("edit")
+  }, [dispatch])
+
+  /** Add a step from the side menu: in the middle of what the canvas shows. */
+  const addFromMenu = (item: PaletteItem) => {
+    const r = document.querySelector("#wfe-root .cv")?.getBoundingClientRect()
+    const cx = ((r?.width ?? 800) / 2 - viewBox.tx) / viewBox.zoom
+    const cy = ((r?.height ?? 500) / 2 - viewBox.ty) / viewBox.zoom
+    onAddNode(item, cx - 110, cy - 40)
+    if (window.matchMedia(NARROW).matches) setMenuOpen(false)
+  }
+
+  const arrangeNow = () => { dispatch({ type: "layout" }); fitSoon() }
+  const fitNow = () => document.querySelector("#wfe-root .cv")?.dispatchEvent(new Event("wfe:fit"))
 
   const patchSelected = (patch: Partial<GraphNode> | Partial<GraphEdge>) => {
     if (!selection) return
@@ -446,9 +501,11 @@ export function App() {
   // --- Templates ----------------------------------------------------------
 
   const onLoadTemplate = async (tpl: TemplateCard) => {
-    if (!confirm(`Replace the current workflow with the "${tpl.title}" template? (Undoable)`)) return
+    if (!confirm(`Replace the current workflow with the "${tpl.title}" template?`)) return
     const graph = await loadTemplate(tpl.id, meta.id)
-    forceReset(graphToState(graph, isNew))
+    const pos = arrange(graph.nodes, graph.edges)
+    dispatch({ type: "setAll", state: { ...graphToState({ ...graph, nodes: graph.nodes.map((n) => ({ ...n, position: n.position ?? pos[n.id] })) }, isNew), isNew } })
+    fitSoon()
     showToast(`Loaded ${tpl.title}`, "ok")
   }
 
@@ -457,18 +514,21 @@ export function App() {
   const [runCursor, setRunCursor] = useState(-1)
   const runScript = useMemo(() => makeDemoRun(state), [state])
   const runTimer = useRef<number | null>(null)
-  const stopRun = () => { if (runTimer.current) window.clearInterval(runTimer.current); setRunning(false); setStatus("is-saved") }
+  const stopRun = () => { if (runTimer.current) window.clearInterval(runTimer.current); setRunning(false); setBusy("") }
   const startRun = () => {
-    setRunning(true); setRunCursor(0); setStatus("is-running")
+    setRunning(true); setRunCursor(0); setBusy("is-running")
     if (runTimer.current) window.clearInterval(runTimer.current)
     runTimer.current = window.setInterval(() => {
       setRunCursor((c) => {
-        if (c >= runScript.length - 1) { if (runTimer.current) window.clearInterval(runTimer.current); setRunning(false); setStatus("is-saved"); return c }
+        if (c >= runScript.length - 1) { if (runTimer.current) window.clearInterval(runTimer.current); setRunning(false); setBusy(""); return c }
         return c + 1
       })
     }, 900)
   }
-  useEffect(() => () => { if (runTimer.current) window.clearInterval(runTimer.current) }, [])
+  useEffect(() => () => {
+    if (runTimer.current) window.clearInterval(runTimer.current)
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+  }, [])
 
   const runState: RunState | null = useMemo(() => {
     if (!running && runCursor < 0) return null
@@ -495,98 +555,127 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = document.activeElement as HTMLElement | null
-      const inField = !!t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)
-      if (e.key === "?" && !inField) setHelpOpen(true)
-      if (e.key === "Escape") { setHelpOpen(false); setTweaksOpen(false) }
+      const inField = !!t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)
       const mod = e.metaKey || e.ctrlKey
-      if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo() }
-      else if (mod && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) { e.preventDefault(); redo() }
+      if (e.key === "?" && !inField) { setHelpOpen(true); return }
+      if (e.key === "Escape") {
+        if (helpOpen) setHelpOpen(false)
+        else if (menuOpen && window.matchMedia(NARROW).matches) setMenuOpen(false)
+        return
+      }
+      if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) { if (!inField) { e.preventDefault(); undo() } }
+      else if (mod && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) { if (!inField) { e.preventDefault(); redo() } }
       else if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); void save() }
       else if (mod && e.key === "Enter") { e.preventDefault(); running ? stopRun() : startRun() }
       else if (mod && e.key.toLowerCase() === "d" && !inField && selection) { e.preventDefault(); onDuplicate(selection) }
-      else if ((e.key === "Delete" || e.key === "Backspace") && !inField && selection) { onDelete(selection) }
-      else if (e.key === "/" && !inField) { e.preventDefault(); (document.querySelector(".pal__search input") as HTMLInputElement | null)?.focus() }
+      else if (mod || e.altKey || inField) return
+      else if ((e.key === "Delete" || e.key === "Backspace") && selection) { e.preventDefault(); onDelete(selection) }
+      else if (e.key === "/") { e.preventDefault(); setMenuOpen(true); setTab("add"); window.setTimeout(() => (document.querySelector("#wfe-root .pal__search input") as HTMLInputElement | null)?.focus(), 0) }
+      else if (e.key === "[") { e.preventDefault(); setMenuOpen(!menuOpen) }
+      else if (e.key === "f" || e.key === "F") { e.preventDefault(); fitNow() }
+      else if (e.key === "l" || e.key === "L") { e.preventDefault(); arrangeNow() }
+      else if (e.key.startsWith("Arrow") && selection?.kind === "node") {
+        const n = stateRef.current.nodes.find((x) => x.id === selection.id)
+        if (!n) return
+        e.preventDefault()
+        const step = e.shiftKey ? 50 : 10
+        const p = n.position ?? { x: 0, y: 0 }
+        const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0]
+        dispatch({ type: "patchNode", id: n.id, patch: { position: { x: p.x + d[0], y: p.y + d[1] } } })
+      }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [selection, running, undo, redo, save, onDelete, onDuplicate])
+  }, [selection, running, undo, redo, save, onDelete, onDuplicate, menuOpen, helpOpen, setMenuOpen])
 
   useEffect(() => {
-    const onUnload = (e: BeforeUnloadEvent) => { if (status === "is-dirty") { e.preventDefault(); e.returnValue = "" } }
+    const onUnload = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = "" } }
     window.addEventListener("beforeunload", onUnload)
     return () => window.removeEventListener("beforeunload", onUnload)
-  }, [status])
+  }, [dirty])
 
   const onDeleteWorkflow = async () => {
     if (isNew) return
     if (!confirm(`Delete workflow "${meta.id}"? This cannot be undone.`)) return
     const ok = await deleteWorkflow(meta.id)
-    if (ok) { showToast("Deleted", "ok"); setTimeout(() => { location.href = "/workflows" }, 500) }
-    else showToast("Delete failed", "err")
+    if (ok) { setSaved(snapshotOf(stateRef.current)); showToast("Deleted", "ok"); window.setTimeout(() => props.onBack(true), 500) }
+    else showToast(owner ? "Delete failed" : "Only the owner can delete a workflow", "err")
   }
 
   return (
-    <div className="app" data-density={density}
-         data-palette={paletteOpen ? "open" : "closed"}
-         data-inspector={inspectorOpen ? "open" : "closed"}>
+    <div className="app" data-menu={menuOpen ? "open" : "closed"}>
       <Toolbar
         title={meta.title}
         setTitle={(v) => dispatch({ type: "setTitle", title: v })}
         status={status}
-        theme={theme} setTheme={setTheme}
         canUndo={canUndo} canRedo={canRedo}
         onUndo={undo} onRedo={redo}
         onSave={() => void save()}
         onRun={() => running ? stopRun() : startRun()}
         running={running}
-        tweaksOpen={tweaksOpen} setTweaksOpen={setTweaksOpen}
         onHelp={() => setHelpOpen(true)}
-        onLayout={() => dispatch({ type: "layout" })}
-        workflowIdLabel={`/workflows/${meta.id}`}
-        paletteOpen={paletteOpen} setPaletteOpen={setPaletteOpen}
-        inspectorOpen={inspectorOpen} setInspectorOpen={setInspectorOpen}
+        onLayout={arrangeNow}
+        onFit={fitNow}
+        onBack={() => props.onBack()}
+        menuOpen={menuOpen} setMenuOpen={setMenuOpen}
+        canSave={owner}
       />
-      {paletteOpen && <Palette onLoadTemplate={onLoadTemplate} />}
+      <aside id="wfe-menu" className="menu" aria-label="Side menu" hidden={!menuOpen}>
+        <div className="menu__tabs" role="tablist" aria-label="Side menu">
+          {owner && <button type="button" role="tab" aria-selected={tab === "add"} className={tab === "add" ? "is-on" : ""} onClick={() => setTab("add")}>Add a step</button>}
+          <button type="button" role="tab" aria-selected={tab === "edit" || !owner} className={tab === "edit" || !owner ? "is-on" : ""} onClick={() => setTab("edit")}>
+            {selection?.kind === "node" ? "This step" : selection?.kind === "edge" ? "This connection" : "Workflow"}
+          </button>
+          <button type="button" className="btn btn--ghost-icon menu__close" aria-label="Hide the side menu" title="Hide the side menu ([)" onClick={() => setMenuOpen(false)}><Icon.x /></button>
+        </div>
+        {!owner && <p className="menu__note">Only the owner can change and save this workflow. You can look around.</p>}
+        <div className="menu__body">
+          {tab === "add" && owner ? (
+            <Palette onLoadTemplate={onLoadTemplate} onAdd={addFromMenu} />
+          ) : (
+            <Inspector
+              selection={selection}
+              nodes={nodes} edges={edges}
+              patch={patchSelected}
+              patchData={patchSelectedData}
+              onDelete={onDelete}
+              onDuplicate={onDuplicate}
+              validation={selectedIssues}
+              runState={runState}
+              agents={agents}
+              meta={meta}
+              patchMeta={(patch) => dispatch({ type: "patchMeta", patch })}
+              onDeleteWorkflow={owner ? onDeleteWorkflow : undefined}
+              isNew={isNew}
+            />
+          )}
+        </div>
+      </aside>
       <Canvas
         nodes={nodes} edges={edges}
         selection={selection} setSelection={setSelection}
-        onNodeMove={onMoveNode} onAddNode={onAddNode}
+        onNodeMove={onMoveNode} onNodeMoved={endMove} onAddNode={onAddNode}
         onConnect={onConnect} onDelete={onDelete}
         runState={runState}
         viewBox={viewBox} setViewBox={setViewBox}
+        fitSignal={fitSignal}
+        editable={owner}
       />
-      {inspectorOpen && (
-        <Inspector
-          selection={selection}
-          nodes={nodes} edges={edges}
-          patch={patchSelected}
-          patchData={patchSelectedData}
-          onDelete={onDelete}
-          onDuplicate={onDuplicate}
-          validation={selectedIssues}
-          runState={runState}
-          agents={agents}
-          meta={meta}
-          patchMeta={(patch) => dispatch({ type: "patchMeta", patch })}
-          onDeleteWorkflow={onDeleteWorkflow}
-          isNew={isNew}
+      <RunPanel running={running || runCursor >= 0} script={runScript} cursor={runCursor} onStop={() => { stopRun(); setRunCursor(-1) }} />
+      <KbdOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
+      {owner && (
+        <ChatWidget
+          currentWorkflow={graphToWorkflow({ meta, nodes, edges }).workflow}
+          onApplyWorkflow={(wf) => {
+            const g = workflowToGraph(wf)
+            const pos = arrange(g.nodes, g.edges)
+            dispatch({ type: "setAll", state: { meta: g.meta, nodes: g.nodes.map((n) => ({ ...n, position: n.position ?? pos[n.id] })), edges: g.edges, selection: null, isNew } })
+            fitSoon()
+            showToast("Applied the workflow from the chat", "ok")
+          }}
         />
       )}
-      <RunPanel running={running || runCursor >= 0} script={runScript} cursor={runCursor} onStop={() => { stopRun(); setRunCursor(-1) }} />
-      <Tweaks open={tweaksOpen} setOpen={setTweaksOpen}
-              theme={theme} setTheme={setTheme}
-              density={density} setDensity={setDensity}
-              hue={hue} setHue={setHue} />
-      <KbdOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
-      <ChatWidget
-        currentWorkflow={graphToWorkflow({ meta, nodes, edges }).workflow}
-        onApplyWorkflow={(wf) => {
-          const g = workflowToGraph(wf)
-          dispatch({ type: "setAll", state: { meta: g.meta, nodes: g.nodes, edges: g.edges, selection: null, isNew: false } })
-          showToast("Applied workflow from chat", "ok")
-        }}
-      />
-      {toast && <div className={"toast" + (toast.kind === "err" ? " err" : "")}><span className="dot" />{toast.msg}</div>}
+      {toast && <div className={"toast" + (toast.kind === "err" ? " err" : "")} role={toast.kind === "err" ? "alert" : "status"}><span className="dot" />{toast.msg}</div>}
     </div>
   )
 }

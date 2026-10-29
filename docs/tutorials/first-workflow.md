@@ -2,9 +2,9 @@
 const image = '/screenshots/editor-chat-reply.png'
 const steps = [
   { title: 'Describe the job', text: 'In the workflow assistant, send “Build the demo report workflow”. The demo uses a scripted reply; a live agent uses your configured model.', image, alt: 'Workflow editor with the demo request and assistant proposal visible.', box: [83, 44, 15, 5] },
-  { title: 'Read the proposal', text: 'The assistant proposes a manual start, a report from the demo’s `cx` agent, and a finish. Read this explanation before applying the graph.', image, alt: 'Assistant explanation of a three-step report workflow.', box: [73, 49, 23, 8] },
+  { title: 'Read the proposal', text: 'The assistant proposes a manual start, a report from the demo’s `cx` agent, and a finish. Read this explanation before applying the graph.', image, alt: 'Assistant explanation of a three-step report workflow.', box: [73, 49, 23, 12] },
   { title: 'Apply to canvas', text: 'Apply to canvas replaces the current workflow on the canvas. This screenshot shows the proposal before that button is pressed.', image, alt: 'Apply to canvas button below the workflow proposal.', box: [74, 57, 8, 4] },
-  { title: 'Inspect the flow', text: 'Follow the connections from start to report to done. Check the selected agent and its task before saving or running.', image: '/screenshots/editor-canvas.png', alt: 'Demo workflow after applying the proposal, with three connected nodes.', box: [26, 32, 44, 10] },
+  { title: 'Inspect the flow', text: 'Follow the connections from start to report to done. Check the selected agent and its task before saving or running.', image: '/screenshots/editor-canvas.png', alt: 'Demo workflow after applying the proposal, with three connected nodes.', box: [37, 46, 54, 13] },
 ]
 </script>
 
@@ -31,7 +31,7 @@ You need a source checkout of AgentX that has been built with `pnpm build` (see 
 
    ![The Workflows list in the demo](/screenshots/workflows-list.png)
 
-5. Select **Edit on canvas**. The workflow editor opens.
+5. Select **Edit on canvas**. The workflow editor opens on the Wall.
 
 ## 2. Follow the visual walkthrough
 
@@ -45,7 +45,7 @@ Use **Next** to read at your own pace, or **Play tour** to advance every few sec
 2. Type **Build the demo report workflow** and select **Send**.
 3. Read the assistant's proposal.
 4. Select **Apply to canvas**.
-5. Select the **report** box and check its agent and task in the panel on the right.
+5. Select the **report** box and check its agent and task in the side menu on the left, under **This step**.
 6. Follow the lines from **start** to **report** to **done**.
 7. Select **Save**.
 

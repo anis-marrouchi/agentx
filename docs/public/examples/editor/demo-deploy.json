@@ -1,0 +1,33 @@
+{
+  "id": "demo-deploy",
+  "version": 2,
+  "title": "Deploy the demo shop",
+  "description": "A fictional example: build, test, ask before going live, then deploy and report. A failed test goes back to the agent once.",
+  "state": "disabled",
+  "nodes": [
+    { "id": "start", "type": "trigger.manual", "config": {} },
+    { "id": "build", "type": "agent", "config": { "agentId": "cx", "prompt": "Build the demo shop from the main branch." } },
+    { "id": "test", "type": "agent", "config": { "agentId": "cx", "prompt": "Run the demo shop tests. Reply RESULT: pass or RESULT: fail." } },
+    { "id": "tests_ok", "type": "branch", "config": { "cases": [{ "when": { "kind": "equals", "params": { "path": "test.result", "value": "pass" } }, "to": "pass" }], "default": "fail" } },
+    { "id": "fix", "type": "agent", "config": { "agentId": "cx", "prompt": "Fix the failing demo shop tests." } },
+    { "id": "go_live", "type": "owner.ask", "config": { "question": "The demo shop build passed. Deploy it now?" } },
+    { "id": "deploy", "type": "agent", "config": { "agentId": "cx", "prompt": "Deploy the demo shop." } },
+    { "id": "report", "type": "action.send", "config": { "channel": "telegram", "chatId": "demo-shop", "text": "Demo shop deployed." } },
+    { "id": "held", "type": "action.send", "config": { "channel": "telegram", "chatId": "demo-shop", "text": "Deploy held: the owner said no." } },
+    { "id": "done", "type": "end", "config": { "status": "completed" } }
+  ],
+  "edges": [
+    { "from": "start", "to": "build" },
+    { "from": "build", "to": "test" },
+    { "from": "test", "to": "tests_ok" },
+    { "from": "tests_ok", "fromPort": "pass", "to": "go_live" },
+    { "from": "tests_ok", "fromPort": "fail", "to": "fix" },
+    { "from": "fix", "to": "test" },
+    { "from": "go_live", "to": "deploy" },
+    { "from": "go_live", "fromPort": "no", "to": "held" },
+    { "from": "go_live", "fromPort": "expired", "to": "held" },
+    { "from": "deploy", "to": "report" },
+    { "from": "report", "to": "done" },
+    { "from": "held", "to": "done" }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "id": "demo-owner-sweep",
+  "version": 2,
+  "title": "Sweep what waits on the owner",
+  "description": "A fictional example: every weekday morning, list what waits on the owner, sort it, and send each kind where it belongs.",
+  "state": "disabled",
+  "nodes": [
+    { "id": "morning", "type": "trigger.cron", "config": { "spec": "40 7 * * 1-5" } },
+    { "id": "collect", "type": "agent", "config": { "agentId": "cx", "prompt": "List the demo shop issues and pull requests that wait on the owner." } },
+    { "id": "sort", "type": "classify", "config": { "input": "{{collect.reply}}", "labels": { "review": "A pull request waits for a review", "answer": "A question waits for an answer", "stale": "Nothing moved for a week" } } },
+    { "id": "ask_review", "type": "action.send", "config": { "channel": "telegram", "chatId": "demo-shop", "text": "Reviews waiting: {{collect.reply}}" } },
+    { "id": "ask_answer", "type": "owner.notify", "config": { "text": "Questions waiting for you: {{collect.reply}}" } },
+    { "id": "close_stale", "type": "agent", "config": { "agentId": "cx", "prompt": "Comment on the stale demo shop items and ask if they are still needed." } },
+    { "id": "unsure", "type": "owner.notify", "config": { "text": "The sweep could not sort today's list. Please look." } },
+    { "id": "label", "type": "action.setLabel", "config": { "channel": "gitlab", "add": ["swept"], "remove": [] } },
+    { "id": "done", "type": "end", "config": { "status": "completed" } }
+  ],
+  "edges": [
+    { "from": "morning", "to": "collect" },
+    { "from": "collect", "to": "sort" },
+    { "from": "sort", "fromPort": "review", "to": "ask_review" },
+    { "from": "sort", "fromPort": "answer", "to": "ask_answer" },
+    { "from": "sort", "fromPort": "stale", "to": "close_stale" },
+    { "from": "sort", "fromPort": "unsure", "to": "unsure" },
+    { "from": "ask_review", "to": "label" },
+    { "from": "ask_answer", "to": "label" },
+    { "from": "close_stale", "to": "label" },
+    { "from": "label", "to": "done" },
+    { "from": "unsure", "to": "done" }
+  ]
+}

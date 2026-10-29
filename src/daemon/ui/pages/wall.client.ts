@@ -69,6 +69,7 @@ import { WALL_ORG_SCRIPT } from "./wall-org.client"
 import { layoutOrg } from "@/business/org-layout"
 import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
+import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -79,7 +80,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'creator', 'live', 'task', 'activity'];
+  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
@@ -90,6 +91,7 @@ ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
 ${WALL_ORG_SCRIPT}
 ${WALL_WORKFLOWS_SCRIPT}
+${WALL_EDITOR_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_LIVE_SCRIPT}
@@ -311,6 +313,7 @@ ${WALL_BUILD_SCRIPT}
     if (S.page === 'task' && !S.task) S.page = 'wall';
     if (S.page === 'activity') actRead(q);
     if (S.page === 'workflows') wfRead(q);
+    if (S.page === 'editor') wedRead(q);
     S.post = q.get('post') || '';
     settingsReadHash(q);
     return f;
@@ -329,6 +332,7 @@ ${WALL_BUILD_SCRIPT}
     if (S.page === 'settings') settingsHashInto(q);
     if (S.page === 'activity') actWrite(q);
     if (S.page === 'workflows') wfWrite(q);
+    if (S.page === 'editor') wedWrite(q);
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
@@ -1010,7 +1014,7 @@ ${WALL_BUILD_SCRIPT}
   }
   function navHtml(page, f) {
     var side = ['projects', 'jobs', 'reviews', 'failures', 'cost', 'decide'].indexOf(S.view) >= 0;
-    var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'wall' ? (S.view === 'decide' || f.status === 'waiting_owner' ? 'needs' : side ? S.view : 'wall') : page;
+    var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'editor' ? 'workflows' : page === 'wall' ? (S.view === 'decide' || f.status === 'waiting_owner' ? 'needs' : side ? S.view : 'wall') : page;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       var me = a.getAttribute('data-nav') === on;
       a.classList.toggle('is-on', me);
@@ -1035,7 +1039,7 @@ ${WALL_BUILD_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || 'Wall';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1254,6 +1258,8 @@ ${WALL_BUILD_SCRIPT}
     $('wall-nodes').innerHTML = happeningHtml();
     var f = current();
     var page = S.post ? 'post' : S.page, onWall = page === 'wall';
+    // The editor (#1524) may keep the page: leaving with changes asks first.
+    if (renderEditor(page) === false) return;
     var posts_ = onWall && (S.view === 'feed' || S.view === 'list');
     navHtml(page, f);
     $('wall-back').hidden = page !== 'post';

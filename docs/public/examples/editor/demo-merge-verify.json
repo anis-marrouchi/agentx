@@ -1,0 +1,33 @@
+{
+  "id": "demo-merge-verify",
+  "version": 2,
+  "title": "Check a merge on the demo shop",
+  "description": "A fictional example: when a merge request is merged, check the live shop, retry once, and tell the owner when it still fails.",
+  "state": "disabled",
+  "nodes": [
+    { "id": "merged", "type": "trigger.hook", "config": { "event": "on:gitlab-mr" } },
+    { "id": "wait", "type": "timer.boundary", "config": { "after": "PT5M" } },
+    { "id": "verify", "type": "agent", "config": { "agentId": "cx", "prompt": "Open the demo shop and check the merged change works. Reply RESULT: ok, RESULT: retry or RESULT: broken." } },
+    { "id": "verdict", "type": "branch", "config": { "cases": [
+      { "when": { "kind": "equals", "params": { "path": "verify.result", "value": "ok" } }, "to": "ok" },
+      { "when": { "kind": "equals", "params": { "path": "verify.result", "value": "retry" } }, "to": "retry" }
+    ], "default": "broken" } },
+    { "id": "react", "type": "action.react", "config": { "channel": "gitlab", "emoji": "white_check_mark" } },
+    { "id": "pause", "type": "agent", "config": { "agentId": "cx", "prompt": "Wait for the demo shop cache to clear, then say ready." } },
+    { "id": "issue", "type": "action.createIssue", "config": { "channel": "gitlab", "project": "demo/shop", "title": "Merged change does not work", "description": "{{verify.reply}}", "labels": ["regression"] } },
+    { "id": "tell", "type": "owner.notify", "config": { "text": "A merged change broke the demo shop: {{issue.issue.webUrl}}" } },
+    { "id": "done", "type": "end", "config": { "status": "completed" } }
+  ],
+  "edges": [
+    { "from": "merged", "to": "wait" },
+    { "from": "wait", "to": "verify" },
+    { "from": "verify", "to": "verdict" },
+    { "from": "verdict", "fromPort": "ok", "to": "react" },
+    { "from": "verdict", "fromPort": "retry", "to": "pause" },
+    { "from": "verdict", "fromPort": "broken", "to": "issue" },
+    { "from": "pause", "to": "verify" },
+    { "from": "issue", "to": "tell" },
+    { "from": "react", "to": "done" },
+    { "from": "tell", "to": "done" }
+  ]
+}

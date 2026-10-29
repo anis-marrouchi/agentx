@@ -2,15 +2,21 @@ import type { Workflow, WorkflowLayout, ValidationIssue } from "./types"
 
 // --- API helpers ---
 //
-// Thin wrappers over /api/workflows with bearer-token handling (reads
-// `ax_token` from localStorage — same convention as the rest of the
-// dashboard) and the X-Requested-With guard enforced by board-dashboard.
+// Thin wrappers over /api/workflows with bearer-token handling and the
+// X-Requested-With guard enforced by board-dashboard. On the Wall (#1524)
+// the token is the page's own (AX_LOCAL_TOKEN), as the Wall's other calls
+// send it; off the machine, the sign-in cookie carries the calls instead.
+
+declare global {
+  interface Window { AX_LOCAL_TOKEN?: string }
+}
 
 function token(): string {
+  if (window.AX_LOCAL_TOKEN) return window.AX_LOCAL_TOKEN
   try { return localStorage.getItem("ax_token") || "" } catch { return "" }
 }
 
-function headers(): Record<string, string> {
+export function headers(): Record<string, string> {
   const h: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Requested-With": "agentx-board",

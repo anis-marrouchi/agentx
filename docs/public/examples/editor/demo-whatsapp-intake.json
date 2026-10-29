@@ -1,0 +1,41 @@
+{
+  "id": "demo-whatsapp-intake",
+  "version": 2,
+  "title": "Answer the demo shop on WhatsApp",
+  "description": "A fictional example: a client writes on WhatsApp, an agent sorts the message, then answers, opens an issue, or asks a person.",
+  "state": "disabled",
+  "nodes": [
+    { "id": "message", "type": "trigger.channel", "config": { "source": "whatsapp-message", "filter": { "chat": "*" } } },
+    { "id": "read", "type": "agent", "config": { "agentId": "cx", "prompt": "A client wrote: {{trigger.text}}. Reply RESULT: status, RESULT: new or RESULT: other." } },
+    { "id": "route", "type": "branch", "config": { "cases": [
+      { "when": { "kind": "equals", "params": { "path": "read.result", "value": "status" } }, "to": "status" },
+      { "when": { "kind": "equals", "params": { "path": "read.result", "value": "new" } }, "to": "new" }
+    ], "default": "other" } },
+    { "id": "lookup", "type": "agent", "config": { "agentId": "cx", "prompt": "Find the client's open demo shop issues and summarise them in two lines." } },
+    { "id": "reply_status", "type": "action.send", "config": { "channel": "whatsapp", "chatId": "{{trigger.chatId}}", "text": "{{lookup.reply}}" } },
+    { "id": "open_issue", "type": "action.createIssue", "config": { "channel": "gitlab", "project": "demo/shop", "title": "From WhatsApp", "description": "{{trigger.text}}", "labels": ["client"] } },
+    { "id": "confirm", "type": "action.send", "config": { "channel": "whatsapp", "chatId": "{{trigger.chatId}}", "text": "Thanks, we opened a ticket for you." } },
+    { "id": "ask_person", "type": "person.message", "config": { "person": "support", "text": "A client needs a person: {{trigger.text}}" } },
+    { "id": "wait_person", "type": "person.wait", "config": { "person": "support", "timeoutMinutes": 120 } },
+    { "id": "relay", "type": "action.send", "config": { "channel": "whatsapp", "chatId": "{{trigger.chatId}}", "text": "{{wait_person.text}}" } },
+    { "id": "sorry", "type": "action.send", "config": { "channel": "whatsapp", "chatId": "{{trigger.chatId}}", "text": "Sorry, nobody is free right now. We will write back soon." } },
+    { "id": "done", "type": "end", "config": { "status": "completed" } }
+  ],
+  "edges": [
+    { "from": "message", "to": "read" },
+    { "from": "read", "to": "route" },
+    { "from": "route", "fromPort": "status", "to": "lookup" },
+    { "from": "route", "fromPort": "new", "to": "open_issue" },
+    { "from": "route", "fromPort": "other", "to": "ask_person" },
+    { "from": "lookup", "to": "reply_status" },
+    { "from": "open_issue", "to": "confirm" },
+    { "from": "ask_person", "to": "wait_person" },
+    { "from": "ask_person", "fromPort": "declined", "to": "sorry" },
+    { "from": "wait_person", "to": "relay" },
+    { "from": "wait_person", "fromPort": "timeout", "to": "sorry" },
+    { "from": "reply_status", "to": "done" },
+    { "from": "confirm", "to": "done" },
+    { "from": "relay", "to": "done" },
+    { "from": "sorry", "to": "done" }
+  ]
+}
