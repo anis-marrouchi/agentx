@@ -63,6 +63,9 @@ export interface RequestSweepDeps {
   /** Reads a request's issue or merge request home (#1522). Unset: homes
    *  are not read. */
   checkHome?: HomeChecker
+  /** The steps the request's active plan has not finished, in words, so a
+   *  close by its home says what the plan stopped with. */
+  planLeft?: (requestId: string) => string[]
   /** Gives a request its headline when it has none (#1126), so the owner
    *  is told what it is. Returns it as it is when none could be written. */
   describe?: (r: RequestRecord) => Promise<RequestRecord>
@@ -185,7 +188,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   if (deps.checkHome && settings.homeCloses !== false) {
     try {
       const every = (settings.checkers ?? DEFAULT_CHECKER_SETTINGS).checkEveryMinutes
-      const r = await checkHomes(store, deps.checkHome, { everyMinutes: every, now, log })
+      const r = await checkHomes(store, deps.checkHome, { everyMinutes: every, now, log, planLeft: deps.planLeft })
       result.checked += r.checked
       result.homesClosed = r.closed
     } catch (e: any) {

@@ -268,7 +268,8 @@ export class RequestTracker {
       const turn = this.live.get(chatKey(d.caller, d.origin.channel, d.origin.chatId))
       if (!turn) return
       const now = this.now()
-      this.store.link(turn.requestId, "delegation", d.id, now)
+      // Who it went to: a later hand-off to the same agent is its retry (#1522).
+      this.store.link(turn.requestId, "delegation", d.id, now, d.peer ? `${d.callee}@${d.peer}` : d.callee)
       this.store.progress(turn.requestId, now, "waiting_other")
     })
   }

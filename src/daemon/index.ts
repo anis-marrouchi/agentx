@@ -101,6 +101,7 @@ import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
 import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { homeChecker } from "@/requests/home-check"
+import { FINISHED_STEP_STATES } from "@/requests/plan-store"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
@@ -2967,8 +2968,10 @@ export class AgentXDaemon {
       check: loopChecker(() => this.requestCheckContext(requests)),
       checkHome: homeChecker(() => {
         const connectors = forgeConnectorsOf(this.config)
-        return { forge: forgeReader(connectors), gitlabUrl: connectors.gitlab?.url ?? null }
+        return { forge: forgeReader(connectors), gitlabUrl: connectors.gitlab?.url ?? null, github: !!connectors.github?.token }
       }),
+      planLeft: (id) => requests.plans.get(id)?.state !== "active" ? []
+        : requests.plans.steps(id).filter((s) => !FINISHED_STEP_STATES.includes(s.state)).map((s) => `${s.idx}. ${s.name}`),
       describe: (r) => headlines.ensure(r),
       fillHeadlines: () => headlines.fill(),
       // A stopped request is a nag: its card is on the Desk at once, the

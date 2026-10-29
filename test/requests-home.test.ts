@@ -9,7 +9,7 @@ import { runRequestsSweep } from "../src/requests/sweep"
 import { homeChecker, homeRefOf, type HomeChecker } from "../src/requests/home-check"
 import type { ForgeItem, ForgeReader } from "../src/requests/checkers/issue"
 
-// Done work leaves the open list (#1522): a merged or closed home closes
+// Done work leaves the open list (#1522): a merged or completed home closes
 // the request, and a retried hand-off no longer holds it after a failure.
 
 const HOUR = 3_600_000
@@ -17,6 +17,10 @@ const GITLAB = "https://gitlab.example.test"
 const PR = "https://github.com/acme/app/pull/12"
 const ISSUE = "https://github.com/acme/app/issues/7"
 const MR = `${GITLAB}/group/project/-/merge_requests/3`
+const GL_ISSUE = `${GITLAB}/group/project/-/issues/4`
+const T0 = Date.parse("2030-03-01T12:00:00Z")
+/** A close time after the request was asked. */
+const LATER = "2030-03-01T13:00:00Z"
 
 let tmp: string
 let db: Database.Database
@@ -27,16 +31,18 @@ let clock: number
 let logs: string[]
 let items: Record<string, ForgeItem | { error: string }>
 let reads: string[]
+let github: boolean
 
 beforeEach(() => {
   tmp = mkdtempSync(path.join(tmpdir(), "agentx-home-"))
   db = new Database(path.join(tmp, "db.sqlite"))
   store = new RequestStore(db)
   settings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
-  clock = 1_000_000
+  clock = T0
   logs = []
   items = {}
   reads = []
+  github = true
   tracker = new RequestTracker(store, () => settings, (m) => logs.push(m), () => clock)
 })
 
@@ -50,7 +56,7 @@ const forge: ForgeReader = async (provider, ref) => {
   reads.push(key)
   return items[key] ?? { error: "not found (or not visible to the connector)" }
 }
-const checkHome: HomeChecker = homeChecker(() => ({ forge, gitlabUrl: GITLAB }))
+const checkHome: HomeChecker = homeChecker(() => ({ forge, gitlabUrl: GITLAB, github }))
 
 function start(taskId: string) {
   tracker.taskStarted({
@@ -59,12 +65,12 @@ function start(taskId: string) {
     at: new Date(clock).toISOString(), humanRoot: true, sender: { name: "Owner", id: "4242" },
   } as any)
 }
-function end(taskId: string, over: Record<string, unknown> = {}) {
-  tracker.taskCompleted({ agentId: "coder", channel: "telegram", chatId: "chat-1", taskId, durationMs: 10, at: new Date(clock).toISOString(), ...over } as any)
+function end(taskId: string) {
+  tracker.taskCompleted({ agentId: "coder", channel: "telegram", chatId: "chat-1", taskId, durationMs: 10, at: new Date(clock).toISOString() } as any)
 }
-const dlg = (id: string) => ({ id, caller: "coder", callee: "devops", origin: { channel: "telegram", chatId: "chat-1" } })
+const dlg = (id: string, callee = "devops") => ({ id, caller: "coder", callee, origin: { channel: "telegram", chatId: "chat-1" } })
 
-/** An open request, in progress, whose home is `link`. */
+/** An open request, waiting on a hand-off, whose home is `link`. */
 function homed(link: string, id = "t1") {
   start(id)
   tracker.delegationStarted(dlg(`dlg-${id}`))
@@ -79,39 +85,84 @@ const sweep = (over: Partial<Parameters<typeof runRequestsSweep>[0]> = {}) =>
 describe("the home closes the request (#1522)", () => {
   it("closes a request whose pull request merged, checked, with who merged it", async () => {
     const id = homed(PR)
-    items["github:acme/app#12"] = { state: "merged", url: PR, closedBy: "anis", closedAt: "2030-01-01T10:00:00Z" }
+    items["github:acme/app#12"] = { state: "merged", url: PR, closedBy: "anis", closedAt: LATER }
     const res = await sweep()
     expect(res.homesClosed).toBe(1)
-    expect(store.get(id)).toMatchObject({ state: "done", verifyState: "verified", evidence: `home ${PR} merged by anis at 2030-01-01T10:00:00Z` })
+    expect(store.get(id)).toMatchObject({ state: "done", verifyState: "verified", evidence: `home ${PR} merged by anis at ${LATER}` })
     expect(logs.join("\n")).toContain(`${id} closed: home ${PR} merged`)
   })
 
-  it("closes one that needs attention, as a blocked plan step leaves it", async () => {
+  it("closes one that needs attention, and names the steps its plan had left", async () => {
     const id = homed(ISSUE)
     store.needsAttention(id, 'Step 2 "Merge after Anis yes" (coder) is blocked: no progress after 3 nudges', clock)
-    items["github:acme/app#7"] = { state: "closed", url: ISSUE, stateReason: "completed" }
-    await sweep()
-    expect(store.get(id)?.state).toBe("done")
+    items["github:acme/app#7"] = { state: "closed", url: ISSUE, stateReason: "completed", closedAt: LATER }
+    await sweep({ planLeft: (r) => (r === id ? ["2. Merge after Anis yes", "3. Deploy"] : []) })
+    expect(store.get(id)).toMatchObject({ state: "done", evidence: `home ${ISSUE} closed at ${LATER}; its plan stopped with steps left: 2. Merge after Anis yes; 3. Deploy` })
   })
 
-  it("reads a merge request on this node's GitLab", async () => {
-    const id = homed(MR)
-    items["gitlab:group/project!3"] = { state: "merged", url: MR, closedBy: "devops" }
+  it("reads a merge request and an issue on this node's GitLab", async () => {
+    const mr = homed(MR, "a")
+    const issue = homed(GL_ISSUE, "b")
+    items["gitlab:group/project!3"] = { state: "merged", url: MR, closedBy: "devops", closedAt: LATER }
+    items["gitlab:group/project#4"] = { state: "closed", url: GL_ISSUE, closedAt: LATER }
     await sweep()
-    expect(store.get(id)).toMatchObject({ state: "done", evidence: `home ${MR} merged by devops` })
+    expect(store.get(mr)).toMatchObject({ state: "done", evidence: `home ${MR} merged by devops at ${LATER}` })
+    expect(store.get(issue)?.state).toBe("done")
   })
 
-  it("leaves an open home, one closed as not planned, and one it cannot read", async () => {
+  it("leaves a pull or merge request closed without merging", async () => {
+    const pr = homed(PR, "a")
+    const mr = homed(MR, "b")
+    items["github:acme/app#12"] = { state: "closed", url: PR, closedAt: LATER }
+    items["gitlab:group/project!3"] = { state: "closed", url: MR, closedAt: LATER }
+    expect((await sweep()).homesClosed).toBe(0)
+    expect(store.get(pr)?.state).toBe("waiting_other")
+    expect(store.get(mr)?.state).toBe("waiting_other")
+  })
+
+  it("leaves an open home, one closed as not planned or a duplicate, one with no close time, and one it cannot read", async () => {
     const open = homed(PR, "a")
     const notPlanned = homed(ISSUE, "b")
-    const unread = homed("https://github.com/acme/app/issues/99", "c")
+    const duplicate = homed("https://github.com/acme/app/issues/8", "c")
+    const noTime = homed(GL_ISSUE, "d")
+    const unread = homed("https://github.com/acme/app/issues/99", "e")
     items["github:acme/app#12"] = { state: "open", url: PR }
-    items["github:acme/app#7"] = { state: "closed", url: ISSUE, stateReason: "not_planned" }
+    items["github:acme/app#7"] = { state: "closed", url: ISSUE, stateReason: "not_planned", closedAt: LATER }
+    items["github:acme/app#8"] = { state: "closed", url: ISSUE, stateReason: "duplicate", closedAt: LATER }
+    items["gitlab:group/project#4"] = { state: "closed", url: GL_ISSUE }
     const res = await sweep()
     expect(res.homesClosed).toBe(0)
-    for (const id of [open, notPlanned, unread]) expect(store.get(id)?.state).toBe("waiting_other")
+    for (const id of [open, notPlanned, duplicate, noTime, unread]) expect(store.get(id)?.state).toBe("waiting_other")
     // Not a verify state: a request with no checker is not "unverified".
     expect(store.get(unread)?.verifyState).toBeNull()
+  })
+
+  it("leaves a home that closed before the request was asked", async () => {
+    const id = homed(PR)
+    items["github:acme/app#12"] = { state: "merged", url: PR, closedAt: "2030-03-01T11:00:00Z" }
+    await sweep()
+    expect(store.get(id)?.state).toBe("waiting_other")
+  })
+
+  it("does not close again what the owner reopened or sent back after the home closed", async () => {
+    const id = homed(PR)
+    items["github:acme/app#12"] = { state: "merged", url: PR, closedAt: LATER }
+    clock = Date.parse(LATER) + HOUR
+    await sweep()
+    expect(store.get(id)?.state).toBe("done")
+    // The owner comments on the closed post: "still broken".
+    expect(store.reopen(id, "still broken", clock)).toBe(true)
+    await sweep({ tellAgent: async () => {}, hasAgent: () => true })
+    clock += 11 * 60_000
+    await sweep()
+    expect(store.get(id)?.state).toBe("in_progress")
+    // And a hand-off on an open one, likewise.
+    const other = homed(PR, "t2")
+    expect(store.handOff(other, "devops", "redo it", clock)).toBe(true)
+    await sweep({ tellAgent: async () => {}, hasAgent: () => true })
+    clock += 11 * 60_000
+    await sweep()
+    expect(store.get(other)?.state).toBe("in_progress")
   })
 
   it("never closes a request waiting on the owner, a promise, or one with its own checker", async () => {
@@ -121,18 +172,27 @@ describe("the home closes the request (#1522)", () => {
     store.setLoop(checked, { closeWhen: { kind: "url", url: "https://example.test/live" } }, clock)
     const promised = homed(PR, "c")
     db.prepare("UPDATE requests SET promise = 1 WHERE id = ?").run(promised)
-    items["github:acme/app#12"] = { state: "merged", url: PR }
+    items["github:acme/app#12"] = { state: "merged", url: PR, closedAt: LATER }
     await sweep({ check: async () => ({ verdict: "not_met", detail: "not yet" }) })
     expect(store.get(waiting)?.state).toBe("waiting_owner")
     expect(store.get(checked)?.state).not.toBe("done")
     expect(store.get(promised)?.state).not.toBe("done")
   })
 
-  it("leaves a home on another forge host, and a home that is not an issue", () => {
+  it("leaves a home on another forge host, a short ref, and a home that is not an issue", () => {
     expect(homeRefOf({ home: { kind: "issue", link: "https://gitlab.other.test/g/p/-/issues/1" } }, GITLAB)).toBeNull()
     expect(homeRefOf({ home: { kind: "idea", link: ISSUE } }, GITLAB)).toBeNull()
     expect(homeRefOf({ home: { kind: "issue", link: "noqta/noqta#412" } }, GITLAB)).toBeNull()
     expect(homeRefOf({ home: { kind: "issue", link: ISSUE } }, GITLAB)).toMatchObject({ provider: "github", ref: { project: "acme/app", number: 7, mr: false } })
+  })
+
+  it("reads GitHub only with a token", async () => {
+    github = false
+    const id = homed(PR)
+    items["github:acme/app#12"] = { state: "merged", url: PR, closedAt: LATER }
+    await sweep()
+    expect(reads).toEqual([])
+    expect(store.get(id)?.state).toBe("waiting_other")
   })
 
   it("reads each home once per checker interval, not every minute", async () => {
@@ -149,7 +209,7 @@ describe("the home closes the request (#1522)", () => {
 
   it("is off with homeCloses: false", async () => {
     const id = homed(PR)
-    items["github:acme/app#12"] = { state: "merged", url: PR }
+    items["github:acme/app#12"] = { state: "merged", url: PR, closedAt: LATER }
     settings.homeCloses = false
     await sweep()
     expect(reads).toEqual([])
@@ -159,15 +219,26 @@ describe("the home closes the request (#1522)", () => {
 
 describe("a retried hand-off replaces its failed one (#1522)", () => {
   const settle = () => runRequestsSweep({ store, settings, log: (m) => logs.push(m), now: clock })
-
-  it("settles once the retry came back done, though the first one was lost in a restart", async () => {
+  /** A request handed to devops as dlg-1. */
+  const handed = () => {
     start("t1")
     tracker.delegationStarted(dlg("dlg-1"))
     end("t1")
+  }
+  /** A second hand-off on the same request, from a later turn. */
+  const again = (id: string, callee = "devops") => {
+    start("t9")
+    tracker.delegationStarted(dlg(id, callee))
+    // The later turn is a request of its own; its hand-off belongs to t1.
+    db.prepare("UPDATE request_links SET request_id = 'req-t1' WHERE ref = ?").run(id)
+  }
+
+  it("settles once the retry to the same agent came back done, though the first was lost in a restart", async () => {
+    handed()
     tracker.delegationDone(dlg("dlg-1"), "lost", "This machine restarted while the work was in progress.")
     expect(store.get("req-t1")?.state).toBe("needs_attention")
     clock += 1000
-    store.link("req-t1", "delegation", "dlg-2", clock)
+    again("dlg-2")
     clock += 1000
     tracker.delegationDone(dlg("dlg-2"), "done", "redone: https://example.test/pr/5")
     clock += 25 * HOUR
@@ -175,13 +246,33 @@ describe("a retried hand-off replaces its failed one (#1522)", () => {
     expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/pr/5" })
   })
 
-  it("still leaves a hand-off that failed after the last one came back", async () => {
-    start("t1")
-    tracker.delegationStarted(dlg("dlg-1"))
-    end("t1")
+  it("still holds a failed hand-off when the one that came back went to another agent", async () => {
+    handed()
+    tracker.delegationDone(dlg("dlg-1"), "error", "crashed")
+    clock += 1000
+    again("dlg-2", "coder")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-2", "coder"), "done", "ok")
+    clock += 25 * HOUR
+    expect((await settle()).settled).toBe(0)
+  })
+
+  it("still holds a hand-off that ended waiting before the retry", async () => {
+    handed()
+    tracker.delegationDone(dlg("dlg-1"), "waiting", "waiting for the DNS")
+    clock += 1000
+    again("dlg-2")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-2"), "done", "ok")
+    clock += 25 * HOUR
+    expect((await settle()).settled).toBe(0)
+  })
+
+  it("still holds a hand-off that failed after the last one came back", async () => {
+    handed()
     tracker.delegationDone(dlg("dlg-1"), "done", "ok")
     clock += 1000
-    store.link("req-t1", "delegation", "dlg-2", clock)
+    again("dlg-2")
     tracker.delegationDone(dlg("dlg-2"), "error", "crashed")
     clock += 25 * HOUR
     expect((await settle()).settled).toBe(0)

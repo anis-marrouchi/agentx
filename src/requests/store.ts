@@ -218,6 +218,12 @@ export function ensureRequestTables(db: Database.Database): void {
   ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
   // How a delegation ended, and the link its answer gave (#1138).
   ensureColumns(db, "request_links", [["ended", "TEXT"], ["ended_at", "INTEGER"], ["proof", "TEXT"]])
+  // Who a delegation went to (#1522): a later one to the same agent that
+  // came back done is the retry of one that failed.
+  ensureColumns(db, "request_links", [["agent", "TEXT"]])
+  // When the owner last sent it back (reply, hand-off, pick-up, reopen,
+  // #1522): a home closed before that does not close it.
+  ensureColumns(db, "requests", [["sent_back_at", "INTEGER"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -284,14 +290,15 @@ export const OVERDUE_REASON = "Past its due time"
 
 /** A request whose handed-on work all came back done (#1138). A hand-off
  *  that failed, timed out or was lost counts for nothing once a later one
- *  came back done: that was its retry (#1522). One still out, or from
- *  before endings were kept, holds it. */
+ *  to the same agent came back done: that was its retry (#1522). One still
+ *  out, waiting, from before endings were kept, or to another agent holds it. */
 const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
   AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
                   AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded'))
-                  AND NOT (l.ended IS NOT NULL AND l.ended_at < (SELECT MAX(d.ended_at) FROM request_links d
-                    WHERE d.request_id = r.id AND d.kind = 'delegation' AND d.ended = 'done')))
+                  AND NOT (l.ended IN ('error', 'lost', 'timeout') AND l.agent IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM request_links d WHERE d.request_id = r.id AND d.kind = 'delegation' AND d.ended = 'done'
+                      AND d.agent = l.agent AND d.ended_at > l.ended_at)))
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')`
 
 /** SET clause for a statement that writes `state`: the change time moves
@@ -583,13 +590,14 @@ export class RequestStore {
    *  no checker of their own, last looked at before `before` (#1522). A
    *  request waiting on the owner keeps its question, a promise is the
    *  agent's word to someone, and a pick-up not told yet is the owner's:
-   *  all three are left. */
-  homesDue(before: number, limit = 50): RequestRecord[] {
-    return this.db.prepare(
+   *  all three are left. `since`: when it was asked, or last sent back by
+   *  the owner; only a home closed after that closes it. */
+  homesDue(before: number, limit = 50): Array<{ request: RequestRecord; since: number }> {
+    return (this.db.prepare(
       `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other', 'needs_attention') AND close_when IS NULL
          AND home_kind = 'issue' AND home_link IS NOT NULL AND COALESCE(promise, 0) = 0 AND pickup_at IS NULL
          AND (checked_at IS NULL OR checked_at < ?) ORDER BY COALESCE(checked_at, 0), created_at LIMIT ?`,
-    ).all(before, limit).map(toRecord)
+    ).all(before, limit) as any[]).map((row) => ({ request: toRecord(row), since: Math.max(row.created_at, row.sent_back_at ?? 0) }))
   }
 
   /** The home was read: only the time, so a request with no checker keeps
@@ -623,8 +631,9 @@ export class RequestStore {
     return row ? toRecord(row) : null
   }
 
-  link(requestId: string, kind: LinkKind, ref: string, now: number): void {
-    this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)").run(requestId, kind, ref, now)
+  /** `agent`: who a delegation went to (#1522). */
+  link(requestId: string, kind: LinkKind, ref: string, now: number, agent: string | null = null): void {
+    this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at, agent) VALUES (?, ?, ?, ?, ?)").run(requestId, kind, ref, now, agent)
   }
 
   /** The owner commented on the request from the Wall (#1316): kept as a
@@ -906,7 +915,7 @@ export class RequestStore {
    *  returned once. One statement: a mark the dashboard (another process)
    *  writes meanwhile is either returned here or kept for the next read. */
   takePickups(): RequestRecord[] {
-    return this.db.prepare("UPDATE requests SET pickup_at = NULL WHERE pickup_at IS NOT NULL RETURNING *").all()
+    return this.db.prepare("UPDATE requests SET sent_back_at = pickup_at, pickup_at = NULL WHERE pickup_at IS NOT NULL RETURNING *").all()
       .map(toRecord)
       .filter((r) => r.state === "in_progress")
       .sort((a, b) => a.createdAt - b.createdAt)
