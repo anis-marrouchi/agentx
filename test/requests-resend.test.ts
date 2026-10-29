@@ -72,12 +72,30 @@ describe("what counts as mechanical", () => {
     expect(resendCause("coder failed: You've hit your weekly limit · resets Nov 3")).toBe("limit")
     expect(resendCause("coder failed: 429 Too Many Requests")).toBe("limit")
     expect(resendCause("The work handed to devops failed: rate_limit_error")).toBe("limit")
-    expect(resendCause("Cut off by a restart and not picked up again (no session)")).toBe("restart")
+    expect(resendCause("Cut off by a restart and not picked up again (started 45 min ago (limit 30))")).toBe("restart")
+    expect(resendCause("Cut off by a restart and not picked up again (no record of how to resume it)")).toBe("restart")
+    expect(resendCause(`Cut off by a restart and not picked up again (nothing would deliver its answer (channel "none"))`)).toBe("restart")
+    expect(resendCause("Cut off by a restart and not picked up again (resume failed: spawn ENOENT)")).toBe("restart")
     expect(resendCause("The work handed to devops was lost in a restart: gone")).toBe("restart")
     expect(resendCause("The answer from devops was not passed on after a restart (x). It said: y")).toBe("restart")
     expect(resendCause("coder failed: TypeError: cannot read x")).toBeNull()
     expect(resendCause("No activity for 24 h")).toBeNull()
     expect(resendCause(null)).toBeNull()
+  })
+
+  it("leaves restarts the resume step chose not to run again to the owner", () => {
+    for (const why of [
+      "stopped by stop-all ord-1: it resumes from its plan",
+      "delegation result relay: the delegation manager runs it again",
+      "stop signal wind-down: its task got a plan from the trace",
+      "scheduled job: the next scheduled run covers it",
+      "3+ restarts within 10 min; not resuming",
+      "cut off again while resuming; not retried",
+      "workflow step: the workflow engine owns retries",
+      "resume is turned off",
+      `channel "telegram" is set to report only`,
+      "no session",
+    ]) expect(resendCause(`Cut off by a restart and not picked up again (${why})`), why).toBeNull()
   })
 })
 
@@ -107,13 +125,39 @@ describe("resend once", () => {
   it("resends a restart loss after the delay", async () => {
     start("t1")
     interrupt("t1")
-    tracker.resumeOutcome({ taskId: "t1", decision: "skipped", reason: "no session" })
+    tracker.resumeOutcome({ taskId: "t1", decision: "reported", reason: "no record of how to resume it" })
     let res = await sweep()
     expect(res).toMatchObject({ held: 1, resent: 0 })
     clock += 5 * MIN
     res = await sweep()
     expect(res).toMatchObject({ resent: 1 })
     expect(sent[0].text).toContain("stopped by a restart")
+  })
+
+  it("resends a run whose resume failed", async () => {
+    start("t1")
+    interrupt("t1")
+    tracker.resumeOutcome({ taskId: "t1", decision: "resume-failed", reason: "resume failed: spawn ENOENT" })
+    clock += 5 * MIN
+    expect(await sweep()).toMatchObject({ resent: 1, notified: 0 })
+  })
+
+  it("resends nothing after a stop-all, a crash loop or max attempts", async () => {
+    const cases: Array<[string, string]> = [
+      ["skipped", "stopped by stop-all ord-1: it resumes from its plan"],
+      ["reported", "3+ restarts within 10 min; not resuming"],
+      ["reported", "cut off again while resuming; not retried"],
+    ]
+    cases.forEach(([decision, reason], i) => {
+      start(`t${i}`)
+      interrupt(`t${i}`)
+      tracker.resumeOutcome({ taskId: `t${i}`, decision, reason })
+    })
+    clock += 6 * MIN
+    expect(await sweep()).toMatchObject({ resent: 0, held: 0, notified: 3 })
+    clock += 13 * HOUR
+    expect(await sweep()).toMatchObject({ resent: 0 })
+    expect(sent).toEqual([])
   })
 
   it("resends only once: a second stop is told, and says it was resent", async () => {
