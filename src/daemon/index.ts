@@ -113,7 +113,7 @@ import {
 import { handleSprintsApi } from "@/requests/sprint-api"
 import { attachPromiseFacts, closeWatcherLoop, promiseSettingsOf, raiseWatcherLoop, watcherNotice } from "@/requests/promise"
 import { FactLedger } from "@/wiki/facts/ledger"
-import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
+import { DEFAULT_PLAN_SETTINGS, MESSAGE_KIND } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
 import { isOwnerTurn, OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
 import { isOperatorTurn, loadOperatorKey, OPERATOR_HEADER, operatorContext, operatorKeyMatches, operatorVouch, ownerProven } from "@/requests/operator"
@@ -2977,7 +2977,7 @@ export class AgentXDaemon {
         return { forge: forgeReader(connectors), gitlabUrl: connectors.gitlab?.url ?? null, github: !!connectors.github?.token }
       }),
       planLeft: (id) => requests.plans.get(id)?.state !== "active" ? []
-        : requests.plans.steps(id).filter((s) => !FINISHED_STEP_STATES.includes(s.state)).map((s) => `${s.idx}. ${s.name}`),
+        : requests.plans.steps(id).filter((s) => !FINISHED_STEP_STATES.includes(s.state)).map((s) => ({ step: `${s.idx}. ${s.name}`, agent: s.kind !== MESSAGE_KIND })),
       describe: (r) => headlines.ensure(r),
       fillHeadlines: () => headlines.fill(),
       // A stopped request is a nag: its card is on the Desk at once, the

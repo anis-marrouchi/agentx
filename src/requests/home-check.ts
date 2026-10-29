@@ -20,7 +20,10 @@ import { parseRef, type ForgeReader, type ParsedRef } from "./checkers/issue"
 // without merging, an issue closed as not planned or a duplicate, a home
 // that cannot be read or gives no close time, a home closed before the
 // request was asked or sent back, a home on a forge host this node does not
-// read, and every request waiting on the owner (store.homesDue).
+// read, a link to a comment or note inside an item, a request whose active
+// plan still has steps an agent owns (the plan, not the home, says when
+// that work is done), and every request waiting on the owner
+// (store.homesDue).
 
 /** What reading a request's home said. */
 export type HomeVerdict =
@@ -39,7 +42,12 @@ export function homeRefOf(r: Pick<RequestRecord, "home">, gitlabUrl: string | nu
   if (r.home?.kind !== "issue") return null
   const link = r.home.link.trim()
   let host: string
-  try { host = new URL(link).host.toLowerCase() } catch { return null }
+  let url: URL
+  try { url = new URL(link); host = url.host.toLowerCase() } catch { return null }
+  // An anchor names a point inside the item (#issuecomment-…, #note_…), a
+  // piece of work that lives there, not the item: its state is not the
+  // work's (#1522, a slice homed on a comment of its parent issue).
+  if (url.hash) return null
   if (host === "github.com") {
     const ref = parseRef("github", link)
     return ref ? { provider: "github", ref, link } : null
@@ -81,6 +89,10 @@ export function homeChecker(read: () => { forge?: ForgeReader; gitlabUrl: string
   }
 }
 
+/** A step the request's active plan has not finished. `agent`: an agent
+ *  does it and reports (any kind but a message the daemon sends). */
+export interface PlanStepLeft { step: string; agent: boolean }
+
 /** How many homes one check reads. */
 const HOME_BATCH = 10
 
@@ -91,7 +103,7 @@ const HOME_BATCH = 10
 export async function checkHomes(
   store: RequestStore,
   check: HomeChecker,
-  opts: { everyMinutes: number; now: number; log: (msg: string) => void; planLeft?: (requestId: string) => string[] },
+  opts: { everyMinutes: number; now: number; log: (msg: string) => void; planLeft?: (requestId: string) => PlanStepLeft[] },
 ): Promise<{ checked: number; closed: number }> {
   const due = store.homesDue(opts.now - opts.everyMinutes * 60_000, HOME_BATCH)
   let closed = 0
@@ -105,7 +117,14 @@ export async function checkHomes(
     // work it asks for is after that close.
     if (res.closedAt <= since) return
     const left = opts.planLeft?.(r.id) ?? []
-    const detail = left.length ? `${res.detail}; its plan stopped with steps left: ${left.join("; ")}` : res.detail
+    // An agent still owes a step: the home closing (a parent issue, an
+    // early merge) is not that step done. Read again next interval.
+    const agentLeft = left.filter((s) => s.agent).map((s) => s.step)
+    if (agentLeft.length) {
+      opts.log(`[requests] ${r.id} left open: ${res.detail}; home closed, plan has agent steps left: ${agentLeft.join("; ")}`)
+      return
+    }
+    const detail = left.length ? `${res.detail}; its plan stopped with steps left: ${left.map((s) => s.step).join("; ")}` : res.detail
     if (store.closeVerified(r.id, detail, opts.now)) {
       closed++
       opts.log(`[requests] ${r.id} closed: ${detail}`)
