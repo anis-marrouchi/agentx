@@ -1,3 +1,5 @@
+import { isNodeFact } from "./node-facts"
+
 // --- Fact freshness: verify-or-ask (#273) ---
 //
 // The one rule every agent follows about stated facts. A stored fact is a
@@ -169,19 +171,23 @@ export const VERIFY_OR_ASK_RULE =
  * was doing) and claims about outside systems. Claims leave the memo for
  * the wiki's proposal queue; only work state is kept as memory.
  */
-export function splitMemo(memo: string): { workState: string[]; claims: string[] } {
+export function splitMemo(memo: string): { workState: string[]; claims: string[]; nodeFacts: string[] } {
   const workState: string[] = []
   const claims: string[] = []
+  // Usage limits, resets and holds: the node reports them live (#1531),
+  // so they are neither kept nor proposed to the wiki.
+  const nodeFacts: string[] = []
   for (const raw of memo.split("\n")) {
     const line = raw.trim()
     if (!line) continue
     const text = line.replace(/^[-*•]\s*/, "")
+    if (isNodeFact(text)) { nodeFacts.push(line); continue }
     // A line citing a check is a claim about an outside system: the memo
     // prompt only lets a summary cite checks for those.
     const claim = classifyFact(text) !== "stable" || citedCheck(text) !== null
     ;(claim ? claims : workState).push(line)
   }
-  return { workState, claims }
+  return { workState, claims, nodeFacts }
 }
 
 /** The check a memo line cites, e.g. "active per GET /v1/user, 2026-09-28". */

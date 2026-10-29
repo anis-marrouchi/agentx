@@ -16,6 +16,18 @@
 // Token budget: each layer gets a max allocation. Total capped at configurable limit.
 // Layers are rendered top-down; if budget exhausted, lower layers are truncated or skipped.
 
+import { isNodeFact, NODE_FACT_STALE_TAG } from "./node-facts"
+
+/** A pinned memo written before #1531 may still carry a limit, reset or
+ *  hold line; it is marked stale rather than shown as current. */
+function markNodeFacts(memo: string): string {
+  return memo.split("\n").map((line) => {
+    if (!isNodeFact(line)) return line
+    const m = line.match(/^(\s*[-*•]\s*)(.*)$/)
+    return m ? `${m[1]}${NODE_FACT_STALE_TAG}${m[2]}` : `${NODE_FACT_STALE_TAG}${line}`
+  }).join("\n")
+}
+
 export interface ContextLayer {
   name: string
   priority: number       // lower = higher priority (1 = most important)
@@ -524,8 +536,8 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       priority: 7.6,
       maxTokens: budget("rotation-memo", 800),
       content: [
-        `[Continuity memo — your previous session for this chat ended (${input.rotationMemo.reason}, ${input.rotationMemo.capturedAt}). Carry on from this work state; do not claim you lack prior context. It is a summary, not checked facts: re-check account, billing, outage or deploy state before stating it, or say it is unverified and ask the owner:]`,
-        input.rotationMemo.memo,
+        `[Continuity memo — your previous session for this chat ended (${input.rotationMemo.reason}, ${input.rotationMemo.capturedAt}). Carry on from this work state; do not claim you lack prior context. It is a summary, not checked facts: re-check account, billing, outage or deploy state before stating it, or say it is unverified and ask the owner. Usage limits, resets, holds and this machine: call agentx_node:]`,
+        markNodeFacts(input.rotationMemo.memo),
       ].join("\n"),
       tags: ["continuity", "rotation-memo"],
     })

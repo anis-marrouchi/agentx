@@ -1,4 +1,5 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
+import { NODE_FACTS_RULE } from "./node-facts"
 
 // --- Landscape Builder ---
 //
@@ -139,9 +140,13 @@ export class LandscapeBuilder {
     lines.push("- On GitLab: reply directly, no Telegram handles. To send to other channels, use the /send API below")
     lines.push("- On WhatsApp: mention another agent's handle to delegate (shared number — name prefixed automatically). To send to other channels, use /send API")
 
-    // Cross-channel outbound messaging
+    // The node is the source of truth for its own environment (#1531).
     const [, portStr] = this.config.node.bind.split(":")
     const port = portStr || "19900"
+    lines.push(NODE_FACTS_RULE)
+    lines.push(`  Without the tool: curl -s "http://localhost:${port}/api/node?format=text"`)
+
+    // Cross-channel outbound messaging
     lines.push("")
     lines.push("[Cross-Channel Messaging]")
     lines.push(`You can send messages to ANY channel proactively (not just reply):`)

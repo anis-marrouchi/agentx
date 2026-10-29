@@ -90,12 +90,13 @@ export const AGENTX_MCP_TOOLS_ENV = "AGENTX_MCP_TOOLS"
  *  (workflows/nodes/follow-up.ts), and saying a run ends waiting rather
  *  than done (agentx_waiting, #1100), drafting posts for approval
  *  from the content team's weekly schedule (agentx_content, #1291),
- *  and sprint lane turns stopping their lane (agentx_sprint, #1241).
+ *  and sprint lane turns stopping their lane (agentx_sprint, #1241),
+ *  and the node-facts rule in every prompt (agentx_node, #1531).
  *  A tool left off the list is
  *  not even findable through ToolSearch, so a prompt naming it would
  *  send the agent after a tool it cannot call. The test scans src/ for
  *  prompts naming any other tool. */
-export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint"]
+export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node"]
 
 /** The tools the `[Context on demand]` line names; kept whenever a lean
  *  start relies on that line. */
@@ -263,7 +264,8 @@ export function onDemandContextNote(channel: string, chatId: string): string {
     `the agent landscape (agentx_agents with landscape=true), ` +
     `earlier messages on this chat (agentx_recent with channel="${channel}", chatId="${chatId}"), ` +
     `today's other chats of yours (agentx_recent without chatId), ` +
-    `and stored knowledge (agentx_wiki_query).`,
+    `stored knowledge (agentx_wiki_query), ` +
+    `and this machine, its programs, Claude usage limits and running work (agentx_node: answer from it with its check time, never from memory).`,
   ].join("\n")
 }
 

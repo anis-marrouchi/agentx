@@ -34,7 +34,8 @@ const MEMO_PROMPT =
   "- Identifiers (issue numbers, PR numbers, ticket ids) the user referred to\n\n" +
   "Do not restate the state of an outside system (billing, account, plan, outage, " +
   "deploy) unless you checked it in this session; then say how and when you checked " +
-  "(e.g. \"active per GET /v1/user, 2026-09-28\").\n\n" +
+  "(e.g. \"active per GET /v1/user, 2026-09-28\").\n" +
+  "Never note usage limits, plan windows, reset times or holds: the node reports them live (agentx_node).\n\n" +
   "Format: 3-12 short bullet points. Each ≤120 chars. No prose, no preamble, " +
   "no header. If the session was uninformative or just casual chat, reply with " +
   "exactly the literal text \"(no memo)\".\n\n" +

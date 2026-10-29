@@ -25,6 +25,7 @@ These tools only read. Use them freely to answer questions:
 | What was said on a channel or chat? | `agentx_recent` |
 | What happened since a given time? | `agentx_events` |
 | What runs on a schedule? | `agentx_crons` |
+| What machine is this, is there a usage limit right now, which version of a program is installed? | `agentx_node` (quote its check time) |
 | What does the team know about a topic? | `agentx_wiki_query` |
 | What is this project's stack? | `agentx_inspect` |
 

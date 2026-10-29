@@ -318,6 +318,16 @@ Show whether a release passed its canary soak on this daemon. Without `sha`, the
 | `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
 | `--json` | — | Print the raw JSON. |
 
+## node
+
+`agentx node`: Show what this node knows about itself: the machine, its programs, the Claude account's limits and the work running now, each with the time it was checked. See [Ask the node about its machine and account](/jobs/node-facts).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Daemon config file. |
+| `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
+| `--json` | — | Print the raw JSON. |
+
 ## agent
 
 `agentx agent`: Manage agents — add, list, remove, pause, resume.

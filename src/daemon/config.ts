@@ -2176,6 +2176,22 @@ export const daemonConfigSchema = z.object({
       backgroundChannels: z.array(z.string()).default(["cron", "heartbeat", "routine"]),
     }).default({}),
   }).default({}),
+  /** What the node reports about its own environment (src/node-env,
+   *  #1531): GET /api/node, `agentx node` and the MCP tool `agentx_node`. */
+  environment: z.object({
+    /** The programs agents depend on; their versions are read at boot and
+     *  every `toolsRefreshHours`. A name runs `<name> --version`; an object
+     *  names the command and arguments to run instead. */
+    tools: z.array(z.union([
+      z.string().min(1),
+      z.object({
+        name: z.string().min(1),
+        command: z.string().min(1).optional(),
+        args: z.array(z.string()).default(["--version"]),
+      }),
+    ])).default(["claude", "codex", "git", "gh", "glab", "node", "pnpm", "npm", "python3", "docker"]),
+    toolsRefreshHours: z.number().min(0.25).max(168).default(6),
+  }).default({}),
   /** Stop and resume signals (agents/signals, #857): stop a running task
    *  cleanly, keep the agent's resume plan, resume it later. The owner may
    *  always signal; an agent may signal tasks it dispatched, or any task

@@ -54,7 +54,7 @@ import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
-import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
+import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, recordSessionInit, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { budgetConfigFrom, budgetProjectOf, preflightBudgetGate, setAgentBudgets, setBudgetProjectResolver } from "./agent-budget"
 import { holdMessage, holdsRoot } from "./holds"
 import { budgetProjectResolver } from "./budget-projects"
@@ -1934,6 +1934,7 @@ export class AgentRegistry {
         tallyToolUses(toolUsesByName, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
         recordRateLimitEvent(event, undefined, task.model || state.def.model)
+        recordSessionInit(event, undefined, task.agentId)
         // Caller-supplied event subscriber (HTTP SSE callers, etc.).
         // Fire after internal capture so a subscriber crash never breaks
         // our own bookkeeping.
@@ -1948,6 +1949,7 @@ export class AgentRegistry {
         tallyToolUses(toolUsesByName, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
         recordRateLimitEvent(event, undefined, task.model || state.def.model)
+        recordSessionInit(event, undefined, task.agentId)
         if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
       }
     }

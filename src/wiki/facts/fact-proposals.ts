@@ -168,8 +168,13 @@ export function rejectFactProposal(ledger: FactLedger, id: string, by: string, r
 export function routeMemo(
   wikiDir: string, memo: string, ctx: { agentId: string; origin: string; chat?: string },
 ): { workState: string; pinned: string; proposals: FactProposal[]; error?: string } {
-  const { workState, claims } = splitMemo(memo)
-  if (claims.length === 0) return { workState: workState.join("\n"), pinned: memo, proposals: [] }
+  const { workState, claims, nodeFacts } = splitMemo(memo)
+  // Limit, reset and hold lines are dropped; the pinned copy says where
+  // the live answer is (#1531).
+  const nodeNote = nodeFacts.length ? [`- (${nodeFacts.length} note(s) about usage limits, resets or holds left out: ask agentx_node for the current state)`] : []
+  if (claims.length === 0) {
+    return { workState: workState.join("\n"), pinned: nodeFacts.length ? [...workState, ...nodeNote].join("\n") : memo, proposals: [] }
+  }
   let proposals: FactProposal[] = []
   let error: string | undefined
   try {
@@ -181,5 +186,5 @@ export function routeMemo(
   }
   const flagged = claims.map((c, i) =>
     `- UNVERIFIED claim (${proposals[i] ? `wiki proposal ${proposals[i].id}` : "not checked"}): ${c.replace(/^[-*•]\s*/, "")}`)
-  return { workState: workState.join("\n"), pinned: [...workState, ...flagged].join("\n"), proposals, ...(error ? { error } : {}) }
+  return { workState: workState.join("\n"), pinned: [...workState, ...flagged, ...nodeNote].join("\n"), proposals, ...(error ? { error } : {}) }
 }
