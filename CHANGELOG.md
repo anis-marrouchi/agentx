@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.189.0](https://github.com/anis-marrouchi/agentx/compare/v0.188.1...v0.189.0) (2026-10-29)
+
+
+### Features
+
+* **daemon:** resource-aware admission queue for new sessions ([#1521](https://github.com/anis-marrouchi/agentx/issues/1521)) ([#1526](https://github.com/anis-marrouchi/agentx/issues/1526)) ([1bacd50](https://github.com/anis-marrouchi/agentx/commit/1bacd50592149169cd71aa68dcdc67e2c27b1f60))
+
 ## [0.188.1](https://github.com/anis-marrouchi/agentx/compare/v0.188.0...v0.188.1) (2026-10-29)
 
 
