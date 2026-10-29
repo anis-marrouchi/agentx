@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.191.0](https://github.com/anis-marrouchi/agentx/compare/v0.190.0...v0.191.0) (2026-10-29)
+
+
+### Features
+
+* **daemon:** the node answers questions about its own environment ([#1531](https://github.com/anis-marrouchi/agentx/issues/1531)) ([#1534](https://github.com/anis-marrouchi/agentx/issues/1534)) ([e2d2361](https://github.com/anis-marrouchi/agentx/commit/e2d2361f8f2f54ea3bf1ae9ab1aa8fe41d9a6add))
+
+
+### Bug Fixes
+
+* **crons:** prompt cron can fail on the command's exit code ([#1540](https://github.com/anis-marrouchi/agentx/issues/1540)) ([#1541](https://github.com/anis-marrouchi/agentx/issues/1541)) ([2bdd1e9](https://github.com/anis-marrouchi/agentx/commit/2bdd1e92212aff8ebd96d31916f38a234a049349))
+* **memory:** 5h/7d count as Claude windows only before a window word ([#1534](https://github.com/anis-marrouchi/agentx/issues/1534)) ([#1537](https://github.com/anis-marrouchi/agentx/issues/1537)) ([ed7ad9c](https://github.com/anis-marrouchi/agentx/commit/ed7ad9cf7c5b011656a68592af8330c89245671d))
+* **wall:** editor review follow-ups from [#1529](https://github.com/anis-marrouchi/agentx/issues/1529) ([#1536](https://github.com/anis-marrouchi/agentx/issues/1536)) ([9c1f90f](https://github.com/anis-marrouchi/agentx/commit/9c1f90f079a81ea88520bf04cd5ffc971614d167))
+* **workflows:** editor save keeps the stored workflow ([#1538](https://github.com/anis-marrouchi/agentx/issues/1538)) ([#1545](https://github.com/anis-marrouchi/agentx/issues/1545)) ([b58346d](https://github.com/anis-marrouchi/agentx/commit/b58346d365d28d05a1ddacc2fa7d83ba7f3bfec0))
+
 ## [0.190.0](https://github.com/anis-marrouchi/agentx/compare/v0.189.1...v0.190.0) (2026-10-29)
 
 
