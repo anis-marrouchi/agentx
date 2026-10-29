@@ -293,7 +293,7 @@ When it is on, AgentX notes every message you send to an agent. A message the ag
 - The run failed or hit its time limit.
 - A restart cut the run off.
 
-An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you.
+An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. A request stopped by a usage limit or a restart is first sent back to its agent once (`autoResend`); you are told only if that does not fix it.
 
 One case is closed instead of coming back to you: a request whose handed-on work all came back done, and that nobody closed within `staleAfterHours`. It is closed as done. The proof is the first link in the other agent's answer. With no link, it is marked **unproven**. Turn this off with `settleHandedBack: false`. A hand-off that failed, timed out or was lost in a restart does not hold the request once a later hand-off to the same agent came back done.
 
@@ -328,6 +328,11 @@ To turn it on by hand:
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
 | `requests.settleHandedBack` | boolean | `true` | A request in progress whose handed-on work all came back done, and that has no activity for `staleAfterHours`, is closed as done instead of coming back to you. The proof is the other agent's link, or the request is marked unproven. Promises, requests with a check or a due time, and tracked plans are never closed this way. |
 | `requests.homeCloses` | boolean | `true` | An open request with no check of its own, whose home is a GitHub or GitLab issue, pull request or merge request, is closed as done once that home is merged or closed as completed. Requests waiting on you and promises are left. |
+| `requests.autoResend.enabled` | boolean | `true` | A request that needs attention because a usage limit or a restart stopped it is sent back to its agent once, on its own. You are told only if it stops again. Promises, tracked plans, requests with a check, and requests whose agent is not on this computer are left. See [Resend once](/jobs/open-requests#resend-once-after-a-limit-or-a-restart). |
+| `requests.autoResend.afterMinutes` | number (0 to 1440) | `5` | Minutes after it stopped before it is resent. A usage limit also waits until it has reset. |
+| `requests.autoResend.holdMaxHours` | number (up to 168) | `12` | Hours your notice waits for the resend. Past it, you are told as before. |
+| `requests.flow.timeZone` | string | `"Africa/Tunis"` | The time zone whose day the daily [flow rate](/jobs/open-requests#how-many-requests-get-closed-the-flow-rate) counts by (`agentx requests flow`). |
+| `requests.flow.days` | whole number (1 to 90) | `7` | Days the flow rate shows when none are asked for. |
 | `requests.promises` | object | `{}` | One record for everything someone owes: proof on close, a fact when it closes. See [A promise closes with proof](/jobs/open-requests#a-promise-closes-with-proof-and-leaves-a-fact). |
 | `requests.promises.requireProof` | boolean | `true` | An agent's `done` on a promise needs a proof: a link, a passing test run, an output, or a check that ran. `false`: any evidence closes it. |
 | `requests.promises.facts` | boolean | `true` | A promise closed with a proof writes a checked fact to the wiki's fact ledger (`agentx wiki facts list`). |

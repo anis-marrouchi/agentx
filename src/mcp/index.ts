@@ -1023,6 +1023,7 @@ const TOOLS = [
       "Use accept when the work goes on after this turn; wait when the next step is the owner's answer (give the question); " +
       "done when it is finished (give a link to the evidence: PR, issue, message, deploy); decline when you will not do it (give the reason). " +
       "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
+      "flow gives the daily flow rate (requests closed, done or dropped, out of those asked), today first then one line per day, with the stuck, waiting and dropped counts: use it when the owner asks how the requests are flowing or what the rate is. " +
       "When the request serves a larger goal (a launch, a client project, a quarter's target), name it on accept with goal {id, title}; goals lists every goal with its open and done requests, how far along it is and what it cost. " +
       "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
       "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
@@ -1041,7 +1042,8 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa or goals." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals", "flow"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa, goals or flow (the daily flow rate: requests closed out of those asked, per day)." },
+        days: { type: "integer", minimum: 1, maximum: 90, description: "flow, optional: how many days, today last (default 7)." },
         goal: {
           type: "object",
           description: "accept, optional: the goal this request serves, {id, title}: id a short name (letters, digits, dashes), title a few plain words. A title alone gives the id. Reuse the id of a goal goals lists.",

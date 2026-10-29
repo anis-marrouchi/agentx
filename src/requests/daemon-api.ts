@@ -9,6 +9,7 @@ import { parseDescription } from "./headline"
 import { DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
+import { DEFAULT_FLOW, FLOW_DAYS_MAX, flowReport, type FlowSettings } from "./flow"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -16,6 +17,7 @@ import { parseGoal } from "./goals"
 // /approvals: loopback, or a mesh token.
 //   GET  /requests        open requests, oldest first
 //   GET  /requests/goals  every goal requests name, with progress and cost (#1168)
+//   GET  /requests/flow   the daily flow rate, ?days=N (#1542)
 //   GET  /requests/:id    one request and what is linked to it
 //   POST /requests        an agent's own statement about its request:
 //                         accept (with `steps`: a tracked plan, #788;
@@ -79,6 +81,8 @@ export interface RequestsApiDeps {
   checkers?: CheckerSettings
   /** One Promise (#1138 D): whether a promise's done needs a proof. */
   promiseSettings?: PromiseSettings
+  /** Whose day the flow rate counts by, and how many days (#1542). */
+  flow?: FlowSettings
   /** What the checker said about this request's closeWhen: the second
    *  pass of a done (handleRequestsCall). */
   verdict?: { requestId: string; result: CheckResult }
@@ -228,6 +232,14 @@ export function handleRequestsApi(
   if (path === "/requests/goals" && m === "GET") {
     const goals = store.goals()
     return { status: 200, body: { enabled: deps.enabled, count: goals.length, goals } }
+  }
+
+  if (path === "/requests/flow" && m === "GET") {
+    const flow = deps.flow ?? DEFAULT_FLOW
+    const raw = deps.query?.get("days")
+    const days = raw == null ? flow.days : Number(raw)
+    if (!Number.isInteger(days) || days < 1 || days > FLOW_DAYS_MAX) return { status: 400, body: { error: `days must be a whole number from 1 to ${FLOW_DAYS_MAX}` } }
+    return { status: 200, body: { enabled: deps.enabled, ...flowReport(store, { days, zone: flow.timeZone, now: deps.now }) } }
   }
 
   const one = path.match(/^\/requests\/([^/]+)$/)

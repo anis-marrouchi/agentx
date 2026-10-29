@@ -755,6 +755,15 @@ Measure what agents owe you when they deliver or go quiet: five numbers per agen
 | `--limit <n>` | `20` | Rows in each dry-run list. |
 | `--json` | — | Machine-readable output. |
 
+### `agentx requests flow`
+
+The daily flow rate: how many of the requests asked each day are closed (done, declined or dropped), today first, then one line per day. Read only. See [How many requests get closed](../jobs/open-requests.md#how-many-requests-get-closed-the-flow-rate).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--days <n>` | `7` | How many days, today last (1 to 90). The default is `requests.flow.days`. |
+| `--json` | — | Machine-readable output. |
+
 ### `agentx requests settings`
 
 Show or change the requests settings (requests in agentx.json).
@@ -769,6 +778,10 @@ Show or change the requests settings (requests in agentx.json).
 | `--headlines <on\|off>` | — | Write a headline for a request its agent did not describe (one small model call each). |
 | `--checks <kind,...>` | — | Checks agents may use to close a request (url, issue, git-ancestor, reply); "none" to turn them all off. |
 | `--check-every <minutes>` | — | How often each open request's check runs. |
+| `--auto-resend <on\|off>` | — | Send a request stopped by a usage limit or a restart back to its agent once, on its own. |
+| `--resend-after <minutes>` | — | Minutes after it stopped before it is resent (a limit also waits for its reset). |
+| `--resend-hold-hours <n>` | — | Hours your notice waits for the resend before you are told anyway. |
+| `--flow-zone <zone>` | — | The time zone whose day the flow rate counts by, for example Africa/Tunis. |
 
 ## request-status
 

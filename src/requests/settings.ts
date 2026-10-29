@@ -5,6 +5,8 @@ import { HUMAN_CHANNELS } from "@/a2a/initiator"
 import type { RequestSettings } from "./tracker"
 import type { PlanSettings } from "./plans"
 import type { CheckerSettings } from "./checkers"
+import type { ResendSettings } from "./resend"
+import type { FlowSettings } from "./flow"
 
 // --- Requests settings: read and change `requests` in agentx.json ---
 //
@@ -21,7 +23,9 @@ export function readRequestSettings(configPath?: string): RequestSettings {
   return parsed.success ? parsed.data : requestsConfigSchema.parse(undefined)
 }
 
-export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines" | "statusDrift" | "catchPromises">> & {
+export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines" | "statusDrift" | "catchPromises" | "autoResend" | "flow">> & {
+  autoResend?: Partial<ResendSettings>
+  flow?: Partial<FlowSettings>
   /** The switch and the cap. Provider, model and timeout are set in agentx.json. */
   catchPromises?: { enabled?: boolean; dailyCap?: number }
   /** Only the switch. Provider, model and timeout are set in agentx.json. */
@@ -57,6 +61,18 @@ export async function updateRequestSettings(
       const c = (r.catchPromises ??= {})
       for (const key of ["enabled", "dailyCap"] as const) {
         if (patch.catchPromises[key] !== undefined) c[key] = patch.catchPromises[key]
+      }
+    }
+    if (patch.autoResend) {
+      const a = (r.autoResend ??= {})
+      for (const key of ["enabled", "afterMinutes", "holdMaxHours"] as const) {
+        if (patch.autoResend[key] !== undefined) a[key] = patch.autoResend[key]
+      }
+    }
+    if (patch.flow) {
+      const f = (r.flow ??= {})
+      for (const key of ["timeZone", "days"] as const) {
+        if (patch.flow[key] !== undefined) f[key] = patch.flow[key]
       }
     }
     if (patch.checkers) {

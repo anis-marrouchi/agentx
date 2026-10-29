@@ -25,7 +25,7 @@ Each request has one state:
 
 A request waits on you when the agent raises a [decision card](../dashboard/approvals.md) for it, or says so with its tool. The card reminds you the usual way: the Approvals inbox, the Mac card, check-ins and the daily digest. When you answer, the request goes on. If the card expires without your answer, the request needs attention; it does not close. A card never approves itself.
 
-When a request needs attention you are told once, through your normal [notifications](./notifications.md). They are held while Focus is on. After that the request stays on the list. Nothing is retried for you, and nothing closes because it got old.
+When a request needs attention you are told once, through your normal [notifications](./notifications.md). They are held while Focus is on. After that the request stays on the list. Nothing closes because it got old. One kind of failure is tried again for you first: see [Resend once after a limit or a restart](#resend-once-after-a-limit-or-a-restart).
 
 ## Turn it on
 
@@ -83,6 +83,22 @@ You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on,
 - **Yes** (or `agentx approvals approve request:<id>`) hands it back to the agent, which gets your request again and works on it. If the agent is still busy with the earlier attempt, your yes waits its turn and runs right after; the request stays in progress meanwhile. If the hand-back fails, it comes back.
 - **No** (or `agentx approvals reject request:<id>`) drops it.
 - **Later** puts it off.
+
+## Resend once after a limit or a restart
+
+Some requests stop for a reason a second try fixes: the agent hit its usage limit (the most it may use in a window of time), or the computer restarted while the agent worked. Such a request is sent back to its agent once, on its own, before you hear about it.
+
+- **Usage limit:** it is sent again once the limit has reset, and at least 5 minutes after it stopped.
+- **Restart:** it is sent again 5 minutes after it stopped. This covers work cut off by a restart, work handed to another agent and lost in one, and an answer a restart kept from reaching you.
+
+The agent gets your request again, with a line saying why it comes back. While the resend waits, you are not told. You are told as before, once, when:
+
+- the resent request stops again. The notice then says `Resent once at …, stopped again.`
+- the limit has not reset after 12 hours.
+
+Each request is resent at most once. These are never resent: promises, requests in a [tracked plan](./tracked-plans.md) (the plan follows its own steps), requests with a check of their own, and requests whose agent is not on this computer.
+
+Turn it off with `agentx requests settings --auto-resend off`. Change the wait with `--resend-after <minutes>` and how long your notice waits with `--resend-hold-hours <n>`.
 
 ## Close a request
 
@@ -313,6 +329,43 @@ The agent passes it with `agentx_request`, e.g. `{action:"accept", home:{kind:"i
 
 Run `agentx requests today`. It lists every request made since 00:00 Tunis time, one row each: the time, its first words, its state, the agent that owns it, and where it landed (issue, idea, approval, ERP record, Desk card, plan, or the evidence it closed with). Requests with nowhere to land are in red, at the top. A declined or dropped request is never red. `--json` gives the same list for the Desk and for voice.
 
+### How many requests get closed: the flow rate
+
+The flow rate says how many of the requests you asked in a day are closed. A request counts as closed when it is done, declined or dropped. Declined and dropped requests always carry a reason, and the reasons are listed beside the rate, so you can see whether a drop was right.
+
+1. **Terminal:** run `agentx requests flow`.
+
+It prints today's figure first, then one line per day for the last 7 days:
+
+```text
+Today (2030-03-02, Africa/Tunis): 17 of 38 closed, 45%.
+  13 done, 4 dropped, 9 moving, 7 waiting on the owner, 5 stuck.
+  Dropped because:
+    3 × a retry of an earlier request
+    1 × asked twice
+
+Day         asked  done  dropped  moving  waiting  stuck  rate
+2030-02-24     30    28        2       0        0      0  100%
+…
+```
+
+| Word | Meaning |
+|---|---|
+| asked | Requests made that day. |
+| done | Closed as done. |
+| dropped | Declined or dropped, each with its reason. |
+| moving | In progress, or waiting on another agent. |
+| waiting | Waiting on you. |
+| stuck | Needs attention. |
+| rate | (done + dropped) ÷ asked. |
+
+A request is counted on the day it was asked, and the counts are worked out again every time, so a request closed today moves the day it was asked. When some were [resent once](#resend-once-after-a-limit-or-a-restart), the figure also says how many, and how many of those are done.
+
+- `--days 14` shows 14 days (up to 90).
+- `--json` gives the same numbers for a script.
+- Agents read it with `agentx_request` and `{action:"flow"}`, so you can ask an agent "what is our rate today?".
+- The day starts at 00:00 in `requests.flow.timeZone` (default `Africa/Tunis`). Change it with `agentx requests settings --flow-zone Europe/Paris`.
+
 ### Read the list from a script
 
 `GET /requests` on the daemon (loopback, or a mesh token) lists requests. Without filters it gives the open ones, oldest first, at most 100. Filters, all optional:
@@ -329,6 +382,8 @@ Run `agentx requests today`. It lists every request made since 00:00 Tunis time,
 | `offset=<n>` | Page from the oldest; the reply gives `nextOffset` while there is more. |
 
 Every reply says `total`, the number of requests that match, and `truncated: true` when it shows fewer. Without `offset`, a `since` list past its limit keeps the newest; any other list keeps the oldest.
+
+`GET /requests/flow?days=7` gives the [flow rate](#how-many-requests-get-closed-the-flow-rate): `zone`, `days` (oldest first, each with `day`, `asked`, `done`, `dropped`, `moving`, `waiting`, `stuck`, `rate`, `dropReasons`, `resent` and `resentDone`), and `today`. `days` is 1 to 90; without it, `requests.flow.days` (default 7).
 
 `GET /requests/goals` lists every goal a request names, most recently active first (at most 50): its `title`, the counts `open`, `done` and `dropped`, `progress` (0 to 1), `costUsd`, `runs`, `unpriced` (runs that reported no cost), and its newest requests (at most 50), each with its own `costUsd`. See [Group requests under a goal](#group-requests-under-a-goal).
 
@@ -389,6 +444,10 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --settle off` | A quiet request whose handed-on work all came back done comes back to you instead of being closed. `on` turns closing back on. Default on. See [When handed-on work came back](#when-handed-on-work-came-back-and-nobody-closed-it). |
 | `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
 | `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
+| `agentx requests settings --auto-resend off` | Stops sending a request stopped by a usage limit or a restart back to its agent once. `on` turns it back on. Default on. See [Resend once](#resend-once-after-a-limit-or-a-restart). |
+| `agentx requests settings --resend-after 10` | Minutes after it stopped before such a request is resent. Default 5. |
+| `agentx requests settings --resend-hold-hours 6` | Hours your notice waits for the resend before you are told anyway. Default 12. |
+| `agentx requests settings --flow-zone Europe/Paris` | The time zone whose day the [flow rate](#how-many-requests-get-closed-the-flow-rate) counts by. Default `Africa/Tunis`. |
 
 In the dashboard, the same settings are under **Approvals** › **Settings: open requests**. The box **Write a headline when the agent gave none** is the `--headlines` switch:
 
@@ -427,8 +486,15 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 18. **Browser:** open **Approvals**. Under **Open requests**, **Goals** lists the goal with `0 of 1 done`. The request's card shows **Goal:** with its title.
 19. **Terminal:** run `curl -s http://127.0.0.1:18800/requests/goals`. The goal is there, with its `open` and `done` counts and its `costUsd`.
 20. **Terminal:** run `agentx requests contract --since 1d --dry-run`. It prints **Five numbers**, the three dry-run lists, and ends with `Read only: nothing was told or written.`
+21. **Terminal:** run `agentx requests flow`. The first line gives today's date, the time zone, and how many of today's requests are closed. The table below it has one line per day.
+22. **Terminal:** run `agentx requests settings`. The line `Resend once` says `on: after a usage limit resets or a restart, 5 minute(s) on; …`. After an agent stops on its usage limit, the daemon log has a `resent once` line for the request once the limit resets, and you are told nothing unless it stops again.
 
 ## If something is wrong
+
+- **The flow rate counts a day differently from your clock:** the day starts at 00:00 in `requests.flow.timeZone`. Set yours with `agentx requests settings --flow-zone <zone>`, for example `Europe/Paris`.
+- **`days must be a whole number from 1 to 90`:** pass `--days` (or `?days=`) between 1 and 90. Closed requests are deleted after `retentionDays`, so older days would be wrong anyway.
+- **A request stopped by a usage limit was never resent:** the limit has not reset yet, or it was already resent once, or it is a promise or part of a tracked plan. `agentx requests show <id>` says why it stopped. After 12 hours you are told anyway.
+- **You were told about a limit or a restart failure at once:** auto-resend is off (`agentx requests settings`), the agent is not on this computer, or the request had already been resent once.
 
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 

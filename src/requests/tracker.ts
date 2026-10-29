@@ -3,6 +3,8 @@ import type { AgentXEvents } from "@/events/bus"
 import type { PlanSettings } from "./plans"
 import type { CheckerSettings } from "./checkers"
 import type { CatchSettings, PromiseCatcher } from "./catch"
+import type { ResendSettings } from "./resend"
+import type { FlowSettings } from "./flow"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
 import { firstLink, OPEN_STATES, OWED_TO_OWNER, type OpenState, type RequestStore } from "./store"
 
@@ -52,6 +54,12 @@ export interface RequestSettings {
   /** Catch "I'll do X" in an owner-facing reply as a promise (#1138 E).
    *  Unset: off. */
   catchPromises?: Partial<CatchSettings>
+  /** A request stopped by a usage limit or a restart is sent back to its
+   *  agent once, on its own (#1542). Unset: the defaults (DEFAULT_RESEND). */
+  autoResend?: ResendSettings
+  /** The daily flow rate (#1542): whose day it counts by. Unset: the
+   *  defaults (DEFAULT_FLOW). */
+  flow?: FlowSettings
 }
 
 /** The chat of a card's promise when no turn names one: the card itself. */

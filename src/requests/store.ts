@@ -143,6 +143,9 @@ export interface RequestRecord {
   // --- Goal (#1168). Null: the request names none. ---
   /** The goal the agent said it serves when it accepted. */
   goal: RequestGoal | null
+  /** When the requests check sent it back to its agent on its own, after
+   *  a usage limit or a restart stopped it (#1542). Once per request. */
+  resentAt: number | null
 }
 
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
@@ -224,6 +227,8 @@ export function ensureRequestTables(db: Database.Database): void {
   // When the owner last sent it back (reply, hand-off, pick-up, reopen,
   // #1522): a home closed before that does not close it.
   ensureColumns(db, "requests", [["sent_back_at", "INTEGER"]])
+  // When the requests check resent it on its own (#1542): once, ever.
+  ensureColumns(db, "requests", [["resent_at", "INTEGER"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -270,6 +275,7 @@ function toRecord(r: any): RequestRecord {
     qaRequestedAt: r.qa_requested_at ?? null,
     qa: r.qa_verdict && r.qa_by && typeof r.qa_at === "number" ? { verdict: r.qa_verdict, by: r.qa_by, at: r.qa_at, note: r.qa_note ?? null } : null,
     goal: r.goal_id && r.goal_title ? { id: r.goal_id, title: r.goal_title } : null,
+    resentAt: r.resent_at ?? null,
   }
 }
 
@@ -866,13 +872,15 @@ export class RequestStore {
   }
 
   /** The owner said "pick it up again": back in progress, and the agent
-   *  is to be told at the next check. */
-  requestPickup(id: string, now: number): boolean {
+   *  is to be told at the next check. `resend`: the requests check sends
+   *  it back on its own (#1542), only if it never did before, and marks it. */
+  requestPickup(id: string, now: number, opts: { resend?: boolean } = {}): boolean {
     return this.db.transaction(() => {
       const moved = this.db.prepare(
         `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?, need = NULL
-         WHERE id = ? AND state = 'needs_attention'`,
-      ).run(now, now, now, id).changes > 0
+           ${opts.resend ? ", resent_at = ?" : ""}
+         WHERE id = ? AND state = 'needs_attention'${opts.resend ? " AND resent_at IS NULL" : ""}`,
+      ).run(now, now, now, ...(opts.resend ? [now] : []), id).changes > 0
       if (moved) this.supersedeHandBacks(id)
       return moved
     })()
@@ -920,6 +928,15 @@ export class RequestStore {
       .map(toRecord)
       .filter((r) => r.state === "in_progress")
       .sort((a, b) => a.createdAt - b.createdAt)
+  }
+
+  /** Every request asked since `since` (candidates left out), for the
+   *  daily flow (#1542): only what the count needs. */
+  flowRows(since: number): Array<{ state: RequestState; createdAt: number; closeReason: string | null; resentAt: number | null }> {
+    return this.db.prepare(
+      `SELECT state, created_at AS createdAt, close_reason AS closeReason, resent_at AS resentAt
+       FROM requests WHERE created_at >= ? AND state != 'candidate' ORDER BY created_at, rowid`,
+    ).all(since) as any
   }
 
   /** Delete closed requests older than `before`. Open ones never age out. */

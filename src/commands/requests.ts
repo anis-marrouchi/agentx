@@ -5,6 +5,8 @@ import { openDb } from "@/storage/sqlite"
 import { CLOSED_STATES, OPEN_STATES, RequestStore, type RequestRecord } from "@/requests/store"
 import { LIST_MAX } from "@/requests/daemon-api"
 import { startOfDay, todayRows } from "@/requests/today"
+import { DEFAULT_FLOW, describeFlow, FLOW_DAYS_MAX, flowReport } from "@/requests/flow"
+import { DEFAULT_RESEND } from "@/requests/resend"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { findConfigPath } from "@/daemon/config-mutator"
 import { PlanStore, type PlanStep } from "@/requests/plan-store"
@@ -157,6 +159,24 @@ requests
     }
   })
 
+requests
+  .command("flow")
+  .description("the daily flow rate: requests closed (done or dropped) out of those asked, today first, then per day")
+  .option("--days <n>", `how many days, today last (1 to ${FLOW_DAYS_MAX}; default requests.flow.days)`)
+  .option("--json", "machine-readable output")
+  .action((opts: { days?: string; json?: boolean }) => {
+    const flow = readRequestSettings().flow ?? DEFAULT_FLOW
+    const days = opts.days === undefined ? flow.days : Number(opts.days)
+    if (!Number.isInteger(days) || days < 1 || days > FLOW_DAYS_MAX) {
+      console.error(chalk.red(`  --days must be a whole number from 1 to ${FLOW_DAYS_MAX}`)); process.exitCode = 1; return
+    }
+    const s = store()
+    if (!s) return
+    const report = flowReport(s, { days, zone: flow.timeZone })
+    if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
+    console.log(describeFlow(report).split("\n").map((l) => `  ${l}`).join("\n"))
+  })
+
 /** This node's agent ids, from agentx.json. Empty when it cannot be read. */
 function agentIds(): Set<string> {
   try { return new Set(Object.keys(JSON.parse(readFileSync(findConfigPath(), "utf-8"))?.agents ?? {})) } catch { return new Set() }
@@ -276,6 +296,10 @@ requests
   .option("--plan-over <minutes>", "work estimated over this many minutes needs a plan (default 30); 0 turns it off")
   .option("--checks <kind,...>", `checks agents may use to close a loop (${CHECK_KINDS.join(", ")}); "none" to turn them all off`)
   .option("--check-every <minutes>", "how often each open loop's check runs")
+  .option("--auto-resend <on|off>", "send a request stopped by a usage limit or a restart back to its agent once, on its own")
+  .option("--resend-after <minutes>", "minutes after it stopped before it is resent (a limit also waits for its reset)")
+  .option("--resend-hold-hours <n>", "hours your notice waits for the resend before you are told anyway")
+  .option("--flow-zone <zone>", "the time zone whose day the flow rate counts by, for example Africa/Tunis")
   .action(async (opts: Record<string, string | undefined>) => {
     const patch: RequestSettingsPatch = {}
     try {
@@ -342,6 +366,19 @@ requests
       }
       checkers.checkEveryMinutes = num("--check-every", opts.checkEvery)
       if (Object.values(checkers).some((v) => v !== undefined)) patch.checkers = checkers
+      const resend: NonNullable<RequestSettingsPatch["autoResend"]> = {}
+      if (opts.autoResend !== undefined) {
+        if (opts.autoResend !== "on" && opts.autoResend !== "off") throw new Error("--auto-resend takes on or off")
+        resend.enabled = opts.autoResend === "on"
+      }
+      if (opts.resendAfter !== undefined) {
+        const n = Number(opts.resendAfter)
+        if (!(n >= 0)) throw new Error("--resend-after must be a number of minutes, 0 or more")
+        resend.afterMinutes = n
+      }
+      resend.holdMaxHours = num("--resend-hold-hours", opts.resendHoldHours)
+      if (Object.values(resend).some((v) => v !== undefined)) patch.autoResend = resend
+      if (opts.flowZone !== undefined) patch.flow = { timeZone: opts.flowZone }
     } catch (e: any) {
       console.error(chalk.red(`  ${e.message}`)); process.exitCode = 1; return
     }
@@ -369,6 +406,9 @@ requests
     const over = p.requireOverMinutes ?? DEFAULT_PLAN_SETTINGS.requireOverMinutes
     const kinds = p.requireForWork ?? DEFAULT_PLAN_SETTINGS.requireForWork
     console.log(`  Plan before starting    ${[kinds.length ? `${kinds.join(", ")} work` : "", over > 0 ? `work over ${over} minute(s)` : ""].filter(Boolean).join("; ") || "never required"}`)
+    const a = s.autoResend ?? DEFAULT_RESEND
+    console.log(`  Resend once             ${a.enabled ? `on: after a usage limit resets or a restart, ${a.afterMinutes} minute(s) on; you are told after ${a.holdMaxHours} hour(s) or a second stop` : "off"}`)
+    console.log(`  Flow rate counts by     ${(s.flow ?? DEFAULT_FLOW).timeZone} days`)
     const c = s.checkers ?? DEFAULT_CHECKER_SETTINGS
     console.log(`  Loop checks             ${c.enabled.length ? c.enabled.join(", ") : "off"}, every ${c.checkEveryMinutes} minute(s)`)
     const repos = Object.keys(c.repos)
