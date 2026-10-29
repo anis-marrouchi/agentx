@@ -2,7 +2,7 @@ import { isQueued } from "@/agents/queued"
 import { OVERDUE_REASON, WALL_CHANNEL, type RequestRecord, type RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
-import { checkHomes, type HomeChecker } from "./home-check"
+import { checkHomes, type HomeChecker, type PlanStepLeft } from "./home-check"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
 import { goalLine } from "./goals"
@@ -63,9 +63,10 @@ export interface RequestSweepDeps {
   /** Reads a request's issue or merge request home (#1522). Unset: homes
    *  are not read. */
   checkHome?: HomeChecker
-  /** The steps the request's active plan has not finished, in words, so a
-   *  close by its home says what the plan stopped with. */
-  planLeft?: (requestId: string) => string[]
+  /** The steps the request's active plan has not finished. One an agent
+   *  owns keeps the request open when its home closes; the rest are named
+   *  in the close, so it says what the plan stopped with. */
+  planLeft?: (requestId: string) => PlanStepLeft[]
   /** Gives a request its headline when it has none (#1126), so the owner
    *  is told what it is. Returns it as it is when none could be written. */
   describe?: (r: RequestRecord) => Promise<RequestRecord>

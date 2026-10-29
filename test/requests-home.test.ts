@@ -92,12 +92,39 @@ describe("the home closes the request (#1522)", () => {
     expect(logs.join("\n")).toContain(`${id} closed: home ${PR} merged`)
   })
 
-  it("closes one that needs attention, and names the steps its plan had left", async () => {
+  it("closes one that needs attention, and names the message steps its plan had left", async () => {
     const id = homed(ISSUE)
-    store.needsAttention(id, 'Step 2 "Merge after Anis yes" (coder) is blocked: no progress after 3 nudges', clock)
+    store.needsAttention(id, 'Step 2 "Tell Anis" is blocked: waiting for approval', clock)
     items["github:acme/app#7"] = { state: "closed", url: ISSUE, stateReason: "completed", closedAt: LATER }
-    await sweep({ planLeft: (r) => (r === id ? ["2. Merge after Anis yes", "3. Deploy"] : []) })
-    expect(store.get(id)).toMatchObject({ state: "done", evidence: `home ${ISSUE} closed at ${LATER}; its plan stopped with steps left: 2. Merge after Anis yes; 3. Deploy` })
+    await sweep({ planLeft: (r) => (r === id ? [{ step: "2. Tell Anis", agent: false }, { step: "3. Tell the client", agent: false }] : []) })
+    expect(store.get(id)).toMatchObject({ state: "done", evidence: `home ${ISSUE} closed at ${LATER}; its plan stopped with steps left: 2. Tell Anis; 3. Tell the client` })
+  })
+
+  it("leaves open a request whose active plan still has a step an agent owns, and says so", async () => {
+    const id = homed(ISSUE)
+    items["github:acme/app#7"] = { state: "closed", url: ISSUE, stateReason: "completed", closedAt: LATER }
+    const left = [{ step: "2. Live check", agent: true }, { step: "3. Tell Anis", agent: false }]
+    const res = await sweep({ planLeft: (r) => (r === id ? left : []) })
+    expect(res.homesClosed).toBe(0)
+    expect(store.get(id)?.state).not.toBe("done")
+    expect(logs.join("\n")).toContain(`${id} left open: home ${ISSUE} closed at ${LATER}; home closed, plan has agent steps left: 2. Live check`)
+    // The agent step finished: the next read closes it, naming what is left.
+    left.shift()
+    clock += 2 * HOUR
+    expect((await sweep({ planLeft: (r) => (r === id ? left : []) })).homesClosed).toBe(1)
+    expect(store.get(id)).toMatchObject({ state: "done", evidence: `home ${ISSUE} closed at ${LATER}; its plan stopped with steps left: 3. Tell Anis` })
+  })
+
+  it("never reads a comment or note anchor as its item's state", async () => {
+    const id = homed(`${GL_ISSUE}#note_130788`, "t1")
+    const other = homed(`${ISSUE}#issuecomment-6493803179`, "t2")
+    items["gitlab:group/project#4"] = { state: "closed", url: GL_ISSUE, closedAt: LATER }
+    items["github:acme/app#7"] = { state: "closed", url: ISSUE, stateReason: "completed", closedAt: LATER }
+    expect((await sweep()).homesClosed).toBe(0)
+    expect(reads).toEqual([])
+    expect(store.get(id)?.state).not.toBe("done")
+    expect(store.get(other)?.state).not.toBe("done")
+    expect(homeRefOf({ home: { kind: "issue", link: `${PR}#discussion_r1` } }, GITLAB)).toBeNull()
   })
 
   it("reads a merge request and an issue on this node's GitLab", async () => {
