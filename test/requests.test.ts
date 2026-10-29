@@ -59,7 +59,7 @@ const dlg = (id: string) => ({ id, caller: "coder", callee: "devops", origin: { 
 
 describe("settings", () => {
   it("is off by default, with a 24 hour quiet time and 90 day retention", () => {
-    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, sprints: { enabled: true, idleMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false }, catchPromises: { enabled: false, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
+    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, homeCloses: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, sprints: { enabled: true, idleMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false }, catchPromises: { enabled: false, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
   })
 
   it("records nothing while it is off", () => {
@@ -669,7 +669,7 @@ describe("the minute check", () => {
   it("does nothing while the feature is off", async () => {
     start("t1"); end("t1", { error: "a" })
     settings.enabled = false
-    expect((await sweep()).result).toEqual({ checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 })
+    expect((await sweep()).result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 })
   })
 })
 
@@ -681,7 +681,7 @@ describe("waiting on the owner", () => {
     expect(store.listOpen()[0]).toMatchObject({ state: "waiting_owner", question: "Deploy to the server now, or after the review?" })
     clock += 72 * HOUR
     const result = await runRequestsSweep({ store, settings, log: () => {}, now: clock, notify: async () => {} })
-    expect(result).toEqual({ checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 })
+    expect(result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 })
     expect(store.get("req-t1")?.state).toBe("waiting_owner")
   })
 

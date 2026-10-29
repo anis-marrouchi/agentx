@@ -40,6 +40,9 @@ export interface RequestSettings {
   /** A quiet request whose handed work all came back done is settled,
    *  not raised to the owner (#1138). Unset: on. */
   settleHandedBack?: boolean
+  /** An open request whose issue or merge request home is merged or
+   *  closed as completed closes as done (#1522). Unset: on. */
+  homeCloses?: boolean
   /** Status follows the work (#1138 step F). Unset: the defaults
    *  (DEFAULT_DRIFT_SETTINGS), which read no project. */
   statusDrift?: DriftSettings

@@ -282,11 +282,16 @@ const AWAITING_QA = "qa_requested_at IS NOT NULL AND (qa_at IS NULL OR qa_at < q
  *  time. Settling reads it back (#1214). */
 export const OVERDUE_REASON = "Past its due time"
 
-/** A request whose handed-on work all came back done (#1138). */
+/** A request whose handed-on work all came back done (#1138). A hand-off
+ *  that failed, timed out or was lost counts for nothing once a later one
+ *  came back done: that was its retry (#1522). One still out, or from
+ *  before endings were kept, holds it. */
 const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
   AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
-                  AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded')))
+                  AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded'))
+                  AND NOT (l.ended IS NOT NULL AND l.ended_at < (SELECT MAX(d.ended_at) FROM request_links d
+                    WHERE d.request_id = r.id AND d.kind = 'delegation' AND d.ended = 'done')))
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')`
 
 /** SET clause for a statement that writes `state`: the change time moves
@@ -572,6 +577,25 @@ export class RequestStore {
       `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND close_when IS NOT NULL
          AND (checked_at IS NULL OR checked_at < ?) ORDER BY COALESCE(checked_at, 0), created_at LIMIT ?`,
     ).all(...OPEN_STATES, before, limit).map(toRecord)
+  }
+
+  /** Open requests whose home is an issue or merge request and that have
+   *  no checker of their own, last looked at before `before` (#1522). A
+   *  request waiting on the owner keeps its question, a promise is the
+   *  agent's word to someone, and a pick-up not told yet is the owner's:
+   *  all three are left. */
+  homesDue(before: number, limit = 50): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other', 'needs_attention') AND close_when IS NULL
+         AND home_kind = 'issue' AND home_link IS NOT NULL AND COALESCE(promise, 0) = 0 AND pickup_at IS NULL
+         AND (checked_at IS NULL OR checked_at < ?) ORDER BY COALESCE(checked_at, 0), created_at LIMIT ?`,
+    ).all(before, limit).map(toRecord)
+  }
+
+  /** The home was read: only the time, so a request with no checker keeps
+   *  its verify state (#1522). */
+  markHomeChecked(id: string, now: number): void {
+    this.db.prepare("UPDATE requests SET checked_at = ? WHERE id = ?").run(now, id)
   }
 
   /** Open loops past their due time with nothing done since it passed,

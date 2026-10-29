@@ -2,6 +2,7 @@ import { isQueued } from "@/agents/queued"
 import { OVERDUE_REASON, WALL_CHANNEL, type RequestRecord, type RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
+import { checkHomes, type HomeChecker } from "./home-check"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
 import { goalLine } from "./goals"
@@ -10,7 +11,10 @@ import { goalLine } from "./goals"
 //
 //   0. Evidence (#1039): an open loop with a `close_when` has its checker
 //      run every `checkers.checkEveryMinutes`. Met closes it as done, with
-//      the checker's evidence.
+//      the checker's evidence. An open request with no checker whose home
+//      is an issue or merge request has that home read as often: merged,
+//      or closed as completed, closes it as done (#1522, home-check.ts).
+//      `homeCloses: false` turns that off.
 //   1. Settle (#1138): a request in progress, quiet for `staleAfterHours`,
 //      whose handed work all came back done, closes as done with the link
 //      its delegate gave, or marked unproven without one. The owner is not
@@ -19,6 +23,8 @@ import { goalLine } from "./goals"
 //      estimate or wait (#1214). One already raised for being overdue
 //      settles the same way once its work has been back that long.
 //      `settleHandedBack: false` raises it as quiet instead, as before.
+//      A hand-off that failed or was lost no longer holds it once a later
+//      one came back done (#1522).
 //   2. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
 //      reported an end. A loop with a due time needs attention once it is
@@ -54,6 +60,9 @@ export interface RequestSweepDeps {
   inPlan?: (requestId: string) => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
   check?: LoopChecker
+  /** Reads a request's issue or merge request home (#1522). Unset: homes
+   *  are not read. */
+  checkHome?: HomeChecker
   /** Gives a request its headline when it has none (#1126), so the owner
    *  is told what it is. Returns it as it is when none could be written. */
   describe?: (r: RequestRecord) => Promise<RequestRecord>
@@ -67,6 +76,8 @@ export interface RequestSweepResult {
   /** Loops whose checker ran, and those it closed. */
   checked: number
   verified: number
+  /** Requests closed because their issue or merge request home closed (#1522). */
+  homesClosed: number
   /** Quiet requests whose handed work came back done, closed (#1138). */
   settled: number
   quiet: number
@@ -157,7 +168,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
   if (!settings.enabled) return result
 
   if (deps.check) {
@@ -168,6 +179,17 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       result.verified = r.closed
     } catch (e: any) {
       log(`[requests] loop checks failed: ${e?.message ?? e}`)
+    }
+  }
+
+  if (deps.checkHome && settings.homeCloses !== false) {
+    try {
+      const every = (settings.checkers ?? DEFAULT_CHECKER_SETTINGS).checkEveryMinutes
+      const r = await checkHomes(store, deps.checkHome, { everyMinutes: every, now, log })
+      result.checked += r.checked
+      result.homesClosed = r.closed
+    } catch (e: any) {
+      log(`[requests] home checks failed: ${e?.message ?? e}`)
     }
   }
 
