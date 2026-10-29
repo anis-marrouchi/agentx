@@ -85,6 +85,7 @@ export class ResumeCoordinator {
       const listLeft = () => {
         for (const w of left) unsaved.push(`- ${run.agentId}: ${describeLeftWork(w)}`)
       }
+      let resumed = false
       try {
         // Claim before any action — skip, report or resume — so a second
         // process can't repeat it (or tell the chat twice).
@@ -117,14 +118,21 @@ export class ResumeCoordinator {
         }
         await this.tell(plan.origin, RESUMED_TEXT, input.log)
         await resumer.resume({ origin: plan.origin, run, note: buildResumeNote(run, left), attempt: run.resumeAttempt + 1 })
-        recordResumeDecision(input.db, run.taskId, "resumed", plan.reason)
-        outcome("resumed", plan.reason)
+        resumed = true
       } catch (e: any) {
         const reason = `resume failed: ${e?.message ?? e}`
         try { recordResumeDecision(input.db, run.taskId, "resume-failed", reason) } catch { /* db gone: logged below */ }
         outcome("resume-failed", reason)
         untold.push(`- ${run.agentId} (${run.channel ?? "no channel"}): ${preview(run)} — ${reason}`)
         listLeft()
+      }
+      if (resumed) {
+        // Outside the try: the run is already handed over, so a failed write
+        // must not read as "resume failed" and get the request resent (#1550).
+        try { recordResumeDecision(input.db, run.taskId, "resumed", plan.reason) } catch (e: any) {
+          input.log(`[resume] ${run.agentId} ${run.taskId}: resumed, but couldn't record it: ${e?.message ?? e}`)
+        }
+        outcome("resumed", plan.reason)
       }
       if (input.staggerMs) await new Promise((r) => setTimeout(r, input.staggerMs))
     }

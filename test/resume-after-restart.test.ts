@@ -210,6 +210,23 @@ describe("ResumeCoordinator", () => {
     expect(row.resume_decision).toBe("resume-failed")
   })
 
+  it("still counts a run as resumed when recording the decision fails (#1550)", async () => {
+    const db = setup([run()])
+    const resumed: string[] = []
+    const c = new ResumeCoordinator()
+    c.register("router", {
+      // The database goes away once the run is handed over.
+      resume: async ({ run: r }) => { resumed.push(r.taskId); db.exec("ALTER TABLE task_traces RENAME TO gone") },
+    })
+    const notify = vi.fn(async () => {})
+    const logs: string[] = []
+    const out = await c.run({ ...base, db, runs: [run()], notifyOperator: notify, log: (m) => logs.push(m) })
+    expect(out.map((o) => o.decision)).toEqual(["resumed"])
+    expect(resumed).toEqual(["t1"])
+    expect(notify).not.toHaveBeenCalled()
+    expect(logs.some((l) => l.includes("couldn't record it"))).toBe(true)
+  })
+
   it("tells the chat when a run is only reported, and the operator when no chat can be told", async () => {
     const runs = [run({ taskId: "old", startedAt: NOW - 60 * 60_000 }), run({ taskId: "voice", channel: "voice", resumeOrigin: null })]
     const db = setup(runs)
