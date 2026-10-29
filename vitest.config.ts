@@ -18,7 +18,9 @@ export default defineConfig({
     // Agent processes export AGENTX_AGENT_ID, and the fact ledger refuses
     // person-only actions under it. Clear it so the suite behaves the same
     // whether a person or an agent runs it; tests that need it set it.
-    env: { AGENTX_AGENT_ID: "" },
+    // The admission queue (#1521) paces starts after boot, which would slow
+    // every test that runs a few turns; its own tests turn it back on.
+    env: { AGENTX_AGENT_ID: "", AGENTX_ADMISSION: "off" },
   },
   plugins: [tsconfigPaths()],
 })

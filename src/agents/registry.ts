@@ -71,7 +71,7 @@ import { randomUUID } from "crypto"
 import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
-import { isHumanFacingTurn } from "@/a2a/initiator"
+import { isHumanFacingTurn, isInsideDelegation } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
 import { dueAtOf, taskTypeOf } from "@/watchers/due"
@@ -99,6 +99,8 @@ const STEP_BUDGET_MS: Record<string, number> = {
   "route-model": 5_000,
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
+import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
+import { ResourceSampler } from "@/native/resources"
 import { prepareOutbox } from "@/utils/app-outbox"
 
 /** Channels that never have an outbound adapter: a queued reply on them
@@ -691,6 +693,9 @@ export class AgentRegistry {
    *  the workflow engine's run store; unset means no wrapping. */
   private workflowRuns?: WorkflowRunStore
   private messageQueue: MessageQueue
+  /** Node-wide admission queue (#1521): every run waits here for room. */
+  readonly admission: AdmissionQueue
+  private admissionTickets = new WeakMap<AgentTask, AdmissionTicket>()
   /**
    * Voice chats a waiting question has claimed between its wait ending and
    * the chat being marked running (the rate limiter awaits in between).
@@ -783,6 +788,12 @@ export class AgentRegistry {
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
     this.messageQueue = new MessageQueue()
+    this.admission = new AdmissionQueue(
+      () => this.admissionSettings(),
+      // The disk that holds the daemon's data folder.
+      new ResourceSampler(existsSync(resolve(process.cwd(), ".agentx")) ? resolve(process.cwd(), ".agentx") : process.cwd()),
+      (m) => this.log(m),
+    )
 
     // Apply the claude-code fleet dispatch budget. See DaemonConfig.session
     // for the tuning knobs. Pools all claude-code agents under one counter
@@ -876,6 +887,13 @@ export class AgentRegistry {
    *  (rotating a key mid-task shouldn't fail the task). */
   setProviders(next: Record<string, { apiKey?: string }>): void {
     this.providers = next
+  }
+
+  /** The admission settings in force, read on every start. */
+  private admissionSettings(): AdmissionSettings {
+    const settings = (this.config.admission as AdmissionSettings | undefined) ?? DEFAULT_ADMISSION_SETTINGS
+    // Emergency switch: no config edit, no restart.
+    return process.env.AGENTX_ADMISSION === "off" ? { ...settings, enabled: false } : settings
   }
 
   /** Hot-swap the live DaemonConfig reference. Registry reads it lazily at
@@ -1355,6 +1373,9 @@ export class AgentRegistry {
     } catch (e: any) {
       response = { content: "", error: e?.message ?? String(e) }
     }
+    // The run normally frees its node place when it ends; this covers a
+    // path that left before its release ran.
+    this.admissionTickets.get(task)?.release()
     // Cut off by a daemon shutdown, at whatever step: report the restart,
     // not how the step read the kill.
     const interruptedBy = task.runningTaskId ? this.interruptedRuns.get(task.runningTaskId) : undefined
@@ -1700,17 +1721,69 @@ export class AgentRegistry {
         this.log(`[${task.agentId}] ${reason} — queued, resumes in ~${Math.max(1, Math.round(waitMs / 1000))}s`)
       },
     })
-    // From here to markRunning below nothing awaits, so the chat is
-    // marked busy before another waiter can look at it.
-    if (voiceClaim) this.voiceClaims.delete(voiceClaim)
+    // The voice claim is kept through the node wait below and dropped only
+    // once the run holds its agent slot (or does not start), so a second
+    // question on the same voice chat cannot slip past while this one waits.
+    const dropVoiceClaim = () => { if (voiceClaim) this.voiceClaims.delete(voiceClaim) }
     if (!rateResult.ok) {
+      dropVoiceClaim()
       this.log(`[${task.agentId}] ${rateResult.reason}`)
       return { content: "", error: rateResult.reason }
     }
     // The rate-limit wait above can be minutes long too. The token it
     // took is spent even though this run never starts; that is accepted,
     // since the next caller only waits one token interval longer.
-    if (task.callerSignal?.aborted) return this.callerGone(task, "rate-limit wait")
+    if (task.callerSignal?.aborted) { dropVoiceClaim(); return this.callerGone(task, "rate-limit wait") }
+
+    // Node admission (#1521): wait for room on the node. The agent's slot is
+    // NOT held while waiting: the queue checks it (canStart) and takes it
+    // (onStart) in the same step as admission, so nothing can slip in
+    // between, and a later, higher-priority message to the same agent still
+    // reaches the queue instead of waiting behind this one. Tiers that start
+    // no local process are not gated. From admission to markRunning below
+    // nothing awaits.
+    const admissionSettings = this.admissionSettings()
+    if (admissionSettings.tiers.includes(state.def.tier)) {
+      const person = personOfTurn(this.config.people, task.context as any)
+      const voiceKey = qChannel === "voice" ? `${task.agentId}\u0000${qChatId}` : null
+      const outcome = await this.admission.admit({
+        agentId: task.agentId,
+        channel: qChannel,
+        chatId: qChatId,
+        person: person?.id ?? null,
+        owner: person?.role === "owner",
+        // A hop whose caller waits on it; a callback turn has no waiting parent.
+        delegated: isInsideDelegation(task.context as any) && !(task.context as any)?.delegation,
+        // A chat message still waiting at shutdown is replayed by the router.
+        keepOnClose: task.origin?.kind === "router",
+        // One question at a time per voice chat: the claim is taken at
+        // admission, before any other entry of the same pass is checked,
+        // and held until this run marks the chat running.
+        canStart: () => state.activeTasks < state.def.maxConcurrent
+          && !(voiceKey && voiceKey !== voiceClaim && (this.voiceClaims.has(voiceKey) || this.messageQueue.isBusy(task.agentId, qChannel, qChatId))),
+        onStart: () => {
+          state.activeTasks++
+          if (voiceKey && !voiceClaim) { voiceClaim = voiceKey; this.voiceClaims.add(voiceKey) }
+        },
+        signal: task.callerSignal,
+      })
+      dropVoiceClaim()
+      if (!outcome.ok) {
+        if (outcome.reason === "caller-gone") return this.callerGone(task, "node queue")
+        if (outcome.reason === "closed") {
+          return { content: "", error: `Agent "${task.agentId}" not started: the daemon is restarting`, errorKind: "interrupted" }
+        }
+        const minutes = Math.round(outcome.waitedMs / 60_000)
+        return {
+          content: "",
+          error: `This machine had no room to start agent "${task.agentId}" for ${minutes} min (${outcome.blockedBy.join("; ") || "busy"}). Please send it again later.`,
+        }
+      }
+      this.admissionTickets.set(task, outcome.ticket)
+    } else {
+      dropVoiceClaim()
+      state.activeTasks++
+    }
 
     // A flushed queued message that waited long enough for its subject to
     // change is told so (#282). Added here, when it really starts, and
@@ -1731,7 +1804,6 @@ export class AgentRegistry {
       task.message = `${clash}\n${task.message}`
     }
 
-    state.activeTasks++
     state.totalTasks++
     state.lastActive = new Date()
 
@@ -1989,6 +2061,7 @@ export class AgentRegistry {
       if (deadline) clearTimeout(deadline)
       clearPreSpawnDeadline()
       state.activeTasks--
+      this.admissionTickets.get(task)?.release()
       // Remove this run from the running-tasks list.
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
       if (idx !== -1) state.runningTasks.splice(idx, 1)

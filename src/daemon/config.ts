@@ -2117,6 +2117,65 @@ export const daemonConfigSchema = z.object({
       maxContinuations: z.number().int().min(0).max(3).default(1),
     }).default({}),
   }).default({}),
+  /** Admission queue (src/admission, #1521): every new agent session waits
+   *  in one priority queue until the node has room (memory, swap, disk,
+   *  load), is under its session caps, and the start pace allows it.
+   *  Read it with GET /api/queue or `agentx queue`. */
+  admission: z.object({
+    enabled: z.boolean().default(true),
+    /** "observe" only logs what it would hold. */
+    mode: z.enum(["enforce", "observe"]).default("enforce"),
+    /** Agent tiers that go through the queue (those that start a local process). */
+    tiers: z.array(z.string()).default(["claude-code", "codex-cli", "opencode"]),
+    /** Most live sessions on this node; 0 = one per GB above the first 2 GB (min 2). */
+    maxSessions: z.number().int().min(0).default(0),
+    /** Owner turns may go this many over maxSessions (never over resources). */
+    ownerExtraSessions: z.number().int().min(0).default(1),
+    /** Helper runs started by a running session may go this many over
+     *  maxSessions, so parents waiting on helpers cannot fill the node. */
+    delegationHeadroom: z.number().int().min(0).default(2),
+    /** Hold below this available memory: the larger of MB and percent. */
+    minAvailableMemoryMB: z.number().int().min(0).default(512),
+    minAvailableMemoryPercent: z.number().min(0).max(90).default(10),
+    /** Hold above this swap in use; 0 = half the swap size, or three
+     *  quarters of the memory size where swap grows on demand (macOS). */
+    maxSwapUsedMB: z.number().int().min(0).default(0),
+    /** Hold below this free disk where the daemon runs; 0 = no check. */
+    minDiskFreeMB: z.number().int().min(0).default(2048),
+    /** Hold above this 1-minute load average per CPU; 0 = no check. */
+    maxLoadPerCpu: z.number().min(0).default(2),
+    /** Least seconds between two starts (owner turns excepted). */
+    minStartGapSeconds: z.number().min(0).default(10),
+    /** After the daemon starts: at most startsPerInterval starts every
+     *  intervalSeconds, for windowSeconds (owner turns excepted). */
+    boot: z.object({
+      windowSeconds: z.number().int().min(0).default(300),
+      startsPerInterval: z.number().int().min(0).default(2),
+      intervalSeconds: z.number().int().min(1).default(30),
+    }).default({}),
+    /** With nothing of ours running, one run starts even when resources
+     *  are short: the pressure is not ours. */
+    allowOneWhenIdle: z.boolean().default(true),
+    /** A run still waiting after this many minutes is refused in plain
+     *  words; 0 = wait as long as it takes. */
+    maxWaitMinutes: z.number().int().min(0).default(60),
+    /** Seconds between resource re-reads while work waits. */
+    sampleSeconds: z.number().int().min(1).max(60).default(5),
+    /** Named caps, e.g. { "browser": { "max": 1, "agents": ["web-tester"] } }. */
+    classes: z.record(z.string(), z.object({
+      max: z.number().int().min(0),
+      agents: z.array(z.string()).optional(),
+      channels: z.array(z.string()).optional(),
+    })).default({}),
+    /** Queue order: owner > critical > normal > background, then age. */
+    priority: z.object({
+      ownerChannels: z.array(z.string()).default(["voice", "app"]),
+      /** config.people ids whose turns run at owner priority. */
+      ownerPeople: z.array(z.string()).default([]),
+      criticalAgents: z.array(z.string()).default([]),
+      backgroundChannels: z.array(z.string()).default(["cron", "heartbeat", "routine"]),
+    }).default({}),
+  }).default({}),
   /** Stop and resume signals (agents/signals, #857): stop a running task
    *  cleanly, keep the agent's resume plan, resume it later. The owner may
    *  always signal; an agent may signal tasks it dispatched, or any task

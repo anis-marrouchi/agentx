@@ -308,6 +308,16 @@ Show whether a release passed its canary soak on this daemon. Without `sha`, the
 | `--no-running` | — | Skip the live daemon probe. |
 | `--json` | — | Emit machine-readable JSON (stable shape for CI). |
 
+## queue
+
+`agentx queue`: Show the node's session queue: resources, running, waiting and next in line. See [Keep a small machine from running out of memory](/jobs/session-queue).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Daemon config file. |
+| `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
+| `--json` | — | Print the raw JSON. |
+
 ## agent
 
 `agentx agent`: Manage agents — add, list, remove, pause, resume.

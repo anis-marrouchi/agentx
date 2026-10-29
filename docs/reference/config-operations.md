@@ -422,6 +422,36 @@ How long `agentx demo` waits while it starts. The demo reads this from the `agen
 |---|---|---|---|
 | `demo.startupTimeoutSeconds` | number (1–3600) | — | Seconds each startup step may take: each node answering `/health`, the dashboard answering `/live`, the nodes finding each other. Unset: `AGENTX_DEMO_STARTUP_TIMEOUT`, else 60, raised when the machine is busy (the 1-minute load average above the CPU count), up to 300. The `--startup-timeout` flag overrides both. |
 
+## admission
+
+The session queue: every new agent session waits until the machine has room. Read it with `agentx queue`. How it works: [Keep a small machine from running out of memory](/jobs/session-queue).
+
+| Key | Default | What it does |
+|---|---|---|
+| `enabled` | `true` | Off: sessions start at once, as before. |
+| `mode` | `"enforce"` | `"observe"` only logs what it would hold. |
+| `tiers` | `["claude-code", "codex-cli", "opencode"]` | Agent tiers that wait in the queue. |
+| `maxSessions` | `0` | Most sessions at once; 0 = one per GB above the first 2 GB, at least 2. |
+| `ownerExtraSessions` | `1` | Owner work may go this many over `maxSessions`. |
+| `delegationHeadroom` | `2` | Helper runs started by a running session may go this many over `maxSessions`. |
+| `minAvailableMemoryMB` | `512` | Hold below this free memory… |
+| `minAvailableMemoryPercent` | `10` | …or below this share of the memory, whichever is larger. |
+| `maxSwapUsedMB` | `0` | Hold above this swap in use; 0 = half the swap, or three quarters of the memory where swap grows on demand. |
+| `minDiskFreeMB` | `2048` | Hold below this free disk; 0 = no check. |
+| `maxLoadPerCpu` | `2` | Hold above this one-minute load per processor; 0 = no check. |
+| `minStartGapSeconds` | `10` | Least time between two starts. |
+| `boot.windowSeconds` | `300` | How long the slow start after boot lasts. |
+| `boot.startsPerInterval` | `2` | Starts allowed per interval during it. |
+| `boot.intervalSeconds` | `30` | The interval. |
+| `allowOneWhenIdle` | `true` | With nothing running, one session starts even when memory is short. |
+| `maxWaitMinutes` | `60` | Refuse work still waiting after this long, with a plain message; 0 = never. |
+| `sampleSeconds` | `5` | How often resources are read again while work waits. |
+| `classes` | `{}` | Named limits, e.g. `{ "browser": { "max": 1, "agents": ["web-tester"] } }`. |
+| `priority.ownerChannels` | `["voice", "app"]` | Channels whose work runs at owner priority. |
+| `priority.ownerPeople` | `[]` | People ids whose work runs at owner priority. |
+| `priority.criticalAgents` | `[]` | Agents whose work runs at critical priority. |
+| `priority.backgroundChannels` | `["cron", "heartbeat", "routine"]` | Channels whose work runs last. |
+
 ## Check it worked
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
