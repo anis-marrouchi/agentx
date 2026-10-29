@@ -51,8 +51,6 @@ export interface WorkflowsApiDeps {
   }
 }
 
-/** Router the daemon calls from its HTTP handler. Returns true if the
- *  request was handled (response written), false if the path isn't ours. */
 /** A write the workflow editor sends (#1524): create, save or delete a
  *  workflow, save its layout, or ask the build chat. Validate and the run
  *  routes are not: checking a draft changes nothing, and runs have their
@@ -66,6 +64,8 @@ export function isWorkflowEditorWrite(method: string, path: string): boolean {
   return /^\/api\/workflows\/[^/]+(\/layout)?$/.test(path) && (m === "PUT" || m === "DELETE" || m === "PATCH" || m === "POST")
 }
 
+/** Router the daemon calls from its HTTP handler. Returns true if the
+ *  request was handled (response written), false if the path isn't ours. */
 export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, deps: WorkflowsApiDeps): boolean {
   const url = req.url || ""
   if (!url.startsWith("/api/workflows")) return false
