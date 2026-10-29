@@ -698,8 +698,11 @@ export class CronScheduler {
 
       // An answer that must cite its sources goes out with the lines that
       // do not named under it; the run record keeps the answer as written.
-      // A quiet answer (#1289) is not checked: it is sent nowhere.
-      const checked = job.requireSources && response.content && !result.quiet ? withSourceWarning(response.content) : undefined
+      // A quiet answer (#1289) is not checked: it is sent nowhere. The
+      // `EXIT=0` line of an `expectExitZero` job (#1540) is for the
+      // scheduler, so it is neither checked nor delivered.
+      const answer = job.expectExitZero ? withoutExitMarker(response.content) : response.content
+      const checked = job.requireSources && answer && !result.quiet ? withSourceWarning(answer) : undefined
       if (checked?.unsourced) {
         result.unsourced = checked.unsourced
         this.log(`Job "${jobId}": ${checked.unsourced} answer line(s) without a source`)
@@ -707,7 +710,7 @@ export class CronScheduler {
 
       // Log run
       this.logRun(result)
-      await this.deliverResult(job, checked?.text ?? response.content, startedAt)
+      await this.deliverResult(job, checked?.text ?? answer, startedAt)
 
       // Post-hook
       if (this.hooks?.has("post:cron-run" as any)) {

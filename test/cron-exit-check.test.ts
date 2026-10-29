@@ -105,6 +105,27 @@ describe("a prompt cron with expectExitZero", () => {
     expect(s.jobs.get("absorb").consecutiveErrors).toBe(0)
   })
 
+  it("delivers the answer without its EXIT=0 line, and records it as written", async () => {
+    const { deliver, go } = run(job({ expectExitZero: true, notify: { channel: "telegram", chatId: "1" } }), {
+      content: "Absorbed 3 notes\nEXIT=0",
+    })
+    await go()
+    expect(deliver).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(deliver.mock.calls[0])).toContain("Absorbed 3 notes")
+    expect(JSON.stringify(deliver.mock.calls[0])).not.toContain("EXIT=0")
+    expect(runRecords()[0].response).toBe("Absorbed 3 notes\nEXIT=0")
+  })
+
+  it("does not count the EXIT=0 line as an unsourced claim", async () => {
+    const { deliver, go } = run(job({ expectExitZero: true, requireSources: true, notify: { channel: "telegram", chatId: "1" } }), {
+      content: "Absorbed 3 notes, see https://example.com/release\nEXIT=0",
+    })
+    await go()
+    expect(runRecords()[0]).toMatchObject({ success: true })
+    expect(runRecords()[0].unsourced).toBeUndefined()
+    expect(JSON.stringify(deliver.mock.calls[0])).not.toContain("no source")
+  })
+
   it("keeps a quiet answer quiet when it ends with EXIT=0", async () => {
     const { deliver, go } = run(job({ expectExitZero: true, report: "exceptions", notify: { channel: "telegram", chatId: "1" } }), {
       content: `${NOTHING_TO_REPORT}\nEXIT=0`,
