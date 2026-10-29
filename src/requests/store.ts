@@ -289,8 +289,9 @@ const AWAITING_QA = "qa_requested_at IS NOT NULL AND (qa_at IS NULL OR qa_at < q
 export const OVERDUE_REASON = "Past its due time"
 
 /** A request whose handed-on work all came back done (#1138). A hand-off
- *  that failed, timed out or was lost counts for nothing once a later one
- *  to the same agent came back done: that was its retry (#1522). One still
+ *  that failed, timed out or was lost counts for nothing once one handed
+ *  to the same agent after it failed came back done: that was its retry
+ *  (#1522). Two running side by side are not each other's retry. One still
  *  out, waiting, from before endings were kept, or to another agent holds it. */
 const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
   AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
@@ -298,7 +299,7 @@ const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pic
                   AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded'))
                   AND NOT (l.ended IN ('error', 'lost', 'timeout') AND l.agent IS NOT NULL AND EXISTS (
                     SELECT 1 FROM request_links d WHERE d.request_id = r.id AND d.kind = 'delegation' AND d.ended = 'done'
-                      AND d.agent = l.agent AND d.ended_at > l.ended_at)))
+                      AND d.agent = l.agent AND d.at > l.ended_at)))
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')`
 
 /** SET clause for a statement that writes `state`: the change time moves

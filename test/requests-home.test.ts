@@ -257,6 +257,18 @@ describe("a retried hand-off replaces its failed one (#1522)", () => {
     expect((await settle()).settled).toBe(0)
   })
 
+  it("still holds a failed hand-off when the one that came back ran beside it, not after it", async () => {
+    handed()
+    clock += 1000
+    again("dlg-2")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-1"), "error", "part A crashed")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-2"), "done", "part B: https://example.test/pr/6")
+    clock += 25 * HOUR
+    expect((await settle()).settled).toBe(0)
+  })
+
   it("still holds a hand-off that ended waiting before the retry", async () => {
     handed()
     tracker.delegationDone(dlg("dlg-1"), "waiting", "waiting for the DNS")
