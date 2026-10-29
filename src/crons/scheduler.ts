@@ -14,6 +14,7 @@ import { withNewRoot } from "@/events/envelope"
 import { withEventPayload, serializePayload, ROUTINE_PAYLOAD_ENV } from "./event-payload"
 import { NoteStore, renderNotesInbox } from "@/wiki/notes"
 import { isQuietRun, withQuietRule } from "./quiet"
+import { exitCheckError, withExitRule, withoutExitMarker } from "./exit-check"
 import { withSourceWarning } from "@/sales/sources"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
@@ -41,6 +42,12 @@ function withOutputCap(prompt: string, maxOutputTokens?: number): string {
  *  its notes first (#825). */
 function withNotesFirst(block: string, prompt: string): string {
   return block ? `${block}\n\n${prompt}` : prompt
+}
+
+/** Whether a prompt job's answer is the quiet one (#1289), read without
+ *  the `EXIT=<code>` line an `expectExitZero` job ends with (#1540). */
+function isQuietJobAnswer(job: CronJobState, text: string | undefined): boolean {
+  return isQuietRun(job.report, job.expectExitZero ? withoutExitMarker(text) : text)
 }
 
 /**
@@ -232,6 +239,7 @@ export class CronScheduler {
         deliverResult: def.deliverResult !== false && Boolean(def.notify),
         report: def.report,
         requireSources: def.requireSources,
+        expectExitZero: def.expectExitZero,
         consecutiveErrors: 0,
         totalRuns: 0,
         totalFailures: 0,
@@ -602,7 +610,7 @@ export class CronScheduler {
       const inbox = this.wikiNotesInbox(job, startedAt)
       const task: AgentTask = {
         message: withOutputCap(
-          withQuietRule(withNotesFirst(inbox.block, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt), job.report),
+          withExitRule(withQuietRule(withNotesFirst(inbox.block, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt), job.report), job.expectExitZero),
           job.maxOutputTokens,
         ),
         agentId: job.agent,
@@ -617,14 +625,17 @@ export class CronScheduler {
         context: cronContext(jobId, job),
       }
       const response = await this.registry.execute(task)
+      // The agent run can succeed while the command it was told to run
+      // failed (#1540): a job with `expectExitZero` fails on the exit code.
+      const error = response.error || exitCheckError(job.expectExitZero, response.content)
 
       const result: CronRunResult = {
         jobId,
         startedAt,
         completedAt: new Date(),
-        success: !response.error,
+        success: !error,
         response: response.content,
-        error: response.error,
+        error,
         duration: response.duration || Date.now() - startedAt.getTime(),
         isRetry,
         retryAttempt,
@@ -634,20 +645,20 @@ export class CronScheduler {
         ...runLinkIds(task, response),
         ...(response.autonomy ? { autonomy: response.autonomy } : {}),
         ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
-        ...(!response.error && isQuietRun(job.report, response.content) ? { quiet: true } : {}),
+        ...(!error && isQuietJobAnswer(job, response.content) ? { quiet: true } : {}),
       }
       if (result.autonomyBlocks) {
         this.log(`Job "${jobId}" (autonomy ${result.autonomy}): ${result.autonomyBlocks.length} action(s) blocked: ${result.autonomyBlocks.map((b) => b.ruleId).join(", ")}`)
       }
 
-      if (response.error) {
+      if (error) {
         job.consecutiveErrors++
         job.totalFailures++
-        job.lastError = response.error
-        this.log(`Job "${jobId}" failed (${job.consecutiveErrors} consecutive): ${response.error}`)
+        job.lastError = error
+        this.log(`Job "${jobId}" failed (${job.consecutiveErrors} consecutive): ${error}`)
 
         // Notify on failure
-        await this.notifyFailure(job, response.error)
+        await this.notifyFailure(job, error)
 
         if (job.onError.includes("disable") && job.consecutiveErrors >= 3) {
           job.enabled = false
@@ -775,7 +786,7 @@ export class CronScheduler {
         const inbox = this.wikiNotesInbox(job, startedAt)
         const task: AgentTask = {
           message: withOutputCap(
-            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withQuietRule(withNotesFirst(inbox.block, job.prompt), job.report)}`,
+            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withExitRule(withQuietRule(withNotesFirst(inbox.block, job.prompt), job.report), job.expectExitZero)}`,
             job.maxOutputTokens,
           ),
           agentId: job.agent,
@@ -786,14 +797,15 @@ export class CronScheduler {
           context: cronContext(jobId, job),
         }
         const response = await this.registry.execute(task)
+        const error = response.error || exitCheckError(job.expectExitZero, response.content)
 
         const result: CronRunResult = {
           jobId,
           startedAt,
           completedAt: new Date(),
-          success: !response.error,
+          success: !error,
           response: response.content,
-          error: response.error,
+          error,
           duration: response.duration || 0,
           isRetry: false,
           timeout,
@@ -801,13 +813,13 @@ export class CronScheduler {
           ...runLinkIds(task, response),
           ...(response.autonomy ? { autonomy: response.autonomy } : {}),
           ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
-          ...(!response.error && isQuietRun(job.report, response.content) ? { quiet: true } : {}),
+          ...(!error && isQuietJobAnswer(job, response.content) ? { quiet: true } : {}),
         }
 
         this.logRun(result)
 
-        if (response.error) {
-          this.log(`Missed job "${jobId}" failed: ${response.error}`)
+        if (error) {
+          this.log(`Missed job "${jobId}" failed: ${error}`)
         } else {
           this.log(`Missed job "${jobId}" completed`)
           job.lastSuccess = new Date()
@@ -827,7 +839,7 @@ export class CronScheduler {
   private async deliverResult(job: CronJobState, text: string | undefined, startedAt: Date): Promise<void> {
     if (!job.deliverResult || !text?.trim()) return
     // A run of a report-only-exceptions job found nothing wrong (#1289).
-    if (isQuietRun(job.report, text)) {
+    if (isQuietJobAnswer(job, text)) {
       this.log(`Job "${job.id}" had nothing to report; nothing sent`)
       return
     }

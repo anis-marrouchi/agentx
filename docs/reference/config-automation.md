@@ -22,6 +22,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `taskType` | string (up to 64 characters) | — | The type of task each run is. It picks the proof a watcher asks for before the run counts as done (`watchers.evidence.<type>`). Unset, or a type with no rule of its own: the rule for `cron`, if there is one. To exempt a job from proof, remove the `cron` rule rather than set a type. See [Require proof of done](/automations/task-watchers#_5-require-proof-of-done-optional). |
 | `autonomy` | `"report"` \| `"propose"` \| `"act"` | — (acts as `act`) | How much the run may do. See [routine autonomy](./config.md#routine-autonomy). Not allowed on command jobs. |
 | `requireSources` | boolean | — | Check each answer before it is sent: every line that states a fact must carry a link (`https://…`, or a link to a `.md` file in the agent's folder). If one does not, the message ends with a warning that names the line, and the run record counts it as `unsourced`. See [sales leads](../jobs/sales.md). |
+| `expectExitZero` | boolean | — | For a prompt that tells the agent to run a shell command. The agent is asked to end its answer with a line `EXIT=<code>`, the command's exit code (0 means it worked). The run counts as failed when that line is missing or is not `EXIT=0`, so the failure shows in the schedule's run history and `onError` applies. Without it, a run counts as a success whenever the agent itself finished, even if the command it ran failed. Not allowed on command jobs, which already fail on a non-zero exit. See [a prompt that runs a command](#a-prompt-that-runs-a-command). |
 | `value` | object | — | The job's value line: why it runs and the number that proves it. Shown as written on the Wall's **Jobs** tab and in Settings › Schedules. A job without one shows **no value line**. |
 | `value.why` | string (1–200 characters) | required | Why the job runs, for example `Keeps the support queue answered overnight`. |
 | `value.metric` | string (1–200 characters) | required | The number that proves it, for example `Tickets older than 12 h each morning: 0`. AgentX does not measure it. |
@@ -51,6 +52,27 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
   }
 }
 ```
+
+### A prompt that runs a command
+
+A job with a `command` runs it directly and fails when it exits with an error. A job with a `prompt` that only says "run this command" is different: the agent runs it and describes the result in words, and the run counts as a success as long as the agent finished.
+
+1. **Editor:** if the job only runs the command, move it from `prompt` to `command`. No agent and no tokens are used.
+2. **Editor:** if the agent must read or act on the result, keep the `prompt` and add `"expectExitZero": true` to the job.
+
+```json
+"crons": {
+  "nightly-import": {
+    "schedule": "0 3 * * *",
+    "agent": "writer",
+    "prompt": "Run: ./scripts/import.sh, then summarise what it imported",
+    "expectExitZero": true,
+    "onError": ["notify"]
+  }
+}
+```
+
+A run that ends with `EXIT=1`, or with no `EXIT=` line at all, is recorded as failed with the error `the command exited with code 1` or `the answer did not report the command's exit code`.
 
 ## `exceptionsDigest`
 
@@ -604,4 +626,6 @@ The two contribution jobs exist only while at least one agent is switched on. A 
 - **`config check` says a cron needs a prompt or a command:** add one of them to that job.
 - **`config check` rejects `autonomy` on a job:** the job has a `command`. Remove `autonomy` or the command.
 - **A webhook is refused with 401:** the entry has `secretEnv`, but that variable is missing from `.env` or holds a different secret. Fix it and restart the daemon.
+- **`config check` rejects `expectExitZero` on a job:** the job has a `command`, which already fails on a non-zero exit. Remove `expectExitZero`.
+- **A job with `expectExitZero` fails with "did not report the command's exit code":** the agent's answer had no `EXIT=<code>` line. Read the run's answer; if the agent never ran the command, make the prompt name it plainly.
 - **A job stopped running:** it may have been turned off after 3 failures (`onError` includes `disable`). Fix the cause, then set `enabled` back to `true`.

@@ -872,6 +872,11 @@ const cronJobSchema = z.object({
    *  fact must carry a source link, or the owner is told which do not
    *  (#1288). See src/sales/sources.ts. */
   requireSources: z.boolean().optional(),
+  /** For a prompt that tells the agent to run a shell command: the agent
+   *  is asked to end its answer with `EXIT=<code>`, and the run fails when
+   *  that line is missing or not 0 (#1540). The agent run alone succeeds
+   *  even when the command it ran failed. See src/crons/exit-check.ts. */
+  expectExitZero: z.boolean().optional(),
   /** Secret that lets an external system fire this job now via
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */
@@ -893,6 +898,8 @@ const cronJobSchema = z.object({
   message: "a cron needs either a prompt (dispatch an agent) or a command (run it directly)",
 }).refine((j) => !(j.command?.trim() && j.autonomy && j.autonomy !== "act"), {
   message: "autonomy applies to agent routines; a command cron runs no agent (remove autonomy or the command)",
+}).refine((j) => !(j.command?.trim() && j.expectExitZero), {
+  message: "expectExitZero applies to prompt crons; a command cron already fails on a non-zero exit (remove expectExitZero)",
 })
 
 /** Whether `expr` is a 5-field cron the scheduler can read: each field a
