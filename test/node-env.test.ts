@@ -13,6 +13,7 @@ import { isNodeFact, NODE_FACTS_RULE } from "../src/agents/node-facts"
 import { MemoryStore, type MemoryFact } from "../src/agents/memory-store"
 import { memoryContextLines, renderMemoryBlock } from "../src/agents/memory-context"
 import { routeMemo } from "../src/wiki/facts/fact-proposals"
+import { splitMemo } from "../src/agents/fact-freshness"
 import { LandscapeBuilder } from "../src/agents/landscape"
 import { onDemandContextNote, AGENTX_CORE_TOOLS } from "../src/agents/session-profile"
 import type { AdmissionSnapshot } from "../src/admission/queue"
@@ -196,12 +197,23 @@ describe("limit notes are the node's, not memory's", () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
   const TRIGGER = "Claude weekly limit reached, resets 10-30 17:00"
+  // Lasting facts about other systems, and a decision: memory keeps them.
+  const OTHER_SYSTEMS = [
+    "nginx rate limit on the API vhost is 10r/s per IP",
+    "Supabase auth email rate limit is 4/hour on the free plan",
+    "Owner decided extra usage stays off for the Max plan",
+    "Video vendor wallet auto-reload off; overage billed per second",
+    "Password reset window is 60 minutes in the app",
+    "GitHub API request limit 5000/h for the PAT",
+    "Mail provider daily limit 300 emails on sandbox domain",
+    "Vercel deploy quota exceeded on hobby plan",
+  ]
 
   it("recognises limit, reset and hold notes, not other uses of the words", () => {
-    for (const t of [TRIGGER, "usage limits hit on the shared account", "5-hour limit resets at 14:00", "cold dispatches are held until the reset", "we are rate-limited", "plan hold on seven_day"]) {
+    for (const t of [TRIGGER, "usage limits hit on the shared account", "5-hour limit resets at 14:00", "cold dispatches are held until the reset", "Claude is rate-limited", "plan hold on seven_day", "weekly limit, resets 10-30 17:00", "five_hour window rejected, resets 12:00"]) {
       expect(isNodeFact(t), t).toBe(true)
     }
-    for (const t of ["deploy path is /srv/app", "reset the password for the demo user", "the char limit for titles is 80", "Alex prefers short replies"]) {
+    for (const t of ["deploy path is /srv/app", "reset the password for the demo user", "the char limit for titles is 80", "Alex prefers short replies", ...OTHER_SYSTEMS]) {
       expect(isNodeFact(t), t).toBe(false)
     }
   })
@@ -212,6 +224,22 @@ describe("limit notes are the node's, not memory's", () => {
     expect(store.addMemory("coder", { agentId: "coder", category: "fact", content: TRIGGER, keywords: ["limit"], source })).toBe(false)
     expect(store.addMemory("coder", { agentId: "coder", category: "fact", content: "Alex prefers short replies", keywords: [], source })).toBe(true)
     expect(store.getAll("coder").map((m) => m.content)).toEqual(["Alex prefers short replies"])
+  })
+
+  it("memory keeps limit facts about other systems, not marked stale", () => {
+    const store = new MemoryStore(root)
+    const source = { channel: "telegram", chatId: "1", sender: "owner", date: "2026-10-29" }
+    for (const content of OTHER_SYSTEMS) {
+      expect(store.addMemory("coder", { agentId: "coder", category: "fact", content, keywords: [], source }), content).toBe(true)
+    }
+    expect(store.getAll("coder").map((m) => m.content).sort()).toEqual([...OTHER_SYSTEMS].sort())
+    const notes: MemoryFact[] = OTHER_SYSTEMS.map((content, i) => ({
+      id: `o${i}`, agentId: "coder", category: "fact", content, keywords: [], source,
+      createdAt: new Date(T0 - 3600_000).toISOString(),
+    }))
+    const block = renderMemoryBlock(memoryContextLines(notes, [], T0))
+    for (const content of OTHER_SYSTEMS) expect(block, content).toContain(content)
+    expect(block).not.toContain("STALE")
   })
 
   it("a stale note stored earlier is marked and points at agentx_node, even when fresh", () => {
@@ -242,5 +270,13 @@ describe("limit notes are the node's, not memory's", () => {
     expect(r.proposals).toEqual([])
     expect(r.pinned).not.toContain("resets 10-30")
     expect(r.pinned).toContain("ask agentx_node")
+  })
+
+  it("a session memo keeps limit facts about other systems", () => {
+    const memo = OTHER_SYSTEMS.map((t) => `- ${t}`).join("\n")
+    expect(splitMemo(memo).nodeFacts).toEqual([])
+    const r = routeMemo(resolve(root, ".agentx/wiki"), memo, { agentId: "coder", origin: "continuity-memo" })
+    expect(r.pinned).not.toContain("ask agentx_node")
+    for (const t of OTHER_SYSTEMS) expect(r.pinned, t).toContain(t)
   })
 })

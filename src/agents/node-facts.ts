@@ -11,33 +11,38 @@
 //   - the prompt rule below tells agents to answer from the tool, with
 //     its check time.
 //
-// The patterns match statements about plan or usage limits, their reset
-// times and the holds they cause, not every use of "limit" or "reset".
+// A line counts only when it is about Claude, this node or its plan:
+// a hold pattern (agentx's own words), or a live-state pattern (limit
+// hit, window resets, rate-limited) on a line that also names a Claude
+// subject. "nginx rate limit 10r/s", "Supabase email limit 4/hour" or
+// "extra usage stays off" are lasting facts about other systems or
+// decisions, and stay in memory.
 
-const LIMIT_WORDS = "(?:usage|plan|rate|weekly|daily|hourly|session|monthly|account|request|message|opus|sonnet|haiku|claude|codex|5[- ]?h(?:our)?|five[- ]hour|7[- ]?d(?:ay)?|seven[- ]day)"
+const SUBJECT = /\b(?:claude|anthropic|opus|sonnet|haiku|codex|five[_ -]hour|seven[_ -]day|5[- ]?h(?:ours?)?|7[- ]?d(?:ays?)?|weekly (?:limits?|windows?|caps?)|usage limits?|session limits?|plan windows?)\b/i
 
-const PATTERNS: RegExp[] = [
-  // "weekly limit", "usage limits", "5-hour limit", "rate limit hit"
-  new RegExp(`\\b${LIMIT_WORDS}[- ]limits?\\b`, "i"),
+const LIVE_STATE: RegExp[] = [
   // "limit … resets 10-30 17:00", "the window resets at 17:00"
   /\b(?:limits?|windows?|quotas?|caps?|allowance)\b[^.\n]{0,60}\bresets?\b/i,
   /\bresets?\b[^.\n]{0,40}\b(?:limits?|windows?|quotas?)\b/i,
-  // "limit reached / hit / exceeded / lifted"
-  /\blimits? (?:is |was |has been |got )?(?:reached|hit|exceeded|exhausted|lifted|used up)\b/i,
+  // "limit reached / hit / exceeded / lifted", "window rejected"
+  /\b(?:limits?|windows?) (?:is |was |has been |got )?(?:reached|hit|exceeded|exhausted|lifted|used up|rejected)\b/i,
   /\b(?:hit|reached|exceeded) (?:the |its |our |a )?(?:\w+ )?limit\b/i,
   // "rate-limited", "quota exceeded", "out of usage"
   /\brate[- ]limited\b/i,
   /\bquotas? (?:is |was )?(?:exceeded|reached|hit|exhausted|used up)\b/i,
   /\bout of (?:usage|quota|credits)\b/i,
-  // "plan hold", "cold dispatches are held", "usingOverage"
-  /\b(?:plan|provider|claude|quota|usage)[- ]holds?\b/i,
-  /\bdispatch(?:es)? (?:are |is |were )?held\b/i,
-  /\b(?:extra usage|overage)\b/i,
 ]
 
-/** True when the text states a usage limit, its reset or a hold. */
+// Holds are agentx's own state: "plan hold", "cold dispatches are held".
+const HOLDS: RegExp[] = [
+  /\b(?:plan|provider|claude|quota|usage)[- ]holds?\b/i,
+  /\bdispatch(?:es)? (?:are |is |were )?held\b/i,
+]
+
+/** True when the text states a Claude usage limit, its reset or a hold. */
 export function isNodeFact(text: string): boolean {
-  return PATTERNS.some((re) => re.test(text))
+  if (HOLDS.some((re) => re.test(text))) return true
+  return SUBJECT.test(text) && LIVE_STATE.some((re) => re.test(text))
 }
 
 /** Rendered before a stored note of that kind. */
