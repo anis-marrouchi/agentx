@@ -510,24 +510,7 @@ export class CronScheduler {
     }
 
     if (!success) {
-      job.consecutiveErrors++
-      job.totalFailures++
-      job.lastError = error
-      this.log(`Command job "${job.id}" failed (${job.consecutiveErrors} consecutive): ${error}`)
-      await this.notifyFailure(job, error ?? "command failed")
-      if (job.onError.includes("disable") && job.consecutiveErrors >= 3) {
-        job.enabled = false
-        this.log(`Job "${job.id}" disabled after ${job.consecutiveErrors} consecutive errors`)
-        try {
-          await applyConfigMutation(
-            (cfg) => setAtPath(cfg, `crons.${job.id}.enabled`, false),
-            { reload: false },
-          )
-        } catch (e: any) {
-          this.log(`Failed to persist disable for "${job.id}": ${e.message}`)
-        }
-        await this.notifyDisabled(job)
-      }
+      await this.recordFailure(job, error ?? "command failed", "Command job")
       this.logRun(result)
       // A fired run is not retried: the caller decides whether to fire again.
       if (!fire) this.scheduleRetry(job.id, retryAttempt)
@@ -652,33 +635,7 @@ export class CronScheduler {
       }
 
       if (error) {
-        job.consecutiveErrors++
-        job.totalFailures++
-        job.lastError = error
-        this.log(`Job "${jobId}" failed (${job.consecutiveErrors} consecutive): ${error}`)
-
-        // Notify on failure
-        await this.notifyFailure(job, error)
-
-        if (job.onError.includes("disable") && job.consecutiveErrors >= 3) {
-          job.enabled = false
-          this.log(`Job "${jobId}" disabled after ${job.consecutiveErrors} consecutive errors`)
-          // Persist to agentx.json so a daemon restart doesn't resurrect the
-          // broken cron (previously this was in-memory only — a repeatedly
-          // failing cron would keep burning money across restarts).
-          try {
-            const res = await applyConfigMutation(
-              (cfg) => setAtPath(cfg, `crons.${jobId}.enabled`, false),
-              { reload: false },
-            )
-            if (!res.success) {
-              this.log(`Failed to persist disable for "${jobId}": ${res.error}`)
-            }
-          } catch (e: any) {
-            this.log(`Failed to persist disable for "${jobId}": ${e.message}`)
-          }
-          await this.notifyDisabled(job)
-        }
+        await this.recordFailure(job, error)
 
         // Retry — scheduled runs only; the caller of a fired run decides.
         this.logRun(result)
@@ -696,10 +653,13 @@ export class CronScheduler {
         this.log(`Job "${jobId}" completed in ${result.duration}ms`)
       }
 
+      // The `EXIT=0` line is for the scheduler, not the reader (#1546).
+      const answer = job.expectExitZero ? withoutExitMarker(response.content) : response.content
+
       // An answer that must cite its sources goes out with the lines that
       // do not named under it; the run record keeps the answer as written.
       // A quiet answer (#1289) is not checked: it is sent nowhere.
-      const checked = job.requireSources && response.content && !result.quiet ? withSourceWarning(response.content) : undefined
+      const checked = job.requireSources && answer && !result.quiet ? withSourceWarning(answer) : undefined
       if (checked?.unsourced) {
         result.unsourced = checked.unsourced
         this.log(`Job "${jobId}": ${checked.unsourced} answer line(s) without a source`)
@@ -707,7 +667,7 @@ export class CronScheduler {
 
       // Log run
       this.logRun(result)
-      await this.deliverResult(job, checked?.text ?? response.content, startedAt)
+      await this.deliverResult(job, checked?.text ?? answer, startedAt)
 
       // Post-hook
       if (this.hooks?.has("post:cron-run" as any)) {
@@ -817,21 +777,62 @@ export class CronScheduler {
         }
 
         this.logRun(result)
-
-        if (error) {
-          this.log(`Missed job "${jobId}" failed: ${error}`)
-        } else {
-          this.log(`Missed job "${jobId}" completed`)
-          job.lastSuccess = new Date()
-        }
         job.lastRun = new Date()
         job.totalRuns++
+
+        // A failed catch-up run counts like a scheduled one (#1546), but is
+        // not retried: the regular schedule runs it next.
+        if (error) {
+          await this.recordFailure(job, error, "Missed job")
+        } else {
+          this.log(`Missed job "${jobId}" completed`)
+          job.consecutiveErrors = 0
+          job.lastSuccess = new Date()
+          job.lastError = undefined
+        }
       } catch (e: any) {
         this.log(`Missed job "${jobId}" threw: ${e.message}`)
+        job.consecutiveErrors++
+        job.totalFailures++
+        job.lastError = e.message
+        await this.notifyFailure(job, e.message)
       }
     }
 
     this.saveLastRuns()
+  }
+
+  /**
+   * Count a failed run, send the failure notice, and turn the job off after
+   * 3 failures in a row when its `onError` says `disable`.
+   */
+  private async recordFailure(job: CronJobState, error: string, label = "Job"): Promise<void> {
+    job.consecutiveErrors++
+    job.totalFailures++
+    job.lastError = error
+    this.log(`${label} "${job.id}" failed (${job.consecutiveErrors} consecutive): ${error}`)
+
+    await this.notifyFailure(job, error)
+
+    if (job.onError.includes("disable") && job.consecutiveErrors >= 3) {
+      job.enabled = false
+      this.log(`Job "${job.id}" disabled after ${job.consecutiveErrors} consecutive errors`)
+      // Persist to agentx.json so a daemon restart doesn't resurrect the
+      // broken cron (previously this was in-memory only — a repeatedly
+      // failing cron would keep burning money across restarts).
+      try {
+        const res = await applyConfigMutation(
+          (cfg) => setAtPath(cfg, `crons.${job.id}.enabled`, false),
+          { reload: false },
+        )
+        if (!res.success) {
+          this.log(`Failed to persist disable for "${job.id}": ${res.error}`)
+        }
+      } catch (e: any) {
+        this.log(`Failed to persist disable for "${job.id}": ${e.message}`)
+      }
+      await this.notifyDisabled(job)
+    }
   }
 
   // --- Notification ---
