@@ -207,13 +207,16 @@ describe("limit notes are the node's, not memory's", () => {
     "GitHub API request limit 5000/h for the PAT",
     "Mail provider daily limit 300 emails on sandbox domain",
     "Vercel deploy quota exceeded on hobby plan",
+    "Mailgun quota resets every 7 days",
+    "Let's Encrypt rate limit resets after 7 days",
+    "Saber cert quota exceeded, retry in 5 hours",
   ]
 
   it("recognises limit, reset and hold notes, not other uses of the words", () => {
-    for (const t of [TRIGGER, "usage limits hit on the shared account", "5-hour limit resets at 14:00", "cold dispatches are held until the reset", "Claude is rate-limited", "plan hold on seven_day", "weekly limit, resets 10-30 17:00", "five_hour window rejected, resets 12:00"]) {
+    for (const t of [TRIGGER, "usage limits hit on the shared account", "5-hour limit resets at 14:00", "cold dispatches are held until the reset", "Claude is rate-limited", "plan hold on seven_day", "weekly limit, resets 10-30 17:00", "five_hour window rejected, resets 12:00", "The 5h window resets at 14:00", "seven-day limit reached"]) {
       expect(isNodeFact(t), t).toBe(true)
     }
-    for (const t of ["deploy path is /srv/app", "reset the password for the demo user", "the char limit for titles is 80", "Alex prefers short replies", ...OTHER_SYSTEMS]) {
+    for (const t of ["deploy path is /srv/app", "reset the password for the demo user", "the char limit for titles is 80", "Alex prefers short replies", "Uses Claude.\nnginx is rate-limited at 10r/s", ...OTHER_SYSTEMS]) {
       expect(isNodeFact(t), t).toBe(false)
     }
   })

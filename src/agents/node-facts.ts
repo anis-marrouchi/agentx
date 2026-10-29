@@ -16,9 +16,10 @@
 // hit, window resets, rate-limited) on a line that also names a Claude
 // subject. "nginx rate limit 10r/s", "Supabase email limit 4/hour" or
 // "extra usage stays off" are lasting facts about other systems or
-// decisions, and stay in memory.
+// decisions, and stay in memory. Window names count as Claude words
+// (5h, 7-day, five_hour), spelled-out durations ("7 days") do not.
 
-const SUBJECT = /\b(?:claude|anthropic|opus|sonnet|haiku|codex|five[_ -]hour|seven[_ -]day|5[- ]?h(?:ours?)?|7[- ]?d(?:ays?)?|weekly (?:limits?|windows?|caps?)|usage limits?|session limits?|plan windows?)\b/i
+const SUBJECT = /\b(?:claude|anthropic|opus|sonnet|haiku|codex|five[_ -]hour|seven[_ -]day|5(?:h|-hour)|7(?:d|-day)|weekly (?:limits?|windows?|caps?)|usage limits?|session limits?|plan windows?)\b/i
 
 const LIVE_STATE: RegExp[] = [
   // "limit … resets 10-30 17:00", "the window resets at 17:00"
@@ -41,8 +42,8 @@ const HOLDS: RegExp[] = [
 
 /** True when the text states a Claude usage limit, its reset or a hold. */
 export function isNodeFact(text: string): boolean {
-  if (HOLDS.some((re) => re.test(text))) return true
-  return SUBJECT.test(text) && LIVE_STATE.some((re) => re.test(text))
+  return text.split("\n").some((line) =>
+    HOLDS.some((re) => re.test(line)) || (SUBJECT.test(line) && LIVE_STATE.some((re) => re.test(line))))
 }
 
 /** Rendered before a stored note of that kind. */
