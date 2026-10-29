@@ -5,6 +5,7 @@ import { openDb } from "@/storage/sqlite"
 import { CLOSED_STATES, OPEN_STATES, RequestStore, type RequestRecord } from "@/requests/store"
 import { LIST_MAX } from "@/requests/daemon-api"
 import { startOfDay, todayRows } from "@/requests/today"
+import { describeFlow, FLOW_DAYS_MAX, measureFlow } from "@/requests/flow"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { findConfigPath } from "@/daemon/config-mutator"
 import { PlanStore, type PlanStep } from "@/requests/plan-store"
@@ -155,6 +156,26 @@ requests
       console.log(`  ${(r.noHome ? chalk.red : chalk.white)(r.time)}  ${chalk.dim(`[${STATE_LABEL[r.state] ?? r.state}] ${r.owner}`)}  ${r.words}`)
       console.log(`         → ${where}  ${chalk.dim(r.id)}`)
     }
+  })
+
+requests
+  .command("flow")
+  .description("the daily flow rate: requests closed correctly (done + dropped) of those asked, with the trend")
+  .option("--days <n>", "days back, today included", "7")
+  .option("--tz <zone>", "time zone whose midnight starts a day (default: requests.flowTimeZone)")
+  .option("--json", "machine-readable output")
+  .action((opts: { days: string; tz?: string; json?: boolean }) => {
+    const s = store()
+    if (!s) return
+    const days = Number(opts.days)
+    if (!Number.isInteger(days) || days < 1 || days > FLOW_DAYS_MAX) {
+      console.error(chalk.red(`  --days must be a whole number from 1 to ${FLOW_DAYS_MAX}`))
+      process.exitCode = 1
+      return
+    }
+    const flow = measureFlow(s, { days, timeZone: opts.tz || readRequestSettings().flowTimeZone })
+    if (opts.json) { console.log(JSON.stringify(flow, null, 2)); return }
+    console.log(describeFlow(flow).split("\n").map((l) => `  ${l}`).join("\n"))
   })
 
 /** This node's agent ids, from agentx.json. Empty when it cannot be read. */

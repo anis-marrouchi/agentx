@@ -43,6 +43,11 @@ export interface RequestSettings {
   /** An open request whose issue or merge request home is merged or
    *  closed as completed closes as done (#1522). Unset: on. */
   homeCloses?: boolean
+  /** One resend of a request stopped by a limit or a restart (#1542).
+   *  Unset: on, with the defaults (resend.ts). */
+  autoResend?: { enabled: boolean; afterMinutes: number; holdMaxHours: number }
+  /** The time zone of a day in the flow rate (#1542). Unset: Africa/Tunis. */
+  flowTimeZone?: string
   /** Status follows the work (#1138 step F). Unset: the defaults
    *  (DEFAULT_DRIFT_SETTINGS), which read no project. */
   statusDrift?: DriftSettings

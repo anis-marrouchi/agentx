@@ -9,6 +9,7 @@ import { parseDescription } from "./headline"
 import { DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
+import { describeFlow, FLOW_DAYS_MAX, measureFlow } from "./flow"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -16,6 +17,7 @@ import { parseGoal } from "./goals"
 // /approvals: loopback, or a mesh token.
 //   GET  /requests        open requests, oldest first
 //   GET  /requests/goals  every goal requests name, with progress and cost (#1168)
+//   GET  /requests/flow   the daily flow rate, ?days=7&tz= (#1542)
 //   GET  /requests/:id    one request and what is linked to it
 //   POST /requests        an agent's own statement about its request:
 //                         accept (with `steps`: a tracked plan, #788;
@@ -82,6 +84,8 @@ export interface RequestsApiDeps {
   /** What the checker said about this request's closeWhen: the second
    *  pass of a done (handleRequestsCall). */
   verdict?: { requestId: string; result: CheckResult }
+  /** The time zone of a day in GET /requests/flow (#1542). */
+  flowTimeZone?: string
   now?: number
 }
 
@@ -228,6 +232,18 @@ export function handleRequestsApi(
   if (path === "/requests/goals" && m === "GET") {
     const goals = store.goals()
     return { status: 200, body: { enabled: deps.enabled, count: goals.length, goals } }
+  }
+
+  if (path === "/requests/flow" && m === "GET") {
+    const q = deps.query ?? new URLSearchParams()
+    const days = q.has("days") ? Number(q.get("days")) : 7
+    if (!Number.isInteger(days) || days < 1 || days > FLOW_DAYS_MAX) return { status: 400, body: { error: `days must be a whole number from 1 to ${FLOW_DAYS_MAX}` } }
+    try {
+      const flow = measureFlow(store, { days, timeZone: q.get("tz") || deps.flowTimeZone, now: deps.now })
+      return { status: 200, body: { enabled: deps.enabled, ...flow, text: describeFlow(flow) } }
+    } catch (e: any) {
+      return { status: 400, body: { error: `unknown time zone: ${e?.message ?? e}` } }
+    }
   }
 
   const one = path.match(/^\/requests\/([^/]+)$/)

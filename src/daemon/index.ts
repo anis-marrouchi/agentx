@@ -13,7 +13,7 @@ import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./confi
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
-import { setDispatchBudget } from "@/agents/claude-code-quota"
+import { activeProviderHolds, setDispatchBudget } from "@/agents/claude-code-quota"
 import { budgetConfigFrom, budgetProjectOf, getBudgetView, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets, setBudgetProjectResolver } from "@/agents/agent-budget"
 import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
@@ -3002,6 +3002,8 @@ export class AgentXDaemon {
       noticeFor: (r) => planNotice(requests.plans, r) ?? watcherNotice(r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       inPlan: (id) => requests.plans.get(id)?.state === "active",
+      // A request a usage limit stopped is resent once the hold lifts (#1542).
+      limitHeld: () => activeProviderHolds().length > 0,
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
       tellAgent: async (agentId, text, r) => {
@@ -5338,6 +5340,7 @@ export class AgentXDaemon {
           query: url.searchParams,
           checkers: this.config.requests.checkers,
           promiseSettings: promiseSettingsOf(this.config.requests),
+          flowTimeZone: this.config.requests.flowTimeZone,
           check: loopChecker(() => this.requestCheckContext(requests)),
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)

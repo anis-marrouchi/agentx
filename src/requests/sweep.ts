@@ -6,6 +6,7 @@ import { checkHomes, type HomeChecker, type PlanStepLeft } from "./home-check"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
 import { goalLine } from "./goals"
+import { DEFAULT_RESEND_SETTINGS, resendDecision, retryLine } from "./resend"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
@@ -31,14 +32,18 @@ import { goalLine } from "./goals"
 //      past it instead, unless its handed work all came back done: that
 //      one waits to settle. A request waiting on the owner is left alone; its
 //      question is what reminds them.
-//   3. Tell once: every request that needs attention is sent to the owner
+//   3. Resend (#1542): a request stopped by a usage limit or a restart is
+//      handed back to its agent once on its own, through the pick-up of
+//      the next check (resend.ts). Its notice waits while that resend is
+//      still to come. `autoResend.enabled: false` turns it off.
+//   4. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
 //      sent at all is tried again at the next check. This is the one
 //      escalation of every loop (#1138 D): a blocked plan step, a task
 //      watcher that fired, a wait that ran out, a promise not kept.
-//   4. Pick-ups: a request the owner said to pick up again is handed back
+//   5. Pick-ups: a request the owner said to pick up again is handed back
 //      to its agent as a new turn, once.
-//   5. Retention: closed requests older than `retentionDays` are deleted.
+//   6. Retention: closed requests older than `retentionDays` are deleted.
 //      Open requests never age out.
 //
 // Every step is isolated: a failure is logged and the next step runs.
@@ -56,6 +61,9 @@ export interface RequestSweepDeps {
    *  again. Fire and forget: the check never waits on a model. */
   tellAgent?: (agentId: string, text: string, request: RequestRecord) => Promise<void>
   hasAgent?: (agentId: string) => boolean
+  /** A provider usage limit is still held (#1542): a request it stopped
+   *  is not resent yet. Unset: none is. */
+  limitHeld?: () => boolean
   /** The request has an active tracked plan (#788): never settled here. */
   inPlan?: (requestId: string) => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
@@ -88,6 +96,8 @@ export interface RequestSweepResult {
   notified: number
   pruned: number
   pickedUp: number
+  /** Requests handed back once on their own after a limit or a restart (#1542). */
+  resent: number
 }
 
 /** The pick-up turn ended. A turn that started is followed through its
@@ -160,7 +170,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
     `What happened: ${r.attentionReason ?? "unknown"}`,
     `Waiting on: ${waitsOnWords(on.group, on.who)}`,
     ...(r.verifyState === "unverified" && r.verifyDetail ? [`Its check could not say: ${r.verifyDetail}`] : []),
-    "Nothing is retrying it.",
+    retryLine(r),
     r.closeWhen
       ? `Needed from you: hand it back to ${r.agentId}, close it by hand with a reason, or drop it.`
       : `Needed from you: ${cardWords(r).need}`,
@@ -172,7 +182,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0 }
   if (!settings.enabled) return result
 
   if (deps.check) {
@@ -258,12 +268,33 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     log(`[requests] quiet check failed: ${e?.message ?? e}`)
   }
 
+  // Held for a resend still to come: not told this check.
+  const held = new Set<string>()
+  const resend = settings.autoResend ?? DEFAULT_RESEND_SETTINGS
+  if (resend.enabled && deps.tellAgent) {
+    try {
+      const ctx = { now, settings: resend, limitHeld: deps.limitHeld ?? (() => false), inPlan: deps.inPlan, hasAgent: deps.hasAgent }
+      for (const r of store.awaitingNotice()) {
+        const what = resendDecision(r, ctx)
+        if (what === "hold") held.add(r.id)
+        else if (what === "resend" && store.resend(r.id, now)) {
+          // Handed back by the pick-ups of the next check.
+          result.resent++
+          log(`[requests] ${r.id} resent once to ${r.agentId}: ${r.attentionReason}`)
+        }
+      }
+    } catch (e: any) {
+      log(`[requests] resend failed: ${e?.message ?? e}`)
+    }
+  }
+
   try {
     // Headlines get a share of the check, not all of it: past the budget
     // a notice goes out with the owner's words, and the background fill
     // writes its headline later.
     let describing = 0
     for (const r of store.awaitingNotice()) {
+      if (held.has(r.id)) continue
       // Marked first: a notice that hangs must not be sent twice.
       store.markNotified(r.id, now)
       if (!deps.notify) continue

@@ -1543,6 +1543,17 @@ export const requestsConfigSchema = z.object({
    *  or closed as completed (#1522). Requests waiting on the owner are
    *  left. Read as often as requests.checkers.checkEveryMinutes. */
   homeCloses: z.boolean().default(true),
+  /** A request stopped by a usage limit or a restart is handed back to its
+   *  agent once on its own (#1542): a limit once no provider hold is left,
+   *  a restart after afterMinutes. The owner is told only if it stops
+   *  again, or after holdMaxHours with the resend still pending. */
+  autoResend: z.object({
+    enabled: z.boolean().default(true),
+    afterMinutes: z.number().min(0).max(24 * 60).default(5),
+    holdMaxHours: z.number().positive().max(24 * 7).default(12),
+  }).default({}),
+  /** The daily flow rate (#1542): the time zone whose midnight starts a day. */
+  flowTimeZone: z.string().default("Africa/Tunis"),
   /** One Promise (src/requests/promise.ts, #1138 D): what a closed promise
    *  leaves, and whether decision cards are promises too. */
   promises: z.object({

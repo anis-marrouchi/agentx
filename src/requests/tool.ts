@@ -104,6 +104,15 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       return `${data.count} goal${data.count === 1 ? "" : "s"}, most recently active first.\n${describeGoals(data.goals ?? [])}`
     }
 
+    if (action === "flow") {
+      const days = args.days === undefined ? 7 : Number(args.days)
+      const res = await doFetch(`${base}/requests/flow?days=${encodeURIComponent(String(days))}`, { signal: AbortSignal.timeout(10_000) })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
+      if (!data.enabled) return "Requests are turned off on this node (requests.enabled), so nothing is recorded."
+      return data.text
+    }
+
     if (action === "list") {
       const res = await doFetch(`${base}/requests`, { signal: AbortSignal.timeout(10_000) })
       const data = await res.json().catch(() => ({})) as any

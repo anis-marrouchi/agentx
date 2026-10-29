@@ -143,7 +143,13 @@ export interface RequestRecord {
   // --- Goal (#1168). Null: the request names none. ---
   /** The goal the agent said it serves when it accepted. */
   goal: RequestGoal | null
+  /** When the requests check handed it back on its own after a limit or
+   *  a restart stopped it (#1542). Once per request. */
+  resentAt: number | null
 }
+
+/** One request as the flow rate counts it (#1542). */
+export interface FlowRow { id: string; state: RequestState; createdAt: number; resentAt: number | null; closeReason: string | null }
 
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
 
@@ -234,7 +240,7 @@ export function ensureRequestTables(db: Database.Database): void {
     ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"], ["headline_tried_at", "INTEGER"],
     ["owed_by", "TEXT"], ["proof", "TEXT"], ["fact_id", "TEXT"],
     ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"],
-    ["goal_id", "TEXT"], ["goal_title", "TEXT"]]) {
+    ["goal_id", "TEXT"], ["goal_title", "TEXT"], ["resent_at", "INTEGER"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -270,6 +276,7 @@ function toRecord(r: any): RequestRecord {
     qaRequestedAt: r.qa_requested_at ?? null,
     qa: r.qa_verdict && r.qa_by && typeof r.qa_at === "number" ? { verdict: r.qa_verdict, by: r.qa_by, at: r.qa_at, note: r.qa_note ?? null } : null,
     goal: r.goal_id && r.goal_title ? { id: r.goal_id, title: r.goal_title } : null,
+    resentAt: r.resent_at ?? null,
   }
 }
 
@@ -876,6 +883,26 @@ export class RequestStore {
       if (moved) this.supersedeHandBacks(id)
       return moved
     })()
+  }
+
+  /** The requests check hands it back on its own (#1542): like a pick-up,
+   *  but only once per request, and only while it still needs attention. */
+  resend(id: string, now: number): boolean {
+    return this.db.transaction(() => {
+      const moved = this.db.prepare(
+        `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?, need = NULL, resent_at = ?
+         WHERE id = ? AND state = 'needs_attention' AND resent_at IS NULL`,
+      ).run(now, now, now, now, id).changes > 0
+      if (moved) this.supersedeHandBacks(id)
+      return moved
+    })()
+  }
+
+  /** Requests asked since `since` (not candidates), oldest first (#1542). */
+  flowRows(since: number): FlowRow[] {
+    return (this.db.prepare(
+      "SELECT id, state, created_at, resent_at, close_reason FROM requests WHERE state != 'candidate' AND created_at >= ? ORDER BY created_at, rowid",
+    ).all(since) as any[]).map((r) => ({ id: r.id, state: r.state, createdAt: r.created_at, resentAt: r.resent_at ?? null, closeReason: r.close_reason ?? null }))
   }
 
   /** The owner replied, or handed it to an agent (the same or another):
