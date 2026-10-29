@@ -124,6 +124,12 @@ for (const [id, title] of [["demo-report", "Draft the demo shop report"], ["demo
   writeFileSync(file, JSON.stringify({ ...fixture, id: "demo-backlog", title: "Review the demo backlog", state: "active", nodes }, null, 2))
   execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "workflow", "add", file, "--no-reload"], { cwd: root, stdio: "pipe" })
 }
+// Four larger examples for the editor's screenshots (#1524): loops, a
+// branch, a classifier and follow-up ports, with no saved layout, so the
+// editor arranges them when they open. All stay switched off.
+for (const f of ["demo-deploy", "demo-owner-sweep", "demo-merge-verify", "demo-whatsapp-intake"]) {
+  execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "workflow", "add", resolve(repo, `docs/public/examples/editor/${f}.json`), "--no-reload"], { cwd: root, stdio: "pipe" })
+}
 await post("/reload")
 for (const [channel, chatId] of [["gitlab", "demo/shop:issue:47"], ["telegram", "demo-office"]]) {
   const result = await post("/task", { agent: "cx", message: "Prepare the demo shop report.", context: { channel, chatId, sender: "Demo operator" } })
@@ -367,4 +373,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts (one with a decision card), a webhook, a board, an action, two places, two handovers, and two real scripted task runs.")
+console.log("Seeded seven workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts (one with a decision card), a webhook, a board, an action, two places, two handovers, and two real scripted task runs.")

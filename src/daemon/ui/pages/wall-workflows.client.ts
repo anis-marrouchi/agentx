@@ -12,7 +12,7 @@
 // workflow that is off and has not run for 30 days "looks stale", as Jobs
 // does. Opened, a workflow shows its last run step by step (who did each
 // step, how long it took, where it stopped) with Run again, Open in the
-// editor ↗ (the editor stays a tool page, in its own tab) and All runs (the
+// editor (the Wall's editor page, #1524, wall-editor.client.ts) and All runs (the
 // classic page, which keeps the run drawer, Follow-ups and the "Every task
 // in a workflow" setting).
 //
@@ -199,7 +199,7 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
   }
   function wfOpenHtml(wf, runs) {
     var all = '<a class="ax-btn ax-btn--ghost" href="/workflows#' + encodeURIComponent(wf.id) + '">' + (WFP.capped || !runs.length ? 'All runs' : runs.length === 1 ? 'Its 1 run' : 'All ' + runs.length + ' runs') + '</a>';
-    var editor = '<a class="ax-btn ax-btn--ghost wwf__ed" href="/workflows/editor?id=' + encodeURIComponent(wf.id) + '" target="_blank" rel="noopener">Open in the editor ↗</a>';
+    var editor = '<a class="ax-btn ax-btn--ghost wwf__ed" href="#page=editor&amp;e-wf=' + encodeURIComponent(wf.id) + '">Open in the editor</a>';
     var again = wf.state === 'active' && runs.length ? '<button type="button" class="ax-btn ax-btn--ghost wwf__own" data-wf-again="' + esc(wf.id) + '"' + (WFP.busy[wf.id] ? ' disabled' : '') + '>Run again</button>' : '';
     var links = '<div class="wwf__links">' + again + editor + all + '</div>';
     if (wf.description) links = '<p class="wwf__desc">' + esc(String(wf.description).slice(0, 400)) + '</p>' + links;
@@ -273,7 +273,7 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
       }).join('') + '</select>' : '') + '</div>';
     var owner = '<p class="wwf__owner">Only the owner can start, turn on or turn off a workflow.</p>';
     if (!defs.length) return note + owner + '<div class="ax-wall__empty wwf__empty"><h3>No workflows yet</h3><p>A workflow is a set of steps your agents take, in order, each time something starts it.</p>' +
-      '<a class="ax-btn wwf__ed" href="/workflows/editor?new=1" target="_blank" rel="noopener">New in the editor ↗</a></div>';
+      '<a class="ax-btn wwf__ed" href="#page=editor&amp;e-new=1">New workflow</a></div>';
     var shown = base.filter(function (wf) { return wfMatch(wf); });
     // Failing and running first, then by name: the one to look at leads.
     var rank = { failed: 0, held: 1, running: 2, waiting: 2, done: 3, stopped: 3, never: 4, off: 5 };

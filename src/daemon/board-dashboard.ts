@@ -2,7 +2,6 @@ import { readMonitorBody, monitorTargets } from "./session-monitor"
 import { cronValueOf, type CronValue } from "@/crons/value-line"
 import { renderMonitorPage } from "./ui/pages/monitor"
 import { renderActivityPage } from "./ui/pages/activity"
-import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { appendFileSync, existsSync, mkdirSync } from "fs"
 import { readFile } from "fs/promises"
@@ -43,7 +42,7 @@ import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { classicRedirect } from "./ui/classic-routes"
-import { handleWorkflowsApi } from "./workflows-api"
+import { handleWorkflowsApi, isWorkflowEditorWrite } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
@@ -265,6 +264,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     sendJson(res, 401, { error: "Only the owner writes on the Wall: sign in, or send the dashboard token." })
     return
   }
+  // The workflow editor is a Wall page (#1524): saving, deleting or laying
+  // out a workflow, and asking the build chat, are the owner's too.
+  if (isWorkflowEditorWrite(method, path) && !wallOwnerOk(req, ctx)) {
+    sendJson(res, 401, { error: "Only the owner changes a workflow: sign in, or send the dashboard token." })
+    return
+  }
   // Sign-in for a browser on another machine (#1306, dashboard-session.ts).
   if (await handleLogin(req, res, url, method, ctx.token)) return
 
@@ -433,9 +438,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
+  // The editor is a Wall page now (#1524, classic-routes.ts): old links and
+  // bookmarks open the same workflow there.
   if (method === "GET" && path === "/workflows/editor") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))
+    const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)!
+    if (!pageAllowed(req, res, ctx, to)) return
+    res.writeHead(302, { Location: to })
+    res.end()
     return
   }
   if (method === "GET" && path === "/activity") {

@@ -8,6 +8,7 @@ import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { closeDb } from "../src/storage/sqlite"
 import { isWallWrite, WALL_ACTIONS_PREFIX } from "../src/daemon/wall-actions"
+import { isWorkflowEditorWrite } from "../src/daemon/workflows-api"
 
 // #1454: every Wall write is the owner's. One guard in board-dashboard.ts
 // refuses a write under /api/admin/wall without the owner's token, so a new
@@ -32,27 +33,39 @@ const UNBUILT = `${WALL_ACTIONS_PREFIX}/not-built-yet`
 const ROUTES = [...new Set([...PAGE_WRITES.filter((p) => p.startsWith(WALL_ACTIONS_PREFIX)), ...DOC_WRITES, UNBUILT])]
 
 const home = process.cwd()
+// Stand-ins for the workflow stores: past the guard, a write lands here.
+const WRITES: string[] = []
+const STORE = {
+  list: () => [], get: () => null, getSource: () => null,
+  save: (wf: { id: string }) => { WRITES.push(`save ${wf.id}`); return wf },
+  delete: (id: string) => { WRITES.push(`delete ${id}`); return true },
+}
+const LAYOUTS = {
+  get: () => null,
+  save: (id: string, l: unknown) => { WRITES.push(`layout ${id}`); return l },
+  delete: () => {},
+}
 const servers: Server[] = []
 let withToken = ""
 let noToken = ""
 
-function post(base: string, path: string, headers: Record<string, string> = {}): Promise<number> {
+function post(base: string, path: string, headers: Record<string, string> = {}, method = "POST"): Promise<number> {
   return new Promise((resolve, reject) => {
-    const r = request(base + path, { method: "POST", headers: { "Content-Type": "application/json", ...headers } }, (res) => {
+    const r = request(base + path, { method, headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...headers } }, (res) => {
       res.resume()
       resolve(res.statusCode ?? 0)
       res.destroy()
     })
     r.setTimeout(10_000, () => r.destroy(new Error(`timeout: ${path}`)))
     r.on("error", reject)
-    r.end("{}")
+    r.end(method === "DELETE" ? undefined : "{}")
   })
 }
 
 async function serve(token?: string): Promise<string> {
   const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, dashboard: token ? { token } : {} })
   const server = createServer((req, res) => {
-    void handleBoardRequest(req, res, { boards: [], sources: new Map(), token, config } as unknown as Ctx)
+    void handleBoardRequest(req, res, { boards: [], sources: new Map(), token, config, workflowStore: STORE, workflowRuns: {}, workflowLayouts: LAYOUTS } as unknown as Ctx)
   })
   servers.push(server)
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()))
@@ -139,5 +152,49 @@ describe("Wall owner-only write guard (#1454)", () => {
     const page = async (headers: Record<string, string> = {}) => (await fetch(`${noToken}/wall`, { headers })).text()
     expect(await page()).toContain('data-nav="settings"')
     expect(await page({ "X-Forwarded-For": "203.0.113.7" })).not.toContain('data-nav="settings"')
+  })
+
+  // #1524: the workflow editor is a Wall page, and what it writes is the owner's.
+  const EDITOR_WRITES: Array<[string, string]> = [
+    ["POST", "/api/workflows"], ["PUT", "/api/workflows/deploy"], ["DELETE", "/api/workflows/deploy"],
+    ["PUT", "/api/workflows/deploy/layout"], ["POST", "/api/workflows/editor/chat"],
+  ]
+
+  it("knows which workflow routes are the editor's writes (#1524)", () => {
+    for (const [m, p] of EDITOR_WRITES) expect(isWorkflowEditorWrite(m, p), `${m} ${p}`).toBe(true)
+    expect(isWorkflowEditorWrite("GET", "/api/workflows/deploy")).toBe(false)
+    expect(isWorkflowEditorWrite("GET", "/api/workflows/deploy/layout")).toBe(false)
+    // Checking a draft changes nothing; runs and settings have rules of their own.
+    expect(isWorkflowEditorWrite("POST", "/api/workflows/deploy/validate")).toBe(false)
+    expect(isWorkflowEditorWrite("POST", "/api/workflows/runs/r1/status")).toBe(false)
+    expect(isWorkflowEditorWrite("POST", "/api/workflows/signal/go")).toBe(false)
+    expect(isWorkflowEditorWrite("POST", "/api/workflows/required")).toBe(false)
+  })
+
+  it("refuses the editor's writes without the owner's token (#1524)", async () => {
+    const open: string[] = []
+    for (const [m, p] of EDITOR_WRITES) {
+      for (const headers of [{}, { Authorization: "Bearer wrong" }, { "X-Agentx-Peer": "http://peer.example:4100" }]) {
+        const status = await post(withToken, p, headers, m)
+        if (status !== 401) open.push(`${m} ${p} ${JSON.stringify(headers)} → ${status}`)
+      }
+      const off = await post(noToken, p, { "X-Forwarded-For": "203.0.113.7" }, m)
+      if (off !== 401) open.push(`${m} ${p} off the machine, no token set → ${off}`)
+    }
+    expect(open).toEqual([])
+    expect(WRITES).toEqual([])
+  })
+
+  it("lets the owner save, lay out and delete a workflow (#1524)", async () => {
+    const auth = { Authorization: "Bearer tok-wall" }
+    // An empty body fails validation: the route answered, so the guard let it pass.
+    expect(await post(withToken, "/api/workflows", auth)).toBe(400)
+    expect(await post(withToken, "/api/workflows/deploy/layout", auth, "PUT")).not.toBe(401)
+    expect(await post(withToken, "/api/workflows/deploy", auth, "DELETE")).toBe(200)
+    // On this machine with no token set, the owner is whoever sits at it.
+    expect(await post(noToken, "/api/workflows/deploy", {}, "DELETE")).toBe(200)
+    expect(WRITES).toEqual(expect.arrayContaining(["delete deploy"]))
+    // Checking a draft stays open to anyone who can read.
+    expect(await post(withToken, "/api/workflows/deploy/validate", auth)).toBe(200)
   })
 })

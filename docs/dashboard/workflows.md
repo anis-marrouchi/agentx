@@ -5,7 +5,8 @@ A workflow is a saved automation: something starts it (a message, a GitLab event
 You see your workflows in two places:
 
 - **Workflows** on the [Wall](./wall.md): every workflow with its state and last runs, a switch to turn it on or off, and a button to start it. Start here.
-- The classic **Workflows** page (`/workflows`): the same list, the full history of each run, **Follow-ups**, the **Every task in a workflow** setting, and the editor, where the steps appear as boxes joined by arrows (the canvas).
+- The **workflow editor**, also on the Wall: the steps appear as boxes joined by arrows on a drawing area (the *canvas*). See [Edit a workflow](#edit-a-workflow).
+- The classic **Workflows** page (`/workflows`): the same list, the full history of each run, **Follow-ups** and the **Every task in a workflow** setting.
 
 ## See your workflows on the Wall
 
@@ -44,7 +45,7 @@ A workflow that is off and has not run for 30 days shows **looks stale** in ambe
 3. Under it, one line per step: a green tick for a step that finished, a red mark for the step where it stopped, with the reason, and a grey circle for steps it did not reach. Each step names the agent that did it and how long it took.
 4. Under the steps:
    - **Run again** starts it once more with the same input as that run.
-   - **Open in the editor ↗** opens the workflow on the canvas, in a new tab.
+   - **Open in the editor** opens the workflow on the canvas, in the same tab. See [Edit a workflow](#edit-a-workflow).
    - **All runs** opens the classic page, where every run is listed.
 5. Select the name again to close it.
 
@@ -69,7 +70,7 @@ This saves the workflow the same way the editor does. A workflow marked **Held**
 
 ### On a phone
 
-On a phone, the page lists the same workflows and tabs, and opens a workflow the same way. It has no switches and no **Run…** buttons: starting a workflow, and turning one on or off, are done on a computer. The editor is not made for a phone either.
+On a phone, the page lists the same workflows and tabs, and opens a workflow the same way. It has no switches and no **Run…** buttons: starting a workflow, and turning one on or off, are done on a computer. The editor opens on a phone too; see [The editor on a phone](#the-editor-on-a-phone).
 
 ![The Workflows page on a phone: the list without switches, under "Only the owner can start, turn on or turn off a workflow"](/screenshots/wall/workflows-phone.png)
 
@@ -107,22 +108,99 @@ See [Run every task through a workflow](../jobs/every-task-a-workflow.md).
 
 ## Edit a workflow
 
-![The workflow editor with the Ask AI to build… button](/screenshots/editor-chat-closed.png)
+The editor is a page of the Wall. It has two columns: a **side menu** on the left and the **canvas** on the right. The Wall's nav shrinks to its icons, so the canvas gets the room.
 
-1. **Browser:** on the Wall's **Workflows** page, open the workflow and select **Open in the editor ↗**. To start a new one, select **New in the editor ↗** next to the page's title. On the classic page, select the workflow, then **Edit on canvas**, or **+** at the top of the list.
-2. Drag a starting point or a step from the left-hand list onto the canvas.
-3. Select a box to change its settings in the right-hand panel.
-4. Select **Save**.
+![The workflow editor on the Wall: the side menu with the workflow's settings on the left, the steps arranged from left to right on the canvas](/screenshots/workflows/editor.png)
 
-To describe the automation in plain English instead, select **Ask AI to build…**. See [Describe what you want](../automations/describe-it.md). Read a proposed workflow before you select **Apply to canvas**: it **replaces everything on the canvas**. Save only when the steps and destinations match what you intend.
+*Demo data; your workflows will differ.*
+
+### Open the editor
+
+1. **Browser:** on the Wall, select **Workflows** in the nav.
+2. To change a workflow, select its name, then **Open in the editor**. To start a new one, select **New workflow** next to the page's title.
+3. The editor opens in the same tab. Its address is `/wall#page=editor&e-wf=` followed by the workflow's ID (its short name), so you can save it as a bookmark. The old address, `/workflows/editor?id=…`, opens the same page. On the classic page, **Edit on canvas** and **+** open it too.
+
+A workflow that has never been laid out (for example one written as a file) is arranged for you when it opens.
+
+### Read the canvas
+
+- Each step is a box. The small line above its name says what it does, such as **Ask an agent** or **Send a message**.
+- Arrows run from left to right in the order the steps run.
+- A step that can go more than one way has one dot per way on its right edge, each with its name. A choice ("If this, then that") has one dot per case, such as **status**, **new** and **other**. **Ask the owner** has **yes**, **no** and **expired**.
+- A dashed arrow that goes back under the boxes is a loop: the run goes back to an earlier step, for example to try again.
+
+![A merge check with a loop: the dashed arrow under the boxes goes from pause back to verify](/screenshots/workflows/editor-loop.png)
+
+### Change a step
+
+1. Select a box on the canvas. The side menu shows **This step** with its settings.
+2. Change what you need. The status next to the title turns to **unsaved**.
+3. Select **Save**, or press ⌘S (Ctrl+S on Windows and Linux). The status turns to **saved**.
+
+![A choice selected: its cases in the side menu, and one named dot per case on the box](/screenshots/workflows/editor-step.png)
+
+To see the whole workflow's settings again, select an empty spot on the canvas. The tab then reads **Workflow**.
+
+### Add and connect steps
+
+1. In the side menu, select **Add a step**.
+2. Select a step in the list. It lands in the middle of the canvas, ready to set up. You can also drag it onto the canvas, to a place you choose.
+3. To connect two steps, press on a dot on the right edge of the first box and drag to the second box. Let go when the box is outlined.
+4. To remove a step or an arrow, select it and press Delete.
+
+### Make room on the canvas
+
+- **Fold the side menu:** select the panel button at the far left of the toolbar, the **×** in the menu, or press `[`. The canvas grows into the space. Select the button again to bring the menu back. The editor remembers your choice.
+- **Arrange:** select **Arrange** in the toolbar, or press `L`. The steps are laid out from left to right, with no box on top of another, a choice's cases in their order from top to bottom, and loops drawn underneath. Arrange is one step you can undo.
+- **Fit:** select the fit button in the toolbar or at the bottom left, or press `F`, to see the whole workflow. Use **+** and **−**, or Ctrl and the mouse wheel, to zoom. Drag an empty spot to move around.
+
+![The side menu folded away: the canvas takes the whole width](/screenshots/workflows/editor-menu-closed.png)
+
+### Keyboard
+
+| Key | What it does |
+|---|---|
+| ⌘S / Ctrl+S | Save |
+| ⌘Z / Ctrl+Z, ⌘⇧Z / Ctrl+Y | Undo, redo |
+| Tab, then Enter | Move between steps, select one |
+| Arrow keys (Shift for bigger moves) | Move the selected step |
+| Delete | Remove the selected step or arrow |
+| ⌘D / Ctrl+D | Copy the selected step |
+| `L` | Arrange |
+| `F` | Fit the workflow in view |
+| `[` | Fold or unfold the side menu |
+| `/` | Find a step to add |
+| ⌘Enter / Ctrl+Enter | Preview |
+| `?` | Show these keys |
+
+### Describe it instead
+
+To describe the automation in plain English, select **Ask AI to build…** at the bottom right. See [Describe what you want](../automations/describe-it.md). Read a proposed workflow before you select **Apply to canvas**: it **replaces everything on the canvas**. Save only when the steps and destinations match what you intend.
+
+**Preview** walks through the steps on screen; it does not run them. To run a workflow for real, use **Run…** on the Workflows page.
+
+### Leave the editor
+
+Select **Workflows** at the left of the toolbar, or any page in the nav. If there are changes you have not saved, the editor asks first. Select **Cancel** to stay.
+
+### The editor on a phone
+
+On a phone, the canvas takes the whole screen above the bottom bar. The side menu starts folded: select the panel button at the top left to open it over the canvas, and **×** to close it. Drag with one finger to move around.
+
+![The editor on a phone: the canvas over the Wall's bottom bar, with the side menu folded](/screenshots/workflows/editor-phone.png)
+
+### Who can change a workflow
+
+Only the owner saves, deletes or lays out a workflow, and only the owner can use **Ask AI to build…**. The owner is whoever opens the Wall on the machine itself, or signs in with the dashboard token. Anyone else can open the editor to look: there is no **Save** and no **Add a step**, and the side menu says so. The dashboard refuses their changes even if they are sent another way.
 
 ## Check it worked
 
-1. **Browser:** after **Save**, the editor shows **Saved**. Select **Refresh** on the Wall's **Workflows** page: the workflow is listed, and the number next to **Workflows** in the nav went up by one.
-2. On the Wall, select **Run…** on a workflow you start by hand, then **Start the run**. The line at the top says **Started**, and a blue square appears at the right of the row's squares. After **Refresh**, once it finishes, the square turns green and the opened run lists each step with a tick.
-3. Select the switch on a test workflow. It reads **Off**, and the workflow is under the **Off** tab. Select it again to turn it back on.
-4. On the classic page, select **▶ Run**, then **Run now**. The run panel lists each step as it finishes.
-5. Follow [Check that it worked](../automations/check-it-worked.md) to confirm the result reached its destination.
+1. **Browser:** after **Save**, the editor shows **saved**. Select **Workflows** at the left of the toolbar: the workflow is listed, and for a new one the number next to **Workflows** in the nav went up by one.
+2. Open the workflow in the editor again and select **Arrange**: every step is visible, none on top of another, and the arrows run from left to right.
+3. On the Wall, select **Run…** on a workflow you start by hand, then **Start the run**. The line at the top says **Started**, and a blue square appears at the right of the row's squares. After **Refresh**, once it finishes, the square turns green and the opened run lists each step with a tick.
+4. Select the switch on a test workflow. It reads **Off**, and the workflow is under the **Off** tab. Select it again to turn it back on.
+5. On the classic page, select **▶ Run**, then **Run now**. The run panel lists each step as it finishes.
+6. Follow [Check that it worked](../automations/check-it-worked.md) to confirm the result reached its destination.
 
 ## If something is wrong
 
@@ -131,6 +209,10 @@ To describe the automation in plain English instead, select **Ask AI to build…
 - **"Could not start …: workflow … is disabled":** the workflow is off. Turn it on with its switch first.
 - **No switch and no Run… on a row:** you are on a phone (use a computer), or the workflow is **Held** (fix the clash in the editor).
 - **Save fails with a message:** the workflow has a mistake, such as a step with no agent. Fix the step the message names and save again.
+- **There is no Save button, and the side menu says only the owner can change the workflow:** you opened the Wall from another computer without signing in. Sign in with the dashboard token, or open the Wall on the machine itself.
+- **The editor says "The editor could not be loaded":** the page could not fetch the editor. Refresh the page. If it keeps happening after an update, run `pnpm build` (from a source checkout) and restart the daemon.
+- **The canvas looks empty:** the steps are outside the view. Press `F` or select the fit button.
+- **An arrow leaves from a dot named after a case that no longer exists:** the choice's cases changed and the arrow kept its old name. Select the arrow and delete it, then connect the right dot again.
 - **Run needs Force:** a workflow that normally starts on an event (not by hand) needs **Force** ticked in the run form to start it now. The form ticks it for you.
 - **Ask AI to build… answers with an error:** the assistant needs an agent with a working model. See [Describe what you want](../automations/describe-it.md).
 - **A run stops at a step:** open the run panel and read the error on that step. See [Check that it worked](../automations/check-it-worked.md).

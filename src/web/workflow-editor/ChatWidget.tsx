@@ -1,3 +1,4 @@
+import { headers as apiHeaders } from "./api"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ReactElement } from "react"
 import type { Workflow } from "./types"
@@ -72,12 +73,9 @@ export function ChatWidget({ currentWorkflow, onApplyWorkflow, agentId }: ChatWi
       const r = await fetch("/api/workflows/editor/chat", {
         method: "POST",
         credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          // CSRF gate on the board-dashboard server. Required on every
-          // write to /api/*; safe no-op on the main daemon.
-          "X-Requested-With": "agentx-board",
-        },
+        // The CSRF header and the page's token: the chat is an owner's
+        // write on the Wall (#1524).
+        headers: apiHeaders(),
         body: JSON.stringify({
           messages: [...history, { role: "user", content: text }],
           currentWorkflow,

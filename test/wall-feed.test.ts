@@ -38,7 +38,7 @@ const APPROVALS = {
   snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
 }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown; wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown; wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -47,7 +47,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const el = (id: string) => {
     if (!els.has(id)) {
       // The open post's action box (wdo-*) is drawn by the script itself.
-      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (/^(wdo|cb)-/.test(id) ? [`<x id="${id}">`] : null)
+      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (/^(wdo|cb)-|^wall-editor-root$/.test(id) ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       const on: Record<string, (ev: unknown) => void> = {}
@@ -132,7 +132,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   // With `timers`, the script's timeouts are kept for the test to run.
   const later = opts.timers ? (f: () => void) => { opts.timers!.push(f); return 0 } : setTimeout
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "setTimeout", script)(
-    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }, fetchStub, loc,
+    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0, later,
   )
@@ -2032,6 +2032,94 @@ describe("The Org page on the Wall (#1419)", () => {
   })
 })
 
+describe("The workflow editor on the Wall (#1524)", () => {
+  function fakeEditor() {
+    const mounts: any[] = []
+    let unmounted = 0
+    return {
+      mounts, unmounted: () => unmounted,
+      api: { mount: (el: any, props: any) => { mounts.push({ el, props }); return { unmount: () => { unmounted++ } } } },
+    }
+  }
+
+  it("opens a workflow in the editor, under Workflows in the nav, owner or not", async () => {
+    const ed = fakeEditor()
+    const w = openWall({ hash: "#page=editor&e-wf=deploy", editor: ed.api, editorCfg: { owner: true } })
+    await w.settle()
+    expect(w.el("wall-editor").hidden).toBe(false)
+    expect(w.wall.classList.contains("is-editor")).toBe(true)
+    expect(w.el("wall-title").textContent).toBe("Workflow editor")
+    expect(w.el("wall-feed").hidden).toBe(true)
+    expect(ed.mounts).toHaveLength(1)
+    expect(ed.mounts[0].props).toMatchObject({ workflowId: "deploy", isNew: false, owner: true })
+    // A refresh repaints the Wall, not the editor.
+    w.hashchange()
+    await w.settle()
+    expect(ed.mounts).toHaveLength(1)
+    const viewer = fakeEditor()
+    const v = openWall({ hash: "#page=editor&e-wf=deploy", editor: viewer.api })
+    await v.settle()
+    expect(viewer.mounts[0].props.owner).toBe(false)
+  })
+
+  it("starts a new workflow, and names it in the link once saved", async () => {
+    const ed = fakeEditor()
+    const w = openWall({ hash: "#page=editor&e-new=1", editor: ed.api })
+    await w.settle()
+    expect(ed.mounts[0].props).toMatchObject({ isNew: true, workflowId: "new-workflow" })
+    ed.mounts[0].props.onSaved("weekly-report")
+    expect(w.loc.hash).toContain("page=editor")
+    expect(w.loc.hash).toContain("e-wf=weekly-report")
+    expect(w.loc.hash).not.toContain("e-new")
+    w.hashchange()
+    await w.settle()
+    // Same workflow, same editor: saving did not reload it.
+    expect(ed.mounts).toHaveLength(1)
+  })
+
+  it("asks before leaving with changes that are not saved, and stays when told to", async () => {
+    const ed = fakeEditor()
+    let asked = 0, answer = false
+    const w = openWall({ hash: "#page=editor&e-wf=deploy", editor: ed.api, confirm: () => { asked++; return answer } })
+    await w.settle()
+    ed.mounts[0].props.onDirty(true)
+    w.loc.hash = "#page=agents"
+    w.hashchange()
+    await w.settle()
+    expect(asked).toBe(1)
+    expect(w.loc.hash).toContain("page=editor")
+    expect(ed.unmounted()).toBe(0)
+    // The browser's hashchange for the hash put back: still the same editor.
+    w.hashchange()
+    await w.settle()
+    expect(ed.mounts).toHaveLength(1)
+    answer = true
+    w.loc.hash = "#page=agents"
+    w.hashchange()
+    await w.settle()
+    expect(ed.unmounted()).toBe(1)
+    expect(w.el("wall-editor").hidden).toBe(true)
+    expect(w.wall.classList.contains("is-editor")).toBe(false)
+  })
+
+  it("goes back to the workflow on the Workflows page, or to the list after a delete", async () => {
+    const ed = fakeEditor()
+    const w = openWall({ hash: "#page=editor&e-wf=deploy", editor: ed.api })
+    await w.settle()
+    ed.mounts[0].props.onBack()
+    expect(w.loc.hash).toBe("#page=workflows&w-open=deploy")
+    ed.mounts[0].props.onBack(true)
+    expect(w.loc.hash).toBe("#page=workflows")
+  })
+
+  it("says what to do when no workflow is named", async () => {
+    const w = openWall({ hash: "#page=editor", editor: fakeEditor().api })
+    await w.settle()
+    expect(w.el("wall-editor").innerHTML).toContain('href="#page=workflows"')
+    expect(w.el("wall-editor").innerHTML).toContain('href="#page=editor&amp;e-new=1"')
+  })
+})
+
 describe("The Workflows page on the Wall (#1445)", () => {
   const iso = (ago: number) => new Date(NOW - ago).toISOString()
   const step = (nodeId: string, status: string, extra: Record<string, unknown> = {}) => ({ at: iso(60e3), nodeId, status, inputKeys: [], idempotencyKey: nodeId, ...extra })
@@ -2136,7 +2224,8 @@ describe("The Workflows page on the Wall (#1445)", () => {
     expect(html).toMatch(/class="is-err">[\s\S]*<b>Write reply<\/b><small>Reviewer · stopped: Reviewer was paused<\/small>/)
     expect(html).toMatch(/class="is-todo">[\s\S]*<b>Send to needs you<\/b><small>not reached<\/small>/)
     expect(html).toContain('data-wf-again="support-reply"')
-    expect(html).toContain('href="/workflows/editor?id=support-reply" target="_blank" rel="noopener">Open in the editor ↗</a>')
+    // The editor is a Wall page (#1524): same tab, no new window.
+    expect(html).toContain('href="#page=editor&amp;e-wf=support-reply">Open in the editor</a>')
     expect(html).toContain('href="/workflows#support-reply">All 7 runs</a>')
   })
 
@@ -2216,7 +2305,7 @@ describe("The Workflows page on the Wall (#1445)", () => {
     const w = openWall({ hash: "#page=workflows" })
     await w.settle()
     expect(w.el("wall-workflows").innerHTML).toContain("No workflows yet")
-    expect(w.el("wall-workflows").innerHTML).toContain('href="/workflows/editor?new=1"')
+    expect(w.el("wall-workflows").innerHTML).toContain('href="#page=editor&amp;e-new=1">New workflow</a>')
     const f = openWall({ hash: "#status=open&view=failures", wfRuns: RUNS })
     await f.settle()
     expect(f.el("wall-failures").innerHTML).toContain('href="#page=workflows&amp;w-open=support-reply"')
