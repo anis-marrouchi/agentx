@@ -1252,6 +1252,11 @@ export class AgentXDaemon {
       }
     } catch {}
 
+    // Nothing waiting for a place on the node starts now (#1521). Chat
+    // messages still waiting are replayed from the inflight log on boot.
+    const leftWaiting = this.registry.admission.close()
+    if (leftWaiting) this.log(`  Admission queue closed — ${leftWaiting} waiting run(s) left for replay on boot`)
+
     // Drain active agent tasks before exit. Channels are already stopped, so
     // the active count can only shrink. This is what lets `systemctl restart`
     // survive long-running agent turns (e.g. a 3-minute coder reply) without
@@ -6839,6 +6844,14 @@ export class AgentXDaemon {
         if (!r.ok) { this.json(res, r.status, { error: r.error }); return }
         if (r.changed) await this.reload()
         this.json(res, 200, r)
+        return
+      }
+
+      // Admission queue (#1521): resources, gate, caps, running, waiting in
+      // order and next in line. Read-only; `agentx queue` prints it.
+      if (req.method === "GET" && path === "/api/queue") {
+        await this.registry.admission.refresh()
+        this.json(res, 200, this.registry.admission.snapshot())
         return
       }
 

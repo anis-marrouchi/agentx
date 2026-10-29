@@ -99,6 +99,8 @@ const STEP_BUDGET_MS: Record<string, number> = {
   "route-model": 5_000,
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
+import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
+import { ResourceSampler } from "@/admission/resources"
 import { prepareOutbox } from "@/utils/app-outbox"
 
 /** Channels that never have an outbound adapter: a queued reply on them
@@ -691,6 +693,10 @@ export class AgentRegistry {
    *  the workflow engine's run store; unset means no wrapping. */
   private workflowRuns?: WorkflowRunStore
   private messageQueue: MessageQueue
+  /** Node-wide admission queue (#1521): every run waits here for room. */
+  readonly admission: AdmissionQueue
+  private admissionTickets = new WeakMap<AgentTask, AdmissionTicket>()
+  private gateWaiters = 0
   /**
    * Voice chats a waiting question has claimed between its wait ending and
    * the chat being marked running (the rate limiter awaits in between).
@@ -783,6 +789,15 @@ export class AgentRegistry {
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
     this.messageQueue = new MessageQueue()
+    this.admission = new AdmissionQueue(
+      () => {
+        const settings = (this.config.admission as AdmissionSettings | undefined) ?? DEFAULT_ADMISSION_SETTINGS
+        // Emergency switch, read on every start: no config edit, no restart.
+        return process.env.AGENTX_ADMISSION === "off" ? { ...settings, enabled: false } : settings
+      },
+      new ResourceSampler(process.cwd()),
+      (m) => this.log(m),
+    )
 
     // Apply the claude-code fleet dispatch budget. See DaemonConfig.session
     // for the tuning knobs. Pools all claude-code agents under one counter
@@ -1355,6 +1370,9 @@ export class AgentRegistry {
     } catch (e: any) {
       response = { content: "", error: e?.message ?? String(e) }
     }
+    // The run normally frees its node place when it ends; this covers a
+    // path that left before its release ran.
+    this.admissionTickets.get(task)?.release()
     // Cut off by a daemon shutdown, at whatever step: report the restart,
     // not how the step read the kill.
     const interruptedBy = task.runningTaskId ? this.interruptedRuns.get(task.runningTaskId) : undefined
@@ -1712,6 +1730,35 @@ export class AgentRegistry {
     // since the next caller only waits one token interval longer.
     if (task.callerSignal?.aborted) return this.callerGone(task, "rate-limit wait")
 
+    // Node admission (#1521): wait for room on the node before the run
+    // takes its place. The agent's slot is held while it waits, so the
+    // agent's own queue keeps collecting the messages behind it.
+    // The shutdown drain does not count it (gateWaiters): a run still
+    // waiting when the daemon stops is replayed on the next boot.
+    state.activeTasks++
+    this.gateWaiters++
+    let ticket: AdmissionTicket | null
+    try {
+      ticket = await this.admission.admit({
+        agentId: task.agentId,
+        channel: qChannel,
+        chatId: qChatId,
+        person: personOfTurn(this.config.people, task.context as any)?.id ?? null,
+        owner: personOfTurn(this.config.people, task.context as any)?.role === "owner",
+        signal: task.callerSignal,
+      })
+    } catch (e) {
+      state.activeTasks--
+      throw e
+    } finally {
+      this.gateWaiters--
+    }
+    if (!ticket) {
+      state.activeTasks--
+      return this.callerGone(task, "node queue")
+    }
+    this.admissionTickets.set(task, ticket)
+
     // A flushed queued message that waited long enough for its subject to
     // change is told so (#282). Added here, when it really starts, and
     // not in the flush: a message that has to queue again then carries
@@ -1731,7 +1778,6 @@ export class AgentRegistry {
       task.message = `${clash}\n${task.message}`
     }
 
-    state.activeTasks++
     state.totalTasks++
     state.lastActive = new Date()
 
@@ -1989,6 +2035,7 @@ export class AgentRegistry {
       if (deadline) clearTimeout(deadline)
       clearPreSpawnDeadline()
       state.activeTasks--
+      this.admissionTickets.get(task)?.release()
       // Remove this run from the running-tasks list.
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
       if (idx !== -1) state.runningTasks.splice(idx, 1)
@@ -3652,7 +3699,7 @@ export class AgentRegistry {
   getActiveTaskCount(): number {
     let total = 0
     for (const s of this.agents.values()) total += s.activeTasks
-    return total
+    return total - this.gateWaiters
   }
 
   /** drainTimeoutSeconds of each agent with a run in flight (undefined when
