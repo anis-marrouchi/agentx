@@ -241,6 +241,32 @@ describe("review fixes (#1526)", () => {
     expect(helper.ticket).toBeTruthy()
   })
 
+  it("time spent waiting only for its own busy agent never runs out", async () => {
+    const { q, advance } = setup({ maxWaitMinutes: 1 })
+    let free = false
+    let out: any
+    void q.admit({ agentId: "a", channel: "telegram", canStart: () => free }).then((o) => { out = o })
+    await tick(); await tick()
+    advance(120_000)
+    await q.pump()
+    expect(out).toBeUndefined()
+    free = true
+    await q.pump()
+    expect(out?.ok).toBe(true)
+  })
+
+  it("switching the queue off frees runs already waiting", async () => {
+    const { q, settings } = setup({ maxSessions: 1, ownerExtraSessions: 0 })
+    ask(q, "a")
+    await tick(); await tick()
+    const b = ask(q, "b")
+    await tick(); await tick()
+    expect(b.ticket).toBeUndefined()
+    settings.enabled = false
+    await q.pump()
+    expect(b.ticket).toBeTruthy()
+  })
+
   it("refuses a run that waited past maxWaitMinutes", async () => {
     const { q, advance } = setup({ maxSessions: 1, ownerExtraSessions: 0, maxWaitMinutes: 1 })
     ask(q, "a")

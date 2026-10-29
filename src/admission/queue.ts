@@ -159,6 +159,9 @@ interface Entry {
   delegated: boolean
   label: string
   enqueuedAt: number
+  /** Since when the node (not its own agent or class) has held it; the
+   *  maxWaitMinutes clock. Null while only its own limits hold it. */
+  nodeHeldSince: number | null
   /** Why it is still waiting, from the last pass. */
   blockedBy: string[]
   req: AdmissionRequest
@@ -278,7 +281,7 @@ export class AdmissionQueue {
     }
     return new Promise((resolve) => {
       const entry: Entry = {
-        ...base, seq: this.seq, delegated: !!req.delegated, enqueuedAt: this.now(), blockedBy: [], req, resolve,
+        ...base, seq: this.seq, delegated: !!req.delegated, enqueuedAt: this.now(), nodeHeldSince: null, blockedBy: [], req, resolve,
       }
       if (req.signal) {
         entry.onAbort = () => {
@@ -404,8 +407,10 @@ export class AdmissionQueue {
     let holdAll = false
     for (const e of this.ordered()) {
       const waitedMs = now - e.enqueuedAt
-      if (s.maxWaitMinutes > 0 && waitedMs >= s.maxWaitMinutes * 60_000) {
-        this.log(`[admission] ${e.agentId} refused after ${Math.round(waitedMs / 60_000)}m in the queue — ${e.blockedBy.join("; ") || "no room"}`)
+      // Only time the node held it counts: waiting for its own busy agent
+      // is the agent's queue, which never gives up.
+      if (s.maxWaitMinutes > 0 && e.nodeHeldSince !== null && now - e.nodeHeldSince >= s.maxWaitMinutes * 60_000) {
+        this.log(`[admission] ${e.agentId} refused after ${Math.round((now - e.nodeHeldSince) / 60_000)}m held by the node — ${e.blockedBy.join("; ") || "no room"}`)
         this.refuse(e, "timeout")
         continue
       }
@@ -428,16 +433,20 @@ export class AdmissionQueue {
       if (pace > 0) holds.push(`start pace: next start in ${Math.ceil(pace / 1000)}s`)
       node.push(...holds)
 
-      if (s.mode === "observe") {
+      // Off (also switched off while runs wait): everything goes, as in
+      // observe, without the log.
+      if (!s.enabled || s.mode === "observe") {
         // Observe never holds for the node; a busy agent still waits, since
         // two runs on one slot would be a real double start.
-        if (node.some((n) => n !== "behind earlier work")) this.log(`[admission] observe: would hold ${e.agentId} (${e.priority}) — ${node.join("; ")}`)
+        if (s.enabled && node.some((n) => n !== "behind earlier work")) this.log(`[admission] observe: would hold ${e.agentId} (${e.priority}) — ${node.join("; ")}`)
         if (own.includes("agent busy")) { e.blockedBy = own; continue }
         this.admitEntry(e, waitedMs)
         continue
       }
       if (own.length || node.length) {
         e.blockedBy = [...node, ...own]
+        if (node.length) e.nodeHeldSince ??= now
+        else e.nodeHeldSince = null
         if (holds.length) holdAll = true
         continue
       }

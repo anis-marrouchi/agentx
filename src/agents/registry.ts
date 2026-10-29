@@ -1745,17 +1745,26 @@ export class AgentRegistry {
     const admissionSettings = this.admissionSettings()
     if (admissionSettings.tiers.includes(state.def.tier)) {
       const person = personOfTurn(this.config.people, task.context as any)
+      const voiceKey = qChannel === "voice" ? `${task.agentId}\u0000${qChatId}` : null
       const outcome = await this.admission.admit({
         agentId: task.agentId,
         channel: qChannel,
         chatId: qChatId,
         person: person?.id ?? null,
         owner: person?.role === "owner",
-        delegated: isInsideDelegation(task.context as any),
+        // A hop whose caller waits on it; a callback turn has no waiting parent.
+        delegated: isInsideDelegation(task.context as any) && !(task.context as any)?.delegation,
         // A chat message still waiting at shutdown is replayed by the router.
         keepOnClose: task.origin?.kind === "router",
-        canStart: () => state.activeTasks < state.def.maxConcurrent,
-        onStart: () => { state.activeTasks++ },
+        // One question at a time per voice chat: the claim is taken at
+        // admission, before any other entry of the same pass is checked,
+        // and held until this run marks the chat running.
+        canStart: () => state.activeTasks < state.def.maxConcurrent
+          && !(voiceKey && voiceKey !== voiceClaim && (this.voiceClaims.has(voiceKey) || this.messageQueue.isBusy(task.agentId, qChannel, qChatId))),
+        onStart: () => {
+          state.activeTasks++
+          if (voiceKey && !voiceClaim) { voiceClaim = voiceKey; this.voiceClaims.add(voiceKey) }
+        },
         signal: task.callerSignal,
       })
       dropVoiceClaim()
