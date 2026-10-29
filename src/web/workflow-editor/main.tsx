@@ -24,11 +24,14 @@ function injectStyles(id: string, css: string): void {
 
 function mount(el: HTMLElement, props: EditorProps): MountedEditor {
   injectStyles("wfe-redesign-css", redesignCss as unknown as string)
-  // The scope every editor style is written under (redesign.css).
-  el.id = "wfe-root"
-  const root: Root = createRoot(el)
+  // The scope every editor style is written under (redesign.css). A child
+  // of the host, so the host keeps its own id.
+  const scope = document.createElement("div")
+  scope.id = "wfe-root"
+  el.appendChild(scope)
+  const root: Root = createRoot(scope)
   root.render(<App {...props} />)
-  return { unmount: () => root.unmount() }
+  return { unmount: () => { root.unmount(); scope.remove() } }
 }
 
 declare global {

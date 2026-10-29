@@ -123,7 +123,8 @@ export const WALL_EDITOR_CSS = `
 .ax-wall.is-editor .ax-wall__n { position: absolute; top: 4px; right: 0; min-width: 18px; line-height: 18px; padding: 0 4px; font-size: 11px; }
 .ax-wall.is-editor .ax-wall__n.is-zero { display: none; }
 #wall-editor { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
-#wall-editor .wed__root { flex: 1; min-height: 0; }
+#wall-editor .wed__root { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#wall-editor .wed__root > #wfe-root { flex: 1; min-height: 0; }
 .wed__msg { padding: 48px 16px; text-align: center; }
 @media (max-width: 640px) {
   .ax-wall.is-editor { grid-template-columns: minmax(0, 1fr); }
