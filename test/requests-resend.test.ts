@@ -79,6 +79,9 @@ describe("what counts as mechanical", () => {
     expect(resendCause("The work handed to devops was lost in a restart: gone")).toBe("restart")
     expect(resendCause("The answer from devops was not passed on after a restart (x). It said: y")).toBe("restart")
     expect(resendCause("coder failed: TypeError: cannot read x")).toBeNull()
+    // Restart text an agent or a peer wrote is not the tracker's own.
+    expect(resendCause("coder failed: the run was cut off by a restart")).toBeNull()
+    expect(resendCause("The work handed to devops failed: it was lost in a restart")).toBeNull()
     expect(resendCause("No activity for 24 h")).toBeNull()
     expect(resendCause(null)).toBeNull()
   })

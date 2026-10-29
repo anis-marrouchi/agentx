@@ -89,7 +89,7 @@ You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on,
 Some requests stop for a reason a second try fixes: the agent hit its usage limit (the most it may use in a window of time), or the computer restarted while the agent worked. Such a request is sent back to its agent once, on its own, before you hear about it.
 
 - **Usage limit:** it is sent again once the limit has reset, and at least 5 minutes after it stopped.
-- **Restart:** it is sent again 5 minutes after it stopped. This covers work cut off by a restart, work handed to another agent and lost in one, and an answer a restart kept from reaching you.
+- **Restart:** it is sent again 5 minutes after it stopped. This covers work handed to another agent and lost in a restart, an answer a restart kept from reaching you, and work cut off by a restart that AgentX could not pick up again: it was too old, it had no way back in or nowhere to answer, or the attempt to pick it up failed. Work that AgentX chose not to pick up again is not resent, and you are told at once: work you stopped with a stop-all (it resumes from its plan), work another part of AgentX runs again, a computer restarting over and over, work already cut off once while being picked up, a workflow step, and work where picking up after a restart is turned off or set to report only.
 
 The agent gets your request again, with a line saying why it comes back. While the resend waits, you are not told. You are told as before, once, when:
 
@@ -494,7 +494,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **The flow rate counts a day differently from your clock:** the day starts at 00:00 in `requests.flow.timeZone`. Set yours with `agentx requests settings --flow-zone <zone>`, for example `Europe/Paris`.
 - **`days must be a whole number from 1 to 90`:** pass `--days` (or `?days=`) between 1 and 90. Closed requests are deleted after `retentionDays`, so older days would be wrong anyway.
 - **A request stopped by a usage limit was never resent:** the limit has not reset yet, or it was already resent once, or it is a promise or part of a tracked plan. `agentx requests show <id>` says why it stopped. After 12 hours you are told anyway.
-- **You were told about a limit or a restart failure at once:** auto-resend is off (`agentx requests settings`), the agent is not on this computer, or the request had already been resent once.
+- **You were told about a limit or a restart failure at once:** auto-resend is off (`agentx requests settings`), the agent is not on this computer, the request had already been resent once, or AgentX chose not to pick the work up again after the restart. The reason in brackets after `not picked up again` says which.
 
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 
