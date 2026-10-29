@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.192.0](https://github.com/anis-marrouchi/agentx/compare/v0.191.0...v0.192.0) (2026-10-29)
+
+
+### Features
+
+* **requests:** daily flow rate and resend once after a limit or a restart ([#1542](https://github.com/anis-marrouchi/agentx/issues/1542)) ([#1544](https://github.com/anis-marrouchi/agentx/issues/1544)) ([dd4919c](https://github.com/anis-marrouchi/agentx/commit/dd4919c4ccb52c746e4b8baecc78943f85844767))
+
+
+### Bug Fixes
+
+* **crons:** exit check follow-ups from [#1541](https://github.com/anis-marrouchi/agentx/issues/1541) review ([#1546](https://github.com/anis-marrouchi/agentx/issues/1546)) ([#1549](https://github.com/anis-marrouchi/agentx/issues/1549)) ([64442d9](https://github.com/anis-marrouchi/agentx/commit/64442d9d543b5de627df310cb2d79506ea0f6ff2))
+* **requests:** resend only restarts the resume step could not run again ([#1544](https://github.com/anis-marrouchi/agentx/issues/1544)) ([#1547](https://github.com/anis-marrouchi/agentx/issues/1547)) ([c0da6b4](https://github.com/anis-marrouchi/agentx/commit/c0da6b471a146b92d39c6550c12fc39d4415b05e))
+* **resume:** a failed record write after a resume no longer resends the request ([#1550](https://github.com/anis-marrouchi/agentx/issues/1550)) ([#1551](https://github.com/anis-marrouchi/agentx/issues/1551)) ([aade5fa](https://github.com/anis-marrouchi/agentx/commit/aade5fa388d71813375df3b78e39c1f79e03c6cf))
+
 ## [0.191.0](https://github.com/anis-marrouchi/agentx/compare/v0.190.0...v0.191.0) (2026-10-29)
 
 
