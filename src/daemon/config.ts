@@ -1594,6 +1594,27 @@ export const requestsConfigSchema = z.object({
   }).default({}),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
+  /** Resend once (src/requests/resend.ts, #1542): a request that needs
+   *  attention because a usage limit or a restart stopped it is sent back
+   *  to its agent one time, on its own. The owner is told only if that
+   *  resend stops too, or the wait runs past holdMaxHours. */
+  autoResend: z.object({
+    enabled: z.boolean().default(true),
+    /** Minutes after it stopped before it is resent. A limit also waits
+     *  until no usage-limit hold is active. */
+    afterMinutes: z.number().min(0).max(24 * 60).default(5),
+    /** Hours the owner's notice waits for the resend. Past it, they are
+     *  told as before. */
+    holdMaxHours: z.number().positive().max(7 * 24).default(12),
+  }).default({}),
+  /** The daily flow rate (src/requests/flow.ts, #1542): requests closed
+   *  (done, declined or dropped) out of those asked, per day. */
+  flow: z.object({
+    /** Whose day the count follows: an IANA time zone. */
+    timeZone: z.string().min(1).refine((z) => { try { new Intl.DateTimeFormat("en-GB", { timeZone: z }); return true } catch { return false } }, "an IANA time zone, for example Africa/Tunis").default("Africa/Tunis"),
+    /** Days shown by default. */
+    days: z.number().int().min(1).max(90).default(7),
+  }).default({}),
   /** Tracked plans (src/requests/plans.ts, #788): a request with two or
    *  more steps, each with an owner agent, followed until every step is
    *  done. Needs `enabled` above. */

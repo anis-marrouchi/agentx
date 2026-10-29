@@ -6,6 +6,7 @@ import { checkHomes, type HomeChecker, type PlanStepLeft } from "./home-check"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
 import { goalLine } from "./goals"
+import { DEFAULT_RESEND, resendLine, resendVerdict, type ResendCause } from "./resend"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
@@ -31,6 +32,12 @@ import { goalLine } from "./goals"
 //      past it instead, unless its handed work all came back done: that
 //      one waits to settle. A request waiting on the owner is left alone; its
 //      question is what reminds them.
+//   2b. Resend once (#1542, resend.ts): a request stopped by a usage
+//      limit or a restart goes back to its agent once, on the pick-up
+//      path, after `autoResend.afterMinutes` and, for a limit, once no
+//      limit hold is active. Its notice is held meanwhile, up to
+//      `autoResend.holdMaxHours`. Runs before the pick-ups, so the resend
+//      is sent by this same check.
 //   3. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
 //      sent at all is tried again at the next check. This is the one
@@ -58,6 +65,9 @@ export interface RequestSweepDeps {
   hasAgent?: (agentId: string) => boolean
   /** The request has an active tracked plan (#788): never settled here. */
   inPlan?: (requestId: string) => boolean
+  /** A usage-limit hold is active (#1542): a request a limit stopped is
+   *  not resent until it lifts. Unset: no hold. */
+  limitHeld?: () => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
   check?: LoopChecker
   /** Reads a request's issue or merge request home (#1522). Unset: homes
@@ -88,6 +98,10 @@ export interface RequestSweepResult {
   notified: number
   pruned: number
   pickedUp: number
+  /** Sent back once on their own after a limit or a restart (#1542). */
+  resent: number
+  /** Notices held while a resend is due. */
+  held: number
 }
 
 /** The pick-up turn ended. A turn that started is followed through its
@@ -111,7 +125,7 @@ export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?
  *  that was asked: another agent may have no way to write there (another
  *  bot's chat, a voice turn), so it is told to answer in this turn, which
  *  the request's card shows as the last answer (#481). */
-export function pickupText(r: RequestRecord): string {
+export function pickupText(r: RequestRecord, resend: ResendCause | null = null): string {
   const first = r.askedAgent && r.askedAgent !== r.agentId ? r.askedAgent : null
   const on = new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")
   const asked = `on ${r.channel} (chat ${r.chatId}) on ${on} UTC and was not finished.`
@@ -124,7 +138,9 @@ export function pickupText(r: RequestRecord): string {
     : "Report to them in that chat."
   return [
     `[agentx:request-pickup id=${r.id}]`,
-    wall && !first && !r.ownerNote
+    resend
+      ? `${resendLine(resend)} It was asked ${wall ? `on the Wall on ${on} UTC and was not finished.` : asked}`
+      : wall && !first && !r.ownerNote
       ? `The owner gave you this task on the Wall on ${on} UTC.`
       : first
         ? `The owner handed this request to you. It was asked of ${first} ${asked}`
@@ -160,7 +176,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
     `What happened: ${r.attentionReason ?? "unknown"}`,
     `Waiting on: ${waitsOnWords(on.group, on.who)}`,
     ...(r.verifyState === "unverified" && r.verifyDetail ? [`Its check could not say: ${r.verifyDetail}`] : []),
-    "Nothing is retrying it.",
+    r.resentAt !== null ? `Resent once at ${new Date(r.resentAt).toISOString().slice(0, 16).replace("T", " ")} UTC, stopped again.` : "Nothing is retrying it.",
     r.closeWhen
       ? `Needed from you: hand it back to ${r.agentId}, close it by hand with a reason, or drop it.`
       : `Needed from you: ${cardWords(r).need}`,
@@ -172,7 +188,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0 }
   if (!settings.enabled) return result
 
   if (deps.check) {
@@ -197,6 +213,34 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     }
   }
 
+  // Held: told later, once the resend is no longer due.
+  const held = new Set<string>()
+  // Resent by this check: its pick-up says why it comes back.
+  const resent = new Map<string, ResendCause>()
+  const resend = settings.autoResend ?? DEFAULT_RESEND
+  if (resend.enabled && deps.tellAgent) {
+    try {
+      const limitHeld = deps.limitHeld?.() ?? false
+      for (const r of store.awaitingNotice()) {
+        const v = resendVerdict(r, {
+          settings: resend, now, limitHeld,
+          hasAgent: deps.hasAgent ? deps.hasAgent(r.agentId) : true,
+          inPlan: deps.inPlan?.(r.id) ?? false,
+          cameBack: store.cameBack(r.id),
+        })
+        if (v.act === "hold") { held.add(r.id); continue }
+        if (v.act !== "resend") continue
+        if (store.requestPickup(r.id, now, { resend: true })) {
+          resent.set(r.id, v.cause)
+          log(`[requests] ${r.id} resent once: stopped by ${v.cause === "limit" ? "a usage limit" : "a restart"} (${r.attentionReason})`)
+        }
+      }
+      result.held = held.size
+    } catch (e: any) {
+      log(`[requests] resend failed: ${e?.message ?? e}`)
+    }
+  }
+
   try {
     // takePickups clears the mark first: a turn that hangs or fails is not started twice.
     for (const r of store.takePickups()) {
@@ -210,8 +254,9 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       const says = r.ownerNote && !r.noteSaid ? r.ownerNote : null
       if (says) store.setNoteSaid(r.id, says, true)
       try {
-        await deps.tellAgent(r.agentId, pickupText(r), r)
+        await deps.tellAgent(r.agentId, pickupText(r, resent.get(r.id) ?? null), r)
         result.pickedUp++
+        if (resent.has(r.id)) result.resent++
       } catch (e: any) {
         if (says) store.setNoteSaid(r.id, says, false)
         store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${e?.message ?? e}`, now)
@@ -264,6 +309,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     // writes its headline later.
     let describing = 0
     for (const r of store.awaitingNotice()) {
+      if (held.has(r.id)) continue
       // Marked first: a notice that hangs must not be sent twice.
       store.markNotified(r.id, now)
       if (!deps.notify) continue

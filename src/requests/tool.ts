@@ -2,6 +2,7 @@ import { resolveScheduleCaller } from "@/crons/schedule-tool"
 import { callerHeaders } from "@/calls/service"
 import { awaitingQa, describeQa } from "./qa"
 import type { GoalSummary } from "./goals"
+import { describeFlow } from "./flow"
 
 // --- Agent-facing `agentx_request` tool (#356) ---
 //
@@ -29,6 +30,7 @@ import type { GoalSummary } from "./goals"
 //            ask for one
 //   list     what is still open
 //   goals    every goal requests name: progress and cost (#1168)
+//   flow     the daily flow rate: today's, then one line per day (#1542)
 // It talks to the daemon's /requests endpoints. Dropping a request is the
 // owner's alone; there is no action for it here.
 
@@ -102,6 +104,15 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
       return `${data.count} goal${data.count === 1 ? "" : "s"}, most recently active first.\n${describeGoals(data.goals ?? [])}`
+    }
+
+    if (action === "flow") {
+      const days = typeof args.days === "number" ? `?days=${Math.floor(args.days)}` : ""
+      const res = await doFetch(`${base}/requests/flow${days}`, { signal: AbortSignal.timeout(10_000) })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
+      if (!data.enabled) return "Requests are turned off on this node (requests.enabled), so nothing is recorded."
+      return describeFlow(data)
     }
 
     if (action === "list") {
