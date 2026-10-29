@@ -295,7 +295,17 @@ When it is on, AgentX notes every message you send to an agent. A message the ag
 
 An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you.
 
-One case is closed instead of coming back to you: a request whose handed-on work all came back done, and that nobody closed within `staleAfterHours`. It is closed as done. The proof is the first link in the other agent's answer. With no link, it is marked **unproven**. Turn this off with `settleHandedBack: false`.
+One case is closed instead of coming back to you: a request whose handed-on work all came back done, and that nobody closed within `staleAfterHours`. It is closed as done. The proof is the first link in the other agent's answer. With no link, it is marked **unproven**. Turn this off with `settleHandedBack: false`. A hand-off that failed, timed out or was lost in a restart does not hold the request once a later hand-off to the same agent came back done.
+
+A request whose home is a GitHub or GitLab issue, pull request or merge request also closes when that home closes. The daemon reads the home as often as the loop checks run (`checkers.checkEveryMinutes`). A merged pull or merge request, or an issue closed as completed, closes the request as done and checked, with who closed it and when. The home must have closed after you asked, and after you last sent the request back. A tracked plan stops with it, and the evidence names the steps it had left.
+
+These stay as they are:
+- requests waiting on you, promises, and requests with a check of their own
+- pull or merge requests closed without merging
+- issues closed as not planned or as a duplicate
+- homes the daemon cannot read, and GitHub homes when there is no GitHub token
+
+Turn this off with `homeCloses: false`.
 
 Who counts as you on this computer's own surfaces (voice, the phone app, the dashboard) is proven, not declared: the daemon marks the turns it starts itself, and the dashboard presents the key in `.agentx/operator.key` for the phone app. The daemon creates that file next to `agentx.json` at start, readable by your user only. A call to `POST /task` that names one of those channels without the key runs as an ordinary turn and is not recorded as your request. When the phone app talks to an agent on another computer, the computer it is paired with checks its own key on the forward and tells the other one the turn is yours; that other computer believes it only from a request that carries one of its `mesh.peers[].token` values and comes from another machine, never from a caller on the same machine or a bare header. A computer you let vouch is trusted for more than the list: the turn is yours for [people limits](/jobs/people) too. When the whole mesh shares one token, every computer in it can vouch, so share a token only between computers you own.
 
@@ -317,6 +327,7 @@ To turn it on by hand:
 | `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your id on that channel, as `channel:id`. That is your login on GitLab and GitHub, and the sender id everywhere else (the numeric id on Telegram, the number on WhatsApp). An entry only applies to its own channel. Usernames beside an id and display names are not matched, because the person chooses them. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
 | `requests.settleHandedBack` | boolean | `true` | A request in progress whose handed-on work all came back done, and that has no activity for `staleAfterHours`, is closed as done instead of coming back to you. The proof is the other agent's link, or the request is marked unproven. Promises, requests with a check or a due time, and tracked plans are never closed this way. |
+| `requests.homeCloses` | boolean | `true` | An open request with no check of its own, whose home is a GitHub or GitLab issue, pull request or merge request, is closed as done once that home is merged or closed as completed. Requests waiting on you and promises are left. |
 | `requests.promises` | object | `{}` | One record for everything someone owes: proof on close, a fact when it closes. See [A promise closes with proof](/jobs/open-requests#a-promise-closes-with-proof-and-leaves-a-fact). |
 | `requests.promises.requireProof` | boolean | `true` | An agent's `done` on a promise needs a proof: a link, a passing test run, an output, or a check that ran. `false`: any evidence closes it. |
 | `requests.promises.facts` | boolean | `true` | A promise closed with a proof writes a checked fact to the wiki's fact ledger (`agentx wiki facts list`). |

@@ -134,6 +134,17 @@ describe("issue", () => {
     expect(asked[0]).toBe("https://api.github.com/repos/acme/app/issues/12 Bearer t1")
     expect(asked).toContain("https://gitlab.example.com/api/v4/projects/g%2Fapp/merge_requests/3 t2")
   })
+
+  it("keeps why a GitHub issue closed, and only when it is closed (#1522)", async () => {
+    const fake = (async (url: string) => {
+      if (url.endsWith("/issues/7")) return Response.json({ state: "closed", state_reason: "not_planned", html_url: "https://github.com/acme/app/issues/7", closed_at: "2030-01-01T00:00:00Z" })
+      if (url.endsWith("/issues/8")) return Response.json({ state: "open", state_reason: "reopened", html_url: "https://github.com/acme/app/issues/8" })
+      return new Response("", { status: 404 })
+    }) as unknown as typeof fetch
+    const read = forgeReader({ github: { apiUrl: "https://api.github.com", token: "t1" } }, fake)
+    expect(await read("github", { project: "acme/app", number: 7, mr: false }, { notes: false })).toMatchObject({ state: "closed", stateReason: "not_planned" })
+    expect(await read("github", { project: "acme/app", number: 8, mr: false }, { notes: false })).not.toHaveProperty("stateReason")
+  })
 })
 
 describe("git-ancestor", () => {

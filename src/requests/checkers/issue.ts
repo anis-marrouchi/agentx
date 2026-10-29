@@ -23,6 +23,9 @@ export interface ForgeItem {
   /** Its milestone title and assignee logins, as the forge says (#1195). */
   milestone?: string | null
   assignees?: string[]
+  /** Why a GitHub issue was closed ("completed", "not_planned"), as the
+   *  forge says (#1522). GitLab has no such field. */
+  stateReason?: string | null
 }
 
 /** Reads one item, or says why it could not (unknown, not visible, down). */
@@ -165,10 +168,12 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
       const url = String(issue.body?.html_url ?? `${ref.project}#${ref.number}`)
       const labels = labelNames(issue.body?.labels)
       const plan = planOf(issue.body, "login")
-      if (!opts.notes) return { state, url, labels, ...closer, ...plan }
+      const reason = state === "closed" ? login(issue.body?.state_reason) : null
+      const stateReason = reason ? { stateReason: reason } : {}
+      if (!opts.notes) return { state, url, labels, ...closer, ...plan, ...stateReason }
       const notes = await get(`${base}/issues/${ref.number}/comments?per_page=100`, headers)
       if (!notes.ok) return { error: `its notes: ${notes.error}` }
-      return { state, url, labels, ...closer, ...plan, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
+      return { state, url, labels, ...closer, ...plan, ...stateReason, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
     }
     const c = connectors.gitlab
     if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }
