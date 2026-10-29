@@ -71,6 +71,8 @@ export function getDispatchBudget(): DispatchBudget { return { ...budget } }
 export function clearDispatchHistory(): void {
   timestamps.length = 0
   providerSignals.clear()
+  liftedHolds.clear()
+  lastSessionInit = null
 }
 
 function prune(now: number): void {
@@ -108,6 +110,85 @@ const providerSignals = new Map<string, RateLimitSignal>()
 
 /** A rejected signal with no reset time is trusted for this long. */
 const REJECTED_FALLBACK_HOLD_MS = 15 * 60 * 1000
+
+// --- Lifted holds (#1531) ---
+//
+// A hold that ends is remembered for a day, so `/api/node` can say "lifted
+// at 07:30" instead of dropping the window silently. Without it, an agent
+// that last saw "rejected, resets tomorrow" could not tell that the
+// account had recovered from the hold simply being gone.
+
+export interface LiftedHold {
+  window: string
+  /** When the provider first reported the window as rejected. */
+  heldSince: number
+  /** The reset time the hold was waiting for, when reported. */
+  resetsAt?: number
+  liftedAt: number
+  /** "served": Claude served a request again; "operator": `agentx usage
+   *  plan --lift`; "reset": the reported reset time passed. */
+  how: "served" | "operator" | "reset"
+}
+
+const LIFTED_KEEP_MS = 24 * 60 * 60 * 1000
+const liftedHolds = new Map<string, LiftedHold>()
+
+function holdEnd(s: RateLimitSignal): number {
+  return s.resetsAt ?? s.seenAt + REJECTED_FALLBACK_HOLD_MS
+}
+
+function noteLifted(s: RateLimitSignal, liftedAt: number, how: LiftedHold["how"]): void {
+  if (s.status !== "rejected" || s.usingOverage) return
+  liftedHolds.set(s.window, { window: s.window, heldSince: s.seenAt, ...(s.resetsAt && { resetsAt: s.resetsAt }), liftedAt, how })
+}
+
+/** Holds that ended in the last day, newest first. A hold whose reset
+ *  time passed counts as lifted at that time. */
+export function liftedProviderHolds(now: number = Date.now()): LiftedHold[] {
+  const out = new Map(liftedHolds)
+  for (const s of providerSignals.values()) {
+    if (s.status !== "rejected" || s.usingOverage) continue
+    const end = holdEnd(s)
+    if (end <= now) out.set(s.window, { window: s.window, heldSince: s.seenAt, ...(s.resetsAt && { resetsAt: s.resetsAt }), liftedAt: end, how: "reset" })
+    else out.delete(s.window)
+  }
+  return [...out.values()].filter((l) => now - l.liftedAt < LIFTED_KEEP_MS).sort((a, b) => b.liftedAt - a.liftedAt)
+}
+
+// --- The account Claude Code last ran on (#1531) ---
+//
+// Claude Code's first stream event (system/init) says where its
+// credential came from (`apiKeySource`: "none" means the /login
+// subscription) and its own version. Kept so the node can say which
+// account its sessions run on without anyone remembering it.
+
+export interface SessionInitInfo {
+  agentId?: string
+  apiKeySource?: string
+  cliVersion?: string
+  model?: string
+  seenAt: number
+}
+
+let lastSessionInit: SessionInitInfo | null = null
+
+export function recordSessionInit(event: unknown, now: number = Date.now(), agentId?: string): void {
+  if (!event || typeof event !== "object") return
+  const e = event as Record<string, unknown>
+  if (e.type !== "system" || e.subtype !== "init") return
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined)
+  lastSessionInit = {
+    ...(agentId && { agentId }),
+    ...(str(e.apiKeySource) && { apiKeySource: str(e.apiKeySource) }),
+    ...(str(e.claude_code_version) && { cliVersion: str(e.claude_code_version) }),
+    ...(str(e.model) && { model: str(e.model) }),
+    seenAt: now,
+  }
+}
+
+export function lastClaudeSessionInit(): SessionInitInfo | null {
+  return lastSessionInit ? { ...lastSessionInit } : null
+}
 
 function asNumber(v: unknown): number | undefined {
   if (typeof v === "number" && Number.isFinite(v)) return v
@@ -168,9 +249,15 @@ export function recordRateLimitEvent(event: unknown, now: number = Date.now(), m
   if (!signal) return null
   if (signal.status !== "rejected") {
     for (const [window, s] of providerSignals) {
-      if (s.status !== "rejected" || window === signal.window) continue
-      if (!windowModel(window) || (model && concerns(window, model))) providerSignals.delete(window)
+      if (s.status !== "rejected") continue
+      if (window === signal.window) { if (holdEnd(s) > now) noteLifted(s, now, "served"); continue }
+      if (!windowModel(window) || (model && concerns(window, model))) {
+        if (holdEnd(s) > now) noteLifted(s, now, "served")
+        providerSignals.delete(window)
+      }
     }
+  } else {
+    liftedHolds.delete(signal.window)
   }
   providerSignals.set(signal.window, signal)
   return signal
@@ -180,7 +267,7 @@ export function recordRateLimitEvent(event: unknown, now: number = Date.now(), m
 export function activeProviderHolds(now: number = Date.now()): RateLimitSignal[] {
   return [...providerSignals.values()].filter((s) => {
     if (s.status !== "rejected" || s.usingOverage) return false
-    return (s.resetsAt ?? s.seenAt + REJECTED_FALLBACK_HOLD_MS) > now
+    return holdEnd(s) > now
   })
 }
 
@@ -196,7 +283,10 @@ export function activeProviderHold(now: number = Date.now(), model?: string): Ra
  */
 export function liftProviderHolds(now: number = Date.now()): RateLimitSignal[] {
   const lifted = activeProviderHolds(now)
-  for (const s of lifted) providerSignals.delete(s.window)
+  for (const s of lifted) {
+    noteLifted(s, now, "operator")
+    providerSignals.delete(s.window)
+  }
   return lifted
 }
 

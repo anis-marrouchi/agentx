@@ -836,6 +836,26 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_node",
+    description:
+      "What this node knows about its own environment, live: the machine (OS, version, CPU, memory, disk, swap, load), " +
+      "installed programs and their versions, the Claude account (which credential, plan windows with reset times, " +
+      "usage-limit holds and holds lifted recently) and the work running or waiting now. Every section has its check time. " +
+      "Call it before you state or act on any of these facts (\"is there a usage limit right now?\", \"what machine am I on?\", " +
+      "\"is gh installed?\"), answer from it, and quote the check time. Never answer them from memory or earlier messages: " +
+      "notes about limits and resets go stale within hours.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        format: {
+          type: "string",
+          enum: ["text", "json"],
+          description: "\"text\" (default) is a short report; \"json\" is the full GET /api/node body.",
+        },
+      },
+    },
+  },
+  {
     name: "agentx_attach_next",
     description:
       "Take the next message queued for the agent identity THIS session is attached to (attach mode). Returns the message plus who sent it and on which channel, or nothing when the inbox is empty. After calling this, just answer normally — your reply is captured automatically and sent back to the channel. Use when the user runs /inbox or asks you to check for waiting messages.",
@@ -1776,6 +1796,16 @@ async function handleToolCall(
       const res = await daemonFetch(`${daemonUrl()}/health`)
       const data = await res.json() as any
       return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] }
+    }
+
+    case "agentx_node": {
+      const json = args.format === "json"
+      const res = await daemonFetch(`${daemonUrl()}/api/node${json ? "" : "?format=text"}`)
+      if (!res.ok) {
+        return { content: [{ type: "text", text: `The node did not answer: HTTP ${res.status}${res.status === 404 ? " (the daemon is older than this tool; ask the owner to update AgentX)" : ""}` }] }
+      }
+      const text = json ? JSON.stringify(await res.json(), null, 2) : await res.text()
+      return { content: [{ type: "text", text }] }
     }
 
     // Attach mode. The session id comes from the environment Claude Code

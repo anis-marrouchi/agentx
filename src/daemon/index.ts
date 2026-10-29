@@ -173,6 +173,8 @@ import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type Servi
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
+import { NodeEnvironment } from "@/node-env"
+import { formatNode } from "@/node-env/format"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { startManualWorkflowRun } from "@/daemon/workflow-manual-run"
 import { setTopbarFeatures } from "@/daemon/topbar"
@@ -284,6 +286,8 @@ export class AgentXDaemon {
     return loadNativeAdapter(this.config)
   }
   private registry: AgentRegistry
+  /** What the node reports about its own environment (#1531). */
+  private nodeEnv!: NodeEnvironment
   private router: MessageRouter
   private cron: CronScheduler
   /** Per-project webhook rules. Hot-reloaded from .agentx/projects/.
@@ -519,6 +523,12 @@ export class AgentXDaemon {
     setGlobalRegistry(this.registry)
     setAgentRegistry(this.registry)
     this.registry.setLandscape(this.landscape)
+    this.nodeEnv = new NodeEnvironment({
+      config: () => this.config,
+      admission: this.registry.admission,
+      build: buildInfo,
+      log: this.log,
+    })
 
     // Initialize heartbeat manager
     this.heartbeat = new HeartbeatManager(this.registry, this.log)
@@ -863,6 +873,9 @@ export class AgentXDaemon {
     this.log("")
     this.log(`  Node: ${this.config.node.name} (${this.config.node.id})`)
     this.log(`  Bind: ${this.config.node.bind}`)
+    // Host and program versions for GET /api/node (#1531). Not awaited:
+    // reading a dozen `--version`s must not hold the boot.
+    void this.nodeEnv.start().catch((e) => this.log(`  [node] environment read failed: ${e?.message ?? e}`))
     // Before any channel polls or pushes: Node's 250 ms per-address connect
     // attempt fails every fetch on a slow dual-stack link (#930).
     const attemptMs = applyConnectAttemptTimeout(this.config.node.connectAttemptTimeoutMs ?? DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS)
@@ -1257,6 +1270,7 @@ export class AgentXDaemon {
     // Nothing waiting for a place on the node starts now (#1521). Chat
     // messages still waiting are replayed from the inflight log on boot;
     // other waiting runs are answered as interrupted.
+    this.nodeEnv.stop()
     const left = this.registry.admission.close()
     if (left.kept || left.refused) this.log(`  Admission queue closed — ${left.kept} chat message(s) kept for replay on boot, ${left.refused} other run(s) answered as interrupted`)
 
@@ -6861,6 +6875,20 @@ export class AgentXDaemon {
       if (req.method === "GET" && path === "/api/queue") {
         await this.registry.admission.refresh()
         this.json(res, 200, this.registry.admission.snapshot())
+        return
+      }
+
+      // The node's own environment (#1531): machine, programs, Claude
+      // account and running work, each with its check time. `?format=text`
+      // is what `agentx node` and agentx_node print.
+      if (req.method === "GET" && path === "/api/node") {
+        const report = await this.nodeEnv.report()
+        if (url.searchParams.get("format") === "text") {
+          res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" })
+          res.end(formatNode(report) + "\n")
+          return
+        }
+        this.json(res, 200, report)
         return
       }
 

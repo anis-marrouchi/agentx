@@ -32,6 +32,7 @@ import { attach as attachCmd } from "@/commands/attach"
 import { process_ as processCmd } from "@/commands/process"
 import { signalCmd } from "@/commands/signal"
 import { queue } from "@/commands/queue"
+import { node as nodeCmd } from "@/commands/node"
 import { reviewGateCmd } from "@/commands/review-gate"
 import { cloudSessionsCmd } from "@/commands/cloud-sessions"
 import { rag as ragCmd } from "@/commands/rag"
@@ -109,6 +110,7 @@ export async function buildProgram(): Promise<Command> {
     appCmd,                      // the phone app
     daemon, doctor,              // operate
     queue,                       // what runs on this node, what waits, why
+    nodeCmd,                     // what the node knows about its machine and account
     agent, channel, schedule,    // configure the things that carry work
     team,                        // ready-made teams, installed in one step
     sales,                       // the sales team's leads, opt-outs and competitor watch

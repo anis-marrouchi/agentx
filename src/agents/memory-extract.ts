@@ -1,6 +1,7 @@
 import type { MemoryStore } from "./memory-store"
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
 import { containsSecret, trustForChannel } from "./memory-trust"
+import { isNodeFact } from "./node-facts"
 
 // --- Haiku-powered memory extraction ---
 // Fire-and-forget after each agent response.
@@ -20,6 +21,7 @@ Extract ONLY facts that would help the agent in FUTURE, DIFFERENT conversations:
 SKIP:
 - Credentials of any kind: passwords, tokens, API keys, private keys, connection strings. Never repeat one, not even partly. At most note that a credential exists and where it is kept, without its value.
 - Routine greetings, acknowledgments, status updates
+- Usage limits, plan windows, reset times, holds, and the state of this machine (memory, disk, installed versions): the node reports these live
 - Information derivable from code or config files
 - Transient conversation flow ("let me check", "here's what I found")
 - Facts already obvious from the agent's system prompt
@@ -83,6 +85,8 @@ export async function extractMemories(
     // The prompt says never to extract credentials; this holds when the
     // model does it anyway. addMemory refuses them too.
     if (fact.category === "secret" || containsSecret(fact.content)) continue
+    // The node reports limits, resets and holds live (#1531).
+    if (isNodeFact(fact.content)) continue
     // Skip duplicates
     if (store.hasSimilar(agentId, fact.content)) continue
 

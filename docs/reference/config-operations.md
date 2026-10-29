@@ -452,6 +452,15 @@ The session queue: every new agent session waits until the machine has room. Rea
 | `priority.criticalAgents` | `[]` | Agents whose work runs at critical priority. |
 | `priority.backgroundChannels` | `["cron", "heartbeat", "routine"]` | Channels whose work runs last. |
 
+## environment
+
+What the node reports about itself: read it with `agentx node`. How it works: [Ask the node about its machine and account](/jobs/node-facts).
+
+| Key | Default | What it does |
+|---|---|---|
+| `tools` | `["claude", "codex", "git", "gh", "glab", "node", "pnpm", "npm", "python3", "docker"]` | Programs whose version the node reads. A name runs `<name> --version`; `{ "name": "uv", "command": "uv", "args": ["version"] }` runs other arguments. |
+| `toolsRefreshHours` | `6` | How often the versions are read again (0.25–168). They are never read on a request. |
+
 ## Check it worked
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.

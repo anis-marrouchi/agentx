@@ -5,6 +5,7 @@ import { FactLedger } from "@/wiki/facts/ledger"
 import type { Provenance } from "./fact-freshness"
 import { memoryContextLines, renderMemoryBlock, type ContextLine } from "./memory-context"
 import { containsSecret, factTrust, initialReview, isInjectable, trustForChannel, type FactReview, type SourceTrust } from "./memory-trust"
+import { isNodeFact } from "./node-facts"
 
 // --- Persistent agent memory store ---
 // JSONL-based. One file per agent: .agentx/memory/{agentId}.jsonl
@@ -59,10 +60,12 @@ export class MemoryStore {
     return resolve(this.memoryDir, `${agentId}.jsonl`)
   }
 
-  /** Store a fact. Refuses secrets (returns false). Stamps the source's
-   *  trust, and holds facts from external sources for review. */
+  /** Store a fact. Refuses secrets, and usage-limit, reset and hold notes
+   *  (the node reports those live, #1531): returns false. Stamps the
+   *  source's trust, and holds facts from external sources for review. */
   addMemory(agentId: string, fact: Omit<MemoryFact, "id" | "createdAt">): boolean {
     if (fact.category === "secret" || containsSecret(fact.content)) return false
+    if (isNodeFact(fact.content)) return false
     const trust = fact.source.trust ?? trustForChannel(fact.source.channel)
     const review = fact.review ?? initialReview(trust)
     const entry: MemoryFact = {
@@ -188,8 +191,8 @@ export class MemoryStore {
 
     return memories
       .filter(m => {
-        // Skip task-state (ephemeral)
-        if (m.category === "task-state") return false
+        // Skip task-state (ephemeral) and limit notes (the node owns them)
+        if (m.category === "task-state" || isNodeFact(m.content)) return false
         // Never reviewed → due
         if (!m.nextReview) return true
         // Past review date → due

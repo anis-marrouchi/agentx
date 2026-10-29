@@ -76,6 +76,7 @@ const groups = [
     { text: "Run a sprint in lanes", link: "/jobs/sprint-lanes" },
     { text: "Pause a task and resume it later", link: "/jobs/pause-and-resume" },
     { text: "Keep a small machine from running out of memory", link: "/jobs/session-queue" },
+    { text: "Ask the node about its machine and account", link: "/jobs/node-facts" },
     { text: "Review what agents learn", link: "/jobs/agent-memory" },
     { text: "Let agents leave notes for the wiki run", link: "/jobs/wiki-notes" },
     { text: "Let agents keep the wiki up to date", link: "/jobs/wiki-contributions" },

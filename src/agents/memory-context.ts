@@ -1,6 +1,7 @@
 import { daysSince, needsRecheck, ageDays, VERIFY_OR_ASK_RULE } from "./fact-freshness"
 import { isStaleFact, matchFact, type WikiFact } from "@/wiki/facts/ledger"
 import type { MemoryFact } from "./memory-store"
+import { isNodeFact, NODE_FACT_STALE_TAG } from "./node-facts"
 
 // --- The Agent Memory block: flag stale lines, reference the wiki ---
 //
@@ -38,6 +39,11 @@ export function wikiRefLine(f: WikiFact, now = Date.now()): { line: string; unve
 function memoryLine(m: MemoryFact, now: number): { line: string; unverified: boolean } {
   const isDM = !m.source.chatId.startsWith("-") && /^\d+$/.test(m.source.chatId)
   const scope = isDM ? "DM" : m.source.chatId
+  // A limit, reset or hold note stored before #1531: stale whatever its
+  // age, and the line says where the live answer is.
+  if (isNodeFact(m.content)) {
+    return { line: `- [${m.category}] ${NODE_FACT_STALE_TAG}${m.content} (${scope}, ${m.source.date})`, unverified: true }
+  }
   const unverified = needsRecheck(m, now)
   return { line: `- [${m.category}] ${flag(unverified, ageDays(m, now))}${m.content} (${scope}, ${m.source.date})`, unverified }
 }
