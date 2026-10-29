@@ -74,6 +74,10 @@ A job with a `command` runs it directly and fails when it exits with an error. A
 
 A run that ends with `EXIT=1`, or with no `EXIT=` line at all, is recorded as failed with the error `the command exited with code 1` or `the answer did not report the command's exit code`.
 
+On a run that worked, the `EXIT=0` line is removed before the answer is sent to `notify`, so the reader never sees it. The run history keeps the answer as the agent wrote it. With `requireSources`, the `EXIT=0` line is not checked for a source.
+
+A run the daemon makes up after a restart, for a time it missed while it was off, counts the same way: a failure adds to the failures in a row, sends the failure message, and can turn the job off under `onError`. It is not retried; the next regular run follows the schedule.
+
 ## `exceptionsDigest`
 
 One message a day that lists only what is wrong on this machine: schedules whose latest run failed or that did not run when due, stuck open requests, and agents or projects paused by their budget. When nothing is wrong, nothing is sent. Off by default. Guide: [Get a daily list of what is wrong](/jobs/exceptions-digest).

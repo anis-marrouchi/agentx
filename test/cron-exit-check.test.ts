@@ -98,11 +98,22 @@ describe("a prompt cron with expectExitZero", () => {
     expect(runRecords()[0].error).toMatch(/did not report/)
   })
 
-  it("records EXIT=0 as a success and delivers the answer", async () => {
-    const { s, go } = run(job({ expectExitZero: true }), { content: "Absorbed 3 notes\nEXIT=0" })
+  it("records EXIT=0 as a success and delivers the answer without the EXIT line", async () => {
+    const { s, deliver, go } = run(job({ expectExitZero: true, notify: { channel: "telegram", chatId: "1" } }), { content: "Absorbed 3 notes\nEXIT=0" })
     await go()
-    expect(runRecords()[0]).toMatchObject({ success: true })
+    expect(runRecords()[0]).toMatchObject({ success: true, response: "Absorbed 3 notes\nEXIT=0" })
     expect(s.jobs.get("absorb").consecutiveErrors).toBe(0)
+    expect(deliver).toHaveBeenCalledTimes(1)
+    expect((deliver.mock.calls[0] as any[])[2]).toBe("Absorbed 3 notes")
+  })
+
+  it("does not flag the EXIT line as a fact without a source", async () => {
+    const { deliver, go } = run(job({ expectExitZero: true, requireSources: true, notify: { channel: "telegram", chatId: "1" } }), {
+      content: "Absorbed 3 notes from https://example.com/release\nEXIT=0",
+    })
+    await go()
+    expect(runRecords()[0].unsourced).toBeUndefined()
+    expect((deliver.mock.calls[0] as any[])[2]).toBe("Absorbed 3 notes from https://example.com/release")
   })
 
   it("keeps a quiet answer quiet when it ends with EXIT=0", async () => {
@@ -120,6 +131,29 @@ describe("a prompt cron with expectExitZero", () => {
     expect(registry.execute.mock.calls[0][0].message).toContain("EXIT=<code>")
     expect(runRecords()).toEqual([expect.objectContaining({ success: false, error: "the command exited with code 1" })])
     expect(s.jobs.get("absorb").lastSuccess).toBeUndefined()
+  })
+
+  it("a failed missed run raises the failure counters and sends the failure notice", async () => {
+    const { s } = run(job({ expectExitZero: true, onError: ["notify"] }), { content: "MODULE_NOT_FOUND\nEXIT=1" })
+    const notify = vi.fn(async () => {})
+    s.setNotifyCallback(notify)
+    await s.executeMissedRuns([{ jobId: "absorb", missedAt: new Date("2026-01-01T03:00:00Z") }])
+    const state = s.jobs.get("absorb")
+    expect(state.consecutiveErrors).toBe(1)
+    expect(state.totalFailures).toBe(1)
+    expect(state.lastError).toBe("the command exited with code 1")
+    expect(notify).toHaveBeenCalledWith("absorb", "ops-agent", "the command exited with code 1", 1)
+  })
+
+  it("a successful missed run clears the failure streak", async () => {
+    const { s } = run(job({ expectExitZero: true }), { content: "Absorbed\nEXIT=0" })
+    const state = s.jobs.get("absorb")
+    state.consecutiveErrors = 2
+    state.lastError = "earlier"
+    await s.executeMissedRuns([{ jobId: "absorb", missedAt: new Date("2026-01-01T03:00:00Z") }])
+    expect(state.consecutiveErrors).toBe(0)
+    expect(state.lastError).toBeUndefined()
+    expect(state.lastSuccess).toBeInstanceOf(Date)
   })
 
   it("an agent run error still wins", async () => {
