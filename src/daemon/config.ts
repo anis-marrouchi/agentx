@@ -1538,6 +1538,12 @@ export const requestsConfigSchema = z.object({
    *  for staleAfterHours, closes as done with its delegate's link (or
    *  marked unproven) instead of coming back to the owner (#1138). */
   settleHandedBack: z.boolean().default(true),
+  /** An open request with no closeWhen whose GitHub or GitLab home (issue,
+   *  pull request, merge request) was merged, or closed as completed,
+   *  closes as done, and its tracked plan ends (#1522). Requests waiting
+   *  on the owner are left alone. Read through the issue checker's
+   *  connectors, at its pace. Off: only an agent or a check closes one. */
+  homeCloses: z.boolean().default(true),
   /** One Promise (src/requests/promise.ts, #1138 D): what a closed promise
    *  leaves, and whether decision cards are promises too. */
   promises: z.object({

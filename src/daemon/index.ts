@@ -103,7 +103,7 @@ import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
-import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
+import { blockStep, endPlan, planNotice, runPlansSweep } from "@/requests/plan-sweep"
 import {
   DEFAULT_SPRINT_SETTINGS, itemEnded, laneChatId, laneContext, parseLaneChat, requeueItem, runSprintSweep, SPRINT_CHANNEL,
   type DispatchRef, type ItemEnd,
@@ -2964,6 +2964,13 @@ export class AgentXDaemon {
       store: requests.store,
       settings: this.config.requests,
       check: loopChecker(() => this.requestCheckContext(requests)),
+      // The home is the default check (#1522): read through the issue
+      // checker's connectors, built per check like its context.
+      home: (() => {
+        const connectors = forgeConnectorsOf(this.config)
+        return { read: forgeReader(connectors), gitlabUrl: connectors.gitlab?.url ?? null }
+      })(),
+      endPlan: (id, why, now) => { endPlan(requests.plans, id, why, now) },
       describe: (r) => headlines.ensure(r),
       fillHeadlines: () => headlines.fill(),
       // A stopped request is a nag: its card is on the Desk at once, the

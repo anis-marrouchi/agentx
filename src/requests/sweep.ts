@@ -5,12 +5,17 @@ import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loo
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
 import { goalLine } from "./goals"
+import { closeOnHome } from "./home-close"
+import type { ForgeReader } from "./checkers/issue"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
 //   0. Evidence (#1039): an open loop with a `close_when` has its checker
 //      run every `checkers.checkEveryMinutes`. Met closes it as done, with
 //      the checker's evidence.
+//      Home (#1522): an open request without one whose GitHub or GitLab
+//      home was merged, or closed as completed, closes as done too, and
+//      its tracked plan ends. One waiting on the owner is left alone.
 //   1. Settle (#1138): a request in progress, quiet for `staleAfterHours`,
 //      whose handed work all came back done, closes as done with the link
 //      its delegate gave, or marked unproven without one. The owner is not
@@ -18,6 +23,9 @@ import { goalLine } from "./goals"
 //      A due time does not keep it open: the agent set it, from its own
 //      estimate or wait (#1214). One already raised for being overdue
 //      settles the same way once its work has been back that long.
+//      A failed hand-off a later done one to the same agent replaced does
+//      not keep it open, and one raised only for that failure settles the
+//      same way (#1522).
 //      `settleHandedBack: false` raises it as quiet instead, as before.
 //   2. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
@@ -54,6 +62,11 @@ export interface RequestSweepDeps {
   inPlan?: (requestId: string) => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
   check?: LoopChecker
+  /** Reads forge homes for the home check (#1522), and this node's GitLab
+   *  address. Unset: homes are not read. */
+  home?: { read: ForgeReader; gitlabUrl: string | null }
+  /** Ends a request's active tracked plan when its home closed it. */
+  endPlan?: (requestId: string, why: string, now: number) => void
   /** Gives a request its headline when it has none (#1126), so the owner
    *  is told what it is. Returns it as it is when none could be written. */
   describe?: (r: RequestRecord) => Promise<RequestRecord>
@@ -67,6 +80,8 @@ export interface RequestSweepResult {
   /** Loops whose checker ran, and those it closed. */
   checked: number
   verified: number
+  /** Requests closed because their forge home was merged or closed (#1522). */
+  homeClosed: number
   /** Quiet requests whose handed work came back done, closed (#1138). */
   settled: number
   quiet: number
@@ -157,7 +172,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homeClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
   if (!settings.enabled) return result
 
   if (deps.check) {
@@ -168,6 +183,16 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       result.verified = r.closed
     } catch (e: any) {
       log(`[requests] loop checks failed: ${e?.message ?? e}`)
+    }
+  }
+
+  if (deps.home && settings.homeCloses !== false) {
+    try {
+      const every = (settings.checkers ?? DEFAULT_CHECKER_SETTINGS).checkEveryMinutes
+      const r = await closeOnHome({ store, read: deps.home.read, gitlabUrl: deps.home.gitlabUrl, everyMinutes: every, now, endPlan: deps.endPlan, log })
+      result.homeClosed = r.closed
+    } catch (e: any) {
+      log(`[requests] home checks failed: ${e?.message ?? e}`)
     }
   }
 

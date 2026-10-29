@@ -103,10 +103,24 @@ Agents often forget to close a request after the work they handed on comes back.
 - You are not told. It simply leaves your list.
 - A due time does not stop it. The agent sets that time itself, for example from its own estimate of how long the work takes. Once the work came back done, the request is not sent to you as "Past its due time"; it waits to be closed this way.
 - A request already sent to you as "Past its due time" is closed the same way, once its handed-on work has been back for `staleAfterHours`.
-- It does **not** apply to promises, to requests with a check, to tracked plans, to requests with a follow-up workflow, or when any handed-on work failed or is still out. Those still come back to you as before.
+- A hand-off that failed, timed out or was lost does not stop it when the agent tried again: once a later hand-off to the **same** agent came back done, the failed one no longer counts. A request that was sent to you only because of that failed hand-off is closed the same way, once the retry has been back for `staleAfterHours`.
+- It does **not** apply to promises, to requests with a check, to tracked plans, to requests with a follow-up workflow, or when any handed-on work failed with no retry, or is still out. Those still come back to you as before.
 - Any other request that already needs attention is left as it is.
 
 To keep the old behaviour, run `agentx requests settings --settle off`.
+
+### When the issue or merge request is already closed
+
+A request often has a **home**: the GitHub or GitLab issue, pull request or merge request where the work happens. (A pull request on GitHub and a merge request on GitLab are the same thing: a proposed change waiting to be merged.) When that home is finished, the request is finished too, even if no agent said so. The regular check looks at the home and closes the request for you:
+
+- It applies to an open request whose home is a GitHub or GitLab issue, pull request or merge request, or that you asked in such an issue's comments. A request with its own check (see [Close on evidence](#close-on-evidence-not-on-a-claim)) follows that check instead.
+- The request closes as **done** when its pull request or merge request was **merged**, or its issue was **closed as completed**. It is marked `verified`. Its proof is the home's link, with who closed it and when, for example `https://github.com/example-org/app/pull/7 merged by reviewer on 2026-10-28 00:51 UTC`.
+- If the request has a [tracked plan](#requests-of-several-steps), the plan ends too. The steps not finished stay on the plan, marked **skipped** with the reason `home closed`.
+- You are not told. On the Wall, the request shows as closed.
+- It leaves alone: requests **waiting on you** (the question is still yours to answer), issues closed as **not planned** or as a duplicate, pull or merge requests closed without being merged, and homes it cannot read.
+- Each home is read once every `checkers.checkEveryMinutes` (default 10), up to 10 at a time, through the same GitHub and GitLab connection as the `issue` check.
+
+To turn it off, run `agentx requests settings --home-closes off`. Requests then stay open until an agent or you close them.
 
 ## Promises an agent makes
 
@@ -387,6 +401,7 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
 | `agentx requests settings --headlines off` | Stops AgentX from writing a headline for a request its agent did not describe. Such a request is then titled with the start of your words. `on` turns it back on. Default on. |
 | `agentx requests settings --settle off` | A quiet request whose handed-on work all came back done comes back to you instead of being closed. `on` turns closing back on. Default on. See [When handed-on work came back](#when-handed-on-work-came-back-and-nobody-closed-it). |
+| `agentx requests settings --home-closes off` | A request whose issue was closed, or whose pull or merge request was merged, stays open instead of being closed. `on` turns closing back on. Default on. See [When the issue or merge request is already closed](#when-the-issue-or-merge-request-is-already-closed). |
 | `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
 | `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
 
@@ -421,16 +436,19 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its card under **Approvals** › **Open requests** is titled with a few plain words, shows **Needed from you**, and keeps your words under **You said**. `agentx requests show <id>` shows the same `headline`.
 13. **Terminal:** run `agentx requests settings`. The line `Headlines` says `on: written when the agent gave none`, or `off` after `--headlines off`.
 14. **Terminal:** in the same output, the line `Handed work came back` says `closed when quiet, with its link or marked unproven`. A day after an agent hands work on and gets a done answer without closing the request, the daemon log has a `settled` line for it, and `agentx requests show <id>` shows it done, with the link or `unproven: …` as its evidence.
-15. Ask an agent to make a change and mark it as needing QA, then ask a second agent to check it and give its verdict.
-16. **Terminal:** run `agentx requests --qa awaiting` before the verdict. The request is listed with `Awaiting QA`. After the verdict, run `agentx requests show <id>`. It shows `QA: PASS by <agent>, <time>` (or `BLOCK` or `RISK` with the note).
-17. Ask an agent for some work and tell it the goal, for example: "this is for the shop relaunch goal".
-18. **Browser:** open **Approvals**. Under **Open requests**, **Goals** lists the goal with `0 of 1 done`. The request's card shows **Goal:** with its title.
-19. **Terminal:** run `curl -s http://127.0.0.1:18800/requests/goals`. The goal is there, with its `open` and `done` counts and its `costUsd`.
-20. **Terminal:** run `agentx requests contract --since 1d --dry-run`. It prints **Five numbers**, the three dry-run lists, and ends with `Read only: nothing was told or written.`
+15. **Terminal:** in the same output, the line `Home closed` says `closed when its issue is closed or its pull or merge request merged`. Merge a pull request that is the home of an open request. Within 10 minutes, the daemon log has a line `[requests] <id> closed: home <ref> merged by <who>`, and `agentx requests show <id>` shows it done, with the pull request's link as its evidence.
+16. Ask an agent to make a change and mark it as needing QA, then ask a second agent to check it and give its verdict.
+17. **Terminal:** run `agentx requests --qa awaiting` before the verdict. The request is listed with `Awaiting QA`. After the verdict, run `agentx requests show <id>`. It shows `QA: PASS by <agent>, <time>` (or `BLOCK` or `RISK` with the note).
+18. Ask an agent for some work and tell it the goal, for example: "this is for the shop relaunch goal".
+19. **Browser:** open **Approvals**. Under **Open requests**, **Goals** lists the goal with `0 of 1 done`. The request's card shows **Goal:** with its title.
+20. **Terminal:** run `curl -s http://127.0.0.1:18800/requests/goals`. The goal is there, with its `open` and `done` counts and its `costUsd`.
+21. **Terminal:** run `agentx requests contract --since 1d --dry-run`. It prints **Five numbers**, the three dry-run lists, and ends with `Read only: nothing was told or written.`
 
 ## If something is wrong
 
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
+- **A request was closed because its issue or merge request closed, but the work goes on:** reopen the work with a new request, or give it its own check. Run `agentx requests settings --home-closes off` if you want such requests to stay open.
+- **A request stays open although its issue is closed:** the issue was closed as not planned, the pull or merge request was closed without a merge, the request is waiting on you, or the home could not be read. For GitLab, check that `channels.gitlab.host` (or `requests.checkers.gitlab.url`) is this GitLab's address. The Wall still marks the request where the two disagree.
 
 - **`no agentx.json here`:** you are not in the install folder, the one that holds `agentx.json`. A folder inside it does not count. Go to that folder and run the command again.
 - **The list says `requests are off`:** run `agentx requests settings --enabled on`.

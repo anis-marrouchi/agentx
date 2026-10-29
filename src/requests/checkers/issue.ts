@@ -23,6 +23,12 @@ export interface ForgeItem {
   /** Its milestone title and assignee logins, as the forge says (#1195). */
   milestone?: string | null
   assignees?: string[]
+  /** Why a GitHub issue was closed ("completed", "not_planned",
+   *  "duplicate"), as the forge says. Null: not given (GitLab, older
+   *  issues, an open one) (#1522). */
+  stateReason?: string | null
+  /** A GitHub pull request read through its issue number (#1522). */
+  pullRequest?: boolean
 }
 
 /** Reads one item, or says why it could not (unknown, not visible, down). */
@@ -165,10 +171,11 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
       const url = String(issue.body?.html_url ?? `${ref.project}#${ref.number}`)
       const labels = labelNames(issue.body?.labels)
       const plan = planOf(issue.body, "login")
-      if (!opts.notes) return { state, url, labels, ...closer, ...plan }
+      const kind = { stateReason: state === "open" ? null : login(issue.body?.state_reason), pullRequest: !!issue.body?.pull_request }
+      if (!opts.notes) return { state, url, labels, ...closer, ...plan, ...kind }
       const notes = await get(`${base}/issues/${ref.number}/comments?per_page=100`, headers)
       if (!notes.ok) return { error: `its notes: ${notes.error}` }
-      return { state, url, labels, ...closer, ...plan, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
+      return { state, url, labels, ...closer, ...plan, ...kind, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
     }
     const c = connectors.gitlab
     if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }

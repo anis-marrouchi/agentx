@@ -313,6 +313,21 @@ async function advance(deps: PlanSweepDeps, r: RequestRecord, steps: PlanStep[],
   return false
 }
 
+/** The request's work is finished elsewhere (its forge home closed,
+ *  #1522): its active plan ends as closed, not done, so no summary is
+ *  sent. The steps left are kept, marked skipped with `why`. */
+export function endPlan(plans: PlanStore, requestId: string, why: string, now: number): boolean {
+  if (plans.get(requestId)?.state !== "active") return false
+  for (const s of plans.steps(requestId)) {
+    if (isFinished(s)) continue
+    plans.updateStep(requestId, s.idx, { state: "skipped", note: why, updatedAt: now })
+    plans.event(requestId, s.idx, "skipped", why, now)
+  }
+  const ended = plans.finish(requestId, "closed", now)
+  if (ended) plans.event(requestId, null, "closed", why, now)
+  return ended
+}
+
 async function followPlan(deps: PlanSweepDeps, plan: PlanRecord, now: number, result: PlanSweepResult): Promise<void> {
   const { plans, requests } = deps
   const r = requests.get(plan.requestId)

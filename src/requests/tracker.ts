@@ -4,7 +4,7 @@ import type { PlanSettings } from "./plans"
 import type { CheckerSettings } from "./checkers"
 import type { CatchSettings, PromiseCatcher } from "./catch"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
-import { firstLink, OPEN_STATES, OWED_TO_OWNER, type OpenState, type RequestStore } from "./store"
+import { firstLink, HANDOFF_FAILED_REASON, OPEN_STATES, OWED_TO_OWNER, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
 //
@@ -40,6 +40,9 @@ export interface RequestSettings {
   /** A quiet request whose handed work all came back done is settled,
    *  not raised to the owner (#1138). Unset: on. */
   settleHandedBack?: boolean
+  /** An open request whose GitHub or GitLab home was merged, or closed as
+   *  completed, closes as done (#1522). Unset: on. */
+  homeCloses?: boolean
   /** Status follows the work (#1138 step F). Unset: the defaults
    *  (DEFAULT_DRIFT_SETTINGS), which read no project. */
   statusDrift?: DriftSettings
@@ -265,7 +268,8 @@ export class RequestTracker {
       const turn = this.live.get(chatKey(d.caller, d.origin.channel, d.origin.chatId))
       if (!turn) return
       const now = this.now()
-      this.store.link(turn.requestId, "delegation", d.id, now)
+      // Who it went to: a later done hand-off to them replaces a failed one (#1522).
+      this.store.link(turn.requestId, "delegation", d.id, now, d.peer ? `${d.callee}@${d.peer}` : d.callee)
       this.store.progress(turn.requestId, now, "waiting_other")
     })
   }
@@ -292,7 +296,7 @@ export class RequestTracker {
         return
       }
       const what = { error: "failed", timeout: "did not answer in time", lost: "was lost in a restart" }[status]
-      if (this.store.needsAttention(req.id, `The work handed to ${who} ${what}: ${clip(text)}`, now)) {
+      if (this.store.needsAttention(req.id, `${HANDOFF_FAILED_REASON} ${who} ${what}: ${clip(text)}`, now)) {
         this.log(`[requests] ${req.id} needs attention: delegation ${d.id} ${status}`)
       }
     })

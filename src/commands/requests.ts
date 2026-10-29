@@ -266,6 +266,7 @@ requests
   .option("--catch <on|off>", "read the reply of each of your turns for a promise or a question to you (one small model call each)")
   .option("--catch-cap <n>", "model calls a day the promise catch may make")
   .option("--settle <on|off>", "close a quiet request whose handed work all came back done, instead of bringing it back to you")
+  .option("--home-closes <on|off>", "close a request whose GitHub or GitLab home was merged, or closed as completed")
   .option("--plans <on|off>", "follow requests of two or more steps as tracked plans")
   .option("--stall-minutes <n>", "minutes without progress before a plan step's agent is nudged")
   .option("--max-nudges <n>", "nudges per step before it counts as blocked and you are told")
@@ -307,6 +308,10 @@ requests
       if (opts.settle !== undefined) {
         if (opts.settle !== "on" && opts.settle !== "off") throw new Error("--settle takes on or off")
         patch.settleHandedBack = opts.settle === "on"
+      }
+      if (opts.homeCloses !== undefined) {
+        if (opts.homeCloses !== "on" && opts.homeCloses !== "off") throw new Error("--home-closes takes on or off")
+        patch.homeCloses = opts.homeCloses === "on"
       }
       const plans: NonNullable<RequestSettingsPatch["plans"]> = {}
       if (opts.plans !== undefined) {
@@ -355,6 +360,7 @@ requests
     const caught = s.catchPromises
     console.log(`  Catch promises          ${caught?.enabled ? `on: each of your turns' reply is read, up to ${caught.dailyCap} call(s) a day` : "off"}`)
     console.log(`  Handed work came back   ${s.settleHandedBack === false ? "comes back to you when quiet" : "closed when quiet, with its link or marked unproven"}`)
+    console.log(`  Home closed             ${s.homeCloses === false ? "left open until an agent or you close it" : "closed when its issue is closed or its pull or merge request merged"}`)
     const p = s.plans ?? DEFAULT_PLAN_SETTINGS
     console.log(`  Plans                   ${p.enabled ? "on" : "off"}`)
     console.log(`  Nudge a quiet step      after ${p.stallMinutes} minute(s), up to ${p.maxNudges} time(s)`)

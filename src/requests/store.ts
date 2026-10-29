@@ -218,6 +218,10 @@ export function ensureRequestTables(db: Database.Database): void {
   ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
   // How a delegation ended, and the link its answer gave (#1138).
   ensureColumns(db, "request_links", [["ended", "TEXT"], ["ended_at", "INTEGER"], ["proof", "TEXT"]])
+  // Who a delegation went to, so a retry can replace a failed one (#1522).
+  ensureColumns(db, "request_links", [["target", "TEXT"]])
+  // When the requests check last read the request's forge home (#1522).
+  ensureColumns(db, "requests", [["home_checked_at", "INTEGER"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -282,11 +286,25 @@ const AWAITING_QA = "qa_requested_at IS NOT NULL AND (qa_at IS NULL OR qa_at < q
  *  time. Settling reads it back (#1214). */
 export const OVERDUE_REASON = "Past its due time"
 
+/** How the tracker words a request raised for a failed, timed-out or
+ *  lost hand-off. Settling reads it back once a retry came back (#1522). */
+export const HANDOFF_FAILED_REASON = "The work handed to"
+
+/** A request raised for a reason settling may clear once its handed work
+ *  is back: past its due time (#1214), or a hand-off a retry replaced (#1522). */
+const SETTLES_RAISED = `(attention_reason LIKE '${OVERDUE_REASON}%' OR attention_reason LIKE '${HANDOFF_FAILED_REASON} %')`
+
+/** A delegation that failed, timed out or was lost, replaced by a later
+ *  one to the same agent that came back done (#1522). Reads `l`. */
+const RETRIED = `l.ended IN ('error', 'timeout', 'lost') AND l.target IS NOT NULL
+  AND EXISTS (SELECT 1 FROM request_links d WHERE d.request_id = l.request_id AND d.kind = 'delegation' AND d.ended = 'done'
+              AND d.target = l.target AND d.ref != l.ref AND d.at >= l.at)`
+
 /** A request whose handed-on work all came back done (#1138). */
 const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
   AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
-                  AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded')))
+                  AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded')) AND NOT (${RETRIED}))
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')`
 
 /** SET clause for a statement that writes `state`: the change time moves
@@ -512,14 +530,16 @@ export class RequestStore {
 
   /** The checker found the evidence: closed as done, with its words. Its
    *  proof is the check that ran (#1138 D). */
-  closeVerified(id: string, evidence: string, now: number): boolean {
+  closeVerified(id: string, evidence: string, now: number, opts: { unless?: RequestState[] } = {}): boolean {
     const text = evidence.trim().slice(0, REASON_MAX) || "the check was met"
     const proof: Proof = { kind: "check", value: text, ranAt: now }
+    // States that keep it open: what moved since the caller read it.
+    const left = [...CLOSED_STATES, ...(opts.unless ?? [])]
     const closed = this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?, proof = ?
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(now, now, now, text, now, now, text, JSON.stringify(proof), id, ...CLOSED_STATES).changes > 0
+       WHERE id = ? AND state NOT IN (${placeholders(left.length)})`,
+    ).run(now, now, now, text, now, now, text, JSON.stringify(proof), id, ...left).changes > 0
     if (closed) this.done(id)
     return closed
   }
@@ -574,6 +594,23 @@ export class RequestStore {
     ).all(...OPEN_STATES, before, limit).map(toRecord)
   }
 
+  /** Open requests whose forge home the requests check may read (#1522):
+   *  a home link or a forge chat, no checker of their own, not waiting on
+   *  the owner, last read before `before` (or never), oldest read first. */
+  dueForHomeCheck(before: number, limit = 50): RequestRecord[] {
+    const states = OPEN_STATES.filter((s) => s !== "waiting_owner")
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(states.length)}) AND close_when IS NULL
+         AND (home_link IS NOT NULL OR channel IN ('github', 'gitlab'))
+         AND (home_checked_at IS NULL OR home_checked_at < ?) ORDER BY COALESCE(home_checked_at, 0), created_at LIMIT ?`,
+    ).all(...states, before, limit).map(toRecord)
+  }
+
+  /** The requests check read its forge home. Not a touch. */
+  markHomeChecked(id: string, now: number): void {
+    this.db.prepare("UPDATE requests SET home_checked_at = ? WHERE id = ?").run(now, id)
+  }
+
   /** Open loops past their due time with nothing done since it passed,
    *  or quiet since `quietBefore` (the owner handed one on after it fell
    *  due: it gets the usual quiet time). A loop waiting on the owner is
@@ -599,8 +636,9 @@ export class RequestStore {
     return row ? toRecord(row) : null
   }
 
-  link(requestId: string, kind: LinkKind, ref: string, now: number): void {
-    this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)").run(requestId, kind, ref, now)
+  /** `target`: who a delegation went to (#1522). */
+  link(requestId: string, kind: LinkKind, ref: string, now: number, target: string | null = null): void {
+    this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at, target) VALUES (?, ?, ?, ?, ?)").run(requestId, kind, ref, now, target)
   }
 
   /** The owner commented on the request from the Wall (#1316): kept as a
@@ -628,9 +666,11 @@ export class RequestStore {
   /** Requests whose handed-on work all came back done (#1138): at least
    *  one delegation done since the owner last sent it back, and none that
    *  is still out, waiting, failed or from before endings were kept.
-   *  Superseded ones count for neither. In progress and quiet since
-   *  `before`, or raised only for being past its due time with that work
-   *  back since before `before` (#1214). A due time is the agent's own
+   *  Superseded ones count for neither, and a failed one a later done
+   *  delegation to the same agent replaced does not count (#1522). In
+   *  progress and quiet since `before`, or raised only for being past its
+   *  due time (#1214) or for a hand-off that retry replaced (#1522), with
+   *  that work back since before `before`. A due time is the agent's own
    *  (its accept, its estimate, a wait it reported): the owner's due times
    *  are promises, which are left out. So are loops with a checker, a
    *  pick-up the agent has not been told about yet, and anything with a
@@ -640,7 +680,7 @@ export class RequestStore {
       `SELECT r.* FROM requests r
         WHERE (
             (r.state = 'in_progress' AND r.updated_at < ?)
-            OR (r.state = 'needs_attention' AND r.attention_reason LIKE '${OVERDUE_REASON}%'
+            OR (r.state = 'needs_attention' AND ${SETTLES_RAISED.replace(/attention_reason/g, "r.attention_reason")}
                 AND (SELECT MAX(l.ended_at) FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done') < ?)
           )
           AND ${CAME_BACK}
@@ -666,14 +706,14 @@ export class RequestStore {
   /** Settled (#1138): the handed work came back done and nobody closed
    *  it. Closed as done with the delegate's link, or, without one, as
    *  "unproven: …". Either way unverified: nothing checked the link. Only
-   *  from in progress, or raised for being overdue (#1214): anything that
-   *  moved since it was read is left. */
+   *  from in progress, or raised for being overdue (#1214) or for a failed
+   *  hand-off (#1522): anything that moved since it was read is left. */
   settle(id: string, proof: string | null, detail: string, now: number): boolean {
     const evidence = (proof ?? `unproven: ${detail}`).trim().slice(0, REASON_MAX)
     return this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          verify_state = ?, verify_detail = ?
-       WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND attention_reason LIKE '${OVERDUE_REASON}%'))`,
+       WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${SETTLES_RAISED}))`,
     ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
   }
 
