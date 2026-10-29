@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.189.1](https://github.com/anis-marrouchi/agentx/compare/v0.189.0...v0.189.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **requests:** keep a request open while its plan has agent steps left ([#1522](https://github.com/anis-marrouchi/agentx/issues/1522)) ([#1532](https://github.com/anis-marrouchi/agentx/issues/1532)) ([3ad05a5](https://github.com/anis-marrouchi/agentx/commit/3ad05a5dea9144f359477c9865aeca66532abf7f))
+
 ## [0.189.0](https://github.com/anis-marrouchi/agentx/compare/v0.188.1...v0.189.0) (2026-10-29)
 
 
