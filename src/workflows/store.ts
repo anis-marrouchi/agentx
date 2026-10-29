@@ -175,31 +175,31 @@ export class WorkflowStore {
   }
 
   get(id: string): Workflow | null {
-    const jsonPath = this.pathForJson(id)
-    const yamlPath = this.pathForYaml(id)
-    const ymlPath = resolve(this.baseDir, `${id}.yml`)
-    const haveJson = existsSync(jsonPath)
-    const haveYaml = existsSync(yamlPath) || existsSync(ymlPath)
+    const found = this.readStored(id)
+    if (!found) return null
+    const parsed = workflowSchema.safeParse(found.raw)
+    return parsed.success ? parsed.data : null
+  }
+
+  /** The workflow as its file holds it: no schema defaults filled in.
+   *  An editor save merges into this (#1538) so the keys it did not
+   *  touch are written back exactly as they were. Null when get() is. */
+  getStored(id: string): Record<string, unknown> | null {
+    const found = this.readStored(id)
+    if (!found || !workflowSchema.safeParse(found.raw).success) return null
+    return found.raw as Record<string, unknown>
+  }
+
+  /** Find and read the one file holding `id`. */
+  private readStored(id: string): { name: string; raw: unknown } | null {
+    const names = [`${id}.json`, `${id}.yaml`, `${id}.yml`].filter((n) => existsSync(resolve(this.baseDir, n)))
     // Coexistence is ambiguous at validateAll time; here we refuse to
     // pick a winner so callers don't silently get whichever the file
     // system orders first. Returning null mirrors "no such workflow".
-    if (haveJson && haveYaml) return null
-    if (haveJson) {
+    if (names.includes(`${id}.json`) && names.length > 1) return null
+    if (names.length > 0) {
       try {
-        const raw = JSON.parse(readFileSync(jsonPath, "utf-8"))
-        const parsed = workflowSchema.safeParse(raw)
-        return parsed.success ? parsed.data : null
-      } catch {
-        return null
-      }
-    }
-    const yPath = existsSync(yamlPath) ? yamlPath : (existsSync(ymlPath) ? ymlPath : null)
-    if (yPath) {
-      try {
-        const text = readFileSync(yPath, "utf-8")
-        const raw = parseYamlWorkflow(text, { filePath: relative(this.baseDir, yPath) })
-        const parsed = workflowSchema.safeParse(raw)
-        return parsed.success ? parsed.data : null
+        return { name: names[0], raw: this.readAndParse(names[0]) }
       } catch {
         return null
       }
@@ -218,7 +218,7 @@ export class WorkflowStore {
       try {
         const raw = this.readAndParse(entry.name)
         const parsed = workflowSchema.safeParse(raw)
-        if (parsed.success && parsed.data.id === id) return parsed.data
+        if (parsed.success && parsed.data.id === id) return { name: entry.name, raw }
       } catch {
         // skip malformed file
       }
@@ -233,6 +233,18 @@ export class WorkflowStore {
       created: workflow.created || now,
       updated: now,
     })
+    return this.write(normalized, normalized, opts)
+  }
+
+  /** Write `doc` as given, with no schema defaults filled in, once it
+   *  parses as a workflow. The editor's save uses this (#1538) so a
+   *  file keeps the keys and values its author wrote. */
+  saveStored(doc: Record<string, unknown>, opts: { convertFromYaml?: boolean } = {}): Workflow {
+    return this.write(workflowSchema.parse(doc), doc, opts)
+  }
+
+  /** `normalized` names the file; `doc` is what goes in it. */
+  private write(normalized: Workflow, doc: object, opts: { convertFromYaml?: boolean }): Workflow {
     // YAML-authored workflows round-trip back to YAML so the editor
     // doesn't silently strip the operator's comments. yaml@2's Document
     // API preserves commentBefore on top-level keys and per-node items,
@@ -268,13 +280,13 @@ export class WorkflowStore {
     }
     if (existingYaml && opts.convertFromYaml) {
       unlinkSync(existingYaml)
-      writeFileSync(this.pathForJson(normalized.id), JSON.stringify(normalized, null, 2) + "\n")
+      writeFileSync(this.pathForJson(normalized.id), JSON.stringify(doc, null, 2) + "\n")
       return normalized
     }
     if (existingYaml) {
       const originalText = readFileSync(existingYaml, "utf-8")
       try {
-        const out = renderWorkflowYamlPreservingComments(originalText, normalized)
+        const out = renderWorkflowYamlPreservingComments(originalText, doc as Workflow)
         writeFileSync(existingYaml, out)
         return normalized
       } catch (e: any) {
@@ -289,7 +301,7 @@ export class WorkflowStore {
         throw err
       }
     }
-    writeFileSync(this.pathForJson(normalized.id), JSON.stringify(normalized, null, 2) + "\n")
+    writeFileSync(this.pathForJson(normalized.id), JSON.stringify(doc, null, 2) + "\n")
     return normalized
   }
 
