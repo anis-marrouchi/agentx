@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.190.0](https://github.com/anis-marrouchi/agentx/compare/v0.189.1...v0.190.0) (2026-10-29)
+
+
+### Features
+
+* **wall:** the workflow editor is a Wall page, with two columns and a working auto-arrange ([#1524](https://github.com/anis-marrouchi/agentx/issues/1524), [#1449](https://github.com/anis-marrouchi/agentx/issues/1449)) ([#1529](https://github.com/anis-marrouchi/agentx/issues/1529)) ([bb99490](https://github.com/anis-marrouchi/agentx/commit/bb9949000e6b2a496f473e6b3f727de2a1bbc9ba))
+
 ## [0.189.1](https://github.com/anis-marrouchi/agentx/compare/v0.189.0...v0.189.1) (2026-10-29)
 
 
