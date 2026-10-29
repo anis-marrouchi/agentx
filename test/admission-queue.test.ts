@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, gateReasons, priorityOf, type AdmissionSettings, type AdmissionTicket } from "../src/admission/queue"
-import { parseMeminfo, parseSwapUsage, parseVmStat, ResourceSampler, type ResourceSample } from "../src/admission/resources"
+import { parseMeminfo, parseSwapUsage, parseVmStat, ResourceSampler, type ResourceSample } from "../src/native/resources"
 import { formatQueue } from "../src/admission/format"
 
 const roomy: ResourceSample = {

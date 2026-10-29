@@ -100,7 +100,7 @@ const STEP_BUDGET_MS: Record<string, number> = {
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
 import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
-import { ResourceSampler } from "@/admission/resources"
+import { ResourceSampler } from "@/native/resources"
 import { prepareOutbox } from "@/utils/app-outbox"
 
 /** Channels that never have an outbound adapter: a queued reply on them

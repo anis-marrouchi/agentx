@@ -17,7 +17,7 @@
 // starts (allowOneWhenIdle): the pressure is not ours, and a node that
 // never starts anything is worse than one busy session.
 
-import type { ResourceSample, ResourceSampler } from "./resources"
+import type { ResourceSample, ResourceSampler } from "../native/resources"
 
 export type AdmissionPriority = "owner" | "critical" | "normal" | "background"
 export const PRIORITY_ORDER: AdmissionPriority[] = ["owner", "critical", "normal", "background"]
