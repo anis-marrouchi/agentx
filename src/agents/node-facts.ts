@@ -16,10 +16,13 @@
 // hit, window resets, rate-limited) on a line that also names a Claude
 // subject. "nginx rate limit 10r/s", "Supabase email limit 4/hour" or
 // "extra usage stays off" are lasting facts about other systems or
-// decisions, and stay in memory. Window names count as Claude words
-// (5h, 7-day, five_hour), spelled-out durations ("7 days") do not.
+// decisions, and stay in memory.
 
-const SUBJECT = /\b(?:claude|anthropic|opus|sonnet|haiku|codex|five[_ -]hour|seven[_ -]day|5(?:h|-hour)|7(?:d|-day)|weekly (?:limits?|windows?|caps?)|usage limits?|session limits?|plan windows?)\b/i
+// A spelled window ("5h", "7-day", "five hour") is a duration unless a
+// window word follows it: "every 5h" is a schedule, "the 5h window" is
+// Claude's. The API names five_hour and seven_day always count.
+const WINDOW = "(?:5[- ]?h(?:ours?)?|7[- ]?d(?:ays?)?|five[- ]hours?|seven[- ]days?)[- ](?:windows?|limits?|caps?|quotas?|usage|holds?)"
+const SUBJECT = new RegExp(`\\b(?:claude|anthropic|opus|sonnet|haiku|codex|five_hour|seven_day|${WINDOW}|weekly (?:limits?|windows?|caps?)|usage limits?|session limits?|plan windows?)\\b`, "i")
 
 const LIVE_STATE: RegExp[] = [
   // "limit … resets 10-30 17:00", "the window resets at 17:00"

@@ -210,10 +210,12 @@ describe("limit notes are the node's, not memory's", () => {
     "Mailgun quota resets every 7 days",
     "Let's Encrypt rate limit resets after 7 days",
     "Saber cert quota exceeded, retry in 5 hours",
+    "Backups run every 5h; the maintenance window resets at 02:00",
+    "cert renews 7d before expiry; Let's Encrypt rate limit reached",
   ]
 
   it("recognises limit, reset and hold notes, not other uses of the words", () => {
-    for (const t of [TRIGGER, "usage limits hit on the shared account", "5-hour limit resets at 14:00", "cold dispatches are held until the reset", "Claude is rate-limited", "plan hold on seven_day", "weekly limit, resets 10-30 17:00", "five_hour window rejected, resets 12:00", "The 5h window resets at 14:00", "seven-day limit reached"]) {
+    for (const t of [TRIGGER, "usage limits hit on the shared account", "5-hour limit resets at 14:00", "cold dispatches are held until the reset", "Claude is rate-limited", "plan hold on seven_day", "weekly limit, resets 10-30 17:00", "five_hour window rejected, resets 12:00", "The 5h window resets at 14:00", "seven-day limit reached", "5 hour window resets at 14:00", "five hour limit hit", "7d window rejected, resets 10-30 17:00"]) {
       expect(isNodeFact(t), t).toBe(true)
     }
     for (const t of ["deploy path is /srv/app", "reset the password for the demo user", "the char limit for titles is 80", "Alex prefers short replies", "Uses Claude.\nnginx is rate-limited at 10r/s", ...OTHER_SYSTEMS]) {
