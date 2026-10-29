@@ -36,6 +36,8 @@ export interface CronJobState {
   report?: CronReportMode
   /** Flag answer lines that state a fact without a source (#1288). */
   requireSources?: boolean
+  /** Fail the run unless the answer ends with `EXIT=0` (#1540). */
+  expectExitZero?: boolean
   lastRun?: Date
   nextRun?: Date
   lastSuccess?: Date
