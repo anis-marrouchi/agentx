@@ -79,7 +79,7 @@ describe("node admission queue in the registry", () => {
     expect(snap.running.map((x) => x.agentId)).toEqual(["a"])
     expect(snap.waiting.map((x) => x.agentId)).toEqual(["b"])
     expect(snap.waiting[0].blockedBy.join()).toMatch(/session cap: 1\/1/)
-    // Waiting at the gate is not in flight for the shutdown drain.
+    // Waiting at the gate holds no agent slot and is not in flight.
     expect(r.getActiveTaskCount()).toBe(1)
 
     r.cancelRunningTask(firstId, "done")
@@ -109,6 +109,42 @@ describe("node admission queue in the registry", () => {
     const againId = await again.started
     r.cancelRunningTask(againId, "done")
     await again.run
+  })
+
+  it("a run waiting at the gate does not hold its agent: the agent's next message waits with its own priority", async () => {
+    const r = registry()
+    const first = start(r, "a")
+    const firstId = await first.started
+    // b waits at the gate (node full); b's slot stays free, so a second
+    // message to b reaches the gate too rather than b's local queue.
+    const b1 = start(r, "b", "cron")
+    const b2 = start(r, "b", "api")
+    await settle()
+    const waiting = r.admission.snapshot().waiting
+    expect(waiting.map((w) => `${w.agentId}:${w.priority}`)).toEqual(["b:normal", "b:background"])
+    r.cancelRunningTask(firstId, "done")
+    await first.run
+    const b2Id = await b2.started
+    expect(b1.didStart()).toBe(false)
+    r.cancelRunningTask(b2Id, "done")
+    await b2.run
+    const b1Id = await b1.started
+    r.cancelRunningTask(b1Id, "done")
+    await b1.run
+  })
+
+  it("on close, a waiting non-chat run is answered as interrupted", async () => {
+    const r = registry()
+    const first = start(r, "a")
+    const firstId = await first.started
+    const waiting = start(r, "b", "cron")
+    await settle()
+    expect(r.admission.close()).toEqual({ kept: 0, refused: 1 })
+    const res = await waiting.run
+    expect(res.errorKind).toBe("interrupted")
+    expect(waiting.didStart()).toBe(false)
+    r.cancelRunningTask(firstId, "done")
+    await first.run
   })
 
   it("AGENTX_ADMISSION=off lets everything start", async () => {

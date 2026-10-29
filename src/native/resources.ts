@@ -21,6 +21,9 @@ export interface ResourceSample {
   /** 0 when the node has no swap configured. */
   swapTotalMB: number
   swapUsedMB: number
+  /** The OS grows swap as it is used (macOS swap files), so the total is
+   *  not a fixed size and used/total is always high. */
+  swapGrows: boolean
   /** Free space for this user on the disk holding the daemon's folder;
    *  null when it could not be read. */
   diskFreeMB: number | null
@@ -85,6 +88,7 @@ export async function sampleResources(diskPath: string): Promise<ResourceSample>
   let memAvailableMB = Math.round(freemem() / MB)
   let swapTotalMB = 0, swapUsedMB = 0
   const os = platform()
+  const swapGrows = os === "darwin"
   if (os === "darwin") {
     const [vm, swap] = await Promise.all([run("vm_stat", []), run("sysctl", ["-n", "vm.swapusage"])])
     memAvailableMB = parseVmStat(vm) ?? memAvailableMB
@@ -105,7 +109,7 @@ export async function sampleResources(diskPath: string): Promise<ResourceSample>
   } catch { /* left null: the disk check is skipped */ }
   return {
     at: Date.now(),
-    memTotalMB, memAvailableMB, swapTotalMB, swapUsedMB, diskFreeMB,
+    memTotalMB, memAvailableMB, swapTotalMB, swapUsedMB, swapGrows, diskFreeMB,
     load1: Math.round(loadavg()[0] * 100) / 100,
     cpuCount: Math.max(1, cpus().length),
   }

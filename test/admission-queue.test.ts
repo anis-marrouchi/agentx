@@ -4,7 +4,7 @@ import { parseMeminfo, parseSwapUsage, parseVmStat, ResourceSampler, type Resour
 import { formatQueue } from "../src/admission/format"
 
 const roomy: ResourceSample = {
-  at: 0, memTotalMB: 8192, memAvailableMB: 4000, swapTotalMB: 2048, swapUsedMB: 100,
+  at: 0, memTotalMB: 8192, memAvailableMB: 4000, swapTotalMB: 2048, swapUsedMB: 100, swapGrows: true,
   diskFreeMB: 50_000, load1: 2, cpuCount: 8,
 }
 
@@ -29,7 +29,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0))
 /** Calls admit and records the ticket once it settles. */
 function ask(q: AdmissionQueue, agentId: string, extra: Record<string, unknown> = {}) {
   const box: { ticket?: AdmissionTicket | null } = {}
-  void q.admit({ agentId, channel: "telegram", ...extra }).then((t) => { box.ticket = t })
+  void q.admit({ agentId, channel: "telegram", ...extra }).then((o) => { box.ticket = o.ok ? o.ticket : null })
   return box
 }
 
@@ -153,7 +153,7 @@ describe("admission gate (#1521)", () => {
     const { q } = setup({ enabled: false, maxSessions: 1 })
     const a = await q.admit({ agentId: "a", channel: "api" })
     const b = await q.admit({ agentId: "b", channel: "api" })
-    expect(a && b).toBeTruthy()
+    expect(a.ok && b.ok).toBe(true)
     expect(q.snapshot().running).toHaveLength(2)
   })
 
@@ -166,20 +166,24 @@ describe("admission gate (#1521)", () => {
     await tick()
     expect(q.snapshot().waiting).toHaveLength(1)
     ac.abort()
-    expect(await p).toBeNull()
+    expect((await p).ok).toBe(false)
     expect(q.snapshot().waiting).toHaveLength(0)
   })
 
-  it("on close, waiting runs never start and are not answered", async () => {
+  it("on close, a kept chat message is never answered; other waiting runs are told", async () => {
     const { q } = setup({ maxSessions: 1, ownerExtraSessions: 0 })
     const a = ask(q, "a")
     await tick(); await tick()
-    const b = ask(q, "b")
+    const chat = ask(q, "chat", { keepOnClose: true })
+    let cron: any
+    void q.admit({ agentId: "cron", channel: "cron" }).then((o) => { cron = o })
     await tick(); await tick()
-    expect(q.close()).toBe(1)
+    expect(q.close()).toEqual({ kept: 1, refused: 1 })
+    await tick()
+    expect(cron).toMatchObject({ ok: false, reason: "closed" })
     a.ticket!.release()
     await tick(); await tick()
-    expect(b.ticket).toBeUndefined()
+    expect(chat.ticket).toBeUndefined()
     expect(q.snapshot().waiting).toHaveLength(0)
   })
 
@@ -187,8 +191,67 @@ describe("admission gate (#1521)", () => {
     const { q } = setup({ maxSessions: 2 })
     const a = await q.admit({ agentId: "a", channel: "api" })
     await q.admit({ agentId: "b", channel: "api" })
-    a!.release(); a!.release()
+    if (!a.ok) throw new Error("not admitted")
+    a.ticket.release(); a.ticket.release()
     expect(q.snapshot().running).toHaveLength(1)
+  })
+})
+
+describe("review fixes (#1526)", () => {
+  it("a busy agent holds only its own run, and the slot is taken at admission", async () => {
+    const { q } = setup()
+    let slots = 1
+    const busy = { canStart: () => slots > 0, onStart: () => { slots-- } }
+    const first = ask(q, "a", busy)
+    await tick(); await tick()
+    expect(first.ticket).toBeTruthy()
+    expect(slots).toBe(0)
+    const second = ask(q, "a", busy), other = ask(q, "b")
+    await tick(); await tick()
+    expect(second.ticket).toBeUndefined()
+    expect(other.ticket).toBeTruthy()
+    expect(q.snapshot().waiting[0].blockedBy).toEqual(["agent busy"])
+    slots = 1; first.ticket!.release()
+    await tick(); await tick()
+    expect(second.ticket).toBeTruthy()
+  })
+
+  it("a later owner message to the same agent goes before a waiting cron", async () => {
+    const { q } = setup({ maxSessions: 1, ownerExtraSessions: 0 })
+    const hold = ask(q, "other")
+    await tick(); await tick()
+    const cron = ask(q, "a", { channel: "cron" })
+    const owner = ask(q, "a", { channel: "telegram", owner: true })
+    await tick(); await tick()
+    expect(q.snapshot().waiting.map((w) => w.priority)).toEqual(["owner", "background"])
+    hold.ticket!.release()
+    await tick(); await tick()
+    expect(owner.ticket).toBeTruthy()
+    expect(cron.ticket).toBeUndefined()
+  })
+
+  it("a delegated helper may go past a full cap, so parents waiting on it do not deadlock", async () => {
+    const { q } = setup({ maxSessions: 2, delegationHeadroom: 2 })
+    ask(q, "p1"); ask(q, "p2")
+    await tick(); await tick()
+    const plain = ask(q, "n")
+    const helper = ask(q, "h", { channel: "a2a", delegated: true })
+    await tick(); await tick()
+    expect(plain.ticket).toBeUndefined()
+    expect(helper.ticket).toBeTruthy()
+  })
+
+  it("refuses a run that waited past maxWaitMinutes", async () => {
+    const { q, advance } = setup({ maxSessions: 1, ownerExtraSessions: 0, maxWaitMinutes: 1 })
+    ask(q, "a")
+    await tick(); await tick()
+    let out: any
+    void q.admit({ agentId: "b", channel: "api" }).then((o) => { out = o })
+    await tick(); await tick()
+    advance(61_000)
+    await q.pump()
+    expect(out).toMatchObject({ ok: false, reason: "timeout" })
+    expect(out.blockedBy.join()).toMatch(/session cap/)
   })
 })
 
@@ -204,9 +267,14 @@ describe("gate reasons", () => {
     expect(gateReasons({ ...roomy, swapTotalMB: 0, swapUsedMB: 0, diskFreeMB: null }, DEFAULT_ADMISSION_SETTINGS)).toEqual([])
   })
 
-  it("defaults the cap to one session per GB", () => {
+  it("defaults the cap to one session per GB above the first 2 GB", () => {
     const { q } = setup()
-    return q.refresh().then(() => expect(q.snapshot().caps.maxSessions).toBe(8))
+    return q.refresh().then(() => expect(q.snapshot().caps.maxSessions).toBe(6))
+  })
+
+  it("on a fixed swap size, holds above half of it", () => {
+    const fixed = { ...roomy, swapGrows: false, swapTotalMB: 2048, swapUsedMB: 1100 }
+    expect(gateReasons(fixed, DEFAULT_ADMISSION_SETTINGS)).toEqual(["swap: 1100 MB used, limit 1024 MB"])
   })
 })
 

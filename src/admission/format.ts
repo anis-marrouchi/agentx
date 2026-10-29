@@ -15,7 +15,7 @@ function where(x: { channel: string; chatId: string | null }): string {
 export function formatQueue(s: AdmissionSnapshot, now = Date.now()): string {
   const out: string[] = []
   const mode = !s.enabled ? "off (nothing is held)" : s.mode === "observe" ? "observe (logs only, nothing is held)" : "on"
-  out.push(`Admission queue: ${mode}`)
+  out.push(`Admission queue: ${mode}${s.checkedAt ? ` — checked ${s.checkedAt}` : ""}`)
   const r = s.resources, l = s.limits
   if (r && l) {
     out.push("")
@@ -28,7 +28,7 @@ export function formatQueue(s: AdmissionSnapshot, now = Date.now()): string {
   out.push("")
   out.push(s.gate.open ? "Gate: open" : `Gate: closed — ${s.gate.reasons.join("; ")}`)
   const classes = Object.entries(s.caps.classes).map(([n, c]) => `${n} ${c.running}/${c.max}`)
-  out.push(`Caps: ${s.running.length}/${s.caps.maxSessions ?? "?"} sessions (owner +${s.caps.ownerExtraSessions})${classes.length ? `; ${classes.join(", ")}` : ""}`)
+  out.push(`Caps: ${s.running.length}/${s.caps.maxSessions ?? "?"} sessions (owner +${s.caps.ownerExtraSessions}, helpers +${s.caps.delegationHeadroom})${classes.length ? `; ${classes.join(", ")}` : ""}`)
   if (s.warmUp.active) {
     const left = Math.max(0, Math.round((Date.parse(s.warmUp.until) - now) / 1000))
     out.push(`Warm-up: ${s.warmUp.startsPerInterval} starts per ${s.warmUp.intervalSeconds}s for ${ago(left)} more`)

@@ -6,16 +6,24 @@
 //      configured limits (see gateReasons);
 //   2. fewer than maxSessions runs are going on this node, and fewer than
 //      its class's cap (e.g. one browser job);
-//   3. the start pace allows it: a short gap between any two starts, and
-//      a few starts per interval in the warm-up window after boot, so a
-//      restart does not bring every queued run up at once.
+//   3. its agent has a free slot (canStart), checked and taken in the same
+//      step, so a waiting run never holds its agent's slot and a later,
+//      higher-priority message to the same agent still reaches this queue;
+//   4. the start pace allows it: a gap between any two starts, and a few
+//      starts per interval in the warm-up window after boot, so a restart
+//      does not bring every queued run up at once.
 // Otherwise it waits in one queue, ordered by priority (owner > critical >
 // normal > background), then by age. The queue is read by GET /api/queue
 // and `agentx queue`.
 //
-// When nothing of ours is running, a run blocked only by resources still
-// starts (allowOneWhenIdle): the pressure is not ours, and a node that
-// never starts anything is worse than one busy session.
+// Two ways past a closed gate, both on purpose and both settings:
+//   - allowOneWhenIdle: with nothing of ours running, one run starts even
+//     when resources are short. The pressure is not ours.
+//   - owner turns skip the pace and may go ownerExtraSessions over the cap
+//     (never past resources).
+// A helper run started by a running session (a delegation) may go
+// delegationHeadroom over the cap: its parent holds a place while it
+// waits for the helper, so without headroom a full node deadlocks.
 
 import type { ResourceSample, ResourceSampler } from "../native/resources"
 
@@ -35,26 +43,35 @@ export interface AdmissionSettings {
   enabled: boolean
   /** "observe" logs what it would hold but starts everything. */
   mode: "enforce" | "observe"
-  /** Node-wide most live sessions; 0 = one per GB of memory, at least 2. */
+  /** Agent tiers whose runs go through the queue (the ones that start a
+   *  local process); other tiers start at once and are not counted. */
+  tiers: string[]
+  /** Node-wide most live sessions; 0 = one per GB of memory above the
+   *  first 2 GB (kept for the system), at least 2. */
   maxSessions: number
   /** Owner runs may go this many over maxSessions (never over resources). */
   ownerExtraSessions: number
+  /** Delegated helper runs may go this many over maxSessions. */
+  delegationHeadroom: number
   /** Hold below this much available memory: the larger of the two. */
   minAvailableMemoryMB: number
   minAvailableMemoryPercent: number
-  /** Hold above this much swap in use; 0 = three quarters of the memory
-   *  size. Swap stays used long after pressure ends, so keep it loose. */
+  /** Hold above this much swap in use. 0 = half the swap size, or three
+   *  quarters of the memory size where swap grows on demand (macOS). */
   maxSwapUsedMB: number
-  /** Hold below this much free disk where the daemon runs; 0 = off. */
+  /** Hold below this much free disk where the daemon keeps its data; 0 = off. */
   minDiskFreeMB: number
   /** Hold above this 1-minute load average per CPU; 0 = off. */
   maxLoadPerCpu: number
-  /** Least time between two starts, any time. */
+  /** Least time between two starts, any time. A session takes several
+   *  seconds to reach its full memory, so the next reading must see it. */
   minStartGapSeconds: number
   /** Warm-up after the daemon starts: at most `startsPerInterval` starts
    *  every `intervalSeconds`, for `windowSeconds`. */
   boot: { windowSeconds: number; startsPerInterval: number; intervalSeconds: number }
   allowOneWhenIdle: boolean
+  /** A run still waiting after this long is refused in plain words; 0 = never. */
+  maxWaitMinutes: number
   /** Seconds between resource re-reads while work is waiting. */
   sampleSeconds: number
   classes: Record<string, AdmissionClass>
@@ -70,16 +87,19 @@ export interface AdmissionSettings {
 export const DEFAULT_ADMISSION_SETTINGS: AdmissionSettings = {
   enabled: true,
   mode: "enforce",
+  tiers: ["claude-code", "codex-cli", "opencode"],
   maxSessions: 0,
   ownerExtraSessions: 1,
+  delegationHeadroom: 2,
   minAvailableMemoryMB: 512,
   minAvailableMemoryPercent: 10,
   maxSwapUsedMB: 0,
   minDiskFreeMB: 2048,
   maxLoadPerCpu: 2,
-  minStartGapSeconds: 3,
+  minStartGapSeconds: 10,
   boot: { windowSeconds: 300, startsPerInterval: 2, intervalSeconds: 30 },
   allowOneWhenIdle: true,
+  maxWaitMinutes: 60,
   sampleSeconds: 5,
   classes: {},
   priority: {
@@ -98,12 +118,23 @@ export interface AdmissionRequest {
   person?: string | null
   /** The person behind the turn has the owner role. */
   owner?: boolean
+  /** A helper run started from inside another run (delegation). */
+  delegated?: boolean
   /** Set by the caller to override the computed priority. */
   priority?: AdmissionPriority
   /** Set by the caller to override the class computed from config. */
   class?: string
   /** Short text for the queue view (never the full message). */
   label?: string
+  /** The caller's own condition, e.g. "the agent has a free slot". When
+   *  false the run keeps waiting, without holding up the runs behind it. */
+  canStart?: () => boolean
+  /** Called in the same step as admission, before anything else can run:
+   *  the place to take the agent's slot. */
+  onStart?: () => void
+  /** On close, leave this run unanswered (a chat message the router
+   *  replays on boot) instead of answering "closed". */
+  keepOnClose?: boolean
   signal?: AbortSignal
 }
 
@@ -113,6 +144,10 @@ export interface AdmissionTicket {
   release(): void
 }
 
+export type AdmissionOutcome =
+  | { ok: true; ticket: AdmissionTicket }
+  | { ok: false; reason: "caller-gone" | "closed" | "timeout"; waitedMs: number; blockedBy: string[] }
+
 interface Entry {
   id: string
   seq: number
@@ -121,13 +156,14 @@ interface Entry {
   chatId?: string
   priority: AdmissionPriority
   cls: string | null
+  delegated: boolean
   label: string
   enqueuedAt: number
   /** Why it is still waiting, from the last pass. */
   blockedBy: string[]
-  resolve: (t: AdmissionTicket | null) => void
+  req: AdmissionRequest
+  resolve: (o: AdmissionOutcome) => void
   onAbort?: () => void
-  signal?: AbortSignal
 }
 
 interface Running {
@@ -142,9 +178,11 @@ interface Running {
   waitedMs: number
 }
 
+const baseChannel = (c: string) => (c || "").toLowerCase().split("@")[0]
+
 export function priorityOf(req: AdmissionRequest, s: AdmissionSettings): AdmissionPriority {
   if (req.priority) return req.priority
-  const ch = (req.channel || "").toLowerCase().split("@")[0]
+  const ch = baseChannel(req.channel)
   if (req.owner || s.priority.ownerChannels.includes(ch)) return "owner"
   if (req.person && s.priority.ownerPeople.includes(req.person)) return "owner"
   if (s.priority.criticalAgents.includes(req.agentId)) return "critical"
@@ -154,7 +192,7 @@ export function priorityOf(req: AdmissionRequest, s: AdmissionSettings): Admissi
 
 export function classOf(req: AdmissionRequest, s: AdmissionSettings): string | null {
   if (req.class) return req.class
-  const ch = (req.channel || "").toLowerCase().split("@")[0]
+  const ch = baseChannel(req.channel)
   for (const [name, c] of Object.entries(s.classes)) {
     if (c.agents?.includes(req.agentId) || c.channels?.includes(ch)) return name
   }
@@ -162,7 +200,7 @@ export function classOf(req: AdmissionRequest, s: AdmissionSettings): string | n
 }
 
 export function effectiveMaxSessions(s: AdmissionSettings, memTotalMB: number): number {
-  return s.maxSessions > 0 ? s.maxSessions : Math.max(2, Math.floor(memTotalMB / 1024))
+  return s.maxSessions > 0 ? s.maxSessions : Math.max(2, Math.round((memTotalMB - 2048) / 1024))
 }
 
 export interface ResourceLimits {
@@ -173,9 +211,10 @@ export interface ResourceLimits {
 }
 
 export function limitsFor(s: AdmissionSettings, r: ResourceSample): ResourceLimits {
+  const autoSwap = r.swapGrows ? (r.memTotalMB * 3) / 4 : r.swapTotalMB / 2
   return {
     minAvailableMemoryMB: Math.max(s.minAvailableMemoryMB, Math.round((r.memTotalMB * s.minAvailableMemoryPercent) / 100)),
-    maxSwapUsedMB: s.maxSwapUsedMB > 0 ? s.maxSwapUsedMB : Math.round((r.memTotalMB * 3) / 4),
+    maxSwapUsedMB: s.maxSwapUsedMB > 0 ? s.maxSwapUsedMB : Math.round(autoSwap),
     minDiskFreeMB: s.minDiskFreeMB,
     maxLoad1: s.maxLoadPerCpu > 0 ? Math.round(s.maxLoadPerCpu * r.cpuCount * 100) / 100 : 0,
   }
@@ -201,7 +240,7 @@ export class AdmissionQueue {
   private pumping = false
   private again = false
   private timer: ReturnType<typeof setTimeout> | null = null
-  private closed = false
+  private closedAt: number | null = null
   private lastReasons: string[] = []
   private readonly bootAt: number
 
@@ -214,9 +253,13 @@ export class AdmissionQueue {
     this.bootAt = now()
   }
 
-  /** Waits until the run may start. Null: the caller gave up (signal);
-   *  the run must not start. Never settles once the daemon is stopping. */
-  admit(req: AdmissionRequest): Promise<AdmissionTicket | null> {
+  get closed(): boolean {
+    return this.closedAt !== null
+  }
+
+  /** Waits until the run may start. A run with keepOnClose is never
+   *  answered once the daemon is stopping. */
+  admit(req: AdmissionRequest): Promise<AdmissionOutcome> {
     const s = this.settings()
     const id = `adm-${++this.seq}`
     const base = {
@@ -224,19 +267,24 @@ export class AdmissionQueue {
       priority: priorityOf(req, s), cls: classOf(req, s),
       label: (req.label || "").replace(/\s+/g, " ").slice(0, 80),
     }
-    // Stopping: never answered, like the runs left waiting by close().
-    if (this.closed) return new Promise(() => {})
-    if (req.signal?.aborted) return Promise.resolve(null)
-    if (!s.enabled) return Promise.resolve(this.start(base, 0))
+    if (this.closed) {
+      if (req.keepOnClose) return new Promise(() => {})
+      return Promise.resolve({ ok: false, reason: "closed", waitedMs: 0, blockedBy: [] })
+    }
+    if (req.signal?.aborted) return Promise.resolve({ ok: false, reason: "caller-gone", waitedMs: 0, blockedBy: [] })
+    if (!s.enabled) {
+      req.onStart?.()
+      return Promise.resolve({ ok: true, ticket: this.start(base, 0) })
+    }
     return new Promise((resolve) => {
-      const entry: Entry = { ...base, seq: this.seq, enqueuedAt: this.now(), blockedBy: [], resolve, signal: req.signal }
+      const entry: Entry = {
+        ...base, seq: this.seq, delegated: !!req.delegated, enqueuedAt: this.now(), blockedBy: [], req, resolve,
+      }
       if (req.signal) {
         entry.onAbort = () => {
-          const i = this.waiting.indexOf(entry)
-          if (i === -1) return
-          this.waiting.splice(i, 1)
+          if (!this.waiting.includes(entry)) return
           this.log(`[admission] ${entry.agentId} left the queue (caller gone) after ${Math.round((this.now() - entry.enqueuedAt) / 1000)}s`)
-          resolve(null)
+          this.refuse(entry, "caller-gone")
         }
         req.signal.addEventListener("abort", entry.onAbort, { once: true })
       }
@@ -245,26 +293,41 @@ export class AdmissionQueue {
     })
   }
 
-  /** The daemon is stopping: nothing starts any more. Waiting runs are
-   *  left unanswered on purpose, so a chat message keeps its unfinished
-   *  entry in the router's inflight log and is replayed on the next boot,
-   *  through this queue again. Returns how many were waiting. */
-  close(): number {
-    this.closed = true
+  /** The daemon is stopping: nothing starts any more. Runs marked
+   *  keepOnClose (chat messages) are left unanswered on purpose, so they
+   *  keep their unfinished entry in the router's inflight log and are
+   *  replayed on boot; every other waiting run is answered "closed", so a
+   *  scheduled job logs its run and a calling agent gets a reply. */
+  close(): { kept: number; refused: number } {
+    this.closedAt = this.now()
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
-    const left = this.waiting.splice(0)
-    for (const e of left) if (e.signal && e.onAbort) e.signal.removeEventListener("abort", e.onAbort)
-    return left.length
+    let kept = 0, refused = 0
+    for (const e of [...this.waiting]) {
+      if (e.req.keepOnClose) {
+        this.drop(e)
+        kept++
+      } else {
+        this.refuse(e, "closed")
+        refused++
+      }
+    }
+    return { kept, refused }
   }
 
   get waitingCount(): number {
     return this.waiting.length
   }
 
-  private settle(e: Entry, ticket: AdmissionTicket | null): void {
-    if (e.signal && e.onAbort) e.signal.removeEventListener("abort", e.onAbort)
-    e.resolve(ticket)
+  private drop(e: Entry): void {
+    const i = this.waiting.indexOf(e)
+    if (i !== -1) this.waiting.splice(i, 1)
+    if (e.req.signal && e.onAbort) e.req.signal.removeEventListener("abort", e.onAbort)
+  }
+
+  private refuse(e: Entry, reason: "caller-gone" | "closed" | "timeout"): void {
+    this.drop(e)
+    e.resolve({ ok: false, reason, waitedMs: this.now() - e.enqueuedAt, blockedBy: e.blockedBy })
   }
 
   private start(e: Omit<Running, "startedAt" | "waitedMs">, waitedMs: number): AdmissionTicket {
@@ -315,11 +378,10 @@ export class AdmissionQueue {
       do {
         this.again = false
         if (!this.waiting.length || this.closed) break
-        const s = this.settings()
         let sample: ResourceSample
         try { sample = await this.sampler.read(this.now()) } catch { break }
         if (this.closed) break
-        this.pass(s, sample)
+        this.pass(this.settings(), sample)
       } while (this.again)
       // Drop pace entries nothing reads any more.
       const keep = Math.max(60_000, this.settings().boot.intervalSeconds * 1000)
@@ -339,32 +401,44 @@ export class AdmissionQueue {
       this.log(reasons.length ? `[admission] gate closed: ${reasons.join("; ")}` : `[admission] gate open`)
       this.lastReasons = reasons
     }
-    let nodeBlocked = false
+    let holdAll = false
     for (const e of this.ordered()) {
-      const blocked: string[] = []
-      if (nodeBlocked) blocked.push("behind earlier work")
-      const sessionCap = e.priority === "owner" ? cap + s.ownerExtraSessions : cap
-      if (this.running.size >= sessionCap) blocked.push(`session cap: ${this.running.size}/${sessionCap} running`)
-      if (reasons.length && !(s.allowOneWhenIdle && this.running.size === 0)) blocked.push(...reasons)
-      const pace = this.paceWait(e.priority, s, now)
-      if (pace > 0) blocked.push(`start pace: next start in ${Math.ceil(pace / 1000)}s`)
-      // A full class only holds its own runs; the rest of the queue moves.
-      const clsCap = e.cls ? s.classes[e.cls]?.max : undefined
-      const classFull = clsCap !== undefined && this.classCount(e.cls!) >= clsCap
-      if (classFull) blocked.push(`class ${e.cls}: ${this.classCount(e.cls!)}/${clsCap} running`)
       const waitedMs = now - e.enqueuedAt
+      if (s.maxWaitMinutes > 0 && waitedMs >= s.maxWaitMinutes * 60_000) {
+        this.log(`[admission] ${e.agentId} refused after ${Math.round(waitedMs / 60_000)}m in the queue — ${e.blockedBy.join("; ") || "no room"}`)
+        this.refuse(e, "timeout")
+        continue
+      }
+      // Held only by its own limits (class, agent): the runs behind it move on.
+      const own: string[] = []
+      const clsCap = e.cls ? s.classes[e.cls]?.max : undefined
+      if (clsCap !== undefined && this.classCount(e.cls!) >= clsCap) own.push(`class ${e.cls}: ${this.classCount(e.cls!)}/${clsCap} running`)
+      if (e.req.canStart && !e.req.canStart()) own.push("agent busy")
+      // Held by the node. Resources and pace hold the runs behind it too,
+      // so order is kept; the session cap does not, since a run behind it
+      // with more headroom (owner, delegated helper) may still fit.
+      const node: string[] = []
+      if (holdAll) node.push("behind earlier work")
+      const extra = e.priority === "owner" ? s.ownerExtraSessions : 0
+      const sessionCap = cap + Math.max(extra, e.delegated ? s.delegationHeadroom : 0)
+      if (this.running.size >= sessionCap) node.push(`session cap: ${this.running.size}/${sessionCap} running`)
+      const holds: string[] = []
+      if (reasons.length && !(s.allowOneWhenIdle && this.running.size === 0)) holds.push(...reasons)
+      const pace = this.paceWait(e.priority, s, now)
+      if (pace > 0) holds.push(`start pace: next start in ${Math.ceil(pace / 1000)}s`)
+      node.push(...holds)
+
       if (s.mode === "observe") {
-        if (blocked.length && !(blocked.length === 1 && nodeBlocked)) {
-          this.log(`[admission] observe: would hold ${e.agentId} (${e.priority}) — ${blocked.join("; ")}`)
-        }
+        // Observe never holds for the node; a busy agent still waits, since
+        // two runs on one slot would be a real double start.
+        if (node.some((n) => n !== "behind earlier work")) this.log(`[admission] observe: would hold ${e.agentId} (${e.priority}) — ${node.join("; ")}`)
+        if (own.includes("agent busy")) { e.blockedBy = own; continue }
         this.admitEntry(e, waitedMs)
         continue
       }
-      if (blocked.length) {
-        e.blockedBy = blocked
-        // Owner runs skip the pace, so a paced lower run does not hold them;
-        // anything else that is blocked keeps the order for the ones behind.
-        if (!classFull || blocked.length > 1) nodeBlocked = true
+      if (own.length || node.length) {
+        e.blockedBy = [...node, ...own]
+        if (holds.length) holdAll = true
         continue
       }
       this.admitEntry(e, waitedMs)
@@ -372,11 +446,13 @@ export class AdmissionQueue {
   }
 
   private admitEntry(e: Entry, waitedMs: number): void {
-    const i = this.waiting.indexOf(e)
-    if (i !== -1) this.waiting.splice(i, 1)
+    this.drop(e)
+    // Same step as the check: the agent's slot is taken before anything
+    // else can look at it.
+    try { e.req.onStart?.() } catch { /* the caller's bookkeeping must not stop the start */ }
     const ticket = this.start(e, waitedMs)
     if (waitedMs >= 1000) this.log(`[admission] started ${e.agentId} (${e.priority}) after ${Math.round(waitedMs / 1000)}s in the queue`)
-    this.settle(e, ticket)
+    e.resolve({ ok: true, ticket })
   }
 
   /** Re-checks while work waits: resources change without any release. */
@@ -408,13 +484,15 @@ export class AdmissionQueue {
     const classes: AdmissionSnapshot["caps"]["classes"] = {}
     for (const [name, c] of Object.entries(s.classes)) classes[name] = { max: c.max, running: this.classCount(name) }
     const warmUntil = this.bootAt + s.boot.windowSeconds * 1000
+    const reasons = r ? gateReasons(r, s) : []
     return {
       enabled: s.enabled,
       mode: s.mode,
+      checkedAt: r ? new Date(r.at).toISOString() : null,
       resources: r,
       limits: r ? limitsFor(s, r) : null,
-      gate: r ? { open: gateReasons(r, s).length === 0, reasons: gateReasons(r, s) } : { open: true, reasons: [] },
-      caps: { maxSessions: cap, ownerExtraSessions: s.ownerExtraSessions, classes },
+      gate: { open: reasons.length === 0, reasons },
+      caps: { maxSessions: cap, ownerExtraSessions: s.ownerExtraSessions, delegationHeadroom: s.delegationHeadroom, classes },
       warmUp: { active: now < warmUntil, until: new Date(warmUntil).toISOString(), startsPerInterval: s.boot.startsPerInterval, intervalSeconds: s.boot.intervalSeconds },
       running: [...this.running.values()].map((x) => ({
         id: x.id, agentId: x.agentId, channel: x.channel, chatId: x.chatId ?? null, priority: x.priority, class: x.cls,
@@ -434,10 +512,12 @@ export class AdmissionQueue {
 export interface AdmissionSnapshot {
   enabled: boolean
   mode: AdmissionSettings["mode"]
+  /** When the resources shown were read. */
+  checkedAt: string | null
   resources: ResourceSample | null
   limits: ResourceLimits | null
   gate: { open: boolean; reasons: string[] }
-  caps: { maxSessions: number | null; ownerExtraSessions: number; classes: Record<string, { max: number; running: number }> }
+  caps: { maxSessions: number | null; ownerExtraSessions: number; delegationHeadroom: number; classes: Record<string, { max: number; running: number }> }
   warmUp: { active: boolean; until: string; startsPerInterval: number; intervalSeconds: number }
   running: Array<{ id: string; agentId: string; channel: string; chatId: string | null; priority: AdmissionPriority; class: string | null; label: string; startedAt: string; waitedSeconds: number }>
   waiting: Array<{ position: number; id: string; agentId: string; channel: string; chatId: string | null; priority: AdmissionPriority; class: string | null; label: string; waitingSeconds: number; blockedBy: string[] }>

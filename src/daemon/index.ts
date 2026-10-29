@@ -1253,9 +1253,10 @@ export class AgentXDaemon {
     } catch {}
 
     // Nothing waiting for a place on the node starts now (#1521). Chat
-    // messages still waiting are replayed from the inflight log on boot.
-    const leftWaiting = this.registry.admission.close()
-    if (leftWaiting) this.log(`  Admission queue closed — ${leftWaiting} waiting run(s) left for replay on boot`)
+    // messages still waiting are replayed from the inflight log on boot;
+    // other waiting runs are answered as interrupted.
+    const left = this.registry.admission.close()
+    if (left.kept || left.refused) this.log(`  Admission queue closed — ${left.kept} chat message(s) kept for replay on boot, ${left.refused} other run(s) answered as interrupted`)
 
     // Drain active agent tasks before exit. Channels are already stopped, so
     // the active count can only shrink. This is what lets `systemctl restart`
