@@ -372,6 +372,8 @@ export class RequestTracker {
       const req = this.store.byLink("card", card.id)
       if (!req) return
       const now = this.now()
+      // Kept so the owner's next message no longer waits on it (#1520).
+      this.store.endLink("card", card.id, card.status, null, now)
       const applied = card.outcome ?? card.if_silent
       // "resolved": the agent closed it because the owner answered in chat.
       const answered = card.status === "decided" || card.status === "resolved"
