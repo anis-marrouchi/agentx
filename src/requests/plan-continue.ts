@@ -74,16 +74,20 @@ export async function refreshCount(plans: PlanStore, step: PlanStep, counter: Fo
   return res
 }
 
+/** How many of a step's latest progress reports to compare. */
+const PROGRESS_LOOKBACK = 200
+
 /** What moved on the step since `since`, in words, or null. */
 function movedSince(plans: PlanStore, step: PlanStep, since: number): string | null {
-  const events = plans.events(step.requestId, 5000).filter((e) => e.step === step.idx)
-  const down = events.filter((e) => e.kind === "count-down" && e.at >= since).at(-1)
+  const down = plans.stepEvents(step.requestId, step.idx, "count-down", 1).find((e) => e.at >= since)
   if (down) return `count ${down.detail}`
   // With a count check, the count is the measure: words alone are not.
   if (readCountSpec(step.checkCount)) return null
-  const progress = events.filter((e) => e.kind === "progress")
+  const progress = plans.stepEvents(step.requestId, step.idx, "progress", PROGRESS_LOOKBACK)
   for (let i = progress.length - 1; i >= 0 && progress[i].at >= since; i--) {
-    if (i === 0 || sameWords(progress[i].detail) !== sameWords(progress[i - 1].detail)) return "new progress reported"
+    // The oldest one read is the step's first report only when the log held no more.
+    const first = i === 0 && progress.length < PROGRESS_LOOKBACK
+    if (first || (i > 0 && sameWords(progress[i].detail) !== sameWords(progress[i - 1].detail))) return "new progress reported"
   }
   return null
 }

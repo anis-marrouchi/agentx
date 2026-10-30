@@ -121,7 +121,7 @@ const sameWords = (s: string) => oneLine(s).replace(/ \(nudges reset from \d+\)$
  *  words, not the same status line again. The reset note on the last
  *  report is not part of its words. */
 function isNewProgress(plans: PlanStore, step: PlanStep, detail: string): boolean {
-  const last = plans.events(step.requestId, 1000).filter((e) => e.step === step.idx && e.kind === "progress").at(-1)
+  const last = plans.stepEvents(step.requestId, step.idx, "progress", 1)[0]
   return !last || sameWords(last.detail) !== sameWords(detail)
 }
 

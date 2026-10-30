@@ -293,6 +293,14 @@ export class PlanStore {
       "SELECT request_id, step, at, kind, detail FROM request_plan_events WHERE request_id = ? ORDER BY at, rowid LIMIT ?",
     ).all(requestId, limit) as any[]).map((r) => ({ requestId: r.request_id, step: r.step ?? null, at: r.at, kind: r.kind, detail: r.detail }))
   }
+
+  /** The newest `limit` events of one kind on a step, in order. Unlike
+   *  `events`, a long log does not hide the latest ones. */
+  stepEvents(requestId: string, step: number, kind: string, limit = 200): PlanEvent[] {
+    return (this.db.prepare(
+      "SELECT request_id, step, at, kind, detail FROM request_plan_events WHERE request_id = ? AND step = ? AND kind = ? ORDER BY at DESC, rowid DESC LIMIT ?",
+    ).all(requestId, step, kind, limit) as any[]).reverse().map((r) => ({ requestId: r.request_id, step: r.step ?? null, at: r.at, kind: r.kind, detail: r.detail }))
+  }
 }
 
 export const STEP_TEXT_MAX = TEXT_MAX

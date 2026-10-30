@@ -354,6 +354,16 @@ describe("nudges", () => {
     expect(plans.events("req-1").filter((e) => e.kind === "progress").at(-1)?.detail).toBe("devops: 11 OPEN")
   })
 
+  it("compares with the newest report even when the plan's log is long", async () => {
+    await sweep()
+    for (let i = 0; i < 1200; i++) plans.event("req-1", 1, "note", `old ${i}`, clock - 1)
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "11 open" })
+    for (let i = 0; i < 2; i++) { clock += 31 * MIN; await sweep() }
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "11 open" })
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
+  })
+
   it("keeps the count when a report repeats one that reset it, reset note and all", async () => {
     await sweep()
     for (let i = 0; i < 2; i++) { clock += 31 * MIN; await sweep() }
