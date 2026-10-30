@@ -15,7 +15,7 @@ describe("bench:compare fixture", () => {
     const dir = mkdtempSync(join(tmpdir(), "bench-compare-"))
     try {
       writeFixture(dir)
-      const before = spawnSync("node", ["--test"], { cwd: dir, encoding: "utf8" })
+      const before = spawnSync("node", ["--test", "--test-reporter=tap"], { cwd: dir, encoding: "utf8" })
       expect(before.status).not.toBe(0)
       expect(before.stdout).toMatch(/^# tests 10$/m)
       expect(before.stdout).toMatch(/^# fail 5$/m)
@@ -29,7 +29,7 @@ describe("bench:compare fixture", () => {
       const fixedFormat = readFileSync(format, "utf8").replace('lines.join(", ")', 'lines.join("\\n")')
       writeFileSync(stats, fixedStats)
       writeFileSync(format, fixedFormat)
-      const after = spawnSync("node", ["--test"], { cwd: dir, encoding: "utf8" })
+      const after = spawnSync("node", ["--test", "--test-reporter=tap"], { cwd: dir, encoding: "utf8" })
       expect(after.status, after.stdout).toBe(0)
       expect(after.stdout).toMatch(/^# pass 10$/m)
     } finally {
@@ -69,14 +69,14 @@ describe("bench:compare tasks", () => {
       const dir = mkdtempSync(join(tmpdir(), `bench-${task.id}-`))
       try {
         writeFixture(dir, task)
-        const before = spawnSync("node", ["--test"], { cwd: dir, encoding: "utf8" })
+        const before = spawnSync("node", ["--test", "--test-reporter=tap"], { cwd: dir, encoding: "utf8" })
         expect(before.status).not.toBe(0)
         for (const [path, content] of Object.entries(task.reference)) {
           expect(path.startsWith("src/")).toBe(true)
           expect(content).not.toBe(task.files[path])
           writeFileSync(join(dir, path), content)
         }
-        const after = spawnSync("node", ["--test"], { cwd: dir, encoding: "utf8" })
+        const after = spawnSync("node", ["--test", "--test-reporter=tap"], { cwd: dir, encoding: "utf8" })
         expect(after.status, after.stdout).toBe(0)
         expect(after.stdout).toMatch(/^# fail 0$/m)
       } finally {
@@ -91,7 +91,7 @@ describe("bench:compare tasks", () => {
       const dir = mkdtempSync(join(tmpdir(), `bench-${task.id}-`))
       try {
         writeFixture(dir, task)
-        const r = spawnSync("node", ["--test"], { cwd: dir, encoding: "utf8" })
+        const r = spawnSync("node", ["--test", "--test-reporter=tap"], { cwd: dir, encoding: "utf8" })
         expect(r.stdout, task.id).toMatch(new RegExp(`^# fail ${failing[task.id]}$`, "m"))
       } finally {
         rmSync(dir, { recursive: true, force: true })
