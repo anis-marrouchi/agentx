@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { Readable } from "stream"
-import { handleAdminApi } from "../src/daemon/admin-panel"
+import { handleAdminApi, secretRef } from "../src/daemon/admin-panel"
 import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
@@ -835,6 +835,17 @@ describe("Wall Settings: a literal secret in agentx.json is never sent or shown 
     await handleAdminApi(req, res, "/api/admin/state")
     return JSON.parse(out)
   }
+
+  it("treats any reference the daemon expands as a reference, lowercase included", () => {
+    expect(secretRef("${TG_SALES}")).toBe("${TG_SALES}")
+    expect(secretRef("${tg_sales}")).toBe("${tg_sales}")
+    expect(secretRef("${Slack_Bot2}")).toBe("${Slack_Bot2}")
+    expect(secretRef("${}")).toEqual({ literal: true })
+    expect(secretRef("${TG-SALES}")).toEqual({ literal: true })
+    expect(secretRef("prefix-${TG_SALES}")).toEqual({ literal: true })
+    expect(secretRef("")).toBe("")
+    expect(secretRef(undefined)).toBe("")
+  })
 
   it("sends a marker for each literal, keeps references, and the Channels page shows neither value nor pre-fill", async () => {
     dir = mkdtempSync(join(tmpdir(), "wall-literal-"))
