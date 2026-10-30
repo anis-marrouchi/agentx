@@ -474,13 +474,13 @@ How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and 
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `processPool.maxIdleSeconds` | number (5–86400) | `30` | Seconds a process may stay quiet before it is stopped. The count starts at its last output, not only at the last question it was asked. |
+| `processPool.maxIdleSeconds` | number (5–86400) | `30` | Seconds of quiet after which a process may be stopped to make room. The count starts at its last output, not only at the last question it was asked. |
 | `processPool.maxAgeSeconds` | number (60–86400) | `2700` | Seconds after the last question it was asked when a process is always stopped, even with work still running. |
 | `processPool.sweepIntervalSeconds` | number (1–300) | `5` | How often the pool is checked. |
 
 A warm process answers only the question it was asked. When a background task of the agent ends, Claude Code writes a reply nobody asked for; that reply is not sent, and the daemon log notes it as `dropped a reply no question asked for`.
 
-A process is not stopped for being quiet while it still has work of its own: a background task (for example a helper agent it started to build something) or a reply nobody asked for that it is still writing. That work keeps running past `maxIdleSeconds`. `maxAgeSeconds` stays the upper limit: once it passes, the process is stopped anyway, and the daemon log line names the background tasks that were still open.
+A process is not stopped for being quiet, or to make room for another one, while it still has work of its own: a background task (for example a helper agent it started to build something) or a reply nobody asked for that it is still writing. That work keeps running past `maxIdleSeconds`. `maxAgeSeconds` stays the upper limit: once it passes, the process is stopped anyway, and the daemon log line names the background tasks that were still open.
 
 ## plugins
 
