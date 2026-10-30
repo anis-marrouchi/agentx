@@ -265,6 +265,17 @@ function setOrgHold(body: any) {
   return { summary: `${id} resumed` }
 }
 
+/**
+ * A secret field in agentx.json, as the state endpoint may show it: a
+ * `${NAME}` reference passes through; anything else is a value typed into
+ * the file, so only `{ literal: true }` leaves the daemon. Empty is "".
+ */
+export type SecretRef = string | { literal: true }
+export function secretRef(v: unknown): SecretRef {
+  if (v === undefined || v === null || v === "") return ""
+  return typeof v === "string" && /^\$\{[A-Z0-9_]+\}$/.test(v) ? v : { literal: true }
+}
+
 function getAdminState() {
   const cfg = readConfigRaw()
   if (!cfg) return { exists: false }
@@ -314,38 +325,39 @@ function getAdminState() {
       id,
       botUsername: acc.botUsername || "",
       agentBinding: acc.agentBinding || "",
-      botTokenRef: acc.token || "",
+      botTokenRef: secretRef(acc.token),
     })),
   }
   const slack = {
     enabled: !!cfg.channels?.slack?.enabled,
-    botTokenRef: cfg.channels?.slack?.botToken || "",
-    appTokenRef: cfg.channels?.slack?.appToken || "",
+    botTokenRef: secretRef(cfg.channels?.slack?.botToken),
+    appTokenRef: secretRef(cfg.channels?.slack?.appToken),
     agentBinding: cfg.channels?.slack?.agentBinding || "",
   }
   const discord = {
     enabled: !!cfg.channels?.discord?.enabled,
-    tokenRef: cfg.channels?.discord?.token || "",
+    tokenRef: secretRef(cfg.channels?.discord?.token),
     agentBinding: cfg.channels?.discord?.agentBinding || "",
   }
   const gitlab = {
     enabled: !!cfg.channels?.gitlab?.enabled,
     host: cfg.channels?.gitlab?.host || "",
     webhookPort: cfg.channels?.gitlab?.webhookPort || 18810,
-    tokenRef: cfg.channels?.gitlab?.token || "",
+    tokenRef: secretRef(cfg.channels?.gitlab?.token),
     routeCount: Array.isArray(cfg.channels?.gitlab?.routes) ? cfg.channels.gitlab.routes.length : 0,
     agentMappingCount: Array.isArray(cfg.channels?.gitlab?.agentMappings) ? cfg.channels.gitlab.agentMappings.length : 0,
   }
   const email = {
     enabled: !!cfg.channels?.email?.enabled,
-    // Addresses and servers only: the password stays a ${VAR} reference.
+    // Addresses and servers only: the password is a ${VAR} reference or a
+    // literal marker (secretRef), never the value.
     accounts: Object.entries(cfg.channels?.email?.accounts || {}).map(([id, a]: [string, any]) => ({
       id,
       agent: a?.agent || "",
       address: a?.address || "",
       imap: `${a?.imap?.host || ""}:${a?.imap?.port ?? 993}`,
       smtp: `${a?.smtp?.host || ""}:${a?.smtp?.port ?? 465}`,
-      passwordRef: a?.imap?.password || "",
+      passwordRef: secretRef(a?.imap?.password),
       allowFrom: Array.isArray(a?.allowFrom) ? a.allowFrom : [],
       send: a?.send === "auto" ? "auto" : "approve",
     })),

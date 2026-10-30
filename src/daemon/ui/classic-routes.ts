@@ -59,6 +59,8 @@ export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/setup", label: "First-run setup", status: "tool" },
   // Settings (#1428) sends a viewer who is not the owner here to sign in.
   { path: "/login", label: "Sign in (#1306)", status: "tool" },
+  // Settings > Channels > Calls (#1428) links here to start a live call.
+  { path: "/call", label: "Browser call", status: "tool" },
   // Owner decision on #1449 (2026-10-29): the editor is a Wall page now (#1524).
   { path: "/workflows/editor", label: "Workflow editor", status: "wall", wall: "/wall#page=editor", note: "The Wall's editor page (#1524): two columns, a side menu that folds away, auto-arrange." },
 ]
