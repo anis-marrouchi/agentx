@@ -248,7 +248,7 @@ Avatars show an agent's or a person's profile picture when one is set on the mac
 
 **Settings** on the Wall is where you, the owner, change your agents. It is the only Wall page that changes settings; every other Wall page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
 
-It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents** and **Health** sections; each other section opens its classic page.
+It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents**, **Schedules**, **Webhooks** and **Health** sections; each other section opens its classic page.
 
 1. **Browser:** in the nav, select **Settings**, under **Owner**. On a phone, select **More**, then **Settings**.
 2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Advanced). The one you picked is on the right; **Agents** opens first.
@@ -339,6 +339,26 @@ To end a handover, select **Release** on its line, then **Release** again to con
    *Scripted demo data; your team's names and machines will differ.*
 
 Health only reads. It refreshes with the Wall, without losing what you are typing in another section.
+
+### Add or remove a schedule
+
+A schedule has an agent do something on a timer, such as a report every Monday.
+
+1. **Browser:** in **Settings**, select **Schedules**, under **Fleet**. Each schedule shows its name, when it runs (a cron expression, in the machine's time zone), its agent, the start of what it asks and its value line.
+2. Under **Add a schedule**, type a **Name**, pick the **Agent**, and fill **When**: type a cron expression, or select a preset such as **Weekdays at 9:00**. The line under it says when that is and the next three runs; a wrong expression says why.
+3. Type **What to do**, then select **Add schedule**. The line at the top says it was added, or why not.
+4. To remove one, select **Delete** on it, then confirm.
+
+### Add a webhook
+
+A webhook is an address another service, such as GitHub or Stripe, calls when something happens there. It goes to the agent you pick. The fields are the same as on the classic page: see [Webhooks](./settings.md#webhooks).
+
+1. **Terminal:** add the shared secret to the `.env` file next to `agentx.json`, for example `EXAMPLE_WEBHOOK_SECRET=<a long random value>`.
+2. **Browser:** in **Settings**, select **Webhooks**, under **Fleet**.
+3. Under **Add a webhook**, type a **Name**, pick the **Source** and the **Agent**, type the secret's variable name (`EXAMPLE_WEBHOOK_SECRET`), then select **Add webhook**.
+4. On its card, select **Copy** next to the address, and paste the address and the secret in the other service.
+
+Each card says **receiving**, **off**, or **signing secret missing**. **Turn off** refuses calls until you select **Turn on**; **Delete** asks you first. Open **Routing** to send one event type to a workflow (type the event, such as `issues.opened`, and the workflow id, then **Add trigger**), or to set the **default workflow** for every other event.
 
 ## Live sessions
 
@@ -806,6 +826,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back. Select **Health**: **agents online** matches the agents on [Live](#live-sessions), and a machine you stop turns red within a minute. Open an agent's **Handovers** tab and hand a test chat to another agent: it is listed under **Routed away from**, and under **Routed to** on the other agent's tab. Select **Release**, then **Release** again: it leaves both lists.
 41. Workflows page: select **Workflows** in the nav. It lists the same workflows as the classic `/workflows` page, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
 42. Old history link: open `/agents/<agent>/history` in the browser, with the name of one of your agents. The Wall opens that agent's profile with **Activity** underlined and **30 d** picked.
+43. Schedules and Webhooks: in **Settings** › **Schedules**, select the preset **Every hour**: the line under **When** says when it runs and the next three times. Add a schedule named `check-test`, then open the classic `/admin#tab=crons`: `check-test` is listed. Delete it on the Wall. In **Settings** › **Webhooks**, add one named `check-test`, select **Turn off**: its card says **off**. Delete it.
 
 ## If something is wrong
 
