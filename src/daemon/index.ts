@@ -94,7 +94,7 @@ import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
-import { attachRequests, type AttachedRequests } from "@/requests/attach"
+import { attachRequests, fillLinkAgents, type AttachedRequests } from "@/requests/attach"
 import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
 import { handleWatchersApi } from "@/watchers/daemon-api"
 import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
@@ -695,6 +695,7 @@ export class AgentXDaemon {
         // `requests.enabled` on every event and does nothing while it is off.
         try {
           this.requests = attachRequests(db, () => this.config.requests, this.log)
+          fillLinkAgents(this.requests.store, db, resolve(process.cwd(), ".agentx/a2a/delegations.jsonl"), this.log)
           // A promise closed with a proof leaves a checked fact in the
           // wiki's fact ledger (#1138 D): `agentx wiki facts list`.
           let ledger: FactLedger | null = null

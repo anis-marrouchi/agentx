@@ -6,7 +6,7 @@ import type { CatchSettings, PromiseCatcher } from "./catch"
 import type { ResendSettings } from "./resend"
 import type { FlowSettings } from "./flow"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
-import { firstLink, OPEN_STATES, OWED_TO_OWNER, type OpenState, type RequestStore } from "./store"
+import { firstLink, HANDOFF_REASON, OPEN_STATES, OWED_TO_OWNER, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
 //
@@ -45,6 +45,9 @@ export interface RequestSettings {
   /** An open request whose issue or merge request home is merged or
    *  closed as completed closes as done (#1522). Unset: on. */
   homeCloses?: boolean
+  /** The owner writing again in a chat sends that agent's requests
+   *  waiting on the owner there back to work (#1520). Unset: on. */
+  releaseOnOwnerTurn?: boolean
   /** Status follows the work (#1138 step F). Unset: the defaults
    *  (DEFAULT_DRIFT_SETTINGS), which read no project. */
   statusDrift?: DriftSettings
@@ -230,6 +233,12 @@ export class RequestTracker {
       if (!p.humanRoot || !(isOwnerTurn(this.settings(), p.channel, p.sender, p.operator === true) || this.isListedOwner(p))) return
       // The owner writing again answers a question caught in the last reply.
       this.catcher?.ownerTurnStarted(p.agentId, p.channel, p.chatId, p.taskId!)
+      // So does a wait the agent set itself, with no caught question (#1520).
+      if (this.settings().releaseOnOwnerTurn !== false) {
+        for (const id of this.store.releaseOwnerWaits(p.agentId, p.channel, p.chatId, now)) {
+          this.log(`[requests] ${id} back to work: the owner wrote again in the chat`)
+        }
+      }
       this.live.set(key, { requestId: `req-${p.taskId}`, runId: p.taskId! })
       this.store.addCandidate({
         id: `req-${p.taskId}`, runId: p.taskId!, channel: p.channel, chatId: p.chatId,
@@ -304,7 +313,7 @@ export class RequestTracker {
         return
       }
       const what = { error: "failed", timeout: "did not answer in time", lost: "was lost in a restart" }[status]
-      if (this.store.needsAttention(req.id, `The work handed to ${who} ${what}: ${clip(text)}`, now)) {
+      if (this.store.needsAttention(req.id, `${HANDOFF_REASON}${who} ${what}: ${clip(text)}`, now)) {
         this.log(`[requests] ${req.id} needs attention: delegation ${d.id} ${status}`)
       }
     })
@@ -363,6 +372,8 @@ export class RequestTracker {
       const req = this.store.byLink("card", card.id)
       if (!req) return
       const now = this.now()
+      // Kept so the owner's next message no longer waits on it (#1520).
+      this.store.endLink("card", card.id, card.status, null, now)
       const applied = card.outcome ?? card.if_silent
       // "resolved": the agent closed it because the owner answered in chat.
       const answered = card.status === "decided" || card.status === "resolved"

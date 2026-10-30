@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep } from "../src/requests/sweep"
+import { delegationAgents, fillLinkAgents } from "../src/requests/attach"
 import { homeChecker, homeRefOf, type HomeChecker } from "../src/requests/home-check"
 import type { ForgeItem, ForgeReader } from "../src/requests/checkers/issue"
 
@@ -307,6 +308,38 @@ describe("a retried hand-off replaces its failed one (#1522)", () => {
     expect((await settle()).settled).toBe(0)
   })
 
+  /** dlg-1 is lost in a restart, then its retry dlg-2 comes back done. */
+  const lostThenRetried = () => {
+    handed()
+    tracker.delegationDone(dlg("dlg-1"), "lost", "This machine restarted while the work was in progress.")
+    clock += 1000
+    again("dlg-2")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-2"), "done", "redone: https://example.test/pr/8")
+  }
+
+  it("still holds a lost part when a different part handed beside it came back done (#1520)", async () => {
+    handed()
+    clock += 1000
+    again("dlg-2")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-2"), "done", "part B: https://example.test/pr/8")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-1"), "lost", "This machine restarted while the work was in progress.")
+    clock += 25 * HOUR
+    expect((await settle()).settled).toBe(0)
+    expect(store.get("req-t1")?.state).toBe("needs_attention")
+  })
+
+  it("settles hand-offs kept without their agent once it is filled (#1520)", async () => {
+    lostThenRetried()
+    db.prepare("UPDATE request_links SET agent = NULL").run()
+    clock += 25 * HOUR
+    expect(store.fillLinkAgents(new Map([["dlg-1", "devops"], ["dlg-2", "devops"], ["dlg-x", "devops"]]))).toBe(2)
+    expect(store.fillLinkAgents(new Map([["dlg-1", "coder"]]))).toBe(0)
+    expect((await settle()).settled).toBe(1)
+  })
+
   it("still holds a hand-off that failed after the last one came back", async () => {
     handed()
     tracker.delegationDone(dlg("dlg-1"), "done", "ok")
@@ -316,5 +349,99 @@ describe("a retried hand-off replaces its failed one (#1522)", () => {
     clock += 25 * HOUR
     expect((await settle()).settled).toBe(0)
     expect(store.get("req-t1")?.state).toBe("needs_attention")
+  })
+})
+
+describe("the owner writing again releases a wait the agent set (#1520)", () => {
+  /** An open request, waiting on the owner with no caught question. */
+  const waiting = () => {
+    start("t1")
+    tracker.delegationStarted(dlg("dlg-1"))
+    end("t1")
+    store.waitOnOwner("req-t1", "Which key should I use?", clock)
+    clock += 1000
+  }
+  const ownerTurn = (taskId: string, chatId = "chat-1") => tracker.taskStarted({
+    agentId: "coder", channel: "telegram", chatId, taskId, messagePreview: "use the new one", fullMessage: "use the new one",
+    at: new Date(clock).toISOString(), humanRoot: true, sender: { name: "Owner", id: "4242" },
+  } as any)
+
+  it("goes back to work when the owner writes in the same chat", () => {
+    waiting()
+    ownerTurn("t2")
+    expect(store.get("req-t1")).toMatchObject({ state: "in_progress", question: null })
+    expect(logs.join("\n")).toContain("req-t1 back to work: the owner wrote again in the chat")
+  })
+
+  it("keeps waiting when the owner writes in another chat", () => {
+    waiting()
+    ownerTurn("t2", "chat-2")
+    expect(store.get("req-t1")?.state).toBe("waiting_owner")
+  })
+
+  it("keeps waiting with releaseOnOwnerTurn off", () => {
+    settings.releaseOnOwnerTurn = false
+    waiting()
+    ownerTurn("t2")
+    expect(store.get("req-t1")?.state).toBe("waiting_owner")
+  })
+
+  it("keeps waiting on a decision card the owner has not decided, and goes on once it is", () => {
+    start("t1")
+    tracker.cardRaised({ id: "card-1", raised_by: "coder", ask: "Ship it?" }, { channel: "telegram", chatId: "chat-1" })
+    end("t1")
+    clock += 1000
+    ownerTurn("t2")
+    expect(store.get("req-t1")?.state).toBe("waiting_owner")
+    tracker.cardResolved({ id: "card-1", status: "decided", ask: "Ship it?", verdict: "approved" })
+    expect(store.get("req-t1")?.state).toBe("in_progress")
+    store.waitOnOwner("req-t1", "Which key should I use?", clock)
+    clock += 1000
+    ownerTurn("t3")
+    expect(store.get("req-t1")?.state).toBe("in_progress")
+  })
+
+  it("leaves a promise waiting on the owner", () => {
+    waiting()
+    db.prepare("UPDATE requests SET promise = 1 WHERE id = 'req-t1'").run()
+    ownerTurn("t2")
+    expect(store.get("req-t1")?.state).toBe("waiting_owner")
+  })
+})
+
+describe("hand-off agents from the delegation log (#1520)", () => {
+  it("reads each start's callee, with its peer, and skips broken lines", () => {
+    const log = [
+      JSON.stringify({ type: "start", ts: 1, id: "dlg-a", caller: "coder", callee: "devops", request: "x" }),
+      JSON.stringify({ type: "done", id: "dlg-a", status: "done", ts: 2 }),
+      JSON.stringify({ type: "start", ts: 3, id: "dlg-b", caller: "pm", callee: "pm-ksi", peer: "clawd", request: "y" }),
+      '{"type":"start","id":"dlg-c","cal',
+    ].join("\n")
+    expect([...delegationAgents(log)]).toEqual([["dlg-a", "devops"], ["dlg-b", "pm-ksi@clawd"]])
+  })
+
+  it("fills from the callee's runs when the compacted log kept only done lines", () => {
+    db.exec("CREATE TABLE task_history (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, chat_id TEXT, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT NOT NULL)")
+    const run = db.prepare("INSERT INTO task_history (id, agent_id, chat_id, status, started_at, finished_at) VALUES (?, ?, ?, 'ok', '', '')")
+    // The run's agent differs from the chat's callee: the chat wins.
+    run.run("r1", "devops-main", "a2a:coder:devops:dlg-1")
+    run.run("r2", "pm", "a2a:coder:pm:dlg-2")
+    run.run("r3", "coder", "telegram:chat-1")
+    start("t1")
+    tracker.delegationStarted(dlg("dlg-1"))
+    tracker.delegationStarted(dlg("dlg-2", "pm"))
+    tracker.delegationStarted(dlg("dlg-3", "qa"))
+    end("t1")
+    db.prepare("UPDATE request_links SET agent = NULL").run()
+    const logPath = path.join(tmp, "delegations.jsonl")
+    writeFileSync(logPath, [
+      JSON.stringify({ type: "done", id: "dlg-1", status: "done", ts: 2 }),
+      JSON.stringify({ type: "done", id: "dlg-2", status: "done", ts: 3 }),
+      JSON.stringify({ type: "start", ts: 4, id: "dlg-3", caller: "coder", callee: "qa", request: "z" }),
+    ].join("\n"))
+    fillLinkAgents(store, db, logPath, (m) => logs.push(m))
+    const agents = db.prepare("SELECT ref, agent FROM request_links WHERE kind = 'delegation' ORDER BY ref").all()
+    expect(agents).toEqual([{ ref: "dlg-1", agent: "devops" }, { ref: "dlg-2", agent: "pm" }, { ref: "dlg-3", agent: "qa" }])
+    expect(logs.join("\n")).toContain("3 hand-off links given their agent")
   })
 })
