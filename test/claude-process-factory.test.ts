@@ -271,3 +271,61 @@ process.stdin.on("data", (c) => {
     }
   })
 })
+
+describe("ClaudeProcessFactory — work between asked turns (#1560)", () => {
+  // Stands in for Claude Code whose turn starts a background builder and
+  // ends while it runs. 100 ms later the builder finishes; its notification
+  // starts a turn nobody asked for, which takes 200 ms.
+  const standIn = `#!/usr/bin/env node
+const out = (e) => process.stdout.write(JSON.stringify(e) + "\\n")
+let buf = ""
+process.stdin.on("data", (c) => {
+  buf += c
+  let nl
+  while ((nl = buf.indexOf("\\n")) !== -1) {
+    const q = JSON.parse(buf.slice(0, nl))
+    buf = buf.slice(nl + 1)
+    out({ type: "system", subtype: "init" })
+    out({ type: "user", uuid: q.uuid, isReplay: true, message: q.message })
+    out({ type: "system", subtype: "task_started", task_id: "builder" })
+    out({ type: "result", result: "started a builder" })
+    setTimeout(() => {
+      out({ type: "system", subtype: "task_notification", task_id: "builder", status: "completed" })
+      out({ type: "system", subtype: "init" })
+      setTimeout(() => out({ type: "result", result: "builder done" }), 200)
+    }, 100)
+  }
+})
+`
+  const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+  it("reports open background tasks and the unasked turn on its snapshot", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-builder-claude-"))
+    const binary = join(dir, "claude")
+    writeFileSync(binary, standIn)
+    chmodSync(binary, 0o755)
+    const handle = new ClaudeProcessFactory({ binary }).spawn(KEY, OPTS())
+    try {
+      for await (const _ of handle.runTurn({ message: "build it", taskId: "t", deadlineMs: 5_000 })) { /* drain */ }
+      const afterTurn = handle.snapshot()
+      expect(afterTurn.state).toBe("idle")
+      expect(afterTurn.backgroundTasks).toBe(1)
+      expect(afterTurn.unaskedTurn).toBe(false)
+
+      await wait(180)   // builder done, the unasked turn is running
+      const during = handle.snapshot()
+      expect(during.backgroundTasks).toBe(0)
+      expect(during.unaskedTurn).toBe(true)
+      expect(during.lastActivityAt).toBeGreaterThan(afterTurn.lastTurnAt)
+      // Only asked turns move lastTurnAt, so the stale limit still counts from there.
+      expect(during.lastTurnAt).toBe(afterTurn.lastTurnAt)
+
+      await wait(250)   // the unasked turn has ended
+      const after = handle.snapshot()
+      expect(after.unaskedTurn).toBe(false)
+      expect(after.state).toBe("idle")
+    } finally {
+      await handle.kill("test-end")
+    }
+  })
+})

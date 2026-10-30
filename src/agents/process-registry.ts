@@ -75,6 +75,15 @@ export interface ProcessSnapshot {
    *  hash and kills idle handles whose hash no longer matches, so the
    *  next dispatch picks up the edited prompt. */
   claudeMdHash: string | null
+  /** Work the process does between asked turns (#1560). lastTurnAt only
+   *  moves on turns the daemon asked for; these say whether the process
+   *  is still busy on its own, so the idle sweep leaves it alone.
+   *  Last time the process wrote anything on stdout. */
+  lastActivityAt?: number
+  /** Background tasks (`Agent` run_in_background, …) still open. */
+  backgroundTasks?: number
+  /** A turn nobody asked for (e.g. a background task's notification) is running. */
+  unaskedTurn?: boolean
 }
 
 export interface SpawnOptions {
@@ -423,18 +432,26 @@ export class ProcessRegistry {
         continue
       }
       if (h.state() !== "idle") continue
+      // The stale limit counts from the last asked turn and is the upper
+      // bound: work the process keeps doing on its own does not extend it.
       const idleFor = now - snap.lastTurnAt
+      const openTasks = snap.backgroundTasks ?? 0
       if (idleFor >= this.cfg.staleTimeoutMs) {
         this.handles.delete(ks)
         this.handleWorkspace.delete(ks)
-        void h.kill(`stale (idle ${Math.round(idleFor / 1000)}s)`)
-        this.cfg.log(`[process-registry] killed stale ${ks}`)
+        const open = openTasks > 0 ? `, ${openTasks} background task(s) open` : ""
+        void h.kill(`stale (idle ${Math.round(idleFor / 1000)}s${open})`)
+        this.cfg.log(`[process-registry] killed stale ${ks}${open}`)
         continue
       }
-      if (idleFor >= this.cfg.idleTimeoutMs) {
+      // Background tasks and a turn nobody asked for are work (#1560):
+      // killing the process kills them. Drift waits for them too.
+      if (openTasks > 0 || snap.unaskedTurn) continue
+      const quietFor = now - Math.max(snap.lastTurnAt, snap.lastActivityAt ?? 0)
+      if (quietFor >= this.cfg.idleTimeoutMs) {
         this.handles.delete(ks)
         this.handleWorkspace.delete(ks)
-        void h.kill(`idle (${Math.round(idleFor / 1000)}s)`)
+        void h.kill(`idle (${Math.round(quietFor / 1000)}s)`)
         this.cfg.log(`[process-registry] killed idle ${ks}`)
         continue
       }

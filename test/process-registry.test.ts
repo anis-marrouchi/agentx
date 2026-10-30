@@ -63,6 +63,11 @@ class FakeHandle implements ProcessHandle {
     this._snap = { ...this._snap, lastTurnAt: at, state: "warm-hot", turnCount: this._snap.turnCount + 1 }
   }
 
+  /** Work the process does between asked turns (#1560). */
+  setWork(work: Pick<ProcessSnapshot, "lastActivityAt" | "backgroundTasks" | "unaskedTurn">): void {
+    this._snap = { ...this._snap, ...work }
+  }
+
   /** A turn is streaming right now (lastTurnAt = previous turn's end). */
   setBusy(lastTurnAt: number = Date.now()): void {
     this._state = "busy"
@@ -320,6 +325,53 @@ describe("ProcessRegistry — idle/stale sweep", () => {
     vi.advanceTimersByTime(150)
     await Promise.resolve()
     expect(h.killReasons.some((r) => r.startsWith("stale"))).toBe(true)
+  })
+
+  // #1560: the asked turn ended long ago, but the process is still working
+  // on its own. The idle kill took its background builders with it.
+  describe("work between asked turns (#1560)", () => {
+    const sweepOnce = async (work: Parameters<FakeHandle["setWork"]>[0], idleMs = 2_000) => {
+      const factory = new FakeFactory()
+      const reg = new ProcessRegistry({
+        factory,
+        idleTimeoutMs: 1_000,
+        staleTimeoutMs: 60_000,
+        sweepIntervalMs: 100,
+      })
+      reg.start()
+      const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+      h.setIdle(Date.now() - idleMs)
+      h.setWork(work)
+      vi.advanceTimersByTime(150)
+      await Promise.resolve()
+      return { h, reg }
+    }
+
+    it("keeps a handle whose background tasks are still open", async () => {
+      const { h, reg } = await sweepOnce({ backgroundTasks: 2 })
+      expect(h.killReasons).toHaveLength(0)
+      expect(reg.list()).toHaveLength(1)
+    })
+
+    it("keeps a handle running a turn nobody asked for", async () => {
+      const { h } = await sweepOnce({ unaskedTurn: true })
+      expect(h.killReasons).toHaveLength(0)
+    })
+
+    it("counts idleness from the last output, not the last asked turn", async () => {
+      const { h } = await sweepOnce({ lastActivityAt: Date.now() - 200 })
+      expect(h.killReasons).toHaveLength(0)
+    })
+
+    it("still kills it once the output has been quiet past idleTimeoutMs", async () => {
+      const { h } = await sweepOnce({ lastActivityAt: Date.now() - 1_500, backgroundTasks: 0, unaskedTurn: false })
+      expect(h.killReasons.some((r) => r.startsWith("idle"))).toBe(true)
+    })
+
+    it("keeps the stale limit as the upper bound, open work or not", async () => {
+      const { h } = await sweepOnce({ lastActivityAt: Date.now(), backgroundTasks: 1, unaskedTurn: true }, 61_000)
+      expect(h.killReasons.some((r) => r.startsWith("stale"))).toBe(true)
+    })
   })
 
   it("does not kill handles that are warm-hot or warm-cold", async () => {
