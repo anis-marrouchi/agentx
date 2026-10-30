@@ -19,6 +19,25 @@ A plan is part of [open requests](./open-requests.md), so open requests must be 
 
 Plans are on as soon as open requests are on. Agents make a plan only for work of two or more steps. One-step work stays an ordinary request.
 
+## Keep a moving step going
+
+A nudge only comes after 30 quiet minutes. With `requests.plans.continue` on, the daemon does not wait when the work is moving. When an agent's turn on a step ends and the step moved, the daemon starts the agent's next turn on that step at once. The step moved when:
+
+- its count went down during the turn, if it has a count check (see `check.count` below), or
+- the agent reported new progress during the turn, if it has no count check. A report that only repeats the last one does not count.
+
+A turn that moved nothing is left to the nudge, as before. A step that is done, blocked, or past its count goes on as usual.
+
+These turns have a daily cap per goal, or per request when it has no goal: 10 turns and $5 by default. At the cap you are told once, and the nudges take over until 00:00 UTC. Every such turn is written to the plan's log as `continued`.
+
+```bash
+agentx config set requests.plans.continue.enabled true
+# Try it on one plan first: its request id or goal id
+agentx config set requests.plans.continue.only '["req-01M672EQ282FFN5VZANBZAJHY2"]'
+agentx config set requests.plans.continue.maxTurnsPerDay 10
+agentx config set requests.plans.continue.maxCostUsdPerDay 5
+```
+
 A plan follows one chain of steps. To work through a list of issues with several agents at once, the lead runs them as a sprint instead: see [Run a sprint in lanes](./sprint-lanes.md).
 
 ## Plan before starting
@@ -120,6 +139,7 @@ Agents make a plan with their `agentx_request` tool, when they take the request 
 - `agent` is the step's owner. It defaults to the agent that makes the plan.
 - `kind` is one short word. The default is `task`. Only `message` changes what happens: the daemon sends it.
 - `check` is optional: an `http` or `https` address the daemon reads every minute, and the text it must show.
+- `check.count` is optional: a count of open items the daemon reads every 5 minutes, through the GitHub or GitLab connector of the `issue` check. The step is done when the count is at `max` or under. For example, `"check": { "count": { "provider": "github", "project": "acme/app", "what": "issues", "max": 0 } }`. `what` is `issues` (the default), `prs` or `all`, and `max` defaults to `0`. Each new count is written to the plan's log. A lower count is how a continued turn knows the step moved.
 - `stallMinutes` is optional. It sets this step's own time before a nudge, for a step that is slow by nature.
 
 An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2, "status": "progress" | "done" | "blocked"}`. A `done` report needs `evidence`, and a `blocked` report needs a `note`. Only the step's owner, or the agent that made the plan, can report on a step.

@@ -101,6 +101,7 @@ describe("settings", () => {
   it("defaults to on, a 30 minute stall, 3 nudges, and approving messages up front", () => {
     expect(requestsConfigSchema.parse(undefined).plans).toEqual({
       enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30,
+      continue: { enabled: false, only: [], maxTurnsPerDay: 10, maxCostUsdPerDay: 5 },
     })
     expect(requestsConfigSchema.parse(undefined).plans).toEqual(DEFAULT_PLAN_SETTINGS)
   })

@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3"
 import { TEXT_MAX } from "./store"
+import { ensureColumns } from "@/storage/sqlite"
 
 // --- Tracked plans: the steps of one open request (#788) ---
 //
@@ -56,6 +57,12 @@ export interface PlanStep {
   checkContains: string | null
   /** This step's own stall time; null: the setting. */
   stallMinutes: number | null
+  /** The open-count check (checkers/count.ts, #1568), as JSON: the
+   *  daemon marks the step done when the count is at or under its max. */
+  checkCount: string | null
+  /** The count the last check read, and when. */
+  lastCount: number | null
+  lastCountAt: number | null
   evidence: string | null
   /** Why it is blocked or skipped. */
   note: string | null
@@ -78,7 +85,7 @@ export interface PlanEvent {
 }
 
 export type NewStep = Pick<PlanStep, "name" | "kind" | "agentId" | "doneWhen" | "needsApproval">
-  & Partial<Pick<PlanStep, "message" | "toChannel" | "toChat" | "toAccount" | "checkUrl" | "checkContains" | "stallMinutes">>
+  & Partial<Pick<PlanStep, "message" | "toChannel" | "toChat" | "toAccount" | "checkUrl" | "checkContains" | "stallMinutes" | "checkCount">>
 
 const DETAIL_MAX = 1000
 
@@ -131,7 +138,17 @@ export function ensurePlanTables(db: Database.Database): void {
       FOREIGN KEY (request_id) REFERENCES request_plans(request_id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_request_plan_events ON request_plan_events(request_id, at);
+    CREATE TABLE IF NOT EXISTS request_plan_continues (
+      goal_key TEXT NOT NULL,
+      day TEXT NOT NULL,
+      turns INTEGER NOT NULL DEFAULT 0,
+      cost_usd REAL NOT NULL DEFAULT 0,
+      told_at INTEGER,
+      PRIMARY KEY (goal_key, day)
+    );
   `)
+  // The count check (#1568), added after the first version.
+  ensureColumns(db, "request_plan_steps", [["check_count", "TEXT"], ["last_count", "INTEGER"], ["last_count_at", "INTEGER"]])
 }
 
 export function hasPlanTables(db: Database.Database): boolean {
@@ -151,6 +168,7 @@ function toStep(r: any): PlanStep {
     state: r.state, needsApproval: !!r.needs_approval, approval: r.approval, cardId: r.card_id ?? null,
     message: r.message ?? null, toChannel: r.to_channel ?? null, toChat: r.to_chat ?? null, toAccount: r.to_account ?? null,
     checkUrl: r.check_url ?? null, checkContains: r.check_contains ?? null, stallMinutes: r.stall_minutes ?? null,
+    checkCount: r.check_count ?? null, lastCount: r.last_count ?? null, lastCountAt: r.last_count_at ?? null,
     evidence: r.evidence ?? null, note: r.note ?? null, dispatchedAt: r.dispatched_at ?? null, updatedAt: r.updated_at,
     nudges: r.nudges, lastNudgeAt: r.last_nudge_at ?? null, notifiedAt: r.notified_at ?? null,
   }
@@ -160,10 +178,11 @@ function toStep(r: any): PlanStep {
 const STEP_COLUMNS: Record<string, string> = {
   state: "state", approval: "approval", cardId: "card_id", message: "message", evidence: "evidence", note: "note",
   dispatchedAt: "dispatched_at", updatedAt: "updated_at", nudges: "nudges", lastNudgeAt: "last_nudge_at", notifiedAt: "notified_at",
+  lastCount: "last_count", lastCountAt: "last_count_at",
 }
 
 export type StepPatch = Partial<Pick<PlanStep,
-  "state" | "approval" | "cardId" | "message" | "evidence" | "note" | "dispatchedAt" | "updatedAt" | "nudges" | "lastNudgeAt" | "notifiedAt">>
+  "state" | "approval" | "cardId" | "message" | "evidence" | "note" | "dispatchedAt" | "updatedAt" | "nudges" | "lastNudgeAt" | "notifiedAt" | "lastCount" | "lastCountAt">>
 
 export class PlanStore {
   constructor(private db: Database.Database) {
@@ -179,8 +198,8 @@ export class PlanStore {
     )
     const insertStep = this.db.prepare(
       `INSERT INTO request_plan_steps (request_id, idx, name, kind, agent_id, done_when, state, needs_approval, message,
-         to_channel, to_chat, to_account, check_url, check_contains, stall_minutes, dispatched_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         to_channel, to_chat, to_account, check_url, check_contains, stall_minutes, dispatched_at, updated_at, check_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     this.db.transaction(() => {
       insertPlan.run(requestId, createdBy, now)
@@ -192,7 +211,7 @@ export class PlanStore {
         insertStep.run(
           requestId, i + 1, s.name, s.kind, s.agentId, s.doneWhen, first ? "active" : "pending", s.needsApproval ? 1 : 0,
           s.message ?? null, s.toChannel ?? null, s.toChat ?? null, s.toAccount ?? null, s.checkUrl ?? null,
-          s.checkContains ?? null, s.stallMinutes ?? null, own ? now : null, now,
+          s.checkContains ?? null, s.stallMinutes ?? null, own ? now : null, now, s.checkCount ?? null,
         )
       })
       this.event(requestId, null, "created", `${steps.length} steps, written by ${createdBy}`, now)
@@ -252,6 +271,21 @@ export class PlanStore {
   event(requestId: string, step: number | null, kind: string, detail: string, now: number): void {
     this.db.prepare("INSERT INTO request_plan_events (request_id, step, at, kind, detail) VALUES (?, ?, ?, ?, ?)")
       .run(requestId, step, now, kind, detail.replace(/\s+/g, " ").trim().slice(0, DETAIL_MAX))
+  }
+
+  /** Turns started on their own for a goal today (#1568): how many,
+   *  and what they cost. */
+  continues(goalKey: string, day: string): { turns: number; costUsd: number; toldAt: number | null } {
+    const row = this.db.prepare("SELECT turns, cost_usd, told_at FROM request_plan_continues WHERE goal_key = ? AND day = ?").get(goalKey, day) as any
+    return row ? { turns: row.turns, costUsd: row.cost_usd, toldAt: row.told_at ?? null } : { turns: 0, costUsd: 0, toldAt: null }
+  }
+
+  addContinue(goalKey: string, day: string, add: { turns?: number; costUsd?: number; toldAt?: number }): void {
+    this.db.prepare(
+      `INSERT INTO request_plan_continues (goal_key, day, turns, cost_usd, told_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(goal_key, day) DO UPDATE SET turns = turns + excluded.turns, cost_usd = cost_usd + excluded.cost_usd,
+         told_at = COALESCE(excluded.told_at, told_at)`,
+    ).run(goalKey, day, add.turns ?? 0, add.costUsd ?? 0, add.toldAt ?? null)
   }
 
   events(requestId: string, limit = 200): PlanEvent[] {

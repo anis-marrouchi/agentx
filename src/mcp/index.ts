@@ -1057,7 +1057,7 @@ const TOOLS = [
         id: { type: "string", description: "The request id, when it is not the request of this turn. Always pass it for step." },
         steps: {
           type: "array",
-          description: "accept, optional: two or more steps, in the order they run. Each: name; done (what proves it is finished); agent (owner, default you); kind (task, deploy, verify, message…, default task); for kind message: message (the text) and to {channel, chatId}; optional check {url, contains} the daemon polls; optional stallMinutes.",
+          description: "accept, optional: two or more steps, in the order they run. Each: name; done (what proves it is finished); agent (owner, default you); kind (task, deploy, verify, message…, default task); for kind message: message (the text) and to {channel, chatId}; optional check {url, contains} the daemon polls, or check {count: {provider:'github'|'gitlab', project:'owner/repo', what:'issues'|'prs'|'all', max:0}}: the step is done when that many or fewer are open; optional stallMinutes.",
           items: {
             type: "object",
             properties: {
@@ -1067,7 +1067,7 @@ const TOOLS = [
               kind: { type: "string" },
               message: { type: "string" },
               to: { type: "object", properties: { channel: { type: "string" }, chatId: { type: "string" }, accountId: { type: "string" } } },
-              check: { type: "object", properties: { url: { type: "string" }, contains: { type: "string" } } },
+              check: { type: "object", properties: { url: { type: "string" }, contains: { type: "string" }, count: { type: "object" } } },
               stallMinutes: { type: "number" },
             },
             required: ["name"],
