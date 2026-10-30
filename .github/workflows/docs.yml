@@ -49,6 +49,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm docs:check
+      # Classic dashboard screenshots, tabs and addresses still in the docs
+      # (#1448): a report with warnings until #1447 turns on --strict.
+      - run: node docs/.scripts/check-classic.mjs
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
