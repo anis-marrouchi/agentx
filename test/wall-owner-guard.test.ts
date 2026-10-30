@@ -62,8 +62,11 @@ function post(base: string, path: string, headers: Record<string, string> = {}, 
   })
 }
 
+// A closed port: a daemon running on this machine must not answer for "demo" (#1579).
+const CLOSED = "http://127.0.0.1:1"
+
 async function serve(token?: string): Promise<string> {
-  const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, dashboard: token ? { token } : {} })
+  const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, dashboard: { daemonUrl: CLOSED, ...(token ? { token } : {}) } })
   const server = createServer((req, res) => {
     void handleBoardRequest(req, res, { boards: [], sources: new Map(), token, config, workflowStore: STORE, workflowRuns: {}, workflowLayouts: LAYOUTS } as unknown as Ctx)
   })
