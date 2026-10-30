@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "http"
 import type { AddressInfo } from "net"
+import type { IncomingMessage, ServerResponse } from "http"
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { Readable } from "stream"
+import { handleAdminApi } from "../src/daemon/admin-panel"
 import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
@@ -804,6 +810,74 @@ describe("Wall Settings: Channels (#1428 phase 2)", () => {
     expect(settingsHtml(w)).toContain("<code>http://node-a:18800/webhook/cx/github</code>")
     await w.click({ "data-st-act": "ch", "data-ch": "calls" })
     expect(settingsHtml(w)).toContain("@cx with owner · 1 min 15 s · 3 transcript parts")
+    expect(w.writes()).toEqual([])
+  })
+})
+
+describe("Wall Settings: a literal secret in agentx.json is never sent or shown (#1567)", () => {
+  // Fake values: each is a literal written into agentx.json instead of a reference.
+  const LITERALS = {
+    telegram: "123456:tg-literal-bot-token",
+    slackBot: "xoxb-literal-slack-bot",
+    slackApp: "xapp-literal-slack-app",
+    discord: "literal-discord-token",
+    gitlab: "glpat-literal-gitlab-token",
+    imap: "literal-imap-password",
+  }
+  const prev = process.cwd()
+  let dir = ""
+  afterEach(() => { process.chdir(prev); if (dir) rmSync(dir, { recursive: true, force: true }); dir = "" })
+
+  async function adminState(): Promise<any> {
+    const req = Object.assign(Readable.from([]), { method: "GET" }) as unknown as IncomingMessage
+    let out = ""
+    const res = { writeHead: () => res, end: (b: string) => { out = b } } as unknown as ServerResponse
+    await handleAdminApi(req, res, "/api/admin/state")
+    return JSON.parse(out)
+  }
+
+  it("sends a marker for each literal, keeps references, and the Channels page shows neither value nor pre-fill", async () => {
+    dir = mkdtempSync(join(tmpdir(), "wall-literal-"))
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({
+      node: { id: "n", name: "n" },
+      agents: { cx: { name: "Customer Desk" } },
+      channels: {
+        telegram: { enabled: true, accounts: { support: { token: LITERALS.telegram, agentBinding: "cx" }, sales: { token: "${TG_SALES}", agentBinding: "cx" } } },
+        slack: { enabled: true, botToken: LITERALS.slackBot, appToken: LITERALS.slackApp, agentBinding: "cx" },
+        discord: { enabled: true, token: LITERALS.discord, agentBinding: "cx" },
+        gitlab: { enabled: true, host: "https://gitlab.example.com", token: LITERALS.gitlab },
+        email: { enabled: true, accounts: { hello: { agent: "cx", address: "hello@example.com", imap: { host: "imap.example.com", password: LITERALS.imap }, smtp: { host: "smtp.example.com" } } } },
+      },
+    }))
+    process.chdir(dir)
+    const state = await adminState()
+    const json = JSON.stringify(state)
+    for (const v of Object.values(LITERALS)) expect(json).not.toContain(v)
+    expect(state.telegram.accounts.find((a: any) => a.id === "support").botTokenRef).toEqual({ literal: true })
+    expect(state.telegram.accounts.find((a: any) => a.id === "sales").botTokenRef).toBe("${TG_SALES}")
+    expect(state.slack.botTokenRef).toEqual({ literal: true })
+    expect(state.slack.appTokenRef).toEqual({ literal: true })
+    expect(state.discord.tokenRef).toEqual({ literal: true })
+    expect(state.gitlab.tokenRef).toEqual({ literal: true })
+    expect(state.email.accounts[0].passwordRef).toEqual({ literal: true })
+    process.chdir(prev)
+
+    const w = openWall({ hash: "#page=settings&section=channels", route: (u) => (u === "/api/admin/state" ? { status: 200, body: { ...STATE, ...state, agents: STATE.agents } } : undefined) })
+    await w.settle()
+    await w.click({ "data-st-act": "tg-edit", "data-id": "support" })
+    const pages = [settingsHtml(w)]
+    expect(pages[0]).toContain("set in agentx.json as a literal value: move it to .env")
+    expect(pages[0]).toContain("<code>${TG_SALES}</code>")
+    expect(w.el("st-tge-env").value).toBe("")
+    for (const ch of ["email", "slack", "discord", "gitlab"]) {
+      await w.click({ "data-st-act": "ch", "data-ch": ch })
+      const html = settingsHtml(w)
+      expect(html, ch).toContain("set in agentx.json as a literal value: move it to .env")
+      pages.push(html)
+    }
+    for (const id of ["st-sl-bot", "st-sl-app", "st-dc-env", "st-gl-env"]) expect(w.el(id)?.value ?? "", id).toBe("")
+    for (const html of pages) for (const v of Object.values(LITERALS)) expect(html).not.toContain(v)
+    expect(pages.join("")).not.toContain("[object Object]")
     expect(w.writes()).toEqual([])
   })
 })

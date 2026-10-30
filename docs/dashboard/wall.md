@@ -844,6 +844,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 ## If something is wrong
 
 - **"Not answered: Only the owner can answer this":** the browser has no dashboard key. Sign in with the key, then answer again. Nothing was changed.
+- **Channels says "set in agentx.json as a literal value: move it to .env":** the secret itself is typed into `agentx.json` instead of the name of a variable, so the page hides it and leaves the form field empty. **Terminal**, on that machine: add a line such as `TG_SUPPORT_BOT_TOKEN=<the token>` to `.env`. Then **Browser:** type that name in the form and save it. The page then shows the name, and `agentx.json` no longer holds the secret.
 - **Workflows says "Could not read the workflows":** the dashboard could not ask the machine for them. The rest of the Wall still works; select **Try again**. See [Workflows](./workflows.md#if-something-is-wrong).
 
 - **Activity says a machine "does not answer":** the dashboard could not reach that machine's run records. Check the machine with `agentx daemon status`. The other machines' runs still show.

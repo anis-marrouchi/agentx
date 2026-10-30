@@ -2636,7 +2636,7 @@ function renderChannels() {
       '<div class="row-card"><div class="info"><h3>' + escapeHtml(acc.id) + '</h3>' +
       '<div class="meta">' +
         '<span class="chip ' + (t.enabled ? '' : 'off') + '">' + (t.enabled ? 'enabled' : 'disabled') + '</span>' +
-        'bot: <b>' + escapeHtml(acc.botUsername || '—') + '</b> · agent: <b>' + escapeHtml(acc.agentBinding || '—') + '</b> · token ref: <b>' + escapeHtml(acc.botTokenRef || '—') + '</b>' +
+        'bot: <b>' + escapeHtml(acc.botUsername || '—') + '</b> · agent: <b>' + escapeHtml(acc.agentBinding || '—') + '</b> · token ref: <b>' + escapeHtml(secretRefText(acc.botTokenRef, '—')) + '</b>' +
       '</div></div>' +
       '<button class="ghost" data-tg-edit="' + escapeHtml(acc.id) + '" style="margin-right:6px">Edit</button>' +
       '<button class="danger" data-id="' + escapeHtml(acc.id) + '">Delete</button></div>').join('');
@@ -2884,7 +2884,7 @@ function renderEmailPane() {
       '</div><div class="meta">' +
         'who may write: <b>' + escapeHtml(acc.allowFrom.length ? acc.allowFrom.join(', ') : 'nobody') + '</b>' +
         ' · replies: <b>' + (acc.send === 'auto' ? 'sent at once' : 'wait for your approval') + '</b>' +
-        ' · password: <code>' + escapeHtml(acc.passwordRef || 'not set') + '</code>' +
+        ' · password: <code>' + escapeHtml(secretRefText(acc.passwordRef, 'not set')) + '</code>' +
       '</div></div>' +
       '<button class="danger" data-email-del="' + escapeHtml(acc.id) + '">Delete</button></div>').join('');
   $('ch-email').innerHTML =
@@ -2938,7 +2938,6 @@ async function addEmail() {
 
 function renderDiscordPane() {
   const d = state.discord || {};
-  const stripRef = (ref) => (ref || '').replace(/^\\\$\\{|\\}$/g, '');
   const agentOptions = state.agents.map((a) => '<option value="' + escapeHtml(a.id) + '"' +
     (a.id === (d.agentBinding || '') ? ' selected' : '') + '>' +
     escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
@@ -2949,14 +2948,14 @@ function renderDiscordPane() {
   $('ch-discord').innerHTML =
     '<div class="row-card" style="margin-bottom:12px"><div class="info"><h3>Discord bot</h3>' +
       '<div class="meta">' + statusChip +
-        (d.tokenRef ? ' token: <code style="font-family:var(--ax-mono)">' + escapeHtml(d.tokenRef) + '</code>' : '') +
+        (d.tokenRef ? ' token: <code style="font-family:var(--ax-mono)">' + escapeHtml(secretRefText(d.tokenRef)) + '</code>' : '') +
         (d.agentBinding ? ' · agent: <b>' + escapeHtml(d.agentBinding) + '</b>' : '') +
       '</div></div>' +
       (configured ? '<label class="toggle-switch" style="margin:0"><input type="checkbox" id="dc-toggle"' + (d.enabled ? ' checked' : '') + ' /> <span>On</span></label>' : '') +
     '</div>' +
     '<div class="add-form"><h3>' + (configured ? 'Edit Discord' : 'Connect Discord') + '</h3>' +
       '<label>Bot token env-var<span class="hint">(from the Discord Developer Portal)</span></label>' +
-      '<input id="dc-env" placeholder="DISCORD_BOT_TOKEN" value="' + escapeHtml(stripRef(d.tokenRef)) + '" />' +
+      '<input id="dc-env" placeholder="DISCORD_BOT_TOKEN" value="' + escapeHtml(secretRefName(d.tokenRef)) + '" />' +
       '<label>Default agent<span class="hint">(optional)</span></label>' +
       '<select id="dc-agent"><option value="">(none)</option>' + agentOptions + '</select>' +
       '<div class="actions"><button class="primary" onclick="configureDiscord()">' + (configured ? 'Save' : 'Connect') + '</button><div id="dc-msg" class="msg"></div></div>' +
@@ -2976,7 +2975,6 @@ async function configureDiscord() {
 
 function renderGitLabPane() {
   const g = state.gitlab || {};
-  const stripRef = (ref) => (ref || '').replace(/^\\\$\\{|\\}$/g, '');
   const configured = !!g.tokenRef;
   const statusChip = configured
     ? (g.enabled ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--ax-accent)">enabled</span>' : '<span class="chip off">disabled</span>')
@@ -2985,7 +2983,7 @@ function renderGitLabPane() {
     '<div class="row-card" style="margin-bottom:12px"><div class="info"><h3>GitLab</h3>' +
       '<div class="meta">' + statusChip +
         (g.host ? ' <code style="font-family:var(--ax-mono)">' + escapeHtml(g.host) + '</code>' : '') +
-        (g.tokenRef ? ' · token: <code style="font-family:var(--ax-mono)">' + escapeHtml(g.tokenRef) + '</code>' : '') +
+        (g.tokenRef ? ' · token: <code style="font-family:var(--ax-mono)">' + escapeHtml(secretRefText(g.tokenRef)) + '</code>' : '') +
         ' · ' + g.routeCount + ' route(s) · ' + g.agentMappingCount + ' agent mapping(s)' +
       '</div></div>' +
       (configured ? '<label class="toggle-switch" style="margin:0"><input type="checkbox" id="gl-toggle"' + (g.enabled ? ' checked' : '') + ' /> <span>On</span></label>' : '') +
@@ -2994,7 +2992,7 @@ function renderGitLabPane() {
       '<label>Host<span class="hint">(e.g. <code>https://gitlab.com</code> or your self-hosted URL)</span></label>' +
       '<input id="gl-host" placeholder="https://gitlab.com" value="' + escapeHtml(g.host || 'https://gitlab.com') + '" />' +
       '<label>Admin token env-var<span class="hint">(personal access token with <code>api</code> scope)</span></label>' +
-      '<input id="gl-env" placeholder="GITLAB_TOKEN" value="' + escapeHtml(stripRef(g.tokenRef)) + '" />' +
+      '<input id="gl-env" placeholder="GITLAB_TOKEN" value="' + escapeHtml(secretRefName(g.tokenRef)) + '" />' +
       '<label>Webhook listen port<span class="hint">(incoming GitLab webhooks)</span></label>' +
       '<input id="gl-port" type="number" min="1" max="65535" value="' + (g.webhookPort || 18810) + '" />' +
       '<div class="actions"><button class="primary" onclick="configureGitLab()">' + (configured ? 'Save' : 'Connect') + '</button><div id="gl-msg" class="msg"></div></div>' +
@@ -3234,7 +3232,6 @@ function renderSlackSection() {
     (a.id === (s.agentBinding || '') ? ' selected' : '') + '>' +
     escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
   // Strip dollar-brace wrappers so the edit form shows just the env-var name.
-  const stripRef = (ref) => (ref || '').replace(/^\\\$\\{|\\}$/g, '');
   const configured = s.botTokenRef && s.appTokenRef;
   const statusChip = configured
     ? (s.enabled
@@ -3246,16 +3243,16 @@ function renderSlackSection() {
     '<h3 style="margin:0 0 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--ax-muted)">Slack</h3>' +
     '<div class="row-card" style="margin-bottom:12px"><div class="info"><h3># slack workspace</h3>' +
       '<div class="meta">' + statusChip +
-        (s.botTokenRef ? ' bot: <code style="font-family:var(--ax-mono)">' + escapeHtml(s.botTokenRef) + '</code>' : '') +
-        (s.appTokenRef ? ' · app: <code style="font-family:var(--ax-mono)">' + escapeHtml(s.appTokenRef) + '</code>' : '') +
+        (s.botTokenRef ? ' bot: <code style="font-family:var(--ax-mono)">' + escapeHtml(secretRefText(s.botTokenRef)) + '</code>' : '') +
+        (s.appTokenRef ? ' · app: <code style="font-family:var(--ax-mono)">' + escapeHtml(secretRefText(s.appTokenRef)) + '</code>' : '') +
         (s.agentBinding ? ' · agent: <b>' + escapeHtml(s.agentBinding) + '</b>' : '') +
       '</div></div>' +
       (configured ? '<label class="toggle-switch" style="margin:0"><input type="checkbox" id="slack-toggle"' + (s.enabled ? ' checked' : '') + ' /> <span>On</span></label>' : '') +
     '</div>' +
     '<div class="add-form"><h3>' + (configured ? 'Edit Slack connection' : 'Connect Slack') + '</h3>' +
       '<div class="rowf">' +
-        '<div><label>Bot token env-var<span class="hint">(<code>xoxb-…</code>)</span></label><input id="slack-bot-env" placeholder="SLACK_BOT_TOKEN" value="' + escapeHtml(stripRef(s.botTokenRef)) + '" /></div>' +
-        '<div><label>App token env-var<span class="hint">(<code>xapp-…</code> — Socket Mode)</span></label><input id="slack-app-env" placeholder="SLACK_APP_TOKEN" value="' + escapeHtml(stripRef(s.appTokenRef)) + '" /></div>' +
+        '<div><label>Bot token env-var<span class="hint">(<code>xoxb-…</code>)</span></label><input id="slack-bot-env" placeholder="SLACK_BOT_TOKEN" value="' + escapeHtml(secretRefName(s.botTokenRef)) + '" /></div>' +
+        '<div><label>App token env-var<span class="hint">(<code>xapp-…</code> — Socket Mode)</span></label><input id="slack-app-env" placeholder="SLACK_APP_TOKEN" value="' + escapeHtml(secretRefName(s.appTokenRef)) + '" /></div>' +
       '</div>' +
       '<label>Default agent<span class="hint">(optional — used when a Slack message has no explicit @mention of another agent)</span></label>' +
       '<select id="slack-agent"><option value="">(none)</option>' + agentOptions + '</select>' +
@@ -3290,9 +3287,8 @@ function openTelegramEdit(acc) {
     '<option value="' + escapeHtml(a.id) + '"' + (a.id === acc.agentBinding ? ' selected' : '') + '>' +
     escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
   $('tg-edit-user').value = acc.botUsername || '';
-  // Current token ref is a dollar-brace placeholder — strip the wrapper for the form.
-  const ref = acc.botTokenRef || '';
-  $('tg-edit-env').value = ref.replace(/^\\\$\\{|\\}$/g, '');
+  // The env-var name inside the reference; empty for a literal token.
+  $('tg-edit-env').value = secretRefName(acc.botTokenRef);
   $('tg-edit-id').value = acc.id;
   $('tg-edit-msg').className = 'msg';
   modal.classList.remove('hidden');
@@ -4259,6 +4255,19 @@ function initJvControls() {
 }
 // Wire up once on script load (doesn't depend on /api/admin/state).
 initJvControls();
+
+// A secret in agentx.json comes from /api/admin/state as a dollar-brace
+// reference string, "" when unset, or { literal: true } when the file holds
+// the value itself (never sent).
+const LITERAL_SECRET_TEXT = 'set in agentx.json as a literal value: move it to .env';
+function secretRefText(ref, empty) {
+  if (ref && typeof ref === 'object') return LITERAL_SECRET_TEXT;
+  return ref || empty;
+}
+/** The env-var NAME inside a reference, for edit forms; "" for a literal. */
+function secretRefName(ref) {
+  return typeof ref === 'string' && ref.indexOf('$' + '{') === 0 ? ref.slice(2, -1) : '';
+}
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

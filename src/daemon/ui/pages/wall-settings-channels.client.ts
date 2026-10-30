@@ -15,13 +15,21 @@
 //   GitHub    its webhooks (added on Webhooks)
 //   Calls     active and recent calls (reads only)
 // A secret is never shown or sent: each form takes the NAME of the .env
-// variable that holds it, as the classic tab does. WhatsApp pairing and
+// variable that holds it, as the classic tab does. When agentx.json holds a
+// token as a literal value, /api/admin/state sends only { literal: true }
+// (secretRef in admin-panel.ts): the row says to move it to .env and the
+// edit field stays empty. WhatsApp pairing and
 // triage, and notification routing, come in the next part.
 
 export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
   var ST_CHANNELS = [['telegram', 'Telegram'], ['email', 'Email'], ['slack', 'Slack'], ['discord', 'Discord'], ['gitlab', 'GitLab'], ['github', 'GitHub'], ['calls', 'Calls']];
-  /** A token reference in agentx.json (dollar sign, {NAME}) → NAME, for the edit forms. */
-  function stEnvName(ref) { return String(ref || '').replace(/^\$\{|\}$/g, ''); }
+  /** A token reference in agentx.json (dollar sign, {NAME}) → NAME, for the edit forms; empty for a literal. */
+  function stEnvName(ref) { return typeof ref === 'string' ? ref.replace(/^\$\{|\}$/g, '') : ''; }
+  /** How a secret reads in a row: its reference, or a warning when agentx.json holds the value itself ({ literal: true }, never sent). */
+  function stRefHtml(ref, empty) {
+    if (ref && typeof ref === 'object') return '<span class="wsj__pill is-warn">set in agentx.json as a literal value: move it to .env</span>';
+    return ref ? '<code>' + esc(ref) + '</code>' : esc(empty || '');
+  }
   function stChState(on, configured) {
     if (configured === false) return '<span class="wsj__pill">not set up</span>';
     return on ? '<span class="wsj__pill is-ok">on</span>' : '<span class="wsj__pill">off</span>';
@@ -50,7 +58,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
     var rows = (t.accounts || []).map(function (a) {
       var k = 'tg:' + a.id, editing = S.st.tgEdit === a.id;
       return '<li class="wsj__row"><div class="wsj__main"><b>' + esc(a.id) + '</b>' +
-        '<p class="wsj__sub">bot ' + esc(a.botUsername || '—') + ' · answers as @' + esc(a.agentBinding || '—') + ' · token <code>' + esc(a.botTokenRef || '—') + '</code></p>' +
+        '<p class="wsj__sub">bot ' + esc(a.botUsername || '—') + ' · answers as @' + esc(a.agentBinding || '—') + ' · token ' + stRefHtml(a.botTokenRef, '—') + '</p>' +
         (editing ? '<form class="wsf" data-st-form="tg-edit" data-id="' + esc(a.id) + '">' +
           '<label>Agent<select id="st-tge-agent">' + stAgentOptions(a.agentBinding || '') + '</select></label>' +
           stChField('st-tge-user', 'Bot username', a.botUsername, 'my_bot', '(optional)') +
@@ -78,7 +86,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
       return '<li class="wsj__row"><div class="wsj__main"><b>' + esc(a.address) + '</b>' +
         '<p class="wsj__sub">answered by @' + esc(a.agent) + ' · IMAP ' + esc(a.imap) + ' · SMTP ' + esc(a.smtp) + '</p>' +
         '<p class="wsj__sub">who may write: ' + esc((a.allowFrom || []).length ? a.allowFrom.join(', ') : 'nobody') + ' · replies ' + (a.send === 'auto' ? 'sent at once' : 'wait for your approval') +
-        ' · password <code>' + esc(a.passwordRef || 'not set') + '</code></p></div>' +
+        ' · password ' + stRefHtml(a.passwordRef, 'not set') + '</p></div>' +
         '<div class="wsj__acts"><button type="button" class="ax-btn ax-btn--ghost" data-st-act="ask" data-key="' + esc(k) + '">Delete</button></div>' +
         stConfirmHtml(k, 'Remove the mailbox <b>' + esc(a.address) + '</b>? Its password stays in .env.', 'Remove ' + a.id) + '</li>';
     }).join('');
@@ -108,7 +116,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
   function stSlackHtml() {
     var s = (S.st.data && S.st.data.slack) || {};
     return stOneHtml({ label: 'Slack', form: 'slack', toggle: 'slack/toggle', on: s.enabled, configured: !!(s.botTokenRef && s.appTokenRef),
-      meta: (s.botTokenRef ? 'bot <code>' + esc(s.botTokenRef) + '</code>' : '') + (s.appTokenRef ? ' · app <code>' + esc(s.appTokenRef) + '</code>' : '') + (s.agentBinding ? ' · default agent @' + esc(s.agentBinding) : ''),
+      meta: (s.botTokenRef ? 'bot ' + stRefHtml(s.botTokenRef) : '') + (s.appTokenRef ? ' · app ' + stRefHtml(s.appTokenRef) : '') + (s.agentBinding ? ' · default agent @' + esc(s.agentBinding) : ''),
       fields: stChField('st-sl-bot', 'Bot token (xoxb-…), as an environment variable name', stEnvName(s.botTokenRef), 'SLACK_BOT_TOKEN') +
         stChField('st-sl-app', 'App token (xapp-…, Socket Mode), as an environment variable name', stEnvName(s.appTokenRef), 'SLACK_APP_TOKEN') +
         '<label>Default agent <small>(optional)</small><select id="st-sl-agent">' + stOptions([['', '(none)']], s.agentBinding || '') + stAgentOptions(s.agentBinding || '') + '</select></label>',
@@ -117,7 +125,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
   function stDiscordHtml() {
     var d = (S.st.data && S.st.data.discord) || {};
     return stOneHtml({ label: 'Discord', form: 'discord', toggle: 'discord/toggle', on: d.enabled, configured: !!d.tokenRef,
-      meta: (d.tokenRef ? 'token <code>' + esc(d.tokenRef) + '</code>' : '') + (d.agentBinding ? ' · agent @' + esc(d.agentBinding) : ''),
+      meta: (d.tokenRef ? 'token ' + stRefHtml(d.tokenRef) : '') + (d.agentBinding ? ' · agent @' + esc(d.agentBinding) : ''),
       fields: stChField('st-dc-env', 'Bot token, as an environment variable name', stEnvName(d.tokenRef), 'DISCORD_BOT_TOKEN') +
         '<label>Default agent <small>(optional)</small><select id="st-dc-agent">' + stOptions([['', '(none)']], d.agentBinding || '') + stAgentOptions(d.agentBinding || '') + '</select></label>',
       hint: 'The bot needs the <code>MESSAGE_CONTENT</code> intent in the Discord Developer Portal. It answers when @-mentioned in channels, and always in direct messages.' });
@@ -131,7 +139,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
   function stGitLabHtml() {
     var g = (S.st.data && S.st.data.gitlab) || {};
     return stOneHtml({ label: 'GitLab', form: 'gitlab', toggle: 'gitlab/toggle', on: g.enabled, configured: !!g.tokenRef,
-      meta: (g.host ? '<code>' + esc(g.host) + '</code>' : '') + (g.tokenRef ? ' · token <code>' + esc(g.tokenRef) + '</code>' : '') +
+      meta: (g.host ? '<code>' + esc(g.host) + '</code>' : '') + (g.tokenRef ? ' · token ' + stRefHtml(g.tokenRef) : '') +
         ' · ' + (g.routeCount || 0) + ' route(s) · ' + (g.agentMappingCount || 0) + ' agent mapping(s)',
       fields: stChField('st-gl-host', 'Host', g.host || 'https://gitlab.com', 'https://gitlab.com') +
         stChField('st-gl-env', 'Admin token (api scope), as an environment variable name', stEnvName(g.tokenRef), 'GITLAB_TOKEN') +
