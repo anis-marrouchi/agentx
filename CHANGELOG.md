@@ -2,6 +2,30 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.193.0](https://github.com/anis-marrouchi/agentx/compare/v0.192.0...v0.193.0) (2026-10-30)
+
+
+### Features
+
+* **hub:** rename the Wall to Hub, /wall redirects to /hub ([#1485](https://github.com/anis-marrouchi/agentx/issues/1485)) ([#1574](https://github.com/anis-marrouchi/agentx/issues/1574)) ([bb4ce16](https://github.com/anis-marrouchi/agentx/commit/bb4ce165fc58f3c9250f7331c7c48704b8af840e))
+* **plans:** keep a moving step going when its turn ends, with a count check ([#1576](https://github.com/anis-marrouchi/agentx/issues/1576)) ([6c9257c](https://github.com/anis-marrouchi/agentx/commit/6c9257c14a6142ec193dc866b5754ad721525d71))
+* **plans:** note "(nudges reset from N)" on a progress report that resets the count ([#1573](https://github.com/anis-marrouchi/agentx/issues/1573)) ([199384e](https://github.com/anis-marrouchi/agentx/commit/199384eac556781add875397d635174bd3e4362b))
+* **wall:** Channels in Settings on the Wall, with no literal secret shown ([#1428](https://github.com/anis-marrouchi/agentx/issues/1428), [#1567](https://github.com/anis-marrouchi/agentx/issues/1567)) ([#1578](https://github.com/anis-marrouchi/agentx/issues/1578)) ([3ee8f6f](https://github.com/anis-marrouchi/agentx/commit/3ee8f6fdddbb81f1a392a231b9e4b777d0be36cf))
+* **wall:** Schedules and Webhooks in Settings on the Wall ([#1428](https://github.com/anis-marrouchi/agentx/issues/1428)) ([#1566](https://github.com/anis-marrouchi/agentx/issues/1566)) ([485ec87](https://github.com/anis-marrouchi/agentx/commit/485ec87e7658c6b99d06d8f148fcaf6d4c5bc10b))
+* **wiki:** freshness fixes 5-7 from the memory audit ([#603](https://github.com/anis-marrouchi/agentx/issues/603)) ([#1564](https://github.com/anis-marrouchi/agentx/issues/1564)) ([9722f58](https://github.com/anis-marrouchi/agentx/commit/9722f5889814f07ef7c4cf0ea0f480c37f791f3f))
+
+
+### Bug Fixes
+
+* **plans:** compare progress with the newest report, not the oldest 1000 ([#1582](https://github.com/anis-marrouchi/agentx/issues/1582)) ([a320407](https://github.com/anis-marrouchi/agentx/commit/a320407ce01ef7e0c6a090501c3017a93d3d9be1))
+* **plans:** new progress on a step starts its nudge count again ([#1569](https://github.com/anis-marrouchi/agentx/issues/1569)) ([d74dce4](https://github.com/anis-marrouchi/agentx/commit/d74dce4453acd89e744c756391baf3001e1f3758))
+* **plans:** show the newest plan events, not the oldest 200 ([#1582](https://github.com/anis-marrouchi/agentx/issues/1582) follow-up) ([#1583](https://github.com/anis-marrouchi/agentx/issues/1583)) ([3a4800d](https://github.com/anis-marrouchi/agentx/commit/3a4800d9b2fa0b6826479859977398e567dd780a))
+* **process-pool:** cap eviction skips a process with open work ([#1560](https://github.com/anis-marrouchi/agentx/issues/1560)) ([#1577](https://github.com/anis-marrouchi/agentx/issues/1577)) ([e8ec187](https://github.com/anis-marrouchi/agentx/commit/e8ec187729969cece0ee436b3726ff558d47223d))
+* **process-pool:** keep a process with background work out of the idle sweep ([#1562](https://github.com/anis-marrouchi/agentx/issues/1562)) ([4ec8b3d](https://github.com/anis-marrouchi/agentx/commit/4ec8b3ddd92e0514d35722da9cf3f46bdab7e950))
+* **requests:** release finished requests that stay open on the Wall ([#1553](https://github.com/anis-marrouchi/agentx/issues/1553)) ([4ea891c](https://github.com/anis-marrouchi/agentx/commit/4ea891c56df385fb04270e6731d853270973821a))
+* **test:** owner-reach phone marks no longer expire with the calendar ([#1555](https://github.com/anis-marrouchi/agentx/issues/1555)) ([#1557](https://github.com/anis-marrouchi/agentx/issues/1557)) ([91f6f68](https://github.com/anis-marrouchi/agentx/commit/91f6f684ce3607c35d0194d6f43bf5219f863f96))
+* **wall:** show a lowercase ${name} secret reference as a reference ([#1578](https://github.com/anis-marrouchi/agentx/issues/1578)) ([#1581](https://github.com/anis-marrouchi/agentx/issues/1581)) ([9389ce0](https://github.com/anis-marrouchi/agentx/commit/9389ce0f5d56cd3e7673ebf7ca4dab5ee9880798))
+
 ## [0.192.0](https://github.com/anis-marrouchi/agentx/compare/v0.191.0...v0.192.0) (2026-10-29)
 
 
