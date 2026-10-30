@@ -328,6 +328,28 @@ describe("nudges", () => {
     expect(turns).toHaveLength(4)
   })
 
+  it("starts the nudge count again when the owner agent reports new progress", async () => {
+    await sweep()
+    for (let i = 0; i < 2; i++) { clock += 31 * MIN; await sweep() }
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "29 open, now 13" })
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 0, lastNudgeAt: null })
+    // Three more quiet spells: nudged three times again before it blocks.
+    for (let i = 0; i < 3; i++) { clock += 31 * MIN; await sweep() }
+    expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 3 })
+    clock += 31 * MIN
+    expect((await sweep()).blocked).toBe(1)
+  })
+
+  it("keeps the nudge count when a progress report only repeats the last one", async () => {
+    await sweep()
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "11 open" })
+    for (let i = 0; i < 2; i++) { clock += 31 * MIN; await sweep() }
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: " 11  OPEN " })
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
+  })
+
   it("goes on when the owner retries a blocked step, with a fresh count", async () => {
     await sweep()
     for (let i = 0; i < 4; i++) { clock += 31 * MIN; await sweep() }

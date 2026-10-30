@@ -104,6 +104,15 @@ function restartStep(requests: RequestStore, plans: PlanStore, step: PlanStep, n
   requests.progress(step.requestId, now)
 }
 
+const sameWords = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase()
+
+/** A progress report says something the step's last one did not: new
+ *  words, not the same status line again. */
+function isNewProgress(plans: PlanStore, step: PlanStep, detail: string): boolean {
+  const last = plans.events(step.requestId, 1000).filter((e) => e.step === step.idx && e.kind === "progress").at(-1)
+  return !last || sameWords(last.detail) !== sameWords(detail).slice(0, 1000)
+}
+
 export type StepStatus = "progress" | "done" | "blocked"
 
 /** An agent reports on a step it owns (or on any step of a plan it wrote).
@@ -136,9 +145,15 @@ export function reportStep(
     blockStep(requests, plans, step, `${input.agentId}: ${note}`, now)
     return null
   }
+  const detail = `${input.agentId}: ${note || "under way"}`
   if (step.state === "blocked") restartStep(requests, plans, step, now, false)
-  else plans.updateStep(step.requestId, step.idx, { updatedAt: now })
-  plans.event(step.requestId, step.idx, "progress", `${input.agentId}: ${note || "under way"}`, now)
+  else if (step.nudges > 0 && isNewProgress(plans, step, detail)) {
+    // Real progress: the step is moving, so the nudges so far no longer
+    // count toward blocking it (#1568). A report that only
+    // repeats the last one ("11 open" twice) keeps the count.
+    plans.updateStep(step.requestId, step.idx, { updatedAt: now, nudges: 0, lastNudgeAt: null })
+  } else plans.updateStep(step.requestId, step.idx, { updatedAt: now })
+  plans.event(step.requestId, step.idx, "progress", detail, now)
   requests.touch(step.requestId, now)
   return null
 }
