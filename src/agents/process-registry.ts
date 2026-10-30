@@ -392,7 +392,8 @@ export class ProcessRegistry {
    * Evict the oldest idle handle in the requested scope. "Oldest" is
    * defined by lastTurnAt (LRU). Returns true when one was evicted.
    * No-op when no idle handle is found — the caller is responsible
-   * for the cap-exceeded error path.
+   * for the cap-exceeded error path. A handle with background tasks
+   * open or an unasked turn running is not idle here either (#1560).
    */
   private evictOldestIdle(scope: { scope: "global" } | { scope: "agent"; agentId: string }): boolean {
     let target: ProcessHandle | undefined
@@ -400,7 +401,9 @@ export class ProcessRegistry {
     for (const h of this.handles.values()) {
       if (h.state() !== "idle") continue
       if (scope.scope === "agent" && h.key.agentId !== scope.agentId) continue
-      const ts = h.snapshot().lastTurnAt
+      const snap = h.snapshot()
+      if ((snap.backgroundTasks ?? 0) > 0 || snap.unaskedTurn) continue
+      const ts = snap.lastTurnAt
       if (ts < oldest) {
         oldest = ts
         target = h

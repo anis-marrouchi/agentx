@@ -210,6 +210,42 @@ describe("ProcessRegistry — caps and eviction", () => {
     reg.acquire(KEY("a", "c1"), OPTS("a")) // warm-cold, NOT idle
     expect(() => reg.acquire(KEY("b", "c1"), OPTS("b"))).toThrow(/global cap/)
   })
+
+  // #1560: eviction must spare work the idle sweep spares.
+  it("does not evict the only idle handle while its background tasks are open", () => {
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({ factory, maxProcessesGlobal: 1, sweepIntervalMs: 1_000_000 })
+    const a = reg.acquire(KEY("a", "c1"), OPTS("a")) as FakeHandle
+    a.setIdle(Date.now() - 10_000)
+    a.setWork({ backgroundTasks: 1 })
+    expect(() => reg.acquire(KEY("b", "c1"), OPTS("b"))).toThrow(/no idle handle to evict/)
+    expect(a.killReasons).toHaveLength(0)
+    expect(reg.list().map((s) => s.key.agentId)).toEqual(["a"])
+  })
+
+  it("does not evict a handle running a turn nobody asked for at the per-agent cap", () => {
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({ factory, maxProcessesPerAgent: 1, sweepIntervalMs: 1_000_000 })
+    const a1 = reg.acquire(KEY("agent-a", "c1"), OPTS("agent-a")) as FakeHandle
+    a1.setIdle(Date.now() - 10_000)
+    a1.setWork({ unaskedTurn: true })
+    expect(() => reg.acquire(KEY("agent-a", "c2"), OPTS("agent-a"))).toThrow(/no idle handle to evict/)
+    expect(a1.killReasons).toHaveLength(0)
+  })
+
+  it("evicts an older handle with no open work instead of a newer-looking one with work", () => {
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({ factory, maxProcessesGlobal: 2, sweepIntervalMs: 1_000_000 })
+    const a = reg.acquire(KEY("a", "c1"), OPTS("a")) as FakeHandle
+    const b = reg.acquire(KEY("b", "c1"), OPTS("b")) as FakeHandle
+    a.setIdle(Date.now() - 10_000) // oldest, but working
+    a.setWork({ backgroundTasks: 2 })
+    b.setIdle(Date.now() - 1_000)
+    reg.acquire(KEY("c", "c1"), OPTS("c"))
+    expect(a.killReasons).toHaveLength(0)
+    expect(b.killReasons.some((r) => r.includes("evicted"))).toBe(true)
+    expect(reg.list().map((s) => s.key.agentId).sort()).toEqual(["a", "c"])
+  })
 })
 
 describe("ProcessRegistry — list / kill / release", () => {
