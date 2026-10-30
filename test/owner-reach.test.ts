@@ -390,7 +390,7 @@ describe("the phone app's marks", () => {
     const a = tell("On the desk", { requestId: "req-1" })
     const b = tell("Card one", { requestId: "req-2" })
     const c = tell("Answered here", { requestId: "req-3" })
-    const deps = appReachDeps({ db: () => db, requestOfCard: (id) => (id === "c2" ? "req-2" : null), log: () => {} })
+    const deps = appReachDeps({ db: () => db, requestOfCard: (id) => (id === "c2" ? "req-2" : null), log: () => {}, now: () => clock })
     deps.touch("phone")
     deps.deskSeen(["request:req-1", "card:c2", "card:unknown"])
     deps.deskAnswered("req-3")

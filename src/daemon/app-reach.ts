@@ -28,14 +28,17 @@ export interface AppReachSources {
   /** The request a decision card belongs to, if any. */
   requestOfCard: (cardId: string) => string | null
   log: (msg: string) => void
+  /** The clock marks and presence are stamped with (tests pin it). */
+  now?: () => number
 }
 
 export function appReachDeps(src: AppReachSources): AppReachDeps {
+  const now = src.now ?? Date.now
   let cached: { db: Database.Database; presence: PresenceStore; marks: ReachMarks } | null = null
   const parts = () => {
     const db = src.db()
     if (!db) return null
-    if (cached?.db !== db) cached = { db, presence: new PresenceStore(db), marks: new ReachMarks(db) }
+    if (cached?.db !== db) cached = { db, presence: new PresenceStore(db, now), marks: new ReachMarks(db, now) }
     return cached
   }
   const guard = <T>(what: string, fallback: T, fn: (p: NonNullable<ReturnType<typeof parts>>) => T): T => {
