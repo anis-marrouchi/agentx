@@ -20,8 +20,9 @@
 // screen, with Health on top) and the Agents section
 // (wall-settings-agent.client.ts for one agent). Health reads the machines
 // the Wall already polls (S.live), so it writes nothing. Phase 2: Schedules
-// and Webhooks (wall-settings-jobs.client.ts). The other sections open
-// their classic page until they are ported.
+// and Webhooks (wall-settings-jobs.client.ts) and Channels
+// (wall-settings-channels.client.ts). The other sections open their
+// classic page until they are ported.
 //
 // A section repaints when it opens or after a save, never on the Wall's
 // minute refresh, so a field being typed in stays as it is. A save that
@@ -29,6 +30,7 @@
 
 import { WALL_SETTINGS_AGENT_CSS, WALL_SETTINGS_AGENT_SCRIPT } from "./wall-settings-agent.client"
 import { WALL_SETTINGS_JOBS_CSS, WALL_SETTINGS_JOBS_SCRIPT } from "./wall-settings-jobs.client"
+import { WALL_SETTINGS_CHANNELS_CSS, WALL_SETTINGS_CHANNELS_SCRIPT } from "./wall-settings-channels.client"
 
 export const WALL_SETTINGS_SCRIPT = String.raw`
   // --- Settings (#1428) ---
@@ -37,7 +39,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
    *  the Wall ('' once it is), and the line a phone shows under it. */
   var ST_GROUPS = [
     ['Fleet', [
-      ['agents', 'Agents', '', ''], ['channels', 'Channels', '/admin#tab=channels', 'Chat apps and developer tools'],
+      ['agents', 'Agents', '', ''], ['channels', 'Channels', '', 'Chat apps and developer tools'],
       ['schedules', 'Schedules', '', 'Recurring jobs'], ['webhooks', 'Webhooks', '', 'Calls from other services'],
       ['mesh', 'Mesh', '/admin#tab=mesh', 'Your other machines'], ['business', 'Business', '/admin#tab=business', 'Org chart and business settings'],
       ['boards', 'Boards', '/admin#tab=boards-cfg', 'Task boards'], ['actions', 'Actions', '/admin#tab=actions', 'Buttons that start a task'],
@@ -234,6 +236,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
         '<p class="wst__todo">' + (wall ? esc(s[1]) + ' has its own page on the Wall.' : esc(s[1]) + ' is not on the Wall yet: it comes in a later step of #1428. Until then, change it on its classic page.') + '</p>' +
         '<a class="ax-btn" href="' + esc(s[2]) + '">' + (wall ? 'Open ' + esc(s[1]) : 'Open ' + esc(s[1]) + ' on the classic page') + '</a>';
     }
+    if (sec === 'channels') return stChannelsHtml();
     if (sec === 'schedules') return stCronsHtml();
     if (sec === 'webhooks') return stHooksHtml();
     return S.st.agent ? stAgentHtml(S.st.agent) : stAgentsHtml();
@@ -471,7 +474,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   async function stConfirmed(key) {
     var id = S.st.agent, a = stAgentOf(id);
     S.st.confirm = '';
-    if (await stJobsConfirmed(key)) return;
+    if (await stJobsConfirmed(key) || await stChannelsConfirmed(key)) return;
     if (key === 'delete') {
       stPaint();
       stNote('delete', '', 'Deleting…');
@@ -641,6 +644,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   }, true);
 ${WALL_SETTINGS_AGENT_SCRIPT}
 ${WALL_SETTINGS_JOBS_SCRIPT}
+${WALL_SETTINGS_CHANNELS_SCRIPT}
 `
 
 export const WALL_SETTINGS_CSS = `
@@ -791,4 +795,4 @@ export const WALL_SETTINGS_CSS = `
   .wsl { grid-template-columns: minmax(0, 1fr); }
   .wsa { padding: 12px 10px; }
 }
-` + WALL_SETTINGS_AGENT_CSS + WALL_SETTINGS_JOBS_CSS
+` + WALL_SETTINGS_AGENT_CSS + WALL_SETTINGS_JOBS_CSS + WALL_SETTINGS_CHANNELS_CSS

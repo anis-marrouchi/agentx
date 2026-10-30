@@ -215,8 +215,8 @@ describe("Wall Settings: the shell (#1428)", () => {
       ["Machines", ["Health", "Advanced"]],
     ])
     expect(html).toContain("3 agents, their pictures, models and on/off")
-    // Agents, Schedules, Webhooks and Health are built: the rest say they open their classic page.
-    expect(html.match(/is-classic/g)).toHaveLength(9)
+    // Agents, Channels, Schedules, Webhooks and Health are built: the rest say they open their classic page.
+    expect(html.match(/is-classic/g)).toHaveLength(8)
     // No section in the link: on a phone the list is the screen.
     expect(html).toContain('<div class="wst">')
     await w.go("#page=settings&section=channels")
@@ -731,6 +731,83 @@ describe("Wall Settings: Webhooks (#1428 phase 2)", () => {
   })
 })
 
+describe("Wall Settings: Channels (#1428 phase 2)", () => {
+  const CH_STATE = {
+    ...STATE,
+    telegram: { enabled: true, accounts: [{ id: "support", botUsername: "support_bot", agentBinding: "cx", botTokenRef: "${TG_SUPPORT}" }] },
+    email: { enabled: false, accounts: [{ id: "hello", address: "hello@example.com", agent: "cx", imap: "imap.example.com:993", smtp: "smtp.example.com:465", allowFrom: ["*"], send: "approve", passwordRef: "${EMAIL_PW}" }] },
+    slack: { enabled: false },
+    gitlab: { enabled: true, host: "https://gitlab.example.com", tokenRef: "${GITLAB_TOKEN}", webhookPort: 18810, routeCount: 2, agentMappingCount: 1 },
+    requestStatus: ["gitlab"],
+  }
+  const openChannels = (route?: Route) => openWall({ hash: "#page=settings&section=channels", route: (u, i) => route?.(u, i) ?? (u === "/api/admin/state" ? { status: 200, body: CH_STATE } : undefined) })
+
+  it("shows Telegram first, with its accounts and the token's variable name only", async () => {
+    const w = openChannels()
+    await w.settle()
+    const html = settingsHtml(w)
+    expect(html).toContain("Telegram <span class=\"wsj__pill is-ok\">on</span>")
+    expect(html).toContain("<b>support</b>")
+    expect(html).toContain("answers as @cx · token <code>${TG_SUPPORT}</code>")
+    expect(html).toContain('data-st-ch-toggle="telegram/toggle" checked')
+    expect(html).toContain('href="/admin#tab=channels"')
+    expect(w.writes()).toEqual([])
+  })
+
+  it("adds, edits and deletes a Telegram account with the classic calls", async () => {
+    const w = openChannels()
+    await w.settle()
+    w.el("st-tg-id").value = "sales"; w.el("st-tg-agent").value = "ops"; w.el("st-tg-user").value = ""; w.el("st-tg-env").value = "TG_SALES"
+    await w.submit({ "data-st-form": "tg" })
+    await w.click({ "data-st-act": "tg-edit", "data-id": "support" })
+    expect(settingsHtml(w)).toContain('data-st-form="tg-edit" data-id="support"')
+    await w.submit({ "data-st-form": "tg-edit", "data-id": "support" })
+    await w.click({ "data-st-act": "ask", "data-key": "tg:support" })
+    expect(settingsHtml(w)).toContain("Delete the Telegram account <b>support</b>?")
+    await w.click({ "data-st-act": "confirm", "data-key": "tg:support" })
+    const writes = w.writes()
+    expect(writes[0]).toEqual({ url: "/api/admin/wall/settings/channels/telegram", method: "POST", body: { id: "sales", agentBinding: "ops", botUsername: "", botTokenEnv: "TG_SALES" } })
+    expect(writes[1].method).toBe("PATCH")
+    expect(writes[1].body.id).toBe("support")
+    expect(writes[2]).toEqual({ url: "/api/admin/wall/settings/channels/telegram", method: "DELETE", body: { id: "support" } })
+  })
+
+  it("adds a mailbox, and shows why it was not added", async () => {
+    const w = openChannels((u, i) => (u.endsWith("/channels/email") && i.method === "POST" ? { status: 400, body: { error: "address is required" } } : undefined))
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "email" })
+    expect(settingsHtml(w)).toContain("<b>hello@example.com</b>")
+    expect(settingsHtml(w)).toContain("password <code>${EMAIL_PW}</code>")
+    w.el("st-em-id").value = "help"; w.el("st-em-address").value = ""; w.el("st-em-auto").checked = true
+    await w.submit({ "data-st-form": "em" })
+    expect(w.writes()[0].body).toMatchObject({ id: "help", send: "auto" })
+    expect(w.el("st-n-em-add").textContent).toBe("Not saved: address is required")
+  })
+
+  it("connects GitLab with the classic call and shows its request status switch", async () => {
+    const w = openChannels()
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "gitlab" })
+    const html = settingsHtml(w)
+    expect(html).toContain("2 route(s) · 1 agent mapping(s)")
+    expect(html).toContain('value="GITLAB_TOKEN"')
+    expect(html).toContain('data-st-rs="gitlab" checked')
+    w.el("st-gl-host").value = "https://gitlab.example.com"; w.el("st-gl-env").value = "GITLAB_TOKEN"; w.el("st-gl-port").value = "18810"
+    await w.submit({ "data-st-form": "gitlab" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/channels/gitlab", method: "POST", body: { host: "https://gitlab.example.com", tokenEnv: "GITLAB_TOKEN", webhookPort: 18810 } }])
+  })
+
+  it("lists GitHub's webhooks and reads the calls without writing", async () => {
+    const w = openChannels((u) => (u === "/api/admin/channels/webrtc/history" ? { status: 200, body: { active: [], history: [{ startedAt: 0, agentId: "cx", target: "owner", durationSec: 75, transcriptChunks: 3 }] } } : undefined))
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "github" })
+    expect(settingsHtml(w)).toContain("<code>http://node-a:18800/webhook/cx/github</code>")
+    await w.click({ "data-st-act": "ch", "data-ch": "calls" })
+    expect(settingsHtml(w)).toContain("@cx with owner · 1 min 15 s · 3 transcript parts")
+    expect(w.writes()).toEqual([])
+  })
+})
+
 describe("Every other Wall page sends no settings write (#1428)", () => {
   const SETTINGS_WRITES = ["/api/admin/wall/settings/", "/api/admin/agents", "/api/admin/org/hold", "/api/admin/wiki/curator", "/api/admin/files"]
   const PAGES = ["#status=open", "#status=waiting_owner", "#page=running", "#page=agents", "#page=live", "#page=creator",
@@ -803,7 +880,8 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     // A classic admin route that Settings does not use is not reachable through the Wall's prefix.
     expect((await fetch(`${base}/api/admin/wall/settings/boards`, { method: "POST", headers: auth, body: "{}" })).status).toBe(404)
     // Phase 2: Schedules and Webhooks reach their classic handlers.
-    for (const [method, path] of [["POST", "crons"], ["DELETE", "crons"], ["POST", "crons/preview"], ["POST", "webhooks"], ["PATCH", "webhooks"], ["DELETE", "webhooks"], ["POST", "webhooks/triggers"]]) {
+    for (const [method, path] of [["POST", "crons"], ["DELETE", "crons"], ["POST", "crons/preview"], ["POST", "webhooks"], ["PATCH", "webhooks"], ["DELETE", "webhooks"], ["POST", "webhooks/triggers"],
+      ["POST", "channels/telegram"], ["PATCH", "channels/telegram"], ["DELETE", "channels/email"], ["POST", "channels/slack/toggle"], ["POST", "channels/request-status"]]) {
       expect((await fetch(`${base}/api/admin/wall/settings/${path}`, { method, headers: auth, body: "{}" })).status, `${method} ${path}`).not.toBe(404)
     }
     expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PUT", headers: auth, body: "{}" })).status).toBe(404)

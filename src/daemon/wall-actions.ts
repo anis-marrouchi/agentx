@@ -108,6 +108,10 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 //   PATCH  /api/admin/wall/settings/webhooks               {id, patch}
 //   DELETE /api/admin/wall/settings/webhooks               {id}
 //   POST   /api/admin/wall/settings/webhooks/triggers      {id, triggers?, defaultWorkflow?}
+//   POST|PATCH|DELETE /api/admin/wall/settings/channels/telegram, POST …/telegram/toggle
+//   POST|DELETE /api/admin/wall/settings/channels/email, POST …/email/toggle
+//   POST   /api/admin/wall/settings/channels/{slack,discord,gitlab}[/toggle]
+//   POST   /api/admin/wall/settings/channels/request-status  {channel, enabled}
 //   POST   /api/admin/wall/settings/agent/<id>/handovers   hand a chat over
 //   DELETE /api/admin/wall/settings/agent/<id>/handovers   release one
 // (the last two are the classic agent page's, served by agent-panel.ts)
@@ -119,6 +123,11 @@ const WALL_SETTINGS_WRITES = new Set([
   // Phase 2: Schedules and Webhooks.
   "POST /crons", "DELETE /crons", "POST /crons/preview",
   "POST /webhooks", "PATCH /webhooks", "DELETE /webhooks", "POST /webhooks/triggers",
+  // Phase 2: Channels.
+  "POST /channels/telegram", "PATCH /channels/telegram", "DELETE /channels/telegram", "POST /channels/telegram/toggle",
+  "POST /channels/email", "DELETE /channels/email", "POST /channels/email/toggle",
+  "POST /channels/slack", "POST /channels/slack/toggle", "POST /channels/discord", "POST /channels/discord/toggle",
+  "POST /channels/gitlab", "POST /channels/gitlab/toggle", "POST /channels/request-status",
 ])
 /** An agent's handovers, written from its Handovers tab (agent-panel.ts's id shape). */
 const WALL_SETTINGS_HANDOVERS = /^\/agent\/[a-z0-9][a-z0-9_-]*\/handovers$/
