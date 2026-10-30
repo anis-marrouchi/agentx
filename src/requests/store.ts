@@ -294,11 +294,17 @@ const AWAITING_QA = "qa_requested_at IS NOT NULL AND (qa_at IS NULL OR qa_at < q
  *  time. Settling reads it back (#1214). */
 export const OVERDUE_REASON = "Past its due time"
 
+/** How the tracker words a request raised for a hand-off that failed,
+ *  timed out or was lost. Settling reads it back once its retry came
+ *  back done (#1520). */
+export const HANDOFF_REASON = "The work handed to "
+
 /** A request whose handed-on work all came back done (#1138). A hand-off
  *  that failed, timed out or was lost counts for nothing once one handed
- *  to the same agent after it failed came back done: that was its retry
- *  (#1522). Two running side by side are not each other's retry. One still
- *  out, waiting, from before endings were kept, or to another agent holds it. */
+ *  to the same agent after it ended came back done: that was its retry
+ *  (#1522). Two running side by side are not each other's retry, lost or
+ *  not: they may be two different parts (#1520). One still out, waiting,
+ *  from before endings were kept, or to another agent holds it. */
 const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
   AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
@@ -307,6 +313,11 @@ const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pic
                     SELECT 1 FROM request_links d WHERE d.request_id = r.id AND d.kind = 'delegation' AND d.ended = 'done'
                       AND d.agent = l.agent AND d.at > l.ended_at)))
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')`
+
+/** Needs attention for a reason settling clears once the handed work came
+ *  back: past its due time (#1214), or a hand-off that did not end done
+ *  (#1520). */
+const settleableAttention = (col: string) => `(${col} LIKE '${OVERDUE_REASON}%' OR ${col} LIKE '${HANDOFF_REASON}%')`
 
 /** SET clause for a statement that writes `state`: the change time moves
  *  only when the state is really different. Takes the new state, then now. */
@@ -643,6 +654,33 @@ export class RequestStore {
     this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at, agent) VALUES (?, ?, ?, ?, ?)").run(requestId, kind, ref, now, agent)
   }
 
+  /** Delegation links kept before the agent was (#1520): filled from the
+   *  delegation log, delegation id → callee. Returns how many were filled. */
+  fillLinkAgents(agents: Map<string, string>): number {
+    const fill = this.db.prepare("UPDATE request_links SET agent = ? WHERE kind = 'delegation' AND ref = ? AND agent IS NULL")
+    let n = 0
+    this.db.transaction(() => {
+      for (const [ref, agent] of agents) n += fill.run(agent, ref).changes
+    })()
+    return n
+  }
+
+  /** The owner wrote again in the chat (#1520): requests of that agent
+   *  waiting on the owner there since before go back to work, and the
+   *  settle and quiet rules follow them from there. Promises are left:
+   *  their own check follows them, and so are requests with a decision
+   *  card not yet decided: the card's answer moves them. A card linked
+   *  before its ending was kept counts as undecided. Returns the ids moved. */
+  releaseOwnerWaits(agentId: string, channel: string, chatId: string, now: number): string[] {
+    const ids = (this.db.prepare(
+      `SELECT r.id FROM requests r WHERE r.agent_id = ? AND r.channel = ? AND r.chat_id = ? AND r.state = 'waiting_owner'
+         AND COALESCE(r.promise, 0) = 0 AND COALESCE(r.state_changed_at, r.updated_at) < ?
+         AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'card' AND l.ended IS NULL)`,
+    ).all(agentId, channel, chatId, now) as Array<{ id: string }>).map((r) => r.id)
+    for (const id of ids) this.progress(id, now)
+    return ids
+  }
+
   /** The owner commented on the request from the Wall (#1316): kept as a
    *  "comment" link, its words in the link's proof column. */
   comment(requestId: string, ref: string, text: string, now: number): void {
@@ -669,8 +707,9 @@ export class RequestStore {
    *  one delegation done since the owner last sent it back, and none that
    *  is still out, waiting, failed or from before endings were kept.
    *  Superseded ones count for neither. In progress and quiet since
-   *  `before`, or raised only for being past its due time with that work
-   *  back since before `before` (#1214). A due time is the agent's own
+   *  `before`, or raised only for being past its due time (#1214) or for a
+   *  hand-off that did not end done (#1520), with that work back since
+   *  before `before`. A due time is the agent's own
    *  (its accept, its estimate, a wait it reported): the owner's due times
    *  are promises, which are left out. So are loops with a checker, a
    *  pick-up the agent has not been told about yet, and anything with a
@@ -680,7 +719,7 @@ export class RequestStore {
       `SELECT r.* FROM requests r
         WHERE (
             (r.state = 'in_progress' AND r.updated_at < ?)
-            OR (r.state = 'needs_attention' AND r.attention_reason LIKE '${OVERDUE_REASON}%'
+            OR (r.state = 'needs_attention' AND ${settleableAttention("r.attention_reason")}
                 AND (SELECT MAX(l.ended_at) FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done') < ?)
           )
           AND ${CAME_BACK}
@@ -706,14 +745,15 @@ export class RequestStore {
   /** Settled (#1138): the handed work came back done and nobody closed
    *  it. Closed as done with the delegate's link, or, without one, as
    *  "unproven: …". Either way unverified: nothing checked the link. Only
-   *  from in progress, or raised for being overdue (#1214): anything that
-   *  moved since it was read is left. */
+   *  from in progress, or raised for being overdue (#1214) or for a
+   *  hand-off that did not end done (#1520): anything that moved since it
+   *  was read is left. */
   settle(id: string, proof: string | null, detail: string, now: number): boolean {
     const evidence = (proof ?? `unproven: ${detail}`).trim().slice(0, REASON_MAX)
     return this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          verify_state = ?, verify_detail = ?
-       WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND attention_reason LIKE '${OVERDUE_REASON}%'))`,
+       WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${settleableAttention("attention_reason")}))`,
     ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
   }
 

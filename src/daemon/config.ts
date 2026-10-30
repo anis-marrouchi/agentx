@@ -1550,6 +1550,9 @@ export const requestsConfigSchema = z.object({
    *  or closed as completed (#1522). Requests waiting on the owner are
    *  left. Read as often as requests.checkers.checkEveryMinutes. */
   homeCloses: z.boolean().default(true),
+  /** The owner writing again in a chat sends that agent's requests waiting
+   *  on the owner there back to work, caught question or not (#1520). */
+  releaseOnOwnerTurn: z.boolean().default(true),
   /** One Promise (src/requests/promise.ts, #1138 D): what a closed promise
    *  leaves, and whether decision cards are promises too. */
   promises: z.object({
