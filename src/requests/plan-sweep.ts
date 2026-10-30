@@ -104,13 +104,19 @@ function restartStep(requests: RequestStore, plans: PlanStore, step: PlanStep, n
   requests.progress(step.requestId, now)
 }
 
-const sameWords = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase()
+const oneLine = (s: string) => s.replace(/\s+/g, " ").trim()
+/** The words of a progress report kept in the plan's log, with room left
+ *  for the reset note after them. */
+const REPORT_MAX = 960
+const resetNote = (nudges: number) => ` (nudges reset from ${nudges})`
+const sameWords = (s: string) => oneLine(s).replace(/ \(nudges reset from \d+\)$/, "").slice(0, REPORT_MAX).toLowerCase()
 
 /** A progress report says something the step's last one did not: new
- *  words, not the same status line again. */
+ *  words, not the same status line again. The reset note on the last
+ *  report is not part of its words. */
 function isNewProgress(plans: PlanStore, step: PlanStep, detail: string): boolean {
   const last = plans.events(step.requestId, 1000).filter((e) => e.step === step.idx && e.kind === "progress").at(-1)
-  return !last || sameWords(last.detail) !== sameWords(detail).slice(0, 1000)
+  return !last || sameWords(last.detail) !== sameWords(detail)
 }
 
 export type StepStatus = "progress" | "done" | "blocked"
@@ -145,13 +151,15 @@ export function reportStep(
     blockStep(requests, plans, step, `${input.agentId}: ${note}`, now)
     return null
   }
-  const detail = `${input.agentId}: ${note || "under way"}`
+  let detail = `${input.agentId}: ${note || "under way"}`
   if (step.state === "blocked") restartStep(requests, plans, step, now, false)
   else if (step.nudges > 0 && isNewProgress(plans, step, detail)) {
     // Real progress: the step is moving, so the nudges so far no longer
     // count toward blocking it (#1568). A report that only
     // repeats the last one ("11 open" twice) keeps the count.
     plans.updateStep(step.requestId, step.idx, { updatedAt: now, nudges: 0, lastNudgeAt: null })
+    // The log says why the next nudge counts from 1 again (#1572).
+    detail = oneLine(detail).slice(0, REPORT_MAX) + resetNote(step.nudges)
   } else plans.updateStep(step.requestId, step.idx, { updatedAt: now })
   plans.event(step.requestId, step.idx, "progress", detail, now)
   requests.touch(step.requestId, now)
