@@ -12,6 +12,7 @@ import {
   type TurnEvent,
   type TurnInput,
 } from "./process-registry"
+import { BackgroundTasks } from "./background-tasks"
 import { readManagedHash } from "./workspace-setup"
 import { claudeBillingEnv } from "@/utils/workspace-env"
 
@@ -118,6 +119,8 @@ class ClaudeProcessHandle implements ProcessHandle {
   private killReason?: string
   /** Promise chain that serialises runTurn calls. Each call appends. */
   private turnQueue: Promise<void> = Promise.resolve()
+  /** Background tasks the process has open, asked turn or not (#1560). */
+  private background = new BackgroundTasks()
   private snap: ProcessSnapshot
   private log: (msg: string) => void
 
@@ -347,12 +350,34 @@ class ClaudeProcessHandle implements ProcessHandle {
         // non-JSON warnings; resilience > strictness here.
         continue
       }
+      this.noteActivity(evt)
       if (this.waiters.length > 0) {
         const w = this.waiters.shift()!
         w(evt)
       } else {
         this.pendingEvents.push(evt)
       }
+    }
+  }
+
+  /**
+   * Record what the process does as it happens, whether or not a turn is
+   * reading its events (#1560). Between asked turns the events wait in
+   * pendingEvents, so without this the registry saw a process running a
+   * turn of its own, or background builders, as idle and killed it.
+   */
+  private noteActivity(evt: ParsedEvent): void {
+    this.background.observe(evt)
+    let unaskedTurn = this.snap.unaskedTurn ?? false
+    // An init while no asked turn is in flight starts a turn nobody asked
+    // for; any result ends the turn that was running.
+    if (evt.type === "system" && evt.subtype === "init" && this.snap.state !== "busy") unaskedTurn = true
+    else if (evt.type === "result") unaskedTurn = false
+    this.snap = {
+      ...this.snap,
+      lastActivityAt: Date.now(),
+      backgroundTasks: this.background.pending,
+      unaskedTurn,
     }
   }
 

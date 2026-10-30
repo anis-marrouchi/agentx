@@ -8,6 +8,7 @@ import { join } from "path"
 import { tmpdir } from "os"
 import { friendlyModelError, renderFriendlyError, type FriendlyError } from "./error-map"
 import { primaryModelFromUsage } from "./model-usage"
+import { BackgroundTasks } from "./background-tasks"
 
 /** An exit 143 this close to the time limit is the limit's own SIGTERM. */
 const SIGTERM_TIMEOUT_SLACK_MS = 5_000
@@ -1983,27 +1984,7 @@ export async function executeOrchestrator(
  * Returns null when the registry can't allocate a slot (cap exceeded,
  * binary not installed, etc.) — caller falls back to spawn-per-task.
  */
-/**
- * Background work a claude run still has open (#892): tasks the CLI
- * announced with `system/task_started` and has not yet closed with
- * `system/task_notification`. A `result` while any is open ends a turn,
- * not the run: the CLI stays up and runs a new turn once the work ends.
- * A task the CLI marks as not backgrounded (a subagent it waits for)
- * ends inside its turn and is not counted.
- */
-export class BackgroundTasks {
-  private open = new Set<string>()
-
-  observe(event: any): void {
-    if (event?.type !== "system" || typeof event.task_id !== "string") return
-    if (event.subtype === "task_started" && event.is_backgrounded !== false) this.open.add(event.task_id)
-    else if (event.subtype === "task_notification") this.open.delete(event.task_id)
-  }
-
-  get pending(): number {
-    return this.open.size
-  }
-}
+export { BackgroundTasks } from "./background-tasks"
 
 /** Grace the CLI gets to exit on its own after its terminal event before
  *  the reply proceeds without it. */

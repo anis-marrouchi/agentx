@@ -2798,7 +2798,9 @@ export const daemonConfigSchema = z.object({
    *
    *  - `maxIdleSeconds`: a handle becomes eligible for cap-pressured
    *    eviction this many seconds after its last turn. Default 30s
-   *    (matches the registry's pre-config behavior).
+   *    (matches the registry's pre-config behavior). Counted from the
+   *    process's last output; a process with background tasks open or a
+   *    turn of its own running is never idle (#1560).
    *  - `maxAgeSeconds`: a handle is killed unconditionally on the next
    *    sweep once its total wall-clock idleness exceeds this. Default
    *    2700s (45min) — matches the registry's pre-config staleTimeoutMs.

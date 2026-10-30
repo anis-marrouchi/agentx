@@ -474,7 +474,7 @@ How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and 
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `processPool.maxIdleSeconds` | number (5–86400) | `30` | Seconds after its last turn when a process may be stopped to make room. |
+| `processPool.maxIdleSeconds` | number (5–86400) | `30` | Seconds after its last output when a process may be stopped to make room. A process with background tasks open, or running a turn nobody asked for, is never idle (#1560); `maxAgeSeconds` still applies. |
 | `processPool.maxAgeSeconds` | number (60–86400) | `2700` | Seconds of idleness after which a process is always stopped. |
 | `processPool.sweepIntervalSeconds` | number (1–300) | `5` | How often the pool is checked. |
 
