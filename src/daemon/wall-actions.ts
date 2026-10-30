@@ -101,6 +101,13 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 //   POST   /api/admin/wall/settings/files/skill            add a skill
 //   DELETE /api/admin/wall/settings/files/skill            delete a skill
 //   POST   /api/admin/wall/settings/wiki/curator           the wiki curator
+//   POST   /api/admin/wall/settings/crons                  a new schedule
+//   DELETE /api/admin/wall/settings/crons                  {id}
+//   POST   /api/admin/wall/settings/crons/preview          {schedule}: its next runs
+//   POST   /api/admin/wall/settings/webhooks               a new webhook
+//   PATCH  /api/admin/wall/settings/webhooks               {id, patch}
+//   DELETE /api/admin/wall/settings/webhooks               {id}
+//   POST   /api/admin/wall/settings/webhooks/triggers      {id, triggers?, defaultWorkflow?}
 //   POST   /api/admin/wall/settings/agent/<id>/handovers   hand a chat over
 //   DELETE /api/admin/wall/settings/agent/<id>/handovers   release one
 // (the last two are the classic agent page's, served by agent-panel.ts)
@@ -109,6 +116,9 @@ const WALL_SETTINGS_WRITES = new Set([
   "POST /org/hold", "POST /agents", "PATCH /agents", "DELETE /agents", "POST /agents/access",
   "POST /agents/integrations", "DELETE /agents/integrations", "POST /agents/test",
   "PUT /files", "POST /files/skill", "DELETE /files/skill", "POST /wiki/curator",
+  // Phase 2: Schedules and Webhooks.
+  "POST /crons", "DELETE /crons", "POST /crons/preview",
+  "POST /webhooks", "PATCH /webhooks", "DELETE /webhooks", "POST /webhooks/triggers",
 ])
 /** An agent's handovers, written from its Handovers tab (agent-panel.ts's id shape). */
 const WALL_SETTINGS_HANDOVERS = /^\/agent\/[a-z0-9][a-z0-9_-]*\/handovers$/

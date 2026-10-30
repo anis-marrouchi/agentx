@@ -27,6 +27,11 @@ const STATE = {
     { id: "audit", schedule: "0 3 * * 1", agent: "cx", model: "model-z", enabled: true },
     { id: "night", schedule: "0 1 * * *", agent: "ops", model: "", enabled: true },
   ],
+  daemonUrl: "http://node-a:18800/",
+  webhooks: [
+    { id: "repo", source: "github", agentId: "cx", secretEnv: "GH_SECRET", description: "Main repo", enabled: true, triggers: { "issues.opened": "triage" }, defaultWorkflow: "" },
+    { id: "pay", source: "stripe", agentId: "ops", secretEnv: "", enabled: false },
+  ],
 }
 const BUDGETS = { agents: [{ agentId: "cx", spentUsd: 12.5, capUsd: 40, state: "ok" }], agentIds: ["cx", "ops", "new"] }
 const ORG = {
@@ -210,15 +215,16 @@ describe("Wall Settings: the shell (#1428)", () => {
       ["Machines", ["Health", "Advanced"]],
     ])
     expect(html).toContain("3 agents, their pictures, models and on/off")
-    // Agents and Health are built: the rest say they open their classic page.
-    expect(html.match(/is-classic/g)).toHaveLength(11)
+    // Agents, Schedules, Webhooks and Health are built: the rest say they open their classic page.
+    expect(html.match(/is-classic/g)).toHaveLength(9)
     // No section in the link: on a phone the list is the screen.
     expect(html).toContain('<div class="wst">')
     await w.go("#page=settings&section=channels")
     expect(settingsHtml(w)).toContain('<div class="wst has-section">')
     expect(settingsHtml(w)).toContain('href="/admin#tab=channels"')
     await w.go("#page=settings&section=schedules")
-    expect(settingsHtml(w)).toContain('href="/admin#tab=crons"')
+    expect(settingsHtml(w)).not.toContain('href="/admin#tab=crons"')
+    expect(settingsHtml(w)).toContain("Add a schedule")
     await w.go("#page=settings&section=guests")
     expect(settingsHtml(w)).toContain('href="/guests"')
     await w.go("#page=settings&section=people")
@@ -643,6 +649,88 @@ describe("Wall Settings: Agents (#1428)", () => {
   })
 })
 
+describe("Wall Settings: Schedules (#1428 phase 2)", () => {
+  it("lists every schedule with when it runs and its agent", async () => {
+    const w = openWall({ hash: "#page=settings&section=schedules" })
+    await w.settle()
+    const html = settingsHtml(w)
+    expect(html).toContain("<b>digest</b> <code>0 9 * * *</code> <small>runs @cx</small>")
+    expect(html).toContain("<b>night</b>")
+    expect(w.writes()).toEqual([])
+  })
+
+  it("adds a schedule with the classic call and previews a preset's next runs", async () => {
+    const w = openWall({ hash: "#page=settings&section=schedules", route: (u) => (u.endsWith("/crons/preview") ? { status: 200, body: { human: "At 09:00 on Monday", timezone: "UTC", next: ["2026-11-02T09:00:00Z"] } } : undefined) })
+    await w.settle()
+    await w.click({ "data-st-act": "cron-preset", "data-cron": "0 9 * * 1" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/crons/preview", method: "POST", body: { schedule: "0 9 * * 1" } }])
+    expect(w.el("st-c-preview").innerHTML).toContain("At 09:00 on Monday")
+    w.el("st-c-id").value = "weekly"; w.el("st-c-agent").value = "ops"; w.el("st-c-prompt").value = "Send the numbers."
+    await w.submit({ "data-st-form": "cron" })
+    expect(w.writes()[1]).toEqual({ url: "/api/admin/wall/settings/crons", method: "POST", body: { id: "weekly", schedule: "0 9 * * 1", agent: "ops", prompt: "Send the numbers." } })
+  })
+
+  it("shows why a schedule was not added", async () => {
+    const w = openWall({ hash: "#page=settings&section=schedules", route: (u, i) => (u === "/api/admin/wall/settings/crons" && i.method === "POST" ? { status: 400, body: { error: "Invalid cron expression." } } : undefined) })
+    await w.settle()
+    await w.submit({ "data-st-form": "cron" })
+    expect(w.el("st-n-cron-add").textContent).toBe("Not added: Invalid cron expression.")
+  })
+
+  it("asks before deleting a schedule, then deletes it", async () => {
+    const w = openWall({ hash: "#page=settings&section=schedules" })
+    await w.settle()
+    await w.click({ "data-st-act": "ask", "data-key": "cron:night" })
+    expect(settingsHtml(w)).toContain("Delete the schedule <b>night</b>?")
+    expect(w.writes()).toEqual([])
+    await w.click({ "data-st-act": "confirm", "data-key": "cron:night" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/crons", method: "DELETE", body: { id: "night" } }])
+    expect(settingsHtml(w)).toContain("Deleted night.")
+  })
+})
+
+describe("Wall Settings: Webhooks (#1428 phase 2)", () => {
+  it("lists each webhook with its address, secret and state", async () => {
+    const w = openWall({ hash: "#page=settings&section=webhooks" })
+    await w.settle()
+    const html = settingsHtml(w)
+    expect(html).toContain("<code>http://node-a:18800/webhook/cx/github</code>")
+    expect(html).toContain("secret: <code>${GH_SECRET}</code>")
+    expect(html).toContain('<span class="wsj__pill is-ok">receiving</span>')
+    expect(html).toContain('<span class="wsj__pill is-warn">signing secret missing</span>')
+    expect(html).toContain("<code>issues.opened → triage</code>")
+  })
+
+  it("adds, turns off and deletes a webhook with the classic calls", async () => {
+    const w = openWall({ hash: "#page=settings&section=webhooks" })
+    await w.settle()
+    w.el("st-w-id").value = "ci"; w.el("st-w-source").value = "gitlab"; w.el("st-w-agent").value = "cx"; w.el("st-w-secret").value = "GL_SECRET"
+    await w.submit({ "data-st-form": "wh" })
+    await w.click({ "data-st-act": "wh-toggle", "data-id": "repo" })
+    await w.click({ "data-st-act": "ask", "data-key": "wh:pay" })
+    await w.click({ "data-st-act": "confirm", "data-key": "wh:pay" })
+    expect(w.writes()).toEqual([
+      { url: "/api/admin/wall/settings/webhooks", method: "POST", body: { id: "ci", source: "gitlab", agentId: "cx", secretEnv: "GL_SECRET", description: "" } },
+      { url: "/api/admin/wall/settings/webhooks", method: "PATCH", body: { id: "repo", patch: { enabled: false } } },
+      { url: "/api/admin/wall/settings/webhooks", method: "DELETE", body: { id: "pay" } },
+    ])
+  })
+
+  it("edits the routing: removes a trigger, saves the default, and says what is missing", async () => {
+    const w = openWall({ hash: "#page=settings&section=webhooks" })
+    await w.settle()
+    await w.click({ "data-st-act": "wh-trig-rm", "data-id": "repo", "data-event": "issues.opened" })
+    await w.submit({ "data-st-form": "wh-default", "data-id": "repo" })
+    expect(w.writes()).toEqual([
+      { url: "/api/admin/wall/settings/webhooks/triggers", method: "POST", body: { id: "repo", triggers: {} } },
+      { url: "/api/admin/wall/settings/webhooks/triggers", method: "POST", body: { id: "repo", defaultWorkflow: "" } },
+    ])
+    await w.submit({ "data-st-form": "wh-trig", "data-id": "repo" })
+    expect(w.el("st-n-wh").textContent).toBe("Write the event type and the workflow id.")
+    expect(w.writes()).toHaveLength(2)
+  })
+})
+
 describe("Every other Wall page sends no settings write (#1428)", () => {
   const SETTINGS_WRITES = ["/api/admin/wall/settings/", "/api/admin/agents", "/api/admin/org/hold", "/api/admin/wiki/curator", "/api/admin/files"]
   const PAGES = ["#status=open", "#status=waiting_owner", "#page=running", "#page=agents", "#page=live", "#page=creator",
@@ -714,6 +802,10 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     expect((await r.json()).error).not.toMatch(/unknown|not found/)
     // A classic admin route that Settings does not use is not reachable through the Wall's prefix.
     expect((await fetch(`${base}/api/admin/wall/settings/boards`, { method: "POST", headers: auth, body: "{}" })).status).toBe(404)
+    // Phase 2: Schedules and Webhooks reach their classic handlers.
+    for (const [method, path] of [["POST", "crons"], ["DELETE", "crons"], ["POST", "crons/preview"], ["POST", "webhooks"], ["PATCH", "webhooks"], ["DELETE", "webhooks"], ["POST", "webhooks/triggers"]]) {
+      expect((await fetch(`${base}/api/admin/wall/settings/${path}`, { method, headers: auth, body: "{}" })).status, `${method} ${path}`).not.toBe(404)
+    }
     expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PUT", headers: auth, body: "{}" })).status).toBe(404)
     // Handovers go to the classic agent page's handler: a release with no chat is its own 400.
     const ho = await fetch(`${base}/api/admin/wall/settings/agent/cx/handovers`, { method: "DELETE", headers: auth, body: "{}" })
