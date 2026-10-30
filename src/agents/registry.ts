@@ -16,6 +16,7 @@ import { executeTask, warmProcessChat, withCallerEnv, type AgentTask, type Agent
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests } from "./sessions"
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
+import { CAPTURE_RUNS_FILE, recordCaptureSkip, recordCaptureWrite } from "@/wiki/capture-runs"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
 import { TokenTracker, splitTaskUsageByTier } from "@/daemon/token-tracker"
@@ -3592,11 +3593,15 @@ export class AgentRegistry {
           content: `User: ${task.message}`,
           responseLength: response.content.length,
         })
+        // Every finished task leaves one line on why it was or was not
+        // captured, counted by `agentx wiki status` (#603).
+        const captureRuns = resolve(this.wikiHub.getBaseDir(), CAPTURE_RUNS_FILE)
+        if (!wikiCapture.capture) recordCaptureSkip(captureRuns, task.agentId, wikiCapture, (m) => this.log(m))
         if (wikiCapture.capture) {
           // The entry carries the classifier's path; by now the turn has
           // run for seconds to minutes, so this rarely waits at all.
           await awaitIntent(INTENT_WAIT_BEFORE_ENTRY_MS)
-          try {
+          recordCaptureWrite(captureRuns, task.agentId, () => {
             const entryId = `${task.agentId}-${Date.now().toString(36)}`
             this.wikiHub.getSharedStore().addEntry({
               id: entryId,
@@ -3627,9 +3632,7 @@ export class AgentRegistry {
               // scorer multiplies the graph weight (default 0.6) by 0.
               meta: buildEntryMeta(intent, task.context),
             })
-          } catch {
-            // Wiki export is best-effort
-          }
+          }, (m) => this.log(m))
 
           // Memory: extract and store memorable facts via Haiku (fire-and-forget)
           extractMemories(

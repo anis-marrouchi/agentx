@@ -1,8 +1,8 @@
 # Approvals — every decision waiting for you, in one place
 
-Some actions wait for your yes or no before an agent goes ahead: the six kinds below. Everything else an agent does without asking; [Keep it safe › What always waits for you](../jobs/keep-it-safe.md#what-always-waits-for-you) has the full list. It is one list of everything waiting for you, most urgent first: **Needs you** on the [Wall](./wall.md). You can answer there, from the terminal, or from the [phone app](./mobile-app.md). The phone app doesn't show this page: on the phone, the same list is under **Activity › Needs you** ([Fleet and Activity on your phone](./mobile-fleet.md)).
+Some actions wait for your yes or no before an agent goes ahead: the kinds below. Everything else an agent does without asking; [Keep it safe › What always waits for you](../jobs/keep-it-safe.md#what-always-waits-for-you) has the full list. It is one list of everything waiting for you, most urgent first: **Needs you** on the [Wall](./wall.md). You can answer there, from the terminal, or from the [phone app](./mobile-app.md). The phone app doesn't show this page: on the phone, the same list is under **Activity › Needs you** ([Fleet and Activity on your phone](./mobile-fleet.md)).
 
-The list brings together six kinds of item:
+The list brings together these kinds of item:
 
 | Kind | What it is | Yes does | No does |
 |---|---|---|---|
@@ -10,13 +10,23 @@ The list brings together six kinds of item:
 | **Schedule** | A schedule an agent asked to create or remove ([schedules from chat](../automations/schedules-from-chat.md)) | Turns it on, or removes it | Drops the request, or keeps the schedule |
 | **Memory fact** | Something an agent learned from an outside source ([review what agents learn](../jobs/agent-memory.md)) | Lets the agent use it | Keeps it out for good |
 | **Wiki lesson** | A lesson proposed for the shared wiki | Writes the article | Declines it |
+| **Wiki question** | Two values for the same fact that disagree, for example two different billing statuses for one account. The card offers both | Records the value you pick as confirmed by you | Dismisses the question; the wiki keeps its value |
 | **New agent** | An agent another agent created ([Org](./org.md)). It starts nothing until you answer | Lets it run | Removes it, and the schedules that came with it, from `agentx.json`; its folder is kept |
 | **WhatsApp reply** | A reply an agent drafted for a watched WhatsApp chat ([watch a WhatsApp chat](../jobs/watch-whatsapp.md)) | Sends it through [wacli](../reference/glossary.md) (the WhatsApp tool AgentX uses) | Drops the draft; nothing is sent |
 | **Email reply** | A reply an agent wrote to a customer's email ([answer customer email](../jobs/answer-email.md)). The text is in a box you can edit | Sends it, as you edited it, into the customer's thread | Drops the reply; nothing is sent |
 | **Post** | A LinkedIn or X post an agent drafted in your voice, with the past posts it followed ([draft posts in your voice](../jobs/content.md)) | Posts it through the agent's connector, or saves it as a file ready to paste when there is none | Drops the draft; nothing is published |
 | **Request** | Something you asked an agent for that failed, ran out of time, was cut off or went quiet ([keep track of what you asked for](../jobs/open-requests.md)) | Hands it back to the agent | Drops the request |
 
-Answering here is the same as answering with the older commands (`agentx schedule approve`, `agentx memory facts approve`, `agentx wiki proposals approve`). They keep working, and both ways stay in step.
+Answering here is the same as answering with the older commands (`agentx schedule approve`, `agentx memory facts approve`, `agentx wiki proposals approve`, `agentx wiki facts proposals approve`, `agentx wiki answer`). They keep working, and both ways stay in step.
+
+### Wiki claims and other wiki questions
+
+Some wiki items wait in the thousands on a busy computer, so they are not cards:
+
+- **Wiki claims:** facts an agent read in a session summary, waiting for someone to check them at their source. They show as one line under the list, for example **2,199 wiki claims wait for a check (96 new today)**. That line is not in the count, the daily digest or the pushes. To see and answer them:
+  1. **Terminal:** run `agentx wiki facts proposals list`.
+  2. **Terminal:** answer one with `agentx wiki facts proposals approve <id>` or `reject <id>`. `agentx approvals approve fact:<id>` works too.
+- **Missing articles and fields** (for example **No article yet for …**): a yes can't fill them in. They stay with `agentx wiki questions` and are answered with `agentx wiki answer <id> "<value>"`.
 
 ## What a decision card says
 
@@ -332,6 +342,7 @@ It shows titles only, never a card's question, a notice's message or a request's
 3. **Browser:** select **No**, then **Confirm**. The note says the agent will be told no, and the card leaves the list. On the **Answered** tab it is listed as **No**.
 4. **Browser:** within a minute, the **Activity** tab shows a short run for that agent on the `approvals` channel. That is the agent reading your answer.
 5. **Terminal:** `agentx approvals list` says `nothing waiting`.
+6. **Terminal:** if agents have proposed wiki claims, `agentx approvals list` ends with one line starting `Also:` that gives how many wait, and the count above it does not include them.
 
 For the popup (Mac):
 
@@ -380,6 +391,7 @@ For what is on your screen:
 ## If something is wrong
 
 - **Needs you shows nothing, but `agentx schedule list` shows a request:** the dashboard reads the folder it was started in. Start `agentx board serve` from the same folder as the daemon.
+- **A wiki claim or a missing-article question is not a card:** that is expected. See [Wiki claims and other wiki questions](#wiki-claims-and-other-wiki-questions).
 - **"Couldn't read …" above the list:** one of the sources couldn't be read, so the list may be incomplete. The message says which one; the other kinds still work.
 - **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it. On another device, [sign in](../jobs/reverse-proxy.md#sign-in-from-another-device) first.
 - **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.

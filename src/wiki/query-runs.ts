@@ -34,11 +34,16 @@ export function queryFailed(status: QueryStatus): boolean {
   return status === "error" || status === "no-catalog"
 }
 
+/** Append one JSON line; past `maxBytes` the file is cut to its newest half. Throws on a write error. */
+export function appendCappedLine(file: string, record: unknown, maxBytes: number): void {
+  appendFileSync(file, `${JSON.stringify(record)}\n`)
+  if (statSync(file).size > maxBytes) trimToNewest(file, Math.floor(maxBytes / 2))
+}
+
 /** Append one record. Never throws: logging must not fail a query. */
 export function recordQueryRun(file: string, record: QueryRunRecord, maxBytes = QUERY_RUNS_MAX_BYTES): void {
   try {
-    appendFileSync(file, `${JSON.stringify(record)}\n`)
-    if (statSync(file).size > maxBytes) trimToNewest(file, Math.floor(maxBytes / 2))
+    appendCappedLine(file, record, maxBytes)
   } catch {
     // best-effort
   }

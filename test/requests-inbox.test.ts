@@ -78,7 +78,7 @@ describe("requests in the Approvals inbox", () => {
   })
 
   it("reads no database for a folder this process does not run from", () => {
-    expect(listInbox({ root: tmp }, { kinds: ["request"] })).toEqual({ items: [], snoozed: 0, errors: [] })
+    expect(listInbox({ root: tmp }, { kinds: ["request"] })).toEqual({ items: [], snoozed: 0, errors: [], backlog: [] })
   })
 
   it("no drops the request, with the note as the reason", async () => {

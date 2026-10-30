@@ -16,7 +16,7 @@ import { parseDestination, readApprovalSettings, updateApprovalSettings, type Ap
 // `agentx wiki proposals approve` keep working and stay in step.
 
 export const approvals = new Command("approvals")
-  .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, WhatsApp and email replies, posts)")
+  .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, wiki facts and questions, WhatsApp and email replies, posts)")
 
 const KIND_LABEL: Record<InboxItem["kind"], string> = {
   card: "card",
@@ -24,6 +24,8 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   agent: "new agent",
   memory: "memory",
   wiki: "wiki",
+  fact: "wiki fact",
+  question: "wiki question",
   whatsapp: "whatsapp",
   email: "email",
   content: "post",
@@ -38,8 +40,17 @@ function when(iso: string): string {
   return iso ? iso.slice(0, 16).replace("T", " ") + " UTC" : "unknown"
 }
 
+/** How long an item has waited, e.g. "3 h" or "2 d". */
+function waitedFor(iso: string, now = Date.now()): string {
+  const ms = now - Date.parse(iso)
+  if (!Number.isFinite(ms) || ms < 0) return ""
+  const h = Math.floor(ms / 3_600_000)
+  return h < 1 ? `${Math.max(1, Math.round(ms / 60_000))} min` : h < 48 ? `${h} h` : `${Math.floor(h / 24)} d`
+}
+
 function printItem(item: InboxItem): void {
-  console.log(`  ${chalk.cyan(item.key)}  ${chalk.dim(`[${KIND_LABEL[item.kind]}] from ${item.raised_by}`)}${item.snoozed_until ? chalk.dim(` (later: until ${when(item.snoozed_until)})`) : ""}`)
+  const waited = waitedFor(item.created_at)
+  console.log(`  ${chalk.cyan(item.key)}  ${chalk.dim(`[${KIND_LABEL[item.kind]}] from ${item.raised_by}${waited ? `, waiting ${waited}` : ""}`)}${item.snoozed_until ? chalk.dim(` (later: until ${when(item.snoozed_until)})`) : ""}`)
   console.log(`    ${chalk.bold(item.title)}`)
   console.log(`    ${item.ask}`)
   if (item.recommend) console.log(`    ${chalk.green("Recommends:")} ${item.recommend}`)
@@ -60,13 +71,16 @@ approvals
     const listing = listInbox(ctx(), { includeSnoozed: opts.all })
     if (opts.json) { console.log(JSON.stringify(listing, null, 2)); return }
     for (const e of listing.errors) console.log(chalk.red(`  couldn't read ${e.kind}: ${e.error}`))
+    const backlog = () => { for (const b of listing.backlog) console.log(chalk.dim(`  Also: ${b.title}. See them with: ${b.more}`)) }
     if (listing.items.length === 0) {
       console.log(chalk.dim(`  nothing waiting${listing.snoozed ? ` (${listing.snoozed} put off; --all shows them)` : ""}`))
+      backlog()
       return
     }
     console.log()
     for (const item of listing.items) { printItem(item); console.log() }
     console.log(chalk.dim(`  ${listing.items.length} waiting${listing.snoozed ? `, ${listing.snoozed} put off (--all)` : ""}. Answer with: agentx approvals approve|reject|later <key>`))
+    backlog()
   })
 
 async function answer(key: string, action: InboxAction, opts: { force?: boolean; note?: string; hours?: string; choice?: string; text?: string }): Promise<void> {
