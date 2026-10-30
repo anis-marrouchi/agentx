@@ -6,6 +6,7 @@ import { summarize } from "@/requests/card-view"
 import { readRequestSettings } from "@/requests/settings"
 import { COMMENT_MAX, OPEN_STATES, TEXT_MAX } from "@/requests/store"
 import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
+import { HUB_NAME } from "./ui/hub-name"
 
 // --- What the owner does from a Wall post (#1316) ---
 //
@@ -243,14 +244,14 @@ export async function handleWallAction(method: string, path: string, body: Recor
     if (!id && agentId) {
       const agent = AGENT_RE.test(agentId) ? agentsOf(deps.inbox.configPath).find((a) => a.id === agentId) : null
       if (!agent) return { status: 404, body: { error: `"${agentId}" is not an agent on this computer` } }
-      return deps.daemon("POST", "/calls/owner", { agentId, reason: "The owner called from the Wall" })
+      return deps.daemon("POST", "/calls/owner", { agentId, reason: `The owner called from the ${HUB_NAME}` })
     }
     if (!id) return { status: 400, body: { error: "send { id } or { agent }" } }
     const store = requestStoreFor(deps.inbox)
     const r = store?.get(id)
     if (!store || !r || r.state === "candidate") return { status: 404, body: { error: `no post "${id}" on this computer` } }
     const about = (r.headline ?? summarize(r.text, 140)).replace(/\s+/g, " ").trim()
-    const reason = `Wall post ${id}: ${about}`.slice(0, REASON_MAX)
+    const reason = `${HUB_NAME} post ${id}: ${about}`.slice(0, REASON_MAX)
     return deps.daemon("POST", "/calls/owner", { agentId: r.agentId, reason })
   }
 
@@ -268,7 +269,7 @@ export async function handleWallAction(method: string, path: string, body: Recor
     if (!topic) return { status: 400, body: { error: "send { topic }: what the post is about" } }
     const id = str(body.id)
     const context = redactSecrets([
-      id ? `This talk is about Wall post ${id}.` : "",
+      id ? `This talk is about ${HUB_NAME} post ${id}.` : "",
       str(body.context).slice(0, CONTEXT_MAX),
     ].filter(Boolean).join("\n"))
     const r = await deps.daemon("POST", "/talk", { agents: [agent, other], topic, context, maxTurns: 10 })

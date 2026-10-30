@@ -161,7 +161,7 @@ On the phone:
 6. **Phone:** tap **Save place**.
    ![The Add a place form with a name and coordinates filled in](/screenshots/mobile-app/places-add.png)
 
-Places are added and changed in the phone app only. The dashboard's old Places page (`/places`) now opens the Wall.
+Places are added and changed in the phone app only. The dashboard's old Places page (`/places`) now opens the Hub.
 
 The Android app picks up a new place the next time it checks: within the hour by default (`app.places.syncMinutes`), or at once when you tap **Check for new places now** on its **Place reminders** screen or open the app.
 

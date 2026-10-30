@@ -1,6 +1,6 @@
 # Live — who's working now
 
-**Live** is a page of the [Wall](./wall.md), the dashboard's home. It shows what runs on every connected machine right now, the tasks you paused, and one card per machine where you restart it and connect your command-line sessions. Use it when you have just sent a task and want to see whether an agent picked it up.
+**Live** is a page of the [Hub](./hub.md), the dashboard's home. It shows what runs on every connected machine right now, the tasks you paused, and one card per machine where you restart it and connect your command-line sessions. Use it when you have just sent a task and want to see whether an agent picked it up.
 
 Live is a current view. For completed work and the route it took, use [Activity](./activity.md). For work that needs your attention, use [Monitor](./monitor.md).
 
@@ -12,7 +12,7 @@ The old address, `/live`, opens this page.
 
 ## Open Live
 
-1. **Browser:** open the dashboard. The Wall opens.
+1. **Browser:** open the dashboard. The Hub opens.
 2. **Browser:** in the nav on the left, select **Live**. On a phone, it is under **More**. The number next to it counts what runs now.
 
 While the page is open, it updates every two seconds.
@@ -30,7 +30,7 @@ Under **Running now**, each card is one run. **Session** is a task from a chat, 
 
 ![A running task's page with the Pause button at the top](/screenshots/wall/task-pause.png)
 
-More on the Task page: [Watch and steer a run](./wall.md#watch-and-steer-a-run).
+More on the Task page: [Watch and steer a run](./hub.md#watch-and-steer-a-run).
 
 ## Resume a paused task
 
@@ -103,7 +103,7 @@ If a machine is slow to answer, Live keeps its last known data for up to five mi
 
 ## Check it worked
 
-1. **Browser:** open `/live` on your dashboard. Wall Live opens, with every machine under **Machines**.
+1. **Browser:** open `/live` on your dashboard. Hub Live opens, with every machine under **Machines**.
 2. Send an agent a small task from a channel or [in-page chat](./chat.md). Within a few seconds, its card shows under **Running now**.
 3. Select the card, then **Pause** and **Pause it?**. Within the time limit, the task is under **Paused** with **Resume plan, by** *agent*.
 4. Select **Resume**. The task shows under **Running now** again, and its answer reaches the original chat.
@@ -115,7 +115,7 @@ If a machine is slow to answer, Live keeps its last known data for up to five mi
 - **No machine appears:** the daemon (the AgentX background service) isn't running or the dashboard can't reach it. See [It's not answering](../help/its-not-answering.md).
 - **The agent never shows under Running now:** the message didn't reach AgentX. Check that the channel is connected in [Settings](./settings.md).
 - **A machine is missing:** its daemon or the connection to it is down. See [Add a second machine](../jobs/second-machine.md).
-- **"Not done: Only the owner writes on the Wall…":** the page was opened without your dashboard key. Open the dashboard from the same machine, or sign in again. Only you can resume, drop, pause or restart.
+- **"Not done: Only the owner writes on the Hub…":** the page was opened without your dashboard key. Open the dashboard from the same machine, or sign in again. Only you can resume, drop, pause or restart.
 - **A machine says it cannot restart from here:** it runs an AgentX from before this feature. Update it, or use `agentx daemon restart --when-idle` in a terminal on it.
 - **"Not done: … would not start AgentX again":** nothing would start AgentX after it exits. See [Restart from the dashboard](../jobs/restart-safely.md#restart-from-the-dashboard).
 - **Resume is missing on a paused task:** the agent is still writing its plan (**Pausing…**), or the task's chat can no longer be reached. Wait a few seconds; if it stays, drop the task and send it again.

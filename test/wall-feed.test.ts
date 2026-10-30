@@ -268,7 +268,7 @@ describe("Wall v2 pages (#1316)", () => {
     expect(w.loc.hash).not.toContain("post=")
     expect(w.el("wall-post").hidden).toBe(true)
     expect(w.el("wall-feed").hidden).toBe(false)
-    expect(w.el("wall-title").textContent).toBe("Wall")
+    expect(w.el("wall-title").textContent).toBe("Hub")
   })
 
   it("opens a post from a shared link, and from the list", async () => {
@@ -397,7 +397,7 @@ describe("Running now does not wait on the feed (#1252)", () => {
   it("still draws Running now when the feed fails", async () => {
     const w = openWall({ feed: Promise.resolve({ ok: false, status: 504, json: async () => ({}) }) })
     await w.settle()
-    expect(w.el("wall-feed").innerHTML).toContain("Could not load the Wall")
+    expect(w.el("wall-feed").innerHTML).toContain("Could not load the Hub")
     expect(w.el("wall-nodes").innerHTML).toContain("Customer Desk: x")
   })
 })
@@ -1230,7 +1230,7 @@ describe("Wall v2 live sessions, comments and calls (#1355)", () => {
     await w.settle()
     const posts = w.calls.filter((c) => c.url === "/api/admin/wall/post")
     expect(posts.map((c) => JSON.parse(c.init.body).agent)).toEqual(["reviewer", "far"])
-    expect(JSON.parse(posts[0].init.body).text).toMatch(/^The owner mentioned you in a comment on Wall post r1 by @cx/)
+    expect(JSON.parse(posts[0].init.body).text).toMatch(/^The owner mentioned you in a comment on Hub post r1 by @cx/)
     expect(posts[0].init.headers["X-Agentx-Peer"]).toBeUndefined()
     expect(posts[1].init.headers["X-Agentx-Peer"]).toBe("http://node-b")
     expect(w.el("wdo-note").textContent).toMatch(/Also posted to @reviewer, @far\./)
@@ -1617,7 +1617,7 @@ describe("The Cost page on the Wall (#1423)", () => {
   it("says so when the cost read fails, and the rest of the Wall still works", async () => {
     const w = openWall({ hash: "#status=open&view=cost", cost: "fail" })
     await w.settle()
-    expect(w.el("wall-cost").innerHTML).toContain("Could not read the cost: node-a answered with an error. The rest of the Wall still works.")
+    expect(w.el("wall-cost").innerHTML).toContain("Could not read the cost: node-a answered with an error. The rest of the Hub still works.")
     w.click({ "data-view": "feed" })
     await w.settle()
     expect(w.el("wall-cost").hidden).toBe(true)
@@ -1996,7 +1996,7 @@ describe("The Org page on the Wall (#1419)", () => {
   it("says so when the org cannot be read, and the rest of the Wall still works", async () => {
     const w = openWall({ org: "fail", hash: "#page=org" })
     await w.settle()
-    expect(w.el("wall-org").innerHTML).toContain("Could not load the org chart: HTTP 500. The rest of the Wall still works.")
+    expect(w.el("wall-org").innerHTML).toContain("Could not load the org chart: HTTP 500. The rest of the Hub still works.")
     expect(w.el("nav-n-org").textContent).toBe("")
     w.click({ "data-view": "feed" })
     await w.settle()
@@ -2342,7 +2342,7 @@ describe("The People page on the Wall (#1441)", () => {
     expect(html).toContain("Owner of this machine")
     expect(html).toMatch(/Sara B[\s\S]*Member[\s\S]*gitlab:sara\.b[\s\S]*Customer Desk/)
     expect(html).toContain("<b>1</b> waiting for approval")
-    expect(html).toContain('<a href="#status=open&asker=sara"><b>1</b> open request on the Wall</a>')
+    expect(html).toContain('<a href="#status=open&asker=sara"><b>1</b> open request on the Hub</a>')
     expect(html).not.toContain("Nobody has paired")
   })
 

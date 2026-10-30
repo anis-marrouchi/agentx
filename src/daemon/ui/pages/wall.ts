@@ -44,6 +44,7 @@ import { WALL_TASK_CSS } from "./wall-task.client"
 import { WALL_SETTINGS_CSS } from "./wall-settings.client"
 import { WALL_ACTIVITY_CSS } from "./wall-activity.client"
 import { WALL_BUILD_CSS } from "./wall-build.client"
+import { HUB_NAME, HUB_PATH } from "../hub-name"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -72,7 +73,7 @@ export const WALL_STATUS_TABS: Array<[string, string]> = [
 export const WALL_DASHBOARD_HREF = "/mesh"
 
 /** Wall Live, where /live redirects (#1439). */
-export const WALL_LIVE_HREF = "/wall#page=live"
+export const WALL_LIVE_HREF = `${HUB_PATH}#page=live`
 
 const NAV_ICON = {
   wall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>',
@@ -107,7 +108,7 @@ interface NavItem { key: string; label: string; href: string; icon: NavIcon; cou
  */
 export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "", items: [
-    { key: "wall", label: "Wall", href: "#status=open&amp;view=feed", icon: "wall", count: "nav-n-wall" },
+    { key: "wall", label: HUB_NAME, href: "#status=open&amp;view=feed", icon: "wall", count: "nav-n-wall" },
     { key: "needs", label: "Needs you", href: "#status=open&amp;view=decide", icon: "needs", count: "nav-n-needs" },
   ] },
   { label: "Work", items: [
@@ -184,20 +185,20 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   // Take B's three columns (#1242): a nav on the left, the feed in the
   // middle, Running now, Agents and the dashboard links on the right.
   const body = `<div class="ax-wall">
-  <nav class="ax-wall__nav" aria-label="Wall">
-    <a class="ax-wall__logo" href="/wall">AX<small>wall</small></a>
+  <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
+    <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
 ${navItems}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
     <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
     <div class="ax-wall__navfoot">
-      <span>The Wall shows the work. It sends something only when you post, comment, call, start a Space or answer.</span>
+      <span>The ${HUB_NAME} shows the work. It sends something only when you post, comment, call, start a Space or answer.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button" data-wall-theme>Light / dark</button>
     </div>
   </nav>
   ${moreSheetHtml(groups, owner)}
   <div class="ax-wall__main">
     <header class="ax-wall__head">
-      <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">Wall</h1>
+      <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">${HUB_NAME}</h1>
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
         <span class="ax-wall__switch" id="wall-act-switch" aria-label="Show as" hidden><button type="button" class="is-on" aria-pressed="true">Feed</button><a href="/activity" title="The classic lane view, and the Map">Timeline</a></span>
         <a class="ax-btn ax-btn--ghost wwf__new" id="wall-wf-new" href="#page=editor&amp;e-new=1" hidden>New workflow</a>
@@ -280,7 +281,7 @@ ${navItems}
     </section>
     <section class="ax-wall__box ax-wall__about" aria-labelledby="wall-about-h">
       <h2 id="wall-about-h">Quiet by design</h2>
-      <p>The Wall is something you open, not something that pings you. It never pings you on its own.</p>
+      <p>The ${HUB_NAME} is something you open, not something that pings you. It never pings you on its own.</p>
       <details class="ax-wall__classicd"><summary>Dashboard pages</summary><nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav></details>
     </section>
   </aside>
@@ -288,7 +289,7 @@ ${navItems}
 </div>`
 
   return renderWallDocument({
-    title: "AgentX · Wall",
+    title: `AgentX · ${HUB_NAME}`,
     body,
     css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS,
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,

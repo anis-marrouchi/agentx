@@ -1,16 +1,16 @@
 # Org: who reports to whom, and what each agent is doing
 
-Your org chart lists who reports to whom: you and other people, and your agents. The [Wall](./wall.md)'s **Org** page draws it from the top down, with what each agent is doing now. Select **Org** in the Wall's nav to open it; [See the org chart](./wall.md#see-the-org-chart) explains each part.
+Your org chart lists who reports to whom: you and other people, and your agents. The [Hub](./hub.md)'s **Org** page draws it from the top down, with what each agent is doing now. Select **Org** in the Hub's nav to open it; [See the org chart](./hub.md#see-the-org-chart) explains each part.
 
-![The Wall's Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager](/screenshots/wall/org.png)
+![The Hub's Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager](/screenshots/wall/org.png)
 
-Changing the chart, pausing an agent, and approving an agent that another agent created are done on the classic **Org** page at `/org`. The Wall only shows the chart. Open `/org` from the Wall's **Open the org chart** link, or under **Dashboard pages**. When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
+Changing the chart, pausing an agent, and approving an agent that another agent created are done on the classic **Org** page at `/org`. The Hub only shows the chart. Open `/org` from the Hub's **Open the org chart** link, or under **Dashboard pages**. When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
 
 ## Edit the org chart
 
 On `/org`, you, the owner, decide who is in the chart, the role each one holds, and who reports to whom, people included. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Anyone else sees the chart only: there is no **Edit org** button for them, and the dashboard refuses their changes.
 
-1. **Browser:** open `/org`, or select **Open the org chart** on the Wall's **Agents** or **Org** page.
+1. **Browser:** open `/org`, or select **Open the org chart** on the Hub's **Agents** or **Org** page.
 2. Select **Edit org** above the chart. The edit panel opens. To open `/org` with the panel already open, go to `/org#edit`.
 3. To add someone, under **Add a member**, pick an agent or a person from the list. People come from the [People](./people.md) page.
 4. Type a role, for example `Engineer`, or pick one from the suggestions. A role you type for the first time is created. Agents need a role; for people it is optional.
@@ -80,7 +80,7 @@ The `--reports-to` of `agentx business orgchart add` is a `reports-to` relation,
 
 4. **Terminal:** list every relation with `agentx business relation list`, and remove one with `agentx business relation remove <from> <type> <to>`.
 5. **Terminal:** run `agentx daemon restart` if the business layer is on, so it reads the new chart.
-6. **Browser:** on the Wall, select **Org**, then **Refresh**. A person sits in the chart with the agents that report to them under them. A **dotted-line** shows as **dotted line to** *name* on the card, and as a dashed arrow with **Show dotted lines**. An **acts-for** shows as **acts for** *name* on the agent's card.
+6. **Browser:** on the Hub, select **Org**, then **Refresh**. A person sits in the chart with the agents that report to them under them. A **dotted-line** shows as **dotted line to** *name* on the card, and as a dashed arrow with **Show dotted lines**. An **acts-for** shows as **acts for** *name* on the agent's card.
 7. **Browser:** on the classic page at `/org`, a person's card says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
 
    ![The Org tab with a person at the top; the assistant under them acts for them, and an engineer further down has a dotted line to a second person](/screenshots/org/people.png)
@@ -122,14 +122,14 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 
 ## Check it worked
 
-1. **Browser:** on the Wall, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On the classic page at `/org`, each agent is a card under its boss.
+1. **Browser:** on the Hub, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On the classic page at `/org`, each agent is a card under its boss.
 2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
 3. Click **Resume**. The card says **Idle** again.
 4. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
 
 ## If something is wrong
 
-- **The Wall's Org page says "Something in the org chart does not hold":** a link names someone who is not in `people` or `business.orgChart`, a member has two bosses, or the bosses loop. The message names the member. Fix it in `agentx.json`.
+- **The Hub's Org page says "Something in the org chart does not hold":** a link names someone who is not in `people` or `business.orgChart`, a member has two bosses, or the bosses loop. The message names the member. Fix it in `agentx.json`.
 - **Every agent is under "Not in the org chart":** `business.orgChart` is empty. Run `agentx business orgchart add` for each agent (see above).
 - **An agent sits at the top although it has a boss:** its boss is not an agent or person here, or the two report to each other. Check with `agentx business relation list`.
 - **A yellow box above the chart says "Problem in the org relations":** a relation names someone who is not in `people` or `business.orgChart`, or breaks a rule. `agentx business relation list` shows the same problem; fix it with `remove`. With the business layer on, the daemon starts without it until it is fixed, and its log says `[business] initialization failed:` with the same problem.

@@ -31,6 +31,7 @@
 import { WALL_SETTINGS_AGENT_CSS, WALL_SETTINGS_AGENT_SCRIPT } from "./wall-settings-agent.client"
 import { WALL_SETTINGS_JOBS_CSS, WALL_SETTINGS_JOBS_SCRIPT } from "./wall-settings-jobs.client"
 import { WALL_SETTINGS_CHANNELS_CSS, WALL_SETTINGS_CHANNELS_SCRIPT } from "./wall-settings-channels.client"
+import { HUB_NAME } from "../hub-name"
 
 export const WALL_SETTINGS_SCRIPT = String.raw`
   // --- Settings (#1428) ---
@@ -145,8 +146,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       // Not the owner (#1451 frame 2): say so instead of the sections.
       if (box.innerHTML) return;
       box.innerHTML = '<div class="wst-owner"><h2>Settings are for the owner</h2>' +
-        '<p>Only the owner of this dashboard sees and changes settings. Open the Wall on the machine that serves it, or <a href="/login">sign in</a> with the dashboard token.</p>' +
-        '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=feed">Back to the Wall</a></div>';
+        '<p>Only the owner of this dashboard sees and changes settings. Open the ${HUB_NAME} on the machine that serves it, or <a href="/login">sign in</a> with the dashboard token.</p>' +
+        '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=feed">Back to the ${HUB_NAME}</a></div>';
       return;
     }
     var key = S.st.section + '|' + S.st.agent + '|' + S.st.tab;
@@ -213,7 +214,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
         return '<h3 class="wst__grp">' + esc(g[0]) + '</h3>' + g[1].map(function (s) {
           var on = s[0] === sec, sub = s[0] === 'agents' ? n + (n === 1 ? ' agent' : ' agents') + ', their pictures, models and on/off' : s[3];
           return '<a href="' + esc(stHref(s[0])) + '" class="wst__sec' + (on ? ' is-on' : '') + (s[2] ? ' is-classic' : '') + '"' + (on ? ' aria-current="page"' : '') +
-            (s[2] ? ' title="Not on the Wall yet: opens its classic page"' : '') + '>' +
+            (s[2] ? ' title="Not on the ${HUB_NAME} yet: opens its classic page"' : '') + '>' +
             '<span>' + esc(s[1]) + '<small class="wst__sub">' + esc(sub) + '</small></span>' + stCountHtml(s[0], att) + '</a>';
         }).join('');
       }).join('') + '</nav>';
@@ -233,7 +234,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (s[2]) {
       var wall = s[2].charAt(0) === '#';
       return '<header class="wst__h"><h2>' + esc(s[1]) + '</h2></header>' +
-        '<p class="wst__todo">' + (wall ? esc(s[1]) + ' has its own page on the Wall.' : esc(s[1]) + ' is not on the Wall yet: it comes in a later step of #1428. Until then, change it on its classic page.') + '</p>' +
+        '<p class="wst__todo">' + (wall ? esc(s[1]) + ' has its own page on the ${HUB_NAME}.' : esc(s[1]) + ' is not on the ${HUB_NAME} yet: it comes in a later step of #1428. Until then, change it on its classic page.') + '</p>' +
         '<a class="ax-btn" href="' + esc(s[2]) + '">' + (wall ? 'Open ' + esc(s[1]) : 'Open ' + esc(s[1]) + ' on the classic page') + '</a>';
     }
     if (sec === 'channels') return stChannelsHtml();

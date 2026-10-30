@@ -70,6 +70,7 @@ import { layoutOrg } from "@/business/org-layout"
 import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
+import { HUB_NAME } from "../hub-name"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -695,7 +696,7 @@ ${WALL_BUILD_SCRIPT}
   }
   function agentsHtml() {
     var list = agentStats(), sel = $('f-owner').value;
-    if (!list.length) return '<p class="ax-wall__empty">No agent has a post on the Wall.</p>';
+    if (!list.length) return '<p class="ax-wall__empty">No agent has a post on the ${HUB_NAME}.</p>';
     var shown = S.allAgents ? list : list.slice(0, 6);
     return shown.map(function (a) {
       return '<button type="button" class="wa' + (a.id === sel ? ' is-on' : '') + '" data-agent="' + esc(a.id) + '">' + avatar(a.id, 'side') +
@@ -804,7 +805,7 @@ ${WALL_BUILD_SCRIPT}
     var p = findPost(S.post);
     if (p) return postHtml(p, true);
     if (!S.data) return '<p class="ax-wall__empty">Loading…</p>';
-    return '<p class="ax-wall__empty">This post is not on the Wall: it may be older than seven days, or its node did not answer. <button type="button" class="wa-more" data-back>Back to the feed</button></p>';
+    return '<p class="ax-wall__empty">This post is not on the ${HUB_NAME}: it may be older than seven days, or its node did not answer. <button type="button" class="wa-more" data-back>Back to the feed</button></p>';
   }
 
   // --- What the owner does from an open post (#1316) ---
@@ -1039,7 +1040,7 @@ ${WALL_BUILD_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || 'Wall';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1430,7 +1431,7 @@ ${WALL_BUILD_SCRIPT}
     try {
       await loadWall();
     } catch (e) {
-      $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the Wall: ' + esc(e.message) + '. The classic pages above still work.</p>';
+      $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the ${HUB_NAME}: ' + esc(e.message) + '. The classic pages above still work.</p>';
     }
     loadRest();
   }

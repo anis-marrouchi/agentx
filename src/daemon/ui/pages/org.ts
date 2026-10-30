@@ -20,6 +20,7 @@
 
 import { pageHead, renderShell, type TopbarPeer } from ".."
 import { injectFns } from "../inject"
+import { HUB_PATH } from "../hub-name"
 import { orgConfirmFor, orgEditHtml } from "./org-setup"
 
 export interface OrgPageOpts {
@@ -206,7 +207,7 @@ const ORG_SCRIPT = `
     var state = n.status === 'working' && n.active > 1 ? 'Working on ' + n.active : STATE[n.status] || n.status;
     if (n.status === 'paused' && n.heldBy) state += ' by ' + n.heldBy;
     if (n.status === 'waiting' && n.heldBy) state += ' (created by ' + n.heldBy + ')';
-    var acts = '<a href="/wall#page=activity&a-agent=' + id + '&a-period=30d">Activity</a><a href="/admin/agents/' + id + '">Agent page</a>';
+    var acts = '<a href="${HUB_PATH}#page=activity&a-agent=' + id + '&a-period=30d">Activity</a><a href="/admin/agents/' + id + '">Agent page</a>';
     if (n.status === 'waiting') acts += '<a href="/approvals">Decide in Approvals</a>';
     else if (n.status === 'paused') acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="0">Resume</button>';
     else acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="1">Pause</button>';

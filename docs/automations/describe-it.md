@@ -17,7 +17,7 @@ You also need at least one agent with a working model connection. It drafts the 
 ## Describe the automation
 
 1. **Browser:** open the dashboard and select the **Workflows** tab.
-2. Open the editor: on the Wall's **Workflows** page, select **New workflow** next to the page's title, or open a workflow and select **Open in the editor**. On the classic page, select **+** (Build a new workflow) or **Edit on canvas**.
+2. Open the editor: on the Hub's **Workflows** page, select **New workflow** next to the page's title, or open a workflow and select **Open in the editor**. On the classic page, select **+** (Build a new workflow) or **Edit on canvas**.
 3. Select **Ask AI to build…** at the bottom right.
 4. Describe what should happen: when, from where, and where the result goes. For example: "Every Monday, summarize last week's GitLab issues and send the summary to Telegram."
 5. Press Enter and wait for the reply.

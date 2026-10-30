@@ -228,7 +228,7 @@ describe("project budgets", () => {
     expect(capped[0].message).toContain("Project Shop")
     const gate = preflightBudgetGate("dev", OCT, "Shop")
     expect(gate).toMatchObject({ reason: "project_budget" })
-    expect(gate!.message).toContain("the Wall's Cost page")
+    expect(gate!.message).toContain("the Hub's Cost page")
     // The same agent on another project, or none, still runs.
     expect(preflightBudgetGate("dev", OCT, "Docs")).toBeNull()
     expect(preflightBudgetGate("dev", OCT)).toBeNull()

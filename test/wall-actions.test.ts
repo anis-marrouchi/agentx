@@ -88,7 +88,7 @@ describe("post (#1355)", () => {
     expect(rec).toMatchObject({ state: "in_progress", channel: "wall", chatId: "owner", agentId: "coder", text: "Check the deploy log", owedTo: "owner" })
     const [picked] = store.takePickups()
     expect(picked.id).toBe(rec.id)
-    expect(pickupText(picked)).toMatch(/gave you this task on the Wall/)
+    expect(pickupText(picked)).toMatch(/gave you this task on the Hub/)
     expect(pickupText(picked)).toMatch(/answer to this turn/)
   })
 
@@ -106,12 +106,12 @@ describe("call", () => {
   it("asks the daemon to have the post's agent call the owner", async () => {
     const r = await post("/call", { id: "r1" })
     expect(r!.status).toBe(201)
-    expect(calls).toEqual([{ method: "POST", path: "/calls/owner", body: { agentId: "coder", reason: expect.stringMatching(/^Wall post r1: /) } }])
+    expect(calls).toEqual([{ method: "POST", path: "/calls/owner", body: { agentId: "coder", reason: expect.stringMatching(/^Hub post r1: /) } }])
   })
 
   it("has an agent of this computer call the owner from its agent page (#1355)", async () => {
     expect((await post("/call", { agent: "coder" }))!.status).toBe(201)
-    expect(calls).toEqual([{ method: "POST", path: "/calls/owner", body: { agentId: "coder", reason: "The owner called from the Wall" } }])
+    expect(calls).toEqual([{ method: "POST", path: "/calls/owner", body: { agentId: "coder", reason: "The owner called from the Hub" } }])
     expect((await post("/call", { agent: "ghost" }))!.status).toBe(404)
     expect((await post("/call", {}))!.status).toBe(400)
   })
@@ -121,7 +121,7 @@ describe("space", () => {
   it("starts talk mode about the post, with what agents say redacted", async () => {
     const r = await post("/space", { id: "r1", agent: "coder", with: "pm", topic: "The login page" })
     expect(calls[0]).toMatchObject({ path: "/talk", body: { agents: ["coder", "pm"], topic: "The login page" } })
-    expect((calls[0].body as any).context).toContain("Wall post r1")
+    expect((calls[0].body as any).context).toContain("Hub post r1")
     expect(JSON.stringify(r!.body)).not.toContain("supersecretvalue123")
   })
 

@@ -373,4 +373,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded seven workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Wall posts (one with a decision card), a webhook, a board, an action, two places, two handovers, and two real scripted task runs.")
+console.log("Seeded seven workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, three Hub posts (one with a decision card), a webhook, a board, an action, two places, two handovers, and two real scripted task runs.")

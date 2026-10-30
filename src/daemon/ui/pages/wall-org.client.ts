@@ -17,6 +17,8 @@
 // Read-only (#1180 rule 4): the Wall has no org forms and no org writes.
 // "Open the org chart" goes to /org, where the owner edits the chart (#1420).
 
+import { HUB_NAME } from "../hub-name"
+
 export const WALL_ORG_SCRIPT = String.raw`
   var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '' };
   var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
@@ -101,7 +103,7 @@ export const WALL_ORG_SCRIPT = String.raw`
   }
   function orgPageHtml() {
     if (!S.org) return '<p class="ax-wall__empty">Loading…</p>';
-    if (S.org.error) return '<p class="ax-wall__empty">Could not load the org chart: ' + esc(S.org.error) + '. The rest of the Wall still works.</p>';
+    if (S.org.error) return '<p class="ax-wall__empty">Could not load the org chart: ' + esc(S.org.error) + '. The rest of the ${HUB_NAME} still works.</p>';
     if (S.org.exists === false) return '<p class="ax-wall__empty">This machine has no agentx.json, so there is no org chart.</p>';
     var d = orgDiagram();
     if (!d || !d.boxes.length) return '<div class="wog__none"><h2>No org chart yet</h2><p>Give each agent a role and a boss, and the chart appears here.</p>' +

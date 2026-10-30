@@ -20,8 +20,10 @@
 // self-contained. The only write, a budget, goes through POST
 // /api/admin/wall/budget behind the Wall's owner-only guard (wall-cost.client.ts).
 
+import { HUB_PATH } from "../hub-name"
+
 /** Where the Cost page lives; /admin/cost and /cost send here. */
-export const WALL_COST_HREF = "/wall#status=open&view=cost"
+export const WALL_COST_HREF = `${HUB_PATH}#status=open&view=cost`
 
 /** The range tabs, in days; 0 is every day kept ("All"), as /admin/cost had. */
 export const COST_RANGES = [7, 14, 30, 90, 0] as const

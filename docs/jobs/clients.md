@@ -103,7 +103,7 @@ A client's machines are managed like a teammate's: in the dashboard's [People](.
 ## Check it worked
 
 1. **Terminal:** run `agentx people list`. The client's line ends with `· client`.
-2. **Terminal:** run `agentx people devices`. The client's machine is listed as `active`. The **People** page of the Wall shows it as **Active**, under a row with the role **Client**.
+2. **Terminal:** run `agentx people devices`. The client's machine is listed as `active`. The **People** page of the Hub shows it as **Active**, under a row with the role **Client**.
 3. **Their browser:** **Your project** shows a request they made on their channel, with the right state, and the title bar reads **Your project**, not **My work**.
 4. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers.
 

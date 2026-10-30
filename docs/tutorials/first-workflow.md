@@ -31,7 +31,7 @@ You need a source checkout of AgentX that has been built with `pnpm build` (see 
 
    ![The Workflows list in the demo](/screenshots/workflows-list.png)
 
-5. Select **Edit on canvas**. The workflow editor opens on the Wall.
+5. Select **Edit on canvas**. The workflow editor opens on the Hub.
 
 ## 2. Follow the visual walkthrough
 

@@ -17,6 +17,8 @@
 // on the machine picked, which the dashboard lets only its owner do (the
 // Wall's owner-only guard); a refusal is shown as such.
 
+import { HUB_NAME } from "../hub-name"
+
 export const WALL_COST_SCRIPT = String.raw`
   var C = { range: 30, key: '', loading: '', data: null, error: '', failed: [], peerBudgets: {}, form: {}, filter: 'all', details: false };
   /** A failed read in plain words, for the "Not read" line. */
@@ -95,7 +97,7 @@ export const WALL_COST_SCRIPT = String.raw`
     var a = document.activeElement;
     if (a && a.id && /^cb-/.test(a.id)) return;
     var budgetsHtml = costBudgetsHtml(costBudgetMachines(), C.form);
-    $('wall-cost').innerHTML = C.error ? '<p class="ax-wall__empty" role="alert">Could not read the cost: ' + esc(C.error) + '. The rest of the Wall still works. Select Refresh to try again.</p>' +
+    $('wall-cost').innerHTML = C.error ? '<p class="ax-wall__empty" role="alert">Could not read the cost: ' + esc(C.error) + '. The rest of the ${HUB_NAME} still works. Select Refresh to try again.</p>' +
         '<section class="wc__budgets" aria-label="Monthly budgets">' + budgetsHtml + '</section>'
       : !C.data ? '<p class="ax-wall__empty">Loading…</p>'
       : costPageHtml(costPageModel(C.data, all, C.range), costNames(), function (id) { return avatar(id, 'sm'); },

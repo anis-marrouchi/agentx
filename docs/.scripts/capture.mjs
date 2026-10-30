@@ -28,59 +28,59 @@ const askSteps = [
 ]
 const shots = [
   // The Wall (#1180): the home page, a post's thread, the list, and a phone.
-  { name: "wall/wall", path: "/wall", wait: ".wp" },
-  { name: "wall/thread", path: "/wall", wait: ".wp", steps: [{ click: "#post-req-docs-wall-handoff [data-thread]" }, { wait: "#post-req-docs-wall-handoff .wt li" }], clipTo: "#post-req-docs-wall-handoff" },
+  { name: "wall/wall", path: "/hub", wait: ".wp" },
+  { name: "wall/thread", path: "/hub", wait: ".wp", steps: [{ click: "#post-req-docs-wall-handoff [data-thread]" }, { wait: "#post-req-docs-wall-handoff .wt li" }], clipTo: "#post-req-docs-wall-handoff" },
   // #1242: a post leads with its result; one tap opens the request under it.
-  { name: "wall/result-first", path: "/wall#status=", wait: "#post-req-docs-wall-done .wp__result", clipTo: "#post-req-docs-wall-done" },
-  { name: "wall/result-request", path: "/wall#status=", wait: "#post-req-docs-wall-done .wp__ask", steps: [{ click: "#post-req-docs-wall-done .wp__ask summary" }, { wait: "#post-req-docs-wall-done .wp__ask[open]" }], clipTo: "#post-req-docs-wall-done" },
-  { name: "wall/list", path: "/wall#status=&grp=owner&view=list", wait: ".wl__g" },
+  { name: "wall/result-first", path: "/hub#status=", wait: "#post-req-docs-wall-done .wp__result", clipTo: "#post-req-docs-wall-done" },
+  { name: "wall/result-request", path: "/hub#status=", wait: "#post-req-docs-wall-done .wp__ask", steps: [{ click: "#post-req-docs-wall-done .wp__ask summary" }, { wait: "#post-req-docs-wall-done .wp__ask[open]" }], clipTo: "#post-req-docs-wall-done" },
+  { name: "wall/list", path: "/hub#status=&grp=owner&view=list", wait: ".wl__g" },
   // #1316: a post on its own with its thread, and the nav's own pages.
-  { name: "wall/post", path: "/wall#status=&post=req-docs-wall-done", wait: "#open-req-docs-wall-done .wt li" },
-  { name: "wall/task", path: "/wall#status=&post=req-docs-plan", wait: "#open-req-docs-plan .wtk__plan", clipTo: "#open-req-docs-plan" },
-  { name: "wall/agents", path: "/wall#page=agents", wait: ".wag" },
-  { name: "wall/running", path: "/wall#page=running", wait: "#wall-running .wn" },
+  { name: "wall/post", path: "/hub#status=&post=req-docs-wall-done", wait: "#open-req-docs-wall-done .wt li" },
+  { name: "wall/task", path: "/hub#status=&post=req-docs-plan", wait: "#open-req-docs-plan .wtk__plan", clipTo: "#open-req-docs-plan" },
+  { name: "wall/agents", path: "/hub#page=agents", wait: ".wag" },
+  { name: "wall/running", path: "/hub#page=running", wait: "#wall-running .wn" },
   // #1355: the feed keeps posts compact; these flags show on the opened post.
-  { name: "wall/concurrent", path: "/wall#status=&post=req-docs-wall-question", wait: "#open-req-docs-wall-question .ax-conc", clipTo: "#open-req-docs-wall-question" },
+  { name: "wall/concurrent", path: "/hub#status=&post=req-docs-wall-question", wait: "#open-req-docs-wall-question .ax-conc", clipTo: "#open-req-docs-wall-question" },
   // A pending decision card on its post (#1185), under "Waiting on the owner".
-  { name: "wall/owner-card", path: "/wall#status=waiting_owner&post=req-docs-wall-question", wait: "#open-req-docs-wall-question .wc", clipTo: "#open-req-docs-wall-question" },
+  { name: "wall/owner-card", path: "/hub#status=waiting_owner&post=req-docs-wall-question", wait: "#open-req-docs-wall-question .wc", clipTo: "#open-req-docs-wall-question" },
   // A QA verdict on its post, and the awaiting-QA filter (#1188).
-  { name: "wall/qa", path: "/wall#status=&post=req-docs-qa-block", wait: "#open-req-docs-qa-block .wp__qa", clipTo: "#open-req-docs-qa-block" },
-  { name: "wall/qa-awaiting", path: "/wall#status=&qa=1&view=list", wait: ".wl" },
-  { name: "wall/phone", path: "/wall", wait: ".wp", phone: true },
+  { name: "wall/qa", path: "/hub#status=&post=req-docs-qa-block", wait: "#open-req-docs-qa-block .wp__qa", clipTo: "#open-req-docs-qa-block" },
+  { name: "wall/qa-awaiting", path: "/hub#status=&qa=1&view=list", wait: ".wl" },
+  { name: "wall/phone", path: "/hub", wait: ".wp", phone: true },
   // #1355: Projects as cards, Jobs per machine, the Creator, the phone dark.
-  { name: "wall/projects", path: "/wall#status=open&view=projects", wait: ".wpc" },
-  { name: "wall/jobs", path: "/wall#status=open&view=jobs", wait: ".wjb" },
-  { name: "wall/needs-you", path: "/wall#status=open&view=decide", wait: "#wall-decide .wdc" },
-  { name: "wall/needs-you-phone", path: "/wall#status=open&view=decide", wait: "#wall-decide .wdc", phone: true },
-  { name: "wall/creator", path: "/wall#page=creator", wait: ".wcr__a", steps: [{ click: ".wcr__a" }, { wait: ".wcr__a.is-on" }, { type: "#cr-text", text: "Summarise the open support tickets by topic" }, { type: "#cr-done", text: "A short list in the post" }] },
-  { name: "wall/comment", path: "/wall#status=&post=req-docs-wall-done", wait: "#wdo-text", steps: [{ type: "#wdo-text", text: "Thanks. @builder please add the delivery times to the shop page too" }], clipTo: ".wdo" },
-  { name: "wall/phone-dark", path: "/wall", wait: ".wp", phone: true, dark: true },
+  { name: "wall/projects", path: "/hub#status=open&view=projects", wait: ".wpc" },
+  { name: "wall/jobs", path: "/hub#status=open&view=jobs", wait: ".wjb" },
+  { name: "wall/needs-you", path: "/hub#status=open&view=decide", wait: "#wall-decide .wdc" },
+  { name: "wall/needs-you-phone", path: "/hub#status=open&view=decide", wait: "#wall-decide .wdc", phone: true },
+  { name: "wall/creator", path: "/hub#page=creator", wait: ".wcr__a", steps: [{ click: ".wcr__a" }, { wait: ".wcr__a.is-on" }, { type: "#cr-text", text: "Summarise the open support tickets by topic" }, { type: "#cr-done", text: "A short list in the post" }] },
+  { name: "wall/comment", path: "/hub#status=&post=req-docs-wall-done", wait: "#wdo-text", steps: [{ type: "#wdo-text", text: "Thanks. @builder please add the delivery times to the shop page too" }], clipTo: ".wdo" },
+  { name: "wall/phone-dark", path: "/hub", wait: ".wp", phone: true, dark: true },
   // Settings on the Wall (#1428): the Agents section, one agent, a save, and a phone.
-  { name: "wall/settings", path: "/wall#page=settings&section=agents", wait: ".wsa" },
+  { name: "wall/settings", path: "/hub#page=settings&section=agents", wait: ".wsa" },
   // #1428 / #1451 frame 2: two changes not saved, then Save… open, then Saved.
-  { name: "wall/settings-agent", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { fill: "#st-e-triggerWords", text: "@cx, desk" }, { wait: "#st-bar:not([hidden])" }] },
-  { name: "wall/settings-confirm", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { fill: "#st-e-triggerWords", text: "@cx, desk" }, { click: "[data-st-act=review]" }, { wait: ".wsd" }] },
-  { name: "wall/settings-saved", path: "/wall#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { click: "[data-st-act=review]" }, { click: "#st-dlg-save" }, { waitText: ["#st-n-edit", "Saved"] }], clipTo: "#st-bar" },
-  { name: "wall/settings-phone", path: "/wall#page=settings", wait: ".wst__sec", phone: true },
-  { name: "wall/settings-phone-agents", path: "/wall#page=settings&section=agents", wait: ".wsa", phone: true },
-  { name: "wall/settings-health", path: "/wall#page=settings&section=health", wait: ".wsh__nodes" },
-  { name: "wall/settings-handovers", path: "/wall#page=settings&section=agents&agent=cx&atab=handovers", wait: ".wsa-tab h4", steps: [{ click: ".wsa-tab .wsx > summary" }, { wait: "#st-h-chat" }] },
+  { name: "wall/settings-agent", path: "/hub#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { fill: "#st-e-triggerWords", text: "@cx, desk" }, { wait: "#st-bar:not([hidden])" }] },
+  { name: "wall/settings-confirm", path: "/hub#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { fill: "#st-e-triggerWords", text: "@cx, desk" }, { click: "[data-st-act=review]" }, { wait: ".wsd" }] },
+  { name: "wall/settings-saved", path: "/hub#page=settings&section=agents&agent=cx", wait: "#st-e-name", steps: [{ fill: "#st-e-maxConcurrent", text: "3" }, { click: "[data-st-act=review]" }, { click: "#st-dlg-save" }, { waitText: ["#st-n-edit", "Saved"] }], clipTo: "#st-bar" },
+  { name: "wall/settings-phone", path: "/hub#page=settings", wait: ".wst__sec", phone: true },
+  { name: "wall/settings-phone-agents", path: "/hub#page=settings&section=agents", wait: ".wsa", phone: true },
+  { name: "wall/settings-health", path: "/hub#page=settings&section=health", wait: ".wsh__nodes" },
+  { name: "wall/settings-handovers", path: "/hub#page=settings&section=agents&agent=cx&atab=handovers", wait: ".wsa-tab h4", steps: [{ click: ".wsa-tab .wsx > summary" }, { wait: "#st-h-chat" }] },
   // #1355: the status tabs with the filters open, and the composer.
-  { name: "wall/filters", path: "/wall#status=waiting", wait: ".wp", steps: [{ click: "#wall-search" }, { wait: "#wall-filters.is-open" }] },
-  { name: "wall/compose", path: "/wall", wait: ".wp", steps: [{ type: "#wc-text", text: "@cx please summarise the open support tickets" }], clipTo: "#wall-compose" },
+  { name: "wall/filters", path: "/hub#status=waiting", wait: ".wp", steps: [{ click: "#wall-search" }, { wait: "#wall-filters.is-open" }] },
+  { name: "wall/compose", path: "/hub", wait: ".wp", steps: [{ type: "#wc-text", text: "@cx please summarise the open support tickets" }], clipTo: "#wall-compose" },
   // The portfolio (#1194), opened with the demo-only key seed-demo.mjs made.
   { name: "wall/portfolio", path: "/portfolio", wait: "#key-form", steps: [{ type: "#key", text: "agx_live_" + "demo".repeat(16) }, { click: "#key-form button" }, { wait: "#projects table" }], full: true },
   { name: "wall/portfolio-phone", path: "/portfolio", wait: "#projects table", phone: true },
   // The posts of one goal under its progress and cost (#1392).
-  { name: "wall/goal", path: "/wall#status=&goal=shop-relaunch", wait: ".wgl__bar" },
+  { name: "wall/goal", path: "/hub#status=&goal=shop-relaunch", wait: ".wgl__bar" },
   // An agent's profile over its own posts (#1207).
-  { name: "wall/profile", path: "/wall#owner=cx&status=", wait: ".wpf" },
+  { name: "wall/profile", path: "/hub#owner=cx&status=", wait: ".wpf" },
   // Blocked tasks grouped by the agent that blocks them (#1193).
-  { name: "wall/blocked", path: "/wall#status=blocked&by=agent&view=list", wait: ".wl" },
+  { name: "wall/blocked", path: "/hub#status=blocked&by=agent&view=list", wait: ".wl" },
   // The review queue: pending and decided classifications (#1182).
-  { name: "wall/reviews", path: "/wall#status=&view=reviews", wait: "[data-rtab]", steps: [{ click: '[data-rtab="approved"]' }, { wait: ".wr__diff" }], clipTo: "#review-docs-review-invoice" },
+  { name: "wall/reviews", path: "/hub#status=&view=reviews", wait: "[data-rtab]", steps: [{ click: '[data-rtab="approved"]' }, { wait: ".wr__diff" }], clipTo: "#review-docs-review-invoice" },
   // Classic /live opens Wall Live (#1439).
-  { name: "live", path: "/wall#page=live", wait: ".wmc" },
+  { name: "live", path: "/hub#page=live", wait: ".wmc" },
   { name: "operations", path: "/mesh", wait: "body" },
   { name: "operations/routines", path: "/mesh", wait: "body", steps: [{ clickText: "Operations" }, { wait: "#mx-routines .mx-flags" }, { scroll: "#mx-routines-title" }] },
   { name: "activity", path: "/activity", wait: ".ac-row" },
@@ -124,9 +124,9 @@ const shots = [
   { name: "operations/schedule-drawer", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-runs .mx-item" }, { click: "#mx-runs .mx-item" }, { wait: "#mx-drawer.is-open" }] },
   { name: "operations/nodes", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-nodes .ax-row-card, #mx-nodes > *" }, { scroll: "#mx-nodes-title" }] },
   // Profile pictures (#1425): docs/jobs/profile-pictures.md sets them on the demo first.
-  { name: "pictures/wall-agents", path: "/wall#page=agents", wait: ".wag .av--pic" },
-  { name: "pictures/wall-profile", path: "/wall#page=agents", wait: "#agent-cx .av", steps: [{ click: "#agent-cx .av" }, { wait: "#wall-profile .wpc-pic" }], clipTo: "#wall-profile" },
-  { name: "pictures/wall-profile-phone", path: "/wall#page=agents", wait: "#agent-cx .av", phone: true, steps: [{ click: "#agent-cx .av" }, { wait: "#wall-profile .wpc-pic" }] },
+  { name: "pictures/wall-agents", path: "/hub#page=agents", wait: ".wag .av--pic" },
+  { name: "pictures/wall-profile", path: "/hub#page=agents", wait: "#agent-cx .av", steps: [{ click: "#agent-cx .av" }, { wait: "#wall-profile .wpc-pic" }], clipTo: "#wall-profile" },
+  { name: "pictures/wall-profile-phone", path: "/hub#page=agents", wait: "#agent-cx .av", phone: true, steps: [{ click: "#agent-cx .av" }, { wait: "#wall-profile .wpc-pic" }] },
   { name: "settings/webhooks", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="webhooks"]' }, { scroll: "#tab-webhooks" }] },
   { name: "settings/webhook-routing", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="webhooks"]' }, { click: "#tab-webhooks details summary" }, { scroll: "#tab-webhooks details" }] },
   { name: "settings/mesh", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="mesh"]' }, { scroll: "#tab-mesh" }] },
@@ -148,10 +148,10 @@ const shots = [
   { name: "setup/engine", path: "/setup", wait: "#wizard", steps: [{ select: '[name="tier"]', value: "sdk" }, { scroll: '[name="triggerWords"]' }] },
   // The Wall's Cost page (#1423), which /admin/cost now opens: the page, a
   // phone, the details it folds, and the monthly budgets with their form.
-  { name: "wall/cost", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row" },
-  { name: "wall/cost-phone", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row", phone: true },
-  { name: "costs/page", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__row", steps: [{ click: "[data-cdetails]" }, { wait: "#wc-details:not([hidden])" }], clipTo: "#wall-cost .wc__more" },
-  { name: "costs/budgets", path: "/wall#status=open&view=cost&range=30", wait: "#wall-cost .wc__form", clipTo: "#wall-cost-budgets" },
+  { name: "wall/cost", path: "/hub#status=open&view=cost&range=30", wait: "#wall-cost .wc__row" },
+  { name: "wall/cost-phone", path: "/hub#status=open&view=cost&range=30", wait: "#wall-cost .wc__row", phone: true },
+  { name: "costs/page", path: "/hub#status=open&view=cost&range=30", wait: "#wall-cost .wc__row", steps: [{ click: "[data-cdetails]" }, { wait: "#wc-details:not([hidden])" }], clipTo: "#wall-cost .wc__more" },
+  { name: "costs/budgets", path: "/hub#status=open&view=cost&range=30", wait: "#wall-cost .wc__form", clipTo: "#wall-cost-budgets" },
   // Only the first check group: the others describe this machine's desktop
   // app and home folder, which a screenshot must not publish.
   { name: "doctor/tab", path: "/admin/health", wait: '[data-tab="doctor"]', steps: [{ click: '[data-tab="doctor"]' }, { wait: ".ax-obs__doctor-group" }], clipBefore: ".ax-obs__doctor-group + .ax-obs__doctor-group" },
@@ -160,15 +160,15 @@ const shots = [
   // Last: the scripted reply takes a minute, so later shots would show it running.
   // Wall Live (#1439): a running task's page with Pause; the same task
   // paused, with its plan open; Live with it; the machine cards; a phone.
-  { name: "wall/task-pause", path: "/wall#page=live", wait: ".wlv", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".wls.is-work" }, { click: ".wls.is-work" }, { wait: "#wtask-ops .wtask__pause" }] },
-  { name: "wall/live-paused", path: "/wall#page=live", wait: ".wlv", steps: [{ pause: "cx" }, { wait: ".wls.is-stopped .wls__plan" }, { click: ".wls.is-stopped .wls__plan summary" }, { wait: ".wls.is-stopped .wls__plan[open]" }], clipTo: ".wls.is-stopped" },
-  { name: "wall/live", path: "/wall#page=live", wait: ".wls.is-stopped" },
-  { name: "wall/live-machines", path: "/wall#page=live", wait: ".wmc", clipTo: ".wlv__mc" },
-  { name: "wall/live-phone", path: "/wall#page=live", wait: ".wls.is-stopped", phone: true },
+  { name: "wall/task-pause", path: "/hub#page=live", wait: ".wlv", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".wls.is-work" }, { click: ".wls.is-work" }, { wait: "#wtask-ops .wtask__pause" }] },
+  { name: "wall/live-paused", path: "/hub#page=live", wait: ".wlv", steps: [{ pause: "cx" }, { wait: ".wls.is-stopped .wls__plan" }, { click: ".wls.is-stopped .wls__plan summary" }, { wait: ".wls.is-stopped .wls__plan[open]" }], clipTo: ".wls.is-stopped" },
+  { name: "wall/live", path: "/hub#page=live", wait: ".wls.is-stopped" },
+  { name: "wall/live-machines", path: "/hub#page=live", wait: ".wmc", clipTo: ".wlv__mc" },
+  { name: "wall/live-phone", path: "/hub#page=live", wait: ".wls.is-stopped", phone: true },
   // Every task in a workflow (#858): switched on through the card itself,
   // then a task on the Live tab shows its run's step; switched off again.
   { name: "workflows/required-settings", path: "/workflows", wait: "#wf-required", steps: [{ click: "#wf-required > summary" }, { wait: "#wf-required-agents select" }, { click: "#wf-required-enabled" }, { waitText: ["#wf-required-note", "Saved"] }, { click: ".ax-wf__req-agents > summary" }], clipTo: ".ax-wf__required" },
-  { name: "live/running-task-workflow", path: "/wall#page=live", wait: ".wlv", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { waitText: [".wls.is-work", "Workflow"] }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".wls.is-work" },
+  { name: "live/running-task-workflow", path: "/hub#page=live", wait: ".wlv", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { waitText: [".wls.is-work", "Workflow"] }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".wls.is-work" },
 ]
 
 function client(ws) {

@@ -36,11 +36,11 @@ afterAll(async () => {
 
 describe("retired classic pages", () => {
   it.each([
-    ["/boards", "/wall#status=open&view=projects"],
-    ["/glossary", "/wall"],
-    ["/procedures", "/wall#page=agents"],
-    ["/processes", "/wall#status=open&view=jobs"],
-    ["/places", "/wall"],
+    ["/boards", "/hub#status=open&view=projects"],
+    ["/glossary", "/hub"],
+    ["/procedures", "/hub#page=agents"],
+    ["/processes", "/hub#status=open&view=jobs"],
+    ["/places", "/hub"],
   ])("%s redirects to %s", async (path, target) => {
     expect(RETIRED_PAGES[path]).toBe(target)
     const r = await fetch(base + path, { redirect: "manual" })
@@ -49,7 +49,7 @@ describe("retired classic pages", () => {
   })
 
   it("redirects to Wall views only", () => {
-    for (const target of Object.values(RETIRED_PAGES)) expect(target).toMatch(/^\/wall(#|$)/)
+    for (const target of Object.values(RETIRED_PAGES)) expect(target).toMatch(/^\/hub(#|$)/)
   })
 
   it("keeps the places API the phone app shares", async () => {

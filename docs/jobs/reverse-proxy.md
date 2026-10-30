@@ -39,7 +39,7 @@ Only add addresses you control. Anything on the list can send your agents instru
 
 ## Sign in from another device
 
-With a dashboard token (`dashboard.token` in `agentx.json`), a browser that is not on the AgentX machine signs in before it sees the Wall, Settings, Approvals, People or an agent's page. A request through a reverse proxy counts as another device, even when the proxy runs on the AgentX machine.
+With a dashboard token (`dashboard.token` in `agentx.json`), a browser that is not on the AgentX machine signs in before it sees the Hub, Settings, Approvals, People or an agent's page. A request through a reverse proxy counts as another device, even when the proxy runs on the AgentX machine.
 
 1. **Browser:** open the dashboard's address. It shows **Sign in to this dashboard**.
 2. Paste the dashboard token and select **Sign in**. You land on the page you asked for.

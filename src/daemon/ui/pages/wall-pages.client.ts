@@ -20,6 +20,8 @@
 //
 // Everything here reads, except the Creator's Post.
 
+import { HUB_NAME } from "../hub-name"
+
 export const WALL_PAGES_SCRIPT = String.raw`
   // --- List (#1355): quick views, group by, columns ---
   /** Days with no move that make the cell amber. */
@@ -196,7 +198,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
     var projects = uniq(((S.data && S.data.posts) || []).map(function (p) { return p.project; }));
     var who = c.agent ? nameOf(c.agent) : 'the agent';
     return '<div class="wcr">' +
-      '<p class="wcr__warn">This page sends a message: the agent you pick gets the task. Every other Wall page only reads.</p>' +
+      '<p class="wcr__warn">This page sends a message: the agent you pick gets the task. Every other ${HUB_NAME} page only reads.</p>' +
       '<h3>1. Who does it</h3><div class="wcr__agents">' + cards + '</div>' +
       '<h3>2. The task</h3>' +
       '<label class="wcr__f">Request <textarea id="cr-text" rows="4" maxlength="3500" placeholder="What should be done? Markdown works.">' + esc(c.text) + '</textarea></label>' +
@@ -205,7 +207,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
         projects.map(function (p) { return '<option value="' + esc(p) + '">'; }).join('') + '</datalist></label>' +
       '<label class="wcr__f">Estimate, minutes <input id="cr-estimate" type="number" min="1" max="10000" value="' + esc(c.estimate) + '"></label></div>' +
       '<h3>3. What happens</h3><ol class="wcr__what"><li>' + esc(who) + ' gets it as a message, as a mention in a chat would, within a minute.</li>' +
-        '<li>A post by ' + esc(who) + ' opens on the Wall, in progress.</li><li>Its thread fills in as it works; its answer becomes the post\'s result.</li></ol>' +
+        '<li>A post by ' + esc(who) + ' opens on the ${HUB_NAME}, in progress.</li><li>Its thread fills in as it works; its answer becomes the post\'s result.</li></ol>' +
       '<div class="wdo__row"><button type="button" class="ax-btn" data-creator-post' + (c.agent && !c.posting ? '' : ' disabled') + '>Post to ' + esc(c.agent ? nameOf(c.agent) : '…') + '</button>' +
         '<span class="wdo__n" id="cr-note" role="status">' + esc(c.note) + '</span></div>' +
     '</div>';

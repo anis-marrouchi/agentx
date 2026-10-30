@@ -13,6 +13,7 @@ import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
 import { busyText, callerHeaders } from "@/calls/service"
 import { READ_TOOL_NAMES, type McpToolSet } from "./tool-names"
+import { HUB_NAME } from "@/daemon/ui/hub-name"
 
 // --- MCP Server: expose agentx as a Model Context Protocol server ---
 // This allows Claude Code, Cursor, Windsurf, and any MCP client to use
@@ -987,7 +988,7 @@ const TOOLS = [
   {
     name: "agentx_picture",
     description:
-      "Set or remove your own profile picture, shown on the Wall, the Org page and Settings instead of your initials. " +
+      `Set or remove your own profile picture, shown on the ${HUB_NAME}, the Org page and Settings instead of your initials. ` +
       "Use it when the owner asks you to pick or make a picture for yourself: save the image as a file first, then set it. " +
       "PNG, JPEG or WebP, 1 MB at most; it is cut to a square and its metadata is dropped. Only your own picture: another agent's is refused. " +
       "Example: {action:'set', file:'avatar.png'}.",

@@ -14,6 +14,8 @@
 // set `wall`, and the redirect and the Wall's link crawl (test/classic-routes
 // .test.ts) follow. The wiki is its own space, like the Wall, and is not listed.
 
+import { HUB_PATH } from "./hub-name"
+
 export type ClassicStatus = "wall" | "pending" | "tool"
 
 export interface ClassicRoute {
@@ -31,38 +33,38 @@ export interface ClassicRoute {
 }
 
 export const CLASSIC_ROUTES: ClassicRoute[] = [
-  { path: "/tasks/<id>", label: "One task's run", status: "wall", wall: "/#page=task", note: "Wall Task page (#1381): stream, steer, Stop." },
-  { path: "/live", label: "Live", status: "wall", wall: "/wall#page=live", note: "Redirected in board-dashboard.ts (#1439)." },
+  { path: "/tasks/<id>", label: "One task's run", status: "wall", wall: "/#page=task", note: "The Task page (#1381): stream, steer, Stop." },
+  { path: "/live", label: "Live", status: "wall", wall: HUB_PATH + "#page=live", note: "Redirected in board-dashboard.ts (#1439)." },
   { path: "/monitor", label: "Monitor", status: "pending", blockedBy: [1439, 1440], note: "Connect a CLI session; open actions of CLI sessions." },
   { path: "/mesh", label: "Operations", status: "pending", blockedBy: [1449], note: "Lifetime view (thread → run → step drill), Routines with stale verdicts, run analytics; no child issue yet." },
-  { path: "/activity", label: "Activity", status: "pending", blockedBy: [1449], note: "Timeline lane view and the Map; no child issue yet. Wall Activity (#1429) has the run list." },
-  { path: "/agents/<id>/history", label: "Agent history", status: "wall", wall: "/wall#page=activity", note: "The agent's profile with its Activity tab (#1429)." },
+  { path: "/activity", label: "Activity", status: "pending", blockedBy: [1449], note: "Timeline lane view and the Map; no child issue yet. The Hub's Activity (#1429) has the run list." },
+  { path: "/agents/<id>/history", label: "Agent history", status: "wall", wall: HUB_PATH + "#page=activity", note: "The agent's profile with its Activity tab (#1429)." },
   { path: "/approvals", label: "Approvals", status: "pending", blockedBy: [1440], note: "Deciding cards and inbox items." },
   { path: "/admin", label: "Settings", status: "pending", blockedBy: [1428] },
   { path: "/admin/agents/<id>", label: "Agent settings", status: "pending", blockedBy: [1428] },
   { path: "/admin/health", label: "Observability", status: "pending", blockedBy: [1428], note: "Also /admin/observability." },
   { path: "/guests", label: "Guests", status: "pending", blockedBy: [1428] },
-  { path: "/admin/cost", label: "Cost", status: "wall", wall: "/wall#status=open&view=cost", note: "Redirected in board-dashboard.ts (#1423, #1466)." },
+  { path: "/admin/cost", label: "Cost", status: "wall", wall: HUB_PATH + "#status=open&view=cost", note: "Redirected in board-dashboard.ts (#1423, #1466)." },
   // Owner decision on #1420 (B): the org chart is edited on /org and the
   // Wall's Org page stays read-only (#1486 closed for it).
-  { path: "/org", label: "Org chart editor", status: "tool", note: "Editing who reports to whom; the Wall's Org page reads it." },
-  { path: "/people", label: "People", status: "wall", wall: "/wall#page=people", note: "Redirected in people-panel.ts (#1441)." },
+  { path: "/org", label: "Org chart editor", status: "tool", note: "Editing who reports to whom; the Hub's Org page reads it." },
+  { path: "/people", label: "People", status: "wall", wall: HUB_PATH + "#page=people", note: "Redirected in people-panel.ts (#1441)." },
   { path: "/workflows", label: "Workflows", status: "pending", blockedBy: [1445] },
   { path: "/admin/graph", label: "Reviews", status: "pending", blockedBy: [1440], note: "Approve or reject a classification. Also /graph." },
   { path: "/admin/projects", label: "Projects", status: "pending", blockedBy: [1449], note: "Creating and editing projects; no child issue yet." },
   { path: "/admin/ledger", label: "Intent ledger", status: "pending", blockedBy: [1449], note: "Not covered by the spike; no child issue yet." },
-  { path: "/boards", label: "Boards", status: "wall", wall: "/wall#status=open&view=projects", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
-  { path: "/glossary", label: "Glossary", status: "wall", wall: "/wall", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
-  { path: "/processes", label: "Processes", status: "wall", wall: "/wall#status=open&view=jobs", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
-  { path: "/procedures", label: "Procedures", status: "wall", wall: "/wall#page=agents", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
-  { path: "/places", label: "Places", status: "wall", wall: "/wall", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
+  { path: "/boards", label: "Boards", status: "wall", wall: HUB_PATH + "#status=open&view=projects", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
+  { path: "/glossary", label: "Glossary", status: "wall", wall: HUB_PATH, note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
+  { path: "/processes", label: "Processes", status: "wall", wall: HUB_PATH + "#status=open&view=jobs", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
+  { path: "/procedures", label: "Procedures", status: "wall", wall: HUB_PATH + "#page=agents", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
+  { path: "/places", label: "Places", status: "wall", wall: HUB_PATH, note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },
   { path: "/setup", label: "First-run setup", status: "tool" },
   // Settings (#1428) sends a viewer who is not the owner here to sign in.
   { path: "/login", label: "Sign in (#1306)", status: "tool" },
   // Settings > Channels > Calls (#1428) links here to start a live call.
   { path: "/call", label: "Browser call", status: "tool" },
   // Owner decision on #1449 (2026-10-29): the editor is a Wall page now (#1524).
-  { path: "/workflows/editor", label: "Workflow editor", status: "wall", wall: "/wall#page=editor", note: "The Wall's editor page (#1524): two columns, a side menu that folds away, auto-arrange." },
+  { path: "/workflows/editor", label: "Workflow editor", status: "wall", wall: HUB_PATH + "#page=editor", note: "The editor page (#1524): two columns, a side menu that folds away, auto-arrange." },
 ]
 
 function pattern(path: string): RegExp {
@@ -115,7 +117,7 @@ export function classicRedirect(path: string, params: URLSearchParams, daemonUrl
     if (params.get("new") === "1") { q.set("page", "editor"); q.set("e-new", "1") }
     else if (id) { q.set("page", "editor"); q.set("e-wf", id.slice(0, 200)) }
     else q.set("page", "workflows")
-    return "/wall#" + q.toString()
+    return HUB_PATH + "#" + q.toString()
   }
   const hist = path.match(/^\/agents\/([^/]+)\/history$/)
   if (hist) {
@@ -128,7 +130,7 @@ export function classicRedirect(path: string, params: URLSearchParams, daemonUrl
     q.set("page", "activity")
     q.set("a-agent", id)
     q.set("a-period", "30d")
-    return "/wall#" + q.toString()
+    return HUB_PATH + "#" + q.toString()
   }
   return null
 }
