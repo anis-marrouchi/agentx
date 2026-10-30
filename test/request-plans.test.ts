@@ -334,6 +334,8 @@ describe("nudges", () => {
     expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
     api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "29 open, now 13" })
     expect(plans.step("req-1", 2)).toMatchObject({ nudges: 0, lastNudgeAt: null })
+    expect(plans.events("req-1").filter((e) => e.kind === "progress").at(-1)?.detail)
+      .toBe("devops: 29 open, now 13 (nudges reset from 2)")
     // Three more quiet spells: nudged three times again before it blocks.
     for (let i = 0; i < 3; i++) { clock += 31 * MIN; await sweep() }
     expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 3 })
@@ -348,6 +350,19 @@ describe("nudges", () => {
     expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
     api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: " 11  OPEN " })
     expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
+    expect(plans.events("req-1").filter((e) => e.kind === "progress").at(-1)?.detail).toBe("devops: 11 OPEN")
+  })
+
+  it("keeps the count when a report repeats one that reset it, reset note and all", async () => {
+    await sweep()
+    for (let i = 0; i < 2; i++) { clock += 31 * MIN; await sweep() }
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "11 open" })
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 0 })
+    clock += 31 * MIN; await sweep()
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 1 })
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "11 open" })
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 1 })
+    expect(plans.events("req-1").filter((e) => e.kind === "progress").at(-1)?.detail).toBe("devops: 11 open")
   })
 
   it("goes on when the owner retries a blocked step, with a fresh count", async () => {
