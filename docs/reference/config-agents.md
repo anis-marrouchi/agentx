@@ -474,11 +474,13 @@ How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and 
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `processPool.maxIdleSeconds` | number (5–86400) | `30` | Seconds after its last turn when a process may be stopped to make room. |
-| `processPool.maxAgeSeconds` | number (60–86400) | `2700` | Seconds of idleness after which a process is always stopped. |
+| `processPool.maxIdleSeconds` | number (5–86400) | `30` | Seconds a process may stay quiet before it is stopped. The count starts at its last output, not only at the last question it was asked. |
+| `processPool.maxAgeSeconds` | number (60–86400) | `2700` | Seconds after the last question it was asked when a process is always stopped, even with work still running. |
 | `processPool.sweepIntervalSeconds` | number (1–300) | `5` | How often the pool is checked. |
 
 A warm process answers only the question it was asked. When a background task of the agent ends, Claude Code writes a reply nobody asked for; that reply is not sent, and the daemon log notes it as `dropped a reply no question asked for`.
+
+A process is not stopped for being quiet while it still has work of its own: a background task (for example a helper agent it started to build something) or a reply nobody asked for that it is still writing. That work keeps running past `maxIdleSeconds`. `maxAgeSeconds` stays the upper limit: once it passes, the process is stopped anyway, and the daemon log line names the background tasks that were still open.
 
 ## plugins
 
@@ -503,6 +505,7 @@ A warm process answers only the question it was asked. When a background task of
 - **On a slow internet link, every message, notification or poll fails with `fetch failed` or `ETIMEDOUT`, while `curl` from the same machine works:** the daemon gave up connecting too early. The start of the daemon log shows `Connect attempt timeout: N ms`. Raise `node.connectAttemptTimeoutMs`, for example to `10000`, and restart the daemon.
 - **An `sdk` agent fails with `No API key for provider`:** set `providers.<name>.apiKey`, or check that the environment variable it points to is in `.env`.
 - **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
+- **An agent's background work stops halfway, and the daemon log shows `killed idle` for that agent a few minutes after its last reply:** update AgentX. Earlier versions stopped a warm process `maxIdleSeconds` after the last question, even while its background tasks were still running. If the log shows `killed stale` with `background task(s) open`, the work ran longer than `maxAgeSeconds`: raise it.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.
 - **An agent on GitHub, a schedule or a workflow says it cannot see another agent, an earlier message or a tool it had before:** its channel starts lean. Either tell the agent to use the `agentx_agents`, `agentx_recent` and `agentx_wiki_query` tools, add the tool server it misses to `session.lean.mcpServers`, or set that channel to `"full"` in `session.profileByChannel`.
 - **A label or close event still runs on the agent's own model:** check the daemon log. A run that used the triage model logs `triage event (labeled) → <model>`. If it is missing, the run also collected another action (such as `opened`), the issue's conversation ran within the last hour, or the model does not start with `claude-` (for `claude-code` agents) or `gpt-` (for `codex-cli` agents).
