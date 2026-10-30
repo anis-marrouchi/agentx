@@ -248,7 +248,7 @@ Avatars show an agent's or a person's profile picture when one is set on the mac
 
 **Settings** on the Wall is where you, the owner, change your agents. It is the only Wall page that changes settings; every other Wall page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
 
-It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents**, **Schedules**, **Webhooks** and **Health** sections; each other section opens its classic page.
+It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents**, **Channels**, **Schedules**, **Webhooks** and **Health** sections; each other section opens its classic page.
 
 1. **Browser:** in the nav, select **Settings**, under **Owner**. On a phone, select **More**, then **Settings**.
 2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Advanced). The one you picked is on the right; **Agents** opens first.
@@ -339,6 +339,18 @@ To end a handover, select **Release** on its line, then **Release** again to con
    *Scripted demo data; your team's names and machines will differ.*
 
 Health only reads. It refreshes with the Wall, without losing what you are typing in another section.
+
+### Connect a chat app
+
+1. **Browser:** in **Settings**, select **Channels**, under **Fleet**. Pick one along the top: **Telegram**, **Email**, **Slack**, **Discord**, **GitLab**, **GitHub** or **Calls**. Each says **on**, **off** or **not set up**.
+2. Put the secret (a bot token or a password) in the `.env` file next to `agentx.json` first. The forms take only the *name* of that variable, such as `TG_SUPPORT_BOT_TOKEN`, and never show a secret.
+3. **Telegram:** under **Add a Telegram account**, type a name, pick the agent that answers, and type the token's variable name, then **Add account**. **Edit** changes an account in place; **Delete** asks you first.
+4. **Email:** under **Add a mailbox**, type the address, the IMAP and SMTP servers, the password's variable name and who may write. Replies wait in **Needs you** unless you tick **Send replies at once**.
+5. **Slack**, **Discord**, **GitLab:** fill the form and select **Connect** (or **Save** once connected). A switch turns each one on or off.
+6. **GitLab** and **GitHub** also have **Request status**: when it is on, AgentX keeps one comment per request up to date on the issue.
+7. **GitHub** lists its webhooks; add one on **Webhooks** with source GitHub. **Calls** lists active and recent calls, and only reads.
+
+The line under the tabs says what was saved, or why not. WhatsApp pairing, WhatsApp triage and notification routing are still on the classic page: **WhatsApp and routing ↗** opens it.
 
 ### Add or remove a schedule
 
@@ -827,6 +839,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 41. Workflows page: select **Workflows** in the nav. It lists the same workflows as the classic `/workflows` page, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
 42. Old history link: open `/agents/<agent>/history` in the browser, with the name of one of your agents. The Wall opens that agent's profile with **Activity** underlined and **30 d** picked.
 43. Schedules and Webhooks: in **Settings** › **Schedules**, select the preset **Every hour**: the line under **When** says when it runs and the next three times. Add a schedule named `check-test`, then open the classic `/admin#tab=crons`: `check-test` is listed. Delete it on the Wall. In **Settings** › **Webhooks**, add one named `check-test`, select **Turn off**: its card says **off**. Delete it.
+44. Channels: in **Settings** › **Channels**, the Telegram account you use is listed with its agent and its token's variable name, never the token. Select **Email**, then **GitLab**: each matches the classic `/admin#tab=channels`. Turn **Request status** on GitLab off and on again: the line under the tabs says so each time, and the classic page shows the same.
 
 ## If something is wrong
 
