@@ -144,6 +144,14 @@ describe("continue when a turn ends", () => {
     expect(await turnEnds()).toBe("still")
   })
 
+  it("reads the newest reports when the plan's log is long", async () => {
+    makePlan(null)
+    for (let i = 0; i < 6000; i++) plans.event(REQ, 2, "note", `old ${i}`, clock - 60 * MIN)
+    reportStep(requests, plans, { requestId: REQ, step: 1, status: "progress", agentId: "coder", note: "PR 1 open" }, clock - 30 * MIN)
+    reportStep(requests, plans, { requestId: REQ, step: 1, status: "progress", agentId: "coder", note: "PR 2 open" }, clock - MIN)
+    expect(await turnEnds()).toBe("continued")
+  })
+
   it("stops at the daily turn cap, tells the owner once, and starts again the next day", async () => {
     settings.maxTurnsPerDay = 2
     makePlan()
