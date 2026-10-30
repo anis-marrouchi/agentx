@@ -46,6 +46,8 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
       <button type="button" class="ax-chip apv__f" data-kind="agent" aria-pressed="false">New agents <span id="n-agent"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="memory" aria-pressed="false">Memory <span id="n-memory"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="wiki" aria-pressed="false">Wiki <span id="n-wiki"></span></button>
+      <button type="button" class="ax-chip apv__f" data-kind="fact" aria-pressed="false">Wiki facts <span id="n-fact"></span></button>
+      <button type="button" class="ax-chip apv__f" data-kind="question" aria-pressed="false">Wiki questions <span id="n-question"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="whatsapp" aria-pressed="false">WhatsApp <span id="n-whatsapp"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="email" aria-pressed="false">Email <span id="n-email"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="content" aria-pressed="false">Posts <span id="n-content"></span></button>
@@ -156,7 +158,7 @@ const APPROVALS_CSS = `
 const APPROVALS_SCRIPT = `
 (function(){
 var state = { items: [], extra: [], desk: null, snoozed: 0, kind: '', showAll: false, popup: false };
-var LABEL = { card: 'Card', schedule: 'Schedule', agent: 'New agent', memory: 'Memory fact', wiki: 'Wiki lesson', whatsapp: 'WhatsApp reply', email: 'Email reply', content: 'Post', request: 'Request' };
+var LABEL = { card: 'Card', schedule: 'Schedule', agent: 'New agent', memory: 'Memory fact', wiki: 'Wiki lesson', fact: 'Wiki fact', question: 'Wiki question', whatsapp: 'WhatsApp reply', email: 'Email reply', content: 'Post', request: 'Request' };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 function headers(json){
@@ -208,7 +210,7 @@ async function load(){
 }
 
 function counts(){
-  var c = { card: 0, schedule: 0, agent: 0, memory: 0, wiki: 0, whatsapp: 0, email: 0, content: 0, request: 0 };
+  var c = { card: 0, schedule: 0, agent: 0, memory: 0, wiki: 0, fact: 0, question: 0, whatsapp: 0, email: 0, content: 0, request: 0 };
   state.items.forEach(function(i){ c[i.kind] = (c[i.kind] || 0) + 1; });
   c.request += state.extra.length;
   $('n-all').textContent = state.items.length + state.extra.length;

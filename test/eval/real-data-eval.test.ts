@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest"
 import { readdirSync, readFileSync, statSync, appendFileSync, existsSync } from "fs"
 import { join, relative } from "path"
 import { buildIndex, scoreAll } from "../../src/memory/bm25"
+import { DEFAULT_RETRIEVAL_FLOOR, findRetrievalCases, hitAt, isArticlePath, loadRetrievalCases } from "../../src/wiki/retrieval-check"
 
 // --- Load real wiki articles from .agentx/wiki ---
 
@@ -61,109 +62,19 @@ function oldScoreRelevance(section: string, query: string): number {
   return overlap / qWords.size
 }
 
-// --- Test cases: realistic queries an agent would receive ---
-// Each has a query and a substring that MUST appear in the correct article's title or path
-interface RealTestCase {
-  name: string
-  query: string
-  /** The correct article's title must contain this (case-insensitive) */
-  expectedTitleContains: string
-  /** Category for reporting */
-  category: "infra" | "incident" | "people" | "project" | "cross-agent" | "synonym"
-}
+// --- Test cases: the operator's own questions (#603) ---
+// They name real people and systems, so they live outside the repository:
+// $AGENTX_RETRIEVAL_CASES or .agentx/retrieval-cases.json, as
+// { "floor": 0.6, "cases": [{ "name", "query", "expectedTitleContains", "category" }] }.
+// See src/wiki/retrieval-check.ts.
+const CASES_FILE = findRetrievalCases()
+const { floor: FLOOR, cases: REAL_CASES } = CASES_FILE ? loadRetrievalCases(CASES_FILE) : { floor: DEFAULT_RETRIEVAL_FLOOR, cases: [] }
 
-const REAL_CASES: RealTestCase[] = [
-  // --- Infrastructure queries ---
-  {
-    name: "globex staging deployment steps",
-    query: "how do I deploy globex to staging",
-    expectedTitleContains: "Globex DevOps Environment",
-    category: "infra",
-  },
-  {
-    name: "acme website deploy pipeline",
-    query: "how does example.com deployment work",
-    expectedTitleContains: "example.com Website",
-    category: "infra",
-  },
-  {
-    name: "elevenlabs voice integration",
-    query: "what is the elevenlabs meet voice pipeline spike",
-    expectedTitleContains: "ElevenLabs",
-    category: "infra",
-  },
-
-  // --- Incident queries ---
-  {
-    name: "gitlab token expired",
-    query: "gitlab token expired what happened",
-    expectedTitleContains: "GITLAB_TOKEN Expired",
-    category: "incident",
-  },
-  {
-    name: "whatsapp echo loop",
-    query: "whatsapp bot sending messages to itself in a loop",
-    expectedTitleContains: "WhatsApp Echo Loop",
-    category: "incident",
-  },
-  {
-    name: "gitlab token renewal process",
-    query: "how to renew the gitlab personal access token",
-    expectedTitleContains: "GITLAB_TOKEN Expired",
-    category: "incident",
-  },
-
-  // --- People queries ---
-  {
-    name: "who is sam",
-    query: "who is sam taylor and what does he do",
-    expectedTitleContains: "Sam Taylor",
-    category: "people",
-  },
-
-  // --- Agent queries ---
-  {
-    name: "what does atlas do",
-    query: "what is atlas agent responsible for",
-    expectedTitleContains: "Atlas",
-    category: "cross-agent",
-  },
-
-  // --- Project queries ---
-  {
-    name: "seo keywords acme",
-    query: "what are our SEO keyword targets for example.com",
-    expectedTitleContains: "SEO Priorities",
-    category: "project",
-  },
-
-  // --- Synonym/indirect queries (harder) ---
-  {
-    name: "bot stuck in loop",
-    query: "the bot keeps repeating itself what is wrong",
-    expectedTitleContains: "Echo Loop",
-    category: "synonym",
-  },
-  {
-    name: "server credentials",
-    query: "what are the database credentials for globex",
-    expectedTitleContains: "Globex DevOps Environment",
-    category: "synonym",
-  },
-  {
-    name: "CI pipeline stages",
-    query: "what are the CI pipeline stages for the website",
-    expectedTitleContains: "example.com Website",
-    category: "synonym",
-  },
-]
-
-// This grades retrieval against the operator's OWN wiki, so it only means
-// anything on a machine that has one. A clean checkout (CI, a new clone) has
-// no .agentx/wiki and the walk threw ENOENT, failing the build for the
-// absence of data the repo deliberately does not ship.
+// This grades retrieval against the operator's OWN wiki and questions, so it
+// only means anything on a machine that has both. A clean checkout (CI, a
+// new clone) has neither and skips: the repo deliberately ships no data.
 const WIKI_DIR = join(process.cwd(), ".agentx/wiki")
-const hasWiki = existsSync(WIKI_DIR)
+const hasWiki = existsSync(WIKI_DIR) && REAL_CASES.length > 0
 
 describe.skipIf(!hasWiki)("Real Data Eval: BM25 vs Word-Overlap on Wiki Articles", () => {
   let articles: Article[] = []
@@ -172,13 +83,9 @@ describe.skipIf(!hasWiki)("Real Data Eval: BM25 vs Word-Overlap on Wiki Articles
   beforeAll(() => {
     const wikiBase = WIKI_DIR
     walkDir(wikiBase, (filePath) => {
-      if (!filePath.endsWith(".md")) return
-      const rel = relative(wikiBase, filePath)
-      if (rel.includes("/raw/") || rel.startsWith("_")) return
-      // Skip index/log/worldview files
-      const base = filePath.split("/").pop() ?? ""
-      if (["WIKI.md", "log.md", "worldview.md"].includes(base)) return
-      if (base.startsWith("_")) return
+      // Compiled articles only: raw/ holds captured entries waiting for
+      // absorb, and reading them as articles inflated the corpus 40-fold.
+      if (!isArticlePath(relative(wikiBase, filePath))) return
 
       const article = parseArticle(filePath)
       if (article) articles.push(article)
@@ -215,10 +122,7 @@ describe.skipIf(!hasWiki)("Real Data Eval: BM25 vs Word-Overlap on Wiki Articles
   }
 
   function isHit(ranked: number[], expectedTitle: string, k: number): boolean {
-    const topK = ranked.slice(0, k)
-    return topK.some((idx) =>
-      articles[idx].title.toLowerCase().includes(expectedTitle.toLowerCase()),
-    )
+    return hitAt(ranked.slice(0, k).map((idx) => articles[idx].title), expectedTitle, k)
   }
 
   // Per-case tests
@@ -267,9 +171,9 @@ describe.skipIf(!hasWiki)("Real Data Eval: BM25 vs Word-Overlap on Wiki Articles
       totalOldR1 += oR1; totalOldR3 += oR3
       totalNewR1 += nR1; totalNewR3 += nR3
 
-      const cat = categories.get(tc.category) ?? { oldR1: 0, oldR3: 0, newR1: 0, newR3: 0, count: 0 }
+      const cat = categories.get(tc.category ?? "all") ?? { oldR1: 0, oldR3: 0, newR1: 0, newR3: 0, count: 0 }
       cat.oldR1 += oR1; cat.oldR3 += oR3; cat.newR1 += nR1; cat.newR3 += nR3; cat.count++
-      categories.set(tc.category, cat)
+      categories.set(tc.category ?? "all", cat)
 
       // Detail line
       const oldTop1 = articles[oldRanked[0]]?.title ?? "?"
@@ -339,5 +243,14 @@ describe.skipIf(!hasWiki)("Real Data Eval: BM25 vs Word-Overlap on Wiki Articles
       appendFileSync(scoreFile, entry)
       console.log(`Score tracked → RETRIEVAL_SCORES.md`)
     }
+  })
+
+  // The check itself (#603): a miss counts. Under the floor the questions
+  // file sets, the run fails.
+  it(`finds the right article in the top three for at least the floor of the questions`, () => {
+    const hits = REAL_CASES.filter((tc) => isHit(findWithBM25(tc.query), tc.expectedTitleContains, 3)).length
+    const share = hits / REAL_CASES.length
+    console.log(`BM25 R@3: ${hits}/${REAL_CASES.length} (${(share * 100).toFixed(1)}%), floor ${(FLOOR * 100).toFixed(0)}%`)
+    expect(share, `R@3 ${hits}/${REAL_CASES.length} is under the floor ${FLOOR}`).toBeGreaterThanOrEqual(FLOOR)
   })
 })

@@ -4,6 +4,10 @@ import { MemoryStore } from "@/agents/memory-store"
 import { approveSchedule, formatFireTime, humanizeCron, nextFireTime, rejectSchedule } from "@/crons/schedule-ops"
 import { listProposals, readProposal, type PromotionProposal } from "@/wiki/proposals"
 import { approveProposal, rejectProposal } from "@/wiki/promote"
+import { FactLedger } from "@/wiki/facts/ledger"
+import { approveFactProposal, listFactProposals, rejectFactProposal } from "@/wiki/facts/fact-proposals"
+import { assertPerson } from "@/wiki/facts/person"
+import { QuestionStore, type WikiQuestion } from "@/wiki/questions"
 import { decideDraft, listDrafts, readDraft, type SendReply } from "@/whatsapp-triage/drafts"
 import { contentTextHash, decideContentDraft, listContentDrafts, readContentDraft, PLATFORM_LABEL, type PublishContent } from "@/content/drafts"
 import { hasConnector, publisher } from "@/content/publish"
@@ -31,6 +35,13 @@ import { applyConfigMutation, unsetAtPath } from "@/daemon/config-mutator"
 //   schedule  schedules an agent asked to create or delete (crons/schedule-ops)
 //   memory    facts from outside sources held before agents may use them
 //   wiki      lessons proposed for the shared wiki (wiki/proposals, wiki/promote)
+//   fact      claims from session summaries waiting for a check
+//             (wiki/facts/fact-proposals); yes records the fact as
+//             confirmed by the owner, no drops the claim
+//   question  gaps and fact disagreements only a person can settle
+//             (wiki/questions); a disagreement is answered by picking
+//             one of the two values, other questions are answered with
+//             `agentx wiki answer`; no dismisses
 //   whatsapp  replies an agent drafted for a watched WhatsApp chat
 //             (whatsapp-triage/drafts); yes sends it through wacli
 //   email     replies an agent wrote to a customer's email (channels/email);
@@ -49,8 +60,8 @@ import { applyConfigMutation, unsetAtPath } from "@/daemon/config-mutator"
 // dashboard's /api/admin/approvals. The daemon's agent-facing API and the
 // MCP tool can create cards and read, never decide.
 
-export type ApprovalKind = "card" | "schedule" | "agent" | "memory" | "wiki" | "whatsapp" | "email" | "content" | "request"
-export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "agent", "memory", "wiki", "whatsapp", "email", "content", "request"]
+export type ApprovalKind = "card" | "schedule" | "agent" | "memory" | "wiki" | "fact" | "question" | "whatsapp" | "email" | "content" | "request"
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "agent", "memory", "wiki", "fact", "question", "whatsapp", "email", "content", "request"]
 
 export type InboxAction = "yes" | "no" | "later"
 
@@ -246,6 +257,66 @@ function wikiItems(ctx: InboxContext): InboxItem[] {
   })
 }
 
+/** Claims from session summaries (#273), waiting for a person to check
+ *  them. Without this they were only seen with `wiki facts proposals`
+ *  and none was ever decided (#603). */
+function factItems(ctx: InboxContext): InboxItem[] {
+  const dir = wikiDirFor(ctx)
+  if (!existsSync(resolve(dir, "_facts.json"))) return []
+  return listFactProposals(new FactLedger(dir), "pending").map((p) => {
+    const parsed = p.subject && p.attribute && p.value
+    return {
+      key: `fact:${p.id}`,
+      kind: "fact" as const,
+      title: parsed ? `${p.subject} · ${p.attribute}: ${p.value}` : `Claim from ${p.agentId}'s summary`,
+      ask: `Is this true? Check it at its source first. "${clip(p.claim, 200)}"`,
+      yes: parsed ? "record it as a fact you confirmed" : "nothing until you give the subject, attribute and value in the terminal",
+      no: "drop the claim",
+      raised_by: p.agentId,
+      created_at: p.createdAt,
+      detail: clip(`From ${p.origin}. Source: ${p.source}.${parsed ? "" : " AgentX could not read a subject, attribute and value from it."}`),
+      more: "agentx wiki facts proposals list",
+    }
+  })
+}
+
+function questionTitle(q: WikiQuestion): string {
+  if (q.kind === "contradiction") return `${q.subject}: two values disagree`
+  if (q.kind === "article") return `No article yet for ${q.subject}`
+  return `${q.subject}: ${q.field ?? "a field"} is missing`
+}
+
+/** Open wiki questions (_questions.json). A disagreement offers its two
+ *  values as choices; the wiki's current one is read from the ledger. */
+function questionItems(ctx: InboxContext): InboxItem[] {
+  const dir = wikiDirFor(ctx)
+  if (!existsSync(resolve(dir, "_questions.json"))) return []
+  const store = new QuestionStore(dir)
+  const file = store.load()
+  if (file.unreadable) throw new Error(`${store.path} is unreadable: ${file.unreadable}`)
+  let ledger: FactLedger | undefined
+  return file.questions.filter((q) => q.status === "open").map((q) => {
+    let choices: string[] | undefined
+    if (q.kind === "contradiction" && q.proposed && q.factId) {
+      const current = (ledger ??= new FactLedger(dir)).get(q.factId)
+      if (current) choices = [current.value, q.proposed.value]
+    }
+    return {
+      key: `question:${q.id}`,
+      kind: "question" as const,
+      title: questionTitle(q),
+      ask: q.question,
+      yes: choices ? "record the value you pick, confirmed by you" : `answer it in the terminal: agentx wiki answer ${q.id} "<value>"`,
+      no: q.kind === "contradiction" ? "dismiss it; the wiki keeps its value" : "dismiss the question",
+      raised_by: q.agentId,
+      created_at: q.asked,
+      ...(choices ? { choices } : {}),
+      ...(q.path && q.kind !== "contradiction" ? { detail: clip(`Article: ${q.path}`) } : {}),
+      more: "agentx wiki questions",
+    }
+  })
+}
+
 function whatsappItems(ctx: InboxContext): InboxItem[] {
   return listDrafts(ctx.root, "pending").map((d) => ({
     key: `whatsapp:${d.id}`,
@@ -391,6 +462,8 @@ const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
   agent: agentItems,
   memory: memoryItems,
   wiki: wikiItems,
+  fact: factItems,
+  question: questionItems,
   whatsapp: whatsappItems,
   email: emailItems,
   content: contentItems,
@@ -567,6 +640,8 @@ async function decideItem(ctx: InboxContext, key: string, action: InboxAction, o
       if (!r.ok) return r
       return { ok: true, message: yes ? `${r.proposal.article.path} written to the shared wiki` : `${key} rejected` }
     }
+    case "fact": return decideFact(ctx, key, ref, yes, by, opts)
+    case "question": return decideQuestion(ctx, key, ref, yes, by, opts)
     case "whatsapp": {
       const r = await decideDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, send: ctx.sendWhatsApp })
       if (!r.ok) return r
@@ -603,5 +678,68 @@ async function decideItem(ctx: InboxContext, key: string, action: InboxAction, o
       store.close(ref, "dropped", opts.note?.trim() || `dropped by ${by}`, now)
       return { ok: true, message: `${key}: dropped` }
     }
+  }
+}
+
+/** A fact proposal: yes writes it to the ledger as confirmed by the owner,
+ *  no rejects it. Both refuse when run as an agent (assertPerson). */
+function decideFact(ctx: InboxContext, key: string, ref: string, yes: boolean, by: string, opts: DecideOptions): DecideResult {
+  const ledger = new FactLedger(wikiDirFor(ctx))
+  try {
+    const p = listFactProposals(ledger, "pending").find((x) => x.id === ref)
+    if (!p) return { ok: false, error: `nothing waiting for "${key}"` }
+    if (!yes) {
+      rejectFactProposal(ledger, p.id, by, opts.note)
+      return { ok: true, message: `${key}: claim dropped` }
+    }
+    const r = approveFactProposal(ledger, p.id, by)
+    return { ok: true, message: `${key}: ${r.write.fact.subject} · ${r.write.fact.attribute} recorded as "${r.write.fact.value}"` }
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message ?? e) }
+  }
+}
+
+/** The 1-based number or the label of one of an item's choices. */
+function pickChoice(choices: string[], choice: string | number | undefined): string | undefined {
+  if (choice === undefined || choice === "") return undefined
+  const n = typeof choice === "number" ? choice : /^\d+$/.test(String(choice).trim()) ? Number(choice) : NaN
+  if (Number.isInteger(n)) return choices[n - 1]
+  const label = String(choice).trim().toLowerCase()
+  return choices.find((c) => c.toLowerCase() === label)
+}
+
+/**
+ * A wiki question. No dismisses it. Yes answers a fact disagreement with
+ * the value picked, written to the ledger as the owner's confirmation,
+ * the same as `agentx wiki answer`. Other questions may need an article
+ * rewritten, so their answer stays with `agentx wiki answer`.
+ */
+function decideQuestion(ctx: InboxContext, key: string, ref: string, yes: boolean, by: string, opts: DecideOptions): DecideResult {
+  const dir = wikiDirFor(ctx)
+  const store = new QuestionStore(dir)
+  const q = store.list("open").find((x) => x.id === ref)
+  if (!q) return { ok: false, error: `nothing waiting for "${key}"` }
+  try {
+    assertPerson(`${yes ? "answer" : "dismiss"} a wiki question`)
+    if (!yes) {
+      store.resolve(q.id, "dismissed")
+      return { ok: true, message: `${key}: dismissed` }
+    }
+    const item = questionItems(ctx).find((i) => i.key === key)
+    if (!item?.choices) return { ok: false, error: `answer it in the terminal: agentx wiki answer ${q.id} "<value>"` }
+    const value = pickChoice(item.choices, opts.choice)
+    if (!value) return { ok: false, error: `pick one of: ${item.choices.map((c, i) => `${i + 1}. ${c}`).join(", ")}` }
+    const ledger = new FactLedger(dir)
+    const fact = q.factId ? ledger.get(q.factId) : undefined
+    if (fact) {
+      ledger.write(
+        { subject: fact.subject, attribute: fact.attribute, value, source: "owner said", verifiedBy: by, volatility: fact.volatility },
+        { confirmedBy: by },
+      )
+    }
+    store.resolve(q.id, "answered", value)
+    return { ok: true, message: `${key}: answered "${value}"` }
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message ?? e) }
   }
 }

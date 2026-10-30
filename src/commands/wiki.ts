@@ -16,6 +16,7 @@ import { applyNoteAnswers, noteSource, parseNoteAnswers, renderAbsorbNotesBlock 
 import { NoteStore, type WikiNote } from "@/wiki/notes"
 import { absorbOffAgents, absorbSkipMessage, selectAbsorbAgents } from "@/wiki/absorb-agents"
 import { runPromotion } from "@/wiki/promote"
+import { CAPTURE_RUNS_FILE, summariseCaptureRuns } from "@/wiki/capture-runs"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
 import { registerWikiNotes } from "./wiki-notes"
@@ -163,6 +164,16 @@ wiki
     console.log()
     console.log(`  Total raw entries: ${totalEntries}`)
     console.log(`  Agents: ${agents.length}`)
+    // What happened to each finished task at the wiki's door (#603).
+    const captureFile = resolve(hub.getBaseDir(), CAPTURE_RUNS_FILE)
+    if (existsSync(captureFile)) {
+      const since = new Date(Date.now() - 7 * 86_400_000).toISOString()
+      const c = summariseCaptureRuns(readFileSync(captureFile, "utf-8"), since)
+      const failed = c.failed > 0 ? chalk.red(`${c.failed} failed to write`) : "0 failed to write"
+      console.log(`  Tasks, last 7 days: ${c.total}  captured ${c.captured} · skipped ${c.skipped} · ${failed}`)
+      const top = Object.entries(c.skippedBy).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      if (top.length) console.log(chalk.dim(`    skipped because: ${top.map(([r, n]) => `${r} (${n})`).join(", ")}`))
+    }
     console.log()
 
     for (const agent of agents) {

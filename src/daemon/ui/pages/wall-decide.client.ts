@@ -26,8 +26,8 @@
 
 export const WALL_DECIDE_SCRIPT = String.raw`
   var D = { data: null, loading: false, reqs: null, tab: 'waiting', kind: '', note: '', noteErr: false, picks: {}, texts: {}, replies: {}, hand: {}, sending: {}, confirm: null };
-  var DEC_BADGE = { card: 'Decision', schedule: 'Schedule', agent: 'New agent', memory: 'Memory', wiki: 'Wiki', whatsapp: 'Draft', email: 'Draft', content: 'Draft', request: 'Request', review: 'Review' };
-  var DEC_CHIPS = [['decisions', 'Decisions', ['card', 'agent']], ['schedules', 'Schedules', ['schedule']], ['memory', 'Memory', ['memory']], ['wiki', 'Wiki', ['wiki']],
+  var DEC_BADGE = { card: 'Decision', schedule: 'Schedule', agent: 'New agent', memory: 'Memory', wiki: 'Wiki', fact: 'Wiki fact', question: 'Wiki question', whatsapp: 'Draft', email: 'Draft', content: 'Draft', request: 'Request', review: 'Review' };
+  var DEC_CHIPS = [['decisions', 'Decisions', ['card', 'agent']], ['schedules', 'Schedules', ['schedule']], ['memory', 'Memory', ['memory']], ['wiki', 'Wiki', ['wiki', 'fact', 'question']],
     ['drafts', 'Drafts', ['whatsapp', 'email', 'content']], ['requests', 'Requests', ['request']], ['reviews', 'Reviews', []]];
   var DEC_SILENT = { discard: 'the agent drops it', keep: 'nothing is approved', pause: 'the agent pauses this work' };
   var DEC_REACH = { all: 'all', urgent: 'urgent only', off: 'off' };
@@ -148,7 +148,7 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     return Object.keys(seen).join(', ');
   }
   function decUnblocks(o, compact) {
-    if (o.kind === 'memory' || o.kind === 'wiki' || o.kind === 'review') return '';
+    if (o.kind === 'memory' || o.kind === 'wiki' || o.kind === 'fact' || o.kind === 'question' || o.kind === 'review') return '';
     var p = decPostOf(o.key), runs = decHeld(o.key), parts = [];
     if (p) parts.push('the post ' + (compact ? esc(p.headline) : '<a href="' + esc(hashOf(p.id)) + '" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a>') +
       (o.at ? ' (waiting ' + esc(short(o.at)) + ')' : ''));

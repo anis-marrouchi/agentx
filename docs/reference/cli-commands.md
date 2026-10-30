@@ -1354,6 +1354,10 @@ Turn a draft JSON file ({category, title, fields}) into a pre-filled issue form 
 
 Show wiki status per agent. For each agent it counts the raw entries an article cites, the entries absorb has read but did not cite, and the entries still waiting (unabsorbed). When entries are waiting, the last line gives the total and tells you to run `agentx wiki absorb`.
 
+It also counts what happened to each finished task in the last 7 days, from `_capture-runs.jsonl` in the wiki folder: **captured**, **skipped** with the top reasons (for example `response too short` or `machine channel: cron`), and **failed to write**. The daemon's log has one line for each skip and each failed write. The file holds no message text and keeps its newest half past 1 MB.
+
+**Check it worked:** run one task, then `agentx wiki status`. The **Tasks, last 7 days** line has grown by one.
+
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |

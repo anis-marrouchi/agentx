@@ -271,6 +271,21 @@ After the pick, AgentX lists the pages the picked pages link to, and the newest 
 - `agentx wiki query "…" --no-notes` leaves the agent's notes out.
 - `agentx wiki query "…" --trace` also prints how many reads were asked and answered, and how long each step took.
 
+## Measure search on your own wiki
+
+From a checkout of AgentX, you can check how often the wiki's keyword search finds the right page for questions you write. The questions name your own people and systems, so they stay on your machine, never in the repository.
+
+1. **Editor:** create `.agentx/retrieval-cases.json` beside your `.agentx/wiki` folder (or point `AGENTX_RETRIEVAL_CASES` at another file):
+
+   ```json
+   { "floor": 0.6, "cases": [
+     { "name": "staging deploy", "query": "how do I deploy the app to staging", "expectedTitleContains": "Staging Deploy" }
+   ] }
+   ```
+
+   `expectedTitleContains` is a part of the right page's title. `floor` is the share of questions whose page must be in the top three (default `0.6`).
+2. **Terminal:** run `pnpm eval:track`. Only compiled pages are searched, not the captured entries waiting for absorb. It prints the top three for each miss, adds a line to `.agentx/RETRIEVAL_SCORES.md`, and fails when fewer than `floor` of the questions find their page. Without a wiki or a questions file, it is skipped.
+
 ## Check it worked
 
 1. **Terminal:** run `agentx wiki query "<a question about something that has an issue>" --agent <agent> --trace`.
