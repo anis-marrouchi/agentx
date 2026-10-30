@@ -3,15 +3,17 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { decide, listInbox } from "../src/approvals/inbox"
+import { readOwnerList } from "../src/desk/owner-list"
 import { FactLedger } from "../src/wiki/facts/ledger"
 import { listFactProposals, proposeFacts } from "../src/wiki/facts/fact-proposals"
 import { QuestionStore } from "../src/wiki/questions"
 
 // Fact proposals and open wiki questions in the Approvals inbox (#603).
-// The audit found 102 claims and 52 questions waiting where nobody looked:
-// only `wiki facts proposals` and `wiki questions` showed them. They are
-// now inbox items with their age, answered through the sources' own paths,
-// and only by a person.
+// The audit found claims and questions waiting where nobody looked. A busy
+// wiki holds thousands of each, so they must not flood the owner's list:
+// pending claims are one backlog line outside the count, and only fact
+// disagreements (the questions a yes can settle) are listed. Each is
+// answered through its source's own path, and only by a person.
 
 const NOW = Date.parse("2026-10-04T08:00:00.000Z")
 
@@ -46,23 +48,29 @@ describe("fact proposals in the inbox", () => {
   function seed() {
     return proposeFacts(new FactLedger(wikiDir), [
       { claim: "The vendor account is past due", agentId: "beta", origin: "continuity-memo", at: "2026-10-01T08:00:00.000Z" },
-      { claim: "Remember the thing from Tuesday", agentId: "alpha", origin: "rotation-memo:tier-2", at: "2026-10-03T08:00:00.000Z" },
+      { claim: "Remember the thing from Tuesday", agentId: "alpha", origin: "rotation-memo:tier-2", at: "2026-10-03T12:00:00.000Z" },
     ])
   }
 
-  it("lists each pending claim with who made it and when", () => {
-    const [p] = seed()
-    const { items, errors } = listInbox(ctx(), { kinds: ["fact"] })
+  it("rolls pending claims up into one backlog line, outside the items and the count", () => {
+    seed()
+    const { items, errors, backlog } = listInbox(ctx(), { kinds: ["fact"] })
     expect(errors).toEqual([])
-    expect(items).toHaveLength(2)
-    expect(items[0]).toMatchObject({
-      key: `fact:${p.id}`, kind: "fact", raised_by: "beta", created_at: "2026-10-01T08:00:00.000Z",
-      title: expect.stringMatching(/^The vendor account · .+: past due$/),
-    })
-    expect(items[0].ask).toContain("The vendor account is past due")
-    // A claim AgentX could not split says so, instead of a yes that fails silently.
-    expect(items[1].yes).toMatch(/terminal/)
-    expect(items[1].detail).toMatch(/could not read a subject/)
+    expect(items).toEqual([])
+    expect(backlog).toEqual([{
+      kind: "fact", count: 2, new_today: 1, newest: "2026-10-03T12:00:00.000Z",
+      title: "2 wiki claims wait for a check (1 new today)", more: "agentx wiki facts proposals list",
+    }])
+    expect(readOwnerList(ctx(), { url: "", name: "here" }).count).toBe(0)
+  })
+
+  it("thousands of claims stay one line", () => {
+    proposeFacts(new FactLedger(wikiDir), Array.from({ length: 2500 }, (_, i) => (
+      { claim: `Example Co office ${i} is open`, agentId: "alpha", origin: "continuity-memo", at: "2026-09-01T08:00:00.000Z" })))
+    const { items, backlog } = listInbox(ctx())
+    expect(items).toEqual([])
+    expect(backlog).toHaveLength(1)
+    expect(backlog[0].title).toBe("2,500 wiki claims wait for a check")
   })
 
   it("yes records the fact as the owner's confirmation; no drops the claim", async () => {
@@ -73,7 +81,7 @@ describe("fact proposals in the inbox", () => {
 
     expect(await decide(ctx(), `fact:${q.id}`, "no", { by: "owner", note: "not a fact" })).toMatchObject({ ok: true })
     expect(listFactProposals(new FactLedger(wikiDir)).find((x) => x.id === q.id)).toMatchObject({ status: "rejected", reason: "not a fact" })
-    expect(listInbox(ctx(), { kinds: ["fact"] }).items).toEqual([])
+    expect(listInbox(ctx(), { kinds: ["fact"] }).backlog).toEqual([])
     expect(await decide(ctx(), `fact:${p.id}`, "yes")).toMatchObject({ ok: false })
   })
 
@@ -96,26 +104,32 @@ describe("fact proposals in the inbox", () => {
   it("a damaged ledger is reported, not shown as nothing waiting", () => {
     seed()
     writeFileSync(join(wikiDir, "_facts.json"), "{ not json")
-    const { items, errors } = listInbox(ctx(), { kinds: ["fact"] })
-    expect(items).toEqual([])
+    const { backlog, errors } = listInbox(ctx(), { kinds: ["fact"] })
+    expect(backlog).toEqual([])
     expect(errors.map((e) => e.kind)).toEqual(["fact"])
   })
 })
 
 describe("open wiki questions in the inbox", () => {
-  it("lists open questions with their age; answered ones are left out", () => {
+  it("lists only disagreements: missing fields and articles stay with `wiki questions`", () => {
     const store = new QuestionStore(wikiDir)
     store.add([
       { kind: "field", agentId: "alpha", path: "people/sam.md", subject: "Sam", field: "role", question: "What is Sam's role?" },
       { kind: "article", agentId: "alpha", path: "", subject: "Example Co", question: "Is Example Co a client or a vendor?" },
     ])
-    const done = store.list()[1]
-    store.resolve(done.id, "dismissed")
-    const { items } = listInbox(ctx(), { kinds: ["question"] })
-    expect(items).toHaveLength(1)
-    expect(items[0]).toMatchObject({ kind: "question", title: "Sam: role is missing", ask: "What is Sam's role?", raised_by: "alpha" })
+    expect(listInbox(ctx(), { kinds: ["question"] }).items).toEqual([])
+    const id = seedContradiction()
+    const { items, backlog } = listInbox(ctx(), { kinds: ["question"] })
+    expect(items.map((i) => i.key)).toEqual([`question:${id}`])
+    expect(items[0]).toMatchObject({ kind: "question", raised_by: "beta" })
     expect(Date.parse(items[0].created_at)).not.toBeNaN()
-    expect(items[0].choices).toBeUndefined()
+    expect(backlog).toEqual([])
+  })
+
+  it("an answered disagreement leaves the list", async () => {
+    const id = seedContradiction()
+    expect(await decide(ctx(), `question:${id}`, "no", { by: "owner" })).toMatchObject({ ok: true })
+    expect(listInbox(ctx(), { kinds: ["question"] }).items).toEqual([])
   })
 
   it("a field question is answered in the terminal; no dismisses it", async () => {

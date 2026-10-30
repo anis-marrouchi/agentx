@@ -46,7 +46,6 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
       <button type="button" class="ax-chip apv__f" data-kind="agent" aria-pressed="false">New agents <span id="n-agent"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="memory" aria-pressed="false">Memory <span id="n-memory"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="wiki" aria-pressed="false">Wiki <span id="n-wiki"></span></button>
-      <button type="button" class="ax-chip apv__f" data-kind="fact" aria-pressed="false">Wiki facts <span id="n-fact"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="question" aria-pressed="false">Wiki questions <span id="n-question"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="whatsapp" aria-pressed="false">WhatsApp <span id="n-whatsapp"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="email" aria-pressed="false">Email <span id="n-email"></span></button>
@@ -60,6 +59,7 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
   <div id="apv-errors"></div>
   <ol id="apv-list" class="apv__list" aria-label="Waiting for you"></ol>
   <p id="apv-snoozed" class="apv__foot"></p>
+  <div id="apv-backlog"></div>
 
 ${REQUESTS_HTML}
 
@@ -157,7 +157,7 @@ const APPROVALS_CSS = `
 
 const APPROVALS_SCRIPT = `
 (function(){
-var state = { items: [], extra: [], desk: null, snoozed: 0, kind: '', showAll: false, popup: false };
+var state = { items: [], extra: [], backlog: [], desk: null, snoozed: 0, kind: '', showAll: false, popup: false };
 var LABEL = { card: 'Card', schedule: 'Schedule', agent: 'New agent', memory: 'Memory fact', wiki: 'Wiki lesson', fact: 'Wiki fact', question: 'Wiki question', whatsapp: 'WhatsApp reply', email: 'Email reply', content: 'Post', request: 'Request' };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
@@ -197,7 +197,7 @@ async function load(){
     var r = await fetch('/api/admin/approvals' + (state.showAll ? '?all=1' : ''), { headers: headers(false) });
     var d = await r.json();
     if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
-    state.items = d.items || []; state.snoozed = d.snoozed || 0;
+    state.items = d.items || []; state.snoozed = d.snoozed || 0; state.backlog = d.backlog || [];
     // The owner's one list: what it holds beyond the inbox is the requests
     // whose agent asked a question (answered in Open requests below).
     state.desk = d.desk || null;
@@ -210,7 +210,7 @@ async function load(){
 }
 
 function counts(){
-  var c = { card: 0, schedule: 0, agent: 0, memory: 0, wiki: 0, fact: 0, question: 0, whatsapp: 0, email: 0, content: 0, request: 0 };
+  var c = { card: 0, schedule: 0, agent: 0, memory: 0, wiki: 0, question: 0, whatsapp: 0, email: 0, content: 0, request: 0 };
   state.items.forEach(function(i){ c[i.kind] = (c[i.kind] || 0) + 1; });
   c.request += state.extra.length;
   $('n-all').textContent = state.items.length + state.extra.length;
@@ -239,6 +239,10 @@ function render(){
   foot.innerHTML = state.snoozed && !state.showAll
     ? state.snoozed + ' put off for later. <button type="button" id="apv-show-all">Show them</button>'
     : (state.showAll ? '<button type="button" id="apv-hide-later">Hide items put off for later</button>' : '');
+  // Kinds that wait in bulk (wiki claims): one line each, outside the count.
+  $('apv-backlog').innerHTML = state.backlog.map(function(b){
+    return '<p class="apv__foot">' + esc(b.title) + '. Not counted above. See them in the terminal: <code>' + esc(b.more) + '</code></p>';
+  }).join('');
 }
 
 function item(i){

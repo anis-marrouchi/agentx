@@ -27,7 +27,7 @@
 export const WALL_DECIDE_SCRIPT = String.raw`
   var D = { data: null, loading: false, reqs: null, tab: 'waiting', kind: '', note: '', noteErr: false, picks: {}, texts: {}, replies: {}, hand: {}, sending: {}, confirm: null };
   var DEC_BADGE = { card: 'Decision', schedule: 'Schedule', agent: 'New agent', memory: 'Memory', wiki: 'Wiki', fact: 'Wiki fact', question: 'Wiki question', whatsapp: 'Draft', email: 'Draft', content: 'Draft', request: 'Request', review: 'Review' };
-  var DEC_CHIPS = [['decisions', 'Decisions', ['card', 'agent']], ['schedules', 'Schedules', ['schedule']], ['memory', 'Memory', ['memory']], ['wiki', 'Wiki', ['wiki', 'fact', 'question']],
+  var DEC_CHIPS = [['decisions', 'Decisions', ['card', 'agent']], ['schedules', 'Schedules', ['schedule']], ['memory', 'Memory', ['memory']], ['wiki', 'Wiki', ['wiki', 'question']],
     ['drafts', 'Drafts', ['whatsapp', 'email', 'content']], ['requests', 'Requests', ['request']], ['reviews', 'Reviews', []]];
   var DEC_SILENT = { discard: 'the agent drops it', keep: 'nothing is approved', pause: 'the agent pauses this work' };
   var DEC_REACH = { all: 'all', urgent: 'urgent only', off: 'off' };
@@ -277,8 +277,12 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     var tabList = all.filter(function (o) { return D.tab === 'later' ? o.snoozed : !o.snoozed; });
     var shown = D.kind === 'reviews' ? (D.tab === 'waiting' ? reviews : []) : tabList.filter(function (o) { return !D.kind || decChipOf(o) === D.kind; });
     var reviewNote = D.kind === 'reviews' && R.data && R.data.error ? '<div class="wdc__err is-part"><p>Could not read the reviews: ' + esc(R.data.error) + '.</p></div>' : '';
+    // Wiki claims wait in bulk: one line under the Wiki chip, not cards, not counted.
+    var backlog = D.tab === 'waiting' && (D.kind === 'wiki' || !D.kind) ? (v.backlog || []).map(function (b) {
+      return '<p class="wdc__ro">' + esc(b.title) + '. Not counted above. See them in the terminal: <code>' + esc(b.more) + '</code></p>';
+    }).join('') : '';
     return note + head + decTabs() + (decOwner() ? decChips(tabList, D.tab === 'waiting' ? reviews : []) : '') + ro + err + reviewNote +
-      (shown.length ? shown.map(decCardHtml).join('') : decEmpty());
+      (shown.length ? shown.map(decCardHtml).join('') : decEmpty()) + backlog;
   }
   /** The side column: what waits, what was answered today, how the inbox reaches you. */
   function decSideHtml() {

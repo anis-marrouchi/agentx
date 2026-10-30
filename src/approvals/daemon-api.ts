@@ -83,6 +83,7 @@ export function handleApprovalsApi(
           items: listing.items.slice(0, LIST_LIMIT),
           truncated: listing.items.length > LIST_LIMIT,
           errors: listing.errors,
+          backlog: listing.backlog,
         },
       }
     }
