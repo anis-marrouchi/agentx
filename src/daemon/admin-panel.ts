@@ -269,11 +269,13 @@ function setOrgHold(body: any) {
  * A secret field in agentx.json, as the state endpoint may show it: a
  * `${NAME}` reference passes through; anything else is a value typed into
  * the file, so only `{ literal: true }` leaves the daemon. Empty is "".
+ * The name pattern matches the daemon's own expansion (`expandEnvVars`), so
+ * a lowercase `${name}` is still a reference, not a literal.
  */
 export type SecretRef = string | { literal: true }
 export function secretRef(v: unknown): SecretRef {
   if (v === undefined || v === null || v === "") return ""
-  return typeof v === "string" && /^\$\{[A-Z0-9_]+\}$/.test(v) ? v : { literal: true }
+  return typeof v === "string" && /^\$\{\w+\}$/.test(v) ? v : { literal: true }
 }
 
 function getAdminState() {
