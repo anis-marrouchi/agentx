@@ -14,7 +14,7 @@ A plan is part of [open requests](./open-requests.md), so open requests must be 
 4. The steps run one after the other. When a step starts, the daemon gives it to its owner agent. The agent reports progress, and reports the step as done with the proof.
 5. A step can carry an address to check. The daemon reads that address every minute and marks the step done as soon as it answers (and shows the expected text, when one is given).
 6. When the steps before an approved message are done, the daemon sends the message itself. It does not ask you again.
-7. When a step shows no progress for a while (30 minutes by default), the daemon **nudges** its agent: it reminds the agent of the step and asks for a report. Every nudge is written to the plan's log. After the last nudge (3 by default), the step counts as **blocked**.
+7. When a step shows no progress for a while (30 minutes by default), the daemon **nudges** its agent: it reminds the agent of the step and asks for a report. Every nudge is written to the plan's log. After the last nudge (3 by default), the step counts as **blocked**. When the agent reports progress on the step, the clock and the nudge count both start again from zero, so only nudges since its last report count.
 8. You hear about a plan only twice at most: once when a step is blocked and needs you, and once at the end, with one summary of every step and its proof. Then the request closes as done.
 
 Plans are on as soon as open requests are on. Agents make a plan only for work of two or more steps. One-step work stays an ordinary request.
@@ -143,6 +143,6 @@ An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2
 - **The agent says ``accept needs `work` ``:** the agent took the request on without saying what kind of work it is. It accepts again with `work`. To stop asking, turn both settings off: `--plan-for none --plan-over 0`.
 - **A message step stays at "not started" after the steps before it are done:** its card is still waiting for you. Answer it in the Approvals inbox. If the card expired, the step is blocked; run `agentx requests step <id> <step> --retry` to send it.
 - **The message was not sent and the step is blocked:** the daemon tried three times and the channel refused it. Check the channel is connected (`agentx doctor`), then run `--retry`.
-- **Nudges come while the work is simply slow:** the agent can report `progress` to reset the clock. To wait longer for every step, raise `--stall-minutes`. For one step, the agent sets `stallMinutes` on it.
+- **Nudges come while the work is simply slow:** the agent can report `progress` to reset the clock and the nudge count. To wait longer for every step, raise `--stall-minutes`. For one step, the agent sets `stallMinutes` on it.
 - **A step with a check is never marked done:** the address did not answer, or did not show the expected text. Open the address in a browser. The agent can still report the step done with its proof.
 - **A plan stopped and its request is gone from the list:** someone closed or dropped the request. The plan stops with it, and the log says `closed`.

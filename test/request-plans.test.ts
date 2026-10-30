@@ -299,6 +299,28 @@ describe("nudges", () => {
     expect((await sweep()).nudged).toBe(0)
   })
 
+  it("starts the nudge count again when the agent reports progress (#1568)", async () => {
+    await sweep()
+    // Nudged, then progress, three times over: each report wins a fresh count.
+    for (let i = 0; i < 3; i++) {
+      clock += 31 * MIN
+      expect((await sweep()).nudged).toBe(1)
+      expect(plans.step("req-1", 2)).toMatchObject({ nudges: 1 })
+      api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: `pass ${i + 1}` })
+      expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 0, lastNudgeAt: null })
+    }
+    expect(turns.at(-1)?.text).toContain("nudge 1 of 3")
+    clock += 31 * MIN
+    expect((await sweep()).blocked).toBe(0)
+    expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 1 })
+    expect(plans.events("req-1").filter((e) => e.kind === "progress").at(-1)?.detail).toBe("devops: pass 3 (nudges reset from 1)")
+    // Quiet again after that: three nudges with no report, then blocked.
+    for (let i = 0; i < 2; i++) { clock += 31 * MIN; await sweep() }
+    clock += 31 * MIN
+    expect((await sweep()).blocked).toBe(1)
+    expect(plans.step("req-1", 2)).toMatchObject({ state: "blocked", note: "no progress after 3 nudges" })
+  })
+
   it("blocks the step after the last nudge and tells the owner once, not twice", async () => {
     await sweep()
     for (let i = 0; i < 3; i++) { clock += 31 * MIN; await sweep() }

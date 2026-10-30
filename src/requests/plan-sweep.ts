@@ -136,9 +136,12 @@ export function reportStep(
     blockStep(requests, plans, step, `${input.agentId}: ${note}`, now)
     return null
   }
+  // Progress resets the nudges: "no progress after 3 nudges" counts the
+  // nudges since the last report, not every nudge the step ever had (#1568).
   if (step.state === "blocked") restartStep(requests, plans, step, now, false)
-  else plans.updateStep(step.requestId, step.idx, { updatedAt: now })
-  plans.event(step.requestId, step.idx, "progress", `${input.agentId}: ${note || "under way"}`, now)
+  else plans.updateStep(step.requestId, step.idx, { nudges: 0, lastNudgeAt: null, updatedAt: now })
+  const reset = step.state !== "blocked" && step.nudges > 0 ? ` (nudges reset from ${step.nudges})` : ""
+  plans.event(step.requestId, step.idx, "progress", `${input.agentId}: ${note || "under way"}${reset}`, now)
   requests.touch(step.requestId, now)
   return null
 }
