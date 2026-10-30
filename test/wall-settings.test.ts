@@ -222,7 +222,7 @@ describe("Wall Settings: the shell (#1428)", () => {
     await w.go("#page=settings&section=guests")
     expect(settingsHtml(w)).toContain('href="/guests"')
     await w.go("#page=settings&section=people")
-    expect(settingsHtml(w)).toContain("People has its own page on the Wall.")
+    expect(settingsHtml(w)).toContain("People has its own page on the Hub.")
     expect(settingsHtml(w)).toContain('href="#page=people"')
   })
 
@@ -684,11 +684,11 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
 
   it("draws Settings on this machine and for a signed-in browser; anyone else gets no page and no API", async () => {
     const base = await start()
-    expect(await (await fetch(base + "/wall")).text()).toContain('data-nav="settings" href="#page=settings"')
-    const signIn = await fetch(`${base}/login`, { method: "POST", redirect: "manual", headers: { ...OFF, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: TOKEN, next: "/wall" }).toString() })
+    expect(await (await fetch(base + "/hub")).text()).toContain('data-nav="settings" href="#page=settings"')
+    const signIn = await fetch(`${base}/login`, { method: "POST", redirect: "manual", headers: { ...OFF, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: TOKEN, next: "/hub" }).toString() })
     const cookie = (signIn.headers.get("set-cookie") || "").split(";")[0]
-    expect(await (await fetch(base + "/wall", { headers: { ...OFF, Cookie: cookie } })).text()).toContain('data-nav="settings" href="#page=settings"')
-    const stranger = await fetch(base + "/wall", { headers: OFF, redirect: "manual" })
+    expect(await (await fetch(base + "/hub", { headers: { ...OFF, Cookie: cookie } })).text()).toContain('data-nav="settings" href="#page=settings"')
+    const stranger = await fetch(base + "/hub", { headers: OFF, redirect: "manual" })
     expect(stranger.status).toBe(302)
     expect(await stranger.text()).not.toContain("AX_WALL_SETTINGS")
     expect((await fetch(`${base}/api/admin/state`, { headers: OFF })).status).toBe(401)
@@ -698,8 +698,8 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
 
   it("with no dashboard token, draws Settings on this machine only, as the writes allow", async () => {
     const base = await start(null)
-    expect(await (await fetch(base + "/wall")).text()).toContain('data-nav="settings" href="#page=settings"')
-    const off = await (await fetch(base + "/wall", { headers: OFF })).text()
+    expect(await (await fetch(base + "/hub")).text()).toContain('data-nav="settings" href="#page=settings"')
+    const off = await (await fetch(base + "/hub", { headers: OFF })).text()
     expect(off).not.toContain('data-nav="settings"')
     expect(off).not.toContain("window.AX_WALL_SETTINGS =")
     expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PATCH", headers: { ...OFF, "X-Requested-With": "agentx-board" }, body: "{}" })).status).toBe(401)

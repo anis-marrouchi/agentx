@@ -31,6 +31,8 @@
 // Also here: who an @mention in a comment names, and the call and join
 // buttons of an agent's page and profile.
 
+import { HUB_NAME } from "../hub-name"
+
 export const WALL_LIVE_SCRIPT = String.raw`
   // --- Live sessions, live ones first ---
   function liveSessions() {
@@ -357,7 +359,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
   async function tellMentioned(p, text) {
     var told = [];
     for (var m of mentionedAgents(text, p.owner)) {
-      var body = 'The owner mentioned you in a comment on Wall post ' + p.id + ' by @' + p.owner + ': "' + (p.headline || p.id) + '".\n\nTheir comment:\n' + text;
+      var body = 'The owner mentioned you in a comment on ${HUB_NAME} post ' + p.id + ' by @' + p.owner + ': "' + (p.headline || p.id) + '".\n\nTheir comment:\n' + text;
       var r = await act('POST', '/api/admin/wall/post', { agent: m.id, text: body }, m.peer);
       told.push(r.ok ? '@' + m.id : '@' + m.id + ' (not sent: ' + r.error + ')');
     }

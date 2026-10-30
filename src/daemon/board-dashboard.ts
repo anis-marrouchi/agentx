@@ -36,6 +36,7 @@ import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphD
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
 import { WALL_COST_HREF } from "./ui/pages/wall-cost"
+import { HUB_NAME, HUB_PATH, hubRedirect } from "./ui/hub-name"
 import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
@@ -193,7 +194,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
 const DASHBOARD_PAGES = new Set([
   "/",
   "/live",
-  "/wall",
+  HUB_PATH,
   "/mesh",
   "/monitor",
   "/activity",
@@ -213,13 +214,13 @@ const DASHBOARD_PAGES = new Set([
   "/admin/wiki",
 ])
 
-/** Retired classic pages and the Wall view each one now opens (#1446). */
+/** Retired classic pages and the Hub view each one now opens (#1446). */
 export const RETIRED_PAGES: Record<string, string> = {
-  "/boards": "/wall#status=open&view=projects",
-  "/glossary": "/wall",
-  "/procedures": "/wall#page=agents",
-  "/processes": "/wall#status=open&view=jobs",
-  "/places": "/wall",
+  "/boards": `${HUB_PATH}#status=open&view=projects`,
+  "/glossary": HUB_PATH,
+  "/procedures": `${HUB_PATH}#page=agents`,
+  "/processes": `${HUB_PATH}#status=open&view=jobs`,
+  "/places": HUB_PATH,
 }
 
 export interface Ctx {
@@ -261,7 +262,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // The Wall's owner-only guard (#1454): every write under /api/admin/wall,
   // here or forwarded to a peer, stops here without the owner's token.
   if (isWallWrite(method, path) && !wallOwnerOk(req, ctx)) {
-    sendJson(res, 401, { error: "Only the owner writes on the Wall: sign in, or send the dashboard token." })
+    sendJson(res, 401, { error: `Only the owner writes on the ${HUB_NAME}: sign in, or send the dashboard token.` })
     return
   }
   // The workflow editor is a Wall page (#1524): saving, deleting or laying
@@ -340,7 +341,15 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end()
     return
   }
-  if (method === "GET" && path === "/wall") {
+  // The Wall is the Hub now (#1485): every old /wall... address opens the
+  // same /hub... page, so bookmarks and links in old messages keep working.
+  const moved = method === "GET" ? hubRedirect(path, url.search) : null
+  if (moved) {
+    res.writeHead(301, { Location: moved })
+    res.end()
+    return
+  }
+  if (method === "GET" && path === HUB_PATH) {
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWallPage(wallPageOpts(req, ctx)))
@@ -534,7 +543,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)
     if (!to) {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
-      res.end("<p>Missing <code>?agent=</code>. Open this task from the Wall's Live page.</p>")
+      res.end(`<p>Missing <code>?agent=</code>. Open this task from the ${HUB_NAME}'s Live page.</p>`)
       return
     }
     // Off-box with no session, sign in first with the whole Wall link as
@@ -552,7 +561,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)
     if (!to) {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
-      res.end("<p>That agent name could not be read. Open the agent from the Wall's Agents page.</p>")
+      res.end(`<p>That agent name could not be read. Open the agent from the ${HUB_NAME}'s Agents page.</p>`)
       return
     }
     // Off-box with no session, sign in first with the whole Wall link as

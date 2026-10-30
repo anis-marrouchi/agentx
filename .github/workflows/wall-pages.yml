@@ -1,6 +1,6 @@
-name: Wall pages
+name: Hub pages
 
-# The shared Wall page check (#1454): every view in
+# The shared Hub page check (#1454): every view in
 # scripts/wall-page-check.json opened at 390 px and at desktop width on the
 # seeded demo, failing on any console error or failed request. Screenshots
 # are uploaded as the "wall-pages" artifact for the PR.
@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   pages:
-    name: Wall page check
+    name: Hub page check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -49,11 +49,11 @@ jobs:
       - name: Start and seed the demo
         run: |
           nohup node dist/cli.js demo --no-open --keep --dashboard-token ci-demo-only-token < /dev/null > demo.log 2>&1 &
-          for i in $(seq 1 90); do curl -sf -o /dev/null http://127.0.0.1:18931/wall && break; sleep 2; done
-          curl -sf -o /dev/null http://127.0.0.1:18931/wall || { cat demo.log; exit 1; }
+          for i in $(seq 1 90); do curl -sf -o /dev/null http://127.0.0.1:18931/hub && break; sleep 2; done
+          curl -sf -o /dev/null http://127.0.0.1:18931/hub || { cat demo.log; exit 1; }
           node docs/.scripts/seed-demo.mjs
 
-      - name: Open every Wall view at 390 px and desktop
+      - name: Open every Hub view at 390 px and desktop
         env:
           WALL_CHECK_TOKEN: ci-demo-only-token
         run: node scripts/wall-page-check.mjs --out wall-pages

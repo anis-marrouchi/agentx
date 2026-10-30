@@ -22,6 +22,8 @@
 // refreshPeople() is called from the Wall's own load(), so the nav count
 // and the "Asked by" names are there before the page is opened.
 
+import { HUB_NAME } from "../hub-name"
+
 export const WALL_PEOPLE_SCRIPT = String.raw`
   var PP = { list: null, paired: 0, error: '', open: {}, detail: {}, note: '', bad: false };
   var PP_ROLE = { owner: 'Owner', member: 'Member', client: 'Client', guest: 'Guest' };
@@ -133,7 +135,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
       (p.agents.length ? '<div class="wp__meta">May reach ' + p.agents.map(function (a) { return '<button type="button" data-agent="' + esc(a) + '">' + esc(nameOf(a)) + '</button>'; }).join(', ') + '</div>' : '') +
       '<div class="wpf__stats"><span><b>' + n + '</b> ' + (n === 1 ? 'machine' : 'machines') + '</span>' +
         (p.machines.pending ? '<span class="is-warn"><b>' + p.machines.pending + '</b> waiting for approval</span>' : '') +
-        '<span><a href="' + askerHref(p.id) + '"><b>' + (S.data ? asked : '…') + '</b> open ' + (asked === 1 ? 'request' : 'requests') + ' on the Wall</a></span></div>' +
+        '<span><a href="' + askerHref(p.id) + '"><b>' + (S.data ? asked : '…') + '</b> open ' + (asked === 1 ? 'request' : 'requests') + ' on the ${HUB_NAME}</a></span></div>' +
       pictureActsHtml(p.id, true) +
       '<button type="button" class="wpp__toggle" data-pp-open="' + esc(p.id) + '" aria-expanded="' + on + '" aria-controls="pp-body-' + esc(p.id) + '">' + (on ? 'Hide machines and requests' : 'Machines and requests') + '</button>' +
       '<div class="wpp__body" id="pp-body-' + esc(p.id) + '"' + (on ? '' : ' hidden') + '>' + (on ? personDetailHtml(p) : '') + '</div>' +
@@ -141,7 +143,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
   }
   function peoplePageHtml() {
     var note = PP.note ? '<p class="wdo__n wpp__note' + (PP.bad ? ' is-bad' : '') + '" role="status">' + esc(PP.note) + '</p>' : '';
-    if (PP.error && !PP.list) return note + '<p class="ax-wall__empty">Could not read the people list: ' + esc(PP.error) + '. The rest of the Wall still works; reload the page if the dashboard token was set after it opened.</p>';
+    if (PP.error && !PP.list) return note + '<p class="ax-wall__empty">Could not read the people list: ' + esc(PP.error) + '. The rest of the ${HUB_NAME} still works; reload the page if the dashboard token was set after it opened.</p>';
     if (!PP.list) return '<p class="ax-wall__empty">Loading…</p>';
     var none = PP.paired ? '' : '<section class="wpp__none" aria-labelledby="pp-none-h"><h2 id="pp-none-h">Nobody has paired a machine yet</h2>' +
       '<p>A teammate gets one page of their own, <b>My work</b>, on a machine you approve. A client gets <b>Your project</b> instead. To invite someone, from the folder that holds <code>agentx.json</code>:</p><ol>' +

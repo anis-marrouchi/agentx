@@ -12,7 +12,7 @@ import { isOffBox, pageToken, sessionValue } from "../src/daemon/dashboard-sessi
 
 const TOKEN = "dash-secret"
 const OFF = { "X-Forwarded-For": "100.64.0.9" }
-const PAGES = ["/wall", "/admin", "/approvals", "/admin/graph", "/admin/agents/ops", "/admin/health", "/admin/ledger"]
+const PAGES = ["/hub", "/admin", "/approvals", "/admin/graph", "/admin/agents/ops", "/admin/health", "/admin/ledger"]
 
 let server: Server | undefined
 
@@ -117,7 +117,7 @@ describe("dashboard pages off-box (#1306)", () => {
     const login = new URL(r.headers.get("location") || "", base)
     expect(login.pathname).toBe("/login")
     const next = login.searchParams.get("next") || ""
-    expect(next).toBe("/wall#page=activity&a-agent=ops&a-period=30d")
+    expect(next).toBe("/hub#page=activity&a-agent=ops&a-period=30d")
     expect((await signIn(base, TOKEN, next)).headers.get("location")).toBe(next)
   })
 

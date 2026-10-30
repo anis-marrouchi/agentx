@@ -20,12 +20,14 @@
 // No new counting: a run's cost is the one its trace stored, and a run
 // with none shows "–", not $0. Nothing here writes.
 
+import { HUB_NAME } from "../hub-name"
+
 export const WALL_ACTIVITY_SCRIPT = String.raw`
   // --- Activity (#1429): every run, newest first ---
   var ACT_PERIODS = [['24h', '24 h', 24], ['7d', '7 d', 168], ['30d', '30 d', 720]];
   var ACT_RESULTS = [['done', 'Done'], ['failed', 'Failed'], ['running', 'Running'], ['stopped', 'Stopped']];
   /** What started a run, from its channel: filter value, label, "from …" text. */
-  var ACT_SOURCES = [['jobs', 'Jobs', 'a job'], ['workflows', 'Workflows', 'a workflow'], ['wall', 'Wall posts', 'a post on the Wall'], ['messages', 'Messages', 'a message']];
+  var ACT_SOURCES = [['jobs', 'Jobs', 'a job'], ['workflows', 'Workflows', 'a workflow'], ['wall', '${HUB_NAME} posts', 'a post on the ${HUB_NAME}'], ['messages', 'Messages', 'a message']];
   /** The hash keys of the Activity filters, and their S.act field. */
   var ACT_KEYS = [['a-agent', 'agent'], ['a-project', 'project'], ['a-result', 'result'], ['a-source', 'source'], ['a-period', 'period']];
   /** The most runs one machine sends for a window (session-monitor.ts). */

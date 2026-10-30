@@ -1,43 +1,43 @@
-# Wall — every task as a post
+# Hub — every task as a post
 
-The Wall is the dashboard's home page, in a space of its own, as the wiki is: its own look, close to X, with no dashboard top bar. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Happening now** gives one line per connected machine with what it runs at this moment, and **Agents** lists who has posts this week.
+The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own look, close to X, with no dashboard top bar. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Happening now** gives one line per connected machine with what it runs at this moment, and **Agents** lists who has posts this week.
 
-The Wall shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, or start a Space (see [Act on a post](#act-on-a-post)); everything else you decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
+The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, or start a Space (see [Act on a post](#act-on-a-post)); everything else you decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
 
-![The Wall in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
+![The Hub in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
 
 *Scripted demo data; your team's names and machines will differ.*
 
-## Open the Wall
+## Open the Hub
 
-1. **Browser:** open the dashboard. The Wall is the first page you see. On every other dashboard page it is the **Wall** tab in the top bar, and you can open it at `/wall`.
-2. The nav on the left starts with **Wall** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
+1. **Browser:** open the dashboard. The Hub is the first page you see. On every other dashboard page it is the **Hub** tab in the top bar, and you can open it at `/hub`.
+2. The nav on the left starts with **Hub** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
    - **Work:** **Live**, **Running now**, **Projects** and **Activity**.
    - **Automation:** **Jobs**, **Workflows**, **Reviews** and **Failures**.
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
    - **Owner:** **Settings**, for the owner only (see [Change settings](#change-settings)).
 
    Under them, **Dashboard** opens the classic pages at **Operations**. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, workflows, classifications waiting for review, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
-3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Wall's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
+3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
-   ![The Wall's title row: Wall, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
+   ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
-4. The **Quiet by design** box on the right says the Wall never pings you. Select **Dashboard pages** in it to list every classic page: **Operations**, **Monitor**, **Approvals**, **Org**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. Cost is a Wall page now (see [See what the fleet costs](#see-what-the-fleet-costs)), and so is Live: `/live` opens [Live](#live-sessions). People moved to the Wall: `/people` opens the Wall's [People](./people.md) page. Workflows has a Wall page too ([See your workflows](#see-your-workflows)), and so does the workflow editor: `/workflows/editor` opens it on the Wall. The classic `/workflows` page stays for **Follow-ups** and the full history of each run.
-5. **Light / dark**, at the bottom of the nav, switches the Wall's colours. The Wall keeps its own choice; until you pick one, it follows your system.
-6. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Wall**, **Needs you**, **Running now**, **Projects** and **More**. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
+4. The **Quiet by design** box on the right says the Hub never pings you. Select **Dashboard pages** in it to list every classic page: **Operations**, **Monitor**, **Approvals**, **Org**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. Cost is a Hub page now (see [See what the fleet costs](#see-what-the-fleet-costs)), and so is Live: `/live` opens [Live](#live-sessions). People moved to the Hub: `/people` opens the Hub's [People](./people.md) page. Workflows has a Hub page too ([See your workflows](#see-your-workflows)), and so does the workflow editor: `/workflows/editor` opens it on the Hub. The classic `/workflows` page stays for **Follow-ups** and the full history of each run.
+5. **Light / dark**, at the bottom of the nav, switches the Hub's colours. The Hub keeps its own choice; until you pick one, it follows your system.
+6. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Hub**, **Needs you**, **Running now**, **Projects** and **More**. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
-   ![The Wall on a phone with More open: Work, Automation and Fleet, then Settings, Dashboard and Light / dark](/screenshots/wall/more-phone.png)
+   ![The Hub on a phone with More open: Work, Automation and Fleet, then Settings, Dashboard and Light / dark](/screenshots/wall/more-phone.png)
 
 
-   ![The Wall on a phone in dark mode, with the bottom bar and the round + button](/screenshots/wall/phone-dark.png)
+   ![The Hub on a phone in dark mode, with the bottom bar and the round + button](/screenshots/wall/phone-dark.png)
 
-![Mockup take B (left, post text blurred) next to the Wall as built](/screenshots/wall/compare-desktop.png)
+![Mockup take B (left, post text blurred) next to the Hub as built](/screenshots/wall/compare-desktop.png)
 
 ## Read a post
 
 The top line of a post is its author: the **owner**, the agent that has the task now, with its avatar, name and @handle, and how long ago the task last moved (`12m`, `3h`, `2d`; point at it for the exact time). A green dot on the avatar means the agent is running something now. The **status** sits on the right of that line.
 
-Under the author line comes the **result**: what the agent delivered or answered. Formatting the agent wrote in Markdown (a text format where `**bold**` shows as **bold** and lines starting with `-` show as a list) is shown as formatting: bold, lists, code, tables and links. Links only open web and mail addresses. It is the task's last run that ended with a reply, with **Answered** and a link to that run. A task closed with no reply shows the proof or reason it was closed with, under **Closed with**. Under the result, select **Request** to open the request it answers: who asked, in which chat, the task id and when. A task with no result yet shows its request as the title, marked **No result yet**. The Wall never takes a result from another task or another chat.
+Under the author line comes the **result**: what the agent delivered or answered. Formatting the agent wrote in Markdown (a text format where `**bold**` shows as **bold** and lines starting with `-` show as a list) is shown as formatting: bold, lists, code, tables and links. Links only open web and mail addresses. It is the task's last run that ended with a reply, with **Answered** and a link to that run. A task closed with no reply shows the proof or reason it was closed with, under **Closed with**. Under the result, select **Request** to open the request it answers: who asked, in which chat, the task id and when. A task with no result yet shows its request as the title, marked **No result yet**. The Hub never takes a result from another task or another chat.
 
 ![A post leading with its result, the request one tap under it](/screenshots/wall/result-first.png)
 
@@ -73,15 +73,15 @@ When a task's home is a GitLab issue or merge request, the post also shows **Git
 - **over estimate**: more time was logged than the estimate,
 - **time logged, no move for N d**: time was logged, but the task has not moved for longer than the stale limit.
 
-The Wall only reads this from GitLab. It never logs time or changes the estimate. Tasks whose home is on GitHub or elsewhere show no GitLab time. When GitLab cannot be read, the post says **GitLab time unknown**, followed by the reason. In the list, point at **unknown** to see the reason.
+The Hub only reads this from GitLab. It never logs time or changes the estimate. Tasks whose home is on GitHub or elsewhere show no GitLab time. When GitLab cannot be read, the post says **GitLab time unknown**, followed by the reason. In the list, point at **unknown** to see the reason.
 
 The machine that keeps the task reads its GitLab time with its own GitLab connection: the `channels.gitlab` channel or `requests.checkers.gitlab`. A machine with neither shows no GitLab time.
 
 ### Issue state, who closed it, and the agent's comments
 
-When a task's home is an issue, pull request or merge request on GitHub or GitLab, the post shows its state there right now: **open**, **closed** or **merged**, who closed or merged it, when, and how long ago the Wall checked. When a person closed the issue while the task is still open on the Wall, the post says so in amber: **GitHub says closed by …, but this post is still open. Do not pick it up.**
+When a task's home is an issue, pull request or merge request on GitHub or GitLab, the post shows its state there right now: **open**, **closed** or **merged**, who closed or merged it, when, and how long ago the Hub checked. When a person closed the issue while the task is still open on the Hub, the post says so in amber: **GitHub says closed by …, but this post is still open. Do not pick it up.**
 
-The post also shows the issue's **milestone** and who it is **assigned to** there. The other mismatch is marked too: when the issue is still open on the forge but the task is closed on the Wall, the post says **GitHub says open, but this post is done. Close it there or reopen it here.**
+The post also shows the issue's **milestone** and who it is **assigned to** there. The other mismatch is marked too: when the issue is still open on the forge but the task is closed on the Hub, the post says **GitHub says open, but this post is done. Close it there or reopen it here.**
 
 ![Three posts with their milestone and assignees: one that agrees with GitHub, one done here but open on GitHub, one open here but closed on GitLab](/screenshots/wall/forge-live.png)
 
@@ -91,7 +91,7 @@ Each comment an agent posted on that issue through AgentX gets its own **Comment
 
 *Fictional data; your projects and agents will differ.*
 
-The Wall reads the state with this machine's own GitHub or GitLab connection (`channels.github` or `requests.checkers.github`, `channels.gitlab` or `requests.checkers.gitlab`). It never changes the issue. The answer is kept for 5 minutes, so the **checked** time can be a few minutes old. When the forge cannot be read, the post says **state unknown**, never a guessed state. Point at **state unknown** to see the reason.
+The Hub reads the state with this machine's own GitHub or GitLab connection (`channels.github` or `requests.checkers.github`, `channels.gitlab` or `requests.checkers.gitlab`). It never changes the issue. The answer is kept for 5 minutes, so the **checked** time can be a few minutes old. When the forge cannot be read, the post says **state unknown**, never a guessed state. Point at **state unknown** to see the reason.
 
 Comment links start with comments posted after this version. Older comments are not linked, so a post with no **Comment by …** link does not mean the agent never commented. AgentX keeps comment links for 90 days, then removes them when AgentX starts.
 
@@ -103,21 +103,21 @@ When an agent asks you a yes/no question (a **decision card**) while working on 
 
 *Scripted demo data; your team's names and machines will differ.*
 
-A card on the Wall shows:
+A card on the Hub shows:
 
 - the question and the agent's **recommendation**,
 - **If no answer**: what happens when the card expires without your answer. The agent drops it (`discard`), leaves things as they are (`keep`), or pauses that piece of work (`pause`). A card never says yes by itself,
 - **Expires**: how long is left, and the exact time. A card that expires within a day has a red edge,
 - who raised it and when, and its source link when it has one.
 
-Only the owner answers on the Wall: the dashboard asks for its key. To answer:
+Only the owner answers on the Hub: the dashboard asks for its key. To answer:
 
 1. **Browser:** select **Needs you** in the nav. It lists what waits on you, with the same count as the phone app's Desk and the daily digest. **Waiting**, **Put off** and **Answered** are the tabs, and the chips narrow the list to one kind: Decisions, Schedules, Memory, Wiki, Drafts, Requests and Reviews.
 2. On a card with choices, the one the agent advised is already picked. Pick another if you want. The draft and what Yes and No do are folded under the card.
 3. Select **Yes**, **No** or **Later** (**Keep** or **Drop** for a memory fact). A line opens that says exactly what is sent; select **Confirm**. The card leaves the list, and its post updates without a reload.
 4. A card raised while working on a task is also on that task's post, with the same buttons and confirm.
 
-Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Wall](./approvals.md#answer-on-the-wall).
+Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Hub](./approvals.md#answer-on-the-hub).
 
 To see the waiting tasks in the feed instead:
 
@@ -129,7 +129,7 @@ To see the waiting tasks in the feed instead:
 1. **Browser:** select a post anywhere outside its links and buttons, or select its time (`21m`) next to the agent's name. With the keyboard, move to the post with Tab and press Enter.
 2. The post opens on its own page as a task. From the top:
     - the request, as its title;
-    - where it stands: **Asked**, **Working**, **Waits** (only while it waits on someone) and **Done**, each with when or how long. The current step has a blue bar over it, or an amber one while it waits. A task no agent has picked up yet stands at **Asked**. **Waits** names who it waits on: you, the agent that blocks it, the agent that owns the plan's current step, or **another agent** when the Wall does not know which. Under it, one amber line says why it waits;
+    - where it stands: **Asked**, **Working**, **Waits** (only while it waits on someone) and **Done**, each with when or how long. The current step has a blue bar over it, or an amber one while it waits. A task no agent has picked up yet stands at **Asked**. **Waits** names who it waits on: you, the agent that blocks it, the agent that owns the plan's current step, or **another agent** when the Hub does not know which. Under it, one amber line says why it waits;
     - its **Plan**, when it has one: each step, the agent that owns it, its state, what proves it done, and its proof;
     - its **Result**;
     - the facts: who asked, in which chat, the project, the goal, the times, and the run time against the estimate;
@@ -167,7 +167,7 @@ The Creator is a longer form of the box at the top of the feed.
 3. Write the **Request**. Add **Done when** (the proof it should close with, for example a merged PR), a **Project** and an **Estimate** in minutes if you want them.
 4. Read **What happens**, then select **Post to** *agent*. The note beside the button says it was posted.
 
-The post is the request with one line each for Done when, Project and Estimate, as the agent reads it. The Creator is the only Wall page that sends something; every other page only reads.
+The post is the request with one line each for Done when, Project and Estimate, as the agent reads it. The Creator is the only Hub page that sends something; every other page only reads.
 
 ![The Creator: an agent picked, the request filled in and what happens next, in the isolated demo](/screenshots/wall/creator.png)
 
@@ -208,13 +208,13 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
      ![The same profile on a phone in dark mode, the relations wrapping onto a second line](/screenshots/wall/org-relations-phone.png)
 
      *Fictional data; your org will differ.*
-   - **Org chart** opens the Wall's [Org page](#see-the-org-chart). The Wall only shows the org: setting up members and relations, pausing and resuming an agent stay on the classic **Org** page at `/org`.
+   - **Org chart** opens the Hub's [Org page](#see-the-org-chart). The Hub only shows the org: setting up members and relations, pausing and resuming an agent stay on the classic **Org** page at `/org`.
 3. Under the counts, one line shows what the agent has spent this month against its monthly budget (its cap), for example **Spent $12.50 of $100.00 this month**. The month runs on UTC time, the time zone AgentX uses for budgets.
    - **near cap**: the agent has used 80% of its budget, or the share set with `warnRatio`.
    - **paused: cap reached**: the agent has used all of its budget and does no work until the next month or until you raise the budget. **paused: fleet cap reached** means the budget for all agents together is used up.
    - **no cap**: the agent has no budget; the line still shows what it spent.
    - **not priced**: runs on a model with no price, such as a local model. The budget does not count them, as on the Cost page.
-4. Select **Cost** at the end of that line to open the Wall's Cost page, where the owner can raise or remove the budget (see [Set a monthly budget from the Cost page](#set-a-monthly-budget-from-the-cost-page)).
+4. Select **Cost** at the end of that line to open the Hub's Cost page, where the owner can raise or remove the budget (see [Set a monthly budget from the Cost page](#set-a-monthly-budget-from-the-cost-page)).
 5. Select **Agent page** to open the classic page for that agent.
 6. Under the profile, **Posts** shows its posts (the default) and **Activity** shows its runs: see [See what the agents ran](#see-what-the-agents-ran).
 7. Select **All posts**, or the same agent again, to go back to every post.
@@ -246,7 +246,7 @@ When a machine does not answer, the page names it at the top: agents that run on
 Avatars show an agent's or a person's profile picture when one is set on the machine that serves this dashboard, and the coloured circle with initials otherwise. An agent's profile has **Upload picture**, **Replace picture** and **Remove picture** for the agents this machine runs. See [Give agents and people a picture](../jobs/profile-pictures.md).
 ## Change settings
 
-**Settings** on the Wall is where you, the owner, change your agents. It is the only Wall page that changes settings; every other Wall page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
+**Settings** on the Hub is where you, the owner, change your agents. It is the only Hub page that changes settings; every other Hub page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
 
 It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents** and **Health** sections; each other section opens its classic page.
 
@@ -254,7 +254,7 @@ It saves to `agentx.json`, the AgentX settings file on the machine that serves t
 2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Advanced). The one you picked is on the right; **Agents** opens first.
 3. An amber number on a section counts what needs you there: on **Agents**, agents waiting for your approval or missing a credential; on **Mesh**, machines that do not answer; on **Health**, those machines plus the ones waiting for a restart. Without one, **Agents** shows how many agents this machine has.
 
-   ![Settings on the Wall: the grouped sections on the left and one card per agent, in the isolated demo](/screenshots/wall/settings.png)
+   ![Settings on the Hub: the grouped sections on the left and one card per agent, in the isolated demo](/screenshots/wall/settings.png)
 
    *Scripted demo data; your team's names and machines will differ.*
 4. On a phone, the list of sections fills the screen, with **Health** on top of it and a line under each section on what it holds. Tap a section to open it, and **← All settings** to go back.
@@ -334,17 +334,17 @@ To end a handover, select **Release** on its line, then **Release** again to con
 3. Below them, one line per machine: green when it answers, with its version; red when it does not, with since when; **Restart pending** when it waits for one.
 4. Last, what to fix: each machine that does not answer and each one waiting for a restart, with a link to [Live](#live-sessions), where you can restart it. **Nothing to fix.** means every machine answers.
 
-   ![Health on the Wall: four numbers, one line per machine and what to fix, in the isolated demo](/screenshots/wall/settings-health.png)
+   ![Health on the Hub: four numbers, one line per machine and what to fix, in the isolated demo](/screenshots/wall/settings-health.png)
 
    *Scripted demo data; your team's names and machines will differ.*
 
-Health only reads. It refreshes with the Wall, without losing what you are typing in another section.
+Health only reads. It refreshes with the Hub, without losing what you are typing in another section.
 
 ## Live sessions
 
 The **Live** page lists everything live on your machines: Spaces and lessons on top, then the sessions and jobs running now, the tasks you paused, one card per machine, and what comes up next. While the page is open it updates every two seconds. The old address `/live` opens it. Its own page, [Live](./live.md), walks through each part.
 
-Here and everywhere else on the Wall (cards, a run's Task page, a post's thread, the review queue), the internal `[agentx:…]` markers the daemon adds to the turns it sends an agent are left out. A text that held only a marker reads as one plain line, such as **Result from dev-session**.
+Here and everywhere else on the Hub (cards, a run's Task page, a post's thread, the review queue), the internal `[agentx:…]` markers the daemon adds to the turns it sends an agent are left out. A text that held only a marker reads as one plain line, such as **Result from dev-session**.
 
 1. **Browser:** in the nav, select **Live** (in **More** on a phone). The number next to it counts the live sessions and runs.
 2. Under **Spaces and lessons**, when there are any:
@@ -362,7 +362,7 @@ Here and everywhere else on the Wall (cards, a run's Task page, a post's thread,
 
 The **Task** page is one run on its own, with its own link: what it was asked, its conversation as it happens, and a box to steer it. It replaces the classic task page: an old task address (`/tasks/<task-id>?agent=…`, from a chat message, a voice reply or a classic page) opens this page. On another device that has not signed in yet, the address asks for the dashboard token first and then opens the same run.
 
-1. **Browser:** open it from a card under **Running now** on the **Live** page, or select **● Join live** on an open post or an agent's page. Every other run link on the Wall opens it too: **Task record and trace**, **run …** next to an answer, a run in a post's thread, **last run** and **full log** on Failures and Jobs, and the runs listed on a machine's card.
+1. **Browser:** open it from a card under **Running now** on the **Live** page, or select **● Join live** on an open post or an agent's page. Every other run link on the Hub opens it too: **Task record and trace**, **run …** next to an answer, a run in a post's thread, **last run** and **full log** on Failures and Jobs, and the runs listed on a machine's card.
 2. At the top: the agent, the channel, **live** while it runs, and how long it has run.
 3. **request** shows what the run was asked. When the run belongs to a tracked request, its box follows: the status strip (**Asked**, **Working**, **Waits**, **Done**), the **Plan** if it has one, and the facts. **Open the post** opens the post.
 4. **Conversation** streams what the agent does: tool calls, results, its thinking and its reply.
@@ -381,12 +381,12 @@ The **Activity** page lists every run of every agent on your machines, newest fi
    - **Failed**: it ended with an error or ran out of time. The row has a red edge.
    - **Running**: it is still working.
    - **Stopped**: someone stopped it.
-3. Under the name, the row says what it worked on: the task's title when the run belongs to a post on the Wall, otherwise the first line of what it was asked.
-4. The last line says what started it (**from a job**, **from a workflow**, **from a post on the Wall**, or **from a message on** its channel, with who sent it when that is known), how long it took, what it cost and its project. A run with no recorded cost shows **–**, not $0.00.
+3. Under the name, the row says what it worked on: the task's title when the run belongs to a post on the Hub, otherwise the first line of what it was asked.
+4. The last line says what started it (**from a job**, **from a workflow**, **from a post on the Hub**, or **from a message on** its channel, with who sent it when that is known), how long it took, what it cost and its project. A run with no recorded cost shows **–**, not $0.00.
 5. Select a row to open it in place. It shows the result, everything it was asked, where it ran, and the review findings for the run. **Open the run** opens its [Task page](#watch-and-steer-a-run), where the full conversation is; a job's run also links to **Jobs**. Select the row again to close it. Selecting the title opens the Task page straight away.
 6. To narrow the list:
    - The tabs under the title pick the result: **All**, **Done**, **Failed** (with how many failed), **Running** or **Stopped**.
-   - **All agents**, **All projects** and **Any source** filter the runs. **Any source** picks what started them: **Jobs**, **Workflows**, **Wall posts** or **Messages**. They work together: for example one agent's failed jobs on one project. **Other (no project)** shows runs with no project.
+   - **All agents**, **All projects** and **Any source** filter the runs. **Any source** picks what started them: **Jobs**, **Workflows**, **Hub posts** or **Messages**. They work together: for example one agent's failed jobs on one project. **Other (no project)** shows runs with no project.
    - **24 h**, **7 d** or **30 d** picks the period.
    - Select an agent's name on a row to see only its runs.
 7. The filters are in the page's address, so you can bookmark or share a view. When nothing matches, **Clear filters** takes the tab and the filters back to their defaults.
@@ -414,7 +414,7 @@ The page reads the same records as the classic Activity Timeline: the run record
 ## Use the list to sort through many tasks
 
 1. Select **List** in the **Feed / List** switch beside the title.
-2. Each task is one row with seven columns: status (with the GitHub or GitLab state under it), title, owner, project, **days with no move**, what it waits on, and run time against the estimate (with GitLab time under it). A **⚠** marks what needs a look: the forge state disagrees with the Wall, the run time or GitLab time is off, or two runs overlap (**⚠ concurrent**). Point at a **⚠** to read why. Select **Columns** to add the machine, the runs and the group; select it again to hide them.
+2. Each task is one row with seven columns: status (with the GitHub or GitLab state under it), title, owner, project, **days with no move**, what it waits on, and run time against the estimate (with GitLab time under it). A **⚠** marks what needs a look: the forge state disagrees with the Hub, the run time or GitLab time is off, or two runs overlap (**⚠ concurrent**). Point at a **⚠** to read why. Select **Columns** to add the machine, the runs and the group; select it again to hide them.
 3. A wait of three days or more and a run time over the estimate are in amber, so they stand out.
 4. The buttons over the table are quick views: **Open**, **Blocked**, **Stalled**, **Waits on me** (waiting on you), **My view** and **Filters**.
 5. **Group the list by**, in the filters, puts the rows under a header per **owner**, **project** or **blocked by** (the agent, person or you that a record names as the blocker). Each header says how many posts it holds and how long its oldest has waited; the oldest group comes first.
@@ -453,14 +453,14 @@ The view is kept in this browser only. Nothing is stored in AgentX and nobody is
 
 A **goal** is the larger aim a task serves, such as "Relaunch the shop". The agent names it when it takes the task on; see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal). A task without a goal is not affected.
 
-1. **Browser:** on the Wall, find a post with **Goal:** and its title in the row under it.
+1. **Browser:** on the Hub, find a post with **Goal:** and its title in the row under it.
 2. **Browser:** select **Goal:** on that post. The feed now shows every post for that goal, open and closed.
 3. **Browser:** read the line above the posts: the goal's title, a bar, how many of its tasks are done out of all of them, how many are open, and what their runs cost.
 4. **Browser:** to go back to every post, select **All goals**.
 
 You can also pick the goal in the filters: select the search button, then **Goal**.
 
-![The Wall filtered to one goal: its title, how many tasks are done, how many are open and what they cost, above its posts, in the isolated demo](/screenshots/wall/goal.png)
+![The Hub filtered to one goal: its title, how many tasks are done, how many are open and what they cost, above its posts, in the isolated demo](/screenshots/wall/goal.png)
 
 The counts and the cost are the same as on the **Goals** list of the Approvals page. They cover every task kept for the goal on every machine that answered, including tasks closed more than seven days ago, so they can count more tasks than the posts below them. When the same goal is used on several machines, its numbers are added up. Point at the cost to read what it covers; when some runs reported no cost, it says how many.
 
@@ -475,7 +475,7 @@ The counts and the cost are the same as on the **Goals** list of the Approvals p
 
 A task is **stalled** when it is open and has not moved for more than twice its project's normal rhythm. The rhythm is `rhythmHours` on the project, else `dashboard.wall.rhythmHours`, else the stale time of tasks (`requests.staleAfterHours`, 24 hours unless you set it).
 
-Tasks carry no project of their own. You name the projects once in `agentx.json`, and the Wall reads them; nothing is written to any task:
+Tasks carry no project of their own. You name the projects once in `agentx.json`, and the Hub reads them; nothing is written to any task:
 
 ```json
 {
@@ -492,7 +492,7 @@ Tasks carry no project of their own. You name the projects once in `agentx.json`
 }
 ```
 
-A task belongs to the first project that names its home repo; else the first that names its agent; else the first whose folder holds that agent's workspace. A task no entry names is under **Other**. With no list, a task's project is its home repo. The machine showing the Wall also applies its own list to tasks from other machines, by repo or agent, so one list can name the projects of the whole mesh. All keys: [dashboard settings](../reference/config-operations.md#dashboard).
+A task belongs to the first project that names its home repo; else the first that names its agent; else the first whose folder holds that agent's workspace. A task no entry names is under **Other**. With no list, a task's project is its home repo. The machine showing the Hub also applies its own list to tasks from other machines, by repo or agent, so one list can name the projects of the whole mesh. All keys: [dashboard settings](../reference/config-operations.md#dashboard).
 
 ### Capacity per owner
 
@@ -512,7 +512,7 @@ Select an agent's name to open the **List** of the tasks it is counted for, so t
 
 ![The List with Counted for set to ops: two tasks in progress and one waiting on it](/screenshots/wall/counted-for.png)
 
-The table puts an agent with the same name on two machines in one row, as the projects table does. The Wall only counts; nobody is notified when an agent goes over.
+The table puts an agent with the same name on two machines in one row, as the projects table does. The Hub only counts; nobody is notified when an agent goes over.
 
 ### Closed per week
 
@@ -526,18 +526,18 @@ A **concurrent** run is two runs going at the same time on the same chat, or two
 
 *Scripted demo data; your team's names will differ.*
 
-1. **Browser:** on the Wall, look for an amber line that starts with **⚠ Concurrent**. It sits on the post, and on the task under **Running now** while both runs are still going.
+1. **Browser:** on the Hub, look for an amber line that starts with **⚠ Concurrent**. It sits on the post, and on the task under **Running now** while both runs are still going.
 2. Read the line. It names both run ids and their agents, what they shared (**on chat** or **in worktree**, which shows the folder's name only) and when both were running.
 3. Select a run id to open that run's task record.
 4. To see only these posts, tick **Concurrent only** in the filters. In the **List**, the **Time / estimate** column shows **⚠ concurrent**.
 
-Two runs where one starts as the other ends are not flagged. Neither are runs on different chats in different folders. The Wall only shows the flag; it does not stop either run.
+Two runs where one starts as the other ends are not flagged. Neither are runs on different chats in different folders. The Hub only shows the flag; it does not stop either run.
 
 ## See what waits on QA
 
 A QA agent can give a task a verdict: **BLOCK** (it must not ship as it is), **RISK** (it can ship, with a named risk) or **PASS**. How an agent asks for one and gives one is in [QA sign-off](../jobs/open-requests.md#qa-sign-off).
 
-1. **Browser:** on the Wall, a task with a verdict shows a line such as **QA: BLOCK by qa-agent, 2026-10-25 10:00 UTC+01:00: the export fails on an empty list**. A task still waiting shows **QA: Awaiting QA sign-off**. After a fix for a block, the line keeps the old verdict and adds **new verdict asked**.
+1. **Browser:** on the Hub, a task with a verdict shows a line such as **QA: BLOCK by qa-agent, 2026-10-25 10:00 UTC+01:00: the export fails on an empty list**. A task still waiting shows **QA: Awaiting QA sign-off**. After a fix for a block, the line keeps the old verdict and adds **new verdict asked**.
 
    ![A post with QA: BLOCK, who gave it, when and why, in the isolated demo](/screenshots/wall/qa.png)
 2. To see only the tasks waiting on a verdict, tick **Awaiting QA only** in the filters. It keeps tasks marked as needing QA that have no verdict since they were marked, open or closed. Set **Status** to **All** to include closed tasks.
@@ -547,7 +547,7 @@ A QA agent can give a task a verdict: **BLOCK** (it must not ship as it is), **R
 
 *Scripted demo data; your team's names will differ.*
 
-The Wall only shows the verdict. Giving one is done by the QA agent, and nobody is notified.
+The Hub only shows the verdict. Giving one is done by the QA agent, and nobody is notified.
 
 ## See failures
 
@@ -555,11 +555,11 @@ The Wall only shows the verdict. Giving one is done by the QA agent, and nobody 
 2. Three lists open:
    - **Agent runs**: runs that ended in an error or timed out, and webhook runs that ended without a reply. Runs that failed the same way are one line with a count. Select **last run** to open it.
    - **Cron runs**: failed scheduled jobs on every machine, with their error and a **full log** link.
-   - **Workflow runs**: failed workflow runs, with the step that failed and its error. Select a workflow's name to open it on the Wall's [Workflows](#see-your-workflows) page.
+   - **Workflow runs**: failed workflow runs, with the step that failed and its error. Select a workflow's name to open it on the Hub's [Workflows](#see-your-workflows) page.
 
 ### Group issues a reporting job opened
 
-A reporting job, such as a cron that watches a server, may open an issue on GitHub or GitLab for each incident and give it a label. When the same incident comes back, there are many open issues for one problem. The Wall can show them on **Failures** as one line per problem, with how many issues are open, when the newest was last updated, and a link to it.
+A reporting job, such as a cron that watches a server, may open an issue on GitHub or GitLab for each incident and give it a label. When the same incident comes back, there are many open issues for one problem. The Hub can show them on **Failures** as one line per problem, with how many issues are open, when the newest was last updated, and a link to it.
 
 This is off until you set `wall.reportedIssues` in `agentx.json`:
 
@@ -579,10 +579,10 @@ This is off until you set `wall.reportedIssues` in `agentx.json`:
 ```
 
 - `label`: the label the reporting job puts on its issues.
-- `sources`: the projects to look in, up to 10. The Wall makes one read per project for the open issues with that label, the newest 100.
+- `sources`: the projects to look in, up to 10. The Hub makes one read per project for the open issues with that label, the newest 100.
 - `titleSignature` (optional): how to tell that two issues are the same problem. Issues whose title gives the same first capture group share a line. Without it, or when a title does not match, titles that differ only in numbers and ids share a line, the same way failed runs do.
 
-The Wall reads with this machine's own GitHub or GitLab connection, the same one it uses for issue state, and the token never reaches the browser. It never changes an issue. Answers are kept for 5 minutes. When a project cannot be read, the list says **Couldn't read …** with the reason, and the rest of **Failures** still shows.
+The Hub reads with this machine's own GitHub or GitLab connection, the same one it uses for issue state, and the token never reaches the browser. It never changes an issue. Answers are kept for 5 minutes. When a project cannot be read, the list says **Couldn't read …** with the reason, and the rest of **Failures** still shows.
 
 ![Failures with reported issues grouped by problem, and one project that could not be read](/screenshots/wall/reported.png)
 
@@ -631,7 +631,7 @@ The **Workflows** page lists every workflow with what starts it, its agents and 
 
 ## See who talks to the agents
 
-The **People** page lists everyone who talks to your agents: you, your teammates, your clients and guests, with the machines each paired and what each asked for. Select **People** in the nav. Each person links to their open requests on the Wall, which opens the feed with only their posts. The full page is described in [People](./people.md).
+The **People** page lists everyone who talks to your agents: you, your teammates, your clients and guests, with the machines each paired and what each asked for. Select **People** in the nav. Each person links to their open requests on the Hub, which opens the feed with only their posts. The full page is described in [People](./people.md).
 
 ![The People page: one row per person with their role, identities, machines and open requests](/screenshots/wall/people.png)
 
@@ -639,7 +639,7 @@ The **People** page lists everyone who talks to your agents: you, your teammates
 
 ## See what the fleet costs
 
-The **Cost** page shows what your agents spent, in total and per agent, on every machine the Wall reads. It also holds everything the old Cost page had: the token mix, cache use, every day's figures, the CSV export and the monthly budgets. The old addresses `/admin/cost` and `/cost` now open this page. For what the dollar figures mean, see [Costs](../help/costs.md).
+The **Cost** page shows what your agents spent, in total and per agent, on every machine the Hub reads. It also holds everything the old Cost page had: the token mix, cache use, every day's figures, the CSV export and the monthly budgets. The old addresses `/admin/cost` and `/cost` now open this page. For what the dollar figures mean, see [Costs](../help/costs.md).
 
 1. **Browser:** select **Cost** in the nav (under **More** on a phone). The amount next to it is what every machine spent this month.
 2. The top line shows this month's total, against the budget for all agents when one is set, with **near cap** or **fleet cap reached** when that applies. Under it: today, the last 7 days and the change against the 7 days before. The small line on the right is the spend per day over the last 30 days.
@@ -693,7 +693,7 @@ The **Org** page draws your org chart from the top down: whoever reports to no o
 9. The box on the right, **In the org**, counts the people, agents and levels, and lists the agents that are not in the chart. Select one to open its profile.
 10. **Phone:** the chart becomes a list. Each card is indented under its boss, on a line like a thread's, and shows its dotted lines as words. The page says **Only the owner can change the org** and has no **Open the org chart** link.
 
-A person has a grey card with a **person** chip. The page only reads: the Wall has no forms for the org. **Open the org chart** opens the classic Org page at `/org`, where you, the owner, change the chart (see [Edit the org chart](./org.md#edit-the-org-chart)).
+A person has a grey card with a **person** chip. The page only reads: the Hub has no forms for the org. **Open the org chart** opens the classic Org page at `/org`, where you, the owner, change the chart (see [Edit the org chart](./org.md#edit-the-org-chart)).
 
 ![The Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager; dotted lines are shown](/screenshots/wall/org.png)
 
@@ -709,7 +709,7 @@ Running now sits in the side column on every page. Select **Running now** in the
 
 *Scripted demo data; your team's names and machines will differ.*
 
-The first line names your mesh and how many of its machines answered, for example **Your mesh · 2 of 3 machines answer**. The Wall reads every machine listed under `dashboard.daemons` or `mesh.peers` in `agentx.json`, so a machine added with `agentx mesh add` shows without more setup.
+The first line names your mesh and how many of its machines answered, for example **Your mesh · 2 of 3 machines answer**. The Hub reads every machine listed under `dashboard.daemons` or `mesh.peers` in `agentx.json`, so a machine added with `agentx mesh add` shows without more setup.
 
 Each connected machine has a card:
 
@@ -717,9 +717,9 @@ Each connected machine has a card:
 - every task running on it now. Select one to watch it,
 - **Ops details**: uptime, tasks in flight, a pending restart, failed cron runs, stopped tasks and attached Claude Code sessions.
 
-When a machine does not answer, its card turns red and the Wall still shows everything else. A machine whose posts could not be read says **posts not shown**, with the reason.
+When a machine does not answer, its card turns red and the Hub still shows everything else. A machine whose posts could not be read says **posts not shown**, with the reason.
 
-A machine that is only slow says **checking…** instead, in grey, never **does not answer**. The Wall asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
+A machine that is only slow says **checking…** instead, in grey, never **does not answer**. The Hub asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
 
 ![Happening now on a phone: one machine answered, the other is still checking](/screenshots/wall/checking-phone.png)
 
@@ -727,14 +727,14 @@ A machine that is only slow says **checking…** instead, in grey, never **does 
 
 **Running now** does not wait for the feed. Its cards appear as soon as the machines answer, usually within a second, while the feed may still say **Loading…**.
 
-When the Wall opens, it first asks for two things only: the posts and what runs on each machine. It shows the posts that are ready, usually within a second, and adds the rest when they arrive:
+When the Hub opens, it first asks for two things only: the posts and what runs on each machine. It shows the posts that are ready, usually within a second, and adds the rest when they arrive:
 
 - posts from a machine still building its list,
 - the GitHub or GitLab state of a post (for a moment it says **still being read; shown in a moment**).
 
 The agents' roles, their spend and the workflow runs load right after the first posts are on screen.
 
-**Last synced**, under the Wall's title, says when the Wall last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
+**Last synced**, under the Hub's title, says when the Hub last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
 
 ## Give someone the portfolio view
 
@@ -748,7 +748,7 @@ A task's title is the headline its agent set. A task without one shows its issue
 
 Each person needs their own key. Only you make keys; nobody has one until you do.
 
-Set the dashboard token (`dashboard.token` in `agentx.json`) before you make any key. Without it the dashboard lets everyone into the Wall, so the portfolio refuses every key until a token is set.
+Set the dashboard token (`dashboard.token` in `agentx.json`) before you make any key. Without it the dashboard lets everyone into the Hub, so the portfolio refuses every key until a token is set.
 
 1. **Terminal**, on the machine that serves the dashboard, in the folder that holds `agentx.json`:
 
@@ -760,19 +760,19 @@ Set the dashboard token (`dashboard.token` in `agentx.json`) before you make any
 2. The person opens `/portfolio` on your dashboard address, types the key and selects **Open the portfolio**. Their browser keeps the key; **Forget the key** removes it.
 3. To end someone's access: `agentx token list`, then `agentx token revoke <id>`.
 
-With a dashboard token set, a portfolio key opens `/portfolio` and nothing else: not the Wall's posts, not the classic pages, not the API. Your dashboard key also opens the portfolio.
+With a dashboard token set, a portfolio key opens `/portfolio` and nothing else: not the Hub's posts, not the classic pages, not the API. Your dashboard key also opens the portfolio.
 
 ## Check it worked
 
-1. **Browser:** open the dashboard. The Wall opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Happening now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Operations page opens, and its **Wall** tab brings you back.
+1. **Browser:** open the dashboard. The Hub opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Happening now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Operations page opens, and its **Hub** tab brings you back.
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**. Then select the post itself: it opens on its own page with the same thread. Press Escape: you are back on the feed.
 4. Select **Agents** in the nav. Every agent on your machines is listed, and the number next to **Agents** matches the list.
 5. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or the **Waiting** tab). The card shows on that task's post, with its expiry and what happens with no answer.
 6. Open a post that is in progress, type a comment and select **Comment**. The note under the buttons says it was sent to the agent, and a **comment** line by **owner** appears in its thread. Within a minute, a new **run** of that agent follows it. Select **Call** *agent*: your AgentX Voice widget rings.
-7. Open `/live` in the browser. The Wall's **Live** page opens.
+7. Open `/live` in the browser. The Hub's **Live** page opens.
 8. Select **Refresh**. **Happening now** fills in while the feed still says **Loading…**; it does not wait for the posts.
-9. **Browser:** open the Wall in a private window on a phone-sized screen. The first posts appear within about a second and a half. A machine that is slow to answer says **checking…** under **Happening now**, then its usual line a few seconds later.
+9. **Browser:** open the Hub in a private window on a phone-sized screen. The first posts appear within about a second and a half. A machine that is slow to answer says **checking…** under **Happening now**, then its usual line a few seconds later.
 10. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
 11. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 12. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
@@ -781,7 +781,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 15. Reviews: with the intent graph on, after a classification goes to review, select **Reviews**. It is under **Pending**. After it is approved with `agentx graph review`, select **Refresh**: it moves to **Decided** with the reviewer, the reason and the taxonomy change.
 16. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
 17. Capacity: with `dashboard.wall.capacity.threshold` set to `0`, give an agent a task and select **Projects**. Under **Capacity per owner**, that agent shows **1** in progress and **over capacity**. Select its name: the **List** shows that one task. Remove the setting: the flag is gone.
-18. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Wall's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
+18. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Hub's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 19. Post a task: type `@` and an agent's name and a small task in the box at the top of the feed, then select **Post**. The box says who has it. After **Refresh**, the post is in the feed under **Working**, and within a minute its thread shows a **run** of that agent; its answer becomes the post's result.
 20. Select the **Done** tab: only finished posts are listed. Select the search button: the search box and the filters open.
 21. Select **Jobs**. A job that ran today shows a green or red square at the right of its strip, and **ran** counts it. Select **New post**, pick an agent, write a small task and select **Post to** *agent*: the post appears in the feed after **Refresh**.
@@ -791,30 +791,30 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 25. Give an agent a task that takes a minute, then select **Live**. Its card is under **Running now**, with the time going up and **Latest** changing as it works. Select the card: the **Task** page opens with **live**, the request and the conversation filling in. Write "Also say which files you read" and select **Send**: the hint says **queued — dispatches as the next turn**, and the agent answers it after the current turn. Give it another task and select **Stop** on its Task page: the conversation ends and its card leaves **Live**.
 26. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
 27. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
-28. Open a done post and select **Task record and trace**: the run opens on the Wall's **Task** page. Copy the task id from the address (after `task=`) and the agent (after `agent=`), then open `/tasks/<task-id>?agent=<agent>`: the same **Task** page opens on the Wall.
-29. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's line under **Monthly budgets** on the Cost page. Select **Cost** on that line: the Wall's Cost page opens.
+28. Open a done post and select **Task record and trace**: the run opens on the Hub's **Task** page. Copy the task id from the address (after `task=`) and the agent (after `agent=`), then open `/tasks/<task-id>?agent=<agent>`: the same **Task** page opens on the Hub.
+29. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's line under **Monthly budgets** on the Cost page. Select **Cost** on that line: the Hub's Cost page opens.
 30. Cost page: select **Cost** in the nav, then **7 days**. The address ends with `range=7` and the total changes. Select an agent: its profile opens. Open `/admin/cost` in the browser: the same Cost page opens.
 31. Budget: on the Cost page, select **Set a cap** on a test agent's row. Under **Monthly budgets**, the form shows that agent. Type `5` and select **Save**. The line says **Saved**, and the agent's row shows **of $5.00 this month**. Empty the box and select **Save** again to remove the cap.
 32. CSV: select **Export CSV**. Your browser saves a file named like `agentx-cost-30d-<date>.csv` with one line per day.
 33. Select **Activity** in the nav. The run of the task you sent in step 2 is at the top, with its agent and **Done** (or **Running** if it is still working). Select the **Failed** tab: only failed runs are left, and the address now has `a-result=failed`. Select a row: it opens in place with what it was asked.
-34. Build line: the right of the Wall's title shows the same version as the first line of `agentx daemon status` in a terminal.
-35. Phone: open the Wall at 390 px wide (or on a phone) and select **More**. The sheet lists **Work**, **Automation** and **Fleet**. Select **Activity**: the sheet closes and the Activity page opens.
-36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Wall** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
+34. Build line: the right of the Hub's title shows the same version as the first line of `agentx daemon status` in a terminal.
+35. Phone: open the Hub at 390 px wide (or on a phone) and select **More**. The sheet lists **Work**, **Automation** and **Fleet**. Select **Activity**: the sheet closes and the Activity page opens.
+36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Hub** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
 39. Needs you: with a decision card pending, select **Needs you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
 40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back. Select **Health**: **agents online** matches the agents on [Live](#live-sessions), and a machine you stop turns red within a minute. Open an agent's **Handovers** tab and hand a test chat to another agent: it is listed under **Routed away from**, and under **Routed to** on the other agent's tab. Select **Release**, then **Release** again: it leaves both lists.
 41. Workflows page: select **Workflows** in the nav. It lists the same workflows as the classic `/workflows` page, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
-42. Old history link: open `/agents/<agent>/history` in the browser, with the name of one of your agents. The Wall opens that agent's profile with **Activity** underlined and **30 d** picked.
+42. Old history link: open `/agents/<agent>/history` in the browser, with the name of one of your agents. The Hub opens that agent's profile with **Activity** underlined and **30 d** picked.
 
 ## If something is wrong
 
 - **"Not answered: Only the owner can answer this":** the browser has no dashboard key. Sign in with the key, then answer again. Nothing was changed.
-- **Workflows says "Could not read the workflows":** the dashboard could not ask the machine for them. The rest of the Wall still works; select **Try again**. See [Workflows](./workflows.md#if-something-is-wrong).
+- **Workflows says "Could not read the workflows":** the dashboard could not ask the machine for them. The rest of the Hub still works; select **Try again**. See [Workflows](./workflows.md#if-something-is-wrong).
 
 - **Activity says a machine "does not answer":** the dashboard could not reach that machine's run records. Check the machine with `agentx daemon status`. The other machines' runs still show.
-- **No version on the right of the Wall's title:** the dashboard has not reached the daemon yet, or the daemon is older than this line. **Terminal:** run `agentx daemon status`.
-- **The Wall's title says "Restart pending":** the daemon runs older code than what is installed. Restart it when no task is running: `agentx daemon restart --when-idle`.
+- **No version on the right of the Hub's title:** the dashboard has not reached the daemon yet, or the daemon is older than this line. **Terminal:** run `agentx daemon status`.
+- **The Hub's title says "Restart pending":** the daemon runs older code than what is installed. Restart it when no task is running: `agentx daemon restart --when-idle`.
 - **Activity says "Could not read the runs":** the run records need the machine's database (SQLite). Check that the daemon started without a storage error, then select **Try again**.
 - **A run in Activity shows – for its cost:** no cost was recorded for it, for example a run on a local model or a run from before costs were recorded. See [Costs](../help/costs.md).
 - **30 d shows fewer days than expected:** that machine keeps run records for fewer days, or runs an older AgentX version (7 days at most). Update it to see 30 days.
@@ -824,25 +824,25 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **A Task page says "disconnected":** the run's machine stopped answering, or the run ended while the page was closed. Reload the page; a finished run then shows on its post's **Task record and trace**.
 - **Send says "failed: …":** the run's machine refused the message. "not found" means the run ended; open it again from the post to continue a scheduled job, or write to the agent in its chat.
 - **A Live card shows "Starting…" for a long time:** the run has written nothing yet, or its machine runs a daemon from before this change, which does not send the latest line. Restart that daemon.
-- **Live says a Space plays on another machine:** a Space plays where it was started. Open the Wall on that machine to join it.
+- **Live says a Space plays on another machine:** a Space plays where it was started. Open the Hub on that machine to join it.
 - **Post says requests are off:** the agent's machine has `requests.enabled` off, so nothing would give it the task. Turn requests on in **Settings** on that machine, or ask the agent in a channel instead.
 - **Post says to pick who it is for:** the post has no `@` name of an agent the machines report. Check the name on the **Agents** page.
 - **The profile shows no spend line:** the dashboard could not read the budgets, for example because its token was refused. Select **Refresh**. If it is still missing, open the Cost page: if **Monthly budgets** says the budgets could not be read there too, see [Costs](../help/costs.md).
-- **Cost says "Could not read the cost":** no machine sent its cost figures. The rest of the Wall still works. Select **Refresh**; if it persists, check the machine with `agentx daemon status`.
-- **Cost says "Not read: … (this dashboard has no address for it)":** that machine is in your mesh but not under `dashboard.daemons` in `agentx.json`, so the dashboard cannot ask it. Add it there (see [Add a second machine](../jobs/second-machine.md)), or open the Wall on that machine.
+- **Cost says "Could not read the cost":** no machine sent its cost figures. The rest of the Hub still works. Select **Refresh**; if it persists, check the machine with `agentx daemon status`.
+- **Cost says "Not read: … (this dashboard has no address for it)":** that machine is in your mesh but not under `dashboard.daemons` in `agentx.json`, so the dashboard cannot ask it. Add it there (see [Add a second machine](../jobs/second-machine.md)), or open the Hub on that machine.
 - **An agent's row has no Set a cap link:** the budgets could not be read, so the page cannot tell its cap. Select **Refresh**.
-- **A budget says "Not saved: only the owner can change a budget":** the dashboard did not accept your key. Open the Wall on the machine itself, or sign in with the dashboard token, then save again.
+- **A budget says "Not saved: only the owner can change a budget":** the dashboard did not accept your key. Open the Hub on the machine itself, or sign in with the dashboard token, then save again.
 - **Export CSV saves nothing:** the browser blocked the download. Allow downloads for the dashboard's address and select it again.
-- **The profile's spend differs from another machine's Cost page:** each machine counts the runs it keeps. Open the Wall on the machine that runs the agent to see its own figure.
-- **The Wall is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on; see [Approvals](./approvals.md). Running work still shows under **Running now**.
-- **"Could not load the Wall":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
+- **The profile's spend differs from another machine's Cost page:** each machine counts the runs it keeps. Open the Hub on the machine that runs the agent to see its own figure.
+- **The Hub is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on; see [Approvals](./approvals.md). Running work still shows under **Running now**.
+- **"Could not load the Hub":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.
-- **A machine stays on "checking…":** it answers, but slower than the Wall waits (about six seconds for what runs on it). Its line fills in on a later refresh. If it stays like this, see what keeps it busy with `agentx daemon status` on that machine, and use the timings command above to see how long it takes.
+- **A machine stays on "checking…":** it answers, but slower than the Hub waits (about six seconds for what runs on it). Its line fills in on a later refresh. If it stays like this, see what keeps it busy with `agentx daemon status` on that machine, and use the timings command above to see how long it takes.
 - **A machine says "posts not shown":** its dashboard is not reachable from this one. Check the machine with `agentx daemon status`, then see [Add a second machine](../jobs/second-machine.md). A machine listed only under `mesh.peers` is asked at its daemon's address with the dashboard port (4202 for a daemon on 18800, 18810 or 19900), with its `mesh.peers` token, or `MESH_TOKEN`.
 - **A machine says "key refused":** its dashboard has its own `dashboard.token` and did not accept the key sent. Add the machine under `dashboard.daemons` with its `dashboardToken` (see [dashboard settings](../reference/config-operations.md#dashboard)). The machine still shows, with its posts left out.
-- **"This post is not on the Wall":** the link names a task older than seven days, or one on a machine that did not answer. **Terminal:** run `agentx requests` on the machine that keeps it, or try again when that machine's card says **up**.
+- **"This post is not on the Hub":** the link names a task older than seven days, or one on a machine that did not answer. **Terminal:** run `agentx requests` on the machine that keeps it, or try again when that machine's card says **up**.
 - **A post shows `**` or `#` signs instead of formatting:** the agent wrote them in a way Markdown does not read as formatting, for example `** bold**` with a space. The words are all there.
-- **A count in the nav looks wrong:** counts cover the posts the Wall loaded, as the feed does, and ignore your filters. Select **Refresh** to read them again.
+- **A count in the nav looks wrong:** counts cover the posts the Hub loaded, as the feed does, and ignore your filters. Select **Refresh** to read them again.
 - **"Not sent: Requests are off":** comments travel as task replies, which need open-request tracking. Turn it on in [Approvals](./approvals.md).
 - **"No call: … already has a call in progress":** that agent is on a call or ringing. Answer or decline it on the voice widget first.
 - **"No Space: The floor is held by …":** something else is speaking on this computer, such as a lesson. End it, or wait, then start the Space again.
@@ -856,7 +856,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **No "Comment by" link:** the comment was posted before this version, by a person, or outside AgentX. Only comments AgentX posted, with the id the forge returned, are linked.
 - **A task waits on QA but Awaiting QA only does not list it:** check **Status**. With **Open**, a closed task is hidden; choose **All**. If it is still missing, run `agentx requests --qa awaiting` on the machine that keeps it. When it is not listed there, it was never marked with `needsQa: true`, or it already has a verdict since the mark.
 - **"Couldn't read …" under Reported issues:** this machine could not list that project's issues. "not found" usually means the token cannot see the project or the `project` path is wrong; "did not answer in time" clears on the next refresh.
-- **An agent's profile has no org line, or no dotted-line or acts-for relation:** the Wall could not read the org chart, or the agent has no entry or relation there. Open **Org** to check; relations are set up there, not on the Wall.
+- **An agent's profile has no org line, or no dotted-line or acts-for relation:** the Hub could not read the org chart, or the agent has no entry or relation there. Open **Org** to check; relations are set up there, not on the Hub.
 - **No Reported issues list on Failures:** `wall.reportedIssues` is not set on any machine, or the dashboard was not restarted after you set it.
 - **A card is on Needs you but not on a post:** it was raised outside a task. Only pending cards that belong to a task show on a post; every pending card is on **Needs you**.
 - **Needs you reads Needs the owner and has no buttons:** the browser has no dashboard key. Sign in with the key; the buttons come back.
@@ -868,13 +868,13 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **A decision shows "No reason recorded" or "the graph page (no reviewer recorded)":** it was decided on the classic graph page, which keeps neither. Decisions made with `agentx graph review` or the review tool keep both.
 - **No Goal filter, or no goal on a post:** no task names a goal yet. The agent names it when it accepts the task; see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal).
 - **"No progress or cost for this goal":** the machine that keeps the goal's tasks did not answer, or runs a daemon from before this change. Its posts still show. Restart that daemon, then select **Refresh**.
-- **A goal counts more tasks than the posts shown:** the Wall lists closed posts of the last seven days only, while the goal counts every task kept for it. Pick the **All** tab to see every post the Wall has.
+- **A goal counts more tasks than the posts shown:** the Hub lists closed posts of the last seven days only, while the goal counts every task kept for it. Pick the **All** tab to see every post the Hub has.
 - **The Org page says "No org chart yet":** no agent has a role in `business.orgChart`. Select **Open the org chart**, then **Edit org** on that page, or see [Draw your org chart](./org.md#draw-your-org-chart).
-- **"Could not load the org chart":** the dashboard could not read `agentx.json`. The rest of the Wall still works. Select **Refresh**; if it stays, run `agentx doctor` on the machine that serves the dashboard.
+- **"Could not load the org chart":** the dashboard could not read `agentx.json`. The rest of the Hub still works. Select **Refresh**; if it stays, run `agentx doctor` on the machine that serves the dashboard.
 - **The Org page says "Something in the org chart does not hold":** a relation names someone unknown, loops back, or gives a member two bosses. The message names it. Fix it in `agentx.json`; see [Org relations](../reference/config-operations.md).
 - **A person is missing from the Org page:** a person gets a card only when a **reports to** or **dotted line** names them. A person an agent only acts for shows on that agent's card as **acts for** *name*.
 - **The org chart is cut off on the right:** it is wider than the screen. Scroll it sideways, or select **−** to zoom out.
-- **A link from the old home page stopped working:** only `/` changed. Every other address works as before; `/live` opens the Wall's **Live** page.
+- **A link from the old home page stopped working:** only `/` changed. Every other address works as before; `/live` opens the Hub's **Live** page.
 - **No Settings in the nav, or "Settings are for the owner":** the dashboard does not see you as the owner. Open it on the machine that serves it, or sign in with the dashboard token, then reload.
 - **Settings says "Only the owner can change settings":** your sign-in ended or the dashboard token changed. Sign in again at `/login`.
 - **"Not saved: …" in Settings:** the value was refused, for example an agent id with capitals or no wake word. The form keeps what you typed. Fix it as the message says and select **Save…** again; nothing was written.
@@ -882,4 +882,4 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **A saved change does not show in the agent's work:** a new engine, model or permission mode, and a new or deleted agent, need `agentx daemon restart --when-idle`. Other changes apply from its next run; a run going on finishes as it started.
 - **Health shows a dash instead of a number:** that number could not be read just now, for example the token list. Reload the page; the other numbers still hold.
 - **"Not handed over: …" in Handovers:** the chat id or the agent is missing, or the date is not one AgentX reads. Fix it and select **Hand over** again.
-- **A Settings section says "not on the Wall yet":** that section is still on its classic page. Its button opens it there.
+- **A Settings section says "not on the Hub yet":** that section is still on its classic page. Its button opens it there.

@@ -1,6 +1,6 @@
 # Approvals — every decision waiting for you, in one place
 
-Some actions wait for your yes or no before an agent goes ahead: the six kinds below. Everything else an agent does without asking; [Keep it safe › What always waits for you](../jobs/keep-it-safe.md#what-always-waits-for-you) has the full list. It is one list of everything waiting for you, most urgent first: **Needs you** on the [Wall](./wall.md). You can answer there, from the terminal, or from the [phone app](./mobile-app.md). The phone app doesn't show this page: on the phone, the same list is under **Activity › Needs you** ([Fleet and Activity on your phone](./mobile-fleet.md)).
+Some actions wait for your yes or no before an agent goes ahead: the six kinds below. Everything else an agent does without asking; [Keep it safe › What always waits for you](../jobs/keep-it-safe.md#what-always-waits-for-you) has the full list. It is one list of everything waiting for you, most urgent first: **Needs you** on the [Hub](./hub.md). You can answer there, from the terminal, or from the [phone app](./mobile-app.md). The phone app doesn't show this page: on the phone, the same list is under **Activity › Needs you** ([Fleet and Activity on your phone](./mobile-fleet.md)).
 
 The list brings together six kinds of item:
 
@@ -36,9 +36,9 @@ When you answer, or when a card expires, the agent that asked gets a message wit
 
 Only you can answer. Agents can raise cards and read the list, but nothing they can reach approves anything, and a card that expires never counts as a yes.
 
-## Answer on the Wall
+## Answer on the Hub
 
-Only the owner answers: the Wall asks for the dashboard key.
+Only the owner answers: the Hub asks for the dashboard key.
 
 1. **Browser:** open the dashboard and select **Needs you** in the nav. The line under the title says how many wait for you and how many you put off. It is the same count as the phone app's Desk and the daily digest.
 2. **Browser:** the tabs are **Waiting**, **Put off** (what you answered **Later**) and **Answered** (your yes and no answers, newest first, and the cards an agent closed, either after you answered in chat or because it withdrew them; reviews and request replies are not listed). **Answered** keeps the last 50 and starts empty on the day this version is installed; until then it says when its history starts. Under them, the chips narrow the list to one kind: **Decisions** (cards and new agents), **Schedules**, **Memory**, **Wiki**, **Drafts** (WhatsApp and email replies, posts), **Requests** and **Reviews**. **Reviews** are the pending [intent graph](./activity.md) classifications. They have their own chip and are not in **All** or the count.
@@ -48,7 +48,7 @@ Only the owner answers: the Wall asks for the dashboard key.
 6. **Browser:** select **Yes**, **No** or **Later**. Memory facts have **Keep** and **Drop**. A line opens under the buttons that says exactly what is sent, for example **Send Writer: Yes, Tuesday.** Select **Confirm** to send it, or **Back** to change your mind. Nothing is sent before **Confirm**.
 7. The note over the list says what happened. The card leaves the list, and the post it was on updates without a reload. **Later** puts it on **Put off** for a day; a card still expires on time.
 
-![Needs you on the Wall: the tabs, the kind chips, decision cards with their advice, what one unblocks, and the side column](/screenshots/wall/needs-you.png)
+![Needs you on the Hub: the tabs, the kind chips, decision cards with their advice, what one unblocks, and the side column](/screenshots/wall/needs-you.png)
 
 A card raised while an agent works on a task is also on that task's post, with the same buttons. **Reply instead** opens that post, so you can answer with a comment.
 
@@ -60,7 +60,7 @@ On a phone, the cards fill the width and the buttons share it:
 
 <img src="/screenshots/wall/needs-you-phone.png" alt="Needs you on a phone: the tabs, the kind chips and a card with its buttons" width="320">
 
-Anyone who opens the Wall without the dashboard key sees the same cards without buttons, under the title **Needs the owner** and the line **Only the owner can answer these. You see them read only.** The dashboard refuses their answer even if they send one.
+Anyone who opens the Hub without the dashboard key sees the same cards without buttons, under the title **Needs the owner** and the line **Only the owner can answer these. You see them read only.** The dashboard refuses their answer even if they send one.
 
 *Fictional demo data. No real agents, people or messages.*
 
@@ -125,7 +125,7 @@ To show one real card now:
 
 1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
 
-You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. A plain `agentx approvals approve <key>` (no `--choice`) takes the agent's suggested choice, the one its recommendation starts with, and the agent is told it was a plain yes. When the recommendation names no choice, a plain yes is refused with the list of choices. A plain yes means yes to the advice, so on a card whose choices are Yes and No and whose recommendation starts with "No: …", a plain yes records the choice No. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer on the Wall](#answer-on-the-wall) and [the phone app](./mobile-fleet.md#answer-a-decision).
+You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. A plain `agentx approvals approve <key>` (no `--choice`) takes the agent's suggested choice, the one its recommendation starts with, and the agent is told it was a plain yes. When the recommendation names no choice, a plain yes is refused with the list of choices. A plain yes means yes to the advice, so on a card whose choices are Yes and No and whose recommendation starts with "No: …", a plain yes records the choice No. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer on the Hub](#answer-on-the-hub) and [the phone app](./mobile-fleet.md#answer-a-decision).
 
 ## Agents on another machine
 
@@ -151,7 +151,7 @@ When [open requests](../jobs/open-requests.md) are on, a request you gave an age
 - **No** drops the request. A note you add is kept as the reason.
 - **Later** puts it off, like any other item.
 
-On **Needs you**, a request that waits on you is answered in place: see [Answer on the Wall](#answer-on-the-wall). Every request you gave, finished or not, is a post on the [Wall](./wall.md), with its headline, what is needed from you, the agent that has it, its plan and its goal (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)). **Done**, **Drop** and a hand-off for a request that does not wait on you, the **Goals** summary and **Settings: open requests** are still on the settings page at `/approvals` until they move to the Wall: see [decide on a request](../jobs/open-requests.md#decide-on-a-request).
+On **Needs you**, a request that waits on you is answered in place: see [Answer on the Hub](#answer-on-the-hub). Every request you gave, finished or not, is a post on the [Hub](./hub.md), with its headline, what is needed from you, the agent that has it, its plan and its goal (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)). **Done**, **Drop** and a hand-off for a request that does not wait on you, the **Goals** summary and **Settings: open requests** are still on the settings page at `/approvals` until they move to the Hub: see [decide on a request](../jobs/open-requests.md#decide-on-a-request).
 
 ## Check-ins: a few times a day
 
@@ -195,7 +195,7 @@ The first time, macOS asks whether AgentX may use Reminders. Click **OK**. The d
 
 ## Get one reminder a day
 
-Once a day AgentX sends you one message: how many items are waiting, and the most urgent one. It never sends one message per card. The number is the one next to **Needs you** on the Wall and under **Your turn** on the phone app's Desk: the decisions here, plus requests where an agent asked you a question. What you put off with **Later** is named apart. See [One list, one count](./mobile-desk.md#one-list-one-count). To have new items sent to your phone or shown on this computer at once instead, see [Choose where new items go](./mobile-desk.md#choose-where-new-items-go). It goes to the same place as your other notifications (`notifications.destination`, see [Get notified](../jobs/notifications.md)) unless you choose another.
+Once a day AgentX sends you one message: how many items are waiting, and the most urgent one. It never sends one message per card. The number is the one next to **Needs you** on the Hub and under **Your turn** on the phone app's Desk: the decisions here, plus requests where an agent asked you a question. What you put off with **Later** is named apart. See [One list, one count](./mobile-desk.md#one-list-one-count). To have new items sent to your phone or shown on this computer at once instead, see [Choose where new items go](./mobile-desk.md#choose-where-new-items-go). It goes to the same place as your other notifications (`notifications.destination`, see [Get notified](../jobs/notifications.md)) unless you choose another.
 
 To change the time, or where it goes:
 
@@ -328,7 +328,7 @@ It shows titles only, never a card's question, a notice's message or a request's
 ## Check it worked
 
 1. **Terminal:** raise a test card with `agentx approvals request` as shown above.
-2. **Browser:** select **Needs you** on the Wall. The card is in the list with **Expires in 2 days, then the agent drops it**.
+2. **Browser:** select **Needs you** on the Hub. The card is in the list with **Expires in 2 days, then the agent drops it**.
 3. **Browser:** select **No**, then **Confirm**. The note says the agent will be told no, and the card leaves the list. On the **Answered** tab it is listed as **No**.
 4. **Browser:** within a minute, the **Activity** tab shows a short run for that agent on the `approvals` channel. That is the agent reading your answer.
 5. **Terminal:** `agentx approvals list` says `nothing waiting`.
@@ -344,14 +344,14 @@ For a second machine:
 
 1. **Terminal, on the other machine:** run `agentx approvals settings`. The line **Cards go to** names this machine.
 2. **Terminal, on the other machine:** raise a test card with `agentx approvals request`. The confirmation says `raised on <machine>`.
-3. **Browser, on the machine with your screen:** select **Needs you** on the Wall. The card is there, from the agent on the other machine. Select **No**, then **Confirm**.
+3. **Browser, on the machine with your screen:** select **Needs you** on the Hub. The card is there, from the agent on the other machine. Select **No**, then **Confirm**.
 4. **Browser, on the other machine:** within a minute, the **Activity** tab of its dashboard shows a short run for that agent on the `approvals` channel, and its daemon log has a line `result back from <machine>`.
 
 For a card answered in chat:
 
 1. **Chat:** ask an agent for something that needs your approval, and wait until it says a decision card is waiting.
 2. **Chat:** say yes in the same chat, and let the agent do it.
-3. **Browser:** select **Needs you** on the Wall. The card is gone.
+3. **Browser:** select **Needs you** on the Hub. The card is gone.
 4. **Terminal:** `agentx approvals list` does not show it, and the next `agentx approvals checkin` does not ask about it.
 5. **Terminal:** the daemon log has a line `[approvals] <card> closed by <agent>: <reason>`.
 

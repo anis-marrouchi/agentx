@@ -1,20 +1,21 @@
 {
-  "$comment": "Wall views the shared page check opens (#1454). A new Wall view adds one line: name, the hash path, and a selector that exists once the view has drawn. scripts/wall-page-check.mjs opens each at 390 px and at desktop width.",
+  "$comment": "Hub views the shared page check opens (#1454). A new Hub view adds one line: name, the hash path, and a selector that exists once the view has drawn. scripts/wall-page-check.mjs opens each at 390 px and at desktop width. old-address opens the Hub's old /wall address, which redirects to /hub (#1485).",
   "views": [
-    { "name": "feed", "path": "/wall#status=", "ready": "#wall-feed > *" },
-    { "name": "list", "path": "/wall#status=&view=list", "ready": "#wall-list > *" },
-    { "name": "projects", "path": "/wall#status=open&view=projects", "ready": "#wall-projects > *" },
-    { "name": "jobs", "path": "/wall#status=open&view=jobs", "ready": "#wall-jobs > *" },
-    { "name": "reviews", "path": "/wall#status=&view=reviews", "ready": "#wall-reviews > *" },
-    { "name": "needs-you", "path": "/wall#status=open&view=decide", "ready": "#wall-decide .wdc__tabs" },
-    { "name": "agents", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" },
-    { "name": "org", "path": "/wall#page=org", "ready": "#wall-org > *" },
+    { "name": "feed", "path": "/hub#status=", "ready": "#wall-feed > *" },
+    { "name": "list", "path": "/hub#status=&view=list", "ready": "#wall-list > *" },
+    { "name": "projects", "path": "/hub#status=open&view=projects", "ready": "#wall-projects > *" },
+    { "name": "jobs", "path": "/hub#status=open&view=jobs", "ready": "#wall-jobs > *" },
+    { "name": "reviews", "path": "/hub#status=&view=reviews", "ready": "#wall-reviews > *" },
+    { "name": "needs-you", "path": "/hub#status=open&view=decide", "ready": "#wall-decide .wdc__tabs" },
+    { "name": "agents", "path": "/hub#page=agents", "ready": "#wall-agents-page > *" },
+    { "name": "org", "path": "/hub#page=org", "ready": "#wall-org > *" },
     { "name": "org-page", "path": "/org", "ready": ".org-card" },
-    { "name": "cost", "path": "/wall#status=open&view=cost", "ready": "#wall-cost > *" },
-    { "name": "settings", "path": "/wall#page=settings", "ready": "#wall-settings .wst__sec" },
-    { "name": "settings-agents", "path": "/wall#page=settings&section=agents", "ready": "#wall-settings .wsa" },
-    { "name": "settings-agent", "path": "/wall#page=settings&section=agents&agent=cx", "ready": "#wall-settings #st-e-name" },
-    { "name": "settings-skills", "path": "/wall#page=settings&section=agents&agent=cx&atab=skills", "ready": "#wall-settings .wsl" },
-    { "name": "workflows", "path": "/wall#page=workflows", "ready": "#wall-workflows .wwf__tabs, #wall-workflows h3" }
+    { "name": "cost", "path": "/hub#status=open&view=cost", "ready": "#wall-cost > *" },
+    { "name": "settings", "path": "/hub#page=settings", "ready": "#wall-settings .wst__sec" },
+    { "name": "settings-agents", "path": "/hub#page=settings&section=agents", "ready": "#wall-settings .wsa" },
+    { "name": "settings-agent", "path": "/hub#page=settings&section=agents&agent=cx", "ready": "#wall-settings #st-e-name" },
+    { "name": "settings-skills", "path": "/hub#page=settings&section=agents&agent=cx&atab=skills", "ready": "#wall-settings .wsl" },
+    { "name": "workflows", "path": "/hub#page=workflows", "ready": "#wall-workflows .wwf__tabs, #wall-workflows h3" },
+    { "name": "old-address", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" }
   ]
 }

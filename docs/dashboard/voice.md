@@ -1138,7 +1138,7 @@ These switches last until the daemon restarts.
    agentx narrate helper on
    ```
    Use `off` to silence it, or `default` to go back to what `agentx.json` says. Scheduled jobs stay quiet unless the file says `"all"`.
-2. **Browser:** to narrate one task only, even a scheduled one, open the task on the Wall's **Task** page. Its id is in the address, after `task=` and before the next `&`.
+2. **Browser:** to narrate one task only, even a scheduled one, open the task on the Hub's **Task** page. Its id is in the address, after `task=` and before the next `&`.
 3. **Terminal:** switch narration on for that task:
    ```sh
    agentx narrate --task <task-id> on

@@ -149,7 +149,7 @@ describe("Wall owner-only write guard (#1454)", () => {
   })
 
   it("with no dashboard token, shows Settings only to a viewer on this machine", async () => {
-    const page = async (headers: Record<string, string> = {}) => (await fetch(`${noToken}/wall`, { headers })).text()
+    const page = async (headers: Record<string, string> = {}) => (await fetch(`${noToken}/hub`, { headers })).text()
     expect(await page()).toContain('data-nav="settings"')
     expect(await page({ "X-Forwarded-For": "203.0.113.7" })).not.toContain('data-nav="settings"')
   })

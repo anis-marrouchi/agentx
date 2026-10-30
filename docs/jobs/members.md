@@ -114,9 +114,9 @@ A refresh does not move someone who uses the keyboard or a screen reader. A butt
 
 ## Manage machines
 
-On the Wall, select [People](../dashboard/people.md) in the nav and select the teammate: every machine of theirs is listed with its state, the address it paired from, and its first and last use. **End access** on a line ends that machine at once.
+On the Hub, select [People](../dashboard/people.md) in the nav and select the teammate: every machine of theirs is listed with its state, the address it paired from, and its first and last use. **End access** on a line ends that machine at once.
 
-![The People page on the Wall with a teammate open: their machines, each with an End access button](/screenshots/wall/people-person.png)
+![The People page on the Hub with a teammate open: their machines, each with an End access button](/screenshots/wall/people-person.png)
 
 The same from a terminal:
 
@@ -132,7 +132,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 ## Check it worked
 
-1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`. The **People** page of the Wall shows it as **Active** too.
+1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`. The **People** page of the Hub shows it as **Active** too.
 2. **Their browser:** **My work** shows a request they made on their channel, with the right state.
 3. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers. On **My work**, a card busy with your task shows its first 200 characters and that you started it, but not where it was asked and no **Show this request** button; once it is finished, the card shows nothing of it.
 4. **Their browser:** while an agent is busy, they send it a second message on their channel. Within 30 seconds the card says **Your message is in line**, and the message appears at the top of **What you sent** as **In line**.

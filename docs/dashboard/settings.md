@@ -20,7 +20,7 @@ Settings is where you manage agents, the apps they answer from, schedules and ac
 
 A **Business** tab (org chart, projects, and which chat belongs to which client) appears only when the business features are switched on (`business.enabled` in `agentx.json`).
 
-Settings is moving to the Wall: its **Agents** tab is already there, with the same saves. See [Change settings](./wall.md#change-settings). This page stays until every tab is on the Wall. `/admin#tab=` followed by a tab's name, such as `/admin#tab=channels`, opens that tab directly.
+Settings is moving to the Hub: its **Agents** tab is already there, with the same saves. See [Change settings](./hub.md#change-settings). This page stays until every tab is on the Hub. `/admin#tab=` followed by a tab's name, such as `/admin#tab=channels`, opens that tab directly.
 
 ## Try an agent
 
@@ -152,7 +152,7 @@ To change how often peers are checked:
 
 ## Boards
 
-The **Boards** tab (titled **Kanban boards**) sets up task boards. The dashboard's old **Boards** page (`/boards`) is retired and now opens the Wall's **Projects** view; the board API (`/api/boards`) still serves these boards. A board shows the issues of one or more GitLab projects as cards in columns. Moving a card to a column adds that column's GitLab label, for example `Status::Doing`. See the [boards settings reference](../reference/config-operations.md#boards).
+The **Boards** tab (titled **Kanban boards**) sets up task boards. The dashboard's old **Boards** page (`/boards`) is retired and now opens the Hub's **Projects** view; the board API (`/api/boards`) still serves these boards. A board shows the issues of one or more GitLab projects as cards in columns. Moving a card to a column adds that column's GitLab label, for example `Status::Doing`. See the [boards settings reference](../reference/config-operations.md#boards).
 
 Each board is listed with its name and id, its projects, its label filter, its time windows, and its columns, with **Edit** and **Remove** buttons.
 

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import type Database from "better-sqlite3"
 import { TokenStore } from "./token-store"
+import { HUB_PATH } from "./ui/hub-name"
 import { MemberStore, type MemberDevice } from "@/members/store"
 import { pendingAnswer, removeDevice } from "@/members/pairing"
 import { requestsOf, runsOf, type PersonRequest, type PersonRun } from "@/people/activity"
@@ -27,7 +28,7 @@ import { IMPLICIT_OWNER, type Person } from "@/people/people"
 
 export const PEOPLE_API = "/api/admin/people"
 /** Where /people goes now: the Wall's People page. */
-export const WALL_PEOPLE_HREF = "/wall#page=people"
+export const WALL_PEOPLE_HREF = `${HUB_PATH}#page=people`
 
 export interface PeoplePanelDeps {
   /** The people list as agentx.json holds it now. */
