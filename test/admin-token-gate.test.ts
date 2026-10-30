@@ -100,7 +100,7 @@ describe("admin token gate (#1302)", () => {
     for (const path of ["/admin/cost", "/cost"]) {
       const r = await fetch(base + path, { redirect: "manual" })
       expect(r.status, path).toBe(302)
-      expect(r.headers.get("location"), path).toBe("/wall#status=open&view=cost")
+      expect(r.headers.get("location"), path).toBe("/hub#status=open&view=cost")
     }
   })
 

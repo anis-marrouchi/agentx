@@ -255,16 +255,16 @@ The PR shows a **ui-evidence** check. Click it: the title gives the result, and 
 - **The check says "Could not run the check".** GitHub's API returned an error, so the PR was not judged. In the browser, open the **UI evidence / UI evidence job** job and click **Re-run jobs**. In `required` mode this result blocks the merge until the re-run passes.
 - **Your change to the folder list has no effect on your own PR.** That is expected: the check uses the list from the base branch. It applies once the PR is merged.
 
-### Wall page check
+### Hub page check
 
-A pull request that changes the dashboard (`src/daemon/ui/`, the Wall's server files) runs the **Wall page check** (`.github/workflows/wall-pages.yml`). It starts the demo, opens every Wall view on a phone-sized screen (390 pixels wide) and on a desktop screen, and fails if a view shows an error in the browser console, a request fails, or the view never appears. It saves a screenshot of each view.
+A pull request that changes the dashboard (`src/daemon/ui/`, the Hub's server files) runs the **Hub page check** (`.github/workflows/wall-pages.yml`). It starts the demo, opens every Hub view on a phone-sized screen (390 pixels wide) and on a desktop screen, and fails if a view shows an error in the browser console, a request fails, or the view never appears. It saves a screenshot of each view.
 
-Every Wall page uses this one check; do not write your own. Every Wall write is also covered by one owner-only guard on the server, tested in `test/wall-owner-guard.test.ts`: put a new write under `/api/admin/wall/` and it is covered.
+Every Hub page uses this one check; do not write your own. Every Hub write is also covered by one owner-only guard on the server, tested in `test/wall-owner-guard.test.ts`: put a new write under `/api/admin/wall/` and it is covered.
 
-**Add a new Wall view to the check** (in your editor):
+**Add a new Hub view to the check** (in your editor):
 
 1. Open `scripts/wall-page-check.json`.
-2. Add one line to `views`: a short `name`, the `path` that opens the view (for example `/wall#status=open&view=cost`), and a `ready` selector that exists once the view has drawn (for example `#wall-cost > *`).
+2. Add one line to `views`: a short `name`, the `path` that opens the view (for example `/hub#status=open&view=cost`), and a `ready` selector that exists once the view has drawn (for example `#wall-cost > *`).
 3. Commit it in the same pull request as the view.
 
 **Run it locally** (in a terminal, from the repo root, with Chrome or Chromium installed):
@@ -275,7 +275,7 @@ Every Wall page uses this one check; do not write your own. Every Wall write is 
 
 #### Check it worked
 
-The last line reads `20/20 passed` (ten views, two sizes each). On a pull request, the **Wall pages / Wall page check** job is green, and its **wall-pages** artifact holds the screenshots.
+The last line reads `32/32 passed` (sixteen views, two sizes each). On a pull request, the **Hub pages / Hub page check** job is green, and its **wall-pages** artifact holds the screenshots.
 
 #### If something is wrong
 

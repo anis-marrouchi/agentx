@@ -15,6 +15,7 @@
 
 import { renderShell, esc, type TopbarPeer } from ".."
 import { injectFns } from "../inject"
+import { HUB_PATH } from "../hub-name"
 import { workflowHealth } from "../../workflow-health"
 
 export interface WorkflowsPageOpts {
@@ -28,7 +29,7 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     <header>
       <h2>Workflows</h2>
       <div class="ax-wf__header-actions">
-        <a id="wf-new" class="ax-wf__icon" href="/wall#page=editor&amp;e-new=1" title="Build a new workflow">+</a>
+        <a id="wf-new" class="ax-wf__icon" href="${HUB_PATH}#page=editor&amp;e-new=1" title="Build a new workflow">+</a>
         <button id="wf-refresh" class="ax-wf__icon" title="Refresh (r)">↻</button>
       </div>
     </header>
@@ -739,7 +740,7 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     $("#wf-detail-head").innerHTML = \`
       <div class="ax-wf__detail-title">
         <h2>\${esc(wf.title || wf.id)}</h2>
-        <a class="ax-wf__btn" href="/wall#page=editor&amp;e-wf=\${encodeURIComponent(wf.id)}" title="Open on the canvas">Edit on canvas</a>
+        <a class="ax-wf__btn" href="${HUB_PATH}#page=editor&amp;e-wf=\${encodeURIComponent(wf.id)}" title="Open on the canvas">Edit on canvas</a>
         <span class="hint">\${esc(wf.id)} · v\${wf.version} · trigger: \${esc(triggerSource)}\${trigFilter ? " · " + esc(trigFilter) : ""}</span>
       </div>
       <div class="ax-wf__detail-actions">

@@ -41,7 +41,7 @@ In AgentX, a stop or resume request is called a **signal**. These are not the wo
 
 ## Pause a task from the dashboard
 
-1. **Browser:** open the dashboard and select **Live** in the Wall's nav (under **More** on a phone).
+1. **Browser:** open the dashboard and select **Live** in the Hub's nav (under **More** on a phone).
 2. Under **Running now**, select the agent's card. The run's **Task** page opens.
 3. Select **Pause** at the top, then **Pause it?** to confirm.
 4. Wait a few seconds. Back on **Live**, the task is under **Paused**, with who stopped it and when.
@@ -51,7 +51,7 @@ In AgentX, a stop or resume request is called a **signal**. These are not the wo
 
 ## Resume a task from the dashboard
 
-1. **Browser:** open **Live** on the Wall.
+1. **Browser:** open **Live** on the Hub.
 2. Find the task under **Paused**.
 3. Select **Resume**. The note at the top says **Resumed: it goes on from its plan.**
 4. The task shows under **Running now** again. Its answer goes to the chat the task came from, as it would have the first time.
@@ -64,7 +64,7 @@ The task's own page has the same **Resume**: select **Open the run** on its card
 
 A paused task stays under **Paused** until it is resumed. A resumed task is removed by itself after 7 days. To remove one you will never resume:
 
-1. **Browser:** open **Live** on the Wall.
+1. **Browser:** open **Live** on the Hub.
 2. Find the task under **Paused**.
 3. Select **Drop**, then select **Drop it for good?** within a few seconds to confirm. The task and its plan are deleted, and it can no longer be resumed.
 
@@ -167,7 +167,7 @@ A workflow can resume a task with the built-in action `signal.resume`. Give it t
 
 A *workflow* is a saved series of steps; each run of it is a *workflow run*. When the task you pause is an agent's step in a workflow run, the whole run pauses at that step. It is not marked failed.
 
-1. **Browser:** on the Wall's **Live** page, open the agent's running card and select **Pause**, as for any task.
+1. **Browser:** on the Hub's **Live** page, open the agent's running card and select **Pause**, as for any task.
 2. Wait a few seconds. Under **Paused**, the task says **A workflow step: its run waits here until this resumes.**
 3. **Terminal (optional):** run `agentx workflow runs <workflow>`. The run shows `paused`, and its `last` line names the step with `(paused)`.
 4. **Terminal (optional):** run `agentx signal show <taskId>`. It names the step and the workflow run, and shows the resume plan.
@@ -224,7 +224,7 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 
 ## Check it worked
 
-1. **Browser:** send an agent a task that takes a while, open its card on the Wall's **Live** page and select **Pause**, then **Pause it?**.
+1. **Browser:** send an agent a task that takes a while, open its card on the Hub's **Live** page and select **Pause**, then **Pause it?**.
 2. Within the time limit, **Paused** on Live shows the task with **Resume plan, by** *agent*.
 3. **Terminal:** run `agentx trace list --agent <agent>`. The task's status is `stopped`, not `error`.
 4. **Browser:** select **Resume**. The task shows under **Running now** again, and the answer reaches the original chat.

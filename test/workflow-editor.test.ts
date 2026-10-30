@@ -43,7 +43,7 @@ describe("workflow editor", () => {
   })
 
   it("is a Wall page, reachable from both workflows pages, that loads its bundle (#1524)", () => {
-    expect(renderWorkflowsPage()).toContain("/wall#page=editor&amp;e-new=1")
+    expect(renderWorkflowsPage()).toContain("/hub#page=editor&amp;e-new=1")
     const html = renderWallPage({ owner: true })
     expect(html).toContain('<section id="wall-editor"')
     expect(html).toContain("window.AX_WALL_EDITOR = ")

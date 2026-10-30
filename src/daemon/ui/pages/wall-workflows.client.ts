@@ -33,6 +33,8 @@
 // renderWorkflows(page) is the one call the Wall's render() makes;
 // refreshWorkflows() is called from the Wall's own load().
 
+import { HUB_NAME } from "../hub-name"
+
 export const WALL_WORKFLOWS_SCRIPT = String.raw`
   var WFP = { defs: null, runs: null, capped: false, error: '', note: '', bad: false, detail: {}, fu: null, req: null, busy: {}, dlg: null, loading: false };
   S.wfv = { tab: '', q: '', project: '', open: '' };
@@ -256,7 +258,7 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
   }
   function workflowsPageHtml() {
     var note = WFP.note ? '<p class="wwf__note' + (WFP.bad ? ' is-bad' : '') + '" role="status">' + esc(WFP.note) + '</p>' : '';
-    if (WFP.error && !WFP.runs) return note + '<p class="ax-wall__empty wwf__empty">Could not read the workflows: ' + esc(WFP.error) + '. The rest of the Wall still works. <button type="button" class="ax-btn ax-btn--ghost" data-wf-retry>Try again</button></p>';
+    if (WFP.error && !WFP.runs) return note + '<p class="ax-wall__empty wwf__empty">Could not read the workflows: ' + esc(WFP.error) + '. The rest of the ${HUB_NAME} still works. <button type="button" class="ax-btn ax-btn--ghost" data-wf-retry>Try again</button></p>';
     if (!WFP.defs || !WFP.runs) return '<p class="ax-wall__empty wwf__empty">Loading…</p>';
     var defs = WFP.defs, f = S.wfv, base = defs.filter(function (wf) { return wfMatch(wf, true); });
     var count = function (tab) { return base.filter(function (wf) { return wfTab(wfState(wf, wfRunsOf(wf.id))) === tab; }).length; };

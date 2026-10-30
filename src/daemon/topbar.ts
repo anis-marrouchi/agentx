@@ -9,6 +9,8 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
+import { HUB_NAME, HUB_PATH } from "./ui/hub-name"
+
 export type TopbarTab = "wall" | "monitor" | "activity" | "live" | "mesh" | "admin" | "graph" | "workflows" | "health" | "cost" | "wiki" | "inbox" | "projects" | "approvals" | "people" | "org"
 
 export interface TopbarPeer {
@@ -458,12 +460,12 @@ export function renderTopbar(opts: TopbarOpts): string {
     {
       name: "Mesh",
       tabs: [
-        { id: "wall", label: "Wall", href: "/wall" },
-        { id: "live", label: "Live", href: "/wall#page=live" },
+        { id: "wall", label: HUB_NAME, href: HUB_PATH },
+        { id: "live", label: "Live", href: `${HUB_PATH}#page=live` },
         { id: "mesh", label: "Operations", href: "/mesh" },
         { id: "monitor", label: "Monitor", href: "/monitor" },
         { id: "approvals", label: "Approvals", href: "/approvals" },
-        { id: "people", label: "People", href: "/wall#page=people" },
+        { id: "people", label: "People", href: `${HUB_PATH}#page=people` },
         { id: "org", label: "Org", href: "/org" },
         { id: "activity", label: "Activity", href: "/activity" },
         { id: "workflows", label: "Workflows", href: "/workflows" },

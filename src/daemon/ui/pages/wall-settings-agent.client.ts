@@ -19,6 +19,8 @@
 // after a confirm, and hands a chat to another agent, with the classic agent
 // page's calls (agent-panel.ts) under the Settings prefix.
 
+import { HUB_NAME } from "../hub-name"
+
 export const WALL_SETTINGS_AGENT_SCRIPT = String.raw`
   var ST_TABS = [['overview', 'Overview'], ['personality', 'Personality'], ['skills', 'Skills'], ['channels', 'Channels'], ['handovers', 'Handovers']];
   /** The Overview fields: key in the PATCH, label, kind. */
@@ -85,7 +87,7 @@ export const WALL_SETTINGS_AGENT_SCRIPT = String.raw`
       '<div id="st-dlg"></div>';
   }
   function stClassicHtml(a, what) {
-    return '<section class="wsc"><p class="wst__todo">' + esc(what) + ' is not on the Wall yet: it comes in a later step of #1428.</p>' +
+    return '<section class="wsc"><p class="wst__todo">' + esc(what) + ' is not on the ${HUB_NAME} yet: it comes in a later step of #1428.</p>' +
       '<a class="ax-btn ax-btn--ghost" href="/admin/agents/' + encodeURIComponent(a.id) + '">Open the classic agent page</a></section>';
   }
 

@@ -36,7 +36,7 @@ The three phases of the comparison in [#1285](https://github.com/anis-marrouchi/
 - Email as a channel, and a support queue that drafts replies from your documents ([#1287](https://github.com/anis-marrouchi/agentx/issues/1287)).
 - An org chart in the dashboard, and owner approval before an agent-created agent starts ([#1169](https://github.com/anis-marrouchi/agentx/issues/1169)).
 
-**Also done:** an [upgrade promise](reference/releases.md#upgrade-promise), an install matrix with its pass rate, and this roadmap; AgentX stays on 0.x for now, and 1.0 will get its own issue ([#1294](https://github.com/anis-marrouchi/agentx/issues/1294)); a worktree per coding task, a review gate on GitLab, and Linear and Jira ([#1292](https://github.com/anis-marrouchi/agentx/issues/1292)); the Wall view of every project; monthly budgets per agent; and stop-all with resume after a restart.
+**Also done:** an [upgrade promise](reference/releases.md#upgrade-promise), an install matrix with its pass rate, and this roadmap; AgentX stays on 0.x for now, and 1.0 will get its own issue ([#1294](https://github.com/anis-marrouchi/agentx/issues/1294)); a worktree per coding task, a review gate on GitLab, and Linear and Jira ([#1292](https://github.com/anis-marrouchi/agentx/issues/1292)); the Hub view of every project; monthly budgets per agent; and stop-all with resume after a restart.
 
 Every change, release by release, is in [CHANGELOG.md](https://github.com/anis-marrouchi/agentx/blob/main/CHANGELOG.md). What a release may change, and how it is checked, is in [Releases, upgrades and security](./reference/releases.md).
 

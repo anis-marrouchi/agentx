@@ -2,6 +2,7 @@ import { readFileSync, statSync } from "fs"
 import { resolve } from "path"
 import { callerHeaders } from "@/calls/service"
 import { AGENT_PICTURE_PATH, PICTURE_MAX_BYTES, PictureError, sniffPicture } from "./pictures"
+import { HUB_NAME } from "@/daemon/ui/hub-name"
 
 // --- An agent sets its own picture (#1425) ---
 //
@@ -60,7 +61,7 @@ export async function setOwnPicture(file: string | null, target: string | undefi
     const data = await res.json().catch(() => ({})) as any
     if (!res.ok) return { ok: false, message: data?.error || `HTTP ${res.status}` }
     if (!body) return { ok: true, message: data.removed ? "Your picture is removed; your initials show again." : "You had no picture; nothing changed." }
-    return { ok: true, message: "Your picture is set. It shows on the Wall, the Org page and Settings on their next load." }
+    return { ok: true, message: `Your picture is set. It shows on the ${HUB_NAME}, the Org page and Settings on their next load.` }
   } catch (e: any) {
     return { ok: false, message: `Couldn't reach the daemon at ${deps.daemonUrl} (${e?.message ?? e}).` }
   }

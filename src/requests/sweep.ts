@@ -7,6 +7,7 @@ import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
 import { goalLine } from "./goals"
 import { DEFAULT_RESEND, resendLine, resendVerdict, type ResendCause } from "./resend"
+import { HUB_NAME } from "@/daemon/ui/hub-name"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
@@ -132,16 +133,16 @@ export function pickupText(r: RequestRecord, resend: ResendCause | null = null):
   // A post the owner wrote on the Wall (#1355) has no chat to report in.
   const wall = r.channel === WALL_CHANNEL
   const report = wall
-    ? "The Wall has no chat: give your report as the answer to this turn, which shows as the post's result."
+    ? `The ${HUB_NAME} has no chat: give your report as the answer to this turn, which shows as the post's result.`
     : first
     ? `That chat is ${first}'s: you may have no way to write there, so do not report in it. Give your report as the answer to this turn: the owner reads it on the request's card. If you have a chat of your own with them, you can report there as well.`
     : "Report to them in that chat."
   return [
     `[agentx:request-pickup id=${r.id}]`,
     resend
-      ? `${resendLine(resend)} It was asked ${wall ? `on the Wall on ${on} UTC and was not finished.` : asked}`
+      ? `${resendLine(resend)} It was asked ${wall ? `on the ${HUB_NAME} on ${on} UTC and was not finished.` : asked}`
       : wall && !first && !r.ownerNote
-      ? `The owner gave you this task on the Wall on ${on} UTC.`
+      ? `The owner gave you this task on the ${HUB_NAME} on ${on} UTC.`
       : first
         ? `The owner handed this request to you. It was asked of ${first} ${asked}`
         : `The owner asked you to pick this request up again. It was asked ${asked}`,

@@ -60,7 +60,7 @@ If a step fails before AgentX was stopped, it stays running and the command prin
 
 The dashboard can ask a node to restart itself as soon as no task is running. This needs launchd or systemd, because a service manager has to start AgentX again after it exits. On a daemon started by hand, use the terminal command above.
 
-1. **Browser:** open the dashboard and select **Live** in the Wall's nav (under **More** on a phone).
+1. **Browser:** open the dashboard and select **Live** in the Hub's nav (under **More** on a phone).
 2. **Browser:** under **Machines**, find the node's card, then select **Restart when idle**.
 
    ![Machine cards on Live: Restart when idle, the Claude Code sessions attached with their agent and start time, and Connect a CLI session](/screenshots/wall/live-machines.png)
@@ -272,7 +272,7 @@ To check the restart command:
 
 To check the dashboard button:
 
-1. **Browser:** on the Wall's **Live** page, select **Restart when idle** on a machine's card, then **Restart once idle?**.
+1. **Browser:** on the Hub's **Live** page, select **Restart when idle** on a machine's card, then **Restart once idle?**.
 2. The card shows **Restart waiting**, then **Restarting…**, then **up** again.
 3. **Terminal:** on that node, `agentx daemon logs` shows `Restart when idle: no tasks running`, then `Shutdown: restart requested by restart-when-idle from the dashboard (…)`.
 

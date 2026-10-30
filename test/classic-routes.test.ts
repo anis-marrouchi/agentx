@@ -22,13 +22,13 @@ function wallHrefs(): string[] {
 }
 
 /** Same-site addresses on the Wall that are not dashboard pages. */
-const NOT_PAGES = [/^\/(#|$)/, /^\/wall([?#]|$)/, /^\/admin\/wiki\//, /^\/(favicon\.svg|apple-touch-icon\.png)$/]
+const NOT_PAGES = [/^\/(#|$)/, /^\/hub([?#]|$)/, /^\/admin\/wiki\//, /^\/(favicon\.svg|apple-touch-icon\.png)$/]
 
 describe("classic routes registry", () => {
   it("gives every pending page an issue to wait on, and every Wall page a target", () => {
     for (const r of CLASSIC_ROUTES) {
       if (r.status === "pending") expect(r.blockedBy?.length, r.path).toBeGreaterThan(0)
-      if (r.status === "wall") expect(r.wall, r.path).toMatch(/^\/(wall)?(#|$)/)
+      if (r.status === "wall") expect(r.wall, r.path).toMatch(/^\/(hub)?(#|$)/)
     }
     expect(new Set(CLASSIC_ROUTES.map((r) => r.path)).size).toBe(CLASSIC_ROUTES.length)
   })
@@ -44,7 +44,7 @@ describe("classic routes registry", () => {
   it("keeps /setup and the org chart editor as tool pages; the workflow editor is on the Wall (#1524)", () => {
     expect(classicRouteFor("/setup")?.status).toBe("tool")
     expect(classicRouteFor("/workflows/editor")?.status).toBe("wall")
-    expect(classicRouteFor("/workflows/editor")?.wall).toBe("/wall#page=editor")
+    expect(classicRouteFor("/workflows/editor")?.wall).toBe("/hub#page=editor")
     // Owner decision on #1420: the org chart is edited on /org, the Wall reads it.
     expect(classicRouteFor("/org")?.status).toBe("tool")
     expect(classicRouteFor("/workflows")?.status).toBe("pending")
@@ -100,13 +100,13 @@ describe("classic Task page redirect", () => {
 
   it("sends an agent's history to its Activity tab on the Wall", () => {
     const to = classicRedirect("/agents/ops%20bot/history", new URLSearchParams("node=http://peer.test&name=Ops"), "http://daemon.test")
-    expect(to).toMatch(/^\/wall#/)
-    expect(Object.fromEntries(new URLSearchParams(to!.slice("/wall#".length)))).toEqual({ page: "activity", "a-agent": "ops bot", "a-period": "30d" })
+    expect(to).toMatch(/^\/hub#/)
+    expect(Object.fromEntries(new URLSearchParams(to!.slice("/hub#".length)))).toEqual({ page: "activity", "a-agent": "ops bot", "a-period": "30d" })
     expect(classicRedirect("/agents/%E0%A4%A/history", new URLSearchParams(""), "http://daemon.test")).toBeNull()
   })
 
   it("sends the workflow editor to its Wall page (#1524)", () => {
-    const keys = (to: string | null) => Object.fromEntries(new URLSearchParams(to!.slice("/wall#".length)))
+    const keys = (to: string | null) => Object.fromEntries(new URLSearchParams(to!.slice("/hub#".length)))
     expect(keys(classicRedirect("/workflows/editor", new URLSearchParams("id=deploy"), "http://daemon.test"))).toEqual({ page: "editor", "e-wf": "deploy" })
     expect(keys(classicRedirect("/workflows/editor", new URLSearchParams("new=1"), "http://daemon.test"))).toEqual({ page: "editor", "e-new": "1" })
     // Nothing named: the Workflows page.
@@ -138,16 +138,16 @@ describe("classic Task page redirect", () => {
       const base = await start()
       const r = await fetch(`${base}/agents/ops/history?node=http://peer.test`, { redirect: "manual" })
       expect(r.status).toBe(302)
-      expect(r.headers.get("location")).toBe("/wall#page=activity&a-agent=ops&a-period=30d")
+      expect(r.headers.get("location")).toBe("/hub#page=activity&a-agent=ops&a-period=30d")
     })
 
     it("redirects /workflows/editor to the Wall's editor page (#1524)", async () => {
       const base = await start()
       const r = await fetch(`${base}/workflows/editor?id=github-sweep`, { redirect: "manual" })
       expect(r.status).toBe(302)
-      expect(r.headers.get("location")).toBe("/wall#page=editor&e-wf=github-sweep")
+      expect(r.headers.get("location")).toBe("/hub#page=editor&e-wf=github-sweep")
       const n = await fetch(`${base}/workflows/editor?new=1`, { redirect: "manual" })
-      expect(n.headers.get("location")).toBe("/wall#page=editor&e-new=1")
+      expect(n.headers.get("location")).toBe("/hub#page=editor&e-new=1")
     })
 
     it("still answers 400 without an agent", async () => {

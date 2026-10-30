@@ -407,8 +407,12 @@ describe("routes", () => {
     expect(root.body).toContain('id="wall-feed"')
     const live = await get("/live")
     expect(live.status).toBe(302)
-    expect(live.location).toBe("/wall#page=live")
-    expect((await get("/wall")).body).toContain('id="wall-feed"')
+    expect(live.location).toBe("/hub#page=live")
+    expect((await get("/hub")).body).toContain('id="wall-feed"')
+    // The old address keeps working (#1485): 301 to the same Hub page.
+    const old = await get("/wall?x=1")
+    expect(old.status).toBe(301)
+    expect(old.location).toBe("/hub?x=1")
   })
 
   it("keeps every classic page one tap away", () => {
@@ -430,8 +434,8 @@ describe("routes", () => {
     }
   })
 
-  it("the dashboard keeps its Wall link (#1242)", async () => {
-    expect((await get("/mesh")).body).toContain('href="/wall"')
+  it("the dashboard keeps its Hub link (#1242, #1485)", async () => {
+    expect((await get("/mesh")).body).toContain('href="/hub"')
   })
 
   it("answers the Wall API, the thread from a run id, and the fleet view", async () => {

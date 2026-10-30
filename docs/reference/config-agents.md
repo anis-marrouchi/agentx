@@ -103,7 +103,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 }
 ```
 
-A top-level `budget` with the same two keys caps all agents together: `"budget": { "monthlyUsd": 200 }` next to `agents`. Reaching it pauses every agent until the month ends or you raise it. A project's budget sits on its entry in [`dashboard.wall.projects`](config-operations.md#dashboard). All three can also be set on the Wall's Cost page ([Set a monthly budget from the Cost page](../dashboard/wall.md#set-a-monthly-budget-from-the-cost-page)).
+A top-level `budget` with the same two keys caps all agents together: `"budget": { "monthlyUsd": 200 }` next to `agents`. Reaching it pauses every agent until the month ends or you raise it. A project's budget sits on its entry in [`dashboard.wall.projects`](config-operations.md#dashboard). All three can also be set on the Hub's Cost page ([Set a monthly budget from the Cost page](../dashboard/hub.md#set-a-monthly-budget-from-the-cost-page)).
 
 ### Instructions AgentX adds for coding agents
 

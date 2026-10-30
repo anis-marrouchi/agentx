@@ -4,14 +4,14 @@ A workflow is a saved automation: something starts it (a message, a GitLab event
 
 You see your workflows in two places:
 
-- **Workflows** on the [Wall](./wall.md): every workflow with its state and last runs, a switch to turn it on or off, and a button to start it. Start here.
-- The **workflow editor**, also on the Wall: the steps appear as boxes joined by arrows on a drawing area (the *canvas*). See [Edit a workflow](#edit-a-workflow).
+- **Workflows** on the [Hub](./hub.md): every workflow with its state and last runs, a switch to turn it on or off, and a button to start it. Start here.
+- The **workflow editor**, also on the Hub: the steps appear as boxes joined by arrows on a drawing area (the *canvas*). See [Edit a workflow](#edit-a-workflow).
 - The classic **Workflows** page (`/workflows`): the same list, the full history of each run, **Follow-ups** and the **Every task in a workflow** setting.
 
-## See your workflows on the Wall
+## See your workflows on the Hub
 
-1. **Browser:** open the dashboard. The Wall is the first page you see.
-2. Select **Workflows** in the nav on the left, under **Automation**. The number next to it is how many workflows this machine has. On a phone, select **More** in the bottom bar, then **Workflows**. The page's address is `/wall#page=workflows`.
+1. **Browser:** open the dashboard. The Hub is the first page you see.
+2. Select **Workflows** in the nav on the left, under **Automation**. The number next to it is how many workflows this machine has. On a phone, select **More** in the bottom bar, then **Workflows**. The page's address is `/hub#page=workflows`.
 3. Each workflow is one row. It shows:
    - its name, and its state: **Running**, **Last run failed**, **Done**, **Waiting** (a step waits for someone), **Never run**, **Off**, or **Held** (it would clash with another way the same events are handled, so it takes no runs until that is fixed);
    - what starts it, in words, such as **Started by hand**, **Fridays at 16:00** or **When a message arrives by email**;
@@ -21,11 +21,11 @@ You see your workflows in two places:
 4. A run that failed adds a red line under the row: when it stopped, and at which step.
 5. Workflows that need a look come first: a failed last run, then running ones, then the rest by name. Off ones come last.
 
-![The Workflows page on the Wall: one workflow opened on its last run, two that are off and look stale, and Follow-ups on the right](/screenshots/wall/workflows.png)
+![The Workflows page on the Hub: one workflow opened on its last run, two that are off and look stale, and Follow-ups on the right](/screenshots/wall/workflows.png)
 
 *Demo data; your workflows will differ.*
 
-The line under the tabs counts your workflows, how many are on, and the runs of the last seven days. The page refreshes with the rest of the Wall, every minute, and when you select **Refresh**.
+The line under the tabs counts your workflows, how many are on, and the runs of the last seven days. The page refreshes with the rest of the Hub, every minute, and when you select **Refresh**.
 
 ### Find one workflow
 
@@ -51,7 +51,7 @@ A workflow that is off and has not run for 30 days shows **looks stale** in ambe
 
 ## Start a run
 
-1. On the Wall's **Workflows** page, select **Run…** under a workflow that is on.
+1. On the Hub's **Workflows** page, select **Run…** under a workflow that is on.
 2. A box opens. Fill in the inputs the workflow asks for. A field marked **\*** is needed.
 3. To send the input as text in JSON format instead, open **Inputs as JSON**.
 4. Read the line above the buttons: it says who does the steps, and, for a workflow that something else normally starts (a message or a time of day), that this run stands in for that.
@@ -63,7 +63,7 @@ To close the box without starting anything, select **Back** or press Escape.
 
 ## Turn a workflow on or off
 
-1. On the Wall's **Workflows** page, select the switch on the workflow's row.
+1. On the Hub's **Workflows** page, select the switch on the workflow's row.
 2. The line at the top of the page says what changed. When it is **Off**, nothing starts it any more; runs already under way go on. When it is **On**, what starts it starts a run again.
 
 This saves the workflow the same way the editor does. A workflow marked **Held** has no switch: fix the clash it names, then turn it on in the editor.
@@ -80,7 +80,7 @@ On a phone, the page lists the same workflows and tabs, and opens a workflow the
 
 *Both demo examples only start when someone runs them.*
 
-1. **Browser:** open `/workflows`, or select **Workflows** under **Dashboard pages** on the Wall.
+1. **Browser:** open `/workflows`, or select **Workflows** under **Dashboard pages** on the Hub.
 2. Select a workflow in the list. Its steps and recent runs appear on the right.
 3. To start it by hand, select **▶ Run**.
 4. Fill in the fields the workflow asks for (or open **Or edit the raw JSON payload**).
@@ -89,7 +89,7 @@ On a phone, the page lists the same workflows and tabs, and opens a workflow the
 
 ## See what is being followed
 
-Workflows that agents started for your requests are listed under **Follow-ups**, at the top of the left column of the classic page, one group per tag (such as `client:example-co`). On the Wall's **Workflows** page, the **Follow-ups** box on the right counts them; select **Show them** to open the classic page.
+Workflows that agents started for your requests are listed under **Follow-ups**, at the top of the left column of the classic page, one group per tag (such as `client:example-co`). On the Hub's **Workflows** page, the **Follow-ups** box on the right counts them; select **Show them** to open the classic page.
 
 1. **Browser:** in the Workflows tab, look at **Follow-ups**. Groups with a blocked run are open.
 2. **Browser:** click a group's name to open it. Each run shows the step it is on, what it waits on and since when.
@@ -108,17 +108,17 @@ See [Run every task through a workflow](../jobs/every-task-a-workflow.md).
 
 ## Edit a workflow
 
-The editor is a page of the Wall. It has two columns: a **side menu** on the left and the **canvas** on the right. The Wall's nav shrinks to its icons, so the canvas gets the room.
+The editor is a page of the Hub. It has two columns: a **side menu** on the left and the **canvas** on the right. The Hub's nav shrinks to its icons, so the canvas gets the room.
 
-![The workflow editor on the Wall: the side menu with the workflow's settings on the left, the steps arranged from left to right on the canvas](/screenshots/workflows/editor.png)
+![The workflow editor on the Hub: the side menu with the workflow's settings on the left, the steps arranged from left to right on the canvas](/screenshots/workflows/editor.png)
 
 *Demo data; your workflows will differ.*
 
 ### Open the editor
 
-1. **Browser:** on the Wall, select **Workflows** in the nav.
+1. **Browser:** on the Hub, select **Workflows** in the nav.
 2. To change a workflow, select its name, then **Open in the editor**. To start a new one, select **New workflow** next to the page's title.
-3. The editor opens in the same tab. Its address is `/wall#page=editor&e-wf=` followed by the workflow's ID (its short name), so you can save it as a bookmark. The old address, `/workflows/editor?id=…`, opens the same page. On the classic page, **Edit on canvas** and **+** open it too.
+3. The editor opens in the same tab. Its address is `/hub#page=editor&e-wf=` followed by the workflow's ID (its short name), so you can save it as a bookmark. The old address, `/workflows/editor?id=…`, opens the same page. On the classic page, **Edit on canvas** and **+** open it too.
 
 A workflow that has never been laid out (for example one written as a file) is arranged for you when it opens.
 
@@ -189,31 +189,31 @@ Select **Workflows** at the left of the toolbar, or any page in the nav. If ther
 
 On a phone, the canvas takes the whole screen above the bottom bar. The side menu starts folded: select the panel button at the top left to open it over the canvas, and **×** to close it. Drag with one finger to move around.
 
-![The editor on a phone: the canvas over the Wall's bottom bar, with the side menu folded](/screenshots/workflows/editor-phone.png)
+![The editor on a phone: the canvas over the Hub's bottom bar, with the side menu folded](/screenshots/workflows/editor-phone.png)
 
 ### Who can change a workflow
 
-Only the owner saves, deletes or lays out a workflow, and only the owner can use **Ask AI to build…**. The owner is whoever opens the Wall on the machine itself, or signs in with the dashboard token. Anyone else can open the editor to look: there is no **Save** and no **Add a step**, and the side menu says so. The dashboard refuses their changes even if they are sent another way.
+Only the owner saves, deletes or lays out a workflow, and only the owner can use **Ask AI to build…**. The owner is whoever opens the Hub on the machine itself, or signs in with the dashboard token. Anyone else can open the editor to look: there is no **Save** and no **Add a step**, and the side menu says so. The dashboard refuses their changes even if they are sent another way.
 
 ## Check it worked
 
 1. **Browser:** after **Save**, the editor shows **saved**. Select **Workflows** at the left of the toolbar: the workflow is listed, and for a new one the number next to **Workflows** in the nav went up by one.
 2. Open the workflow in the editor again and select **Arrange**: every step is visible, none on top of another, and the arrows run from left to right.
-3. On the Wall, select **Run…** on a workflow you start by hand, then **Start the run**. The line at the top says **Started**, and a blue square appears at the right of the row's squares. After **Refresh**, once it finishes, the square turns green and the opened run lists each step with a tick.
+3. On the Hub, select **Run…** on a workflow you start by hand, then **Start the run**. The line at the top says **Started**, and a blue square appears at the right of the row's squares. After **Refresh**, once it finishes, the square turns green and the opened run lists each step with a tick.
 4. Select the switch on a test workflow. It reads **Off**, and the workflow is under the **Off** tab. Select it again to turn it back on.
 5. On the classic page, select **▶ Run**, then **Run now**. The run panel lists each step as it finishes.
 6. Follow [Check that it worked](../automations/check-it-worked.md) to confirm the result reached its destination.
 
 ## If something is wrong
 
-- **The Wall says "Could not read the workflows":** the dashboard could not ask the machine. The rest of the Wall still works. Select **Try again**; if it persists, check the machine with `agentx daemon status`.
-- **The Wall says "Only the owner can start, turn on or turn off a workflow":** the dashboard did not accept your key. Open the Wall on the machine itself, or sign in with the dashboard token, then try again.
+- **The Hub says "Could not read the workflows":** the dashboard could not ask the machine. The rest of the Hub still works. Select **Try again**; if it persists, check the machine with `agentx daemon status`.
+- **The Hub says "Only the owner can start, turn on or turn off a workflow":** the dashboard did not accept your key. Open the Hub on the machine itself, or sign in with the dashboard token, then try again.
 - **"Could not start …: workflow … is disabled":** the workflow is off. Turn it on with its switch first.
 - **No switch and no Run… on a row:** you are on a phone (use a computer), or the workflow is **Held** (fix the clash in the editor).
 - **Save fails with a message:** the workflow has a mistake, such as a step with no agent. Fix the step the message names and save again.
 - **"Saved, but the step positions were not":** the workflow was saved, but the machine refused the layout. Select **Arrange** or move a step, then save again.
 - **"Not saved: …" with a network error:** the machine did not answer. Nothing was written. Check it with `agentx daemon status` (in a **Terminal** on that machine), then save again.
-- **There is no Save button, and the side menu says only the owner can change the workflow:** you opened the Wall from another computer without signing in. Sign in with the dashboard token, or open the Wall on the machine itself.
+- **There is no Save button, and the side menu says only the owner can change the workflow:** you opened the Hub from another computer without signing in. Sign in with the dashboard token, or open the Hub on the machine itself.
 - **The editor says "The editor could not be loaded":** the page could not fetch the editor. Refresh the page. If it keeps happening after an update, run `pnpm build` (from a source checkout) and restart the daemon.
 - **The canvas looks empty:** the steps are outside the view. Press `F` or select the fit button.
 - **An arrow leaves from a dot named after a case that no longer exists:** the choice's cases changed and the arrow kept its old name. Select the arrow and delete it, then connect the right dot again.

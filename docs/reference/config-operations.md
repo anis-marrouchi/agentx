@@ -17,9 +17,9 @@ The dashboard is the web page served by `agentx board serve`. See [Dashboard](/d
 | `dashboard.daemonUrl` | string | `"http://localhost:18800"` | The main daemon the dashboard reads live data from. |
 | `dashboard.daemons` | list of objects | `[]` | Extra daemons to show, beyond the peers the main daemon already knows. |
 | `dashboard.draftAgent` | string | — | Agent that drafts text when you create an issue from a board. |
-| `dashboard.wall.rhythmHours` | number | `requests.staleAfterHours` | The normal rhythm of work on the [Wall](/dashboard/wall#see-every-project-at-once), in hours. An open task with no move for more than twice this is **stalled**. |
-| `dashboard.wall.projects` | list of objects | `[]` | Names the Wall's projects. A task's project comes from its home repo, its agent, or that agent's workspace, checked in that order. Empty: a task's project is its home repo. |
-| `dashboard.wall.capacity.threshold` | whole number | — | Flags an agent **over capacity** on the [Wall](/dashboard/wall#capacity-per-owner) when its tasks in progress plus the tasks waiting on it are above this. Unset: no flag. |
+| `dashboard.wall.rhythmHours` | number | `requests.staleAfterHours` | The normal rhythm of work on the [Hub](/dashboard/hub#see-every-project-at-once), in hours. An open task with no move for more than twice this is **stalled**. |
+| `dashboard.wall.projects` | list of objects | `[]` | Names the Hub's projects. A task's project comes from its home repo, its agent, or that agent's workspace, checked in that order. Empty: a task's project is its home repo. |
+| `dashboard.wall.capacity.threshold` | whole number | — | Flags an agent **over capacity** on the [Hub](/dashboard/hub#capacity-per-owner) when its tasks in progress plus the tasks waiting on it are above this. Unset: no flag. |
 
 Each entry in `dashboard.daemons`:
 
@@ -35,7 +35,7 @@ Each entry in `dashboard.wall.projects`:
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `name` | string | required | The project's name on the Wall. |
+| `name` | string | required | The project's name on the Hub. |
 | `repos` | list of strings | `[]` | Home repos in this project, as `group/project`. Case does not matter. |
 | `agents` | list of strings | `[]` | Agents whose tasks are in this project. |
 | `workspaces` | list of strings | `[]` | Folders: an agent whose workspace is one of them, or inside one, is in this project. `~/` is your home folder. |

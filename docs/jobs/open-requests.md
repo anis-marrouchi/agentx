@@ -277,7 +277,7 @@ Where you see it:
 - On the request's card under **Approvals** › **Open requests**: **Awaiting QA sign-off**, or **QA: PASS by …** with the time and the note.
 
   ![Two request cards: one shows QA: BLOCK with who gave it, when and why; the other shows Awaiting QA sign-off](/screenshots/approvals/qa.png)
-- On the request's post on the [Wall](../dashboard/wall.md#see-what-waits-on-qa), with **Awaiting QA only** in its filters.
+- On the request's post on the [Hub](../dashboard/hub.md#see-what-waits-on-qa), with **Awaiting QA only** in its filters.
 - In the terminal: `agentx requests show <id>`, and `agentx requests --qa awaiting` for every request still waiting on QA, open or done. `--qa block`, `--qa risk` and `--qa pass` list the requests whose latest verdict is that one.
 - From a script: `GET /requests?qa=awaiting` (see [Read the list from a script](#read-the-list-from-a-script)).
 
@@ -309,7 +309,7 @@ How the numbers are counted:
 
 A closed request is kept for `retentionDays` (90 days by default). After that it leaves its goal's numbers too.
 
-On the Wall, select **Goal:** on a post to see every post for that goal under the same numbers: see [Follow one goal](../dashboard/wall.md#follow-one-goal). Agents can read the same list with `{action:"goals"}`. From a script, `GET /requests/goals` on the daemon gives it as JSON.
+On the Hub, select **Goal:** on a post to see every post for that goal under the same numbers: see [Follow one goal](../dashboard/hub.md#follow-one-goal). Agents can read the same list with `{action:"goals"}`. From a script, `GET /requests/goals` on the daemon gives it as JSON.
 
 ## Where a request landed
 

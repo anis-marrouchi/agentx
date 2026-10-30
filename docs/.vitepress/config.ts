@@ -15,7 +15,7 @@ const groups = [
   ] },
   { text: "Dashboard", collapsed: true, items: [
     { text: "Dashboard", link: "/dashboard/" },
-    { text: "Wall", link: "/dashboard/wall" },
+    { text: "Hub", link: "/dashboard/hub" },
     { text: "Monitor", link: "/dashboard/monitor" },
     { text: "Approvals", link: "/dashboard/approvals" },
     { text: "People", link: "/dashboard/people" },

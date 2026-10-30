@@ -297,7 +297,7 @@ describe("the page", () => {
   it("moved to the Wall: /people goes to the Wall's People page, and the dashboard navigation links there", async () => {
     const r = await fetch(`${base}/people`, { redirect: "manual" })
     expect(r.status).toBe(302)
-    expect(r.headers.get("location")).toBe("/wall#page=people")
-    expect(renderGuestsPage({})).toMatch(/<a href="\/wall#page=people" class="ax-topbar__tab">People<\/a>/)
+    expect(r.headers.get("location")).toBe("/hub#page=people")
+    expect(renderGuestsPage({})).toMatch(/<a href="\/hub#page=people" class="ax-topbar__tab">People<\/a>/)
   })
 })
