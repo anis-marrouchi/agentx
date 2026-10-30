@@ -1,6 +1,8 @@
 import type { DecisionCard } from "@/approvals/cards"
 import { CLOSED_STATES, type RequestRecord, type RequestStore } from "./store"
 import { checkUrl } from "./checkers/url"
+import type { ForgeCounter } from "./checkers/count"
+import { refreshCount } from "./plan-continue"
 import { cardWords } from "./card-view"
 import { FINISHED_STEP_STATES, type PlanRecord, type PlanStep, type PlanStore } from "./plan-store"
 import {
@@ -45,6 +47,8 @@ export interface PlanSweepDeps {
   readCard?: (id: string) => DecisionCard | null
   /** Fetch a step's check address. */
   fetch?: typeof fetch
+  /** Read open counts, for steps with a count check (#1568). */
+  counter?: ForgeCounter
   hasAgent?: (agentId: string) => boolean
   log: (msg: string) => void
   now?: number
@@ -59,6 +63,8 @@ export interface PlanSweepResult {
 }
 
 const MINUTE = 60_000
+/** A count check reads the forge at most this often. */
+const COUNT_EVERY = 5 * MINUTE
 
 const isFinished = (s: PlanStep) => FINISHED_STEP_STATES.includes(s.state)
 
@@ -288,6 +294,17 @@ async function advance(deps: PlanSweepDeps, r: RequestRecord, steps: PlanStep[],
     }
     // Not live yet, or not reachable: the step stays as it is.
     if (res.verdict === "unverifiable") log(`[plans] ${r.id} step ${s.idx}: check ${s.checkUrl} failed: ${res.detail}`)
+  }
+
+  if (s.checkCount && (s.lastCountAt === null || now - s.lastCountAt >= COUNT_EVERY)) {
+    const res = await refreshCount(plans, s, deps.counter, now)
+    if (res?.verdict === "met") {
+      plans.updateStep(r.id, s.idx, { state: "done", evidence: res.detail, updatedAt: now })
+      plans.event(r.id, s.idx, "done", `check: ${res.detail}`, now)
+      requests.progress(r.id, now)
+      return true
+    }
+    if (res?.verdict === "unverifiable") log(`[plans] ${r.id} step ${s.idx}: count check failed: ${res.detail}`)
   }
 
   if (deps.hasAgent && !deps.hasAgent(s.agentId)) {

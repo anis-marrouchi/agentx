@@ -2,6 +2,7 @@ import type { RequestRecord } from "./store"
 import { CHOICE_LIMITS } from "@/approvals/choices"
 import { STEP_TEXT_MAX, type NewStep, type PlanStep } from "./plan-store"
 import { goalLine } from "./goals"
+import { describeCount, parseCountSpec, readCountSpec } from "./checkers/count"
 
 // --- What a plan is made of, and what each party is told (#788) ---
 //
@@ -23,11 +24,28 @@ export interface PlanSettings {
   requireForWork: string[]
   /** Work estimated over this many minutes needs a plan. 0: off. */
   requireOverMinutes: number
+  /** Start the next turn on a step when one ends with progress (#1568). */
+  continue?: ContinueSettings
+}
+
+export interface ContinueSettings {
+  enabled: boolean
+  /** Only plans of these request or goal ids. Empty: every plan. */
+  only: string[]
+  /** Turns started on their own, per goal per day, before the owner is told. */
+  maxTurnsPerDay: number
+  /** What those turns may cost, per goal per day, in USD. */
+  maxCostUsdPerDay: number
+}
+
+
+export const DEFAULT_CONTINUE_SETTINGS: ContinueSettings = {
+  enabled: false, only: [], maxTurnsPerDay: 10, maxCostUsdPerDay: 5,
 }
 
 export const DEFAULT_PLAN_SETTINGS: PlanSettings = {
   enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [],
-  requireForWork: ["code"], requireOverMinutes: 30,
+  requireForWork: ["code"], requireOverMinutes: 30, continue: DEFAULT_CONTINUE_SETTINGS,
 }
 
 /** The kind the daemon carries out itself: it sends the message. */
@@ -134,10 +152,18 @@ export function parseSteps(
 
     if (s.check !== undefined) {
       const check = (s.check && typeof s.check === "object" ? s.check : {}) as Record<string, unknown>
+      if (check.count !== undefined) {
+        // An open-count check (#1568): "open issues in owner/repo = 0".
+        const spec = parseCountSpec((check.count && typeof check.count === "object" ? check.count : {}) as Record<string, unknown>)
+        if (typeof spec === "string") return { ok: false, error: `${at}: check.${spec}` }
+        step.checkCount = JSON.stringify(spec)
+      }
       const url = str(check.url)
-      if (!/^https?:\/\/\S+$/i.test(url)) return { ok: false, error: `${at}: check.url must be an http(s) address` }
-      step.checkUrl = url
-      step.checkContains = str(check.contains) || null
+      if (url || check.count === undefined) {
+        if (!/^https?:\/\/\S+$/i.test(url)) return { ok: false, error: `${at}: check.url must be an http(s) address` }
+        step.checkUrl = url
+        step.checkContains = str(check.contains) || null
+      }
     }
     if (s.stallMinutes !== undefined) {
       const n = Number(s.stallMinutes)
@@ -186,11 +212,34 @@ export function dispatchText(r: RequestRecord, steps: PlanStep[], s: PlanStep): 
     ...goalLine(r.goal),
     `Done when: ${s.doneWhen}`,
     ...(s.checkUrl ? [`The daemon also checks ${s.checkUrl}${s.checkContains ? ` for "${s.checkContains}"` : ""} and marks the step done when it answers.`] : []),
+    ...countLines(s),
     "",
     "The plan:",
     ...stepLines(steps),
     "",
     `Do it now. ${reportHow(r, s)}`,
+  ].join("\n")
+}
+
+function countLines(s: PlanStep): string[] {
+  const spec = readCountSpec(s.checkCount)
+  if (!spec) return []
+  return [`The daemon counts ${describeCount(spec)} and marks the step done when it is met${s.lastCount !== null ? ` (last count: ${s.lastCount})` : ""}.`]
+}
+
+/** The turn the daemon starts on its own when the last one on the step
+ *  ended with progress (#1568). */
+export function continueText(r: RequestRecord, steps: PlanStep[], s: PlanStep, moved: string, turn: number, max: number): string {
+  return [
+    `[agentx:plan-continue id=${r.id} step=${s.idx}]`,
+    `Your last turn on step ${s.idx} of the plan for request ${r.id}, "${s.name}", moved it on (${moved}). The daemon starts this turn so the work goes on without waiting for a nudge. Continue turn ${turn} of at most ${max} today.`,
+    `Done when: ${s.doneWhen}`,
+    ...countLines(s),
+    "",
+    "The plan:",
+    ...stepLines(steps),
+    "",
+    `Go on with the next piece of work now, in this turn. Work you leave running in the background is not seen as progress. ${reportHow(r, s)}`,
   ].join("\n")
 }
 

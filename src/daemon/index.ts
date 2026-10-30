@@ -19,7 +19,7 @@ import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { isRestricted } from "@/guard/autonomy"
-import { OPEN_STATES, type OpenState } from "@/requests/store"
+import { OPEN_STATES, type OpenState, type RequestRecord } from "@/requests/store"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
 import { configureDecisions } from "@/decisions/seat"
@@ -101,11 +101,13 @@ import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
 import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { homeChecker } from "@/requests/home-check"
-import { FINISHED_STEP_STATES } from "@/requests/plan-store"
+import { FINISHED_STEP_STATES, type PlanStep } from "@/requests/plan-store"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
+import { continueOnTurnEnd } from "@/requests/plan-continue"
+import { forgeCounter } from "@/requests/checkers/count"
 import {
   DEFAULT_SPRINT_SETTINGS, itemEnded, laneChatId, laneContext, parseLaneChat, requeueItem, runSprintSweep, SPRINT_CHANNEL,
   type DispatchRef, type ItemEnd,
@@ -113,9 +115,9 @@ import {
 import { handleSprintsApi } from "@/requests/sprint-api"
 import { attachPromiseFacts, closeWatcherLoop, promiseSettingsOf, raiseWatcherLoop, watcherNotice } from "@/requests/promise"
 import { FactLedger } from "@/wiki/facts/ledger"
-import { DEFAULT_PLAN_SETTINGS, MESSAGE_KIND } from "@/requests/plans"
+import { DEFAULT_CONTINUE_SETTINGS, DEFAULT_PLAN_SETTINGS, MESSAGE_KIND } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
-import { isOwnerTurn, OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
+import { isOwnerTurn, OPERATOR_CHANNELS, PICKUP_CHANNEL, pickupContext } from "@/requests/tracker"
 import { isOperatorTurn, loadOperatorKey, OPERATOR_HEADER, operatorContext, operatorKeyMatches, operatorVouch, ownerProven } from "@/requests/operator"
 import { WikiCurateApi } from "./wiki-curate-api"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
@@ -708,6 +710,7 @@ export class AgentXDaemon {
           this.requests.tracker.setCatcher(this.promiseCatcher(db, this.requests))
           // A sprint lane's turn that ended after a restart (#1241).
           this.attachSprintEnds(this.requests)
+          this.attachPlanContinue(this.requests)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
         }
@@ -2766,6 +2769,44 @@ export class AgentXDaemon {
     }
   }
 
+  /** A turn on a plan step, in the request's own chat. Fire and forget,
+   *  like a pick-up. A turn that could not start comes back as { error }:
+   *  the step is blocked and the owner told. */
+  private async planTurn(requests: AttachedRequests, agentId: string, text: string, r: RequestRecord, step: PlanStep): Promise<void> {
+    const fail = (error: string) => {
+      const cur = requests.plans.step(step.requestId, step.idx)
+      if (cur?.state === "active") blockStep(requests.store, requests.plans, cur, `could not hand it to ${agentId}: ${error}`, Date.now())
+      this.log(`[plans] ${r.id} step ${step.idx}: turn on ${agentId} failed: ${error}`)
+    }
+    void this.registry.execute({ agentId, message: text, context: pickupContext(r.id) })
+      .then((res) => { if (res?.error && !isQueued(res.error)) fail(res.error) })
+      .catch((e: any) => fail(e?.message ?? String(e)))
+  }
+
+  /** Requests whose last plan turn the daemon started on its own (#1568). */
+  private planContinued = new Set<string>()
+
+  /** A turn on a plan step ended: when the step moved, the next turn
+   *  starts at once instead of after the 30-minute nudge
+   *  (src/requests/plan-continue.ts, #1568). */
+  private attachPlanContinue(requests: AttachedRequests): void {
+    getAgentEventBus().on("task:completed", (p: AgentXEvents["task:completed"]) => {
+      if (p.channel !== PICKUP_CHANNEL || this.shuttingDown || !this.config.requests.enabled) return
+      const plans = this.config.requests.plans ?? DEFAULT_PLAN_SETTINGS
+      if (!plans.enabled) return
+      void continueOnTurnEnd({
+        requests: requests.store,
+        plans: requests.plans,
+        settings: plans.continue ?? DEFAULT_CONTINUE_SETTINGS,
+        tellAgent: (agentId, text, r, step) => this.planTurn(requests, agentId, text, r, step),
+        notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
+        counter: forgeCounter(forgeConnectorsOf(this.config)),
+        started: this.planContinued,
+        log: this.log,
+      }, p).catch((e: any) => this.log(`[plans] continue after ${p.agentId}'s turn on ${p.chatId} failed: ${e?.message ?? e}`))
+    })
+  }
+
   /** A lane's turn this daemon did not start ended: one an earlier daemon
    *  started and this boot resumed. Its running item is settled. */
   private attachSprintEnds(requests: AttachedRequests): void {
@@ -2832,18 +2873,8 @@ export class AgentXDaemon {
         requests: requests.store,
         plans: requests.plans,
         settings: this.config.requests.plans ?? DEFAULT_PLAN_SETTINGS,
-        // Fire and forget, like a pick-up. A turn that could not start
-        // comes back as { error }: the step is blocked and the owner told.
-        tellAgent: async (agentId, text, r, step) => {
-          const fail = (error: string) => {
-            const cur = requests.plans.step(step.requestId, step.idx)
-            if (cur?.state === "active") blockStep(requests.store, requests.plans, cur, `could not hand it to ${agentId}: ${error}`, Date.now())
-            this.log(`[plans] ${r.id} step ${step.idx}: turn on ${agentId} failed: ${error}`)
-          }
-          void this.registry.execute({ agentId, message: text, context: pickupContext(r.id) })
-            .then((res) => { if (res?.error && !isQueued(res.error)) fail(res.error) })
-            .catch((e: any) => fail(e?.message ?? String(e)))
-        },
+        tellAgent: (agentId, text, r, step) => this.planTurn(requests, agentId, text, r, step),
+        counter: forgeCounter(forgeConnectorsOf(this.config)),
         // Keyed by the step: a retry within a day never sends it twice.
         send: async (step, text) => {
           await this.router.sendOutbound(

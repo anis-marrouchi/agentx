@@ -384,6 +384,11 @@ To turn it on by hand:
 | `requests.plans.disabledAgents` | list of strings | `[]` | Agents that may not make a plan. |
 | `requests.plans.requireForWork` | list of strings | `["code"]` | Kinds of work an agent must plan before it starts. The agent is told to plan first: its accept without steps is turned down. While this list or `requireOverMinutes` is set, an accept without steps must name its `work`. Covers recorded requests only. `[]`: no kind needs a plan. See [Plan before starting](/jobs/tracked-plans#plan-before-starting). |
 | `requests.plans.requireOverMinutes` | number (0 to 10080) | `30` | Work the agent estimates at more than this many minutes needs a plan. `0` turns this off. |
+| `requests.plans.continue` | object | `{}` | Keep a moving step going: when a turn on a plan step ends and the step moved (its count went down, or new progress was reported), the next turn starts at once instead of after a nudge. See [Keep a moving step going](/jobs/tracked-plans#keep-a-moving-step-going). |
+| `requests.plans.continue.enabled` | boolean | `false` | Start those turns. |
+| `requests.plans.continue.only` | list of strings | `[]` | Only plans whose request id or goal id is listed. Empty: every plan. |
+| `requests.plans.continue.maxTurnsPerDay` | whole number (1 to 200) | `10` | Such turns per goal (or per request without a goal) per UTC day. At the cap you are told once, and the nudges take over. |
+| `requests.plans.continue.maxCostUsdPerDay` | number (up to 1000) | `5` | What those turns may cost per goal per UTC day, in USD. |
 | `requests.sprints` | object | `{}` | Sprint lanes: a lead agent hands AgentX lanes of issues, and AgentX gives each lane its next issue when the lane's turn ends. Needs `requests.enabled`. See [Run a sprint in lanes](/jobs/sprint-lanes). |
 | `requests.sprints.enabled` | boolean | `true` | Agents may start sprints, and the daemon follows them. |
 | `requests.sprints.idleMinutes` | number (up to 10080) | `30` | Minutes a lane may sit idle with issues left before you are told. A sprint can set its own. |

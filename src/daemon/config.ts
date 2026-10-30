@@ -1639,6 +1639,20 @@ export const requestsConfigSchema = z.object({
     /** An accept whose `estimateMinutes` is over this needs a plan too.
      *  0: no estimate needs one. */
     requireOverMinutes: z.number().min(0).max(7 * 24 * 60).default(30),
+    /** Keep a step moving (#1568): when a turn on a plan step ends and the
+     *  step moved (its count went down, or a new progress report), the
+     *  daemon starts the next turn on it at once. The nudge stays as the
+     *  safety net for a turn that never ends. Off by default. */
+    continue: z.object({
+      enabled: z.boolean().default(false),
+      /** Only the plans of these request ids or goal ids. Empty: every plan. */
+      only: z.array(z.string().min(1)).default([]),
+      /** Turns started this way, per goal (or request) per day. When they
+       *  run out, the owner is told once and the nudges take over. */
+      maxTurnsPerDay: z.number().int().min(1).max(200).default(10),
+      /** What those turns may cost, per goal per day, in USD. */
+      maxCostUsdPerDay: z.number().positive().max(1000).default(5),
+    }).default({}),
   }).default({}),
   /** Sprint lanes (src/requests/sprints.ts, #1241): a lead agent hands the
    *  daemon lanes of items (agentx_sprint), and the daemon gives each lane
