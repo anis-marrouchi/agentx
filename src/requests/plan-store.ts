@@ -288,14 +288,15 @@ export class PlanStore {
     ).run(goalKey, day, add.turns ?? 0, add.costUsd ?? 0, add.toldAt ?? null)
   }
 
+  /** The newest `limit` events of the plan, in order. A long log drops
+   *  its oldest entries, never the latest ones. */
   events(requestId: string, limit = 200): PlanEvent[] {
     return (this.db.prepare(
-      "SELECT request_id, step, at, kind, detail FROM request_plan_events WHERE request_id = ? ORDER BY at, rowid LIMIT ?",
-    ).all(requestId, limit) as any[]).map((r) => ({ requestId: r.request_id, step: r.step ?? null, at: r.at, kind: r.kind, detail: r.detail }))
+      "SELECT request_id, step, at, kind, detail FROM request_plan_events WHERE request_id = ? ORDER BY at DESC, rowid DESC LIMIT ?",
+    ).all(requestId, limit) as any[]).reverse().map((r) => ({ requestId: r.request_id, step: r.step ?? null, at: r.at, kind: r.kind, detail: r.detail }))
   }
 
-  /** The newest `limit` events of one kind on a step, in order. Unlike
-   *  `events`, a long log does not hide the latest ones. */
+  /** The newest `limit` events of one kind on a step, in order. */
   stepEvents(requestId: string, step: number, kind: string, limit = 200): PlanEvent[] {
     return (this.db.prepare(
       "SELECT request_id, step, at, kind, detail FROM request_plan_events WHERE request_id = ? AND step = ? AND kind = ? ORDER BY at DESC, rowid DESC LIMIT ?",

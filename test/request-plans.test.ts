@@ -125,6 +125,12 @@ describe("making a plan", () => {
     expect(plans.events("req-1")[0]).toMatchObject({ kind: "created" })
   })
 
+  it("shows the newest events of a long log, in order (#1582)", () => {
+    makePlan()
+    for (let i = 1; i <= 5; i++) plans.event("req-1", 1, "progress", `report ${i}`, Date.now() + i * 1000)
+    expect(plans.events("req-1", 3).map((e) => e.detail)).toEqual(["report 3", "report 4", "report 5"])
+  })
+
   it("needs two steps, a done check, an agent of this node, and a destination for a message", () => {
     const one = parseSteps([{ name: "a", done: "x" }], { createdBy: "coder", hasAgent: (id) => AGENTS.has(id), settings })
     expect(one.ok).toBe(false)
