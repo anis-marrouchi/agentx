@@ -300,19 +300,18 @@ export const OVERDUE_REASON = "Past its due time"
 export const HANDOFF_REASON = "The work handed to "
 
 /** A request whose handed-on work all came back done (#1138). A hand-off
- *  that failed or timed out counts for nothing once one handed to the
- *  same agent after it ended came back done: that was its retry (#1522).
- *  Two running side by side are not each other's retry, unless the first
- *  was lost in a restart: a duplicate of it that started after it and
- *  came back done did its work (#1520). One still out, waiting, from
- *  before endings were kept, or to another agent holds it. */
+ *  that failed, timed out or was lost counts for nothing once one handed
+ *  to the same agent after it ended came back done: that was its retry
+ *  (#1522). Two running side by side are not each other's retry, lost or
+ *  not: they may be two different parts (#1520). One still out, waiting,
+ *  from before endings were kept, or to another agent holds it. */
 const CAME_BACK = `r.close_when IS NULL AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
   AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
                   AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded'))
                   AND NOT (l.ended IN ('error', 'lost', 'timeout') AND l.agent IS NOT NULL AND EXISTS (
                     SELECT 1 FROM request_links d WHERE d.request_id = r.id AND d.kind = 'delegation' AND d.ended = 'done'
-                      AND d.agent = l.agent AND d.at > CASE WHEN l.ended = 'lost' THEN l.at ELSE l.ended_at END)))
+                      AND d.agent = l.agent AND d.at > l.ended_at)))
   AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')`
 
 /** Needs attention for a reason settling clears once the handed work came
@@ -666,14 +665,45 @@ export class RequestStore {
     return n
   }
 
+  /** Delegation links kept before the agent was (#1520), filled from the
+   *  callee's own turn: a delegation runs in chat `a2a:<caller>:<callee>:<id>`
+   *  (src/a2a/delegation.ts), kept in task_history until its retention
+   *  prunes it. A peer's delegation runs on the peer, with no row here:
+   *  those stay without an agent. Returns how many were filled. */
+  fillLinkAgentsFromHistory(): number {
+    const hasHistory = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'task_history'").get()
+    if (!hasHistory) return 0
+    const refs = new Set((this.db.prepare(
+      "SELECT DISTINCT ref FROM request_links WHERE kind = 'delegation' AND agent IS NULL",
+    ).all() as Array<{ ref: string }>).map((r) => r.ref))
+    if (!refs.size) return 0
+    const agents = new Map<string, string>()
+    for (const { chat_id } of this.db.prepare(
+      "SELECT DISTINCT chat_id FROM task_history WHERE chat_id LIKE 'a2a:%:%:%'",
+    ).iterate() as Iterable<{ chat_id: string }>) {
+      // The callee is the third part, not the row's agent_id: a turn can
+      // be kept under another id than the one the delegation went to.
+      const parts = chat_id.split(":")
+      if (parts.length !== 4) continue
+      const [, , callee, ref] = parts
+      if (callee && refs.has(ref) && !agents.has(ref)) agents.set(ref, callee)
+    }
+    return this.fillLinkAgents(agents)
+  }
+
   /** The owner wrote again in the chat (#1520): requests of that agent
    *  waiting on the owner there since before go back to work, and the
    *  settle and quiet rules follow them from there. Promises are left:
-   *  their own check follows them. Returns the ids moved. */
+   *  their own check follows them. So is a request waiting on a decision
+   *  card not yet answered: the card's answer moves it (cardResolved). A
+   *  card from before answers were kept counts as undecided only while
+   *  the request has not moved since it was raised. Returns the ids moved. */
   releaseOwnerWaits(agentId: string, channel: string, chatId: string, now: number): string[] {
     const ids = (this.db.prepare(
-      `SELECT id FROM requests WHERE agent_id = ? AND channel = ? AND chat_id = ? AND state = 'waiting_owner'
-         AND COALESCE(promise, 0) = 0 AND COALESCE(state_changed_at, updated_at) < ?`,
+      `SELECT r.id FROM requests r WHERE r.agent_id = ? AND r.channel = ? AND r.chat_id = ? AND r.state = 'waiting_owner'
+         AND COALESCE(r.promise, 0) = 0 AND COALESCE(r.state_changed_at, r.updated_at) < ?
+         AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'card' AND l.ended IS NULL
+                           AND l.at >= COALESCE(r.state_changed_at, r.updated_at))`,
     ).all(agentId, channel, chatId, now) as Array<{ id: string }>).map((r) => r.id)
     for (const id of ids) this.progress(id, now)
     return ids

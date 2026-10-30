@@ -42,12 +42,16 @@ export function delegationAgents(logText: string): Map<string, string> {
 }
 
 /** Delegation links kept before their agent was (#1520), filled once at
- *  start from the delegation log, so a retry can be told from its failure. */
-export function fillLinkAgentsFromLog(store: RequestStore, logPath: string, log: (msg: string) => void): void {
-  if (!existsSync(logPath)) return
+ *  start, so a retry can be told from its failure. The delegation log
+ *  first, though compaction keeps only unfinished starts there; then the
+ *  callee's own turn in task_history, which covers the finished ones. The
+ *  whole log is read: it stays small (compacted). */
+export function fillLinkAgents(store: RequestStore, logPath: string, log: (msg: string) => void): void {
   try {
-    const n = store.fillLinkAgents(delegationAgents(readFileSync(logPath, "utf-8")))
-    if (n) log(`  Requests: ${n} hand-off link${n === 1 ? "" : "s"} given their agent from the delegation log`)
+    const fromLog = existsSync(logPath) ? store.fillLinkAgents(delegationAgents(readFileSync(logPath, "utf-8"))) : 0
+    const fromHistory = store.fillLinkAgentsFromHistory()
+    const n = fromLog + fromHistory
+    if (n) log(`  Requests: ${n} hand-off link${n === 1 ? "" : "s"} given their agent (${fromLog} from the delegation log, ${fromHistory} from task history)`)
   } catch (e: any) {
     log(`  Requests: hand-off agents not filled (${e?.message ?? e})`)
   }

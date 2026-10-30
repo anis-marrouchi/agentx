@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep } from "../src/requests/sweep"
-import { delegationAgents } from "../src/requests/attach"
+import { delegationAgents, fillLinkAgents } from "../src/requests/attach"
 import { homeChecker, homeRefOf, type HomeChecker } from "../src/requests/home-check"
 import type { ForgeItem, ForgeReader } from "../src/requests/checkers/issue"
 
@@ -308,40 +308,77 @@ describe("a retried hand-off replaces its failed one (#1522)", () => {
     expect((await settle()).settled).toBe(0)
   })
 
-  /** dlg-1 and its duplicate dlg-2 run side by side; dlg-2 comes back
-   *  done, then a restart loses dlg-1 (#1520). */
-  const lostBeside = () => {
+  /** dlg-1 is lost in a restart, then its retry dlg-2 comes back done (#1520). */
+  const lostThenRetried = () => {
     handed()
+    tracker.delegationDone(dlg("dlg-1"), "lost", "This machine restarted while the work was in progress.")
     clock += 1000
     again("dlg-2")
     clock += 1000
     tracker.delegationDone(dlg("dlg-2"), "done", "done: https://example.test/pr/8")
-    clock += 1000
-    tracker.delegationDone(dlg("dlg-1"), "lost", "This machine restarted while the work was in progress.")
   }
 
-  it("settles a request raised for a lost hand-off whose duplicate came back done (#1520)", async () => {
-    lostBeside()
-    expect(store.get("req-t1")?.state).toBe("needs_attention")
-    clock += 25 * HOUR
+  it("waits staleAfterHours before settling a lost hand-off (#1520)", async () => {
+    lostThenRetried()
+    clock += 2 * HOUR
+    expect((await settle()).settled).toBe(0)
+    clock += 23 * HOUR
     expect((await settle()).settled).toBe(1)
     expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/pr/8" })
   })
 
-  it("waits staleAfterHours before settling a lost hand-off (#1520)", async () => {
-    lostBeside()
-    clock += 2 * HOUR
+  it("still holds a lost part when a different part to the same agent beside it came back done (#1520)", async () => {
+    handed()
+    clock += 1000
+    again("dlg-2")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-2"), "done", "part B: https://example.test/pr/9")
+    clock += 1000
+    tracker.delegationDone(dlg("dlg-1"), "lost", "This machine restarted while the work was in progress.")
+    clock += 25 * HOUR
     expect((await settle()).settled).toBe(0)
-    expect(store.get("req-t1")?.state).toBe("needs_attention")
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention" })
+    expect(store.get("req-t1")?.attentionReason).toContain("was lost in a restart")
   })
 
-  it("settles hand-offs kept without their agent once the log fills it (#1520)", async () => {
-    lostBeside()
+  it("holds hand-offs kept without their agent (#1520)", async () => {
+    lostThenRetried()
     db.prepare("UPDATE request_links SET agent = NULL").run()
     clock += 25 * HOUR
     expect((await settle()).settled).toBe(0)
+  })
+
+  it("settles hand-offs kept without their agent once the log fills it (#1520)", async () => {
+    lostThenRetried()
+    db.prepare("UPDATE request_links SET agent = NULL").run()
+    clock += 25 * HOUR
     expect(store.fillLinkAgents(new Map([["dlg-1", "devops"], ["dlg-2", "devops"], ["dlg-x", "devops"]]))).toBe(2)
     expect(store.fillLinkAgents(new Map([["dlg-1", "coder"]]))).toBe(0)
+    expect((await settle()).settled).toBe(1)
+  })
+
+  it("fills hand-off agents from task history when the compacted log kept only done lines (#1520)", async () => {
+    lostThenRetried()
+    db.prepare("UPDATE request_links SET agent = NULL").run()
+    clock += 25 * HOUR
+    // The log after compaction: no start lines, so it names no callee.
+    const logPath = path.join(tmp, "delegations.jsonl")
+    writeFileSync(logPath, [
+      JSON.stringify({ type: "done", id: "dlg-1", status: "lost", ts: 1 }),
+      JSON.stringify({ type: "done", id: "dlg-2", status: "done", ts: 2 }),
+    ].join("\n"))
+    db.exec(`CREATE TABLE task_history (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, channel TEXT, chat_id TEXT, status TEXT NOT NULL,
+      started_at TEXT NOT NULL, finished_at TEXT NOT NULL)`)
+    const row = db.prepare("INSERT INTO task_history (id, agent_id, channel, chat_id, status, started_at, finished_at) VALUES (?, ?, 'a2a', ?, 'ok', 'x', 'x')")
+    // The callee is read from the chat id, not the row's agent id.
+    row.run("h1", "devops-old", "a2a:coder:devops:dlg-1")
+    row.run("h2", "devops", "a2a:coder:devops:dlg-2")
+    row.run("h3", "devops", "a2a:coder:devops:dlg-other")
+    row.run("h4", "coder", "a2a:coder:devops")
+    fillLinkAgents(store, logPath, (m) => logs.push(m))
+    expect(logs.join("\n")).toContain("2 hand-off links given their agent (0 from the delegation log, 2 from task history)")
+    expect((db.prepare("SELECT agent FROM request_links WHERE kind = 'delegation' ORDER BY ref").all() as Array<{ agent: string }>).map((r) => r.agent))
+      .toEqual(["devops", "devops"])
     expect((await settle()).settled).toBe(1)
   })
 
@@ -389,6 +426,25 @@ describe("the owner writing again releases a wait the agent set (#1520)", () => 
     waiting()
     ownerTurn("t2")
     expect(store.get("req-t1")?.state).toBe("waiting_owner")
+  })
+
+  it("keeps waiting on a decision card the owner has not answered", () => {
+    start("t1")
+    tracker.cardRaised({ id: "card-1", raised_by: "coder", ask: "Ship it?" }, { channel: "telegram", chatId: "chat-1" })
+    end("t1")
+    expect(store.get("req-t1")?.state).toBe("waiting_owner")
+    clock += 1000
+    ownerTurn("t2")
+    expect(store.get("req-t1")?.state).toBe("waiting_owner")
+    // The card's answer lets the work go on, and a later wait of the
+    // agent's own is released again by the owner's next turn.
+    tracker.cardResolved({ id: "card-1", status: "decided", ask: "Ship it?", verdict: "approved" })
+    expect(store.get("req-t1")?.state).toBe("in_progress")
+    clock += 1000
+    store.waitOnOwner("req-t1", "Which key should I use?", clock)
+    clock += 1000
+    ownerTurn("t3")
+    expect(store.get("req-t1")?.state).toBe("in_progress")
   })
 
   it("leaves a promise waiting on the owner", () => {
