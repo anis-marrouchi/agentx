@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3"
+import { existsSync, readFileSync } from "fs"
 import { getEventBus } from "@/events/bus"
 import { RequestStore } from "./store"
 import { PlanStore } from "./plan-store"
@@ -20,6 +21,36 @@ export interface AttachedRequests {
   /** What status drift has told and written (#1138 step F). */
   drift: DriftStore
   detach: () => void
+}
+
+/** Who each delegation in the log went to: id → callee, `callee@peer` for
+ *  a peer's, as the tracker links them. */
+export function delegationAgents(logText: string): Map<string, string> {
+  const agents = new Map<string, string>()
+  for (const line of logText.split("\n")) {
+    if (!line.includes('"type":"start"')) continue
+    try {
+      const e = JSON.parse(line)
+      if (e.type === "start" && typeof e.id === "string" && typeof e.callee === "string") {
+        agents.set(e.id, e.peer ? `${e.callee}@${e.peer}` : e.callee)
+      }
+    } catch {
+      // A line cut off by a crash: the rest of the log still reads.
+    }
+  }
+  return agents
+}
+
+/** Delegation links kept before their agent was (#1520), filled once at
+ *  start from the delegation log, so a retry can be told from its failure. */
+export function fillLinkAgentsFromLog(store: RequestStore, logPath: string, log: (msg: string) => void): void {
+  if (!existsSync(logPath)) return
+  try {
+    const n = store.fillLinkAgents(delegationAgents(readFileSync(logPath, "utf-8")))
+    if (n) log(`  Requests: ${n} hand-off link${n === 1 ? "" : "s"} given their agent from the delegation log`)
+  } catch (e: any) {
+    log(`  Requests: hand-off agents not filled (${e?.message ?? e})`)
+  }
 }
 
 export function attachRequests(
