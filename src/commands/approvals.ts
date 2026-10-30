@@ -71,13 +71,16 @@ approvals
     const listing = listInbox(ctx(), { includeSnoozed: opts.all })
     if (opts.json) { console.log(JSON.stringify(listing, null, 2)); return }
     for (const e of listing.errors) console.log(chalk.red(`  couldn't read ${e.kind}: ${e.error}`))
+    const backlog = () => { for (const b of listing.backlog) console.log(chalk.dim(`  Also: ${b.title}. See them with: ${b.more}`)) }
     if (listing.items.length === 0) {
       console.log(chalk.dim(`  nothing waiting${listing.snoozed ? ` (${listing.snoozed} put off; --all shows them)` : ""}`))
+      backlog()
       return
     }
     console.log()
     for (const item of listing.items) { printItem(item); console.log() }
     console.log(chalk.dim(`  ${listing.items.length} waiting${listing.snoozed ? `, ${listing.snoozed} put off (--all)` : ""}. Answer with: agentx approvals approve|reject|later <key>`))
+    backlog()
   })
 
 async function answer(key: string, action: InboxAction, opts: { force?: boolean; note?: string; hours?: string; choice?: string; text?: string }): Promise<void> {
