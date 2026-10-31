@@ -161,7 +161,7 @@ When [open requests](../jobs/open-requests.md) are on, a request you gave an age
 - **No** drops the request. A note you add is kept as the reason.
 - **Later** puts it off, like any other item.
 
-On **Needs you**, a request that waits on you is answered in place: see [Answer on the Hub](#answer-on-the-hub). Every request you gave, finished or not, is a post on the [Hub](./hub.md), with its headline, what is needed from you, the agent that has it, its plan and its goal (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)). **Done**, **Drop** and a hand-off for a request that does not wait on you, the **Goals** summary and **Settings: open requests** are still on the settings page at `/approvals` until they move to the Hub: see [decide on a request](../jobs/open-requests.md#decide-on-a-request).
+On **Needs you**, a request that waits on you is answered in place: see [Answer on the Hub](#answer-on-the-hub). Every request you gave, finished or not, is a post on the [Hub](./hub.md), with its headline, what is needed from you, the agent that has it, its plan and its goal (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)). A request that does not wait on you is handed off, closed as done or dropped from its post: see [Close or hand off a request](./hub.md#close-or-hand-off-a-request). A goal's progress is the Hub's [Goal filter](./hub.md#follow-one-goal), and the request settings are in [Settings › Requests](./hub.md#choose-approvals-and-requests).
 
 ## Check-ins: a few times a day
 
@@ -209,9 +209,11 @@ Once a day AgentX sends you one message: how many items are waiting, and the mos
 
 To change the time, or where it goes:
 
-1. **Browser:** on **Needs you**, select **Change in Settings** in the **Reaching you** box. It opens the settings page; open **Settings: where new items go, expiry, later, daily digest** at the bottom.
+1. **Browser:** on **Needs you**, select **Change in Settings** in the **Reaching you** box. It opens the Hub's **Settings** › **Inbox**; scroll to **Approvals**.
 2. **Browser:** change **Digest time**, or type a destination such as `telegram:123456` in **Digest goes to**.
-3. **Browser:** click **Save settings**.
+3. **Browser:** select **Save**.
+
+![Settings, the Inbox section, under Approvals: where new cards go, how long they wait, Later, and the daily digest](/screenshots/wall/settings-approvals.png)
 
 Or in the terminal:
 
@@ -343,6 +345,7 @@ It shows titles only, never a card's question, a notice's message or a request's
 4. **Browser:** within a minute, the Hub's **Activity** page shows a short run for that agent on the `approvals` channel. That is the agent reading your answer.
 5. **Terminal:** `agentx approvals list` says `nothing waiting`.
 6. **Terminal:** if agents have proposed wiki claims, `agentx approvals list` ends with one line starting `Also:` that gives how many wait, and the count above it does not include them.
+7. **Browser:** open `<dashboard>/approvals`, the old address of this page. It opens **Needs you** on the Hub.
 
 For the popup (Mac):
 
@@ -406,8 +409,8 @@ For what is on your screen:
 - **A card comes back after you already approved it in chat:** the agent did not close it. Answer it with what you said in chat (**Yes**), or tell the agent to close it with the `resolve` action. Agents whose sessions started before this update need a new session to see that action.
 - **An agent gets "only the agent that raised the card can close it":** the call did not come from one of that agent's running turns, or it came from another agent. Only the agent that raised a card can close it, while it is working. Answer the card in **Approvals** instead.
 - **An agent on another machine can't close its card ("needs a request from that peer"):** the request did not reach this machine with a mesh token over the network. Check that `agentx mesh list` on the other machine shows this machine as `healthy`, and that both machines hold the same `MESH_TOKEN` (or give that peer its own `token` in `mesh.peers`, and use the same token for this machine in the peer's `mesh.peers`). Until then, answer the card in **Approvals**.
-- **An agent gets "card … was raised by another agent (… on node …)":** the card came from an agent on another machine. Only that agent can close it, through its own machine. Answer it in **Approvals** instead.
-- **An agent gets "card … is answered by the operator only" when it closes a card:** the card belongs to a workflow, a plan or a retro, which act on your answer themselves. Answer it in **Approvals**.
+- **An agent gets "card … was raised by another agent (… on node …)":** the card came from an agent on another machine. Only that agent can close it, through its own machine. Answer it on **Needs you** instead.
+- **An agent gets "card … is answered by the operator only" when it closes a card:** the card belongs to a workflow, a plan or a retro, which act on your answer themselves. Answer it on **Needs you**.
 - **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
 - **"Pick one of the choices first":** you clicked **Yes** on a card with choices without picking one. Click a choice, then **Yes**.

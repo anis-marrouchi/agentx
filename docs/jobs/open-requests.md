@@ -29,7 +29,7 @@ When a request needs attention you are told once, through your normal [notificat
 
 ## Turn it on
 
-In the dashboard: open **Approvals**, scroll to **Open requests**, open **Settings: open requests**, tick **Record and follow my requests** and save. Or from the terminal:
+In the dashboard: on the [Hub](../dashboard/hub.md#choose-approvals-and-requests), open **Settings** › **Requests**, tick **Record and follow my requests** and select **Save**. Or from the terminal:
 
 1. **Terminal:** go to the folder that holds `agentx.json`.
 2. **Terminal:** run `agentx requests settings --enabled on`.
@@ -45,30 +45,32 @@ Other people's messages are never recorded.
 2. You see every open request, oldest first, with when and where you asked, the agent, your words and the state.
 3. For one request and what is linked to it, run `agentx requests show <id>`.
 
-In the dashboard, the same list is under **Approvals**, in **Open requests**. Each request is a card. What it shows is described in the next section.
+In the dashboard, each request is a post on the [Hub](../dashboard/hub.md). Open a post to see the whole request. What it shows is described in the next section.
 
 ### What a request's card shows
 
-Every place that shows you a request uses the same words: its card in **Approvals**, its line on the phone app's **Desk**, the Mac card popup, and the notification when it needs attention.
+Every place that shows you a request uses the same words: its post on the Hub, its line on the phone app's **Desk**, the Mac card popup, and the notification when it needs attention.
 
 - **The headline:** a few plain words that say what the request is, for example "Check the invoices batch". The agent writes it when it takes the request on. When it did not, AgentX writes it once with one short model call (`requests.headlines`). Until then, or with that setting off, the title is the start of your own words.
 - **Needed from you:** the one thing the request needs from you. When nothing is needed, it says "Nothing, just so you know.". A request waiting on your answer shows the question. A request that stopped asks you to hand it back or drop it.
-- **You said:** your own words, in full, below the headline. For a request you spoke, this is the transcript.
+- **The request:** your own words, in full, behind the headline. For a request you spoke, this is the transcript.
 - Its state, the agent that has it, and why it is not finished.
-- **Last answer from …**: what the agent last told you about it, when it answered.
+- **Thread:** what happened, in order, ending with what the agent last told you.
 
-![An open request card titled "Fix and ship the demo shop checkout button", with the line Needed from you: Nothing, just so you know, and the owner's own words under You said](/screenshots/approvals/request-headline.png)
+![An open post on the Hub: its headline, where it stands, its plan, and the facts under it](/screenshots/wall/task.png)
 
 A headline must say what the request is in words. One that is only a reference, such as "#412" or a link, is refused. A popup card whose title is only a reference is not shown, and its agent is told to describe the request.
 
 ## Decide on a request
 
-On its card in the dashboard, one step each:
+Open the request's post on the [Hub](../dashboard/hub.md#act-on-a-post), one step each:
 
-- **Send reply:** write your reply in the box, or press **Speak** and say it, then press **Send reply**. The agent that has the request gets your reply together with the request, within a minute, and goes on. **Speak** shows only in a browser that can turn speech into text (Chrome, Edge, Safari); it fills the box and sends nothing until you press **Send reply**.
-- **Hand to agent:** pick an agent and press **Hand to agent**. Pick the same agent to make it try again, or another agent on this computer to give it the work. Text in the reply box goes along as a note. The card then shows that agent after **With**, and the request stays on the list until it is closed. Another agent does not answer in the chat where you first asked: that chat belongs to the first agent, and the new one may have no way to write there. Read its answer on the card, under **Last answer from …**. If it has a chat of its own with you, it may also write to you there.
-- **Done:** closes it as finished. A link to the evidence is optional when you close it yourself.
-- **Drop:** closes one you no longer want. Text in the reply box is kept as the reason.
+- **Comment:** write your reply in the box and select **Comment**. The agent that has the request gets your reply together with the request, within a minute, and goes on.
+- **Hand to…:** pick an agent on the same machine. Pick the same agent to make it try again, or another one to give it the work. Text in the comment box goes along as a note. The request stays open until it is closed. Another agent does not answer in the chat where you first asked: that chat belongs to the first agent, and the new one may have no way to write there. Read its answer in the post's **Thread**. If it has a chat of its own with you, it may also write to you there.
+- **Done:** closes it as finished. A link to the evidence in the comment box is optional when you close it yourself.
+- **Drop:** closes one you no longer want. Text in the comment box is kept as the reason.
+
+**Hand to…**, **Done** and **Drop** each ask you to confirm first. See [Close or hand off a request](../dashboard/hub.md#close-or-hand-off-a-request). A request that waits on you is also on **Needs you**, with a reply box and the same buttons.
 
 Reply and hand-off need open requests turned on, because the daemon's check is what tells the agent.
 
@@ -102,8 +104,8 @@ Turn it off with `agentx requests settings --auto-resend off`. Change the wait w
 
 ## Close a request
 
-- **It is finished:** `agentx requests done <id> --evidence <link>`. The link is the proof: a pull request, an issue, a message, a deploy. In the dashboard, press **Done** on the card; the link is optional there.
-- **You checked it yourself:** `agentx requests done <id> --reason "checked by hand"`. This also closes a request whose check cannot tell. The proof then reads `closed by owner: checked by hand`. In the dashboard, a card with a check asks for the reason in the box next to **Done**.
+- **It is finished:** `agentx requests done <id> --evidence <link>`. The link is the proof: a pull request, an issue, a message, a deploy. On the Hub, put the link in the comment box and select **Done** on the post; the link is optional there.
+- **You checked it yourself:** `agentx requests done <id> --reason "checked by hand"`. This also closes a request whose check cannot tell. The proof then reads `closed by owner: checked by hand`. On the Hub, write the reason in the comment box, then select **Done**.
 - **You no longer want it:** `agentx requests drop <id>`. Add `--reason "…"` to say why.
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
@@ -243,13 +245,9 @@ A request is **stalled** when it is past its due time, or, without a due time, w
 To see them:
 
 1. **Terminal:** run `agentx requests --stalled`. Each group is listed with its requests and why each one is stalled. Add `--json` for a script.
-2. **Browser:** open **Approvals** and scroll to **Open requests**. Press **Stalled on you**, **Stalled on an agent** or **Stalled on an outside person** to show only that group; the number in brackets is how many it holds. **All** shows every open request again.
+2. **Browser:** on the [Hub](../dashboard/hub.md#filter), under **Status**, choose **Blocked**. Each post says **Waits on** with who it waits on (you, an agent or an outside person), for how long, and why. In the list, **Waits on** is a column.
 
-![Open requests showing only the promise stalled on an outside person](/screenshots/approvals/open-loops-stalled-person.png)
-
-Each card also says who a promise is owed to, when it is due, and what check closes it, with what the check last said. A check that could not tell is shown in amber, with the reason.
-
-![Open requests with promises, due times, checks and stalled lines](/screenshots/approvals/open-loops-all.png)
+An opened post also lists who a promise is owed to (**Promised to**), when it is due (**Due**), and what check closes it (**Closes when**), with what the check last said. A check that could not tell, or was not met, is shown in amber, with the reason.
 
 A promise past its due time comes back to you once, like a request that needs attention, with the title **Promise not kept** and the group it waits on.
 
@@ -274,10 +272,9 @@ A request is **awaiting QA** while it is marked as needing QA and has no verdict
 
 Where you see it:
 
-- On the request's card under **Approvals** › **Open requests**: **Awaiting QA sign-off**, or **QA: PASS by …** with the time and the note.
+- On the request's post on the [Hub](../dashboard/hub.md#see-what-waits-on-qa): **Awaiting QA sign-off**, or **QA: BLOCK by …** with the time and the note. **Awaiting QA only** in its filters lists the ones still waiting.
 
-  ![Two request cards: one shows QA: BLOCK with who gave it, when and why; the other shows Awaiting QA sign-off](/screenshots/approvals/qa.png)
-- On the request's post on the [Hub](../dashboard/hub.md#see-what-waits-on-qa), with **Awaiting QA only** in its filters.
+  ![A post on the Hub with QA: BLOCK, who gave it, when and why](/screenshots/wall/qa.png)
 - In the terminal: `agentx requests show <id>`, and `agentx requests --qa awaiting` for every request still waiting on QA, open or done. `--qa block`, `--qa risk` and `--qa pass` list the requests whose latest verdict is that one.
 - From a script: `GET /requests?qa=awaiting` (see [Read the list from a script](#read-the-list-from-a-script)).
 
@@ -289,13 +286,12 @@ An agent names the goal when it takes the request on. It passes `goal` with `acc
 
 A plan made with `accept` and `steps` has the goal of its request. Each step's agent, and an agent you hand the request to, is told the goal's title when it is given the work, so it knows why the task exists.
 
-To see your goals in the dashboard:
+To see a goal in the dashboard:
 
-1. **Browser:** open **Approvals** and scroll to **Open requests**.
-2. **Browser:** find **Goals** above the request cards. Each line shows the goal's title, a bar, how many of its requests are done, how many are open, and what they cost.
-3. **Browser:** click a goal to list its requests, with the state and cost of each.
+1. **Browser:** on the Hub, open a post that serves the goal.
+2. **Browser:** select the goal's title next to **Goal**. The line above the posts shows the goal's title, a bar, how many of its requests are done, how many are open, and what they cost. The posts below are its requests, with the state of each.
 
-![The Goals list above the open request cards: one goal opened, showing its requests with their state and cost](/screenshots/approvals/goals.png)
+![The Hub showing one goal: its progress bar, counts and cost above its posts](/screenshots/wall/goal.png)
 
 How the numbers are counted:
 
@@ -309,7 +305,7 @@ How the numbers are counted:
 
 A closed request is kept for `retentionDays` (90 days by default). After that it leaves its goal's numbers too.
 
-On the Hub, select **Goal:** on a post to see every post for that goal under the same numbers: see [Follow one goal](../dashboard/hub.md#follow-one-goal). Agents can read the same list with `{action:"goals"}`. From a script, `GET /requests/goals` on the daemon gives it as JSON.
+See [Follow one goal](../dashboard/hub.md#follow-one-goal). Agents can read the same list with `{action:"goals"}`. From a script, `GET /requests/goals` on the daemon gives it as JSON.
 
 ## Where a request landed
 
@@ -449,14 +445,13 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --resend-hold-hours 6` | Hours your notice waits for the resend before you are told anyway. Default 12. |
 | `agentx requests settings --flow-zone Europe/Paris` | The time zone whose day the [flow rate](#how-many-requests-get-closed-the-flow-rate) counts by. Default `Africa/Tunis`. |
 
-In the dashboard, the same settings are under **Approvals** › **Settings: open requests**. The box **Write a headline when the agent gave none** is the `--headlines` switch:
+In the dashboard, the same settings are on the Hub, in **Settings** › **Requests**. The box **Write a headline when the agent gave none** is the `--headlines` switch:
 
-1. **Browser:** open **Approvals** and scroll to the bottom.
-2. **Browser:** click **Settings: open requests**.
-3. **Browser:** tick or untick **Write a headline when the agent gave none**.
-4. **Browser:** click **Save settings**.
+1. **Browser:** on the Hub, select **Settings** in the nav, then **Requests**.
+2. **Browser:** tick or untick **Write a headline when the agent gave none**.
+3. **Browser:** select **Save**.
 
-![The open requests settings, with the box Write a headline when the agent gave none ticked](/screenshots/approvals/headline-setting.png)
+![Settings, the Requests section: open requests, plans and loop checks, with one Save](/screenshots/wall/settings-requests.png)
 
 The engine and model used for the headline are set only in `agentx.json`, under `requests.headlines`.
 
@@ -477,13 +472,13 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 9. **Terminal:** run `agentx requests --stalled`. It prints the stalled requests by group, or `nothing is stalled`.
 10. **Terminal:** run `agentx requests today`. Each request you made since midnight is listed; the ones with no home are red, at the top.
 11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
-12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its card under **Approvals** › **Open requests** is titled with a few plain words, shows **Needed from you**, and keeps your words under **You said**. `agentx requests show <id>` shows the same `headline`.
+12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its post on the Hub is titled with a few plain words and shows **Needed from you**, and your words are behind the headline. `agentx requests show <id>` shows the same `headline`.
 13. **Terminal:** run `agentx requests settings`. The line `Headlines` says `on: written when the agent gave none`, or `off` after `--headlines off`.
 14. **Terminal:** in the same output, the line `Handed work came back` says `closed when quiet, with its link or marked unproven`. A day after an agent hands work on and gets a done answer without closing the request, the daemon log has a `settled` line for it, and `agentx requests show <id>` shows it done, with the link or `unproven: …` as its evidence.
 15. Ask an agent to make a change and mark it as needing QA, then ask a second agent to check it and give its verdict.
 16. **Terminal:** run `agentx requests --qa awaiting` before the verdict. The request is listed with `Awaiting QA`. After the verdict, run `agentx requests show <id>`. It shows `QA: PASS by <agent>, <time>` (or `BLOCK` or `RISK` with the note).
 17. Ask an agent for some work and tell it the goal, for example: "this is for the shop relaunch goal".
-18. **Browser:** open **Approvals**. Under **Open requests**, **Goals** lists the goal with `0 of 1 done`. The request's card shows **Goal:** with its title.
+18. **Browser:** on the Hub, open the request's post. **Goal** shows the goal's title. Select it: the line above the posts shows `0 of 1 done`.
 19. **Terminal:** run `curl -s http://127.0.0.1:18800/requests/goals`. The goal is there, with its `open` and `done` counts and its `costUsd`.
 20. **Terminal:** run `agentx requests contract --since 1d --dry-run`. It prints **Five numbers**, the three dry-run lists, and ends with `Read only: nothing was told or written.`
 21. **Terminal:** run `agentx requests flow`. The first line gives today's date, the time zone, and how many of today's requests are closed. The table below it has one line per day.

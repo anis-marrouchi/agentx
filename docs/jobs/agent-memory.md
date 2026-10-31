@@ -51,7 +51,7 @@ A new value only replaces a checked fact when it was checked more recently, or w
 
 Only a person can confirm a fact, approve or reject a fact proposal, or answer or dismiss a disagreement. When an agent runs one of those commands, AgentX refuses it and the agent has to ask you. A fact recorded without a check time is shown as `UNCHECKED` in `agentx wiki facts list`, and agents see it as unverified until someone checks it.
 
-Held facts and proposed lessons also appear in the dashboard's **Approvals** tab and in `agentx approvals list`, next to everything else waiting for you. See [Approvals](../dashboard/approvals.md).
+Held facts and proposed lessons also appear in **Needs you** on the dashboard's Hub and in `agentx approvals list`, next to everything else waiting for you. See [Approvals](../dashboard/approvals.md).
 
 ## 1. Approve or reject facts from public channels
 
@@ -201,7 +201,7 @@ Agents don't write down what went wrong, so a tool that fails in session after s
    ```
    The lowest value is 2: a failure inside one session is never treated as a pattern.
 3. Add `--failures` to the nightly `wiki promote --commit` job (`agentx schedule list` shows it).
-4. Review the lessons like any other, with `agentx wiki proposals show <id>`. For a failure, the evidence shows the failing tool, the kind of error, how many sessions and tasks hit it, and some example task ids. Open one with `agentx trace show <task-id>`. In the **Approvals** tab these lessons start with "Recurring failure".
+4. Review the lessons like any other, with `agentx wiki proposals show <id>`. For a failure, the evidence shows the failing tool, the kind of error, how many sessions and tasks hit it, and some example task ids. Open one with `agentx trace show <task-id>`. In **Needs you** these lessons start with "Recurring failure".
 
 While a failure lesson waits for your review, the same failure isn't suggested a second time. A failure lesson you rejected isn't offered again until the failure reaches 4 sessions, then 8, then 16, and so on.
 

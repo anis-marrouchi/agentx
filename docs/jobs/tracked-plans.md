@@ -64,10 +64,10 @@ You choose which kinds of work need a plan, and the time limit. See [Change the 
 
 In the dashboard:
 
-1. **Browser:** open **Approvals**.
-2. **Browser:** scroll to **Open requests**. A request with a plan lists its steps, in order, with the agent that has each one and its state: not started, in progress, done (with the proof), blocked (with the reason) or skipped.
+1. **Browser:** open the [Hub](../dashboard/hub.md) and select the request's post.
+2. **Browser:** under **Plan**, the post lists its steps, in order, with the agent that has each one and its state: not started, in progress, done (with the proof), blocked (with the reason) or skipped.
 
-![An open request card on the Approvals page, with a plan of three steps: Build the fix is done with a link to the pull request, Deploy and check it is live is in progress, Tell the shop is not started.](/screenshots/approvals/plan.png)
+![An open post on the Hub with its plan: each step with its agent and state, and how many are done](/screenshots/wall/task.png)
 
 In the terminal:
 
@@ -79,7 +79,7 @@ In the terminal:
 
 When a step is blocked you get one notice with the reason. You have three ways to move it on:
 
-- **Answer the agent.** Reply on the request's card in the dashboard, or write to the agent. When the agent reports the step again, it is no longer blocked.
+- **Answer the agent.** Comment on the request's post on the Hub, or write to the agent. When the agent reports the step again, it is no longer blocked.
 - **Try again.** **Terminal:** run `agentx requests step <id> <step> --retry`. The daemon gives the step to its agent again, within a minute, and the nudges count from zero. For a message whose card expired, this counts as your yes.
 - **Skip it, or say it is done.** **Terminal:** run `agentx requests step <id> <step> --skip` or `--done`. Add `--note "…"` to give the reason or the proof. The plan goes on with the next step.
 
@@ -89,11 +89,11 @@ The step number is the one `agentx requests show` prints: 1 is the first step.
 
 In the dashboard:
 
-1. **Browser:** open **Approvals**, scroll to **Open requests** and open **Settings: open requests**.
-2. **Browser:** set the plan settings: **Follow requests of two or more steps as plans**, the minutes before a nudge, the number of nudges, the step kinds you approve when the plan is made, the agents that may not make a plan, the kinds of work an agent must plan before it starts, and the minutes of work that need a plan.
-3. **Browser:** press **Save settings**.
+1. **Browser:** on the [Hub](../dashboard/hub.md#choose-approvals-and-requests), select **Settings** in the nav, then **Requests**.
+2. **Browser:** under **Plans**, set: **Follow requests of two or more steps as plans**, the minutes before a nudge, the number of nudges, the step kinds you approve when the plan is made, the agents that may not open a plan, the kinds of work an agent must plan before it starts, and the minutes of work that need a plan.
+3. **Browser:** select **Save**.
 
-![The open requests settings on the Approvals page. Below the plan settings are two new fields: the kinds of work an agent must plan before it starts, set to code, and the minutes of work that need a plan, set to 30.](/screenshots/approvals/plan-gate-settings.png)
+![Settings, the Requests section: open requests, plans and loop checks, with one Save](/screenshots/wall/settings-requests.png)
 
 In the terminal:
 

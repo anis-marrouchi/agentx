@@ -55,7 +55,7 @@ The nav starts with **Hub** and **Needs you**. The other pages sit in groups, ea
 
 Select a post to open it on its own, with its thread; select a running task to watch and steer it (see [Watch and steer a run](./hub.md#watch-and-steer-a-run)). **Light / dark**, at the bottom of the nav, switches the colours. Some pages stay empty until the matching app (for example GitLab) is connected.
 
-A few tools keep a page of their own: the [workflow history and follow-ups](./workflows.md), [approvals](./approvals.md), the [wiki](./wiki.md) and the first-run [setup](../install.md). The [dashboard map](../reference/dashboard-map.md) lists every address.
+A few tools keep a page of their own: the [workflow history and follow-ups](./workflows.md), the [wiki](./wiki.md) and the first-run [setup](../install.md). The [dashboard map](../reference/dashboard-map.md) lists every address.
 
 ## See which version is running
 

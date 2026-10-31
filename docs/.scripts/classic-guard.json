@@ -79,7 +79,7 @@
     { "path": "/agents/", "child": "#1429" },
     { "path": "/approvals", "child": "#1440" },
     { "path": "/admin/cost", "child": "#1428" },
-    { "path": "/admin/graph", "child": "#1440" },
+    { "path": "/admin/graph", "child": "#1449" },
     { "path": "/admin", "child": "#1428" },
     { "path": "/guests", "child": "#1428" },
     { "path": "/people", "child": "#1441" },

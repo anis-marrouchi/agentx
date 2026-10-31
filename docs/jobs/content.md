@@ -106,11 +106,11 @@ Every Monday the agent drafts the week's posts and Telegram tells you how many a
 
 **In the browser:**
 
-1. Open the dashboard and go to **Approvals**. Click **Posts** to see only the drafts.
-2. Read the whole post. Open **Details** to see which of your past posts it followed.
-3. Click **Yes** to publish it, or **No** to drop it. Yes publishes exactly the post you read: if the draft changed after the page loaded, Yes is refused and asks you to reload.
+1. **Browser:** open the dashboard's Hub and select **Needs you**. Select the **Drafts** chip to see only the drafts.
+2. **Browser:** read the whole post. Open **Details, and what Yes and No do** to see which of your past posts it followed.
+3. **Browser:** select **Yes** to publish it, or **No** to drop it, then **Confirm**. Yes publishes exactly the post you read: if the draft changed after the page loaded, Yes is refused and asks you to reload.
 
-![The Approvals page with a LinkedIn post waiting, showing the whole post and the past posts it followed](/screenshots/content/approvals-post.png)
+![Needs you on the Hub with the Drafts chip on, showing a drafted post waiting](/screenshots/wall/needs-you-drafts.png)
 
 **Or in the terminal:**
 
