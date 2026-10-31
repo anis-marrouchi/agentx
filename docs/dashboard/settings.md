@@ -20,7 +20,7 @@ Settings is where you manage agents, the apps they answer from, schedules and ac
 
 A **Business** tab (org chart, projects, and which chat belongs to which client) appears only when the business features are switched on (`business.enabled` in `agentx.json`).
 
-Settings is moving to the Hub: its **Agents**, **Channels** (WhatsApp and its triage included), **Schedules** and **Webhooks** tabs are already there, and **Notifications routing** is the Hub's **Inbox** section, with the same saves. See [Change settings](./hub.md#change-settings). This page stays until every tab is on the Hub. `/admin#tab=` followed by a tab's name, such as `/admin#tab=channels`, opens that tab directly.
+Every tab is now also on the Hub's **Settings**, with the same saves: **Notifications routing** is its **Inbox** section, and **Screen capture** is a section of its own. See [Change settings](./hub.md#change-settings). `/admin#tab=` followed by a tab's name, such as `/admin#tab=channels`, opens that tab directly.
 
 ## Try an agent
 
