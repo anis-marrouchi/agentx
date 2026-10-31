@@ -281,8 +281,6 @@ describe("requests in the Approvals inbox", () => {
 })
 
 import { handleRequestsPanel } from "../src/daemon/requests-panel"
-import { renderApprovalsPage } from "../src/daemon/ui/pages/approvals"
-import { REQUESTS_SCRIPT } from "../src/daemon/ui/pages/approvals-requests"
 
 describe("the dashboard's open requests", () => {
   const panelCtx = () => {
@@ -335,13 +333,5 @@ describe("the dashboard's open requests", () => {
     expect(JSON.parse(readFileSync(c.configPath, "utf-8")).requests.enabled).toBe(true)
     expect((await handleRequestsPanel("POST", `${P}/settings`, { from: "no-channel" }, c)).status).toBe(400)
     expect(await handleRequestsPanel("POST", `${P}/settings`, { staleAfterHours: 0 }, c)).toEqual({ status: 400, body: { error: "staleAfterHours must be a positive number" } })
-  })
-
-  it("ships a page whose script parses and whose section is on the Approvals page", () => {
-    expect(() => new Function(REQUESTS_SCRIPT)).not.toThrow()
-    const html = renderApprovalsPage()
-    expect(html).toContain('id="req-section"')
-    expect(html).toContain('data-kind="request"')
-    expect(html).toContain("/api/admin/approvals/requests/'")
   })
 })

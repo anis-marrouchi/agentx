@@ -66,7 +66,7 @@ What it costs depends on your model account (a Claude subscription, or an API ke
 
 **First result you can see.** **Terminal:** `agentx content drafts` lists one draft per planned post, each with the past posts it followed.
 
-![A LinkedIn post waiting in Approvals, with the past posts it followed](docs/public/screenshots/content/approvals-post.png)
+![A drafted post waiting in Needs you on the Hub, under the Drafts chip](docs/public/screenshots/wall/needs-you-drafts.png)
 
 [Draft posts in your voice](docs/jobs/content.md)
 

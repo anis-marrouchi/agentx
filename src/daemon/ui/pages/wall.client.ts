@@ -44,6 +44,8 @@
 // out loud on this computer, with the owner's words going into it. And the
 // owner's answers (#1440): Yes, No or Later on what waits for them, and a
 // review's Approve or Reject, through the same calls the classic pages make.
+// On an open post the owner also hands the request to another agent, or
+// closes it as done or dropped (wall-close.client.ts), as /approvals did.
 //
 // Settings (#1428, wall-settings.client.ts) changes settings, for the owner
 // only: the owner replaced #1180's rule 4, so the Wall may write wherever a
@@ -55,6 +57,7 @@ import { plainMarkerText } from "../marker-text"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
+import { WALL_CLOSE_SCRIPT } from "./wall-close.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
@@ -88,6 +91,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
+${WALL_CLOSE_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
 ${WALL_ORG_SCRIPT}
@@ -606,13 +610,18 @@ ${WALL_BUILD_SCRIPT}
       : 'Closed with ' + shortTime(r.at);
     return '<section class="wtk__sec"><h2>Result</h2><div class="wp__result ax-md">' + md(r.text) + '</div><div class="wp__from">' + from + '</div></section>';
   }
-  /** Who asked, where, and the clock, as a short list of facts. */
+  /** What a loop's check last said (requests/loops.ts verifyState). */
+  var LOOP_CHECK = { verified: 'check met', unverified: 'check could not say', failed: 'check not met' };
+  /** Who asked, where, the clock and its open loop, as a short list of facts. */
   function factsHtml(p) {
     var rows = [
       ['Asked by', p.askedBy ? esc(p.askedBy) : ''],
       ['In', esc(groupKey(p))],
       ['Project', p.project ? esc(p.project) : ''],
       ['Goal', p.goal ? '<a href="#" data-goal="' + esc(p.goal.id) + '">' + esc(p.goal.title) + '</a>' : ''],
+      ['Promised to', p.loop && p.loop.promise && p.loop.owedTo ? esc(p.loop.owedTo === 'owner' ? 'you' : nameOf(p.loop.owedTo)) : ''],
+      ['Due', p.loop && p.loop.dueAt ? when(p.loop.dueAt) : ''],
+      ['Closes when', p.loop && p.loop.check ? esc(p.loop.check) + (p.loop.verifyState ? ' <span' + (p.loop.verifyState === 'verified' ? '' : ' class="is-warn"') + '>(' + esc(LOOP_CHECK[p.loop.verifyState] || p.loop.verifyState) + (p.loop.verifyDetail ? ': ' + esc(p.loop.verifyDetail) : '') + ')</span>' : '') : ''],
       ['Opened', when(p.createdAt)],
       ['Last move', when(p.lastMoveAt)],
       ['Closed', p.closedAt ? when(p.closedAt) : ''],
@@ -827,6 +836,7 @@ ${WALL_BUILD_SCRIPT}
             '<button type="button" class="ax-btn ax-btn--ghost" data-act="space" title="Two agents talk about this post out loud on this computer">Start a Space</button></span>'
           : '') +
       '</div>' +
+      '<div id="wdo-close">' + closeHtml(p) + '</div>' +
       '<p class="wdo__n" id="wdo-note" role="status">' + esc(S.doNote || '') + '</p>' +
       '<div id="wdo-space">' + spaceHtml() + '</div>' +
     '</div>';
@@ -879,6 +889,13 @@ ${WALL_BUILD_SCRIPT}
       var y = await act('POST', '/api/admin/wall/space/say', { text: said });
       if (!y.ok) { note('Not heard: ' + y.error); return; }
       $('wdo-say').value = '';
+    } else if (kind === 'close-done' || kind === 'close-drop') {
+      closeAsk(kind.slice(6));
+    } else if (kind === 'close-go') {
+      closeSend();
+    } else if (kind === 'close-back') {
+      S.closing = null;
+      paintClose();
     } else if (kind === 'space-stop') {
       await act('POST', '/api/admin/wall/space/stop', {});
       S.space = null;

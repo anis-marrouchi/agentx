@@ -57,7 +57,7 @@ Some cards offer choices, such as the fixes a [retro](../jobs/retro.md) proposes
 
 <img src="/screenshots/mobile-app/activity-choice-sheet.png" alt="Picking one of four fixes on the phone, with the message the agent gets below" width="320">
 
-This is the same inbox as the [Approvals page](./approvals.md) and `agentx approvals`.
+This is the same inbox as **Needs you** on the Hub ([Approvals](./approvals.md)) and `agentx approvals`.
 
 ## Stop or steer a running task
 

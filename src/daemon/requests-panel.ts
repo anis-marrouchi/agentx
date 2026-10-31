@@ -82,7 +82,7 @@ async function route(
     if (act === "handoff" && !agent) return { status: 400, body: { error: `"${agentId}" is not an agent on this node` } }
     // The agent is told by the daemon's requests check, which is off with the feature.
     if (!readRequestSettings(ctx.configPath).enabled) {
-      return { status: 409, body: { error: "Requests are off, so nothing would tell the agent. Turn them on in the settings below." } }
+      return { status: 409, body: { error: "Requests are off, so nothing would tell the agent. Turn them on in Settings › Requests." } }
     }
     if (!store.handOff(id, agentId, text, ctx.now ?? Date.now())) return { status: 409, body: { error: `${id} is already closed` } }
     const who = agent?.name ?? agentId

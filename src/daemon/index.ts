@@ -134,6 +134,7 @@ import { syncSourceIssue } from "@/business/backlog-sync"
 import { loopChecker, parseDue } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
+import { HUB_NEEDS_YOU } from "./ui/hub-name"
 import { readOwnerList } from "@/desk/owner-list"
 import { deskNotice, deskRouting, reaches, routeDesk, type DeskRouting } from "@/desk/route"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
@@ -2426,7 +2427,7 @@ export class AgentXDaemon {
         if (!store) throw new Error("the requests database is not open")
         return store.listByState("waiting_owner")
       },
-      answerUrl: m.answerUrl ?? `http://localhost:${this.config.dashboard.port}/approvals`,
+      answerUrl: m.answerUrl ?? `http://localhost:${this.config.dashboard.port}${HUB_NEEDS_YOU}`,
       notify: (title, message) => this.notifyOwner(title, message, "mirror"),
       log: this.log,
     })

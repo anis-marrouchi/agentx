@@ -1,5 +1,5 @@
 {
-  "$comment": "Hub views the shared page check opens (#1454). A new Hub view adds one line: name, the hash path, and a selector that exists once the view has drawn. scripts/wall-page-check.mjs opens each at 390 px and at desktop width. old-address opens the Hub's old /wall address, which redirects to /hub (#1485).",
+  "$comment": "Hub views the shared page check opens (#1454). A new Hub view adds one line: name, the hash path, and a selector that exists once the view has drawn. scripts/wall-page-check.mjs opens each at 390 px and at desktop width. old-address opens the Hub's old /wall address, which redirects to /hub (#1485); old-approvals opens /approvals, which redirects to Needs you (#1440).",
   "views": [
     { "name": "feed", "path": "/hub#status=", "ready": "#wall-feed > *" },
     { "name": "list", "path": "/hub#status=&view=list", "ready": "#wall-list > *" },
@@ -27,6 +27,7 @@
     { "name": "settings-screen", "path": "/hub#page=settings&section=screen", "ready": "#wall-settings [data-st-form=screen]" },
     { "name": "settings-advanced", "path": "/hub#page=settings&section=advanced", "ready": "#wall-settings #st-adv-text" },
     { "name": "workflows", "path": "/hub#page=workflows", "ready": "#wall-workflows .wwf__tabs, #wall-workflows h3" },
-    { "name": "old-address", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" }
+    { "name": "old-address", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" },
+    { "name": "old-approvals", "path": "/approvals", "ready": "#wall-decide .wdc__tabs" }
   ]
 }

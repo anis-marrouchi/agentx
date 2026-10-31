@@ -2,7 +2,7 @@
 
 The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own look, close to X, with no dashboard top bar. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. Beside the feed, **Happening now** gives one line per connected machine with what it runs at this moment, and **Agents** lists who has posts this week.
 
-The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, or start a Space (see [Act on a post](#act-on-a-post)); everything else you decide and reply where you always have: on [Approvals](./approvals.md), in a channel, or on the classic pages.
+The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Needs you** (see [See what waits on you](#see-what-waits-on-you)).
 
 ![The Hub in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
 
@@ -117,7 +117,7 @@ Only the owner answers on the Hub: the dashboard asks for its key. To answer:
 3. Select **Yes**, **No** or **Later** (**Keep** or **Drop** for a memory fact). A line opens that says exactly what is sent; select **Confirm**. The card leaves the list, and its post updates without a reload.
 4. A card raised while working on a task is also on that task's post, with the same buttons and confirm.
 
-Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Hub](./approvals.md#answer-on-the-hub).
+Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Hub](./approvals.md#answer-on-the-hub). The old Approvals page's address, `/approvals`, opens **Needs you**, so old links and bookmarks still work.
 
 To see the waiting tasks in the feed instead:
 
@@ -185,6 +185,25 @@ Open a post on its own. Under its details there are three actions:
 
 A comment and a call go to the machine that keeps the post. All of these need the dashboard token, like every other dashboard action.
 
+### Close or hand off a request
+
+Every open post is a request you gave an agent. As the owner, you can close it or give it to another agent from the post, whether or not it waits on you. Anyone without the dashboard key does not see these buttons, and the dashboard refuses the call.
+
+1. **Browser:** open the post on its own.
+2. **Browser:** to leave a note, a link to the evidence or a reason, type it in the comment box first. It is sent with what you pick next.
+3. **Browser:** under the comment box, pick one:
+   - **Hand to…**: choose an agent on the same machine. It has the request from now on and is told within a minute. The agent marked **(has it: try again)** gets it back to try again.
+   - **Done**: closes the request as done. When the request had a check that closes it, the note says why you closed it by hand.
+   - **Drop**: drops the request.
+4. **Browser:** a line opens that says exactly what happens, for example **Close "Relaunch the demo shop" as done.** Select **Confirm**, or **Back** to change your mind.
+5. The note under the buttons says what happened, and the post updates.
+
+![An open post with Hand to, Done and Drop under the comment box, and the line that asks to confirm Done](/screenshots/wall/post-close.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+These are the same calls as **Needs you** makes for a request that waits on you, and the same as `agentx requests done` and `agentx requests drop` in a terminal.
+
 ## Open a post's thread in the feed
 
 1. On a post, select **Thread**.
@@ -248,7 +267,7 @@ Avatars show an agent's or a person's profile picture when one is set on the mac
 
 **Settings** on the Hub is where you, the owner, change your agents. It is the only Hub page that changes settings; every other Hub page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
 
-It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. Every classic tab is here, with the approval and request settings that were on [Approvals](./approvals.md). Only **Guests** and **People** open pages of their own.
+It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. Every classic tab is here, with the approval and request settings the old Approvals page had. Only **Guests** and **People** open pages of their own.
 
 1. **Browser:** in the nav, select **Settings**, under **Owner**. On a phone, select **More**, then **Settings**.
 2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, Requests, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Screen capture, Advanced). The one you picked is on the right; **Agents** opens first.
@@ -263,7 +282,7 @@ It saves to `agentx.json`, the AgentX settings file on the machine that serves t
 
    ![Settings on a phone: the Agents section with one agent card and its on/off switch](/screenshots/wall/settings-phone-agents.png)
 
-Each agent card shows the agent's name, @handle, its role in the org chart when it has one, its AI engine and model, and an **On** / **Off** switch. **Waits for approval** instead of the switch means the agent waits for you in [Approvals](./approvals.md).
+Each agent card shows the agent's name, @handle, its role in the org chart when it has one, its AI engine and model, and an **On** / **Off** switch. **Waits for approval** instead of the switch means the agent waits for you in **Needs you**: select it to answer there.
 
 ### Turn an agent off or on
 
@@ -407,10 +426,12 @@ Each card says **receiving**, **off**, or **signing secret missing**. **Turn off
 
 ### Choose approvals and requests
 
-**Inbox** also has **Approvals**, and **Requests** is its own section under **Fleet**. These are the settings that were at the bottom of the [Approvals](./approvals.md) page, with the same saves.
+**Inbox** also has **Approvals**, and **Requests** is its own section under **Fleet**. These are the settings the old Approvals page had, with the same saves. That page's address, `/approvals`, now opens **Needs you**.
 
 1. **Browser:** in **Settings** › **Inbox**, under **Approvals**, pick what is sent to your phone and shown on this computer at once, how long cards wait, how long **Later** hides an item, and the daily digest. Select **Save**.
 2. In **Settings** › **Requests**, choose whether your requests are recorded and followed, what counts as you on shared channels, when a quiet request comes back, the plan rules and the loop checks. Select **Save**. See [Open requests](../jobs/open-requests.md).
+
+![Settings, the Requests section: open requests, plans and loop checks, with one Save](/screenshots/wall/settings-requests.png)
 
 ### Link another machine (Mesh)
 
@@ -565,7 +586,7 @@ You can also pick the goal in the filters: select the search button, then **Goal
 
 ![The Hub filtered to one goal: its title, how many tasks are done, how many are open and what they cost, above its posts, in the isolated demo](/screenshots/wall/goal.png)
 
-The counts and the cost are the same as on the **Goals** list of the Approvals page. They cover every task kept for the goal on every machine that answered, including tasks closed more than seven days ago, so they can count more tasks than the posts below them. When the same goal is used on several machines, its numbers are added up. Point at the cost to read what it covers; when some runs reported no cost, it says how many.
+The counts and the cost are the same as the daemon's goal list (`GET /requests/goals`, see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal)). They cover every task kept for the goal on every machine that answered, including tasks closed more than seven days ago, so they can count more tasks than the posts below them. When the same goal is used on several machines, its numbers are added up. Point at the cost to read what it covers; when some runs reported no cost, it says how many.
 
 ## See every project at once
 
@@ -893,7 +914,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 24. Open a post whose request has a plan. Under its title, **Working** is marked while it runs, and **Plan** lists the steps the agent wrote, each with its owner and done check (see [Follow a request of several steps](../jobs/tracked-plans.md)).
 25. Give an agent a task that takes a minute, then select **Live**. Its card is under **Running now**, with the time going up and **Latest** changing as it works. Select the card: the **Task** page opens with **live**, the request and the conversation filling in. Write "Also say which files you read" and select **Send**: the hint says **queued — dispatches as the next turn**, and the agent answers it after the current turn. Give it another task and select **Stop** on its Task page: the conversation ends and its card leaves **Live**.
 26. Finished runs: on a run's Task page, add `&done=1` to the end of the address and reload. For a run from a chat (telegram, mail, a2a), the page shows the stored record, no box, and says it only reads. For a scheduled job, the box is there without **Stop**, and **Send** opens the new turn's Task page.
-27. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
+27. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as `curl -s http://127.0.0.1:18800/requests/goals` gives for it.
 28. Open a done post and select **Task record and trace**: the run opens on the Hub's **Task** page. Copy the task id from the address (after `task=`) and the agent (after `agent=`), then open `/tasks/<task-id>?agent=<agent>`: the same **Task** page opens on the Hub.
 29. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's line under **Monthly budgets** on the Cost page. Select **Cost** on that line: the Hub's Cost page opens.
 30. Cost page: select **Cost** in the nav, then **7 days**. The address ends with `range=7` and the total changes. Select an agent: its profile opens.
@@ -911,6 +932,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 42. One agent's runs: select an agent's name, then **Activity** under its profile. **Activity** is underlined and the list shows only that agent's runs.
 43. Schedules and Webhooks: in **Settings** › **Schedules**, select the preset **Every hour**: the line under **When** says when it runs and the next three times. Add a schedule named `check-test`, then open the classic `/admin#tab=crons`: `check-test` is listed. Delete it on the Hub. In **Settings** › **Webhooks**, add one named `check-test`, select **Turn off**: its card says **off**. Delete it.
 44. Channels: in **Settings** › **Channels**, the Telegram account you use is listed with its agent and its token's variable name, never the token. Select **Email**, then **GitLab**: each matches the classic `/admin#tab=channels`. Turn **Request status** on GitLab off and on again: the line under the tabs says so each time, and the classic page shows the same.
+46. Approvals moved: open `<dashboard>/approvals` in the browser. It opens **Needs you** on the Hub, and its count matches `agentx approvals list`. Open a post that is in progress: under the comment box there are **Hand to…**, **Done** and **Drop**. Select **Drop**: a line asks you to confirm, and **Back** closes it without sending anything. In a private window without the dashboard key, the post has no such buttons.
 45. WhatsApp and Inbox: in **Settings** › **Channels**, select **WhatsApp**: with WhatsApp on, it says **connected** (or shows a code to scan), and its watch rules match **WhatsApp triage** on the classic `/admin#tab=webhooks`. Select **Inbox**: **Where it goes** names the same chat as `agentx notifications`. Untick **A task is queued**, select **Save**, and the classic **Notifications routing** shows the same. In a private window without the dashboard key, `curl -X POST <dashboard>/api/admin/wall/settings/notifications` gets `401`.
 
 ## If something is wrong
@@ -943,7 +965,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **A budget says "Not saved: only the owner can change a budget":** the dashboard did not accept your key. Open the Hub on the machine itself, or sign in with the dashboard token, then save again.
 - **Export CSV saves nothing:** the browser blocked the download. Allow downloads for the dashboard's address and select it again.
 - **The profile's spend differs from another machine's Cost page:** each machine counts the runs it keeps. Open the Hub on the machine that runs the agent to see its own figure.
-- **The Hub is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on; see [Approvals](./approvals.md). Running work still shows under **Running now**.
+- **The Hub is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on, in **Settings** › **Requests** ([Choose approvals and requests](#choose-approvals-and-requests)). Running work still shows under **Running now**.
 - **"Could not load the Hub":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.
 - **A machine stays on "checking…":** it answers, but slower than the Hub waits (about six seconds for what runs on it). Its line fills in on a later refresh. If it stays like this, see what keeps it busy with `agentx daemon status` on that machine, and use the timings command above to see how long it takes.
@@ -952,7 +974,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **"This post is not on the Hub":** the link names a task older than seven days, or one on a machine that did not answer. **Terminal:** run `agentx requests` on the machine that keeps it, or try again when that machine's card says **up**.
 - **A post shows `**` or `#` signs instead of formatting:** the agent wrote them in a way Markdown does not read as formatting, for example `** bold**` with a space. The words are all there.
 - **A count in the nav looks wrong:** counts cover the posts the Hub loaded, as the feed does, and ignore your filters. Select **Refresh** to read them again.
-- **"Not sent: Requests are off":** comments travel as task replies, which need open-request tracking. Turn it on in [Approvals](./approvals.md).
+- **"Not sent: Requests are off":** comments and hand-offs travel as task replies, which need open-request tracking. Turn it on in **Settings** › **Requests** ([Choose approvals and requests](#choose-approvals-and-requests)).
 - **"No call: … already has a call in progress":** that agent is on a call or ringing. Answer or decline it on the voice widget first.
 - **"No Space: The floor is held by …":** something else is speaking on this computer, such as a lesson. End it, or wait, then start the Space again.
 - **"Thread not available":** the task belongs to another machine that stopped answering. Try again when its card says **up**.

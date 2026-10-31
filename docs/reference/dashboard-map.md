@@ -34,6 +34,7 @@ These classic pages are gone. Their addresses still work and open the matching H
 | `/live` | **Live** |
 | `/people` | **People** |
 | `/admin/cost` | **Cost** |
+| `/approvals` | **Needs you** |
 | `/agents/<agent-id>/history` | the agent's profile, with its **Activity** open |
 | `/workflows/editor?id=<id>` | the workflow editor |
 
@@ -46,12 +47,11 @@ These pages are still served, because the Hub does not do everything they do yet
 | [Settings](../dashboard/settings.md) | `/admin`, `/admin/agents/<agent-id>` | The settings the Hub's Settings page does not have yet, such as the wiki notes inbox ([Wiki notes](../jobs/wiki-notes.md)) and the wiki page curator ([Wiki](../dashboard/wiki.md#ask-an-agent-to-curate-a-page)) |
 | Health | `/admin/health` (the old `/admin/observability` redirects here) | Route traces, errors and daemon health |
 | Guests | `/guests` | Letting another organisation into part of your mesh ([guest mesh](../jobs/guest-mesh.md)) |
-| [Approvals](../dashboard/approvals.md) | `/approvals` | Deciding inbox items and the Desk settings |
 | [Monitor](../dashboard/monitor.md) | `/monitor` | Task reviews, and connecting a CLI session by hand |
 | [Operations](../dashboard/operations.md) | `/mesh` | A run's full lifetime, Routines with their stale flags, run analytics |
 | [Activity timeline](../dashboard/activity.md) | `/activity` | The timeline lanes and the Map |
 | [Workflows](../dashboard/workflows.md) | `/workflows` | Follow-ups, and every run of a workflow |
-| Intent graph | `/admin/graph` (also `/graph`) | Approving or rejecting a classification |
+| Intent graph | `/admin/graph` (also `/graph`) | Editing the taxonomy. Pending classifications are decided on the Hub's **Reviews** |
 | Projects | `/admin/projects` | Creating and editing projects |
 | Intent ledger | `/admin/ledger` | The record of incoming work and which agent it was sent to |
 

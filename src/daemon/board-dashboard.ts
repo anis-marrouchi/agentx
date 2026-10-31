@@ -23,7 +23,7 @@ import { handleWizardGet, handleWizardPost, handleStartDaemonPost, wizardState }
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
-import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
+import { handleApprovalsPanelApi } from "./approvals-panel"
 import { handlePeoplePanel } from "./people-panel"
 import { handlePicturesPanel, servePicture } from "./pictures-panel"
 import { IMPLICIT_OWNER } from "@/people/people"
@@ -36,7 +36,7 @@ import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphD
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
 import { WALL_COST_HREF } from "./ui/pages/wall-cost"
-import { HUB_NAME, HUB_PATH, hubRedirect } from "./ui/hub-name"
+import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH, hubRedirect } from "./ui/hub-name"
 import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { renderGuestsPage } from "./ui/pages/guests"
@@ -204,7 +204,6 @@ const DASHBOARD_PAGES = new Set([
   "/setup",
   "/admin",
   "/admin/graph",
-  "/approvals",
   "/people",
   "/org",
   "/admin/health",
@@ -598,10 +597,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     handleAdminGet(req, res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
     return
   }
-  // /approvals — one inbox for every decision waiting for the operator.
-  if (method === "GET" && path === "/approvals") {
-    if (!pageAllowed(req, res, ctx, path)) return
-    handleApprovalsPageGet(res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
+  // /approvals was the classic inbox. The Hub's Needs you answers every
+  // item it listed, and Settings has its approval and request settings
+  // (#1440, #1428), so old links and bookmarks land there. The page read
+  // no query or hash of its own, so none is carried. Off-box with no
+  // session, sign in first with Needs you as next, as the history redirect
+  // does. The agent side, /approvals/... on the daemon, and
+  // /api/admin/approvals/... stay.
+  if (method === "GET" && (path === "/approvals" || path === "/approvals/")) {
+    if (!pageAllowed(req, res, ctx, HUB_NEEDS_YOU)) return
+    res.writeHead(301, { Location: HUB_NEEDS_YOU })
+    res.end()
     return
   }
   // /admin/graph — Intent Knowledge Graph: pending approvals + taxonomy editor.

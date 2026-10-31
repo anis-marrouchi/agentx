@@ -579,7 +579,7 @@ How AgentX uses the apps that come with the operating system, such as Reminders 
 | `native.mirror.list` | string | `"AgentX Desk"` | The Reminders list. Must not start with `-`, and must not be one of `reminders.lists` or `approvals.checkin.lists`. |
 | `native.mirror.dueAfterMinutes` | number (0–1440) | `5` | How long after a card is raised its reminder falls due. Never later than the card expires. |
 | `native.mirror.include` | list of `"card"`, `"request"` | `["card", "request"]` | What is mirrored: decision cards, requests waiting on you, or both. |
-| `native.mirror.answerUrl` | URL | — | The address in each reminder where you answer. Unset: `http://localhost:<dashboard.port>/approvals`. |
+| `native.mirror.answerUrl` | URL | — | The address in each reminder where you answer. Unset: `http://localhost:<dashboard.port>/hub#status=open&view=decide` (**Needs you** on the Hub). |
 | `native.forwardTo` | string | — | The mesh peer with the owner's notes app, for a machine without one. Unset: `approvals.forwardTo`. |
 | `native.notes.enabled` | boolean | `false` | Lets agents put ideas in Apple Notes with `agentx_note`. See [Get agents' ideas in Apple Notes](/jobs/ideas-to-notes). |
 | `native.notes.folder` | string | `"AgentX"` | The Notes folder. Created the first time. |

@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3"
 import { redactSecrets } from "@/agents/memory-trust"
 import type { DecisionCard, IfSilent } from "@/approvals/cards"
-import { cardWords, summarize } from "@/requests/card-view"
+import { cardWords, loopOf, summarize, type RequestCard } from "@/requests/card-view"
 import { activeStepAgentOf, stalledWhy, waitsOn } from "@/requests/loops"
 import { awaitingQa, type QaRecord } from "@/requests/qa"
 import type { PlanStore } from "@/requests/plan-store"
@@ -191,6 +191,9 @@ export interface WallPost {
   qa: QaRecord | null
   /** Marked as needing QA, with no verdict since. */
   awaitingQa: boolean
+  /** Its open loop (#1039): who it is owed to, when it is due, what check
+   *  closes it. Shown on the opened post since /approvals redirects (#1440). */
+  loop: RequestCard["loop"]
 }
 
 /** One step of a post's plan, as the opened task shows it (#1355). */
@@ -628,7 +631,14 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     ownerCards: ownerCardsOf(r.id, deps),
     qa: r.qa ? { ...r.qa, note: r.qa.note ? redactSecrets(r.qa.note) : null } : null,
     awaitingQa: awaitingQa(r),
+    loop: loopOfPost(r),
   }
+}
+
+/** loopOf, with what the check said redacted as the post's other words are. */
+function loopOfPost(r: RequestRecord): WallPost["loop"] {
+  const loop = loopOf(r)
+  return loop ? { ...loop, verifyDetail: loop.verifyDetail ? clean(loop.verifyDetail, 200) : null } : null
 }
 
 /** Milliseconds per part of a Wall build, for `?timings=1` (#1252). */

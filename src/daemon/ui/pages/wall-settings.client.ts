@@ -324,7 +324,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   // --- Agents: one card each, then add one, then the wiki page curator ---
   function stSwitchHtml(a) {
     var o = stOrgNode(a.id);
-    if (o.status === 'waiting') return '<a class="chip chip--warn wsa__wait" href="/approvals" title="It starts once you approve it in Approvals">Waits for approval</a>';
+    if (o.status === 'waiting') return '<a class="chip chip--warn wsa__wait" href="#status=open&amp;view=decide" title="It starts once you approve it in Needs you">Waits for approval</a>';
     var on = o.status !== 'paused';
     return '<button type="button" class="wsa__sw" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" data-st-hold="' + esc(a.id) + '"' +
       ' title="' + (on ? 'On. Turn off: it starts no run until you turn it back on.' : 'Off: it starts no run. Turn on to let it work again.') + '">' +

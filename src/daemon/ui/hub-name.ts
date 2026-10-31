@@ -26,3 +26,7 @@ export function hubRedirect(path: string, search = ""): string | null {
   if (path !== OLD_HUB_PATH && !path.startsWith(`${OLD_HUB_PATH}/`)) return null
   return HUB_PATH + path.slice(OLD_HUB_PATH.length) + search
 }
+
+/** The Hub's Needs you view: what waits on the owner (#1440). /approvals,
+ *  the classic page it replaced, redirects (301) here. */
+export const HUB_NEEDS_YOU = `${HUB_PATH}#status=open&view=decide`

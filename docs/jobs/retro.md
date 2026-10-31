@@ -64,9 +64,9 @@ The reviewer runs `claude -p` with no tools, so the Claude Code command must be 
 
 The card lists the fixes, most severe first, then **None of these**. The most severe fix is already picked. Below the fixes is a short description of each one; you can edit it before you answer.
 
-1. **Browser:** open **Approvals** on the dashboard. Find the card, pick a fix, and change the text below it if you like.
+1. **Browser:** on the dashboard's Hub, select **Needs you**. Find the card, pick a fix, and open **The draft, and what Yes and No do** to change the text if you like.
 
-   ![A retro card on the Approvals page: choices with the recommended one picked, and the message the agent gets](/screenshots/approvals/choices.png)
+   ![Needs you on the Hub: decision cards with their choices, the advised one picked](/screenshots/wall/needs-you.png)
 
 2. **Browser:** click **Yes**.
 

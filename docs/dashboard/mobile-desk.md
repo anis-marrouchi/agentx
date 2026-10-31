@@ -71,12 +71,12 @@ The Desk is for the owner. It is served only to a paired phone, never to members
 
 ## One list, one count
 
-What waits for you is one list. The **Your turn** column, the count at the top of the dashboard's **Approvals** page and the daily digest read the same list on the same computer, so they show the same items with the same number:
+What waits for you is one list. The **Your turn** column, the count next to **Needs you** on the dashboard's Hub and the daily digest read the same list on the same computer, so they show the same items with the same number:
 
 - every decision waiting in [Approvals](./approvals.md);
-- every request where an agent asked you a question and has no decision card of its own waiting. The Approvals page lists it too, with a link to answer it in writing under **Open requests**.
+- every request where an agent asked you a question and has no decision card of its own waiting. **Needs you** lists it too, with a box to answer it in writing.
 
-![The Approvals page on the demo: "4 waiting for you", the same number as the Desk and the digest](/screenshots/approvals/one-count.png)
+![Needs you on the Hub in the demo: the count next to Needs you is the same number as the Desk and the digest](/screenshots/wall/needs-you.png)
 
 What you put off with **Later** is not counted as waiting. It is counted apart, everywhere in the same words: "1 put off for later". The digest says, for example, `3 waiting for you on the Desk (and 1 you put off for later).`
 
@@ -90,7 +90,9 @@ Three settings decide where a new item reaches you. Everything else waits on the
 | **Shown on this computer at once** (`notifications.desk.computer`) | The Mac card when the [Mac popup](./approvals.md) is on, otherwise a banner on this computer. | Everything when the Mac popup is on, nothing when it is off |
 | **Digest time** (`approvals.digest`) | When the daily digest comes, or no digest. | 09:00 |
 
-![The three settings at the top of the Approvals settings: phone, this computer, and the digest time](/screenshots/approvals/desk-settings.png)
+On the dashboard, they are on the Hub in **Settings** › **Inbox**, under **Approvals** ([Choose approvals and requests](./hub.md#choose-approvals-and-requests)):
+
+![Settings, the Inbox section, under Approvals: sent to your phone, shown on this computer, and the digest time](/screenshots/wall/settings-approvals.png)
 
 The first two take **Everything new**, **Only what expires within a day** or **Nothing: the Desk and the digest only**. The defaults are what AgentX did before these settings existed, so nothing changes until you choose.
 
@@ -119,9 +121,9 @@ The next new item goes where the settings now say. Items that were already waiti
 ## If something is wrong
 
 - **"With agents" and "No news" stay empty, or hold only old cards** — open requests are off, so nothing new is tracked and nothing old moves. Turn them on as described in [Open requests](../jobs/open-requests.md).
-- **"Requests are off, so nothing would tell the agent…"** when you send an answer — the same cause. The settings it mentions are on the dashboard's Approvals page, not on the phone. Turn open requests on there, then send it again.
+- **"Requests are off, so nothing would tell the agent…"** when you send an answer — the same cause. The settings it mentions are on the dashboard's Hub, in **Settings** › **Requests**, not on the phone. Turn open requests on there, then send it again.
 - **"What waits on … could not be read"** — the dashboard cannot reach that computer, so its decisions are missing from **Your turn**. The rest of the board is still right. Start AgentX there, or check the mesh with `agentx mesh list`.
 - **"… failed: nothing waiting for …"** — the card was answered somewhere else, or its time ran out. Tap **Refresh**.
 - **A card has no "Write an answer" button** — it belongs to another computer. Answer it with **Yes** or **No**, or open that computer's dashboard.
-- **A new item did not reach the phone** — check **Sent to your phone at once** on the Approvals page, and that the item is new: what was already waiting when the setting changed is not sent. The same item told in the last 24 hours on another of your channels is not told again (`agentx notify --told` lists it as not repeated).
+- **A new item did not reach the phone** — check **Sent to your phone at once** in the Hub's **Settings** › **Inbox**, and that the item is new: what was already waiting when the setting changed is not sent. The same item told in the last 24 hours on another of your channels is not told again (`agentx notify --told` lists it as not repeated).
 - **The tab stays on "Loading what waits for you…"** — the phone lost its connection. The yellow bar says so; the tab fills in when the phone reconnects.

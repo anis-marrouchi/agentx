@@ -2,7 +2,7 @@
 
 When an agent needs your answer, it raises a decision card. Requests can also wait on you. The **Reminders mirror** puts each of these in Apple Reminders as well, with a due time. It then shows in Calendar, and the Mac alerts you when it falls due, the same way your own reminders do.
 
-You still answer on the Desk, the Approvals page or with `agentx approvals`. A reminder cannot hold choices or a draft, so it only tells you that something is waiting and links to where you answer.
+You still answer on the Desk, on **Needs you** on the dashboard's Hub, or with `agentx approvals`. A reminder cannot hold choices or a draft, so it only tells you that something is waiting and links to where you answer.
 
 It is off by default and works on a Mac.
 
@@ -14,7 +14,7 @@ Every minute, on the machine that holds your cards:
 - The reminder's notes hold the question, the choices, what the agent recommends, the address where you answer, and a last line such as `agentx: card=<id>`.
 - When you answer the card, or it expires or is closed, or the request stops waiting on you, AgentX ticks the reminder off.
 - **Ticking off a reminder is not an answer.** If you tick it off or delete it while the card is still waiting, the card stays on the Desk, and AgentX does not add that reminder again.
-- While the mirror runs, cards no longer pop up as the floating card on the Mac, so you are not alerted twice. **Show on Mac** on the Approvals page still shows one. A card whose reminder could not be added still pops up. If the mirror stops (you turn it off, or Reminders can't be read), the popup comes back within 5 minutes.
+- While the mirror runs, cards no longer pop up as the floating card on the Mac, so you are not alerted twice. **Show it on the Mac again**, in a card's details on **Needs you**, still shows one. A card whose reminder could not be added still pops up. If the mirror stops (you turn it off, or Reminders can't be read), the popup comes back within 5 minutes.
 - Check-ins and [due reminders](/automations/reminders) skip these reminders, so a mirrored reminder never turns back into a card or into a task for an agent.
 - If a reminder can't be added three times in a row, AgentX stops trying for that card. It is still on the Desk. You get one notification about it, at most once a day.
 - If AgentX is not allowed to use Reminders, or the permission prompt is never answered (the daemon runs in the background, so the prompt can go unseen), the cards pop up on the Mac as before. The daemon log says so, with a line such as `[mirror] 2 card(s) could not be added to Reminders; the Mac popup shows them instead`.
@@ -59,7 +59,7 @@ The first time the daemon adds a reminder, macOS asks whether it may. Only the M
      --ask "Is the mirror working?" --recommend "Yes" --if-silent discard
    ```
 3. Wait up to a minute. **Reminders:** the list **AgentX Desk** has **Mirror test**, due in about 5 minutes.
-4. Answer the card on the Approvals page. Within a minute the reminder is ticked off.
+4. **Browser:** answer the card on **Needs you**. Within a minute the reminder is ticked off.
 
 ## Count what the mirror covered
 

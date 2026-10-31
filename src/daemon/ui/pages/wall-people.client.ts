@@ -77,7 +77,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
     if (d.state === 'active') return ppState('Active', 'chip--done');
     if (d.state === 'pending' && d.answer === 'yes') return ppState('Approved', 'chip--done') + ' <small>not opened since</small>';
     if (d.state === 'pending' && d.answer === 'no') return ppState('Refused', 'chip--ghost');
-    if (d.state === 'pending') return ppState('Waiting for your approval', 'chip--warn') + ' <a href="/approvals">Approve</a>';
+    if (d.state === 'pending') return ppState('Waiting for your approval', 'chip--warn') + ' <a href="#status=open&amp;view=decide">Approve</a>';
     return ppState('Ended', 'chip--ghost') + (d.removedReason ? ' <small>' + esc(plain(d.removedReason)) + '</small>' : '');
   }
   // Not machinesHtml: the Live page's script shares this scope (#1461).
@@ -149,7 +149,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
       '<p>A teammate gets one page of their own, <b>My work</b>, on a machine you approve. A client gets <b>Your project</b> instead. To invite someone, from the folder that holds <code>agentx.json</code>:</p><ol>' +
       '<li>List them, with the identity they write from: <code>agentx people add sara --name "Sara B" --identity gitlab:sara.b</code>. For a client, add <code>--role client</code>.</li>' +
       '<li>Make their one-time code: <code>agentx people invite sara</code></li>' +
-      '<li>Send them the address and the code it prints, then say yes to their machine in <a href="/approvals">Approvals</a>.</li></ol></section>';
+      '<li>Send them the address and the code it prints, then say yes to their machine in <a href="#status=open&amp;view=decide">Needs you</a>.</li></ol></section>';
     return note + none + (PP.list.length ? PP.list.map(personHtml).join('') : '<p class="ax-wall__empty">Nobody is listed.</p>');
   }
   /** Called from the Wall's render(). Keeps the keyboard on the same control across a repaint. */

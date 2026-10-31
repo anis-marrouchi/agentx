@@ -4,6 +4,7 @@ import { readOwnerList, type OwnerList } from "@/desk/owner-list"
 import { readInboxState, recordDigest } from "./state"
 import type { PopupRunnerSettings } from "./popup-runner"
 import type { CheckinSettings } from "./checkin"
+import { HUB_NAME, HUB_NEEDS_YOU } from "@/daemon/ui/hub-name"
 
 // --- The daemon's approvals sweep ---
 //
@@ -99,7 +100,7 @@ export function digestText(list: Pick<OwnerList, "count" | "later" | "items">, d
   }
   // System nags kept back for this digest instead of a push each (#1126).
   if (nagLine) lines.push(nagLine)
-  lines.push(dashboardUrl ? `Open ${dashboardUrl.replace(/\/$/, "")}/approvals, or run: agentx approvals list` : "Open Approvals in the dashboard, or run: agentx approvals list")
+  lines.push(dashboardUrl ? `Open ${dashboardUrl.replace(/\/$/, "")}${HUB_NEEDS_YOU}, or run: agentx approvals list` : `Open Needs you on the ${HUB_NAME}, or run: agentx approvals list`)
   return lines.join("\n")
 }
 

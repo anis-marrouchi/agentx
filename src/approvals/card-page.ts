@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto"
 import { esc } from "@/daemon/ui/util"
+import { HUB_NAME } from "@/daemon/ui/hub-name"
 import { CARD_CSS } from "./card-page-style"
 import { CHOICE_PLACEHOLDER, recommended } from "./choices"
 import type { DecisionCard } from "./cards"
@@ -114,7 +115,7 @@ ${options ? `<div class="options" role="radiogroup">${options}</div>` : ""}
 ${rec.why ? `<p class="why" dir="auto">${esc(rec.why)}</p>` : ""}
 ${card.draft ? `<div class="label-row" id="msg"><span class="label">Message</span><span class="edited"><i class="dot"></i>Edited</span><button class="reset" id="reset">Reset</button></div>
 <textarea id="text" dir="auto" rows="2" spellcheck="true"></textarea>` : ""}
-<div class="notes"><div>${CLOCK}<span>${request ? "It stays in Open requests on the Approvals page until you close it." : `If you don't answer by ${esc(when(card.expires, now))}: ${esc(card.if_silent)}.`}</span></div>
+<div class="notes"><div>${CLOCK}<span>${request ? `It stays on the ${HUB_NAME} until you close it.` : `If you don't answer by ${esc(when(card.expires, now))}: ${esc(card.if_silent)}.`}</span></div>
 <div>${LOCK}<span>Nothing goes out until you click.</span></div></div>
 </div><div class="foot"><button class="btn later" id="later">Not now<kbd>esc</kbd></button>
 <button class="btn" id="no">${request ? "Drop" : "No"}</button>
