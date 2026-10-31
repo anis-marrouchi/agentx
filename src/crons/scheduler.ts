@@ -446,6 +446,13 @@ export class CronScheduler {
     this.timers.set(jobId, timer)
   }
 
+  /** The ledger row for a run skipped because its goal is closed (#1568). */
+  private recordGoalHalt(job: CronJobState, firedAt: Date): void {
+    this.recordCronDecisionInLedger(job.id, job.agent, firedAt, {
+      agentId: null, outcome: "halted", reason: `goal ${job.goal} ${job.goalClosed?.state ?? "closed"}`,
+    })
+  }
+
   /**
    * Phase 1 commit 6.d — record one cron-fire decision in the ledger
    * when the source is enabled. Wrapped in try/catch so a ledger
@@ -585,9 +592,7 @@ export class CronScheduler {
     // A job whose goal is closed does not run (#1568).
     const goal = this.goalGate(job)
     if (goal.skip) {
-      this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
-        agentId: null, outcome: "halted", reason: `goal ${job.goal} ${job.goalClosed?.state ?? "closed"}`,
-      })
+      this.recordGoalHalt(job, firedAt)
       if (!fire) this.scheduleNext(jobId)
       return
     }
@@ -770,7 +775,12 @@ export class CronScheduler {
       const job = this.jobs.get(jobId)
       if (!job || !job.enabled) continue
       const goal = this.goalGate(job)
-      if (goal.skip) continue
+      if (goal.skip) {
+        // Same ledger row as a live run skipped for its goal, keyed on the
+        // time the run was due.
+        this.recordGoalHalt(job, missedAt)
+        continue
+      }
 
       this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
 

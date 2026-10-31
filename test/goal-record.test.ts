@@ -223,6 +223,19 @@ describe("crons.<id>.goal", () => {
     expect(listed).toMatchObject({ goal: "zero-issues", goalClosed: { state: "done" }, enabled: true })
   })
 
+  it("records the same halted ledger row for a live run and a missed run of a closed goal", async () => {
+    const { s, registry } = scheduler("done")
+    const ledger = vi.spyOn(s, "recordCronDecisionInLedger").mockReturnValue(undefined)
+    const due = new Date("2026-10-26T09:00:00Z")
+    await s.executeJob("hourly")
+    await s.executeMissedRuns([{ jobId: "hourly", missedAt: due }])
+    expect(registry.execute).not.toHaveBeenCalled()
+    expect(ledger).toHaveBeenCalledTimes(2)
+    const halted = { agentId: null, outcome: "halted", reason: "goal zero-issues done" }
+    expect(ledger.mock.calls[0]).toEqual(["hourly", "ops", expect.any(Date), halted])
+    expect(ledger.mock.calls[1]).toEqual(["hourly", "ops", due, halted])
+  })
+
   it("runs as before when this node has no record of the goal", () => {
     expect(cronGoalGate("zero-issues", () => null)).toEqual({ skip: null, brief: "[Goal] zero-issues: no record of this goal on this node." })
     expect(cronGoalGate(undefined, () => { throw new Error("never read") })).toEqual({ skip: null, brief: "" })
