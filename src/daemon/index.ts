@@ -4515,6 +4515,8 @@ export class AgentXDaemon {
         // Only the ledger: the callee's own context is left as it was.
         ...(caller ? { root: rootInitiatorOf(caller.context, caller.agentId) } : {}),
         onStart: (id) => {
+          // A pre-spawn retry starts a second run: let go of the first.
+          if (runId && runId !== id) this.syncWaits.end(runId)
           runId = id
           if (caller?.taskId) this.syncWaits.begin(caller.taskId, id, chainRootOf(caller, this.syncWaits))
         },

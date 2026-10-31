@@ -125,6 +125,8 @@ describe("Hub chat: what it draws (#1528)", () => {
     expect(html).not.toContain("Thinking…")
     expect(html).toContain('data-hc-stop="task-7"')
     expect(html).toContain('<a class="hc__run" href="#page=task&amp;task=task-7">Open the run</a>')
+    expect(html).toContain('<div class="b" data-hc-live><p>Looking at the log</p></div>')
+    expect(chatLogHtml(msgs, { agent: "Scout", live: "x", stopFailed: true })).toContain('data-hc-stop="task-7">Not stopped. Try again</button>')
     // Not started yet: no run to stop or open.
     const waiting = chatLogHtml([msgs[0], { ...msgs[1], taskId: null }], { agent: "Scout" })
     expect(waiting).toContain("Thinking…")
@@ -331,6 +333,59 @@ describe("Hub chat: on the page (#1528)", () => {
     await w.settle()
     expect(w.delays.at(-1)).toBe(10000)
     expect(w.streams.filter((s) => !s.closed)).toEqual([])
+  })
+
+  it("falls back to the quick read when the stream errors, without reopening it (#1637)", async () => {
+    const w = openChat({
+      thread: "t1", node: "http://studio",
+      route: (url) => url.startsWith("/api/assistant/thread?id=t1") ? { status: 200, body: {
+        node: "http://studio", thread: { id: "t1", title: "Why?", agentId: "scout" },
+        messages: [{ role: "user", content: "Why?", status: "done" }, { role: "assistant", content: "", status: "pending", taskId: "task-7" }],
+      } } : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.streams).toHaveLength(1)
+    // The node no longer knows the run: `event: error`, then the stream ends.
+    w.streams[0].emit("error", { message: "task not found or already evicted" })
+    expect(w.streams[0].closed).toBe(true)
+    expect(w.delays.at(-1)).toBe(1500)
+    w.timers.at(-1)!()
+    await w.settle()
+    expect(w.streams).toHaveLength(1)
+    expect(w.delays.at(-1)).toBe(1500)
+  })
+
+  it("repaints only the streamed text on a chunk, so Stop keeps its label (#1637)", async () => {
+    let fail = true
+    const w = openChat({
+      thread: "t1", node: "http://studio",
+      route: (url, init) => url.startsWith("/api/assistant/thread?id=t1") ? { status: 200, body: {
+        node: "http://studio", thread: { id: "t1", title: "Why?", agentId: "scout" },
+        messages: [{ role: "user", content: "Why?", status: "done" }, { role: "assistant", content: "", status: "pending", taskId: "task-7" }],
+      } } : url.startsWith("/api/task/action") && init.method === "POST" ? (fail ? "down" : { status: 200, body: { ok: true } })
+        : undefined,
+    })
+    const liveEl = { innerHTML: "" }
+    w.el("hc-log").querySelector = (s: string) => (s === "[data-hc-live]" ? liveEl : null)
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    w.streams[0].emit("start", { initial: "Reading " })
+    expect(w.el("hc-log").innerHTML).toContain("Reading")
+    const stop = { disabled: false, textContent: "Stop", getAttribute: () => "task-7" }
+    await w.fire("hc-log", "click", { target: { closest: (s: string) => (s === "[data-hc-stop]" ? stop : null) } })
+    expect(stop.textContent).toBe("Not stopped. Try again")
+    const before = w.el("hc-log").innerHTML
+    w.streams[0].emit("chunk", { text: "the log" })
+    w.streams[0].emit("chunk", { text: "\n[task finished]\n" })
+    expect(w.el("hc-log").innerHTML).toBe(before)
+    expect(liveEl.innerHTML).toContain("Reading the log")
+    expect(liveEl.innerHTML).not.toContain("task finished")
+    // A full repaint (the thread read) still says Stop did not take.
+    w.timers.at(-1)!()
+    await w.settle()
+    expect(w.el("hc-log").innerHTML).toContain("Not stopped. Try again")
+    fail = false
   })
 
   it("sends a conversation's next message to the node that holds it", async () => {

@@ -185,7 +185,8 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // --- The pending answer, live: its run's stream (GET /api/task/stream) ---
   // The thread read stays as the fallback: slower while the stream is open,
   // and it settles the answer once the run is done.
-  var es = null, streamed = '', live = '';
+  // stopFailed: the run whose Stop did not take, so a repaint keeps saying so.
+  var es = null, streamed = '', live = '', stopFailed = '';
   function closeStream() {
     if (es) { try { es.close(); } catch (e) { /* already closed */ } }
     es = null; streamed = ''; live = '';
@@ -199,14 +200,43 @@ export const WALL_CHAT_SCRIPT = String.raw`
     try {
       es = new ES('/api/task/stream?node=' + encodeURIComponent(threadNode) + '&agent=' + encodeURIComponent(thread.agentId) + '&task=' + encodeURIComponent(m.taskId));
     } catch (e) { es = null; return; }
-    function ended() { if (es) { try { es.close(); } catch (e) { /* already closed */ } } es = null; loadThread(id); }
+    var mine = es;
+    function ended() { if (es === mine) { try { es.close(); } catch (e) { /* already closed */ } es = null; } loadThread(id); }
     es.addEventListener('start', function (ev) {
       try { var d = JSON.parse(ev.data); if (d.initial) { live = d.initial; paintLog(); } if (d.done) ended(); } catch (e) { /* not JSON: skip */ }
     });
     es.addEventListener('chunk', function (ev) {
-      try { live += JSON.parse(ev.data).text || ''; paintLog(); } catch (e) { /* not JSON: skip */ }
+      try {
+        var text = JSON.parse(ev.data).text || '';
+        // The run's end marker: 'end' follows, and the thread read settles it.
+        if (!text || text === FINISHED) return;
+        var had = live; live += text;
+        paintLive(had);
+      } catch (e) { /* not JSON: skip */ }
     });
     es.addEventListener('end', ended);
+    // The run is unknown to its node (evicted, or the node restarted), or
+    // the connection dropped: stop here, not reconnect every few seconds.
+    // streamed keeps the id, so this run is not opened again; the thread
+    // read takes over at its quick pace.
+    es.addEventListener('error', function () {
+      if (es !== mine) return;
+      try { es.close(); } catch (e) { /* already closed */ }
+      es = null;
+      if (id === threadId) { clearTimeout(poll); poll = setTimeout(function () { loadThread(id); }, 1500); }
+    });
+  }
+  var FINISHED = '\n[task finished]\n';
+  /** A chunk: repaint the streamed text alone, so Stop and its label stay
+   *  as they are. The first text, or a log without it, repaints it all. */
+  function paintLive(had) {
+    var log = $('hc-log');
+    var b = had && log.querySelector ? log.querySelector('[data-hc-live]') : null;
+    if (!b) { paintLog(); return; }
+    var html = esc(live);
+    try { html = markdownToHtml(live); } catch (e) { /* plain text above */ }
+    b.innerHTML = html;
+    log.scrollTop = log.scrollHeight;
   }
   /** The pending answer's Task page on the Hub (wall-task.client.ts). */
   function runHref(m) {
@@ -225,7 +255,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   function paintLog() {
     var log = $('hc-log');
     var p = pendingMsg();
-    log.innerHTML = chatLogHtml(msgs, { agent: agentName(), md: markdownToHtml, notSent: notSent, live: p && p.taskId === streamed ? live : '', runHref: runHref(p) });
+    log.innerHTML = chatLogHtml(msgs, { agent: agentName(), md: markdownToHtml, notSent: notSent, live: p && p.taskId === streamed ? live : '', runHref: runHref(p), stopFailed: !!p && p.taskId === stopFailed });
     log.scrollTop = log.scrollHeight;
     $('hc-sub').textContent = (thread && thread.title) || 'New conversation';
   }
@@ -301,15 +331,15 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (stop) {
       // Stop ends the run (POST /api/task/action kind=cancel); the thread
       // read then shows how it ended.
-      var id = threadId;
-      stop.disabled = true;
-      fetch('/api/task/action?node=' + encodeURIComponent(threadNode || '') + '&task=' + encodeURIComponent(stop.getAttribute('data-hc-stop')) + '&kind=cancel', {
+      var id = threadId, task = stop.getAttribute('data-hc-stop');
+      stop.disabled = true; stopFailed = '';
+      fetch('/api/task/action?node=' + encodeURIComponent(threadNode || '') + '&task=' + encodeURIComponent(task) + '&kind=cancel', {
         method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ reason: 'Stopped from the Hub chat' }),
       }).then(function (r) {
         if (r.status === 401) { signedOut(); return; }
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return loadThread(id);
-      }).catch(function () { stop.disabled = false; stop.textContent = 'Not stopped. Try again'; });
+      }).catch(function () { stopFailed = task; stop.disabled = false; stop.textContent = 'Not stopped. Try again'; });
     } else if (t.closest('[data-hc-retry]')) {
       var last = msgs.filter(function (m) { return m.role === 'user'; }).pop();
       if (last) send(last.content);

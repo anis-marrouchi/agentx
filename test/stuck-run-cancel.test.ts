@@ -242,6 +242,16 @@ describe("the pre-spawn deadline (#183)", () => {
     expect(stepLine).toMatch(iso)
   })
 
+  it("hands the retry's run id to onStart, so the caller points at the live run (#1637)", async () => {
+    const r = withPreSpawn(0.05)
+    const ids: string[] = []
+    const res = await r.execute({ message: "[GitHub PR #2 assigned]", agentId: "ops", context: { channel: "github", chatId: "o/r:pull:2" }, onStart: (id) => ids.push(id) })
+    expect(res.errorKind).toBe("interrupted")
+    expect(ids).toHaveLength(2)
+    expect(ids[1]).not.toBe(ids[0])
+    expect(r.getTaskRecord("ops", ids[1])!.status).toBe("timeout")
+  })
+
   it("is cleared once the agent is spawned", async () => {
     hang.on = false
     spawn.agentMs = 1
