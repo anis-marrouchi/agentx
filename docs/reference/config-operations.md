@@ -461,6 +461,47 @@ What the node reports about itself: read it with `agentx node`. How it works: [A
 | `tools` | `["claude", "codex", "git", "gh", "glab", "node", "pnpm", "npm", "python3", "docker"]` | Programs whose version the node reads. A name runs `<name> --version`; `{ "name": "uv", "command": "uv", "args": ["version"] }` runs other arguments. |
 | `toolsRefreshHours` | `6` | How often the versions are read again (0.25–168). They are never read on a request. |
 
+## mail sender
+
+The one sender for mail AgentX itself sends, such as sign-in links ([#1478](https://github.com/anis-marrouchi/agentx/issues/1478)). It is not an agent's mailbox (those are under [`channels.email`](./config-channels.md#email)): it only sends. It works with any mail provider that accepts SMTP, the usual way to send mail with a login for your sending domain. Unset: AgentX sends no mail of its own.
+
+| Key | Default | What it does |
+|---|---|---|
+| `mail.sender.kind` | required | `"smtp"`. |
+| `mail.sender.from` | required | The address mail comes from, on the domain your provider sends for, for example `no-reply@mg.example.com`. |
+| `mail.sender.name` | `"AgentX"` | The sender name people see. |
+| `mail.sender.host` | required | The provider's SMTP server. |
+| `mail.sender.port` | `587` | SMTP port. |
+| `mail.sender.secure` | `false` | `false`: upgraded to TLS when the server offers it (port 587). `true`: TLS from the start (port 465). |
+| `mail.sender.user` | required | The SMTP login. Must be a `${VAR}` reference; the value goes in `.env`. |
+| `mail.sender.password` | required | The SMTP password. Must be a `${VAR}` reference; the value goes in `.env`. |
+
+Example, with made-up values. In `agentx.json`:
+
+```json
+"mail": {
+  "sender": {
+    "kind": "smtp",
+    "from": "no-reply@mg.example.com",
+    "name": "Example Wall",
+    "host": "smtp.example-mail.net",
+    "user": "${AGENTX_MAIL_USER}",
+    "password": "${AGENTX_MAIL_PASSWORD}"
+  }
+}
+```
+
+and in `.env`, next to `agentx.json`:
+
+```
+AGENTX_MAIL_USER=postmaster@mg.example.com
+AGENTX_MAIL_PASSWORD=your-smtp-password
+```
+
+A login or password written straight into `agentx.json` is refused when the config loads, so it never ends up in a file that gets copied or shared. In your provider's settings for the sending domain, turn off click tracking and open tracking, so links in the mail stay as AgentX wrote them.
+
+To check the setup, run `agentx mail test you@example.com` in the folder with `agentx.json`. It sends one short test mail. See [`agentx mail test`](./cli-commands.md#agentx-mail-test-address).
+
 ## Check it worked
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
@@ -473,6 +514,9 @@ What the node reports about itself: read it with `agentx node`. How it works: [A
 - **Dashboard changes don't show:** the dashboard is its own process. Restart it after changing `dashboard` settings.
 - **A script that reads the dashboard's admin data gets `401`:** with `dashboard.token` set, every `/api/admin/` address needs it. Send the header `Authorization: Bearer <your token>` with each request.
 - **The live log in Settings › Diagnostics or the Activity map stays empty on another computer:** sign in at `/login` on that dashboard first, then reload the page.
+- **The config is refused with `mail.sender.user` or `mail.sender.password: put the value in .env`:** move the value to `.env` and write the `${VAR}` reference in `agentx.json`, as in the [mail sender](#mail-sender) example.
+- **`agentx mail test` says `Not sent`:** the message after it comes from the provider. `Invalid login` or `535` means a wrong login or password in `.env`. A timeout usually means a wrong `host` or `port`, or `secure` doesn't match the port (`false` for 587, `true` for 465).
+- **The test mail never arrives, but `mail test` says `Sent`:** look in the spam folder, then check the provider's sending log for that address.
 - **A mesh peer shows as down:** check its `url` and `token`, then raise `mesh.healthCheck.timeout` if the link is slow.
 - **`agentx demo` says `Timed out waiting for …`:** the machine is too busy for the startup limit. Run it again with `--startup-timeout 300`, or set `demo.startupTimeoutSeconds`. The line `Startup limit: …` at the top shows the value in use and where it came from.
 - **A backend key is empty at runtime:** the variable named in `apiKeyEnv` is missing from `.env`. Add it, then restart the daemon.
