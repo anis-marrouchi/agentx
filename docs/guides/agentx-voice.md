@@ -450,7 +450,7 @@ These are menu choices, not in `agentx.json`. macOS saves them for your user, ex
 | `AGENTX_STT_MODEL` | `scribe_v1` | The ElevenLabs speech-to-text model |
 | `AGENTX_TTS_MODEL` | `eleven_turbo_v2_5` | The ElevenLabs voice model |
 | `AGENTX_PASTE_COMMAND` | the line in `~/.agentx/paste-command.txt`, else `agentx paste` | The command **Smart paste** runs. The app also uses it to find `agentx notify`. Set by `agentx desktop install` |
-| `AGENTX_VOICE_PATH` | the folder of `ffmpeg` plus macOS's standard folders | Read by the installer only: the `PATH` the app starts with |
+| `AGENTX_VOICE_PATH` | the folder of the first real `ffmpeg` program (wrapper scripts are skipped) plus macOS's standard folders | Read by the installer only: the `PATH` the app starts with |
 
 An app started at login doesn't see variables set in your terminal. Keep keys in a key file rather than in your shell profile.
 
