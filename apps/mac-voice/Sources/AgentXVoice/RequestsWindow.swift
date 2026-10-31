@@ -50,9 +50,9 @@ final class RequestsWindow: NSPanel {
     private static let footerHeight: CGFloat = 34
     private static let emptyHeight: CGFloat = 104
     /// A failed row opened: its reason and Ask again under it.
-    private static let reasonHeight: CGFloat = 62
+    private static let reasonHeight: CGFloat = 56
     /// "Can’t reach AgentX on this Mac", with Try now and the dashboard.
-    private static let unreachableHeight: CGFloat = 132
+    private static let unreachableHeight: CGFloat = 92
     /// Two placeholder rows while the daemon is slow to answer.
     private static let loadingRows = 2
 
@@ -539,7 +539,7 @@ struct FailedReason: View {
         }
         .padding(.leading, 40)
         .padding(.trailing, 8)
-        .frame(maxWidth: .infinity, minHeight: 62, maxHeight: 62, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56, alignment: .topLeading)
         .accessibilityElement(children: .contain)
     }
 }
@@ -567,7 +567,7 @@ struct Unreachable: View {
             .font(.system(size: 11.5))
         }
         .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 132, maxHeight: 132, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 92, maxHeight: 92, alignment: .topLeading)
         .accessibilityElement(children: .contain)
     }
 }

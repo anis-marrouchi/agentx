@@ -246,16 +246,23 @@ over to the next build.
   the open-requests list (`OpenRequests.swift`, `RequestsWindow.swift`,
   tested in `Tests/OpenRequests`) until picked, with one soft sound;
   `voice.answers: "play"` (Settings › General, or "Play answers at once"
-  in the menu) plays them as they come, as before. Picking a row makes its
-  agent the target, so the next words continue that agent's voice
-  conversation. Rows close with ×, ⌘⌫ or "Close heard"; a thinking row
-  asks first, and only "Stop …" stops the agent. The list is kept by the
-  daemon (`/voice/requests`, `src/daemon/voice-requests-api.ts`): it
-  survives a restart of the app or the daemon, and heard is shared by
-  every client that reads it. A row that was thinking when the daemon
-  stopped turns to "Couldn't answer". The phone's Chat strip does not read
-  this list yet, and the voice conversation is not the phone tab's
-  conversation with that agent. During a call the turn works as before.
+  in the menu) plays them as they come, as before; the soft sound is
+  `voice.readySound`. Picking a row makes its agent the target, so the
+  next words continue that agent's conversation. Rows close with ×, ⌘⌫ or
+  "Close heard"; a thinking row asks first, and only "Stop …" stops the
+  agent. A failed row, picked, says why and offers "Ask again". The list
+  is kept by the daemon (`/voice/requests`,
+  `src/daemon/voice-requests-api.ts`): it survives a restart of the app or
+  the daemon. While the daemon doesn't answer, the list says so, with "Try
+  now". A row that was thinking when the daemon stopped turns to
+  "Couldn't answer". A request to one of this computer's agents runs in
+  the phone app's newest conversation with that agent
+  (`src/daemon/voice-phone-thread.ts`): same session, and the question and
+  answer show on the phone. Heard is one state: heard on the Mac reads it
+  on the phone, opened on the phone it is heard on the Mac. Agents on a
+  mesh peer keep their own voice conversation, and a thinking request
+  shows on the phone only once it has answered. During a call the turn
+  works as before.
 - ⌥Space is the default talk key (`⌃Space` is commonly bound to
   input-source switching). Talk, stop, paste and per-agent shortcuts are
   set in Settings… and stored in agentx.json (`voice.hotkeys`,

@@ -209,6 +209,7 @@ To try a voice before keeping it:
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it |
 | **Open requests** | **Command–Option–O**. Opens the list of your requests. Fixed; shown so you don't reuse it |
 | **When an answer is ready** | **Wait until I pick it** (a soft sound and a blue dot, the default) or **Play it at once**, as before |
+| **Soft sound** | The Mac sound played once when an answer waits for you. Default **Pop**; picking one plays it |
 | **Open the list on hover** | Pointing at the pill for half a second opens the list of your requests. Default on |
 | **Keep the answer open** | How long an [answer in the pill](#read-the-answer-in-the-pill) stays open after it has been spoken: from 10 seconds to 5 minutes, or **Until I close it**. Default 30 seconds |
 | **Tallest answer** | How tall the answer grows before it scrolls, from 120 to 800 points. Default 320 |
@@ -280,7 +281,7 @@ Each row in the list shows the agent, what it is doing, the first words of your 
 | **Waiting its turn** | You asked that agent again; this one goes when the first is answered |
 | A blue dot and **Answer ready** | The answer is back and you haven't heard it. Pick it to hear it |
 | **Heard** | You have heard it. Pick it to read it again; **Listen again** plays it |
-| **Couldn't answer** | Something went wrong. Pick it to see why |
+| **Couldn't answer** | Something went wrong. Pick it to see why, and choose **Ask again** to send the same words once more |
 
 With the list open from the keyboard, hold **Option–Space** to talk to the agent of the row you are on. Press **Escape** to close the list. Moving the pointer away closes a list you opened by pointing.
 
@@ -288,13 +289,15 @@ With the list open from the keyboard, hold **Option–Space** to talk to the age
 
 **Many requests.** From six requests, the list shows one row per agent. Pick an agent to see its requests, and **History** at the top for its earlier conversations. **Left** arrow or **Escape** goes back.
 
+**The same on your phone.** With the [phone app](../dashboard/mobile-chat.md) paired, what you ask an agent on the Mac goes into your last conversation with that agent on the phone, in the same session. Its answer shows there with a **New** chip. Hear it on the Mac and the chip goes; open it on the phone and the Mac row says **Heard**. See [The same requests on the phone](../dashboard/voice.md#the-same-requests-on-the-phone).
+
 **Close a row.** Point at a row and click its **×**, or press **Command–Delete** on it:
 
 - An answered or failed row closes at once, with **Undo** for five seconds. The question and answer stay in **History…**.
 - A row that is still thinking asks first. **Close, let it finish** (press **Return**) lets the agent finish; its answer goes to History with no sound. **Stop Writer** (press **Tab**, then **Return**) stops the agent; it is never the default. **Keep** (press **Escape**) changes nothing.
 - **Close heard**, at the bottom of the list, closes every heard and failed row at once.
 
-The list is kept by AgentX itself, so it is still there after you quit the app or restart AgentX. A request that was still thinking when AgentX restarted says **Couldn't answer**: ask it again.
+The list is kept by AgentX itself, so it is still there after you quit the app or restart AgentX. A request that was still thinking when AgentX restarted says **Couldn't answer**: ask it again. While AgentX doesn't answer, the list says **Can't reach AgentX on this Mac**, with **Try now**; your requests come back when it answers.
 
 While agents are working, or answers wait for you, a row of small orbs appears in the pill, one per agent in its colours. The big orb on the left keeps following the agent that is listening or speaking.
 
@@ -406,6 +409,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.startReduced` | `false` | `true` starts the app with the pill [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb): a small circle you can drag anywhere. With the character, as the [character alone](../dashboard/voice.md#reduce-the-character), without its speech bubble |
 | `voice.stroll` | `false` | `true` lets the [character](../dashboard/voice.md#the-character) take a [slow stroll](../dashboard/voice.md#let-the-character-stroll) when the assistant has nothing to do |
 | `voice.answers` | `"wait"` | When an answer is ready: `"wait"` keeps it in the [open-requests list](#ask-several-agents-at-once) with a soft sound and a blue dot until you pick it; `"play"` plays it at once, as before. Same as **Play answers at once** in the menu |
+| `voice.readySound` | `"Pop"` | The Mac alert sound played once when an answer waits: `"Pop"`, `"Tink"`, `"Glass"`, `"Ping"`, `"Purr"`, `"Bottle"`, `"Blow"`, `"Frog"`, `"Funk"`, `"Hero"`, `"Morse"`, `"Submarine"`, `"Basso"` or `"Sosumi"` |
 | `voice.listOnHover` | `true` | `false`: pointing at the pill no longer opens the open-requests list; a click or **Command–Option–O** still does |
 | `voice.animations` | `"sometimes"` | How often the character plays a [small animation by itself](../dashboard/voice.md#let-the-character-play-by-itself) when idle: `"off"`, `"rarely"`, `"sometimes"` or `"often"` |
 | `voice.floor.enabled` | `true` | Lets a demo, a recording or a script take [the floor](../dashboard/voice.md#one-speaker-at-a-time-the-floor): while it is held, every other voice and bubble waits. `false`: nobody can take it |

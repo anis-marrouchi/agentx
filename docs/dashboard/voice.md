@@ -125,7 +125,7 @@ Open it one of three ways:
 | **Waiting its turn** | Another request to the same agent goes first | Nothing yet |
 | A blue dot and **Answer ready** | The answer is back and you haven't heard it | Hear it. The answer plays and its text shows in the pill |
 | **Heard** | You have heard it | See its text again. **Listen again** in the pill plays it |
-| **Couldn't answer** | The agent could not answer | See why, in the pill |
+| **Couldn't answer** | The agent could not answer | See why, under the row, with **Ask again** |
 
 Picking a row also makes its agent the one you talk to next: see [Continue a conversation](#continue-a-conversation).
 
@@ -134,7 +134,7 @@ Pick a row with a click, or with the keyboard:
 | Key | What it does |
 |---|---|
 | **Up** and **Down** arrows | Move between rows |
-| **Return** | Pick the row |
+| **Return** | Pick the row. On a failed row that is already open, ask again |
 | **Option–Space** (hold) | Talk to the agent of the row you are on |
 | **Command–Delete** | Close the row you are on (see [Close a request](#close-a-request)) |
 | **Escape** | Close the list |
@@ -142,7 +142,18 @@ Pick a row with a click, or with the keyboard:
 - VoiceOver reads each row in full, for example "Ops. Answer ready, not heard. You asked: check last night's backups finished. 2 minutes ago.", then offers **Listen**, **Show the answer** or **See why**.
 - Heard rows stay in the list until you close them. The eight most recent heard rows are kept; older ones leave by themselves.
 - The list is kept by the AgentX daemon, not the app. Quitting the app or restarting the daemon keeps it. A request that was still thinking when the daemon stopped says **Couldn't answer**, with the reason "AgentX restarted before the answer came back. Ask again."
-- Heard is the same everywhere: a row you heard on this Mac shows as heard to any other app that reads the list from the daemon (see [Open requests for scripts](#open-requests-for-scripts)). The phone's Chat strip doesn't read this list yet.
+- Heard is the same everywhere: a row you heard on this Mac is read on the phone, and an answer you open on the phone turns to **Heard** on the Mac (see [The same requests on the phone](#the-same-requests-on-the-phone)). Any other app that reads the list from the daemon sees the same (see [Open requests for scripts](#open-requests-for-scripts)).
+- **Couldn't answer:** pick the row and it opens in place, with why in one line, for example "The calendar didn't answer in time.", and **Ask again**. **Ask again** asks the same words again in the same row.
+
+  ![The open-requests list, made-up data: Writer thinking, Ops with an answer ready, and Planner's failed row picked, saying The calendar didn't answer in time, with Ask again under it](/screenshots/voice/requests-ask-again-light.png)
+
+  ![The same list in dark mode](/screenshots/voice/requests-ask-again-dark.png)
+- **AgentX not answering:** while the daemon doesn't answer, the list says **Can't reach AgentX on this Mac**: your requests are kept by AgentX and come back when it answers. The app tries again every few seconds; **Try now** tries at once, and **Open the dashboard** opens it in your browser. The moment the daemon stops answering, the pill says **AgentX isn't answering** for a few seconds.
+
+  ![The list while the daemon doesn't answer: Can't reach AgentX on this Mac, with Try now and Open the dashboard, and Writer's thinking row kept below](/screenshots/voice/requests-unreachable-light.png)
+- **Loading:** if the daemon takes more than half a second to send the list when it opens, two grey rows show until it does.
+
+  ![The list loading: two grey placeholder rows under Open requests](/screenshots/voice/requests-loading-light.png)
 - To open the list only with a click or **Command–Option–O**, turn off **Open the list on hover** in [Settings › General](#general-tab).
 
 #### One row per agent
@@ -163,7 +174,7 @@ With the keyboard on an agent's row, holding **Option–Space** asks that agent 
 
 #### Continue a conversation
 
-Each agent has one ongoing voice conversation on this computer. Picking a row lets you carry on with that agent, in the same row:
+Each agent has one ongoing conversation, the same as on your phone: a request to one of this computer's agents goes into the phone app's most recent conversation with that agent. Picking a row lets you carry on with that agent, in the same row:
 
 1. **Mac:** open the list and pick the row. Its agent becomes the ticked agent, and the pill says, for example, **Ops · Hold ⌥Space to continue it**.
 2. **Mac:** hold **Option–Space** and say your follow-up, for example "and the night before?".
@@ -172,6 +183,22 @@ Each agent has one ongoing voice conversation on this computer. Picking a row le
 - The row stays picked for every follow-up, until you close it or talk to another agent (for example "Writer, …"). Then a new row starts.
 - Picking a row that is still thinking keeps your follow-up for when that answer is back, then asks it in the same row. The answer you talked over is not played; it stays in [History](#history-of-what-you-asked). If AgentX set aside the first words (for example, it took them as a sound while another agent held the floor), your follow-up is still asked in that row.
 - Picking a row that is waiting its turn adds your words to that request, which hasn't gone yet.
+
+#### The same requests on the phone
+
+Your requests from the Mac go into the [phone app's Chat](./mobile-chat.md), in the conversation you had last with that agent, and the agent answers in the same session. If you never chatted with that agent on the phone, a new conversation starts on the phone you used last. With no paired phone that ever chatted, the Mac keeps its own conversation with each agent.
+
+| On the Mac | On the phone |
+|---|---|
+| **Thinking** | Your question shows in the conversation. No chip until the answer is back |
+| A blue dot and **Answer ready** | A chip with **New** |
+| **Couldn't answer**, not seen | A chip with **New**; the conversation says why |
+| **Heard** | No chip: the conversation is read |
+| Closed before you heard it | No chip: the conversation is read |
+
+Open the conversation on the phone and the Mac row turns to **Heard** within five seconds. Hear the answer on the Mac and the phone's **New** chip goes.
+
+Agents on another computer in your mesh keep a conversation of their own with the Mac, apart from the phone's.
 
 #### Close a request
 
@@ -744,6 +771,8 @@ To hear a voice before you keep it:
 
 ![The General tab in dark mode: Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Answer in the pill with Keep the answer open and Tallest answer, and Launch at login](/screenshots/voice/settings-general.png)
 
+![The Answers group of the General tab, made-up settings: When an answer is ready set to Wait until I pick it, Soft sound set to Glass, and Open the list on hover on](/screenshots/voice/settings-answers-light.png)
+
 | Setting | What it does | Saved as |
 |---|---|---|
 | **Talk (hold)** | Hold to speak, let go to send. Default **Option–Space** | `voice.hotkeys.talk` |
@@ -752,6 +781,7 @@ To hear a voice before you keep it:
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
 | **Open requests** | **Command–Option–O**. Opens the [open-requests list](#open-requests). Fixed; shown so you don't reuse it | not saved |
 | **When an answer is ready** | **Wait until I pick it** (a soft sound and a blue dot, the default) or **Play it at once**, as before. Same as **Play answers at once** in the menu | `voice.answers`: `"wait"` or `"play"` |
+| **Soft sound** | The Mac sound played once when an answer is ready and waits for you: **Pop** (the default), **Tink**, **Glass** and the rest of the Mac's alert sounds. Picking one plays it. Only with **Wait until I pick it** | `voice.readySound` |
 | **Open the list on hover** | Half a second's pointing at the pill opens the [open-requests list](#open-requests). Off: only a click or **Command–Option–O** opens it. Default on | `voice.listOnHover` |
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
 | **Start reduced** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb), or the character [without its speech bubble](#reduce-the-character). Default off | `voice.startReduced` |
@@ -1162,7 +1192,7 @@ The [open-requests list](#open-requests) is kept by the daemon, so any app on th
 | Address | What it does |
 |---|---|
 | `GET /voice/requests` | The open rows, oldest first: `{"requests": [...]}` |
-| `POST /voice/requests` | Add a row: `{"agentId": "<id>", "question": "<words>"}`. Add `"waiting": true` for one that waits behind another request to the same agent. Replies `201` with the row. Then ask with `POST /ask` and `"request": "<row id>"` in the body: the row turns to thinking, then to answered or failed |
+| `POST /voice/requests` | Add a row: `{"agentId": "<id>", "question": "<words>"}`. Add `"waiting": true` for one that waits behind another request to the same agent. Replies `201` with the row. Then ask with `POST /ask` and `"request": "<row id>"` in the body: the row turns to thinking, then to answered or failed. For one of this computer's agents, the turn runs in the phone app's conversation with that agent (see [The same requests on the phone](#the-same-requests-on-the-phone)) |
 | `GET /voice/requests/<id>` | One row, with `reply`: its answer as `/ask` returned it |
 | `POST /voice/requests/<id>/heard` | Mark it heard, for every app |
 | `POST /voice/requests/<id>/close` | Close it. Add `{"stop": true}` to also stop an agent that is still thinking on it |
@@ -1170,7 +1200,7 @@ The [open-requests list](#open-requests) is kept by the daemon, so any app on th
 | `POST /voice/requests/<id>/continue` | A follow-up for the row: `{"question": "…", "waiting": false}`. The same row asks again with these words, not heard; its last answer goes. A closed row comes back |
 | `POST /voice/requests/close-heard` | Close every heard answer and every failure: `{"closed": <how many>}` |
 
-Each row has an `id`, the `agentId`, your `question`, its `state` (`waiting`, `thinking`, `answered` or `failed`), `sentAt` and `since` (in milliseconds since 1970), `heard`, and `error` (why it failed). At most 50 rows are listed; closed rows are forgotten after seven days.
+Each row has an `id`, the `agentId`, your `question`, its `state` (`waiting`, `thinking`, `answered` or `failed`), `sentAt` and `since` (in milliseconds since 1970), `heard`, `error` (why it failed), and `conversationId`: the phone app's conversation it ran in, or `null`. `heard` is also `true` once that conversation was opened on the phone after the answer came. At most 50 rows are listed; closed rows are forgotten after seven days.
 
 ## Task narration
 
@@ -1474,6 +1504,16 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 30. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again and pick its answer: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
 31. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
 32. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
+
+To check the phone side, with the [phone app](./mobile-chat.md) paired and a past conversation with one agent:
+
+1. **Mac:** ask that agent something, and wait for the blue dot.
+2. **Phone:** open Chat. The question is in your last conversation with that agent, its answer under it, and a chip says **New**.
+3. **Phone:** tap the chip. Within five seconds, the Mac row says **Heard**.
+4. **Mac:** ask the same agent "what did I just ask you?". It answers with the question from step 1: one session for both.
+5. **Mac:** ask it something else and pick the answer in the list when it is ready. On the phone, the **New** chip goes at the next look.
+6. **Terminal:** stop the daemon, then press **Command–Option–O** on the Mac. The list says **Can't reach AgentX on this Mac**. Start the daemon and choose **Try now**: the rows come back.
+7. **Mac:** in **Settings › General**, pick another **Soft sound**. It plays once; the next answer that waits plays it.
 
 ## If something is wrong
 
