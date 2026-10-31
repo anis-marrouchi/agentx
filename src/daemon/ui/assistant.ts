@@ -192,6 +192,12 @@ try{if(localStorage.getItem('ax-assistant-open')==='1')open(true)}catch{}
 
 /* What the agent is told about where you are. Pages publish their own slice;
    everything else still gets the path, so the question is never contextless. */
+/* The owner's token: /api/assistant is the owner's alone. Off the box the
+   session cookie carries it; on it, the page's token (as topbar.ts reads it). */
+function axAuth(h){
+const t=window.AX_LOCAL_TOKEN||(()=>{try{return localStorage.getItem('ax_token')||''}catch{return ''}})();
+return t?Object.assign({},h,{Authorization:'Bearer '+t}):(h||{});
+}
 function pageContext(){
 const base={path:location.pathname,tab:document.querySelector('.ax-topbar__tab.is-active')?.textContent?.trim()||null};
 try{ if(typeof window.axPageContext==='function') return {...base,...(window.axPageContext()||{})}; }catch(e){}
@@ -273,7 +279,7 @@ log.scrollTop=log.scrollHeight;
 async function loadThread(id,{quiet}={}){
 if(!id){renderMessages([]);$('ax-as-title').textContent='Ask an agent';return;}
 try{
- const r=await fetch('/api/assistant/thread?id='+encodeURIComponent(id));
+ const r=await fetch('/api/assistant/thread?id='+encodeURIComponent(id),{headers:axAuth()});
  if(!r.ok){setThread(null);renderMessages([]);return;}
  const d=await r.json();
  $('ax-as-title').textContent=d.thread.title||'Ask an agent';
@@ -288,7 +294,7 @@ try{
 
 async function loadHistory(){
 try{
- const r=await fetch('/api/assistant/threads');
+ const r=await fetch('/api/assistant/threads',{headers:axAuth()});
  const d=await r.json();
  const list=d.threads||[];
  $('ax-as-hist-empty').hidden=list.length>0;
@@ -315,7 +321,7 @@ $('ax-as-bar-input').focus();
 $('ax-as-hist-list').addEventListener('click',async e=>{
 const del=e.target.closest('[data-del]');
 if(del){e.stopPropagation();
- await fetch('/api/assistant/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+ await fetch('/api/assistant/delete',{method:'POST',headers:axAuth({'Content-Type':'application/json'}),
   body:JSON.stringify({threadId:del.dataset.del})});
  if(del.dataset.del===threadId){setThread(null);renderMessages([]);}
  loadHistory();return;}
@@ -334,7 +340,7 @@ if(!agent&&!threadId){add('err','Pick an agent first.');return;}
 busy=true; $('ax-as-bar-send').disabled=true;
 input.value='';
 try{
- const r=await fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json'},
+ const r=await fetch('/api/assistant',{method:'POST',headers:axAuth({'Content-Type':'application/json'}),
   body:JSON.stringify({threadId:threadId||undefined,agentId:agent,node:$('ax-as-node').value||undefined,
    message:text,context:pageContext()})});
  const d=await r.json();

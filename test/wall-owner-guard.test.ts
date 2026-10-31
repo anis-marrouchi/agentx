@@ -157,6 +157,31 @@ describe("Wall owner-only write guard (#1454)", () => {
     expect(await page({ "X-Forwarded-For": "203.0.113.7" })).not.toContain('data-nav="settings"')
   })
 
+  it("keeps the ask-an-agent proxy for the owner, reads included", async () => {
+    const open: string[] = []
+    // post() sends a body, which a GET may not carry: reads go through fetch.
+    for (const headers of [{}, { Authorization: "Bearer wrong" }]) {
+      for (const p of ["/api/assistant/threads", "/api/assistant/thread?id=c1"]) {
+        const status = (await fetch(withToken + p, { headers })).status
+        if (status !== 401) open.push(`GET ${p} ${JSON.stringify(headers)} → ${status}`)
+      }
+    }
+    const offRead = (await fetch(`${noToken}/api/assistant/threads`, { headers: { "X-Forwarded-For": "203.0.113.7" } })).status
+    if (offRead !== 401) open.push(`GET /api/assistant/threads off the machine, no token set → ${offRead}`)
+    for (const [m, p] of [["POST", "/api/assistant"], ["POST", "/api/assistant/delete"]]) {
+      for (const headers of [{}, { Authorization: "Bearer wrong" }]) {
+        const status = await post(withToken, p, headers, m)
+        if (status !== 401) open.push(`${m} ${p} ${JSON.stringify(headers)} → ${status}`)
+      }
+      const off = await post(noToken, p, { "X-Forwarded-For": "203.0.113.7" }, m)
+      if (off !== 401) open.push(`${m} ${p} off the machine, no token set → ${off}`)
+    }
+    expect(open).toEqual([])
+    // Past the guard, the proxy asks the node, which is not running here.
+    expect(await post(withToken, "/api/assistant", { Authorization: "Bearer tok-wall" })).not.toBe(401)
+    expect(await post(noToken, "/api/assistant")).not.toBe(401)
+  })
+
   // #1524: the workflow editor is a Wall page, and what it writes is the owner's.
   const EDITOR_WRITES: Array<[string, string]> = [
     ["POST", "/api/workflows"], ["PUT", "/api/workflows/deploy"], ["DELETE", "/api/workflows/deploy"],
