@@ -31,6 +31,7 @@ import { WALL_PAGE_SCRIPT } from "./wall.client"
 import { renderWallDocument } from "./wall-space"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
 import { WALL_REVIEWS_CSS } from "./wall-reviews.client"
+import { WALL_EVENTS_CSS } from "./wall-events.client"
 import { WALL_DECIDE_CSS } from "./wall-decide.client"
 import { WALL_COST_CSS } from "./wall-cost.client"
 import { WALL_ORG_CSS } from "./wall-org.client"
@@ -93,6 +94,7 @@ const NAV_ICON = {
   projects: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/></svg>',
   jobs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   reviews: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 10l2.5 2.5L16 8"/></svg>',
+  events: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l6 4V6L7 10z"/><path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
   activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h9M4 18h6"/><circle cx="18" cy="16" r="3.5"/><path d="M18 14.5V16l1 .8"/></svg>',
   failures: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
   cost: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2"/></svg>',
@@ -127,6 +129,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     { key: "jobs", label: "Jobs", href: "#status=open&amp;view=jobs", icon: "jobs", count: "nav-n-jobs" },
     { key: "workflows", label: "Workflows", href: "#page=workflows", icon: "workflows", count: "nav-n-workflows" },
     { key: "reviews", label: "Reviews", href: "#status=open&amp;view=reviews", icon: "reviews", count: "wall-rev-n" },
+    { key: "events", label: "Events", href: "#status=open&amp;view=events", icon: "events", count: "wall-ev-n", title: "Events: broadcasts, who was woken and who replied" },
     { key: "failures", label: "Failures", href: "#status=open&amp;view=failures", icon: "failures", count: "wall-fail-n" },
   ] },
   { label: "Fleet", items: [
@@ -256,6 +259,7 @@ ${navItems}
     <section id="wall-failures" class="ax-wall__failures" aria-label="Failures" hidden></section>
     <section id="wall-jobs" class="ax-wall__failures" aria-label="Recurring jobs" hidden></section>
     <section id="wall-reviews" class="ax-wall__reviews" aria-label="Review queue" hidden></section>
+    <section id="wall-events" class="ax-wall__reviews" aria-label="Events: broadcasts, wakes and replies" hidden></section>
     <section id="wall-decide" class="ax-wall__decide" aria-label="Waiting for your answer" hidden></section>
     <section id="wall-cost" class="ax-wall__cost" aria-label="Cost: global and per agent" hidden></section>
     <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
@@ -301,7 +305,7 @@ ${navItems}
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }

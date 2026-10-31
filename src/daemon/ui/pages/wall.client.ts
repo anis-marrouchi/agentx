@@ -56,6 +56,7 @@ import { injectFns } from "../inject"
 import { plainMarkerText } from "../marker-text"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
+import { WALL_EVENTS_SCRIPT } from "./wall-events.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
 import { WALL_CLOSE_SCRIPT } from "./wall-close.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
@@ -90,6 +91,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg })}
 ${WALL_REVIEWS_SCRIPT}
+${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
 ${WALL_CLOSE_SCRIPT}
 ${WALL_COST_SCRIPT}
@@ -1031,7 +1033,7 @@ ${WALL_BUILD_SCRIPT}
     return n;
   }
   function navHtml(page, f) {
-    var side = ['projects', 'jobs', 'reviews', 'failures', 'cost', 'decide'].indexOf(S.view) >= 0;
+    var side = ['projects', 'jobs', 'reviews', 'events', 'failures', 'cost', 'decide'].indexOf(S.view) >= 0;
     var on = page === 'post' ? 'wall' : page === 'task' ? 'live' : page === 'editor' ? 'workflows' : page === 'wall' ? (S.view === 'decide' || f.status === 'waiting_owner' ? 'needs' : side ? S.view : 'wall') : page;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       var me = a.getAttribute('data-nav') === on;
@@ -1056,7 +1058,7 @@ ${WALL_BUILD_SCRIPT}
       el.classList.toggle('is-zero', !n);
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
-    var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
+    var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
     $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
   }
 
@@ -1333,7 +1335,7 @@ ${WALL_BUILD_SCRIPT}
     // The Workflows page (#1445): wall-workflows.client.ts.
     renderWorkflows(page);
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list' || page === 'org');
-    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-decide', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
+    if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-events', 'wall-decide', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     // Needs you does not wait on the feed (#1440): its list is the inbox.
     if (onWall && S.view === 'decide') renderDecide('decide');
     if (!S.data) return;
@@ -1349,7 +1351,7 @@ ${WALL_BUILD_SCRIPT}
     $('wall-synced').textContent = stamp(synced);
     $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
     $('wall-synced').parentNode.classList.toggle('is-stale', Date.now() - synced > 120000);
-    if (!onWall) { renderReviews(''); renderDecide(''); renderCost(''); return; }
+    if (!onWall) { renderReviews(''); renderEvents(''); renderDecide(''); renderCost(''); return; }
     var side = S.view === 'failures' || S.view === 'projects' || S.view === 'jobs' || S.view === 'decide';
     $('wall-profile').hidden = !f.owner || side;
     if (f.owner) $('wall-profile').innerHTML = profileHtml(f.owner);
@@ -1369,6 +1371,8 @@ ${WALL_BUILD_SCRIPT}
     // Recurring jobs with their value line (#1183): cron-value.ts.
     if (S.view === 'jobs') $('wall-jobs').innerHTML = jobsPageHtml();
     renderReviews(S.view);
+    // The Events view (#1648): wall-events.client.ts.
+    renderEvents(S.view);
     renderDecide(S.view);
     // The Cost page (#1423): wall-cost.client.ts.
     renderCost(S.view);
@@ -1411,6 +1415,7 @@ ${WALL_BUILD_SCRIPT}
   // The reads the home does not need for its first paint (#1442): after it.
   function loadRest() {
     refreshReviews();
+    refreshEvents();
     refreshDecide();
     refreshCost();
     refreshPeople();

@@ -26,6 +26,9 @@ export const EMIT_REF_MAX = 200
 export interface EmitCaller {
   agentId: string
   rootId?: string
+  /** The event that woke the emitting turn, when a wake started it: the
+   *  Hub files this event as a reply to that one (#1648). */
+  parentId?: string
 }
 
 export type EmitResult =
@@ -57,6 +60,7 @@ export function publishNamedEvent(
   const event = bus.publish({
     id,
     rootId: caller?.rootId ?? id,
+    ...(caller?.parentId ? { parentId: caller.parentId } : {}),
     kind: "custom",
     type: name,
     summary,

@@ -16,6 +16,7 @@ The dashboard opens on the [Hub](../dashboard/hub.md). Every view below is a pag
 | Workflows and their runs; start one, turn one on or off ([Workflows](../dashboard/workflows.md)) | **Workflows** | `/hub#page=workflows` |
 | Edit a workflow on the canvas ([workflow editor](../dashboard/workflows.md#edit-a-workflow)) | **Workflows**, then **Open in the editor** | `/hub#page=editor&e-wf=<id>` |
 | Classifications waiting for review ([Reviews](../dashboard/hub.md#review-classifications)) | **Reviews** | `/hub#status=open&view=reviews` |
+| Broadcast events, who they woke and the replies ([Events](../dashboard/hub.md#see-events-and-who-answered-them)) | **Events** | `/hub#status=open&view=events` |
 | Failed runs and reported issues ([Failures](../dashboard/hub.md#see-failures)) | **Failures** | `/hub#status=open&view=failures` |
 | Every agent, and one agent's profile ([Agents](../dashboard/hub.md#see-every-agent)) | **Agents** | `/hub#page=agents` |
 | Who talks to the agents ([People](../dashboard/people.md)) | **People** | `/hub#page=people` |

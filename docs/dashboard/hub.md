@@ -13,11 +13,11 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 1. **Browser:** open the dashboard. The Hub is the first page you see. Its address is `/hub`. From a classic dashboard page, select **Hub** to come back.
 2. The nav on the left starts with **Hub** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
    - **Work:** **Live**, **Running now**, **Projects** and **Activity**.
-   - **Automation:** **Jobs**, **Workflows**, **Reviews** and **Failures**.
+   - **Automation:** **Jobs**, **Workflows**, **Reviews**, **Events** and **Failures**.
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
    - **Owner:** **Settings**, for the owner only (see [Change settings](#change-settings)).
 
-   Under them, **Dashboard** opens the classic pages at **Operations**. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, workflows, classifications waiting for review, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
+   Under them, **Dashboard** opens the classic pages at **Operations**. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, workflows, classifications waiting for review, events since the machines last started, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
 3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
@@ -747,6 +747,33 @@ When the intent graph (`graph.enabled` in `agentx.json`) is not sure where a mes
 
 A skipped classification stays pending: a skip is not recorded. The wiki searches a reviewer ran are not recorded either, so the link searches the path's names instead. Classifications the graph approved by itself never went to review; the count line says how many.
 
+## See events and who answered them
+
+An **event** is one short record of something that happened, such as `daemon:restart-soon` sent before a restart. A **broadcast** is an event sent to every agent that follows it. An agent can follow an event so that it is **woken**: the event starts a task for it (see [Let agents follow events](../automations/event-subscriptions.md)). The **Events** view shows the events agents and scripts sent, which agents each one woke and how that went, and the events the agents sent back in reply. You no longer need the daemon log for this.
+
+It lists named events (sent with `agentx events emit` or the `agentx_emit` tool) and mesh announcements, from every connected machine. It reads what each machine keeps in memory, so it starts empty after a daemon restarts. Nothing is sent from this view.
+
+1. **Browser:** select **Events** in the nav, under **Automation**. The number next to it counts the events listed.
+2. The line at the top counts the events and the wakes, and how the wakes went: **ran**, **waiting**, **timed out or gave up**, **failed** and **skipped**.
+3. Each card is one event, newest activity first. Its first line gives the event's name, who sent it, when, its **ref** (where the details are, as the sender gave it) and the first characters of its id. The summary follows when there is one.
+4. Under it, **N wakes** sums up the agents it woke. Select it to see one line per agent, with the machine it is on when you have more than one:
+   - **ran**: the task ran. **waited 4 min** is added when it had to wait for a free slot (the agent was busy) before it started.
+   - **waiting** or **running**: the task has not started yet, or is still going. **waiting** gives how long so far.
+   - **held**: a dispatch limit is holding it. The daemon tries again on its own; **try 2** counts the tries.
+   - **timed out**: it waited too long for a slot, or its run hit its time limit. **gave up**: it was held too many times.
+   - **failed**: the task ended with an error, shown under the line.
+   - **skipped**: the agent was not woken. The reason follows: `rate-limit`, `own-root` (the event came from its own work) or `duplicate-root` (it was already woken for it).
+   - **run** opens the woken task on the Hub's **Task** page.
+5. Events sent in reply are listed under the event that caused them, marked **in reply to** with that event's name and id. Each has its own wakes.
+
+![The Events view: a restart notice, the three agents it woke, one after a wait, and their replies under it, in a scripted demo](/screenshots/wall/events.png)
+
+![The same Events view on a phone, in dark mode](/screenshots/wall/events-phone.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+A reply is linked to its event in this order: the event that woke the task that sent the reply; else an event of the same request that woke the sender; else the latest earlier event of the same request sent by someone else. An event sent from outside any task (a script, a person) starts its own thread.
+
 ## See your workflows
 
 The **Workflows** page lists every workflow with what starts it, its agents and project, its last runs as squares and its state. Select **Workflows** in the nav, under **Automation**. Open a workflow to see its last run step by step; **Run…** starts one, and the switch turns it on or off. A workflow that is off and quiet for 30 days **looks stale**. The full page is described in [Workflows](./workflows.md).
@@ -936,6 +963,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 44. Channels: in **Settings** › **Channels**, the Telegram account you use is listed with its agent and its token's variable name, never the token. Select **Email**, then **GitLab**: each matches the classic `/admin#tab=channels`. Turn **Request status** on GitLab off and on again: the line under the tabs says so each time, and the classic page shows the same.
 46. Approvals moved: open `<dashboard>/approvals` in the browser. It opens **Needs you** on the Hub, and its count matches `agentx approvals list`. Open a post that is in progress: under the comment box there are **Hand to…**, **Done** and **Drop**. Select **Drop**: a line asks you to confirm, and **Back** closes it without sending anything. In a private window without the dashboard key, the post has no such buttons.
 45. WhatsApp and Inbox: in **Settings** › **Channels**, select **WhatsApp**: with WhatsApp on, it says **connected** (or shows a code to scan), and its watch rules match **WhatsApp triage** on the classic `/admin#tab=webhooks`. Select **Inbox**: **Where it goes** names the same chat as `agentx notifications`. Untick **A task is queued**, select **Save**, and the classic **Notifications routing** shows the same. In a private window without the dashboard key, `curl -X POST <dashboard>/api/admin/wall/settings/notifications` gets `401`.
+47. Events: give an agent a subscription such as `{ "kinds": ["test:ping"], "delivery": "wake", "prompt": "Reply with agentx events emit test:pong" }`. **Terminal:** run `agentx events emit test:ping --summary "hello"`. **Browser:** select **Events**, then **Refresh** after a minute. The `test:ping` card says **1 wake: 1 ran**, and `test:pong` is under it, marked **in reply to test:ping**.
 
 ## If something is wrong
 
@@ -997,6 +1025,10 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
 - **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.
 - **The portfolio shows "Untitled request" a lot:** those tasks have no headline yet and no issue or merge request as their home. The text of the task is never used as a title there.
+- **Events says "No named event or announcement since the daemons last started":** events are kept in memory only. Send one with `agentx events emit <name>` and select **Refresh**.
+- **An event shows "No subscriber was woken":** no agent has a `wake` subscription that matches it, or the subscription names other machines in `nodes`. Pull and digest subscriptions do not show here. See [Let agents follow events](../automations/event-subscriptions.md#set-up-a-subscription).
+- **Events says a machine "key refused" or "no events feed (older AgentX)":** that machine's events and wakes are missing; the rest still shows. Add its `dashboardToken` under `dashboard.daemons`, or update AgentX on it.
+- **A reply is listed as its own card:** it was sent from outside the woken task (a script, or a task on another request), so nothing links it to the event. Send it from the woken task with `agentx events emit` or the `agentx_emit` tool.
 - **Reviews says the intent graph is off:** `graph.enabled` is false in `agentx.json`, so nothing is classified here. Classifications made before it was switched off still show.
 - **A decision shows "No reason recorded" or "the graph page (no reviewer recorded)":** it was decided on the classic graph page, which keeps neither. Decisions made with `agentx graph review` or the review tool keep both.
 - **No Goal filter, or no goal on a post:** no task names a goal yet. The agent names it when it accepts the task; see [Group requests under a goal](../jobs/open-requests.md#group-requests-under-a-goal).

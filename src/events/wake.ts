@@ -1,5 +1,6 @@
 import type { EventEnvelope } from "./envelope"
 import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor, type SubscriptionInput } from "./subscriptions"
+import type { WakeJournal } from "./wake-journal"
 
 // --- Wake on event ---
 //
@@ -16,7 +17,8 @@ import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor,
 // (peer-feed.ts) wake only a subscription whose `nodes` names that
 // machine: a broad subscription must not turn every peer's activity into
 // turns here. Pull and digest still see them.
-// Every skipped wake is logged with its reason.
+// Every skipped wake is logged with its reason, and every wake (skipped,
+// held, run, failed) is kept in the optional journal the Hub reads (#1648).
 // A wake is a cold dispatch, so the dispatch cap can hold it (#1284). A
 // held wake is not dropped: it is queued and retried with a growing delay
 // until the window frees up, and each hold is logged with its reason.
@@ -38,6 +40,8 @@ export interface WakeDeps {
   /** True for events this node published itself (bus.isLocal). Without
    *  it every event counts as local. */
   isLocal?: (e: EventEnvelope) => boolean
+  /** Records what each wake did, for the Hub's events feed (#1648). */
+  journal?: WakeJournal
   now?: () => number
 }
 
@@ -99,6 +103,7 @@ export class EventWaker {
       if (hits.length === 0) continue
       const { outcome, sub } = this.decide(agentId, e, hits, t)
       out.push(outcome)
+      this.deps.journal?.decided(agentId, e, outcome.woke ? undefined : outcome.reason)
       if (!outcome.woke) {
         this.deps.log(`[events] wake skipped for ${agentId}: ${outcome.reason} — ${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`)
         continue
@@ -121,11 +126,17 @@ export class EventWaker {
   }
 
   private run(agentId: string, e: EventEnvelope, sub: SubscriptionInput, attempt: number): void {
-    const failed = (err: any) => this.deps.log(`[events] wake of ${agentId} failed: ${err?.message ?? err}`)
+    const journal = this.deps.journal
+    const failed = (err: any) => {
+      this.deps.log(`[events] wake of ${agentId} failed: ${err?.message ?? err}`)
+      journal?.finished(agentId, e.id, String(err?.message ?? err) || "failed")
+    }
+    if (attempt > 0) journal?.retrying(agentId, e.id)
     try {
       Promise.resolve(this.deps.dispatch(agentId, e, sub)).then((result) => {
         const held = heldReason(result)
         if (held) this.retry(agentId, e, sub, attempt, held)
+        else journal?.finished(agentId, e.id, errorOf(result))
       }, failed)
     } catch (err: any) {
       failed(err)
@@ -137,12 +148,15 @@ export class EventWaker {
     const line = `${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`
     if (attempt >= RETRY_ATTEMPTS) {
       this.deps.log(`[events] wake of ${agentId} dropped after ${attempt} retries, still held: ${reason} — ${line}`)
+      this.deps.journal?.held(agentId, e.id, `${reason} (gave up after ${attempt} retries)`, false)
       return
     }
     if (!this.held.has(key) && this.held.size >= RETRY_QUEUE_CAP) {
       this.deps.log(`[events] wake of ${agentId} dropped, ${RETRY_QUEUE_CAP} held wakes already queued: ${reason} — ${line}`)
+      this.deps.journal?.held(agentId, e.id, `${reason} (retry queue full)`, false)
       return
     }
+    this.deps.journal?.held(agentId, e.id, reason, true)
     const delay = Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
     this.deps.log(`[events] wake of ${agentId} held: ${reason} — retry ${attempt + 1}/${RETRY_ATTEMPTS} in ${Math.round(delay / 60_000)} min — ${line}`)
     const timer = setTimeout(() => {
@@ -198,6 +212,13 @@ function heldReason(result: unknown): string | undefined {
   if (!result || typeof result !== "object") return undefined
   const held = (result as Partial<WakeDispatch>).held
   return typeof held === "string" && held ? held : undefined
+}
+
+/** The error a dispatch result carries, when it has one. */
+function errorOf(result: unknown): string | undefined {
+  if (!result || typeof result !== "object") return undefined
+  const err = (result as { error?: unknown }).error
+  return typeof err === "string" && err.trim() ? err : undefined
 }
 
 /** The message a woken turn receives: what happened, who emitted it, where

@@ -56,6 +56,10 @@ The answer is `{ "events": [ … ] }`, oldest first. When `since` is an event ID
 
 An agent can follow events through its `subscriptions` setting: it reads them with the `agentx_events` tool, gets a short list when it starts a fresh conversation, or is started by them. See [Let agents follow events](/automations/event-subscriptions). The same list is served at `GET /agents/<id>/events?since=&limit=`. It returns `{ "agentId", "subscriptions", "events": [ … ], "next" }`, at most 50 events, oldest first. Without `since` you get the newest events; with `since` you get the oldest ones after it, so passing `next` back as `since` reads every event once. Off this machine it needs the mesh token too.
 
+## Events and wakes for the Hub
+
+`GET /events/hub` answers this machine's share of the Hub's [Events view](/dashboard/hub#see-events-and-who-answered-them): `{ "node", "events": [ … ], "wakes": [ … ] }`. `events` holds the `custom` and `announce` envelopes in the buffer, peers' included, at most 500. `wakes` holds what each wake did, at most 500: `agentId`, `eventId`, `rootId`, `status` (`waiting`, `held`, `running`, `ran`, `failed`, `timed-out`, `dropped` or `skipped`), `reason`, `decidedAt`, `startedAt`, `endedAt` (milliseconds), `attempts`, `taskId` and a short `error`. Both are in memory and empty after a restart. Off this machine it needs the mesh token. The dashboard merges every machine's share at `GET /api/admin/wall/events`.
+
 ## Live stream
 
 `GET /events` is a server-sent event stream. Its wire format is unchanged: `event: <kind>` with the kind's own fields as `data`, for the `run`, `task`, `signal`, `mesh`, `channel` and `status` kinds. Each frame now also includes `rootId` and `node`. Filter with `?type=run,task`, `?workflow=`, `?run=`, `?actor=` and `?channel=`. Agent task steps still arrive as `event: task` with `kind: "task:step"`. The envelope-only kinds (`message`, `agent`, `announce`, and the mesh `forward` and `feed:*` events) are read through `/events/recent` or the envelope stream.
