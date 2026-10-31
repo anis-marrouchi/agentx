@@ -16,6 +16,7 @@ import { NoteStore, renderNotesInbox } from "@/wiki/notes"
 import { isQuietRun, withQuietRule } from "./quiet"
 import { exitCheckError, withExitRule, withoutExitMarker } from "./exit-check"
 import { withSourceWarning } from "@/sales/sources"
+import { cronGoalGate, withGoalFirst, type CronGoalSource } from "./goal-gate"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -202,6 +203,7 @@ export class CronScheduler {
   private notifyCallback?: CronNotifyCallback
   private deliverCallback?: CronDeliverCallback
   private wikiNotes?: DaemonConfig["wikiNotes"]
+  private goalSource?: CronGoalSource
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -236,6 +238,7 @@ export class CronScheduler {
         autonomy: def.autonomy,
         onError: def.onError,
         value: def.value,
+        goal: def.goal,
         deliverResult: def.deliverResult !== false && Boolean(def.notify),
         report: def.report,
         requireSources: def.requireSources,
@@ -283,6 +286,25 @@ export class CronScheduler {
    */
   setNotifyCallback(cb: CronNotifyCallback): void {
     this.notifyCallback = cb
+  }
+
+  /** Where `crons.<id>.goal` is read (#1568): the goal records. */
+  setGoalSource(source: CronGoalSource): void {
+    this.goalSource = source
+  }
+
+  /** The job's goal before a run: skip it when the goal is closed, else
+   *  the goal's state for the prompt. A skip is kept on the job, so the
+   *  Wall can ask whether to turn it off. */
+  private goalGate(job: CronJobState): { skip: boolean; brief: string } {
+    const gate = cronGoalGate(job.goal, this.goalSource)
+    if (!gate.skip) {
+      job.goalClosed = undefined
+      return { skip: false, brief: gate.brief }
+    }
+    if (!job.goalClosed) this.log(`Job "${job.id}" skipped: ${gate.skip.why}. Turn it off, or point it at another goal.`)
+    job.goalClosed = { state: gate.skip.state, at: new Date() }
+    return { skip: true, brief: "" }
   }
 
   /**
@@ -560,6 +582,16 @@ export class CronScheduler {
       }
     }
 
+    // A job whose goal is closed does not run (#1568).
+    const goal = this.goalGate(job)
+    if (goal.skip) {
+      this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
+        agentId: null, outcome: "halted", reason: `goal ${job.goal} ${job.goalClosed?.state ?? "closed"}`,
+      })
+      if (!fire) this.scheduleNext(jobId)
+      return
+    }
+
     // Named after what will actually happen. A command job saying
     // `-> agent "coo-agent"` sends a reader looking for a dispatch that
     // never occurs.
@@ -593,7 +625,7 @@ export class CronScheduler {
       const inbox = this.wikiNotesInbox(job, startedAt)
       const task: AgentTask = {
         message: withOutputCap(
-          withExitRule(withQuietRule(withNotesFirst(inbox.block, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt), job.report), job.expectExitZero),
+          withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt)), job.report), job.expectExitZero),
           job.maxOutputTokens,
         ),
         agentId: job.agent,
@@ -737,6 +769,8 @@ export class CronScheduler {
     for (const { jobId, missedAt } of missed) {
       const job = this.jobs.get(jobId)
       if (!job || !job.enabled) continue
+      const goal = this.goalGate(job)
+      if (goal.skip) continue
 
       this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
 
@@ -746,7 +780,7 @@ export class CronScheduler {
         const inbox = this.wikiNotesInbox(job, startedAt)
         const task: AgentTask = {
           message: withOutputCap(
-            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withExitRule(withQuietRule(withNotesFirst(inbox.block, job.prompt), job.report), job.expectExitZero)}`,
+            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, job.prompt)), job.report), job.expectExitZero)}`,
             job.maxOutputTokens,
           ),
           agentId: job.agent,

@@ -376,6 +376,8 @@ function getAdminState() {
     prompt: (c.prompt || "").slice(0, 200),
     enabled: c.enabled !== false,
     value: cronValueOf(c.value),
+    kind: typeof c.command === "string" && c.command.trim() ? "command" : "agent",
+    ...(typeof c.goal === "string" ? { goal: c.goal } : {}),
   }))
   const webhooks = Array.isArray(cfg.webhooks) ? cfg.webhooks.map((w: any) => ({
     id: w.id,

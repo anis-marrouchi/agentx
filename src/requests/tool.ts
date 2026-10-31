@@ -2,6 +2,7 @@ import { resolveScheduleCaller } from "@/crons/schedule-tool"
 import { callerHeaders } from "@/calls/service"
 import { awaitingQa, describeQa } from "./qa"
 import type { GoalSummary } from "./goals"
+import { describeGoalCheck, type GoalRecord } from "./goal-store"
 import { describeFlow } from "./flow"
 
 // --- Agent-facing `agentx_request` tool (#356) ---
@@ -30,6 +31,10 @@ import { describeFlow } from "./flow"
 //            ask for one
 //   list     what is still open
 //   goals    every goal requests name: progress and cost (#1168)
+//   goal     one goal record (#1568): goalAction show (default), create
+//            (goal {id, title}, doneWhen, check), close (evidence) or
+//            drop (reason). A goal with a check closes by itself when it
+//            is met; a cron that names it stops running then
 //   flow     the daily flow rate: today's, then one line per day (#1542)
 // It talks to the daemon's /requests endpoints. Dropping a request is the
 // owner's alone; there is no action for it here.
@@ -78,13 +83,59 @@ export function usd(n: number): string {
 }
 
 /** One line per goal, most recently active first (#1168). */
-export function describeGoals(goals: GoalSummary[]): string {
+export function describeGoals(goals: GoalSummary[], records: GoalRecord[] = []): string {
   if (!goals.length) return "No request names a goal."
+  const byId = new Map(records.map((g) => [g.id, g]))
   return goals.map((g) => {
     const far = g.progress === null ? "nothing open or done" : `${Math.round(g.progress * 100)}% done`
     const unpriced = g.unpriced ? `, ${g.unpriced} of ${g.runs} runs without a cost` : ""
-    return `- ${g.id} "${g.title}": ${g.open} open, ${g.done} done${g.dropped ? `, ${g.dropped} declined or dropped` : ""} (${far}). Cost ${usd(g.costUsd)}${unpriced}.`
+    const rec = byId.get(g.id)
+    const state = rec ? ` [${rec.state}${rec.ownerAgent ? `, owner ${rec.ownerAgent}` : ""}]` : ""
+    return `- ${g.id} "${rec?.title ?? g.title}"${state}: ${g.open} open, ${g.done} done${g.dropped ? `, ${g.dropped} declined or dropped` : ""} (${far}). Cost ${usd(g.costUsd)}${unpriced}.`
   }).join("\n")
+}
+
+/** One goal record in a line (#1568). */
+export function describeGoalRecord(g: GoalRecord): string {
+  const check = g.check ? ` Check: ${describeGoalCheck(g.check)}${g.lastCheck ? ` (last: ${g.lastCheck})` : ""}.` : ""
+  const closed = g.state !== "active" && g.evidence ? ` Closed: ${g.evidence}.` : ""
+  return `${g.id} "${g.title}" [${g.state}${g.ownerAgent ? `, owner ${g.ownerAgent}` : ""}].${g.doneWhen ? ` Done when: ${g.doneWhen}.` : ""}${check}${closed}`
+}
+
+async function goalTool(args: Record<string, unknown>, deps: RequestToolDeps, base: string, doFetch: typeof fetch): Promise<string> {
+  const op = (str(args.goalAction) || "show").toLowerCase()
+  const goalArg = args.goal && typeof args.goal === "object" ? args.goal as Record<string, unknown> : null
+  const id = str(args.id) || str(goalArg?.id)
+  if (op === "show") {
+    if (!id) return "Error: show needs id: the goal's id (goals lists them)."
+    const res = await doFetch(`${base}/requests/goals/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(10_000) })
+    const data = await res.json().catch(() => ({})) as any
+    if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
+    const s = data.summary as GoalSummary | null
+    return [
+      data.goal ? describeGoalRecord(data.goal) : `${id} has no record yet: it is a label on its requests. Make one with goalAction create.`,
+      s ? `Requests: ${s.open} open, ${s.done} done${s.dropped ? `, ${s.dropped} declined or dropped` : ""}. Cost ${usd(s.costUsd)}.` : "No request names it yet.",
+    ].join("\n")
+  }
+  const env = deps.env ?? process.env
+  const caller = resolveScheduleCaller(args, env)
+  if (!caller) return "Error: couldn't tell which agent you are. Pass callerAgentId."
+  const res = await doFetch(`${base}/requests/goals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...callerHeaders(env) },
+    body: JSON.stringify({
+      action: op, agentId: caller.agentId, id, goal: args.goal, doneWhen: args.doneWhen,
+      check: args.check ?? args.closeWhen, evidence: args.evidence, reason: args.reason,
+    }),
+    signal: AbortSignal.timeout(10_000),
+  })
+  const data = await res.json().catch(() => ({})) as any
+  if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
+  const g = data.goal as GoalRecord
+  if (op === "create") {
+    return `Goal ${res.status === 201 ? "made" : "updated"}: ${describeGoalRecord(g)}${g.check ? " The daemon runs its check and closes it when it is met." : ` Close it with {action:"goal", goalAction:"close", id:"${g.id}", evidence:"<link>"} when it is reached.`} A cron with goal "${g.id}" stops running once it is closed.`
+  }
+  return `Goal ${g.id} is ${g.state}. Crons that name it no longer run.`
 }
 
 /** One line per plan step. */
@@ -103,8 +154,16 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       const res = await doFetch(`${base}/requests/goals`, { signal: AbortSignal.timeout(10_000) })
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
-      return `${data.count} goal${data.count === 1 ? "" : "s"}, most recently active first.\n${describeGoals(data.goals ?? [])}`
+      const records: GoalRecord[] = data.records ?? []
+      const named = new Set((data.goals ?? []).map((g: GoalSummary) => g.id))
+      const bare = records.filter((g) => !named.has(g.id))
+      return [
+        `${data.count} goal${data.count === 1 ? "" : "s"}, most recently active first.\n${describeGoals(data.goals ?? [], records)}`,
+        ...(bare.length ? ["Goal records no request names yet:", ...bare.map((g) => `- ${describeGoalRecord(g)}`)] : []),
+      ].join("\n")
     }
+
+    if (action === "goal") return await goalTool(args, deps, base, doFetch)
 
     if (action === "flow") {
       const days = typeof args.days === "number" ? `?days=${Math.floor(args.days)}` : ""

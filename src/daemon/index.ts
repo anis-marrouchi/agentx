@@ -107,7 +107,8 @@ import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/reque
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
 import { continueOnTurnEnd } from "@/requests/plan-continue"
-import { forgeCounter } from "@/requests/checkers/count"
+import { checkCount, forgeCounter } from "@/requests/checkers/count"
+import { checkGoals, goalBrief } from "@/requests/goal-store"
 import {
   DEFAULT_SPRINT_SETTINGS, itemEnded, laneChatId, laneContext, parseLaneChat, requeueItem, runSprintSweep, SPRINT_CHANNEL,
   type DispatchRef, type ItemEnd,
@@ -125,7 +126,7 @@ import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
 import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
-import { DEFAULT_CHECKER_SETTINGS, type CheckContext } from "@/requests/checkers"
+import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
 import { runDriftSweep } from "@/requests/drift/sweep"
 import { driftForge } from "@/requests/drift/forge"
@@ -1983,6 +1984,13 @@ export class AgentXDaemon {
     // `notify` target is reached too; router.sendOutbound alone has no
     // adapter for either.
     const wiring = { config, registry: this.registry, router: this.router, replies: this.callbackReplies }
+    // crons.<id>.goal (#1568): read from the goal records at each run.
+    cron.setGoalSource((id) => {
+      const goal = this.requests?.goals.get(id)
+      if (!goal) return null
+      const counts = this.requests!.store.goalCounts().find((g) => g.id === id)
+      return { state: goal.state, brief: goalBrief(goal, counts ? { open: counts.open, done: counts.done } : null) }
+    })
     cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
       this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`)
       this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
@@ -2809,6 +2817,7 @@ export class AgentXDaemon {
         notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
         counter: forgeCounter(forgeConnectorsOf(this.config)),
         started: this.planContinued,
+        onDone: () => this.kickPlans(),
         log: this.log,
       }, p).catch((e: any) => this.log(`[plans] continue after ${p.agentId}'s turn on ${p.chatId} failed: ${e?.message ?? e}`))
     })
@@ -2945,6 +2954,16 @@ export class AgentXDaemon {
       .finally(() => { this.driftSweeping = false })
   }
 
+  /** Goals with a check close by themselves when it is met (#1568), at
+   *  the loop checkers' pace. */
+  private async checkGoalRecords(requests: AttachedRequests): Promise<void> {
+    const settings = this.config.requests.checkers ?? DEFAULT_CHECKER_SETTINGS
+    const counter = forgeCounter(forgeConnectorsOf(this.config))
+    await checkGoals(requests.goals, (check) => check.kind === "count"
+      ? checkCount(check, counter)
+      : runCheck(check, this.requestCheckContext(requests)), settings.checkEveryMinutes, Date.now(), this.log)
+  }
+
   /** What the loop checkers read (#1039): the forges through the
    *  configured connectors, the local clones under requests.checkers.repos,
    *  and this node's own record of inbound turns. Built per check, so a
@@ -3020,6 +3039,7 @@ export class AgentXDaemon {
   private async sweepRequests(requests: AttachedRequests): Promise<void> {
     await this.sweepPlans(requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
     await this.sweepSprints(requests).catch((e: any) => this.log(`[sprints] check failed: ${e?.message ?? e}`))
+    await this.checkGoalRecords(requests).catch((e: any) => this.log(`[goals] check failed: ${e?.message ?? e}`))
     const headlines = this.headlineWriter(requests)
     await runRequestsSweep({
       store: requests.store,
@@ -5389,6 +5409,7 @@ export class AgentXDaemon {
           hasAgent: (id) => !!this.registry.getAgent(id),
           runningTurn: (id, p) => this.provenTurn(id, p),
           plans: requests.plans,
+          goals: requests.goals,
           planSettings: this.config.requests.plans,
           onPlanChange: () => this.kickPlans(),
           query: url.searchParams,

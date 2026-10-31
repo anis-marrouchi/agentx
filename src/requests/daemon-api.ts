@@ -9,6 +9,7 @@ import { parseDescription } from "./headline"
 import { DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
+import { DONE_WHEN_MAX, GOAL_EVIDENCE_MAX, parseGoalCheck, type GoalStore } from "./goal-store"
 import { DEFAULT_FLOW, FLOW_DAYS_MAX, flowReport, type FlowSettings } from "./flow"
 
 // --- The daemon's /requests endpoints (#356) ---
@@ -16,7 +17,11 @@ import { DEFAULT_FLOW, FLOW_DAYS_MAX, flowReport, type FlowSettings } from "./fl
 // Reachable by agents (the agentx_request tool posts here), gated like
 // /approvals: loopback, or a mesh token.
 //   GET  /requests        open requests, oldest first
-//   GET  /requests/goals  every goal requests name, with progress and cost (#1168)
+//   GET  /requests/goals  every goal requests name, with progress and cost (#1168),
+//                         and the goal records (#1568)
+//   GET  /requests/goals/:id  one goal: its record and its summary
+//   POST /requests/goals  create (or change) a goal record, or close or
+//                         drop it: its owner agent only (#1568)
 //   GET  /requests/flow   the daily flow rate, ?days=N (#1542)
 //   GET  /requests/:id    one request and what is linked to it
 //   POST /requests        an agent's own statement about its request:
@@ -72,6 +77,8 @@ export interface RequestsApiDeps {
   runningTurn: (agentId: string, proof: CallerProof) => { channel: string; chatId: string } | null
   /** Tracked plans (#788). Unset: a node without them; steps are refused. */
   plans?: PlanStore
+  /** Goal records (#1568). Unset: goals stay labels on requests. */
+  goals?: GoalStore
   planSettings?: PlanSettings
   /** A plan was made or a step moved: run the plan check soon. */
   onPlanChange?: () => void
@@ -204,6 +211,50 @@ function parseListQuery(p: URLSearchParams): Parameters<RequestStore["query"]>[0
   }
 }
 
+/** POST /requests/goals (#1568): an agent makes or changes a goal (create),
+ *  or its owner closes it (close: done, drop: dropped). Like every write
+ *  here, it must come from a running turn of the agent it names. */
+function goalWrite(input: Record<string, unknown>, deps: RequestsApiDeps, caller: CallerProof): ApiReply {
+  const goals = deps.goals
+  if (!goals) return { status: 409, body: { error: "This node keeps no goal records." } }
+  if (!deps.enabled) return { status: 409, body: { error: "Requests are turned off on this node (requests.enabled)." } }
+  const action = str(input.action).toLowerCase()
+  if (!["create", "close", "drop"].includes(action)) return { status: 400, body: { error: `unknown goal action "${action}": use create, close or drop` } }
+  const agentId = str(input.agentId)
+  if (!agentId || !deps.hasAgent(agentId)) return { status: 400, body: { error: "agentId must be an agent on this node" } }
+  if (!deps.runningTurn(agentId, caller)) return { status: 403, body: { error: `no running turn of "${agentId}" matches this call: use the agentx_request tool from inside your run` } }
+  const now = deps.now ?? Date.now()
+
+  if (action === "create") {
+    const goal = parseGoal(input.goal ?? (input.title ? { id: input.id, title: input.title } : undefined))
+    if (goal === undefined) return { status: 400, body: { error: "create needs goal {id, title}: a short id and a few plain words" } }
+    if (typeof goal === "string") return { status: 400, body: { error: goal } }
+    const doneWhen = str(input.doneWhen)
+    if (doneWhen.length > DONE_WHEN_MAX) return { status: 400, body: { error: `doneWhen is longer than ${DONE_WHEN_MAX} characters` } }
+    const raw = input.check ?? input.closeWhen
+    const check = raw == null || raw === "" ? undefined : parseGoalCheck(raw, deps.checkers ?? DEFAULT_CHECKER_SETTINGS, now)
+    if (typeof check === "string") return { status: 400, body: { error: check } }
+    const had = goals.get(goal.id)
+    if (had && had.state !== "active") return { status: 409, body: { error: `goal "${goal.id}" is already ${had.state}: a new goal needs a new id` } }
+    if (had?.ownerAgent && had.ownerAgent !== agentId) return { status: 403, body: { error: `goal "${goal.id}" belongs to ${had.ownerAgent}` } }
+    const record = goals.upsert({
+      ...goal, ownerAgent: agentId, ...(doneWhen ? { doneWhen } : {}), ...(check ? { check } : {}),
+    }, now)
+    return { status: had ? 200 : 201, body: { goal: record } }
+  }
+
+  const id = str(input.id) || (typeof input.goal === "object" && input.goal ? str((input.goal as any).id) : "")
+  if (!id) return { status: 400, body: { error: `${action} needs id: the goal's id (goals lists them)` } }
+  const had = goals.get(id)
+  if (!had) return { status: 404, body: { error: `no goal record "${id}"` } }
+  if (had.state !== "active") return { status: 409, body: { error: `goal "${id}" is already ${had.state}` } }
+  if (had.ownerAgent && had.ownerAgent !== agentId) return { status: 403, body: { error: `goal "${id}" belongs to ${had.ownerAgent}: only its owner closes it` } }
+  const evidence = str(input.evidence) || str(input.reason)
+  if (!evidence) return { status: 400, body: { error: action === "close" ? "close needs evidence: what shows the goal is reached" : "drop needs reason: why the goal is given up" } }
+  goals.close(id, action === "close" ? "done" : "dropped", evidence.slice(0, GOAL_EVIDENCE_MAX), now)
+  return { status: 200, body: { goal: goals.get(id) } }
+}
+
 export function handleRequestsApi(
   method: string,
   path: string,
@@ -231,8 +282,22 @@ export function handleRequestsApi(
 
   if (path === "/requests/goals" && m === "GET") {
     const goals = store.goals()
-    return { status: 200, body: { enabled: deps.enabled, count: goals.length, goals } }
+    // The records (#1568): a goal's state, owner and check, including
+    // goals no request names yet.
+    const records = deps.goals?.list() ?? []
+    return { status: 200, body: { enabled: deps.enabled, count: goals.length, goals, records } }
   }
+
+  const oneGoal = path.match(/^\/requests\/goals\/([^/]+)$/)
+  if (oneGoal && m === "GET") {
+    const id = decodeURIComponent(oneGoal[1])
+    const goal = deps.goals?.get(id) ?? null
+    const summary = store.goals().find((g) => g.id === id) ?? null
+    if (!goal && !summary) return { status: 404, body: { error: `no goal "${id}"` } }
+    return { status: 200, body: { goal, summary } }
+  }
+
+  if (path === "/requests/goals" && m === "POST") return goalWrite(body ?? {}, deps, caller)
 
   if (path === "/requests/flow" && m === "GET") {
     const flow = deps.flow ?? DEFAULT_FLOW
@@ -420,7 +485,10 @@ export function handleRequestsApi(
     if (typeof declared === "string") return { status: 400, body: { error: declared } }
     if (action === "accept") {
       store.setWork(request.id, declared)
-      if (goal) store.setGoal(request.id, goal)
+      if (goal) {
+        store.setGoal(request.id, goal)
+        deps.goals?.ensure(goal, agentId, now)
+      }
       const settings = deps.planSettings ?? DEFAULT_PLAN_SETTINGS
       if (input.steps == null && deps.plans && !deps.plans.get(request.id) && planGateOn(settings, agentId)) {
         const kept = store.get(request.id)
