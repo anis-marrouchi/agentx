@@ -236,6 +236,10 @@ export const eventSubscriptionSchema = z.object({
   /** wake only: what to do next when this event arrives. Added to the
    *  woken turn's message after the event itself (#1284). */
   prompt: z.string().min(1).max(2000).optional(),
+  /** wake only: drop the wake when its turn has not started this many
+   *  minutes after the event, for example because the agent stayed busy
+   *  (#1596). An event's own `expiresAt` applies too; the earlier wins. */
+  maxDelayMin: z.number().int().min(1).max(1440).optional(),
 })
 
 

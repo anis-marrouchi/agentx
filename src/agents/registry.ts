@@ -1672,15 +1672,17 @@ export class AgentRegistry {
         const start = Date.now()
         const maxWaitMs = task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
         const pollIntervalMs = 500
+        // A wake with a deadline can wait well under a minute (#1596).
+        const waitLabel = maxWaitMs < 60_000 ? `${Math.max(1, Math.ceil(maxWaitMs / 1000))}s` : `${Math.round(maxWaitMs / 60000)}m`
         if (state.activeTasks >= state.def.maxConcurrent) {
-          this.log(`[${task.agentId}] busy, waiting for a slot (up to ${Math.round(maxWaitMs / 60000)}m) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId}`)
+          this.log(`[${task.agentId}] busy, waiting for a slot (up to ${waitLabel}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId}`)
         }
         while (state.activeTasks >= state.def.maxConcurrent) {
           if (task.callerSignal?.aborted) { dropVoiceClaim(); return this.callerGone(task, "slot wait") }
           if (Date.now() - start > maxWaitMs) {
             dropVoiceClaim()
-            this.log(`[${task.agentId}] slot wait timed out after ${Math.round(maxWaitMs / 60000)}m chat=${qChannel}:${qChatId} — message not run`)
-            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m`, errorKind: "agent_busy" }
+            this.log(`[${task.agentId}] slot wait timed out after ${waitLabel} chat=${qChannel}:${qChatId} — message not run`)
+            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${waitLabel}`, errorKind: "agent_busy" }
           }
           await new Promise((r) => setTimeout(r, pollIntervalMs))
         }

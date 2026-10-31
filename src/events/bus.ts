@@ -292,6 +292,7 @@ export interface PublishInput {
   summary: string
   agentId?: string
   ref?: string
+  expiresAt?: string
   id?: string
   at?: string
   rootId?: string
@@ -361,6 +362,7 @@ export class TypedEventBus {
     if (parentId) envelope.parentId = parentId
     if (input.agentId) envelope.agentId = input.agentId
     if (input.ref) envelope.ref = input.ref
+    if (input.expiresAt) envelope.expiresAt = input.expiresAt
     this.ring.push(envelope)
     for (const fn of this.envelopeListeners) {
       try { fn(envelope, input.data) } catch { /* a bad listener must not break peers */ }
@@ -402,6 +404,7 @@ export class TypedEventBus {
     if (input.parentId) envelope.parentId = input.parentId
     if (input.agentId) envelope.agentId = input.agentId
     if (input.ref) envelope.ref = input.ref
+    if (input.expiresAt) envelope.expiresAt = input.expiresAt
     this.ring.push(envelope)
     for (const fn of this.envelopeListeners) {
       try { fn(envelope) } catch { /* a bad listener must not break peers */ }

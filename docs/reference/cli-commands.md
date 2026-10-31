@@ -3503,6 +3503,7 @@ Send a named event, such as `render:ready`, that wakes the agents subscribed to 
 | `--summary <text>` | the name | One short line on what happened. |
 | `--ref <ref>` | — | Pointer to the details: an issue, a path, a run ID. |
 | `--by <name>` | the running agent | Who sent it: an agent ID, or a person's name. |
+| `--expires-in <duration>` | — | How long the event stays worth acting on, such as `90s`, `5m` or `2h` (at most 7 days). A woken task that has not started by then is dropped. |
 
 ## db (advanced)
 
