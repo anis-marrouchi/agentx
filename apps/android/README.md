@@ -144,3 +144,30 @@ type (7 = Bluetooth SCO), and whether the microphone heard anything.
 Check the rest by eye and ear: the watch shows the call screen, the
 phrase plays on the watch, and the recording comes back. Report one
 result per phone and watch on #1636.
+
+### Start the agent from the watch (#1664, debug builds only)
+
+The same screen has a top part for starting an agent call from the watch
+itself. The watch runs no apps, so it calls a contact:
+
+1. Turn on Bluetooth calling on the watch.
+2. Open **AgentX watch spike**, type a code from `agentx app pair` and tap
+   **Pair**. `-PagentxWatchAddress=https://…` fills in the address at
+   build time.
+3. Tap **Save and set up** until it says Ready: permissions, the
+   call-redirect role, then the **AgentX** contact (default number
+   `+21400000000`, a spare country code that no network connects).
+4. Sync the contact to the watch (Mi Fitness → Contacts) and call it from
+   the watch. The app's `CallRedirectionService` cancels the SIM call and
+   rings the watch with its own call. Answer on the watch and talk: the
+   recording goes to `/api/app/voice/transcribe`, the words to
+   `/api/app/chat`, and the answer comes back through
+   `/api/app/voice/speak` (or the phone's voice). Hang up on the watch to
+   end it.
+
+`RESULT A/B/C` lines in the log report the three unknowns: the watch's
+call passes through redirection (A), the ring-back is answered on the
+watch (B), and a hang-up on the watch reaches the app (C). If A fails,
+**Ring the watch with the agent** starts the same call from the phone.
+**Send this log to the agent** posts the log as a chat message.
+Keep the screen open during a run, as above.

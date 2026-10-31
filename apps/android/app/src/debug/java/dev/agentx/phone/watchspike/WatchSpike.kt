@@ -87,8 +87,13 @@ class WatchSpikeConnectionService : ConnectionService() {
     }
 
     override fun onCreateIncomingConnection(account: PhoneAccountHandle?, request: ConnectionRequest?): Connection {
-        SpikeLog.add("Telecom: incoming call created, ringing. Answer on the watch, or with Answer here.")
-        return SpikeConnection(applicationContext).apply { setRinging() }
+        val agent = request?.extras?.getBoolean(WatchStart.EXTRA_AGENT) == true
+        if (agent && WatchStart.settings(this).autoAnswer) {
+            SpikeLog.add("Telecom: agent call created, answering by itself (B without a tap)")
+            return SpikeConnection(applicationContext, agent = true).apply { setActive() }
+        }
+        SpikeLog.add("Telecom: ${if (agent) "agent" else "incoming"} call created, ringing. Answer on the watch, or with Answer here.")
+        return SpikeConnection(applicationContext, agent).apply { setRinging() }
     }
 
     override fun onCreateOutgoingConnectionFailed(account: PhoneAccountHandle?, request: ConnectionRequest?) {
@@ -101,7 +106,7 @@ class WatchSpikeConnectionService : ConnectionService() {
 }
 
 /** One spike call. The test starts when it turns active. */
-class SpikeConnection(private val ctx: Context) : Connection() {
+class SpikeConnection(private val ctx: Context, private val agent: Boolean = false) : Connection() {
     companion object {
         /** The call in progress, for the screen's Answer and Hang up. */
         @Volatile var current: SpikeConnection? = null
@@ -111,6 +116,11 @@ class SpikeConnection(private val ctx: Context) : Connection() {
 
     @Volatile private var ended = false
     @Volatile private var started = false
+    @Volatile private var loop: AgentLoop? = null
+    /** Set by the screen's Answer button, so B tells a phone tap from a watch tap. */
+    @Volatile var answeredOnPhone = false
+    @Volatile private var answered = false
+    val isEnded: Boolean get() = ended
     private val audio = ctx.getSystemService(AudioManager::class.java)
 
     init {
@@ -127,12 +137,21 @@ class SpikeConnection(private val ctx: Context) : Connection() {
 
     override fun onAnswer() {
         SpikeLog.add("Answered")
+        answered = true
+        if (agent) {
+            val s = (android.os.SystemClock.elapsedRealtime() - WatchStart.ringAt) / 1000
+            SpikeLog.add(if (answeredOnPhone) "RESULT B: answered with the phone's Answer button after $s s (the watch did not answer)"
+                else "RESULT B: PASS answered on the watch after $s s")
+        }
         setActive()
         startTest()
     }
 
     override fun onReject() { SpikeLog.add("Rejected"); end(DisconnectCause.REJECTED) }
-    override fun onDisconnect() { SpikeLog.add("Hung up (watch or phone)"); end(DisconnectCause.LOCAL) }
+    override fun onDisconnect() {
+        SpikeLog.add(if (agent) "RESULT C: PASS the hang-up reached the app (watch, or Bluetooth)" else "Hung up (watch or phone)")
+        end(DisconnectCause.LOCAL)
+    }
     override fun onAbort() { SpikeLog.add("Aborted"); end(DisconnectCause.CANCELED) }
 
     override fun onStateChanged(state: Int) {
@@ -149,6 +168,7 @@ class SpikeConnection(private val ctx: Context) : Connection() {
     @Synchronized fun end(cause: Int) {
         if (ended) return
         ended = true
+        loop?.hangUp()
         setDisconnected(DisconnectCause(cause))
         destroy()
         if (current === this) current = null
@@ -160,7 +180,7 @@ class SpikeConnection(private val ctx: Context) : Connection() {
         started = true
         thread(name = "watch-spike") {
             try {
-                runTest()
+                if (agent) runAgent() else runTest()
             } catch (e: Exception) {
                 SpikeLog.add("FAIL ${e.javaClass.simpleName}: ${e.message}")
             } finally {
@@ -168,6 +188,15 @@ class SpikeConnection(private val ctx: Context) : Connection() {
                 end(DisconnectCause.LOCAL)
             }
         }
+    }
+
+    private fun runAgent() {
+        Thread.sleep(500)
+        val route = routeToWatch()
+        SpikeLog.add(if (route) "PASS audio is on the watch" else "FAIL audio is not on a Bluetooth headset (the agent is on the phone's speaker)")
+        if (!answered) SpikeLog.add("RESULT B (answer by itself): ${if (route) "PASS" else "FAIL"} audio ${if (route) "reached" else "did not reach"} the watch without a tap")
+        if (ended) return
+        AgentLoop(ctx, this).also { loop = it }.run()
     }
 
     private fun runTest() {
@@ -229,13 +258,13 @@ class SpikeConnection(private val ctx: Context) : Connection() {
         audio.mode = AudioManager.MODE_NORMAL
     }
 
-    private val voiceAttrs: AudioAttributes = AudioAttributes.Builder()
+    val voiceAttrs: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
 
     /** Says the phrase on the call's audio and waits until it is spoken. */
-    private fun speak(text: String): Boolean {
+    fun speak(text: String): Boolean {
         val ready = CountDownLatch(1)
         val done = CountDownLatch(1)
         // Written on the TTS threads, read here.
@@ -254,9 +283,13 @@ class SpikeConnection(private val ctx: Context) : Connection() {
             override fun onError(id: String?) { ok.set(false); done.countDown() }
         })
         t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "phrase")
-        val finished = done.await(20, TimeUnit.SECONDS)
+        var finished = false
+        // A hang-up stops the wait; the timeout grows with the text.
+        val limit = System.currentTimeMillis() + 20_000 + text.length * 100L
+        while (!finished && !ended && System.currentTimeMillis() < limit) finished = done.await(300, TimeUnit.MILLISECONDS)
+        if (ended) t.stop()
         t.shutdown()
-        if (!finished) SpikeLog.add("Test phrase timed out after 20 s")
+        if (!finished && !ended) SpikeLog.add("Speech timed out")
         return finished && ok.get()
     }
 

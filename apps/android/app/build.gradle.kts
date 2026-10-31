@@ -18,6 +18,8 @@ android {
         targetSdk = 35
         versionCode = (prop("agentxVersionCode") ?: "1").toInt()
         versionName = prop("agentxVersionName") ?: "0.1.0"
+        // Debug watch spike (#1664): the computer address filled in on its screen.
+        resValue("string", "watch_default_address", prop("agentxWatchAddress") ?: "")
     }
 
     // A release build is signed with your own key when these are set:
