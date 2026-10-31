@@ -55,7 +55,7 @@ export function isMeshGatedPath(path: string): boolean {
     // Follow-up runs name people, chats and what was said to them (#788).
     path === "/follow-up" || path.startsWith("/follow-up/") ||
     // Recent events name agents, chats and errors across the node.
-    path === "/events/recent" || /^\/agents\/[^/]+\/events$/.test(path) ||
+    path === "/events/recent" || path === "/events/hub" || /^\/agents\/[^/]+\/events$/.test(path) ||
     // Delegations name which agents are working for which others.
     path === "/a2a/delegations" || path.startsWith("/a2a/delegations/") ||
     // Traces carry each task's full prompt and final answer.

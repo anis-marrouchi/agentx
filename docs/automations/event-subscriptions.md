@@ -106,6 +106,12 @@ The woken task's message gives the event's name, summary, `ref` and who sent it,
 
 To wake an agent on another machine, list the sending machine in that agent's subscription: `"nodes": ["<machine name>"]`.
 
+## See wakes and replies on the Hub
+
+**Browser:** open the Hub and select **Events**. Each named event shows the agents it woke on every machine: whether the task ran, how long it waited for a free slot, whether it was held, timed out or skipped, and why. Events the woken agents sent back are listed under it. See [See events and who answered them](../dashboard/hub.md#see-events-and-who-answered-them).
+
+An event an agent sends from a task that a wake started records the event that woke it (its `parentId`), so the Hub files it as a reply.
+
 ## Read events yourself
 
 1. **Terminal:** run `agentx events --agent helper`. You see the events that match `helper`'s subscriptions, oldest first, with each event's ID.
@@ -126,6 +132,7 @@ Anyone on the daemon's own machine can read any agent's list, just as they can r
 2. **Terminal:** when it has answered, run `agentx events --agent helper`. You see a `task:completed reviewer@<machine>` line.
 3. For a `wake` subscription, **Terminal:** run `agentx daemon logs`. You see `waking helper`, followed by a task for `helper` on the `events` channel.
 4. For a named event, **Terminal:** run `agentx events emit test:ping --summary "hello"`, then `agentx events --kind custom`. You see a `test:ping` line.
+5. For a `wake` subscription, **Browser:** open the Hub and select **Events**. The event's card lists the woken agent with **ran**.
 
 ## If something is wrong
 

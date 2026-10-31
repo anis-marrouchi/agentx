@@ -85,6 +85,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
+import { buildWallEvents, readShare, WALL_EVENTS_PATH } from "./wall-events"
 import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallGuestsTarget, wallSettingsTarget, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
@@ -895,6 +896,23 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // (src/voice/voice-health.ts); after the token gate above.
   if (method === "GET" && path === "/api/admin/voice-health") {
     sendJson(res, 200, readVoiceHealth() ?? { checkedAt: null, missing: [] })
+    return
+  }
+  // The Hub's Events view (#1648): broadcasts, the wakes they caused on
+  // every machine, and the replies under them. Read-only. A peer asks with
+  // ?scope=node and gets this machine's share alone, so nothing fans out twice.
+  if (method === "GET" && path === WALL_EVENTS_PATH) {
+    const primary = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+    const local = () => readShare(`${primary}/events/hub`, process.env.MESH_TOKEN || dashboardTokenForNode(ctx.config.dashboard, primary))
+    if (url.searchParams.get("scope") === "node") {
+      try { sendJson(res, 200, await local()) } catch (e: any) { sendJson(res, 502, { error: e?.message || "daemon unreachable" }) }
+      return
+    }
+    const peers = wallPeers(ctx.config).map(({ name, dashboard: peer }) => ({
+      name,
+      read: () => readShare(`${peer.url}${WALL_EVENTS_PATH}?scope=node`, peer.token, { "X-Agentx-Peer": "primary" }),
+    }))
+    sendJson(res, 200, await buildWallEvents(url.searchParams, { local, peers }))
     return
   }
   // The Wall's review queue (#1182): read-only over the graph's own files.

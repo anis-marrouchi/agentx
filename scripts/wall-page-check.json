@@ -6,6 +6,7 @@
     { "name": "projects", "path": "/hub#status=open&view=projects", "ready": "#wall-projects > *" },
     { "name": "jobs", "path": "/hub#status=open&view=jobs", "ready": "#wall-jobs > *" },
     { "name": "reviews", "path": "/hub#status=&view=reviews", "ready": "#wall-reviews > *" },
+    { "name": "events", "path": "/hub#status=&view=events", "ready": "#wall-events > *" },
     { "name": "needs-you", "path": "/hub#status=open&view=decide", "ready": "#wall-decide .wdc__tabs" },
     { "name": "agents", "path": "/hub#page=agents", "ready": "#wall-agents-page > *" },
     { "name": "org", "path": "/hub#page=org", "ready": "#wall-org > *" },
