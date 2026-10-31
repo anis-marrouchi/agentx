@@ -7,6 +7,7 @@ import type { ChildProcess } from "child_process"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { applyVoiceSettings, checkVoiceSettings, previewLine, saveVoiceSettings, voiceSettingsView } from "../src/daemon/voice-settings-api"
 import { describeHotkey, parseHotkey } from "../src/voice/hotkey"
+import { VOICE_READY_SOUNDS } from "../src/voice/orb-palettes"
 import { elevenLabsSpeed, sayArgs, sayRate, type Play, type Utterance } from "../src/voice/speaker"
 import { SpeechOut } from "../src/voice/speaking-queue"
 import { SIRI_SAY } from "../src/voice/siri"
@@ -177,6 +178,18 @@ describe("applyVoiceSettings", () => {
     expect(raw.voice).toEqual({ answers: "play", listOnHover: false })
   })
 
+  it("plays a soft sound the person picks from the Mac's own (#1455)", () => {
+    const view = voiceSettingsView(config(), []).general
+    expect(view.readySound).toBe("Pop")
+    expect(view.readySounds).toContain("Glass")
+    expect(checkVoiceSettings({ general: { readySound: "Glass" } }, config())).toEqual([])
+    expect(checkVoiceSettings({ general: { readySound: "../../x" } } as never, config()))
+      .toEqual([{ path: "general.readySound", message: `Soft sound must be one of ${VOICE_READY_SOUNDS.join(", ")}` }])
+    const raw: any = {}
+    applyVoiceSettings(raw, { general: { readySound: "Glass" } })
+    expect(raw.voice).toEqual({ readySound: "Glass" })
+  })
+
   it("writes the look, and the orb is the look when none is written", () => {
     const raw: any = rawConfig()
     expect(voiceSettingsView(config(), []).general.look).toBe("orb")
@@ -260,7 +273,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false, animations: "sometimes", answers: "wait", listOnHover: true, pronunciations: [] })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false, animations: "sometimes", answers: "wait", readySound: "Pop", readySounds: [...VOICE_READY_SOUNDS], listOnHover: true, pronunciations: [] })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })
