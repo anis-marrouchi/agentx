@@ -2,6 +2,7 @@ import { accessSync, closeSync, constants, existsSync, openSync, readFileSync, r
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
+import { installedMacHelper, resolveDesktopHelper } from '@/computer-use/helper'
 
 export const DESKTOP_LABEL = 'tn.acme.agentx.voice'
 export const DESKTOP_APP = 'AgentX Desktop.app'
@@ -100,9 +101,7 @@ export function desktopPlist(opts: { label?: string; executable: string; cwd: st
 export function helperBuildArgs(icon?: string): string[] {
   return icon ? ['--icon', icon] : []
 }
-export function installedHelper(home: string): string {
-  return join(home, 'Applications', HELPER_APP, 'Contents/MacOS/agentx-mac-helper')
-}
+export const installedHelper = installedMacHelper
 /** The AgentX package folder, found by walking up from this file (dist/
  *  when installed, src/ in a checkout) — never from the caller's cwd, so
  *  `agentx notify` finds a repo-built helper from any folder. */
@@ -122,9 +121,10 @@ export function resolveHelper(root: string | null, home: string, override?: stri
   if (existsSync(installed) || !root) return installed
   return join(root, 'apps/mac-helper/build', HELPER_APP, 'Contents/MacOS/agentx-mac-helper')
 }
-/** The AgentX Helper binary when one is built or installed, else null.
- *  AGENTX_MAC_HELPER points at a helper somewhere else. */
+/** The desktop helper for this OS when one is built or installed, else
+ *  null. AGENTX_DESKTOP_HELPER (or, on a Mac, AGENTX_MAC_HELPER) points at
+ *  a helper somewhere else. */
 export function findHelper(): string | null {
-  const path = resolveHelper(packageRoot(), homedir(), process.env.AGENTX_MAC_HELPER)
-  return existsSync(path) ? path : null
+  const path = resolveDesktopHelper({ platform: process.platform, root: packageRoot(), home: homedir(), env: process.env, exists: existsSync })
+  return path && existsSync(path) ? path : null
 }

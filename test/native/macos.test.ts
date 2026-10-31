@@ -23,7 +23,7 @@ describe("macOS adapter (#1062 step 3)", () => {
   it("is what darwin gets on auto, and nowhere else", () => {
     expect(loadNativeAdapter({}, { platform: "darwin" }).os).toBe("macos")
     expect(loadNativeAdapter({}, { platform: "linux" }).os).toBe("none")
-    expect(loadNativeAdapter({}, { platform: "win32" }).os).toBe("none")
+    expect(loadNativeAdapter({}, { platform: "freebsd" }).os).toBe("none")
   })
 
   it("reports a banner as posted through the helper, or failed when both ways fail", async () => {

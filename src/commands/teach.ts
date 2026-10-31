@@ -15,7 +15,8 @@ import {
   type UIElementAnswers,
   type PriorAttempt,
 } from "@/decisions/seats/ui-element"
-import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
+import { HELPER, HELPER_MISSING, readScreen, rectFor } from "@/computer-use/screen"
+import { helperOs } from "@/computer-use/helper"
 import { closeBlocked } from "@/computer-use/candidates"
 import { verify as verifyClaim } from "@/computer-use/verify"
 import { readScreenSettings } from "@/computer-use/capture-settings"
@@ -88,7 +89,7 @@ export const teach = new Command()
       process.exit(1)
     }
     if (!existsSync(HELPER)) {
-      console.log(chalk.red("  helper not built — run apps/mac-helper/build.sh"))
+      console.log(chalk.red(`  ${HELPER_MISSING}`))
       process.exit(1)
     }
 
@@ -125,7 +126,9 @@ export const teach = new Command()
     // about.
     let recorder: ChildProcess | null = null
     let recordingPath: string | null = null
-    if (opts.record) {
+    if (opts.record && helperOs(process.platform) !== "macos") {
+      console.log(chalk.yellow("  --record uses macOS screencapture; the lesson runs without a recording on this OS"))
+    } else if (opts.record) {
       recordingPath = join(
         opts.recordDir || process.cwd(),
         `teach-${lesson.id}-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.mov`,

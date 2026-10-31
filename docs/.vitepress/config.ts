@@ -148,6 +148,7 @@ const groups = [
     { text: "Channels", link: "/reference/channels" },
     { text: "Workflow schema", link: "/reference/workflow-schema" },
     { text: "Agent-to-agent (A2A)", link: "/reference/a2a" },
+    { text: "Desktop helper and Windows", link: "/reference/desktop-helper" },
     { text: "Events", link: "/reference/events" },
     { text: "Dashboard map", link: "/reference/dashboard-map" },
     { text: "Glossary", link: "/reference/glossary" },

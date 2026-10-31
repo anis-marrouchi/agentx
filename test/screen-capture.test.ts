@@ -8,6 +8,7 @@ import { join } from "path"
 import { captureAround, captureArgs, captureShot, HelperOutdatedError, regionArgs, resolveRegion } from "../src/computer-use/capture"
 import { DEFAULT_SCREEN, patchScreen, readScreenSettings, screenSettings } from "../src/computer-use/capture-settings"
 import { capture } from "../src/computer-use/look"
+import { HELPER_MISSING } from "../src/computer-use/screen"
 import { DUMP_TTL_MS, ScreenBuffer, sweepStaleDumps } from "../src/daemon/screen-buffer"
 import { proofAlert } from "../src/notify/proof"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -174,7 +175,7 @@ describe("captureAround — arm, act, capture", () => {
     const action = vi.fn(async () => "done")
     const r = await captureAround(action, { kind: "screen" }, {}, { helper: join(dir, "missing") })
     expect(action).toHaveBeenCalledOnce()
-    expect(r).toMatchObject({ result: "done", shot: null, error: expect.stringMatching(/helper not built/) })
+    expect(r).toMatchObject({ result: "done", shot: null, error: HELPER_MISSING })
   })
 })
 
