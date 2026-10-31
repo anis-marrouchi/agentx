@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "os"
 import { join } from "path"
 import { PresenceHost } from "../src/daemon/voice-presence"
-import { PresenceOverlay, REST_SECONDS, endRecorded, posFile, reapPresence, presenceLook, systemProcesses, type Presence, type ProcessOps } from "../src/voice/presence"
+import { PresenceOverlay, REST_SECONDS, endRecorded, posFile, reapPresence, presenceLook, systemProcesses, withControls, type Presence, type ProcessOps } from "../src/voice/presence"
 import { SpeechOut } from "../src/voice/speaking-queue"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 
@@ -117,6 +117,20 @@ describe("machine-wide registry", () => {
     expect(reapPresence(join(dir, "missing"), ps({}).ops)).toBe(0)
   })
 
+  it("the character with its tag is gone when either one goes, unless the tag never started (#1591)", () => {
+    const part = (alive: { v: boolean }): Presence => ({ moveTo() {}, say() {}, clear() {}, park() {}, close() {}, get alive() { return alive.v } })
+    const character = { v: true }, tag = { v: true }
+    const both = withControls(part(character), part(tag))
+    expect(both.alive).toBe(true)
+    tag.v = false
+    expect(both.alive).toBe(false)
+    tag.v = true; character.v = false
+    expect(both.alive).toBe(false)
+    // No helper on this machine: the tag was never there, the character still is.
+    const alone = withControls(part({ v: true }), part({ v: false }))
+    expect(alone.alive).toBe(true)
+  })
+
   it("keeps where the person dragged a tag across restarts", () => {
     const dir = mkdtempSync(join(tmpdir(), "presence-"))
     writeFileSync(posFile(dir, "secretary-agent"), '{"x":40,"y":900}')
@@ -205,6 +219,10 @@ describe("PresenceOverlay process", () => {
     expect(plain).not.toContain("--tag-only")
     expect(tagOnly).toContain("--tag-only")
     expect(tagOnly).not.toContain("--rest")
+    // Each look keeps where its own tag was pinned.
+    const pos = (a: string[]) => a[a.indexOf("--pos-file") + 1]
+    expect(pos(plain)).toMatch(/secretary-agent\.pos$/)
+    expect(pos(tagOnly)).toMatch(/secretary-agent\.tag\.pos$/)
   })
 
   it.skipIf(process.platform === "win32")("Skip on the tag reaches the owner every time it is pressed (#1591)", async () => {

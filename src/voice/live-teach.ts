@@ -418,11 +418,16 @@ export class LiveTeach {
         if (this.skipped) return "skipped"
         if (!this.is("running") || this.doorQueue.length) return false
         const now = await this.signature()
+        // Skip pressed while the screen was being read: no poke was
+        // listening, so take it here rather than after one more poll.
+        if (this.skipped) return "skipped"
         if (now === null || now === before) { candidate = null; continue }
         if (now === candidate) return true
         candidate = now
       }
-      return false
+      // A Skip in the last poll interval still counts as a Skip, not an
+      // undone step, even though the deadline passed while it landed.
+      return this.skipped && this.is("running") ? "skipped" : false
     } finally {
       this.waiting = false
       if (!this.is("ended")) this.deps.presence.waiting?.(0)

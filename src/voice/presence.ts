@@ -76,8 +76,13 @@ export const REST_SECONDS = 6
 
 /** A pointer that draws no controls of its own (the character), with the
  *  name tag of a tag-only overlay beside it for the ×, Skip and the line
- *  being said. */
+ *  being said. It counts as gone when either one goes, so a dead tag is
+ *  drawn afresh instead of leaving the character with no × and no Skip.
+ *  A tag that never started (no helper on this machine) does not count:
+ *  the character alone is all there is to show. */
 export function withControls(pointer: Presence, controls: Presence): Presence {
+  const up = (p: Presence) => p.alive !== false
+  const tagStarted = up(controls)
   return {
     moveTo: (r, o) => pointer.moveTo(r, o),
     clear: () => pointer.clear(),
@@ -88,7 +93,7 @@ export function withControls(pointer: Presence, controls: Presence): Presence {
     close: () => { pointer.close(); controls.close() },
     onDismiss: (fn) => controls.onDismiss?.(fn),
     onSkip: (fn) => controls.onSkip?.(fn),
-    get alive() { return pointer.alive !== false },
+    get alive() { return up(pointer) && (!tagStarted || up(controls)) },
   }
 }
 
@@ -103,8 +108,11 @@ export const presenceDir = () => process.env.AGENTX_PRESENCE_DIR || join(homedir
 const safeId = (agentId: string) => agentId.replace(/[^\w.-]/g, "_")
 const pidFile = (dir: string, agentId: string) => join(dir, `${safeId(agentId)}.pid`)
 /** Where the person dragged this agent's name tag. The helper reads and
- *  writes it; it outlives every overlay, so the tag stays where it was put. */
-export const posFile = (dir: string, agentId: string) => join(dir, `${safeId(agentId)}.pos`)
+ *  writes it; it outlives every overlay, so the tag stays where it was put.
+ *  The tag-only look (beside the character) keeps its own file: a tag
+ *  pinned in one look does not move the tag in the other. */
+export const posFile = (dir: string, agentId: string, opts: { tagOnly?: boolean } = {}) =>
+  join(dir, `${safeId(agentId)}${opts.tagOnly ? ".tag" : ""}.pos`)
 
 /** Swapped in tests: the process table and signals. */
 export interface ProcessOps {
@@ -182,7 +190,7 @@ export class PresenceOverlay implements Presence {
       "presence", "--name", look.name, "--initial", look.initial, "--color", look.color,
       // The helper also exits on its own when this process dies or goes quiet.
       "--parent", String(process.pid), "--idle", String(IDLE_SECONDS),
-      "--pos-file", posFile(dir, agentId),
+      "--pos-file", posFile(dir, agentId, opts),
       ...(opts.tagOnly ? ["--tag-only"] : ["--rest", String(REST_SECONDS)]),
     ]) as ChildProcessWithoutNullStreams
     this.child = child
