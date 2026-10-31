@@ -432,10 +432,16 @@ Each card says **receiving**, **off**, or **signing secret missing**. **Turn off
 - **Boards**: each board with its GitLab projects and columns. **Edit** fills the form below it; **Add column** and **×** change its columns; **Remove** asks you first. The same as `agentx board`.
 - **Actions**: each shell command or web call workflows run by id. Open **Run** to fill its inputs and run it now; what it printed shows under it. **Edit** fills the form, **Remove** asks you first. A secret in a web call's headers goes in as its `$VAR`, read from the daemon's environment. The same as `agentx actions`.
 
+![Settings › Actions on the Hub: one shell action with its input, Run, Edit and Remove, in the isolated demo](/screenshots/wall/settings-actions.png)
+
 ### Screen capture and Advanced
 
 - **Screen capture**, under **Machines**: how agents capture the screen, and the recent-frames buffer. The same as `agentx screen config`; it applies without a restart.
 - **Advanced**: `agentx.json` itself, in an editor. A secret typed into the file, rather than a `${NAME}` reference to `.env`, shows as `[hidden secret: kept on save]` and never reaches the page; leave it as it is and the save keeps it. Select **Save**: invalid JSON is refused, and the file gets a backup next to it. **Reload from disk** throws away what you typed.
+
+![Settings › Advanced on the Hub: agentx.json in an editor, with the dashboard token and an API key shown as hidden secrets, in the isolated demo](/screenshots/wall/settings-advanced.png)
+
+*Scripted demo data; your settings will differ.*
 
 ## Live sessions
 
