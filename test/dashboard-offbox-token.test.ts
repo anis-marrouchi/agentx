@@ -77,6 +77,20 @@ describe("dashboard pages off-box (#1306)", () => {
     expect((await fetch(`${base}/api/admin/state`, { headers: wrong })).status).toBe(401)
   })
 
+  it("refuses off-box guest grant reads and changes without a token or session (#1449)", async () => {
+    const base = await start()
+    expect((await fetch(`${base}/api/guests`, { headers: OFF })).status).toBe(401)
+    for (const op of ["pause", "resume", "end", "update"]) {
+      expect((await fetch(`${base}/api/guests/g-1/${op}`, { method: "POST", headers: OFF })).status, op).toBe(401)
+    }
+    expect((await fetch(`${base}/api/admin/wall/settings/guests/g-1/end`, { method: "POST", headers: OFF })).status).toBe(401)
+    // Signed in, they reach the daemon proxy (unreachable here, so 502).
+    const cookie = ((await signIn(base, TOKEN)).headers.get("set-cookie") || "").split(";")[0]
+    const headers = { ...OFF, Cookie: cookie }
+    expect((await fetch(`${base}/api/guests`, { headers })).status).toBe(502)
+    expect((await fetch(`${base}/api/guests/g-1/end`, { method: "POST", headers })).status).toBe(502)
+  })
+
   it("signs a browser in with the token: an HttpOnly, SameSite=Strict cookie that is not the token", async () => {
     const base = await start()
     const bad = await signIn(base, "guess")

@@ -522,6 +522,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   const guestsPath = wallGuestsTarget(method, path) ?? path
   if ((method === "GET" && guestsPath === "/api/guests") || (method === "POST" && /^\/api\/guests\/[^/]+\/(pause|resume|end|update)$/.test(guestsPath))) {
+    // The proxy sends the dashboard's own token on, so only the owner may use it.
+    if (method === "GET" ? !isDashboardOwner(req, ctx) : !wallOwnerOk(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" }
       if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
