@@ -225,6 +225,8 @@ import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath } from "@/daemon/voice-requests-api"
+import { beginPhoneThread, finishPhoneThread } from "@/daemon/voice-phone-thread"
+import { safeUi } from "@/daemon/app-chat-relay"
 import { toSpeakable } from "@/voice/speakable"
 import { pronouncer } from "@/voice/pronounce"
 import { isNoiseTranscript, NOISE_REPLY } from "@/voice/noise"
@@ -5087,7 +5089,10 @@ export class AgentXDaemon {
         const reply = handleVoiceRequests({
           store: this.voiceRequests,
           knows: (id) => !!this.registry.getAgent(id) || this.voiceMesh.isRemote(id),
-          stop: (id) => this.registry.cancelChatTasks(id, "voice", `voice:${id}`, "stopped from the open-requests list"),
+          // A request in the phone's conversation runs under its key (#1455).
+          stop: (r) => r.conversationId
+            ? this.registry.cancelChatTasks(r.agentId, "app", `app:${r.conversationId}`, "stopped from the open-requests list")
+            : this.registry.cancelChatTasks(r.agentId, "voice", `voice:${r.agentId}`, "stopped from the open-requests list"),
         }, req.method || "GET", path, body)
         this.json(res, reply.status, reply.body)
         return
@@ -8301,6 +8306,14 @@ export class AgentXDaemon {
               // Recorded under the surface it came from; the turn below is the owner's.
               operatorPerson(this.config.people)?.id ?? null,
             )
+            // A row of the open-requests list continues the agent's
+            // conversation with the phone: same session, same thread (#1455).
+            const def = this.registry.getAgent(agentId)
+            const thread = requestId && this.voiceRequests
+              ? beginPhoneThread(this.voiceRequests, requestId,
+                { id: agentId, name: def?.name, color: presenceLook(agentId, this.config.agents[agentId]).color },
+                message, this.config.node.name || this.config.node.id || "This computer")
+              : null
             const response = await this.registry.execute({
               agentId,
               message,
@@ -8308,7 +8321,9 @@ export class AgentXDaemon {
                 // With the character on screen, the agent may send it to show something (#482).
                 (this.config.voice.look === "character" && this.voiceTalk.guide.listening ? `\n${GUIDE_INSTRUCTION}` : ""),
               // The owner spoke to this node: the turn is theirs (#393).
-              context: operatorContext({ channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
+              context: operatorContext(thread
+                ? { channel: "app", sender: "Voice", chatId: thread.chatId }
+                : { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
               intentRef,
             })
 
@@ -8349,6 +8364,12 @@ export class AgentXDaemon {
             // voice prompt: two parsers drift.
             const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
             const speakable = toSpeakable(withoutDirective, this.config.voice.spokenMaxChars)
+            if (thread && this.voiceRequests) {
+              const ui = safeUi(directive)
+              finishPhoneThread(this.voiceRequests.chats, thread, {
+                content: withoutDirective, ...(response.error ? { error: String(response.error) } : {}), ...(ui ? { ui } : {}),
+              })
+            }
             if (!response.error) this.voiceIntros.spoke(session, agentId)
             // The answer is in the pill or the character's bubble: nothing of
             // this agent stays on screen. Only a lesson shows its pointer.

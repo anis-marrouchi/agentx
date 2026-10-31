@@ -5,8 +5,9 @@ import path from "path"
 import type Database from "better-sqlite3"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import {
-  LIMITS, RESTART_REASON, VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath,
+  LIMITS, RESTART_REASON, VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath, type VoiceRequest,
 } from "../src/daemon/voice-requests-api"
+import { beginPhoneThread, finishPhoneThread } from "../src/daemon/voice-phone-thread"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 
 // #1455: AgentX Voice's open-requests list is kept by the daemon, so it
@@ -28,7 +29,7 @@ function deps(store: VoiceRequestStore | null = new VoiceRequestStore(db, T0)) {
   return {
     store,
     knows: (id: string) => id === "writer" || id === "researcher",
-    stop: (id: string) => { stopped.push(id); return 1 },
+    stop: (r: VoiceRequest) => { stopped.push(r.agentId); return 1 },
     stopped,
   }
 }
@@ -247,5 +248,118 @@ describe("voice requests gate and wiring", () => {
     store.start(r.id, T0 + 1000)
     store.settle(r.id, 500, { error: "agent crashed" }, T0 + 2000)
     expect(store.get(r.id)).toMatchObject({ state: "failed", error: "agent crashed", since: T0 + 2000 })
+  })
+})
+
+// The phone and the Mac share one conversation per agent, and one heard
+// state: an answer heard on the Mac is read on the phone, and opened on
+// the phone it is heard on the Mac.
+describe("voice requests in the phone's conversations", () => {
+  const agent = { id: "writer", name: "Writer", color: "#22aa88" }
+
+  it("continues the phone's newest conversation with the agent, under its session key", () => {
+    const store = new VoiceRequestStore(db, T0)
+    const older = store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 5000)
+    const newer = store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "second", T0 - 1000)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "researcher" }, "other", T0 - 500)
+    store.chats.create("phone-1", { node: "peer-a", nodeName: "Peer", agent: "writer" }, "remote", T0 - 100)
+    const r = store.create("writer", "draft the summary", false, T0)
+
+    const thread = beginPhoneThread(store, r.id, agent, "draft the summary", "Home", T0 + 10)
+    expect(thread).toEqual({ conversationId: newer.id, chatId: `app:${newer.id}` })
+    expect(older.id).not.toBe(newer.id)
+    expect(store.get(r.id)?.conversationId).toBe(newer.id)
+    expect(store.chats.get("phone-1", newer.id)?.messages).toEqual([{ role: "user", content: "draft the summary", at: T0 + 10 }])
+
+    finishPhoneThread(store.chats, thread!, { content: "Done, see the notes." }, T0 + 20)
+    expect(store.chats.get("phone-1", newer.id)?.messages.at(-1)).toMatchObject({ role: "assistant", content: "Done, see the notes.", status: "done" })
+    // The phone's strip shows it as an answer not opened yet.
+    expect(store.chats.unread("phone-1", 10).map((u) => u.id)).toEqual([newer.id])
+  })
+
+  it("starts a conversation on the phone used last when the agent has none; none without a phone", () => {
+    const store = new VoiceRequestStore(db, T0)
+    const r = store.create("writer", "q", false, T0)
+    expect(beginPhoneThread(store, r.id, agent, "q", "Home", T0)).toBeNull()
+    expect(store.get(r.id)?.conversationId).toBeNull()
+
+    store.chats.create("phone-2", { node: "local", nodeName: "Home", agent: "researcher" }, "other", T0)
+    const thread = beginPhoneThread(store, r.id, agent, "what is next", "Home", T0 + 5)!
+    const conv = store.chats.get("phone-2", thread.conversationId)!
+    expect(conv).toMatchObject({ agent: "writer", agentName: "Writer", color: "#22aa88", node: "local", title: "what is next" })
+    // The same row asked again stays in its conversation.
+    expect(beginPhoneThread(store, r.id, agent, "again", "Home", T0 + 6)?.conversationId).toBe(conv.id)
+    expect(beginPhoneThread(store, "rnosuchrow1", agent, "q", "Home")).toBeNull()
+  })
+
+  it("heard on the Mac reads the conversation on the phone", () => {
+    const store = new VoiceRequestStore(db, T0)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 1000)
+    const r = store.create("writer", "q", false, T0)
+    const thread = beginPhoneThread(store, r.id, agent, "q", "Home", T0)!
+    finishPhoneThread(store.chats, thread, { content: "A." }, T0 + 100)
+    store.settle(r.id, 200, answer, T0 + 100)
+    expect(store.chats.unread("phone-1", 10)).toHaveLength(1)
+
+    store.heard(r.id, T0 + 200)
+    expect(store.chats.unread("phone-1", 10)).toEqual([])
+  })
+
+  it("opened on the phone after the answer, the row is heard; opened before, it is not", () => {
+    const store = new VoiceRequestStore(db, T0)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 1000)
+    const r = store.create("writer", "q", false, T0)
+    const thread = beginPhoneThread(store, r.id, agent, "q", "Home", T0)!
+    store.chats.markRead("phone-1", thread.conversationId, T0 + 50)
+    expect(store.get(r.id)?.heard).toBe(false)
+
+    finishPhoneThread(store.chats, thread, { content: "A." }, T0 + 100)
+    store.settle(r.id, 200, answer, T0 + 100)
+    expect(store.list()[0]).toMatchObject({ id: r.id, heard: false })
+    store.chats.markRead("phone-1", thread.conversationId, T0 + 300)
+    expect(store.list()[0]).toMatchObject({ id: r.id, heard: true })
+    // "Close heard" counts it as heard.
+    expect(store.closeHeard(T0 + 400)).toBe(1)
+  })
+
+  it("a failure is saved for the phone with why", () => {
+    const store = new VoiceRequestStore(db, T0)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 1000)
+    const r = store.create("writer", "q", false, T0)
+    const thread = beginPhoneThread(store, r.id, agent, "q", "Home", T0)!
+    finishPhoneThread(store.chats, thread, { content: "", error: "the model was busy" }, T0 + 100)
+    expect(store.chats.unread("phone-1", 10)[0]).toMatchObject({ id: thread.conversationId, status: "error" })
+  })
+
+  it("closing an unheard answer reads it on the phone too", () => {
+    const store = new VoiceRequestStore(db, T0)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 1000)
+    const r = store.create("writer", "q", false, T0)
+    const thread = beginPhoneThread(store, r.id, agent, "q", "Home", T0)!
+    finishPhoneThread(store.chats, thread, { content: "A." }, T0 + 100)
+    store.settle(r.id, 200, answer, T0 + 100)
+    store.close(r.id, T0 + 200)
+    expect(store.chats.unread("phone-1", 10)).toEqual([])
+  })
+
+  it("a thinking row in a phone conversation is stopped under that conversation", () => {
+    const store = new VoiceRequestStore(db, T0)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 1000)
+    const r = store.create("writer", "q", false, T0)
+    const thread = beginPhoneThread(store, r.id, agent, "q", "Home", T0)!
+    const seen: Array<string | null> = []
+    handleVoiceRequests({ store, knows: () => true, stop: (row) => { seen.push(row.conversationId); return 1 } },
+      "POST", `/voice/requests/${r.id}/close`, { stop: true })
+    expect(seen).toEqual([thread.conversationId])
+  })
+
+  it("a database from before the phone link gains the column", () => {
+    db.exec(`CREATE TABLE voice_requests (
+      id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, question TEXT NOT NULL,
+      state TEXT NOT NULL, sent_at INTEGER NOT NULL, since INTEGER NOT NULL,
+      heard_at INTEGER, closed_at INTEGER, reply TEXT, error TEXT)`)
+    db.prepare("INSERT INTO voice_requests (id, agent_id, question, state, sent_at, since) VALUES ('rold0000001', 'writer', 'q', 'answered', 1, 1)").run()
+    const store = new VoiceRequestStore(db, T0)
+    expect(store.get("rold0000001")).toMatchObject({ conversationId: null, heard: false })
   })
 })
