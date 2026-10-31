@@ -234,6 +234,7 @@ Scripts and scheduled jobs can call `agentx notify`:
 ```sh
 agentx notify "Build finished" --title "CI"
 agentx notify "Production is down" --title "Alert" --todo "Open the status page" --urgent
+agentx notify "Video v4 is ready" --title "Rafeeq" --url "https://example.com/video-v4"
 agentx notify --status        # Focus state and anything held
 agentx notify --flush         # deliver what is held now
 ```
@@ -245,7 +246,9 @@ agentx notify --flush         # deliver what is held now
 | `--priority <1-5>` | ntfy priority (default 4); the phone app ignores it |
 | `--urgent` | Deliver even during Focus, and even if you were already told the same thing |
 | `--key <id>` | What the message is about, for example `backup:nightly`. A message with the same key is told once across all channels within `notifications.told.repeatWindowHours`. Without it, a message of 40 characters or more is its own key |
-| `--request <id>` | The open request the message belongs to |
+| `--request <id>` | The open request the message belongs to. A tap on the notification opens it on the Hub (needs `notifications.publicUrl`) |
+| `--url <url>` | What a tap on the notification opens. It is also shown as an **Open** button |
+| `--button "<label>=<url>"` | A button on the notification. Repeat it for more: three at most, `--url` included |
 | `--digest` | A system reminder, such as disk space or a channel that stopped. It waits for the daily digest instead of a notification now |
 | `--told` | Show what you were told in the last 24 hours: how many were sent, held, kept for the digest or not repeated, and the latest ones |
 | `--from <who>` | Shown in a held digest, so you know who sent what |
@@ -258,6 +261,7 @@ agentx notify --flush         # deliver what is held now
 - `agentx notify` reads its settings from `./agentx.json`. When it runs from another folder, as scheduled jobs do, add `-c /path/to/agentx.json`. Without a settings file it uses the defaults.
 - It waits for the banner and the sound to finish before it exits (about two seconds), so a job that ends straight afterwards still gets both.
 - The phone push goes through the running AgentX daemon. If the daemon is stopped, the command reports an error, but the banner and sound still play.
+- A tap on an ntfy notification opens its first link (`--url`, else the first `--button`). Without one it opens the request on the Hub (`--request`), else the Hub, at the address in `notifications.publicUrl`, for example `https://my-mac.example.ts.net`. Links to `localhost` or `127.0.0.1` are refused, because they would open on the phone itself. Without `notifications.publicUrl`, a notification without a link opens nothing.
 - Every notice from `agentx notify` ends with a **To do** line after the message, so you know at a glance whether it wants anything from you. Notices the daemon sends by itself (a failed job, a request that needs you) do not have one.
 - A message must read in about ten seconds: the title can be up to 120 characters and the message up to 300, counting the To do line. A longer one is not sent. The command says why and exits with an error, so the agent or script that sent it can shorten it. AgentX never cuts it.
 - A title must say what the notice is in words. A title that is only a reference, such as `#402`, `group/project#402`, a link, a commit hash or a request id, is not sent; put the reference in the message instead. A short plain title such as `Backups` is fine, and so is a reference next to words, such as `Login fix ready (#402)`.
