@@ -1304,7 +1304,13 @@ A lesson also ends by itself when you have not done two steps in a row: the scre
 
 While a step waits for you, the name tag shows **Skip** and the seconds left, for example **Skip · 38s**. Click **Skip** to leave that step and go on to the next one; a skipped step does not count as one you did not do. The arrow itself fades out 6 seconds after it last moved, so it does not sit on your screen while you work. It comes back when the agent points at the next thing. The name tag stays, with **Skip** and **×**.
 
+![A step waiting for you, 6 seconds after the arrow last moved: the arrow has faded out, and the name tag with Skip · 38s, × and the bubble "New is up here. Say stop or press × to end." is still there](/screenshots/voice/lesson-skip-rested.png)
+
+![The agent points again: its arrow is back, and the name tag still counts down, Skip · 36s](/screenshots/voice/lesson-skip-pointing.png)
+
 With `voice.look` set to `character`, the character points instead of the arrow. The same name tag, with **Skip**, **×** and the lesson's bubble, sits at the top centre of your screen. Drag it elsewhere and it stays there.
+
+![The name tag shown with the character look: Coder, Skip · 44s, × and the bubble "You asked: open the pulls page", with no arrow](/screenshots/voice/lesson-character-tag.png)
 
 A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` or `act` for your question, or from a terminal.
 
