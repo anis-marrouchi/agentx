@@ -2467,6 +2467,13 @@ export const daemonConfigSchema = z.object({
     /** AgentX Voice starts with its pill reduced to the orb alone: a
      *  small circle the person can drag. Off: the full pill. */
     startReduced: z.boolean().default(false),
+    /** AgentX Voice, when an answer is ready (#1455): "wait" keeps it as
+     *  "not heard" in the open-requests list, with one soft sound, until
+     *  the person picks it; "play" plays it at once, as before. */
+    answers: z.enum(["wait", "play"]).default("wait"),
+    /** AgentX Voice opens the open-requests list after half a second's
+     *  hover on the pill. Off: only a click or the list shortcut opens it. */
+    listOnHover: z.boolean().default(true),
     /** The character takes a slow stroll beside where it rests when it
      *  has nothing to do. Off: it moves only out of the pointer's way. */
     stroll: z.boolean().default(false),

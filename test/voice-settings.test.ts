@@ -163,6 +163,20 @@ describe("applyVoiceSettings", () => {
     expect(raw.voice).toEqual({ animations: "off" })
   })
 
+  it("waits for a pick by default, plays at once when asked, and opens the list on hover (#1455)", () => {
+    const view = voiceSettingsView(config(), []).general
+    expect(view.answers).toBe("wait")
+    expect(view.listOnHover).toBe(true)
+    expect(checkVoiceSettings({ general: { answers: "play", listOnHover: false } }, config())).toEqual([])
+    expect(checkVoiceSettings({ general: { answers: "later" } } as never, config()))
+      .toEqual([{ path: "general.answers", message: "When an answer is ready must be wait or play" }])
+    expect(checkVoiceSettings({ general: { listOnHover: "yes" } } as never, config()))
+      .toEqual([{ path: "general.listOnHover", message: "Open the list on hover must be on or off" }])
+    const raw: any = {}
+    applyVoiceSettings(raw, { general: { answers: "play", listOnHover: false } })
+    expect(raw.voice).toEqual({ answers: "play", listOnHover: false })
+  })
+
   it("writes the look, and the orb is the look when none is written", () => {
     const raw: any = rawConfig()
     expect(voiceSettingsView(config(), []).general.look).toBe("orb")
@@ -246,7 +260,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false, animations: "sometimes", pronunciations: [] })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false, animations: "sometimes", answers: "wait", listOnHover: true, pronunciations: [] })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })
