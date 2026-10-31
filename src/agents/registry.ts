@@ -1414,9 +1414,12 @@ export class AgentRegistry {
     // from the start; a second stall is reported in plain words, not with
     // the internal error (#340).
     const preSpawn = !interruptedBy && !stoppedBy && response.error && /^timed out before spawn after/.test(response.error)
+    // The retry keeps onStart: it gets the new run's id, so a caller that
+    // stored the first one (a Hub chat row, a delegation) now points at the
+    // run that is live, not the dead one.
     if (preSpawn && !task.preSpawnRetry) {
       this.log(`[${task.agentId}] ${response.error}; retrying the run once`)
-      return this.execute({ ...task, preSpawnRetry: 1, runningTaskId: undefined, onStart: undefined }, onDelta, onThinking, onEvent)
+      return this.execute({ ...task, preSpawnRetry: 1, runningTaskId: undefined }, onDelta, onThinking, onEvent)
     }
     if (preSpawn) {
       const step = response.error!.match(/in step "([^"]+)"/)?.[1] ?? "start"

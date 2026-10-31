@@ -42,14 +42,16 @@ export function chatContextLine(c: ChatPageContext | null | undefined): string {
  * stays in the composer. A failed reply offers Try again and Ask another
  * agent when it is the last message. A pending answer whose run has
  * started shows `live`, the text streamed so far, with Stop and, when
- * `runHref` names it, Open the run.
+ * `runHref` names it, Open the run (`stopFailed`: a Stop that did not
+ * take, so its button says so). Its text sits in `[data-hc-live]`, so
+ * a new chunk repaints that alone and leaves Stop as it is.
  */
-export function chatLogHtml(msgs: ChatMessage[], o: { agent: string; md?: (s: string) => string; notSent?: string; live?: string; runHref?: string }): string {
+export function chatLogHtml(msgs: ChatMessage[], o: { agent: string; md?: (s: string) => string; notSent?: string; live?: string; runHref?: string; stopFailed?: boolean }): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string))
   const who = esc(o.agent || "The agent")
   const me = (t: string) => '<div class="hc__me"><div class="b">' + esc(t) + "</div></div>"
-  const them = (cls: string, body: string, meta: string) =>
-    '<div class="hc__them' + (cls ? " " + cls : "") + '"><div class="b">' + body + "</div>" + (meta ? '<div class="hc__meta">' + meta + "</div>" : "") + "</div>"
+  const them = (cls: string, body: string, meta: string, live?: boolean) =>
+    '<div class="hc__them' + (cls ? " " + cls : "") + '"><div class="b"' + (live ? " data-hc-live" : "") + ">" + body + "</div>" + (meta ? '<div class="hc__meta">' + meta + "</div>" : "") + "</div>"
   if (!msgs.length && !o.notSent) {
     return '<div class="hc__empty"><b>Ask about what you see</b>The page you are on and what is in view go with your message. Answers stay here when you move to another page.</div>'
   }
@@ -57,12 +59,12 @@ export function chatLogHtml(msgs: ChatMessage[], o: { agent: string; md?: (s: st
     if (m.role === "user") return me(m.content)
     if (m.status === "pending") {
       const run = m.taskId
-        ? '<button type="button" class="hc__stop" data-hc-stop="' + esc(m.taskId) + '">Stop</button>' +
+        ? '<button type="button" class="hc__stop" data-hc-stop="' + esc(m.taskId) + '">' + (o.stopFailed ? "Not stopped. Try again" : "Stop") + "</button>" +
           (o.runHref ? '<a class="hc__run" href="' + esc(o.runHref) + '">Open the run</a>' : "")
         : ""
       let body = "Thinking…"
       if (o.live) { body = esc(o.live); if (o.md) { try { body = o.md(o.live) } catch { /* plain text above */ } } }
-      return them(o.live ? "hc__md" : "hc__wait", body, '<span class="hc__live">' + who + " is answering</span>" + run)
+      return them(o.live ? "hc__md" : "hc__wait", body, '<span class="hc__live">' + who + " is answering</span>" + run, true)
     }
     if (m.status === "error") {
       const last = i === msgs.length - 1 && !o.notSent
