@@ -9,6 +9,7 @@
 // /admin Channels tab sets them, with the same calls under the Settings
 // prefix (wall-actions.ts), so the owner guard holds every write:
 //   Telegram  the connector on/off, accounts (add, edit, delete)
+//   WhatsApp  pairing, chats, watched chats (wall-settings-whatsapp.client.ts)
 //   Email     the connector on/off, mailboxes (add, delete)
 //   Slack, Discord, GitLab   connect or edit, on/off
 //   GitLab, GitHub           request status comments on/off
@@ -18,11 +19,12 @@
 // variable that holds it, as the classic tab does. When agentx.json holds a
 // token as a literal value, /api/admin/state sends only { literal: true }
 // (secretRef in admin-panel.ts): the row says to move it to .env and the
-// edit field stays empty. WhatsApp pairing and
-// triage, and notification routing, come in the next part.
+// edit field stays empty. WhatsApp (pairing, chats and watched chats) is in
+// wall-settings-whatsapp.client.ts; notification routing is the Inbox
+// section (wall-settings-inbox.client.ts).
 
 export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
-  var ST_CHANNELS = [['telegram', 'Telegram'], ['email', 'Email'], ['slack', 'Slack'], ['discord', 'Discord'], ['gitlab', 'GitLab'], ['github', 'GitHub'], ['calls', 'Calls']];
+  var ST_CHANNELS = [['telegram', 'Telegram'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['slack', 'Slack'], ['discord', 'Discord'], ['gitlab', 'GitLab'], ['github', 'GitHub'], ['calls', 'Calls']];
   /** A token reference in agentx.json (dollar sign, {NAME}) → NAME, for the edit forms; empty for a literal. */
   function stEnvName(ref) { return typeof ref === 'string' ? ref.replace(/^\$\{|\}$/g, '') : ''; }
   /** How a secret reads in a row: its reference, or a warning when agentx.json holds the value itself ({ literal: true }, never sent). */
@@ -45,8 +47,8 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
     var ch = S.st.ch || 'telegram';
     var tabs = '<nav class="wsj__tabs" aria-label="Channels">' + ST_CHANNELS.map(function (c) {
       return '<button type="button" class="ax-chip" data-st-act="ch" data-ch="' + c[0] + '" aria-pressed="' + (c[0] === ch) + '">' + esc(c[1]) + '</button>';
-    }).join('') + '<a class="ax-chip" href="/admin#tab=channels" title="WhatsApp pairing and triage, and notification routing, are on the classic page for now">WhatsApp and routing ↗</a></nav>';
-    var body = ch === 'email' ? stEmailHtml() : ch === 'slack' ? stSlackHtml() : ch === 'discord' ? stDiscordHtml()
+    }).join('') + '</nav>';
+    var body = ch === 'whatsapp' ? stWhatsAppHtml() : ch === 'email' ? stEmailHtml() : ch === 'slack' ? stSlackHtml() : ch === 'discord' ? stDiscordHtml()
       : ch === 'gitlab' ? stGitLabHtml() : ch === 'github' ? stGitHubHtml() : ch === 'calls' ? stCallsHtml() : stTelegramHtml();
     return '<header class="wst__h"><h2>Channels</h2><p>The chat apps and developer tools your agents answer from. Secrets stay in .env: each form takes the name of the variable that holds one.</p></header>' +
       tabs + stNoteHtml('ch') + body;

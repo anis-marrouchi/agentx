@@ -20,8 +20,10 @@
 // screen, with Health on top) and the Agents section
 // (wall-settings-agent.client.ts for one agent). Health reads the machines
 // the Wall already polls (S.live), so it writes nothing. Phase 2: Schedules
-// and Webhooks (wall-settings-jobs.client.ts) and Channels
-// (wall-settings-channels.client.ts). The other sections open their
+// and Webhooks (wall-settings-jobs.client.ts), Channels
+// (wall-settings-channels.client.ts, WhatsApp in
+// wall-settings-whatsapp.client.ts) and Inbox, how notifications reach the
+// owner (wall-settings-inbox.client.ts). The other sections open their
 // classic page until they are ported.
 //
 // A section repaints when it opens or after a save, never on the Wall's
@@ -31,6 +33,8 @@
 import { WALL_SETTINGS_AGENT_CSS, WALL_SETTINGS_AGENT_SCRIPT } from "./wall-settings-agent.client"
 import { WALL_SETTINGS_JOBS_CSS, WALL_SETTINGS_JOBS_SCRIPT } from "./wall-settings-jobs.client"
 import { WALL_SETTINGS_CHANNELS_CSS, WALL_SETTINGS_CHANNELS_SCRIPT } from "./wall-settings-channels.client"
+import { WALL_SETTINGS_WHATSAPP_CSS, WALL_SETTINGS_WHATSAPP_SCRIPT } from "./wall-settings-whatsapp.client"
+import { WALL_SETTINGS_INBOX_SCRIPT } from "./wall-settings-inbox.client"
 import { HUB_NAME } from "../hub-name"
 
 export const WALL_SETTINGS_SCRIPT = String.raw`
@@ -44,7 +48,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       ['schedules', 'Schedules', '', 'Recurring jobs'], ['webhooks', 'Webhooks', '', 'Calls from other services'],
       ['mesh', 'Mesh', '/admin#tab=mesh', 'Your other machines'], ['business', 'Business', '/admin#tab=business', 'Org chart and business settings'],
       ['boards', 'Boards', '/admin#tab=boards-cfg', 'Task boards'], ['actions', 'Actions', '/admin#tab=actions', 'Buttons that start a task'],
-      ['inbox', 'Inbox', '/admin#tab=channels', 'How the inbox reaches you'],
+      ['inbox', 'Inbox', '', 'How the inbox reaches you'],
     ]],
     ['Access', [
       ['guests', 'Guests', '/guests', 'Who else may use your agents'], ['people', 'People', '#page=people', 'The people your agents work with'],
@@ -240,6 +244,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (sec === 'channels') return stChannelsHtml();
     if (sec === 'schedules') return stCronsHtml();
     if (sec === 'webhooks') return stHooksHtml();
+    if (sec === 'inbox') return stInboxHtml();
     return S.st.agent ? stAgentHtml(S.st.agent) : stAgentsHtml();
   }
 
@@ -475,7 +480,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   async function stConfirmed(key) {
     var id = S.st.agent, a = stAgentOf(id);
     S.st.confirm = '';
-    if (await stJobsConfirmed(key) || await stChannelsConfirmed(key)) return;
+    if (await stJobsConfirmed(key) || await stChannelsConfirmed(key) || await stWhatsAppConfirmed(key)) return;
     if (key === 'delete') {
       stPaint();
       stNote('delete', '', 'Deleting…');
@@ -646,6 +651,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
 ${WALL_SETTINGS_AGENT_SCRIPT}
 ${WALL_SETTINGS_JOBS_SCRIPT}
 ${WALL_SETTINGS_CHANNELS_SCRIPT}
+${WALL_SETTINGS_WHATSAPP_SCRIPT}
+${WALL_SETTINGS_INBOX_SCRIPT}
 `
 
 export const WALL_SETTINGS_CSS = `
@@ -796,4 +803,4 @@ export const WALL_SETTINGS_CSS = `
   .wsl { grid-template-columns: minmax(0, 1fr); }
   .wsa { padding: 12px 10px; }
 }
-` + WALL_SETTINGS_AGENT_CSS + WALL_SETTINGS_JOBS_CSS + WALL_SETTINGS_CHANNELS_CSS
+` + WALL_SETTINGS_AGENT_CSS + WALL_SETTINGS_JOBS_CSS + WALL_SETTINGS_CHANNELS_CSS + WALL_SETTINGS_WHATSAPP_CSS
