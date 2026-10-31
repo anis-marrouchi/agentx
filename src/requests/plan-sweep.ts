@@ -68,6 +68,13 @@ const COUNT_EVERY = 5 * MINUTE
 
 const isFinished = (s: PlanStep) => FINISHED_STEP_STATES.includes(s.state)
 
+/** The request waits by design: on the owner's answer (until its due
+ *  time, if it has one), or on someone else until a due time still ahead.
+ *  Past the due time the requests check's overdue loop takes it up. */
+const waitsUntilDue = (r: RequestRecord, now: number) =>
+  r.state === "waiting_owner" ? r.dueAt === null || r.dueAt > now
+    : r.state === "waiting_other" && r.dueAt !== null && r.dueAt > now
+
 /** Block a step: the request needs attention. The owner hears it through
  *  the requests check, the one escalation of every loop (#1138 D), told
  *  once and in the plan's own words (planNotice). */
@@ -328,6 +335,9 @@ async function advance(deps: PlanSweepDeps, r: RequestRecord, steps: PlanStep[],
     return false
   }
 
+  // A request that waits (on the owner's answer, or on someone else until
+  // its due time) is not quiet: no nudge, no block before then (#1661).
+  if (waitsUntilDue(r, now)) return false
   const stallMinutes = s.stallMinutes ?? settings.stallMinutes
   const quietSince = Math.max(s.updatedAt, s.dispatchedAt, s.lastNudgeAt ?? 0)
   if (now - quietSince < stallMinutes * MINUTE) return false

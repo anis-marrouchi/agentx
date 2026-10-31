@@ -382,6 +382,37 @@ describe("nudges", () => {
     expect(plans.events("req-1").filter((e) => e.kind === "progress").at(-1)?.detail).toBe("devops: 11 open")
   })
 
+  it("does not nudge or block a step while the request waits on the owner, until its due time (#1661)", async () => {
+    await sweep()
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "sent to the owner" })
+    requests.waitOnOwner("req-1", "Yes or no on v4?", clock)
+    requests.setLoop("req-1", { dueAt: clock + 10 * 60 * MIN }, clock)
+    for (let i = 0; i < 6; i++) { clock += 31 * MIN; await sweep() }
+    expect(turns).toHaveLength(1)
+    expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 0 })
+    expect(requests.get("req-1")?.state).toBe("waiting_owner")
+    // Past the due time the step is followed again.
+    clock += 8 * 60 * MIN
+    expect((await sweep()).nudged).toBe(1)
+  })
+
+  it("does not nudge a step while the request waits on someone else with a due time ahead (#1661)", async () => {
+    await sweep()
+    requests.progress("req-1", clock, "waiting_other")
+    requests.setLoop("req-1", { dueAt: clock + 3 * 60 * MIN }, clock)
+    for (let i = 0; i < 4; i++) { clock += 31 * MIN; await sweep() }
+    expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 0 })
+    clock += 2 * 60 * MIN
+    expect((await sweep()).nudged).toBe(1)
+  })
+
+  it("still nudges a step whose request waits on someone else with no due time", async () => {
+    await sweep()
+    requests.progress("req-1", clock, "waiting_other")
+    clock += 31 * MIN
+    expect((await sweep()).nudged).toBe(1)
+  })
+
   it("goes on when the owner retries a blocked step, with a fresh count", async () => {
     await sweep()
     for (let i = 0; i < 4; i++) { clock += 31 * MIN; await sweep() }
