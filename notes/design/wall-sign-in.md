@@ -1,6 +1,6 @@
 # Wall sign-in with an email link, Google if available, round 1 (#1478)
 
-Design proposal for review. Nothing here is built. Per #1478, building starts once the AgentX issue list is clear, not before, and only on an accepted design (the same design-first rule as #1449). Comment on #1478.
+Design accepted on 2026-10-31: the owner took the proposals for all seven questions ([answers](#answers-from-the-owner)). Nothing here is built. Per #1478, building starts once the AgentX issue list is clear, not before; that order holds until the owner says otherwise. Comment on #1478.
 
 **Revised 2026-10-30** after the owner's scope on #1478 (the second answer, about 19:30Z):
 
@@ -9,7 +9,7 @@ Design proposal for review. Nothing here is built. Per #1478, building starts on
 - **Sign in with Google is on standby.** It is in scope only once we have access to the owner's Google Cloud account and a project we can use there. The access check on #1478 (2026-10-30) found none: the saved logins have expired and no OAuth client exists. So the email link ships alone, and Google waits ([Decision 5](#5-sign-in-with-google-on-standby)).
 - Keys come only from `agentx.json` or `.env`, never from the repo, the issue or a chat. No code is written for one provider only, and nothing billable is created in Google Cloud without asking first.
 
-This round covers how the sign-in works: who may sign in, how the link proves who someone is, how the mail is sent, what a signed-in person may open, and what is reused. The screens (sign-in page, "check your mail" page, the People page changes, the approval card) come in round 2, once the questions are answered, because the answers change what goes on them.
+This round covers how the sign-in works: who may sign in, how the link proves who someone is, how the mail is sent, what a signed-in person may open, and what is reused. The screens (sign-in page, "check your mail" page, the People page changes, the approval card) come in round 2, now that the questions are answered.
 
 All names and addresses below are made up: people Dana (member) and Lee (client), `example.com`, the machine `studio`.
 
@@ -44,7 +44,7 @@ open the link, press
 "Sign in" ───────────────▶  check and spend the one-time link
                             find the person by the address
                             not on the list (any more) → "No access"
-                            first sign-in → approval card (question 3)
+                            first sign-in → approval card
                             personal session cookie, person id inside
                             open the Wall part for that role
 ```
@@ -88,7 +88,7 @@ The issue says to reuse `ax_session`. The proposal keeps everything around it (t
 AgentX stays generic: it knows a **mail sender**, not a company. The owner's sender is Mailgun, set up like any other.
 
 - A new, small block in `agentx.json` names one sender: the `from` address and name, and how to reach the provider. It is not an email account (`channels.email.accounts`), because those belong to an agent and need an IMAP inbox; this sender only sends.
-- The proposal is one kind of sender to start with: **SMTP**. Mailgun, like most mail providers, accepts mail over SMTP with a login for the sending domain, so it needs no code written for Mailgun. The sending reuses `sendMail` from `src/channels/email/smtp.ts` (nodemailer), split so it does not need an agent's account.
+- One kind of sender to start with: **SMTP**, with the provider's SMTP login (answer 7). Mailgun, like most mail providers, accepts mail over SMTP with a login for the sending domain, so it needs no code written for Mailgun. The sending reuses `sendMail` from `src/channels/email/smtp.ts` (nodemailer), split so it does not need an agent's account.
 - Example, with made-up values:
 
   ```json
@@ -142,11 +142,11 @@ A Web OAuth client for sign-in costs nothing. If any step asks to turn on billin
 
 ### 6. What each role sees
 
-There is no read-only Wall today, so this is the largest new piece. The proposal, until the owner says otherwise ([question 2](#questions-for-the-owner)):
+There is no read-only Wall today, so this is the largest new piece. Accepted on 2026-10-31 ([answer 2](#answers-from-the-owner)):
 
 | Role | After sign-in |
 |---|---|
-| owner | The whole Wall, as on this machine today, writes and settings included ([question 4](#questions-for-the-owner)). |
+| owner | The whole Wall, as on this machine today, writes and settings included ([answer 4](#answers-from-the-owner)). |
 | member | The Wall read only, as drawn in round 2 of Wall v2 for "anyone else" (#1451): the feed, Needs the owner without buttons, Running now, Projects, Activity, Agents, People, Org. Plus **My work**. No Settings, no Cost. |
 | client | **Your project** only, as today. No Wall until #1479 decides who sees which mesh. |
 | guest | Cannot sign in. |
@@ -166,9 +166,10 @@ A request on these paths without a personal session gets the sign-in page, never
 
 ### 8. The first sign-in
 
-- The proposal: a person's **first** sign-in raises an approval card ("Dana signed in for the first time, from Chrome on a Mac. Let them in?"), the same card as a new member machine (`createCard` in `members/pairing.ts`). Until the owner says yes, Dana sees "Waiting for the owner", as a new member machine does.
+- A person's **first** sign-in raises an approval card ("Dana signed in for the first time, from Chrome on a Mac. Let them in?"), the same card as a new member machine (`createCard` in `members/pairing.ts`). Until the owner says yes, Dana sees "Waiting for the owner", as a new member machine does.
 - Later sign-ins of the same person, from any browser, go straight in, and appear on their People page.
-- A setting lets the owner skip the card for members ([question 3](#questions-for-the-owner)). For clients, the card stays.
+- A setting lets the owner skip the card for members ([answer 3](#answers-from-the-owner)). For clients, the card stays.
+- The owner is different: the owner's first sign-in from **each new browser** must be confirmed on the home machine itself (the dashboard opened there, not a phone card), before that browser gets owner rights ([answer 4](#answers-from-the-owner)). This setting does not skip it.
 
 ### 9. One identity for every mesh (#1479)
 
@@ -199,7 +200,7 @@ None of these exist yet. Each one gets a docs page or section in the same change
 | `wall.signIn.oidc.hd` | `agentx.json` | On standby. Optional: only accounts of this Workspace domain. |
 | `agentx people link <id> email:<address>` | CLI, exists | How the owner lets a person sign in. No new command. |
 
-## How it would be built, once accepted
+## How it would be built
 
 Small slices, each one usable and tested on its own:
 
@@ -210,17 +211,19 @@ Small slices, each one usable and tested on its own:
 5. The first-sign-in card.
 6. On standby: sign in with Google (OpenID Connect). Built only once the owner has made the OAuth client ([Decision 5](#5-sign-in-with-google-on-standby)); tests use a fake provider.
 
-## Questions for the owner
+## Answers from the owner
 
-The old question "which mail service sends the links" is answered: Mailgun, as a configured sender.
+Questions 1 to 7 of this note were answered on 2026-10-31 on #1478: the owner said that where an agent made a recommendation, take it. The earlier answer, Mailgun as the mail service, stands.
 
-1. **Network.** Does the Wall stay on the private network, with sign-in on top (people outside reach it through a Tailscale share, as members do today)? Or does it get a public address? The links need a fixed HTTPS name the person's browser can reach, for example the machine's Tailscale name `https://studio.example-tailnet.ts.net`, not a public one. A public address would let clients and suppliers in without Tailscale, but puts the sign-in page on the open internet. *Proposal: private network first; a public address later, as its own decision.*
-2. **Roles on the Wall.** Is the member view in [Decision 6](#6-what-each-role-sees) right? Should a client see anything of the Wall now, or wait for #1479?
-3. **First sign-in.** Always an approval card, or automatic for anyone on the people list? *Proposal: a card for the first sign-in of each person; members can be set to automatic.*
-4. **The owner signing in by link (or Google, later).** Should the owner's address give full owner rights from any browser, as the dashboard token does today? Or should owner rights stay with the token and this machine, and a sign-in as the owner give the member view? With a link, whoever reads the owner's mailbox can become the owner. *Proposal: full owner rights, with the first owner sign-in from each new browser confirmed on this machine.*
-5. **Cookie.** [Decision 1](#1-a-personal-session-not-the-token-cookie) uses a new cookie (`ax_person`) instead of reusing `ax_session`, so a member session can never be mistaken for the owner. Is that change from the issue fine?
-6. **Sending address.** Which address do the links come from? *Proposal: a `no-reply@` address on the domain already set up for sending at the provider, so no new domain setup is needed.*
-7. **SMTP or the provider's API key.** The scope on #1478 mentions an API key and a sending domain. The proposal uses the provider's SMTP login instead (also issued per sending domain), because SMTP needs no provider-specific code. Is an SMTP login fine, or must it be the API key? The API key would need a second `kind` of sender ([Decision 4](#4-the-mail-provider)).
+1. **Network:** private network first, with sign-in on top. A public address comes later, as its own decision.
+2. **Roles on the Wall:** the member view is as in [Decision 6](#6-what-each-role-sees). Clients see nothing of the Wall until #1479.
+3. **First sign-in:** an approval card for each person's first sign-in. Members can be set to automatic (`wall.signIn.firstSignIn: "auto"`).
+4. **Owner sign-in:** full owner rights. The first owner sign-in from each new browser is confirmed on the home machine ([Decision 8](#8-the-first-sign-in)).
+5. **Cookie:** a new personal cookie, `ax_person`, so a member session can never pass as the owner ([Decision 1](#1-a-personal-session-not-the-token-cookie)).
+6. **Sending address:** links come from `no-reply@` on the sending domain already set up at the mail provider.
+7. **SMTP or API key:** the provider's SMTP login, not the API key, so the sender stays `kind: "smtp"` ([Decision 4](#4-the-mail-provider)).
+
+Still open, and not part of this design: **when** to build. The 2026-10-30 order (once the AgentX issue list is clear) holds until the owner says otherwise. Google stays conditional ([Decision 5](#5-sign-in-with-google-on-standby)).
 
 ## Not proposed
 
