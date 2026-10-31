@@ -42,8 +42,9 @@ Anyone who is not the owner sees **Chat is for the owner**, with **Sign in** whe
 ## Continue or start over
 
 1. To reopen an earlier conversation, select **History** in the panel, then pick one.
-2. To start fresh, select **New**.
-3. To close the panel, select **×** or press Escape.
+2. To remove one, select **×** next to it in **History**. If the dashboard cannot remove it, **History** says **Not deleted. Try again.** and the conversation stays.
+3. To start fresh, select **New**.
+4. To close the panel, select **×** or press Escape. When another Hub window (a workflow or a settings confirmation) is open on top, Escape closes that window first and the panel stays open.
 
 The browser remembers which conversation was open; the conversations themselves are stored by the dashboard. Drag the panel's left edge to resize it (or focus it and use the arrow keys). The small handle above the bottom bar hides and shows the bar.
 
@@ -61,4 +62,5 @@ The workflow editor has its own assistant, **Ask AI to build…**, which propose
 - **A question sent to another machine fails:** check the connection between the machines. See [Tailscale setup](../jobs/tailscale.md).
 - **No reply, or an error about the model:** the agent's model connection isn't working. Try the agent with **Test drive** in [Settings](./settings.md).
 - **The panel says "Sign in to ask an agent from this page", or History says "Sign in to see past conversations":** the dashboard did not recognise you as its owner. Select **Sign in**, enter the dashboard token, and you come back to the same page. With no `dashboard.token` set, open the dashboard on its own machine instead.
+- **History says "Not deleted. Try again.":** the dashboard did not remove the conversation. Select **×** again; if it keeps failing, check the daemon. **Terminal:** run `agentx daemon status`.
 - **Costs:** every question uses the chosen agent's normal model and billing.
