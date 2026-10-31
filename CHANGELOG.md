@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.195.0](https://github.com/anis-marrouchi/agentx/compare/v0.194.0...v0.195.0) (2026-10-31)
+
+
+### Features
+
+* **hub:** Diagnostics Overview, Activity and Logs; redirect /admin/health ([#1449](https://github.com/anis-marrouchi/agentx/issues/1449)) ([#1624](https://github.com/anis-marrouchi/agentx/issues/1624)) ([6f6d680](https://github.com/anis-marrouchi/agentx/commit/6f6d6809936e38ce01fa66a6fc3d5d397c64d6b9))
+* **hub:** Settings › Diagnostics with four tabs of /admin/health ([#1449](https://github.com/anis-marrouchi/agentx/issues/1449)) ([#1623](https://github.com/anis-marrouchi/agentx/issues/1623)) ([1bf9120](https://github.com/anis-marrouchi/agentx/commit/1bf9120e0f3068e7cf96069bec698e8d67a18cca))
+* **hub:** Settings › Guests; redirect /guests ([#1449](https://github.com/anis-marrouchi/agentx/issues/1449)) ([#1626](https://github.com/anis-marrouchi/agentx/issues/1626)) ([d3539da](https://github.com/anis-marrouchi/agentx/commit/d3539da69b25b60ba539fc8cc6030d81cdf9c7e9))
+
+
+### Bug Fixes
+
+* **hub:** close the Diagnostics Logs stream when leaving Settings ([#1624](https://github.com/anis-marrouchi/agentx/issues/1624)) ([#1625](https://github.com/anis-marrouchi/agentx/issues/1625)) ([b727de8](https://github.com/anis-marrouchi/agentx/commit/b727de8a2e69e7c3efcc26ac30576b5b8edb6ba7)), closes [#1449](https://github.com/anis-marrouchi/agentx/issues/1449)
+* **hub:** no dead sign-in link on Settings without a dashboard token ([#1619](https://github.com/anis-marrouchi/agentx/issues/1619)) ([#1621](https://github.com/anis-marrouchi/agentx/issues/1621)) ([ccbba69](https://github.com/anis-marrouchi/agentx/commit/ccbba691f62746a34c6dc2be44d697f8365df9c1)), closes [#1447](https://github.com/anis-marrouchi/agentx/issues/1447)
+
 ## [0.194.0](https://github.com/anis-marrouchi/agentx/compare/v0.193.0...v0.194.0) (2026-10-31)
 
 
