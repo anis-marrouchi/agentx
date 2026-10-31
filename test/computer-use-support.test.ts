@@ -30,7 +30,9 @@ describe("computerUseSupport", () => {
   it("Linux on Wayland: read and accessibility actions, no overlay, and says so", () => {
     const s = computerUseSupport("linux", { XDG_SESSION_TYPE: "wayland" })
     expect(s).toMatchObject({ helper: false, read: true, act: "accessibility", overlay: false })
-    expect(supportLine(s)).toMatch(/Wayland session.*cursor overlay.*will not.*Ubuntu on Xorg/)
+    expect(supportLine(s)).toMatch(/Wayland session.*accessibility.*blocks moving the pointer and drawing over other apps/)
+    // States what the display allows, not what a future port will do (#1595 options are open).
+    expect(supportLine(s)).not.toMatch(/will|Ubuntu on Xorg/)
   })
   it("Linux without a desktop can do nothing", () => {
     const s = computerUseSupport("linux", {})

@@ -69,6 +69,6 @@ export function supportLine(s: ComputerUseSupport): string {
   const planned = "not on Linux yet (planned, #1595)"
   if (s.session === "x11") return `${planned}. This is an X11 session: reading, acting and the cursor overlay will all work here`
   if (s.session === "wayland")
-    return `${planned}. This is a Wayland session: reading the screen and pressing controls will work, but the cursor overlay and moving the pointer will not. Pick "Ubuntu on Xorg" at login for the overlay`
+    return `${planned}. This is a Wayland session: it lets apps read the screen and press controls through accessibility, but blocks moving the pointer and drawing over other apps`
   return `${planned}. No desktop session in this shell, so there is no screen to read`
 }

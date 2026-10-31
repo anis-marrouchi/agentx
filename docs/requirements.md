@@ -240,7 +240,7 @@ To see what your machine allows:
 
 1. **Terminal:** open a terminal inside your desktop session, not over SSH.
 2. **Terminal:** run `agentx daemon status`.
-3. Read the **Computer use** line. On a Mac it says `available (AgentX Helper)`. On Linux it names your session and what will work there.
+3. Read the **Computer use** line. On a Mac it says `available (AgentX Helper)`. On Linux it names your session and what that session allows.
 
 `agentx daemon status --json` gives the same answer under `computerUse`.
 
