@@ -1244,7 +1244,7 @@ final class App: NSObject, NSApplicationDelegate {
     /// A row picked in the list: an answer not heard plays, a heard one
     /// shows its text again (Listen again plays it), a failure opens in
     /// place with why and Ask again. Its agent becomes the one the next
-    /// words go to, and they continue this row: no new row. The daemon runs
+    /// words go to, so they continue that conversation: the daemon runs
     /// every request in the phone's conversation with the agent, so it is
     /// the same session and thread as the phone's.
     private func pick(_ id: Int) {
@@ -1268,17 +1268,14 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// "Ask again" on a failed row: the row goes, and the same words go
-    /// to the same agent as a new request.
+    /// "Ask again" on a failed row: the same words, in the same row, as a
+    /// follow-up (it waits its turn if the agent has another request out).
     private func askAgain(_ id: Int) {
-        guard let r = requests.request(id), case .failed = r.phase, requests.close(id) != nil else { return }
+        guard let r = requests.request(id), case .failed = r.phase else { return }
         requestsWindow.model.expanded = nil
-        if let key = r.key {
-            requestsEpoch += 1
-            Task { await AgentClient.closeRequest(key, stop: false) }
-        }
+        picked = id
         Log.info("request \(id): asked again (\(r.agentID))")
-        send(r.question, agent: r.agentID)
+        follow(id, r.question)
     }
 
     /// Heard here and, through the daemon, on every client.

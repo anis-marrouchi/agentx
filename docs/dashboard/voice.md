@@ -143,7 +143,7 @@ Pick a row with a click, or with the keyboard:
 - Heard rows stay in the list until you close them. The eight most recent heard rows are kept; older ones leave by themselves.
 - The list is kept by the AgentX daemon, not the app. Quitting the app or restarting the daemon keeps it. A request that was still thinking when the daemon stopped says **Couldn't answer**, with the reason "AgentX restarted before the answer came back. Ask again."
 - Heard is the same everywhere: a row you heard on this Mac is read on the phone, and an answer you open on the phone turns to **Heard** on the Mac (see [The same requests on the phone](#the-same-requests-on-the-phone)). Any other app that reads the list from the daemon sees the same (see [Open requests for scripts](#open-requests-for-scripts)).
-- **Couldn't answer:** pick the row and it opens in place, with why in one line, for example "The calendar didn't answer in time.", and **Ask again**. **Ask again** closes the row and sends the same words to the same agent as a new request.
+- **Couldn't answer:** pick the row and it opens in place, with why in one line, for example "The calendar didn't answer in time.", and **Ask again**. **Ask again** asks the same words again in the same row.
 
   ![The open-requests list, made-up data: Writer thinking, Ops with an answer ready, and Planner's failed row picked, saying The calendar didn't answer in time, with Ask again under it](/screenshots/voice/requests-ask-again-light.png)
 

@@ -256,10 +256,9 @@ var failing = OpenRequests()
 let failed1 = failing.add(agentID: "planner", question: "what's on thursday", at: t0)
 failing.failed(failed1, reason: "The calendar didn’t answer in time.", at: at(3))
 check(OpenRequests.pick(failing.request(failed1)!) == .reason("The calendar didn’t answer in time."), "a failed row says why")
-let closedFailed = failing.close(failed1)
-let again = failing.add(agentID: closedFailed!.agentID, question: closedFailed!.question, at: at(4))
-check(failing.requests.count == 1 && failing.request(again)?.phase == .thinking
-      && failing.request(again)?.question == "what's on thursday", "Ask again: the same words to the same agent, thinking")
+check(failing.follow(failed1, with: "what's on thursday", at: at(4)) == .ask, "Ask again: the same words, asked at once")
+check(failing.requests.count == 1 && failing.request(failed1)?.phase == .thinking
+      && failing.request(failed1)?.question == "what's on thursday", "in the same row, thinking")
 check(OpenRequests.askAgain == "Ask again" && OpenRequests.loadingAfter == 0.5, "the words and the half second of screen 7")
 
 if failures > 0 {
