@@ -14,11 +14,20 @@ import AppKit
 ///   {"cmd":"say","text":"The export button is top right."}
 ///   {"cmd":"clear"}   drop the highlight
 ///   {"cmd":"park"}    return beside the person's own pointer, no highlight
+///   {"cmd":"wait","seconds":45}  the owner waits on the person: Skip and
+///                     a countdown on the tag; 0 takes them away
 ///   {"cmd":"ping"}    nothing; keeps an idle overlay alive
 ///
 /// and reports on stdout what the person did to it, one JSON object per line:
 ///
 ///   {"event":"dismiss"}  the × on the name tag was clicked; it then fades out
+///   {"event":"skip"}     Skip was clicked: the owner stops waiting
+///
+/// The arrow rests (#1591): `--rest` seconds after its last move or wait
+/// it fades out with its highlight, and comes back on the next move. A
+/// park while resting moves it unseen. The tag stays, so the × and Skip
+/// are always there to use. `--tag-only` draws no arrow at all, only the
+/// tag: the controls of a lesson whose pointer is the character.
 ///
 /// Coordinates are accessibility coordinates (top-left origin, global),
 /// the same as `read`, `ocr` and `point`.
@@ -137,14 +146,21 @@ enum Presence {
         let ring: NSPanel
         let color: NSColor
         let posFile: String?
+        let tagOnly: Bool
+        /// Seconds after the last move or wait before the arrow rests; 0 never.
+        let rest: TimeInterval
+        var lastAction = Date()
+        private(set) var resting = false
         var at: CGPoint          // tip position, AppKit coordinates
         /// The tag's top-left once the person has dragged it; nil rides with the arrow.
         var pinned: NSPoint?
         var timer: Timer?
 
-        init(color: NSColor, initial: String, name: String, posFile: String?) {
+        init(color: NSColor, initial: String, name: String, posFile: String?, tagOnly: Bool = false, rest: TimeInterval = 0) {
             self.color = color
             self.posFile = posFile
+            self.tagOnly = tagOnly
+            self.rest = rest
             arrow = Presence.panel(NSRect(origin: .zero, size: ArrowView.size))
             arrow.contentView = ArrowView(color: color)
             tag = PresenceTag(color: color, initial: initial, name: name)
@@ -168,14 +184,44 @@ enum Presence {
                 self.place(self.at)
             }
             place(at)
-            for p in [arrow, tagPanel] {
+            for p in tagOnly ? [tagPanel] : [arrow, tagPanel] {
                 p.alphaValue = 0
                 p.orderFrontRegardless()
             }
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.2
-                arrow.animator().alphaValue = 1
+                if !tagOnly { arrow.animator().alphaValue = 1 }
                 tagPanel.animator().alphaValue = 1
+            }
+        }
+
+        /// Top centre of the main screen, below a window's tab bar and
+        /// toolbar so it covers neither: where a tag with no arrow to ride
+        /// sits until it is dragged.
+        static func topCentre(width: CGFloat) -> NSPoint {
+            let v = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            return NSPoint(x: v.midX - width / 2, y: v.maxY - 96)
+        }
+
+        /// No move or wait for `rest` seconds: the arrow and its highlight
+        /// fade out. The overlay stays, and so does the tag.
+        func restIfIdle() {
+            guard !tagOnly, rest > 0, !resting, Date().timeIntervalSince(lastAction) > rest else { return }
+            resting = true
+            ring.orderOut(nil)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.4
+                arrow.animator().alphaValue = 0
+            }
+        }
+
+        private func wake() {
+            lastAction = Date()
+            guard resting else { return }
+            resting = false
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                arrow.animator().alphaValue = 1
             }
         }
 
@@ -192,6 +238,11 @@ enum Presence {
             arrow.setFrameOrigin(NSPoint(x: tip.x - ArrowView.tip.x, y: tip.y - ArrowView.tip.y))
             if tag.dragged { return }
             let size = tagPanel.frame.size
+            if tagOnly {
+                let top = pinned ?? Controller.topCentre(width: size.width)
+                tagPanel.setFrameOrigin(NSPoint(x: top.x, y: top.y - size.height))
+                return
+            }
             var top = pinned ?? NSPoint(x: tip.x + 20, y: tip.y - 26)
             if pinned == nil {
                 // Near the right edge the tag sits to the left of the arrow.
@@ -230,7 +281,8 @@ enum Presence {
         func handle(_ obj: [String: Any]) {
             switch obj["cmd"] as? String {
             case "move":
-                guard let x = obj["x"] as? Double, let y = obj["y"] as? Double else { return }
+                guard !tagOnly, let x = obj["x"] as? Double, let y = obj["y"] as? Double else { return }
+                wake()
                 let w = obj["w"] as? Double ?? 0, h = obj["h"] as? Double ?? 0
                 let rect = CGRect(x: x, y: y, width: w, height: h)
                 // Aim just inside the control's lower-left third, so the
@@ -244,8 +296,14 @@ enum Presence {
             case "clear":
                 highlight(nil)
             case "park":
+                guard !tagOnly else { return }
+                // Resting, it goes back unseen: only a move shows it again.
                 highlight(nil)
                 glide(to: Controller.parking())
+            case "wait":
+                lastAction = Date()
+                tag.setWait(obj["seconds"] as? Double ?? 0)
+                place(at)
             default:
                 break
             }
@@ -271,10 +329,11 @@ enum Presence {
 
     /// Read commands until stdin closes, the owner dies, or it goes idle.
     static func run(name: String, initial: String, colorHex: String?, parent: pid_t?, idle: TimeInterval,
-                    posFile: String? = nil) {
+                    posFile: String? = nil, tagOnly: Bool = false, rest: TimeInterval = 0) {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
-        let ctl = Controller(color: color(hex: colorHex), initial: initial, name: name, posFile: posFile)
+        let ctl = Controller(color: color(hex: colorHex), initial: initial, name: name, posFile: posFile,
+                             tagOnly: tagOnly, rest: rest)
         var lastCommand = Date()
         var quitting = false
         // Main thread only. The fade is a courtesy: exit follows regardless.
@@ -289,6 +348,11 @@ enum Presence {
             FileHandle.standardOutput.write("{\"event\":\"dismiss\"}\n".data(using: .utf8)!)
             quit()
         }
+        ctl.tag.onSkip = {
+            FileHandle.standardOutput.write("{\"event\":\"skip\"}\n".data(using: .utf8)!)
+        }
+        // Checked often enough that the rest lands close to its second.
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in ctl.restIfIdle() }
         DispatchQueue(label: "tn.acme.agentx.presence.stdin").async {
             while let line = readLine(strippingNewline: true) {
                 guard let data = line.data(using: .utf8),

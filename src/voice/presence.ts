@@ -55,6 +55,11 @@ export interface Presence {
   /** Called when the person closes the overlay themselves (the × on the
    *  name tag); its owner ends what it was showing. */
   onDismiss?(fn: () => void): void
+  /** The owner waits on the person for `seconds`: a Skip button and the
+   *  seconds left show on the tag. 0 takes them away. */
+  waiting?(seconds: number): void
+  /** Called each time the person presses Skip. */
+  onSkip?(fn: () => void): void
 }
 
 /** Nothing on screen: what a lesson gets when `voice.pointer` is off. */
@@ -64,6 +69,28 @@ export const NO_POINTER: Presence = { moveTo() {}, say() {}, clear() {}, park() 
  *  overlay whose owner forgot it cannot stay on screen. Owners that hold
  *  one on purpose ping it well inside this. */
 export const IDLE_SECONDS = 60
+
+/** The arrow rests (fades out) this long after its last move or wait,
+ *  as agent-desktop's cursor does (#1591); the next move shows it again. */
+export const REST_SECONDS = 6
+
+/** A pointer that draws no controls of its own (the character), with the
+ *  name tag of a tag-only overlay beside it for the ×, Skip and the line
+ *  being said. */
+export function withControls(pointer: Presence, controls: Presence): Presence {
+  return {
+    moveTo: (r, o) => pointer.moveTo(r, o),
+    clear: () => pointer.clear(),
+    park: () => pointer.park(),
+    say: (t) => controls.say(t),
+    waiting: (s) => controls.waiting?.(s),
+    ping: () => { pointer.ping?.(); controls.ping?.() },
+    close: () => { pointer.close(); controls.close() },
+    onDismiss: (fn) => controls.onDismiss?.(fn),
+    onSkip: (fn) => controls.onSkip?.(fn),
+    get alive() { return pointer.alive !== false },
+  }
+}
 
 // --- One overlay per agent, machine-wide ---
 //
@@ -145,8 +172,10 @@ export function presenceEvent(line: string): string | null {
 export class PresenceOverlay implements Presence {
   private child: ChildProcessWithoutNullStreams | null
   private dismissed: Array<() => void> = []
+  private skipped: Array<() => void> = []
 
-  constructor(look: PresenceLook, helper: string, agentId: string, dir = presenceDir()) {
+  /** `tagOnly`: no arrow, only the name tag with its × and Skip. */
+  constructor(look: PresenceLook, helper: string, agentId: string, dir = presenceDir(), opts: { tagOnly?: boolean } = {}) {
     if (!existsSync(helper)) { this.child = null; return }
     endRecorded(agentId, dir)
     const child = spawn(helper, [
@@ -154,6 +183,7 @@ export class PresenceOverlay implements Presence {
       // The helper also exits on its own when this process dies or goes quiet.
       "--parent", String(process.pid), "--idle", String(IDLE_SECONDS),
       "--pos-file", posFile(dir, agentId),
+      ...(opts.tagOnly ? ["--tag-only"] : ["--rest", String(REST_SECONDS)]),
     ]) as ChildProcessWithoutNullStreams
     this.child = child
     const file = pidFile(dir, agentId)
@@ -168,17 +198,23 @@ export class PresenceOverlay implements Presence {
     child.on("exit", gone)
     child.stdin.on("error", () => {})
     // The helper reports the person's own gestures on stdout, one JSON
-    // object per line: {"event":"dismiss"} when the × is pressed.
+    // object per line: {"event":"dismiss"} when the × is pressed,
+    // {"event":"skip"} when Skip is.
     let pending = ""
     child.stdout?.on("data", (d: Buffer) => {
       pending += d.toString("utf8")
       const lines = pending.split("\n")
       pending = lines.pop() ?? ""
-      for (const line of lines) if (presenceEvent(line) === "dismiss") this.fireDismiss()
+      for (const line of lines) {
+        const event = presenceEvent(line)
+        if (event === "dismiss") this.fireDismiss()
+        else if (event === "skip") for (const fn of this.skipped) { try { fn() } catch { /* as for dismiss */ } }
+      }
     })
   }
 
   onDismiss(fn: () => void): void { this.dismissed.push(fn) }
+  onSkip(fn: () => void): void { this.skipped.push(fn) }
 
   private fireDismiss(): void {
     for (const fn of this.dismissed.splice(0)) {
@@ -194,6 +230,7 @@ export class PresenceOverlay implements Presence {
   say(text: string): void { this.send({ cmd: "say", text }) }
   clear(): void { this.send({ cmd: "clear" }) }
   park(): void { this.send({ cmd: "park" }) }
+  waiting(seconds: number): void { this.send({ cmd: "wait", seconds: Math.max(0, Math.round(seconds)) }) }
   ping(): void { this.send({ cmd: "ping" }) }
   /** EOF: the helper fades out and exits. */
   close(): void { this.child?.stdin.end(); this.child = null }

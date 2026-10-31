@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "os"
 import { join } from "path"
 import { PresenceHost } from "../src/daemon/voice-presence"
-import { PresenceOverlay, endRecorded, posFile, reapPresence, presenceLook, systemProcesses, type Presence, type ProcessOps } from "../src/voice/presence"
+import { PresenceOverlay, REST_SECONDS, endRecorded, posFile, reapPresence, presenceLook, systemProcesses, type Presence, type ProcessOps } from "../src/voice/presence"
 import { SpeechOut } from "../src/voice/speaking-queue"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 
@@ -184,6 +184,39 @@ describe("PresenceOverlay process", () => {
     for (let i = 0; i < 100 && n === 0; i++) await new Promise((r) => setTimeout(r, 20))
     await new Promise((r) => setTimeout(r, 100))
     expect(n).toBe(1)
+    overlay.close()
+  })
+
+  it.skipIf(process.platform === "win32")("the cursor rests after REST_SECONDS; the character's tag draws no arrow (#1591)", async () => {
+    // A stand-in helper that records its arguments, one per directory.
+    const argsOf = async (opts: { tagOnly?: boolean }) => {
+      const dir = mkdtempSync(join(tmpdir(), "presence-"))
+      const helper = join(dir, "agentx-mac-helper")
+      writeFileSync(helper, `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(dir, "args")}"\ncat >/dev/null\n`)
+      chmodSync(helper, 0o755)
+      const overlay = new PresenceOverlay(presenceLook("secretary-agent", agents["secretary-agent"]), helper, "secretary-agent", dir, opts)
+      const read = () => { try { return readFileSync(join(dir, "args"), "utf8") } catch { return "" } }
+      for (let i = 0; i < 100 && !read().includes("--pos-file"); i++) await new Promise((r) => setTimeout(r, 50))
+      overlay.close()
+      return read().split("\n")
+    }
+    const plain = await argsOf({}), tagOnly = await argsOf({ tagOnly: true })
+    expect(plain[plain.indexOf("--rest") + 1]).toBe(String(REST_SECONDS))
+    expect(plain).not.toContain("--tag-only")
+    expect(tagOnly).toContain("--tag-only")
+    expect(tagOnly).not.toContain("--rest")
+  })
+
+  it.skipIf(process.platform === "win32")("Skip on the tag reaches the owner every time it is pressed (#1591)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "presence-"))
+    const helper = join(dir, "agentx-mac-helper")
+    writeFileSync(helper, `#!/bin/sh\nprintf '{"event":"skip"}\\n'\nsleep 0.1\nprintf '{"event":"skip"}\\n'\ncat >/dev/null\n`)
+    chmodSync(helper, 0o755)
+    const overlay = new PresenceOverlay(presenceLook("secretary-agent", agents["secretary-agent"]), helper, "secretary-agent", dir)
+    let n = 0
+    overlay.onSkip(() => n++)
+    for (let i = 0; i < 100 && n < 2; i++) await new Promise((r) => setTimeout(r, 20))
+    expect(n).toBe(2)
     overlay.close()
   })
 

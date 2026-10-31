@@ -14,7 +14,7 @@ import {
 import { HELPER } from "@/computer-use/screen"
 import { LiveTeach, teachSystemPrompt, type TeachDeps, type TeachMode } from "@/voice/live-teach"
 import { helperAct, readScreenView } from "@/voice/live-teach-screen"
-import { IDLE_SECONDS, NO_POINTER, PresenceOverlay, presenceLook, reapPresence, type Presence, type PresenceLook } from "@/voice/presence"
+import { IDLE_SECONDS, NO_POINTER, PresenceOverlay, presenceLook, reapPresence, withControls, type Presence, type PresenceLook } from "@/voice/presence"
 import type { SpeechOut } from "@/voice/speaking-queue"
 import type { LineModel } from "@/voice/talk-model"
 import { talkSpeaker, type VoiceSettings } from "@/voice/agent-voice"
@@ -40,6 +40,9 @@ export interface PresenceHostDeps {
   /** The character as the agent's pointer (src/voice/guide.ts), or null
    *  while it is not on screen: then the drawn cursor points. */
   character?: (agentId: string) => Presence | null
+  /** The tag beside the character for its ×, Skip and line (#1591):
+   *  a tag-only overlay unless a test swaps it. */
+  controls?: (look: PresenceLook, agentId: string) => Presence
   screen?: Pick<TeachDeps, "readScreen" | "act">
   frontmostApp?: () => Promise<string | null>
 }
@@ -128,9 +131,14 @@ export class PresenceHost {
       say: (t) => slot.presence.say(t),
       clear: () => slot.presence.clear(),
       park: () => slot.presence.park(),
+      waiting: (s) => slot.presence.waiting?.(s),
       close: () => { if (this.slots.get(agentId) === slot) this.hide(agentId) },
       onDismiss: (fn) => slot.presence.onDismiss?.(() => {
         this.log(`[presence] ${agentId} closed on screen`)
+        fn()
+      }),
+      onSkip: (fn) => slot.presence.onSkip?.(() => {
+        this.log(`[presence] ${agentId} step skipped on screen`)
         fn()
       }),
     }
@@ -173,6 +181,13 @@ export class PresenceHost {
   }
 
   private overlay(look: PresenceLook, agentId: string): Presence {
-    return this.deps.overlay?.(look, agentId) ?? this.deps.character?.(agentId) ?? new PresenceOverlay(look, HELPER, agentId)
+    if (this.deps.overlay) return this.deps.overlay(look, agentId)
+    // The character has no × or Skip of its own: a tag beside it has them.
+    const character = this.deps.character?.(agentId)
+    if (character) {
+      const controls = this.deps.controls?.(look, agentId) ?? new PresenceOverlay(look, HELPER, agentId, undefined, { tagOnly: true })
+      return withControls(character, controls)
+    }
+    return new PresenceOverlay(look, HELPER, agentId)
   }
 }
