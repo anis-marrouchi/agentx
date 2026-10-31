@@ -2299,7 +2299,7 @@ export const daemonConfigSchema = z.object({
       list: z.string().min(1).refine((l) => !l.startsWith("-"), "must not start with \"-\"").default("AgentX Desk"),
       dueAfterMinutes: z.number().int().min(0).max(1440).default(5),
       include: z.array(z.enum(["card", "request"])).min(1).default(["card", "request"]),
-      /** Where the owner answers. Unset: the local dashboard's Approvals page. */
+      /** Where the owner answers. Unset: Needs you on the local dashboard's Hub. */
       answerUrl: z.string().url().optional(),
     }).default({}),
     /** The mesh peer that has the owner's notes app, for a node without

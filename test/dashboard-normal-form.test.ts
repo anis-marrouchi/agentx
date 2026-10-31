@@ -81,7 +81,7 @@ describe("an address not in normal form", () => {
 describe("an address in normal form", () => {
   it("reaches its page as before, with or without a query", async () => {
     // The member page and the phone app ask for their own key; an admin page opens on loopback.
-    for (const [path, status] of [["/member", 401], ["/api/member/me", 401], ["/api/app/fleet", 401], ["/approvals", 200], ["/approvals?next=/../live", 200]] as const) {
+    for (const [path, status] of [["/member", 401], ["/api/member/me", 401], ["/api/app/fleet", 401], ["/admin", 200], ["/admin?next=/../live", 200], ["/approvals", 301]] as const) {
       const r = await raw(path)
       expect([path, r.status]).toEqual([path, status])
       expect(r.text).not.toBe(REFUSED)

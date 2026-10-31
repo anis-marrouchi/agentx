@@ -304,7 +304,7 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     }).join('') : '<p class="k">Nothing yet today.</p>') + '<p><button type="button" class="wa-more" data-dtab="answered">All answered →</button></p></section>';
     var s = v.settings || {}, d = s.desk || {}, dg = s.digest || {};
     var reach = '<section class="ax-wall__box"><h2>Reaching ' + (decOwner() ? 'you' : 'the owner') + '</h2><p>Phone: ' + esc(DEC_REACH[d.phone] || 'off') + '. Computer: ' + esc(DEC_REACH[d.computer] || 'off') + '. ' +
-      (dg.enabled ? 'Digest at ' + esc(dg.time || '—') + '.' : 'No daily digest.') + (decOwner() ? ' <a href="/approvals#settings">Change in Settings</a>' : '') + '</p></section>';
+      (dg.enabled ? 'Digest at ' + esc(dg.time || '—') + '.' : 'No daily digest.') + (decOwner() ? ' <a href="#page=settings&amp;section=inbox">Change in Settings</a>' : '') + '</p></section>';
     return waits + answered + reach;
   }
   async function loadDecide() {

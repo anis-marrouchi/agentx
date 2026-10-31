@@ -12,7 +12,6 @@ import { runApprovalsSweep, digestDue, digestText, type ApprovalSettings } from 
 import { handleApprovalsApi, OPERATOR_ONLY } from "../src/approvals/daemon-api"
 import { runApprovalTool } from "../src/approvals/tool"
 import { handleApprovalsPanelApi } from "../src/daemon/approvals-panel"
-import { renderApprovalsPage } from "../src/daemon/ui/pages/approvals"
 import { readInboxState } from "../src/approvals/state"
 import { MemoryStore } from "../src/agents/memory-store"
 import { saveProposal, readProposal, type PromotionProposal } from "../src/wiki/proposals"
@@ -703,14 +702,6 @@ describe("the dashboard (operator) API", () => {
     expect(readCard(root, c.card.id)?.status).toBe("pending")
   })
 
-  it("the page offers Show on Mac for cards, and its script parses", () => {
-    const html = renderApprovalsPage()
-    const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((x) => x.includes("/api/admin/approvals")) ?? ""
-    expect(script).toContain("i.kind === 'card' && state.popup")
-    expect(script).toContain("/api/admin/approvals/popup")
-    expect(() => new Function(script)).not.toThrow()
-  })
-
   it("saves settings through the config schema", async () => {
     const post = (b: unknown) => fetch(`${base}/api/admin/approvals/settings`, {
       method: "POST", body: JSON.stringify(b), headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" },
@@ -734,17 +725,5 @@ describe("config", () => {
     expect(daemonConfigSchema.safeParse({ ...base, approvals: { digest: { time: "9am" } } }).success).toBe(false)
     expect(daemonConfigSchema.safeParse({ ...base, approvals: { digest: { timezone: "Mars/Olympus" } } }).success).toBe(false)
     expect(existsSync(join(root, ".agentx", "approvals"))).toBe(false)
-  })
-})
-
-describe("the page", () => {
-  it("renders, with an Approvals tab and client JS that parses", async () => {
-    const { renderApprovalsPage } = await import("../src/daemon/ui/pages/approvals")
-    const html = renderApprovalsPage({ localToken: "t" })
-    expect(html).toMatch(/href="\/approvals" class="ax-topbar__tab is-active"/)
-    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    const page = scripts.find((s) => s.includes("/api/admin/approvals"))
-    expect(page).toBeTruthy()
-    expect(() => new Function(page!)).not.toThrow()
   })
 })

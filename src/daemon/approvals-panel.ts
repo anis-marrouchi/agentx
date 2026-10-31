@@ -5,9 +5,7 @@ import { popAgain } from "@/approvals/popup-runner"
 import { parseDestination, readApprovalSettings, readDeskRouting, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
 import { readOwnerList } from "@/desk/owner-list"
 import { DESK_REACH, type DeskReach } from "@/desk/route"
-import { renderApprovalsPage } from "./ui/pages/approvals"
 import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
-import type { TopbarPeer } from "./topbar"
 
 // --- Dashboard side of the Approvals inbox ---
 //
@@ -17,7 +15,7 @@ import type { TopbarPeer } from "./topbar"
 // (browser-origin.ts refuses pages from other origins before this runs).
 // Agents never reach decide() through the daemon; see daemon-api.ts.
 //
-//   GET  /approvals                        the page
+//   GET  /approvals                        moved: to the Hub's Needs you (#1440)
 //   GET  /api/admin/approvals[?all=1]      inbox + settings, and `desk`: the
 //                                          owner's one list with its count
 //                                          (desk/owner-list.ts, #1138 step C);
@@ -59,11 +57,6 @@ export function choiceAnswer(body: Record<string, unknown>): { choice?: string |
     ...(typeof body.text === "string" && body.text.trim() ? { text: body.text } : {}),
     ...(typeof body.seen === "string" && body.seen ? { seen: body.seen } : {}),
   }
-}
-
-export function handleApprovalsPageGet(res: ServerResponse, peers: TopbarPeer[], localToken?: string): void {
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-  res.end(renderApprovalsPage({ peers, localToken }))
 }
 
 export interface ApprovalsPanelOpts {

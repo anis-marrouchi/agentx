@@ -26,7 +26,7 @@ export interface ContentApiReply {
 }
 
 export const PUBLISH_REFUSED =
-  "Only the owner publishes: `agentx approvals approve content:<id>`, or the Approvals page in the dashboard."
+  "Only the owner publishes: `agentx approvals approve content:<id>`, or Needs you on the dashboard's Hub."
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "")
 

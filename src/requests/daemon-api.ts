@@ -42,7 +42,7 @@ import { DEFAULT_FLOW, FLOW_DAYS_MAX, flowReport, type FlowSettings } from "./fl
 
 export const LIST_LIMIT = 100
 
-export const OWNER_ONLY = "Only the owner drops a request: `agentx requests drop <id>`, or the Approvals page in the dashboard."
+export const OWNER_ONLY = "Only the owner drops a request: `agentx requests drop <id>`, or its post on the dashboard's Hub."
 
 /** Names the caller's running turn: its task id, or its channel and chat
  *  (the X-AgentX-Task / X-AgentX-Channel / X-AgentX-Chat headers).

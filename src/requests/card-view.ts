@@ -95,6 +95,16 @@ export function summarize(md: string, max = SUMMARY_MAX): string {
 /** What the stall view needs: the quiet time, the clock, and which ids are agents. */
 export interface StallLookup { staleAfterHours: number; now: number; isAgent: (id: string) => boolean }
 
+/** A request's open loop (#1039): who it is owed to, when it is due, what
+ *  check closes it and what that check last said. Null: none of it. The
+ *  card and the Hub's post (#1440) both show it. */
+export function loopOf(r: RequestRecord): RequestCard["loop"] {
+  return r.promise || r.dueAt !== null || r.closeWhen ? {
+    owedTo: r.owedTo, promise: r.promise, dueAt: r.dueAt, check: r.closeWhen ? describeCloseWhen(r.closeWhen) : null,
+    verifyState: r.verifyState, verifyDetail: r.verifyDetail,
+  } : null
+}
+
 export function requestCard(
   r: RequestRecord,
   store: Pick<RequestStore, "lastAnswer">,
@@ -114,10 +124,7 @@ export function requestCard(
     why: r.state === "waiting_owner" ? r.question : r.state === "needs_attention" ? r.attentionReason : null,
     ownerNoteHtml: r.ownerNote ? markdownToHtml(r.ownerNote) : null,
     lastAnswer: answer ? { agentId: answer.agentId, at: answer.at, html: markdownToHtml(cutAnswer!) } : null,
-    loop: r.promise || r.dueAt !== null || r.closeWhen ? {
-      owedTo: r.owedTo, promise: r.promise, dueAt: r.dueAt, check: r.closeWhen ? describeCloseWhen(r.closeWhen) : null,
-      verifyState: r.verifyState, verifyDetail: r.verifyDetail,
-    } : null,
+    loop: loopOf(r),
     awaitingQa: awaitingQa(r),
     stall: stall && why ? { ...waitsOn(r, { isAgent: stall.isAgent, activeStepAgent: activeStepAgentOf(plans) }), why } : null,
     plan: plan ? {

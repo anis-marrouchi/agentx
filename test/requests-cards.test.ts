@@ -8,7 +8,6 @@ import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep, pickupText, pickupEnded } from "../src/requests/sweep"
 import { plain, requestCard, summarize } from "../src/requests/card-view"
 import { handleRequestsPanel } from "../src/daemon/requests-panel"
-import { REQUESTS_SCRIPT } from "../src/daemon/ui/pages/approvals-requests"
 import { nextRequestToPop, popNext, requestAsCard } from "../src/approvals/popup-runner"
 import { renderCardPage } from "../src/approvals/card-page"
 import { createCard } from "../src/approvals/cards"
@@ -266,11 +265,6 @@ describe("deciding on a card", () => {
     await handleRequestsPanel("POST", `${P}/close`, { id: "req-t2", action: "done", evidence: "https://example.test/pr/4" }, ctx())
     expect(store.get("req-t2")?.evidence).toBe("https://example.test/pr/4")
   })
-
-  it("ships a page script that parses and has every action", () => {
-    expect(() => new Function(REQUESTS_SCRIPT)).not.toThrow()
-    for (const a of ["reply", "handoff", "done", "drop"]) expect(REQUESTS_SCRIPT).toContain(`data-req="${a}"`)
-  })
 })
 
 describe("the notice on the Mac", () => {
@@ -332,7 +326,7 @@ describe("the notice on the Mac", () => {
     expect(html).toContain(">Request<")
     expect(html).toContain("Hand it back")
     expect(html).toContain(">Drop<")
-    expect(html).toContain("It stays in Open requests")
+    expect(html).toContain("It stays on the Hub until you close it.")
     expect(html).not.toContain("If you don't answer by")
   })
 })

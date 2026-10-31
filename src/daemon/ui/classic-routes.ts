@@ -14,7 +14,7 @@
 // set `wall`, and the redirect and the Wall's link crawl (test/classic-routes
 // .test.ts) follow. The wiki is its own space, like the Wall, and is not listed.
 
-import { HUB_PATH } from "./hub-name"
+import { HUB_NEEDS_YOU, HUB_PATH } from "./hub-name"
 
 export type ClassicStatus = "wall" | "pending" | "tool"
 
@@ -35,11 +35,11 @@ export interface ClassicRoute {
 export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/tasks/<id>", label: "One task's run", status: "wall", wall: "/#page=task", note: "The Task page (#1381): stream, steer, Stop." },
   { path: "/live", label: "Live", status: "wall", wall: HUB_PATH + "#page=live", note: "Redirected in board-dashboard.ts (#1439)." },
-  { path: "/monitor", label: "Monitor", status: "pending", blockedBy: [1439, 1440], note: "Connect a CLI session; open actions of CLI sessions." },
+  { path: "/monitor", label: "Monitor", status: "pending", blockedBy: [1449], note: "Connect a CLI session; open actions of CLI sessions. No child issue yet (#1439 and #1440 closed)." },
   { path: "/mesh", label: "Operations", status: "pending", blockedBy: [1449], note: "Lifetime view (thread → run → step drill), Routines with stale verdicts, run analytics; no child issue yet." },
   { path: "/activity", label: "Activity", status: "pending", blockedBy: [1449], note: "Timeline lane view and the Map; no child issue yet. The Hub's Activity (#1429) has the run list." },
   { path: "/agents/<id>/history", label: "Agent history", status: "wall", wall: HUB_PATH + "#page=activity", note: "The agent's profile with its Activity tab (#1429)." },
-  { path: "/approvals", label: "Approvals", status: "pending", blockedBy: [1440], note: "Deciding cards and inbox items." },
+  { path: "/approvals", label: "Approvals", status: "wall", wall: HUB_NEEDS_YOU, note: "Needs you (#1440); its settings are in Settings › Inbox and Requests (#1428). Redirected (301) in board-dashboard.ts." },
   { path: "/admin", label: "Settings", status: "pending", blockedBy: [1428] },
   { path: "/admin/agents/<id>", label: "Agent settings", status: "pending", blockedBy: [1428] },
   { path: "/admin/health", label: "Observability", status: "pending", blockedBy: [1428], note: "Also /admin/observability." },
@@ -50,7 +50,7 @@ export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/org", label: "Org chart editor", status: "tool", note: "Editing who reports to whom; the Hub's Org page reads it." },
   { path: "/people", label: "People", status: "wall", wall: HUB_PATH + "#page=people", note: "Redirected in people-panel.ts (#1441)." },
   { path: "/workflows", label: "Workflows", status: "pending", blockedBy: [1445] },
-  { path: "/admin/graph", label: "Reviews", status: "pending", blockedBy: [1440], note: "Approve or reject a classification. Also /graph." },
+  { path: "/admin/graph", label: "Intent graph", status: "pending", blockedBy: [1449], note: "The taxonomy editor; no child issue yet. Reviews are decided on the Hub (#1440). Also /graph." },
   { path: "/admin/projects", label: "Projects", status: "pending", blockedBy: [1449], note: "Creating and editing projects; no child issue yet." },
   { path: "/admin/ledger", label: "Intent ledger", status: "pending", blockedBy: [1449], note: "Not covered by the spike; no child issue yet." },
   { path: "/boards", label: "Boards", status: "wall", wall: HUB_PATH + "#status=open&view=projects", note: "Retired, redirected in board-dashboard.ts RETIRED_PAGES (#1446)." },

@@ -7,8 +7,6 @@ import { closeDb } from "../src/storage/sqlite"
 import { requests } from "../src/commands/requests"
 import { updateRequestSettings } from "../src/requests/settings"
 import { handleRequestsPanel } from "../src/daemon/requests-panel"
-import { renderApprovalsPage } from "../src/daemon/ui/pages/approvals"
-import { REQUESTS_SCRIPT } from "../src/daemon/ui/pages/approvals-requests"
 
 // Rough edges left by the reviews of the requests CLI and page (#395).
 
@@ -96,28 +94,5 @@ describe("reading requests from the dashboard", () => {
     closeDb()
     expect(tables(file)).not.toContain("requests")
     expect(tables(file)).not.toContain("request_links")
-  })
-})
-
-describe("the Open requests list after an answer in the inbox", () => {
-  it("loads again when the inbox reports a decision", async () => {
-    const listeners: Record<string, () => void> = {}
-    const element: any = { addEventListener: () => {}, contains: () => false, enabled: {}, from: {}, channels: {}, staleAfterHours: {}, retentionDays: {} }
-    const document = {
-      getElementById: () => element,
-      addEventListener: (name: string, fn: () => void) => { listeners[name] = fn },
-      visibilityState: "visible",
-      activeElement: null,
-    }
-    const fetch = vi.fn(async () => ({ ok: true, json: async () => ({ items: [], settings: {} }) }))
-    new Function("document", "fetch", "window", "setInterval", REQUESTS_SCRIPT)(document, fetch, {}, () => 0)
-    expect(fetch).toHaveBeenCalledTimes(1)
-    listeners["apv:decided"]()
-    expect(fetch).toHaveBeenCalledTimes(2)
-    expect(fetch.mock.calls[1][0]).toBe(P)
-  })
-
-  it("is told by the inbox once a decision is saved", () => {
-    expect(renderApprovalsPage()).toContain("document.dispatchEvent(new Event('apv:decided'))")
   })
 })

@@ -203,9 +203,9 @@ describe("Wall Settings: Agents (#1428)", () => {
     const ops = html.split('id="st-agent-ops"')[1].split("</article>")[0]
     expect(ops).toContain('aria-checked="false"')
     expect(ops).toContain("Codex CLI · public API")
-    // An agent waiting for approval is decided in Approvals, not here.
+    // An agent waiting for approval is decided in Needs you, not here.
     const hire = html.split('id="st-agent-new"')[1].split("</article>")[0]
-    expect(hire).toContain('href="/approvals"')
+    expect(hire).toContain('href="#status=open&amp;view=decide"')
     expect(hire).not.toContain("data-st-hold")
   })
 

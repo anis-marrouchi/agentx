@@ -50,6 +50,12 @@ describe("classic routes registry", () => {
     expect(classicRouteFor("/workflows")?.status).toBe("pending")
   })
 
+  it("lists /approvals as on the Hub, at Needs you (#1440)", () => {
+    expect(classicRouteFor("/approvals")).toMatchObject({ status: "wall", wall: "/hub#status=open&view=decide" })
+    // Its blocker is gone from every page still pending.
+    for (const r of CLASSIC_ROUTES) expect(r.blockedBy ?? [], r.path).not.toContain(1440)
+  })
+
   it("matches ids, queries and hashes", () => {
     expect(classicRouteFor("/agents/a1/history?node=x")?.path).toBe("/agents/<id>/history")
     expect(classicRouteFor("/admin/agents/a1")?.path).toBe("/admin/agents/<id>")
@@ -77,7 +83,7 @@ describe("the Wall's links (link crawl)", () => {
     const linked = new Set(wallHrefs().map((h) => classicRouteFor(h)).filter((r) => r?.status === "pending").map((r) => r!.path))
     // Shrinks as each child of #1449 lands; empty once #1447 is done.
     expect([...linked].sort()).toEqual([
-      "/activity", "/admin", "/admin/agents/<id>", "/approvals",
+      "/activity", "/admin", "/admin/agents/<id>",
       "/mesh", "/monitor", "/workflows",
     ])
   })
@@ -148,6 +154,17 @@ describe("classic Task page redirect", () => {
       expect(r.headers.get("location")).toBe("/hub#page=editor&e-wf=github-sweep")
       const n = await fetch(`${base}/workflows/editor?new=1`, { redirect: "manual" })
       expect(n.headers.get("location")).toBe("/hub#page=editor&e-new=1")
+    })
+
+    it("redirects /approvals for good to the Hub's Needs you (#1440)", async () => {
+      const base = await start()
+      for (const path of ["/approvals", "/approvals/", "/approvals?kind=card"]) {
+        const r = await fetch(base + path, { redirect: "manual" })
+        expect([path, r.status]).toEqual([path, 301])
+        expect(r.headers.get("location")).toBe("/hub#status=open&view=decide")
+      }
+      // Not a sub-page: anything else under /approvals is still not a page here.
+      expect((await fetch(`${base}/approvals/c1`, { redirect: "manual" })).status).not.toBe(301)
     })
 
     it("still answers 400 without an agent", async () => {

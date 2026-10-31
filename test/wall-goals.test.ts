@@ -53,6 +53,19 @@ describe("Wall goals", () => {
     expect(wallPost(store.get("plain")!, deps()).goal).toBeNull()
   })
 
+  // /approvals showed a promise's loop on its card; it redirects to the Hub
+  // now, so the post carries it (#1440).
+  it("puts a promise's loop on its post: owed to, due, the check and what it said", () => {
+    store.addPromise({ id: "p1", channel: "telegram", chatId: "chat-p1", agentId: "coder", text: "Send the quote", owedTo: "client-a",
+      dueAt: NOW + 2 * H, closeWhen: { kind: "url", url: "https://example.com/quote" }, now: NOW - H })
+    store.markChecked("p1", "unverified", "HTTP 503 token=supersecretvalue123", NOW)
+    expect(wallPost(store.get("p1")!, deps()).loop).toMatchObject({
+      owedTo: "client-a", promise: true, dueAt: NOW + 2 * H, check: "https://example.com/quote answers", verifyState: "unverified",
+    })
+    expect(wallPost(store.get("p1")!, deps()).loop!.verifyDetail).not.toContain("supersecretvalue123")
+    expect(wallPost(store.get("plain")!, deps()).loop).toBeNull()
+  })
+
   it("redacts secrets in a goal's title", () => {
     const post = wallPost(store.get("g3")!, deps())
     expect(post.goal!.title).not.toContain("supersecretvalue123")

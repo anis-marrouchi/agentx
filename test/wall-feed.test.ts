@@ -38,7 +38,7 @@ const APPROVALS = {
   snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
 }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown; wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown; wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -132,7 +132,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   // With `timers`, the script's timeouts are kept for the test to run.
   const later = opts.timers ? (f: () => void) => { opts.timers!.push(f); return 0 } : setTimeout
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "setTimeout", script)(
-    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm }, fetchStub, loc,
+    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm, AX_WALL_SETTINGS: opts.owner ? {} : undefined }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0, later,
   )
@@ -750,6 +750,61 @@ describe("Wall post actions (#1316)", () => {
     expect(sent(w, "/api/admin/wall/space")[0].body).toMatchObject({ id: "r1", agent: "cx", with: "reviewer" })
     const space = w.calls.find((c) => c.url === "/api/admin/wall/space")!
     expect(space.init.headers["X-Agentx-Peer"]).toBeUndefined()
+  })
+
+  // /approvals had Hand to agent, Done and Drop on every open request; it
+  // redirects to the Hub now, so an open post has them for the owner (#1440).
+  it("shows a promise's loop in the opened post's facts (#1440)", async () => {
+    const loop = { owedTo: "owner", promise: true, dueAt: NOW + 3600e3, check: "https://example.com/quote answers", verifyState: "failed", verifyDetail: "HTTP 503" }
+    const w = openWall({ hash: "#status=open&post=r1", data: { ...WALL, posts: [post("r1", "cx", "in_progress", { loop })] } })
+    await w.settle()
+    const facts = /<dl class="wtk__facts">(.*?)<\/dl>/.exec(w.el("wall-post").innerHTML)![1]
+    expect(facts).toContain("<dt>Promised to</dt><dd>you</dd>")
+    expect(facts).toContain("<dt>Due</dt>")
+    expect(facts).toContain('<dt>Closes when</dt><dd>https://example.com/quote answers <span class="is-warn">(check not met: HTTP 503)</span></dd>')
+  })
+
+  it("gives the owner Hand to, Done and Drop on an open post, and no one else", async () => {
+    const owner = openWall({ hash: "#status=open&post=r1", owner: true })
+    await owner.settle()
+    const page = owner.el("wall-post").innerHTML
+    expect(page).toContain('data-act="close-done"')
+    expect(page).toContain('data-act="close-drop"')
+    expect(page).toContain('<select id="wdo-hand" aria-label="Hand it to"><option value="">Hand to…</option><option value="reviewer">Reviewer</option></select>')
+    const guest = openWall({ hash: "#status=open&post=r1" })
+    await guest.settle()
+    expect(guest.el("wall-post").innerHTML).not.toContain("close-done")
+    const closed = openWall({ hash: "#post=r3", owner: true })
+    await closed.settle()
+    expect(closed.el("wall-post").innerHTML).not.toContain("close-done")
+  })
+
+  it("asks once, then sends Done, Drop or the hand-off with the comment box's words", async () => {
+    const w = openWall({ hash: "#status=open&post=r1", owner: true })
+    await w.settle()
+    w.click({ "data-act": "close-done" })
+    expect(w.el("wdo-close").innerHTML).toContain("<b>Close “Post r1” as done.</b> It cannot be taken back.")
+    expect(sent(w, "/api/admin/wall/request/close")).toEqual([])
+    w.click({ "data-act": "close-back" })
+    expect(w.el("wdo-close").innerHTML).not.toContain("Confirm")
+    w.el("wdo-text").value = " https://example.test/pr/4 "
+    w.click({ "data-act": "close-done" })
+    w.click({ "data-act": "close-go" })
+    await w.settle()
+    w.el("wdo-text").value = ""
+    w.click({ "data-act": "close-drop" })
+    w.click({ "data-act": "close-go" })
+    await w.settle()
+    w.change("wdo-hand", "reviewer")
+    expect(w.el("wdo-close").innerHTML).toContain("<b>Hand “Post r1” to Reviewer.</b>")
+    w.click({ "data-act": "close-go" })
+    await w.settle()
+    expect(sent(w, "/api/admin/wall/request/close")).toEqual([
+      { method: "POST", body: { id: "r1", action: "done", evidence: "https://example.test/pr/4" } },
+      { method: "POST", body: { id: "r1", action: "drop", reason: "" } },
+    ])
+    expect(sent(w, "/api/admin/wall/request/handoff")).toEqual([{ method: "POST", body: { id: "r1", agentId: "reviewer", note: "" } }])
+    expect(w.el("wdo-note").textContent).toBe("Done.")
   })
 })
 

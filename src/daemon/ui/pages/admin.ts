@@ -24,6 +24,7 @@ import {
 } from ".."
 import { getTopbarFeatures } from "../../topbar"
 import { CRON_VALUE_CSS, CRON_VALUE_SCRIPT } from "../cron-value"
+import { HUB_NAME, HUB_NEEDS_YOU } from "../hub-name"
 
 /** Feather-style stroked icons for each section head. Kept together at the
  *  top so we can swap the icon set in one place if/when the design calls
@@ -2903,7 +2904,7 @@ function renderEmailPane() {
       '<label>Who may write<span class="hint">(addresses, @domain, or * for anyone)</span></label><input id="em-allow" value="*" />' +
       '<label class="toggle-switch" style="margin-top:8px"><input type="checkbox" id="em-auto" /> <span>Send replies at once, without my approval</span></label>' +
       '<div class="actions"><button class="primary" onclick="addEmail()">Add mailbox</button><div id="em-msg" class="msg"></div></div>' +
-      '<div class="hint-block">Only mail that arrives after the daemon starts reading the mailbox is answered, and the mailbox is never changed. Each reply waits in <a href="/approvals">Approvals</a> until you send it, unless you tick the box above. To check the login before saving, use <code>agentx connect email</code>.</div>' +
+      '<div class="hint-block">Only mail that arrives after the daemon starts reading the mailbox is answered, and the mailbox is never changed. Each reply waits in <a href="${HUB_NEEDS_YOU}">Needs you</a> on the ${HUB_NAME} until you send it, unless you tick the box above. To check the login before saving, use <code>agentx connect email</code>.</div>' +
     '</div></div>';
   const t = $('em-toggle');
   if (t) t.addEventListener('change', async (ev) => {

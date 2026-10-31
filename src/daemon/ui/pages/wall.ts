@@ -59,7 +59,7 @@ export interface WallPageOpts {
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
-  ["Operations", "/mesh"], ["Monitor", "/monitor"], ["Approvals", "/approvals"],
+  ["Operations", "/mesh"], ["Monitor", "/monitor"],
   ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
 ]
 
