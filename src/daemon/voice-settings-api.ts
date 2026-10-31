@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync } from "fs"
 import type { DaemonConfig } from "@/daemon/config"
 import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
 import { presenceLook } from "@/voice/presence"
-import { ORB_PALETTES, VOICE_ANIMATIONS, VOICE_LOOKS, agentPalette, type VoiceAnimations, type VoiceLook } from "@/voice/orb-palettes"
+import { ORB_PALETTES, VOICE_ANIMATIONS, VOICE_LOOKS, VOICE_READY_SOUNDS, agentPalette, type VoiceAnimations, type VoiceLook, type VoiceReadySound } from "@/voice/orb-palettes"
 import { resolveAgentVoice, voiceRef, label } from "@/voice/agent-voice"
 import type { SystemVoice } from "@/voice/system-voices"
 import type { VoiceRef } from "@/voice/speaker"
@@ -63,6 +63,7 @@ export interface VoiceSettingsPatch {
     stroll?: boolean
     animations?: VoiceAnimations
     answers?: VoiceAnswers
+    readySound?: VoiceReadySound
     listOnHover?: boolean
     /** The whole list, replacing the saved one; null or [] clears it. */
     pronunciations?: Pronunciation[] | null
@@ -98,6 +99,10 @@ export interface VoiceSettingsView {
     animations: VoiceAnimations
     /** When an answer is ready: "wait" until picked, or "play" at once. */
     answers: VoiceAnswers
+    /** The Mac sound played once when an answer is ready and waits. */
+    readySound: VoiceReadySound
+    /** The sounds it may be. */
+    readySounds: readonly VoiceReadySound[]
     /** Half a second's hover on the pill opens the open-requests list. */
     listOnHover: boolean
     /** How words are said aloud without changing how they are written. */
@@ -151,6 +156,8 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       stroll: v.stroll,
       animations: v.animations,
       answers: v.answers ?? "wait",
+      readySound: v.readySound ?? "Pop",
+      readySounds: VOICE_READY_SOUNDS,
       listOnHover: v.listOnHover ?? true,
       pronunciations: v.pronunciations ?? [],
     },
@@ -200,7 +207,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   for (const k of Object.keys(patch)) if (k !== "general" && k !== "agents") err(k, `"${k}" is not a voice setting`)
 
   const g = patch.general ?? {}
-  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced", "stroll", "animations", "answers", "listOnHover", "pronunciations"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
+  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced", "stroll", "animations", "answers", "readySound", "listOnHover", "pronunciations"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
   if (g.provider !== undefined && !["system", "elevenlabs"].includes(g.provider)) err("general.provider", "Voice provider must be system or elevenlabs")
   if (g.stt !== undefined && !["auto", "elevenlabs", "local"].includes(g.stt)) err("general.stt", "Speech to text must be auto, elevenlabs or local")
   if (g.localStt !== undefined && !["mlx-whisper", "parakeet"].includes(g.localStt)) err("general.localStt", "The engine on this Mac must be mlx-whisper or parakeet")
@@ -210,6 +217,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   if (g.stroll !== undefined && typeof g.stroll !== "boolean") err("general.stroll", "Character strolls when idle must be on or off")
   if (g.animations !== undefined && !VOICE_ANIMATIONS.includes(g.animations)) err("general.animations", `Character plays when idle must be ${VOICE_ANIMATIONS.slice(0, -1).join(", ")} or ${VOICE_ANIMATIONS.at(-1)}`)
   if (g.answers !== undefined && !["wait", "play"].includes(g.answers)) err("general.answers", "When an answer is ready must be wait or play")
+  if (g.readySound !== undefined && !VOICE_READY_SOUNDS.includes(g.readySound)) err("general.readySound", `Soft sound must be one of ${VOICE_READY_SOUNDS.join(", ")}`)
   if (g.listOnHover !== undefined && typeof g.listOnHover !== "boolean") err("general.listOnHover", "Open the list on hover must be on or off")
   if (g.pronunciations != null) errors.push(...checkPronunciations(g.pronunciations))
   for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
@@ -306,6 +314,7 @@ export function applyVoiceSettings(raw: any, patch: VoiceSettingsPatch): void {
     if (g.stroll !== undefined) raw.voice.stroll = g.stroll
     if (g.animations !== undefined) raw.voice.animations = g.animations
     if (g.answers !== undefined) raw.voice.answers = g.answers
+    if (g.readySound !== undefined) raw.voice.readySound = g.readySound
     if (g.listOnHover !== undefined) raw.voice.listOnHover = g.listOnHover
     if (g.pronunciations !== undefined) {
       const list = (g.pronunciations ?? []).map((p) => ({

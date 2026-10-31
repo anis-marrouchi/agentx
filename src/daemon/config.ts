@@ -7,7 +7,7 @@ import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { monthlyBudgetSchema } from "@/agents/budget-schema"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
-import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
+import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS, VOICE_READY_SOUNDS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { NOISE_MARKERS } from "@/voice/noise"
 import { FLOOR_DEFAULTS } from "@/voice/floor"
@@ -2471,6 +2471,8 @@ export const daemonConfigSchema = z.object({
      *  "not heard" in the open-requests list, with one soft sound, until
      *  the person picks it; "play" plays it at once, as before. */
     answers: z.enum(["wait", "play"]).default("wait"),
+    /** The Mac alert sound played once when an answer is ready and waits. */
+    readySound: z.enum(VOICE_READY_SOUNDS).default("Pop"),
     /** AgentX Voice opens the open-requests list after half a second's
      *  hover on the pill. Off: only a click or the list shortcut opens it. */
     listOnHover: z.boolean().default(true),
