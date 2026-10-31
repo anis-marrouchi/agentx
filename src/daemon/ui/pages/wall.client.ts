@@ -1520,6 +1520,29 @@ ${WALL_BUILD_SCRIPT}
   // openPost applies its own hash; skip the hashchange that follows it.
   window.addEventListener('hashchange', function () { if (location.hash !== S.applied) applyHash(); });
 
+  // What a chat message carries (#1528, wall-chat.client.ts): the page, the
+  // status tab and filters that are set, the open post or run, and the
+  // headlines in view, capped. A later Hub page gets it with no work of its own.
+  window.axPageContext = function () {
+    var page = S.post ? 'post' : S.page, onPosts = page === 'wall' && (S.view === 'feed' || S.view === 'list');
+    var c = { page: $('wall-title').textContent || '${HUB_NAME}' };
+    if (page === 'wall') c.view = S.view;
+    if (S.task && S.task.task) c.task = S.task.task;
+    var p = S.post && findPost(S.post);
+    if (p) c.post = { id: p.id, headline: p.headline };
+    if (onPosts && S.data) {
+      var f = current();
+      c.status = f.status;
+      var set = {};
+      FILTERS.forEach(function (k) { if (k !== 'status' && f[k]) set[k] = f[k]; });
+      if (Object.keys(set).length) c.filters = set;
+      var posts = (S.data.posts || []).filter(function (x) { return match(x, f); });
+      c.count = posts.length;
+      c.inView = posts.slice(0, 10).map(function (x) { return x.headline; });
+    }
+    return c;
+  };
+
   // A link from the classic task page: /wall?task=<id> opens that post's thread.
   var fromTask = new URLSearchParams(location.search).get('task');
   load().then(function () {

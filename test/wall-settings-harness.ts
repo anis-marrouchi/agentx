@@ -147,7 +147,7 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
     await settle()
   }
   const writes = () => calls.filter((c) => c.method !== "GET")
-  return { page, el, calls, writes, settle, go, click, submit, type, change, key, paints: () => paints, wall, sources }
+  return { page, el, calls, writes, settle, go, click, submit, type, change, key, paints: () => paints, wall, sources, win }
 }
 
 export const settingsHtml = (w: ReturnType<typeof openWall>) => w.el("wall-settings")!.innerHTML as string
