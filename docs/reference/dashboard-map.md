@@ -45,7 +45,7 @@ These pages are still served, because the Hub does not do everything they do yet
 | Page | Path | What only it has |
 |---|---|---|
 | [Settings](../dashboard/settings.md) | `/admin`, `/admin/agents/<agent-id>` | The settings the Hub's Settings page does not have yet, such as the wiki notes inbox ([Wiki notes](../jobs/wiki-notes.md)) and the wiki page curator ([Wiki](../dashboard/wiki.md#ask-an-agent-to-curate-a-page)) |
-| Health | `/admin/health` (the old `/admin/observability` redirects here) | Route traces, errors and daemon health |
+| Health | `/admin/health` (the old `/admin/observability` redirects here) | Route traces, errors and daemon health. Errors, Routing, Rotations and Doctor are also in the Hub's **Settings** › **Diagnostics** |
 | Guests | `/guests` | Letting another organisation into part of your mesh ([guest mesh](../jobs/guest-mesh.md)) |
 | [Monitor](../dashboard/monitor.md) | `/monitor` | Task reviews, and connecting a CLI session by hand |
 | [Operations](../dashboard/operations.md) | `/mesh` | A run's full lifetime, Routines with their stale flags, run analytics |

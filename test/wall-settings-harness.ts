@@ -134,8 +134,8 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
     await settle()
   }
   /** A switch flipped: the change event on an element carrying these attributes. */
-  const change = async (attrs: Record<string, string>, checked: boolean) => {
-    const t: any = { checked, getAttribute: (k: string) => attrs[k] ?? null, hasAttribute: (k: string) => k in attrs }
+  const change = async (attrs: Record<string, string>, checked: boolean, value?: string) => {
+    const t: any = { checked, value, getAttribute: (k: string) => attrs[k] ?? null, hasAttribute: (k: string) => k in attrs }
     for (const f of onDoc.change ?? []) f({ target: t })
     await settle()
   }
