@@ -137,9 +137,9 @@ To have any other schedule's answers checked for links the same way, set `"requi
 2. **Terminal:** run `agentx sales watch` twice. The first time it says **Now watching** for each page; the second time, **No competitor changes.**
 3. **Terminal:** run `agentx schedule list`. The four `sales-` schedules are listed.
 4. **Telegram:** the next weekday after 08:30, the brief arrives, every line with a link.
-5. **Browser:** open the dashboard, select **Operations**, switch the view to **Operations**, and find `sales-daily-brief` under **Today's automations**. Its drawer lists the run with an **Open** link. See [Operations](../dashboard/operations.md).
+5. **Browser:** open the dashboard. On the Hub, select **Jobs** in the nav, under **Automation**, and find `sales-daily-brief` under its machine. Its newest square is green. Select the row to read the last run's summary and its **Full log** link. See [See recurring jobs](../dashboard/hub.md#see-recurring-jobs-and-their-value-line).
 
-![A schedule drawer with its latest result and one finished run under Runs today, with its Open link](/screenshots/operations/schedule-drawer.png)
+![The Jobs page: today's totals, then one machine's jobs, each with its schedule, last runs and state](/screenshots/wall/jobs.png)
 
 ## If something is wrong
 

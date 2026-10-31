@@ -144,7 +144,7 @@ Each entry in `screen.regions` (for example `"chat": { "x": 0, "y": 0, "width": 
 
 ## business
 
-An experimental layer that runs agents like a team, with roles, working hours and a shared pool of work. It is off by default and its shape may change between minor versions. The whole `business` block is optional. An org chart alone (the [Org](../dashboard/org.md) tab) needs only `business.orgChart`; `business.mainChannel` is required once `business.enabled` is on.
+An experimental layer that runs agents like a team, with roles, working hours and a shared pool of work. It is off by default and its shape may change between minor versions. The whole `business` block is optional. An org chart alone (the Hub's [Org](../dashboard/org.md) page) needs only `business.orgChart`; `business.mainChannel` is required once `business.enabled` is on.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -420,7 +420,7 @@ How long `agentx demo` waits while it starts. The demo reads this from the `agen
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `demo.startupTimeoutSeconds` | number (1–3600) | — | Seconds each startup step may take: each node answering `/health`, the dashboard answering `/live`, the nodes finding each other. Unset: `AGENTX_DEMO_STARTUP_TIMEOUT`, else 60, raised when the machine is busy (the 1-minute load average above the CPU count), up to 300. The `--startup-timeout` flag overrides both. |
+| `demo.startupTimeoutSeconds` | number (1–3600) | — | Seconds each startup step may take: each node answering `/health`, the dashboard answering `/live` (the address the demo prints, which opens the Hub's Live page), the nodes finding each other. Unset: `AGENTX_DEMO_STARTUP_TIMEOUT`, else 60, raised when the machine is busy (the 1-minute load average above the CPU count), up to 300. The `--startup-timeout` flag overrides both. |
 
 ## admission
 

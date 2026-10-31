@@ -66,7 +66,7 @@ Joining only adds the inviting machine to the joining machine's list, which is w
 ## Check it worked
 
 1. **Terminal, on each machine:** run `agentx mesh list`. The other machine shows as `healthy`, with its number of agents.
-2. **Browser:** open the **Operations** tab and check that both machines appear. See [Operations](../dashboard/operations.md).
+2. **Browser:** open the dashboard. On the Hub, select **Running now** in the nav, and check that both machines have a card marked **up**. See [Running now](../dashboard/hub.md#running-now).
 3. Send a small test task by following [Agent-to-agent communication](../reference/a2a.md).
 
 ## If something is wrong

@@ -4,20 +4,20 @@ After you build a workflow, check three things: that it is set up the way you me
 
 ## Check the setup
 
-1. **Browser:** open the dashboard and select the **Workflows** tab.
-2. Select the workflow in the list.
-3. Read the line under its title: it shows the workflow's ID, its version, and its **trigger** (what starts it, such as a schedule, a message or a GitLab event).
-4. Select **Edit on canvas** to check each step's destination and settings.
+1. **Browser:** open the dashboard. The Hub is the first page you see.
+2. Select **Workflows** in the nav on the left, under **Automation**. On a phone, select **More** in the bottom bar, then **Workflows**.
+3. Find the workflow's row. It shows its state, what starts it in words (its **trigger**, such as **Fridays at 16:00** or **When a message arrives by email**), its agents and its project.
+4. Select the workflow's name, then **Open in the editor**, to check each step's destination and settings.
 
-![The Workflows tab listing two demo workflows](/screenshots/workflows-list.png)
+![The Workflows page on the Hub: one row per workflow, one opened on its last run](/screenshots/wall/workflows.png)
 
 ## Run it once
 
-1. **Browser:** on the workflow's details, select **▶ Run**.
-2. Leave **Force** ticked unless the workflow starts with **You start it**. Force pretends the trigger just happened.
-3. Select **Run now**.
-4. Watch the run appear in the workflow's list of runs, with its status: running, completed, failed, paused or canceled.
-5. Select the run to open its timeline, which shows each step as it happens.
+1. **Browser:** on the Hub's **Workflows** page, select **Run…** under the workflow. It must be **On**.
+2. Fill in the inputs the workflow asks for. A field marked **\*** is needed.
+3. Read the line above the buttons. For a workflow that something else normally starts (a message or a time of day), it says that this run stands in for that.
+4. Select **Start the run**. The line at the top of the page says **Started**, and the workflow opens on its new run.
+5. Watch its last runs as squares: blue running, green finished, red failed, amber waiting, grey stopped. Select the workflow's name to see the run step by step.
 
 ## A draft can still run
 
@@ -30,16 +30,16 @@ So a workflow marked `status: "draft"` still runs if its `state` is `active`. Ke
 
 ## Check it worked
 
-1. The run in the workflow's list shows **completed**.
-2. **Browser:** open **Activity** and find the agent's task for that run.
+1. **Browser:** on the Hub's **Workflows** page, the workflow's newest square is green, and its last run shows a green tick on every step.
+2. **Browser:** select **Activity** in the Hub's nav and find the agent's run for that workflow.
 3. The destination (chat, issue or channel) received the expected result.
 4. **Terminal, optional:** `agentx workflow runs <workflow-id>` lists the workflow's recent runs, and `agentx workflow trace <run-id>` shows each step of one run.
 
 ## If something is wrong
 
 - **Nothing ran:** check that the daemon is running (`agentx daemon status`), that the workflow engine is on (see [Describe what you want](./describe-it.md)), and that the workflow's `state` is `active`.
-- **It never starts by itself, but Run now works:** its trigger doesn't match what happens. Check the trigger's filter (for example the project or chat) on the canvas.
+- **It never starts by itself, but **Run…** works:** its trigger doesn't match what happens. Check the trigger's filter (for example the project or chat) on the canvas.
 - **The run failed:** open the failed step with `agentx workflow trace <run-id>`, fix the instructions or destination, and run it again.
 - **It ran but the result is wrong or went to the wrong place:** fix the step's instructions or destination on the canvas, save, and run it again.
-- **The run is paused:** it is waiting at a step that holds until someone says go, or someone paused it. Open the run to see which step it stopped at; **Resume** continues a run that was paused by hand.
+- **The run is paused:** it is waiting at a step that holds until someone says go, or someone paused it. On the Hub's **Workflows** page, select the workflow's name to see which step it stopped at. To continue a run that was paused by hand, select **All runs** under it: the full list of runs, with **Resume**, is still on the classic page.
 - **No reply at all from the agent:** follow [It's not answering](../help/its-not-answering.md).

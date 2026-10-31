@@ -138,10 +138,11 @@ A blocked step stays where it is until the agent reports it done or you stop the
 
 **In the dashboard:**
 
-1. **Browser:** open the dashboard and click the **Workflows** tab.
-2. **Browser:** look at **Follow-ups**, at the top of the left column. There is one group per tag; a run without tags is under `untagged`. The first three groups are open, and so is every group with a blocked run.
-3. **Browser:** click a group's name to open or close it.
-4. **Browser:** click a run to open it: its steps, what each produced, and what it waits on.
+1. **Browser:** open the dashboard. On the Hub, select **Workflows** in the nav, under **Automation**.
+2. **Browser:** the **Follow-ups** box on the right counts the runs being followed. Select **Show them**. The list opens on the classic Workflows page, where it still lives.
+3. **Browser:** look at **Follow-ups**, at the top of the left column. There is one group per tag; a run without tags is under `untagged`. The first three groups are open, and so is every group with a blocked run.
+4. **Browser:** click a group's name to open or close it.
+5. **Browser:** click a run to open it: its steps, what each produced, and what it waits on.
 
 The dashboard collects runs from every computer it is connected to. If one cannot be reached, the heading says how many.
 
@@ -217,7 +218,7 @@ The steps are `deploy` (an agent puts it live and gives the link as proof), `ver
 - **`workflow "…" is not active`:** the saved workflow is switched off or still a draft. Check it, then set `state: active` and `status: active` in its file. A workflow an agent built for you is switched off on purpose; keep it with [Save a workflow for reuse](#save-a-workflow-for-reuse).
 - **`type "…" is not one an agent may use`:** an agent tried to build a workflow with a step it may not use. Add that step yourself in the editor or the file.
 - **Nothing moves after you answer a card:** answers are picked up by the Approvals check, which runs once a minute. Wait a minute, then run `agentx workflow progress` again.
-- **The card is not on the computer where you answer cards:** cards for workflow steps are raised on the computer that runs the workflow, even when `approvals.forwardTo` sends other cards elsewhere. Open the dashboard of that computer, or choose it in the top bar's machine menu.
+- **The card is not on the computer where you answer cards:** cards for workflow steps are raised on the computer that runs the workflow, even when `approvals.forwardTo` sends other cards elsewhere. Open the dashboard of that computer, or choose it in the **Managing** menu of the Approvals page.
 - **The client never got the message:** look for `approved message not sent` in `agentx daemon logs`. The channel must be connected on this computer or on another computer of your mesh. The run stops and your summary gives the reason.
 - **The run stopped after a no or a missed reply:** the step ended on `no`, `expired`, `declined` or `timeout`, and the workflow has no arrow for it. Add an arrow with that `fromPort` if the run should go on another way.
 - **A step stays blocked:** read the reason in the notice or in `agentx workflow progress`. Sort it with the agent, which then reports it done, or stop the run with `agentx workflow cancel <runId>`.

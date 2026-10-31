@@ -11,8 +11,8 @@ You need Node.js 22.19 or newer, up to 26. Nothing else: no download of the sour
    npx agentix-cli demo
    ```
    The first run downloads the AgentX package, which takes a minute or two. The terminal may stay quiet during that time, or print `npm warn deprecated …` lines: those warnings are harmless. The demo writes its files to a folder called `.agentx-demo` in the folder you ran it from, and deletes it when you stop the demo (unless you use `--keep`).
-2. Wait for the line `Dashboard: http://127.0.0.1:18931/live`. The demo opens it in your browser. On a machine with no browser, such as a server, it prints `Couldn't open a browser. Visit http://127.0.0.1:18931/live` and carries on.
-3. **Browser:** watch the **Live** tab. The task moves from one machine to another.
+2. Wait for the line `Dashboard: http://127.0.0.1:18931/live`. The demo opens it in your browser. On a machine with no browser, such as a server, it prints `Couldn't open a browser. Visit http://127.0.0.1:18931/live` and carries on. That address opens the Hub's **Live** page (`/hub#page=live`).
+3. **Browser:** watch the **Live** page. The task moves from one machine to another.
 4. **Terminal:** press Enter to play the scenario again, or Ctrl-C to stop the demo.
 
 ### Options
@@ -32,7 +32,7 @@ Each demo machine records every message it handles in its own intent ledger. The
 
 If you already have a built copy of the source code (see [Install › Run from source](./install.md#run-from-source)), `node dist/cli.js demo` in that folder does the same.
 
-![Three local demo nodes in Live](/screenshots/live.png)
+![The Hub's Live page in the demo: what runs now, and one card per demo machine](/screenshots/wall/live.png)
 
 *The demo after a task has moved between machines.*
 
@@ -55,8 +55,8 @@ The filled-in demo is the one used for the screenshots on this site. It adds mad
    ```sh
    pnpm docs:seed
    ```
-4. **Browser:** open `http://127.0.0.1:18931/live`.
-5. **Browser:** open the **Workflows** tab, then open **Draft the demo shop report**.
+4. **Browser:** open `http://127.0.0.1:18931`. The Hub opens.
+5. **Browser:** select **Workflows** in the Hub's nav, under **Automation**. Select **Draft the demo shop report**, then **Open in the editor**.
 6. **Browser:** select **Ask AI to build…**, type `Build the demo report workflow`, and send it. The demo answers with a fixed example.
 
 ![The workflow editor in the filled-in demo](/screenshots/editor-chat-closed.png)
@@ -69,7 +69,7 @@ Docker runs programs in a sealed box, called a container. The Docker version of 
    ```sh
    docker compose -f docker-compose.demo.yml up --build -d
    ```
-2. **Browser:** open `http://127.0.0.1:18931/live`.
+2. **Browser:** open `http://127.0.0.1:18931`. The Hub opens.
 3. **Terminal:** when you want a fresh demo, remove it and its stored data:
    ```sh
    docker compose -f docker-compose.demo.yml down -v
@@ -79,7 +79,7 @@ Next: [follow the annotated workflow walkthrough](tutorials/first-workflow.md), 
 
 ## Check it worked
 
-1. **Browser:** `http://127.0.0.1:18931/live` shows agents on three machines.
+1. **Browser:** `http://127.0.0.1:18931/live` opens the Hub's **Live** page, with a card for each of the three machines.
 2. The terminal prints `A2A mesh healthy`, which means the three demo machines can reach each other.
 3. The scenario ends with a line that starts with `Resolved`. That line means the demo worked from start to end. If the run stops before it, copy the line that starts with `Demo failed:` and the `Node logs:` line under it into your report.
 

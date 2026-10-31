@@ -81,7 +81,7 @@ A run started this way counts like a scheduled one: it's recorded, and failure a
 ## Check it worked
 
 1. **Terminal:** send the request from step 2 by hand. The answer should say `"ok": true`.
-2. **Browser:** open the dashboard's **Operations** tab, then click the job's row in **Today's automations**. The new run is listed under **Runs today**. See [Open, watch and continue a scheduled run](../dashboard/operations.md#open-watch-and-continue-a-scheduled-run).
+2. **Browser:** open the dashboard. On the Hub, select **Jobs** in the nav, under **Automation**. On the job's row, the newest square (on the right) is the new run. Select the row to read its summary. See [See recurring jobs](../dashboard/hub.md#see-recurring-jobs-and-their-value-line).
 3. **Terminal:** for a schedule, the run's record in `.agentx/cron/runs/<id>/` contains `"fired": true`.
 
 ## If something is wrong

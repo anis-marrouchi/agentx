@@ -25,12 +25,12 @@ Joining adds the first machine to the second machine's peer list. For each machi
 
 Don't make the daemon reachable from the public internet just to get pairing working. Use a private network between the machines.
 
-![The Nodes section of the Operations tab, listing each paired machine as online (three demo machines here)](/screenshots/operations/nodes.png)
+![Running now on the Hub: one card per connected machine, with what each runs now (demo machines here)](/screenshots/wall/running.png)
 
 ## Check it worked
 
 1. **Terminal, on either machine:** run `agentx mesh list`. The other machine is listed as `healthy`, with its number of agents.
-2. **Browser:** open the **Operations** tab. Both machines appear. See [Operations](../dashboard/operations.md).
+2. **Browser:** open the dashboard. On the Hub, select **Running now** in the nav. Both machines have a card marked **up**. See [Running now](../dashboard/hub.md#running-now).
 3. Send a small test task to an agent on the other machine: see [Agent-to-agent (A2A)](../reference/a2a.md).
 
 Agents on the second machine sometimes need your yes or no. If your screen is on the first machine, tell the second one to send its decision cards there: see [Approvals › Agents on another machine](../dashboard/approvals.md#agents-on-another-machine).

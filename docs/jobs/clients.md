@@ -98,14 +98,14 @@ It refreshes every 30 seconds. Opened without a connection, it shows what was la
 
 ## Manage machines
 
-A client's machines are managed like a teammate's: in the dashboard's [People](../dashboard/people.md) tab, where the client's row carries the badge **Client**, or from a terminal with `agentx people devices`, `agentx people revoke-device <id>` and `agentx people remove acme`. See [Manage machines](./members.md#manage-machines). A machine's key lasts 90 days; invite again after that.
+A client's machines are managed like a teammate's: on the Hub's [People](../dashboard/people.md) page, where the client's row carries the badge **Client**, or from a terminal with `agentx people devices`, `agentx people revoke-device <id>` and `agentx people remove acme`. See [Manage machines](./members.md#manage-machines). A machine's key lasts 90 days; invite again after that.
 
 ## Check it worked
 
 1. **Terminal:** run `agentx people list`. The client's line ends with `· client`.
 2. **Terminal:** run `agentx people devices`. The client's machine is listed as `active`. The **People** page of the Hub shows it as **Active**, under a row with the role **Client**.
 3. **Their browser:** **Your project** shows a request they made on their channel, with the right state, and the title bar reads **Your project**, not **My work**.
-4. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers.
+4. **Their browser:** opening `https://<your computer>/`, `/hub` or `/app` shows nothing of yours: only `/member` answers.
 
 ## If something is wrong
 

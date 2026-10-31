@@ -16,8 +16,8 @@ You also need at least one agent with a working model connection. It drafts the 
 
 ## Describe the automation
 
-1. **Browser:** open the dashboard and select the **Workflows** tab.
-2. Open the editor: on the Hub's **Workflows** page, select **New workflow** next to the page's title, or open a workflow and select **Open in the editor**. On the classic page, select **+** (Build a new workflow) or **Edit on canvas**.
+1. **Browser:** open the dashboard. On the Hub, select **Workflows** in the nav, under **Automation**.
+2. Open the editor: select **New workflow** next to the page's title, or select a workflow's name, then **Open in the editor**.
 3. Select **Ask AI to build…** at the bottom right.
 4. Describe what should happen: when, from where, and where the result goes. For example: "Every Monday, summarize last week's GitLab issues and send the summary to Telegram."
 5. Press Enter and wait for the reply.
@@ -30,7 +30,7 @@ You also need at least one agent with a working model connection. It drafts the 
 2. Select **Apply to canvas** only when you are ready. It **replaces the whole current workflow** on the canvas.
 3. Select each step on the canvas and check its destination and settings in the side menu on the left, under **This step**.
 4. Select **Save**.
-5. Test it for real before relying on it: in the **Workflows** tab, select the workflow, select **▶ Run**, then **Run now**. The editor's **Preview** only walks through the steps on screen; it doesn't run them.
+5. Test it for real before relying on it: on the Hub's **Workflows** page, select **Run…** under the workflow, then **Start the run**. The editor's **Preview** only walks through the steps on screen; it doesn't run them.
 
 ![Scripted authoring reply with Apply to canvas](/screenshots/editor-chat-reply.png)
 
@@ -46,9 +46,9 @@ For step names and fields, see the [workflow schema](../reference/workflow-schem
 
 ## Check it worked
 
-1. **Browser:** the **Workflows** tab lists the saved workflow.
-2. Select it. Its details show the trigger (what starts it).
-3. After a test run, the run appears under the workflow, and the destination received the result.
+1. **Browser:** the Hub's **Workflows** page lists the saved workflow.
+2. Its row says what starts it, in words.
+3. After a test run, a square for the run appears on its row, and the destination received the result.
 
 ## If something is wrong
 

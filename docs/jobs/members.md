@@ -134,7 +134,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`. The **People** page of the Hub shows it as **Active** too.
 2. **Their browser:** **My work** shows a request they made on their channel, with the right state.
-3. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers. On **My work**, a card busy with your task shows its first 200 characters and that you started it, but not where it was asked and no **Show this request** button; once it is finished, the card shows nothing of it.
+3. **Their browser:** opening `https://<your computer>/`, `/hub` or `/app` shows nothing of yours: only `/member` answers. On **My work**, a card busy with your task shows its first 200 characters and that you started it, but not where it was asked and no **Show this request** button; once it is finished, the card shows nothing of it.
 4. **Their browser:** while an agent is busy, they send it a second message on their channel. Within 30 seconds the card says **Your message is in line**, and the message appears at the top of **What you sent** as **In line**.
 5. **The access rule holds:** a port other than 443 does not answer the teammate. The daemon (18800) and the dashboard (4202) listen on your own computer only, so they refuse a teammate even with no rule at all and prove nothing here. Open a test port for a minute instead.
 

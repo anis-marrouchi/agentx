@@ -49,13 +49,13 @@ Then [connect Telegram](./connect-telegram.md) if you want to talk to the agent 
 ## Check it worked
 
 1. The **Test drive** window shows the agent's reply.
-2. **Browser:** the **Live** tab shows the agent, and the run appears there while it works.
-3. **Browser:** the **Activity** tab lists the finished run. See [Activity](./dashboard/activity.md).
+2. **Browser:** on the Hub, select **Agents** in the nav (under **More** on a phone). The agent is listed. While it works, the run shows on the Hub's **Live** page.
+3. **Browser:** select **Activity** in the Hub's nav. It lists the finished run. See [Activity](./dashboard/activity.md).
 
 ## If something is wrong
 
 - **Save and continue shows an error about the Agent id:** use only lowercase letters, numbers, `-` and `_`, starting with a letter or number.
-- **The agent isn't listed in Settings or Live:** the daemon hasn't loaded it. Restart the daemon as above.
+- **The agent isn't listed in Settings or on the Hub's Agents page:** the daemon hasn't loaded it. Restart the daemon as above.
 - **Test drive returns `Credit balance is too low`:** the API key's account has no credits. Add a payment method and buy credits in the provider's console. See [Choose a model account](./help/costs.md#choose-a-model-account).
 - **Test drive returns an error about a key or login:** for **Anthropic API (BYO key)**, check `ANTHROPIC_API_KEY` in `.env`. For a CLI engine, check the tool on the machine, for example `claude --version`, and sign in to it.
 - **Nothing happens at all:** run `agentx daemon status`. If it says `Daemon is not running`, start it. Then see [It's not answering](./help/its-not-answering.md).

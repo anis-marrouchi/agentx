@@ -1,16 +1,35 @@
 # Activity — what ran, where, and what it decided
 
-Monitor answers "what needs me?" Activity answers "what ran, where, and what did it decide?" Use Activity to look into a finished task, or a message that seems to have gone to the wrong agent.
+Needs you answers "what needs me?" Activity answers "what ran, where, and what did it decide?" Use Activity to look into a finished task, or a message that seems to have gone to the wrong agent.
 
-Each bar on the timeline is one run: one task an agent worked on. Small marks on a run show what it recorded: a **decision**, a **warning**, **friction** (something that slowed it down), or something to **do later**. A cross marks a **canceled** run.
+**Activity** is a page of the [Hub](./hub.md), the dashboard's home. It lists every run of every agent on your machines, newest first, with its result, what started it, how long it took and what it cost. A run is one task an agent worked on.
+
+![The Activity page: outcome tabs, filters and the period, then runs newest first, with one failed job opened in place, in a demo](/screenshots/wall/activity.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+## See the runs
+
+1. **Browser:** open the dashboard. The Hub opens.
+2. In the nav on the left, select **Activity**, under **Work**. On a phone, select **More** in the bottom bar, then **Activity**. The page's address is `/hub#page=activity`.
+3. Pick the result with the tabs under the title (**All**, **Done**, **Failed**, **Running**, **Stopped**) and the period with **24 h**, **7 d** or **30 d**.
+4. Select a row to open it in place: its result, what it was asked and where it ran. **Open the run** opens its Task page with the full conversation.
+
+One agent's runs are on its profile, under **Activity**. Old links to an agent's classic history page open that tab. The full steps are in [Hub › See what the agents ran](./hub.md#see-what-the-agents-ran).
+
+## The timeline and the Map
+
+The lane timeline and the Map are not on the Hub yet. They are still on the classic Activity page: on the Hub's Activity page, select **Timeline** next to **Feed** beside the title. The rest of this page describes them.
+
+Each bar on the timeline is one run. Small marks on a run show what it recorded: a **decision**, a **warning**, **friction** (something that slowed it down), or something to **do later**. A cross marks a **canceled** run.
 
 ![Activity timeline from the isolated demo](/screenshots/activity.png)
 
 *The three scripted runs appear on the agent timeline.*
 
-## Find a run
+### Find a run on the timeline
 
-1. **Browser:** open the dashboard and select the **Activity** tab.
+1. **Browser:** on the Hub's **Activity** page, select **Timeline** beside the title.
 2. Pick how far back to look: **6h**, **24h**, **3d** or **7d**.
 3. Next to **Lanes by**, pick how to group the runs: **Agent**, **Client**, **Project**, **Channel**, **Person** or **Node** (machine).
 4. Find the lane you care about and the bar at the time you expect.
@@ -98,8 +117,8 @@ The line board, **active only**, and the idle stations switch still apply. Selec
 ## Check it worked
 
 1. **Browser:** send an agent a small task, and wait for it to finish.
-2. Open **Activity** with **24h** selected.
-3. A new bar appears in that agent's lane. Select **Refresh** if the page was already open.
+2. On the Hub, select **Activity** in the nav, with **24 h** picked. The run is the first row, marked **Done**.
+3. Select **Timeline** beside the title. A new bar appears in that agent's lane. Select **Refresh** if the page was already open.
 4. Select the bar. Its details show the channel it came from and its result.
 5. Select **Map**, then select the train for that task. Its route starts with who started it, then the channel you used, and lists every agent that worked on it.
 
@@ -107,9 +126,9 @@ The line board, **active only**, and the idle stations switch still apply. Selec
 
 - **A message never appears:** it may not have reached AgentX at all. Go to [It's not answering](../help/its-not-answering.md) and check whether the channel reached the daemon.
 - **Runs sit under unmapped when grouped by Client:** that chat isn't linked to a client yet. The list that links chats to clients is under **Settings › Business**, a tab that only appears when the business features are switched on (`business.enabled` in `agentx.json`). Restart the daemon after changing it.
-- **A machine's runs are missing:** that machine may be unreachable. Check [Operations](./operations.md).
+- **A machine's runs are missing:** that machine may be unreachable. The Hub's Activity page names a machine that does not answer above the runs; see also [Running now](./hub.md#running-now).
 - **The timeline is empty:** widen the window to **7d**. Nothing may have run in the last 24 hours.
-- **A train starts at Mesh (A2A) instead of where it came from:** the run that started it is older than the window, or the computer it ran on did not answer. Widen the window, or check that computer in [Operations](./operations.md). Work handed off by a computer with an older AgentX carries no starting point; update AgentX on every computer in the mesh.
+- **A train starts at Mesh (A2A) instead of where it came from:** the run that started it is older than the window, or the computer it ran on did not answer. Widen the window, or check that computer under the Hub's [Running now](./hub.md#running-now). Work handed off by a computer with an older AgentX carries no starting point; update AgentX on every computer in the mesh.
 - **A run sits under no known person when grouped by Person:** nobody in your people list started it, or it ran before that person was listed. Unlike the map, the timeline does not rename older runs. A computer in your mesh with an older AgentX sends no person, so all its runs land there; update AgentX on it. Each computer names people from its own list: give a person the same `id` on every computer, or they get two lanes.
 - **You have two lanes when grouped by Person, Owner and your own name:** the **Owner** runs started at this computer before you listed yourself as its owner. Runs since then are under your name. The timeline does not rename older runs; they leave as the window moves on.
 - **A person shows as Unknown:** their login or id on that channel is not in your people list. Add it under `people` in `agentx.json`: see [Tell agents who is who](../jobs/people.md). The map then names them, including for work already on the map.

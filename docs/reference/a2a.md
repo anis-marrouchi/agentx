@@ -10,7 +10,7 @@ First [pair your machines](../jobs/tailscale.md). The peer name comes from `agen
 agentx daemon send helper "Reply with a short hello" --peer work-machine
 ```
 
-This sends a task through your local daemon to the named peer. It runs the remote agent with that agent's configured tools and provider. Check **Operations** and **Activity** to inspect the work.
+This sends a task through your local daemon to the named peer. It runs the remote agent with that agent's configured tools and provider. On the Hub, **Live** shows the work while it runs and **Activity** lists it once it ends.
 
 The corresponding local HTTP request is:
 
@@ -68,7 +68,7 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 ## Check it worked
 
 1. **Terminal:** run `agentx mesh list`. The peer you send to is listed.
-2. **Terminal:** send the hello task above. The reply prints in the terminal, and the work shows in **Operations**.
+2. **Terminal:** send the hello task above. The reply prints in the terminal, and the work shows on the Hub's **Activity** page.
 3. **Terminal:** send the `POST /task` request above. It prints the agent's answer as JSON.
 4. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
 

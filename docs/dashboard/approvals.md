@@ -340,7 +340,7 @@ It shows titles only, never a card's question, a notice's message or a request's
 1. **Terminal:** raise a test card with `agentx approvals request` as shown above.
 2. **Browser:** select **Needs you** on the Hub. The card is in the list with **Expires in 2 days, then the agent drops it**.
 3. **Browser:** select **No**, then **Confirm**. The note says the agent will be told no, and the card leaves the list. On the **Answered** tab it is listed as **No**.
-4. **Browser:** within a minute, the **Activity** tab shows a short run for that agent on the `approvals` channel. That is the agent reading your answer.
+4. **Browser:** within a minute, the Hub's **Activity** page shows a short run for that agent on the `approvals` channel. That is the agent reading your answer.
 5. **Terminal:** `agentx approvals list` says `nothing waiting`.
 6. **Terminal:** if agents have proposed wiki claims, `agentx approvals list` ends with one line starting `Also:` that gives how many wait, and the count above it does not include them.
 
@@ -356,7 +356,7 @@ For a second machine:
 1. **Terminal, on the other machine:** run `agentx approvals settings`. The line **Cards go to** names this machine.
 2. **Terminal, on the other machine:** raise a test card with `agentx approvals request`. The confirmation says `raised on <machine>`.
 3. **Browser, on the machine with your screen:** select **Needs you** on the Hub. The card is there, from the agent on the other machine. Select **No**, then **Confirm**.
-4. **Browser, on the other machine:** within a minute, the **Activity** tab of its dashboard shows a short run for that agent on the `approvals` channel, and its daemon log has a line `result back from <machine>`.
+4. **Browser, on the other machine:** within a minute, the **Activity** page of its Hub shows a short run for that agent on the `approvals` channel, and its daemon log has a line `result back from <machine>`.
 
 For a card answered in chat:
 

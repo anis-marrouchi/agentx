@@ -2,9 +2,9 @@
 
 **Live** is a page of the [Hub](./hub.md), the dashboard's home. It shows what runs on every connected machine right now, the tasks you paused, and one card per machine where you restart it and connect your command-line sessions. Use it when you have just sent a task and want to see whether an agent picked it up.
 
-Live is a current view. For completed work and the route it took, use [Activity](./activity.md). For work that needs your attention, use [Monitor](./monitor.md).
+Live is a current view. For completed work and the route it took, use [Activity](./activity.md). For work that waits on you, use the Hub's [Needs you](./hub.md#see-what-waits-on-you) page.
 
-The old address, `/live`, opens this page.
+The page's address is `/hub#page=live`. Old links to the classic Live page open it too.
 
 ![The Live page: a session and a job running now, a paused task with Resume and Drop, and the machine cards](/screenshots/wall/live.png)
 
@@ -103,7 +103,7 @@ If a machine is slow to answer, Live keeps its last known data for up to five mi
 
 ## Check it worked
 
-1. **Browser:** open `/live` on your dashboard. Hub Live opens, with every machine under **Machines**.
+1. **Browser:** open `/hub#page=live` on your dashboard. The Hub's **Live** page opens, with every machine under **Machines**.
 2. Send an agent a small task from a channel or [in-page chat](./chat.md). Within a few seconds, its card shows under **Running now**.
 3. Select the card, then **Pause** and **Pause it?**. Within the time limit, the task is under **Paused** with **Resume plan, by** *agent*.
 4. Select **Resume**. The task shows under **Running now** again, and its answer reaches the original chat.
@@ -120,4 +120,4 @@ If a machine is slow to answer, Live keeps its last known data for up to five mi
 - **"Not done: … would not start AgentX again":** nothing would start AgentX after it exits. See [Restart from the dashboard](../jobs/restart-safely.md#restart-from-the-dashboard).
 - **Resume is missing on a paused task:** the agent is still writing its plan (**Pausing…**), or the task's chat can no longer be reached. Wait a few seconds; if it stays, drop the task and send it again.
 - **An attached session doesn't appear:** type a message in that session so its hooks report to the daemon, then check `agentx attach list`. If the session isn't listed there, run `agentx attach install` once and restart the session.
-- **Find CLI sessions says "No CLI found":** the CLI runs under another account, or is not running. Register it by hand on [Monitor](./monitor.md).
+- **Find CLI sessions says "No CLI found":** the CLI runs under another account, or is not running. Register it by hand on the classic [Monitor](./monitor.md) page, which still has that form.

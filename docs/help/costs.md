@@ -37,13 +37,13 @@ Not sure? If you already pay for a Claude plan, start with **Claude Code (recomm
 
 The Cost page is on the Hub, the dashboard's home.
 
-1. **Browser:** open the dashboard and select **Cost** in the Hub's nav (under **More** on a phone). The old addresses `/admin/cost` and `/cost` open it too.
+1. **Browser:** open the dashboard and select **Cost** in the Hub's nav (under **More** on a phone).
 2. Pick a period: **7 days**, **14 days**, **30 days**, **90 days** or **All**.
 3. Read this month's total and the range's total, then one row per agent, highest spend first.
 4. Select **Show details** for the token mix, cache use and every day's figures.
 5. To keep a copy or compare with your bill, select **Export CSV**.
 
-![The Cost page's details: daily average, token mix, cache efficiency and every day](/screenshots/costs/page.png)
+![The Cost page: this month's total, the range tabs, the stacked chart and one row per agent, in the demo](/screenshots/wall/cost.png)
 
 The page adds up every machine the Hub reads. Each step is described in [See what the fleet costs](../dashboard/hub.md#see-what-the-fleet-costs).
 
@@ -115,7 +115,7 @@ Example output (shortened):
 
 ## See which commands and pages people use
 
-`agentx usage surfaces` answers "which AgentX commands and dashboard pages does anyone actually open?". AgentX counts each use on this machine: the command name (such as `guard log`) or the page address (such as `/live`), never what you typed after it. The counts stay in the local database and are not sent anywhere. The daemon does not need to be running.
+`agentx usage surfaces` answers "which AgentX commands and dashboard pages does anyone actually open?". AgentX counts each use on this machine: the command name (such as `guard log`) or the page address (such as `/hub`), never what you typed after it. The counts stay in the local database and are not sent anywhere. The daemon does not need to be running.
 
 1. **Terminal:** in the folder with `agentx.json`, run:
    ```sh
@@ -136,7 +136,7 @@ Example output (shortened):
       41  daemon status                 12d
        9  schedule list                  5d
   Dashboard pages
-     130  /live                         22d
+     130  /hub                          22d
 ```
 
 Counting only happens inside an AgentX folder (one with `agentx.json` or `.agentx`). Setting the environment variable `AGENTX_NO_TELEMETRY` turns it off.
@@ -234,7 +234,7 @@ On a Claude subscription the figures are what the work would cost with an API ke
 5. **Browser:** on the Hub, select **Cost**. Under **Monthly budgets**, all agents, each project and each agent with a budget show their spend this month against it, with **near cap** or **paused** when that applies.
 6. **Browser:** on the Hub, select the agent. Its profile shows the same figure in one line, such as **Spent $12.50 of $100.00 this month** (see [See one agent's profile](../dashboard/hub.md#see-one-agent-s-profile)).
 
-![Monthly budgets on the Cost page: all agents and one agent against their caps, and the form to set a budget](/screenshots/costs/budgets.png)
+![One agent's row on the Cost page: its spend this month against its cap, with Change cap on the right](/screenshots/wall/cost-set-cap.png)
 
 Waiting messages are saved in `.agentx/budget-holds.json`, so they are still there after the daemon restarts, and they run when the agent resumes.
 

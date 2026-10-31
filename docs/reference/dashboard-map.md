@@ -1,38 +1,61 @@
 # Dashboard map
 
-The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows**, and **Settings**. Each tab answers a different question. The dashboard also has deeper pages, reached from those tabs or by typing the address. Add each path to your dashboard's address, for example `http://127.0.0.1:4202/mesh`.
+The dashboard opens on the [Hub](../dashboard/hub.md). Every view below is a page of the Hub, picked in its nav on the left (on a phone: the bar at the bottom, and **More** for the rest). Add each path to your dashboard's address, for example `http://127.0.0.1:4202/hub#page=live`.
 
-## Tabs
+## Hub pages
 
-| Need | Tab | Path |
+| Need | Nav item | Path |
 |---|---|---|
-| See current agent work, resume paused tasks, restart a machine | **Live** (on the Hub) | `/hub#page=live` (`/live` opens it) |
-| See machines, peer work and schedules | **Operations** | `/mesh` |
-| See what needs a person | **Monitor** | `/monitor` |
-| Answer what agents ask you | **Approvals** | `/approvals` |
-| See who is connected, their machines and what they asked for: the Hub's [People](../dashboard/people.md) page | **People** | `/hub#page=people` (the old `/people` opens it too) |
-| Investigate past work | **Activity** | `/activity` |
-| See workflows and their runs, start one, turn one on or off: the Hub's [Workflows](../dashboard/workflows.md) page | **Workflows** (on the Hub) | `/hub#page=workflows` |
-| Edit a workflow on the canvas: the Hub's [workflow editor](../dashboard/workflows.md#edit-a-workflow) | **Workflows** (on the Hub) | `/hub#page=editor&e-wf=<id>` (the old `/workflows/editor?id=<id>` opens it too) |
-| Follow-ups, every run of a workflow | **Workflows** | `/workflows` |
-| Configure agents, channels, schedules, webhooks and tokens | **Settings** | `/admin` |
+| Every task as a post, with its thread | **Hub** | `/hub` |
+| What waits on you: decisions, drafts, requests ([Needs you](../dashboard/hub.md#see-what-waits-on-you)) | **Needs you** | `/hub#status=open&view=decide` |
+| Live sessions, paused tasks, each machine, restart when idle ([Live](../dashboard/live.md)) | **Live** | `/hub#page=live` |
+| What each machine runs at this moment ([Running now](../dashboard/hub.md#running-now)) | **Running now** | `/hub#page=running` |
+| Every project with its open work ([Projects](../dashboard/hub.md#see-every-project-at-once)) | **Projects** | `/hub#status=open&view=projects` |
+| What the agents ran, newest first ([Activity](../dashboard/activity.md)) | **Activity** | `/hub#page=activity` |
+| Recurring jobs and their value line ([Jobs](../dashboard/hub.md#see-recurring-jobs-and-their-value-line)) | **Jobs** | `/hub#status=open&view=jobs` |
+| Workflows and their runs; start one, turn one on or off ([Workflows](../dashboard/workflows.md)) | **Workflows** | `/hub#page=workflows` |
+| Edit a workflow on the canvas ([workflow editor](../dashboard/workflows.md#edit-a-workflow)) | **Workflows**, then **Open in the editor** | `/hub#page=editor&e-wf=<id>` |
+| Classifications waiting for review ([Reviews](../dashboard/hub.md#review-classifications)) | **Reviews** | `/hub#status=open&view=reviews` |
+| Failed runs and reported issues ([Failures](../dashboard/hub.md#see-failures)) | **Failures** | `/hub#status=open&view=failures` |
+| Every agent, and one agent's profile ([Agents](../dashboard/hub.md#see-every-agent)) | **Agents** | `/hub#page=agents` |
+| Who talks to the agents ([People](../dashboard/people.md)) | **People** | `/hub#page=people` |
+| The org chart, to read ([Org](../dashboard/org.md)) | **Org** | `/hub#page=org` |
+| Token spend and monthly budgets ([Cost](../dashboard/hub.md#see-what-the-fleet-costs)) | **Cost** | `/hub#status=open&view=cost` |
+| Settings, for the owner ([Change settings](../dashboard/hub.md#change-settings)) | **Settings** | `/hub#page=settings` |
+| Watch or steer one task ([Watch and steer a run](../dashboard/hub.md#watch-and-steer-a-run)) | a post, then its run | `/tasks/<task-id>?agent=<agent-id>` opens it |
 
-## Other pages
+## Old addresses that open the Hub
 
-| Need | Path |
+These classic pages are gone. Their addresses still work and open the matching Hub page, so old bookmarks and links in old messages keep working.
+
+| Old address | Opens |
 |---|---|
-| Run setup again, or add another agent | `/setup` |
-| Edit one agent's instructions and skills | `/admin/agents/<agent-id>` |
-| Watch or reopen one task | `/tasks/<task-id>?agent=<agent-id>` opens the run on the Hub's **Task** page ([Watch and steer a run](../dashboard/hub.md#watch-and-steer-a-run)) |
-| Trace an inbound message, errors, and daemon health | `/admin/health` (the old `/admin/observability` redirects here) |
-| See token spend and set monthly budgets ([Hub › Cost](../dashboard/hub.md#see-what-the-fleet-costs)) | `/hub`, **Cost** (`/admin/cost` opens it) |
-| Browse the shared wiki by pillar and type ([Wiki](../dashboard/wiki.md)) | `/admin/wiki/` |
-| Browse each agent's own wiki pages | `/admin/wiki/agents` |
-| Set the wiki notes inbox, the schedules and absorb pass that read it, and see recent notes ([Wiki notes](../jobs/wiki-notes.md)) | `/admin`, **Schedules** tab, **Wiki notes inbox** |
-| Turn the wiki's page curator chat off, or choose its agent ([Wiki](../dashboard/wiki.md#ask-an-agent-to-curate-a-page)) | `/admin`, **Agents** tab, **Wiki page curator** |
-| See work grouped by project | `/admin/projects` |
-| Review the intent ledger (the record of incoming work and which agent it was sent to) | `/admin/ledger` |
-| Review the intent graph | `/admin/graph` (also `/graph`) |
+| `/wall` | **Hub** (`/hub`) |
+| `/live` | **Live** |
+| `/people` | **People** |
+| `/admin/cost`, `/cost` | **Cost** |
+| `/agents/<agent-id>/history` | the agent's profile, with its **Activity** open |
+| `/workflows/editor?id=<id>` | the workflow editor |
+
+## Pages the Hub does not replace yet
+
+These pages are still served, because the Hub does not do everything they do yet. Each one goes when the Hub matches it.
+
+| Page | Path | What only it has |
+|---|---|---|
+| [Settings](../dashboard/settings.md) | `/admin`, `/admin/agents/<agent-id>` | The settings the Hub's Settings page does not have yet, such as the wiki notes inbox ([Wiki notes](../jobs/wiki-notes.md)) and the wiki page curator ([Wiki](../dashboard/wiki.md#ask-an-agent-to-curate-a-page)) |
+| Health | `/admin/health` (the old `/admin/observability` redirects here) | Route traces, errors and daemon health |
+| Guests | `/guests` | Letting another organisation into part of your mesh ([guest mesh](../jobs/guest-mesh.md)) |
+| [Approvals](../dashboard/approvals.md) | `/approvals` | Deciding inbox items and the Desk settings |
+| [Monitor](../dashboard/monitor.md) | `/monitor` | Task reviews, and connecting a CLI session by hand |
+| [Operations](../dashboard/operations.md) | `/mesh` | A run's full lifetime, Routines with their stale flags, run analytics |
+| [Activity timeline](../dashboard/activity.md) | `/activity` | The timeline lanes and the Map |
+| [Workflows](../dashboard/workflows.md) | `/workflows` | Follow-ups, and every run of a workflow |
+| Intent graph | `/admin/graph` (also `/graph`) | Approving or rejecting a classification |
+| Projects | `/admin/projects` | Creating and editing projects |
+| Intent ledger | `/admin/ledger` | The record of incoming work and which agent it was sent to |
+
+Tool pages stay on purpose, outside the Hub: `/setup` (run setup again or add an agent), the org chart editor at `/org` ([Edit the org chart](../dashboard/org.md#edit-the-org-chart)), `/login` (sign in from another device) and the wiki at `/admin/wiki/` ([Wiki](../dashboard/wiki.md); each agent's own pages at `/admin/wiki/agents`).
 
 ## Retired pages
 
@@ -52,13 +75,13 @@ The route list is a navigation aid, not a list of separate products. A view may 
 
 ## Check it worked
 
-1. **Browser:** open `/mesh` on your dashboard. The top bar shows the eight tabs. Select **Live**: the Hub's Live page opens.
-2. Open `/admin/health`. It loads, or redirects there from `/admin/observability`.
-3. Open `/boards`. The Hub opens on **Projects**.
+1. **Browser:** open `/hub` on your dashboard. The Hub opens with its nav on the left. Select **Live**: the Live page opens.
+2. **Browser:** open `/live`. The same Live page opens.
+3. **Browser:** open `/boards`. The Hub opens on **Projects**.
 
 ## If something is wrong
 
 - **A page doesn't load at all:** the dashboard is a separate service from the daemon. **Terminal:** check it is running, then run `agentx daemon status` for the daemon.
 - **A page is empty:** the feature behind it may not be set up yet, such as boards or the wiki.
-- **An old address opens the Hub instead of a page:** that page was retired; see [Retired pages](#retired-pages).
+- **An old address opens the Hub instead of a page:** that page moved to the Hub or was retired; see [Old addresses that open the Hub](#old-addresses-that-open-the-hub) and [Retired pages](#retired-pages).
 - **A page looks out of date after an update:** restart the dashboard service as well as the daemon.

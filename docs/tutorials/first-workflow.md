@@ -26,12 +26,13 @@ You need a source checkout of AgentX that has been built with `pnpm build` (see 
    ```sh
    pnpm docs:seed
    ```
-3. **Browser:** open `http://127.0.0.1:18931/workflows`.
-4. Select **Draft the demo shop report** in the list on the left.
+3. **Browser:** open `http://127.0.0.1:18931`. The Hub opens.
+4. Select **Workflows** in the Hub's nav, under **Automation**.
+5. Select **Draft the demo shop report** in the list.
 
-   ![The Workflows list in the demo](/screenshots/workflows-list.png)
+   ![The Hub's Workflows page in the demo: one row per workflow, one opened on its last run](/screenshots/wall/workflows.png)
 
-5. Select **Edit on canvas**. The workflow editor opens on the Hub.
+6. Select **Open in the editor**. The workflow editor opens on the Hub.
 
 ## 2. Follow the visual walkthrough
 

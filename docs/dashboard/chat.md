@@ -2,13 +2,13 @@
 
 Use **Ask an agent** to ask about what you are looking at without leaving the dashboard. It needs a running dashboard and daemon, plus an agent with a working model connection. See [core setup](../requirements.md#core-setup).
 
-Every dashboard page has two ways in: the input bar at the bottom (**Ask an agent about this page…**), and the **Ask an agent** tab on the right edge, which opens the conversation panel directly.
+The Hub does not have it yet: it is on the classic dashboard pages, such as Monitor (`/monitor`). Each of them has two ways in: the input bar at the bottom (**Ask an agent about this page…**), and the **Ask an agent** tab on the right edge, which opens the conversation panel directly.
 
 ![The Ask an agent input bar at the bottom of a dashboard page, and the tab on the right edge](/screenshots/monitor-only-you.png)
 
 ## Ask a question
 
-1. **Browser:** open a dashboard page, such as **Monitor** or **Activity**.
+1. **Browser:** open a classic dashboard page, such as `/monitor`.
 2. Select the **Ask an agent** tab on the right edge. The conversation panel opens.
 3. In the panel, pick an agent from the **Agent** list.
 4. To send the question to another connected machine, pick it from the **Node** list. Otherwise leave **This node**.
