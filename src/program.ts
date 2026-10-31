@@ -55,6 +55,7 @@ import { webhook } from "@/commands/webhook"
 import { business } from "@/commands/business"
 import { plan } from "@/commands/plan"
 import { notifications } from "@/commands/notifications"
+import { mail } from "@/commands/mail"
 import { retention } from "@/commands/retention"
 import { quality } from "@/commands/quality"
 import { actions as actionsCmd } from "@/commands/actions"
@@ -180,7 +181,7 @@ const ADVANCED = [
   // Scheduling internals (`schedule` is the friendly front door)
   cron,
   // Housekeeping
-  migrate, retention, notifications,
+  migrate, retention, notifications, mail,
   // Channel-specific + demo
   whatsapp, demo,
   // Posts drafted in your voice (the content team)
