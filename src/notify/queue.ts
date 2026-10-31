@@ -47,6 +47,13 @@ export interface PendingNotification {
  *  belongs beside the rest of their agentx state. */
 const DEFAULT_PATH = join(homedir(), ".agentx", "notifications", "pending.json")
 
+/** What identifies an entry. The id, and when a hand-edited file left it
+ *  out, the entry's content: an entry that cannot be matched could never be
+ *  cleared, and would be delivered again on every tick. */
+function entryKey(e: PendingNotification): string {
+  return e.id ? `id:${e.id}` : `raw:${JSON.stringify(e)}`
+}
+
 export class NotificationQueue {
   readonly path: string
 
@@ -77,6 +84,29 @@ export class NotificationQueue {
     const all = this.list()
     if (all.length) this.write([])
     return all
+  }
+
+  /** Remove these entries and keep everything else.
+   *
+   *  What a delivery clears: only what it sent. An entry held while the
+   *  send was in flight was not in it, and must still be waiting after. */
+  remove(entries: Iterable<PendingNotification>): number {
+    const gone = new Set([...entries].map(entryKey))
+    const all = this.list()
+    const kept = all.filter((e) => !gone.has(entryKey(e)))
+    if (kept.length !== all.length) this.write(kept)
+    return all.length - kept.length
+  }
+
+  /** Drop one held entry by id, or by an unambiguous id prefix, without
+   *  delivering it. Returns the entry dropped, or null when none matched. */
+  drop(id: string): PendingNotification | null {
+    const all = this.list()
+    const exact = all.filter((e) => e.id === id)
+    const matches = exact.length ? exact : all.filter((e) => typeof e.id === "string" && e.id.startsWith(id))
+    if (!id || matches.length !== 1) return null
+    this.remove([matches[0]])
+    return matches[0]
   }
 
   private write(entries: PendingNotification[]): void {

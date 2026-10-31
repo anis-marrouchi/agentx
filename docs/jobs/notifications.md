@@ -218,7 +218,7 @@ Without that permission, AgentX cannot see Focus and never holds a message, so n
 1. Create the file `~/.agentx/focus.json` containing `{"active": true}`.
 2. To release the messages, delete the file or change it to `{"active": false}`.
 
-AgentX checks every 30 seconds. When Focus ends, it sends what it held: one message per destination, with one banner and one sound.
+AgentX checks every 30 seconds. Whenever you are neither in Focus nor in a call and something is held, it sends what it held: one message per destination, with one banner and one sound. This also covers a hold so short that it began and ended between two checks.
 
 **Calls.** While you are in a call, messages and decision cards are held the same way, and they come when the call ends. AgentX counts you as in a call when:
 
@@ -237,6 +237,7 @@ agentx notify "Production is down" --title "Alert" --todo "Open the status page"
 agentx notify "Video v4 is ready" --title "Rafeeq" --url "https://example.com/video-v4"
 agentx notify --status        # Focus state and anything held
 agentx notify --flush         # deliver what is held now
+agentx notify --drop <id>     # remove one held message without sending it
 ```
 
 | Option | What it does |
@@ -250,6 +251,9 @@ agentx notify --flush         # deliver what is held now
 | `--url <url>` | What a tap on the notification opens. It is also shown as an **Open** button |
 | `--button "<label>=<url>"` | A button on the notification. Repeat it for more: three at most, `--url` included |
 | `--digest` | A system reminder, such as disk space or a channel that stopped. It waits for the daily digest instead of a notification now |
+| `--status` | Show whether you are in Focus or a call, and the messages held, each with its id |
+| `--flush` | Send everything held now, as one message |
+| `--drop <id>` | Remove one held message without sending it. Copy the id from `--status`; the start of the id is enough when only one message begins with it |
 | `--told` | Show what you were told in the last 24 hours: how many were sent, held, kept for the digest or not repeated, and the latest ones |
 | `--from <who>` | Shown in a held digest, so you know who sent what |
 | `--channel`, `--chat-id` | Deliver somewhere other than the default channel (`notifications.channel`, which is `push`) |
@@ -313,15 +317,17 @@ AgentX also keeps where you were last seen: the phone app, its Desk tab, and eac
 7. Run `agentx notify --status` and check that the message is listed as held.
 8. Delete `~/.agentx/focus.json`. Within 30 seconds, the held message arrives.
 9. Create `~/.agentx/call.json` containing `{"active": true, "source": "test"}`. Run `agentx notify --status`: it says `in a call`. Delete the file; within 30 seconds anything held arrives.
-10. Run `agentx notify "$(printf 'x%.0s' {1..301})"`. It says `not sent: message is longer than 300 characters` and sends nothing.
-11. Run `agentx notify "Ready for review" --title "#402"`. It says `not sent: title is only a reference ("#402")` and sends nothing.
-12. Run `agentx notify "Backups ran" --title "Backups"`. The notice shows `Backups ran`, then `To do: nothing, FYI` on the next line.
-13. Run `agentx notify "Backups ran" --title "Backups" --key backup:test` twice. The first is sent; the second says `not sent: the owner was already told this`.
-14. Run `agentx notify "The test disk is nearly full" --title "Disk" --digest`. It says `not sent: kept for the daily digest`. Run `agentx notify --told`: it counts `1 kept for the digest`, and the next digest has a line for it.
-15. On a Mac, run `say "This is a long sentence that takes a few seconds to read aloud"` and, while it speaks, ask an agent something by voice. Its answer starts only after `say` is finished.
-16. With the phone app, run `agentx notify "Seen test" --title "Reach"`. On the phone, open **Alerts** and tap the message. Run `agentx notify --told`: the message shows `seen ... (phone)`.
-17. Switch a channel off: `curl -s -X POST http://127.0.0.1:18800/channels/ntfy/switch -H 'Content-Type: application/json' -d '{"on": false}'`. Run `curl -s http://127.0.0.1:18800/health`: `channels.ntfy` says `"up": false`. Send to it with `curl -s -X POST http://127.0.0.1:18800/send -H 'Content-Type: application/json' -d '{"channel":"ntfy","chatId":"default","text":"Test\nrefused"}'`: the answer is `503` with `"refused": true` and the reason. Switch it on again with `{"on": true}`.
-18. On the phone, run `agentx notify "Link test" --url https://example.com` and tap the notification: `https://example.com` opens. Run `agentx notify "Request test" --request <id>` with the id of an open request and tap it: that request opens on the Hub. With ntfy, this needs `notifications.publicUrl` or `calls.phone.appUrl`.
+10. Create `~/.agentx/focus.json` containing `{"active": true}` again, send a message, and delete the file at once. Within 30 seconds the held message arrives, even though the hold lasted less than one check.
+11. Hold a message again (step 6). Run `agentx notify --status`, copy its id, then run `agentx notify --drop <id>`. `--status` now shows `0 held`.
+12. Run `agentx notify "$(printf 'x%.0s' {1..301})"`. It says `not sent: message is longer than 300 characters` and sends nothing.
+13. Run `agentx notify "Ready for review" --title "#402"`. It says `not sent: title is only a reference ("#402")` and sends nothing.
+14. Run `agentx notify "Backups ran" --title "Backups"`. The notice shows `Backups ran`, then `To do: nothing, FYI` on the next line.
+15. Run `agentx notify "Backups ran" --title "Backups" --key backup:test` twice. The first is sent; the second says `not sent: the owner was already told this`.
+16. Run `agentx notify "The test disk is nearly full" --title "Disk" --digest`. It says `not sent: kept for the daily digest`. Run `agentx notify --told`: it counts `1 kept for the digest`, and the next digest has a line for it.
+17. On a Mac, run `say "This is a long sentence that takes a few seconds to read aloud"` and, while it speaks, ask an agent something by voice. Its answer starts only after `say` is finished.
+18. With the phone app, run `agentx notify "Seen test" --title "Reach"`. On the phone, open **Alerts** and tap the message. Run `agentx notify --told`: the message shows `seen ... (phone)`.
+19. Switch a channel off: `curl -s -X POST http://127.0.0.1:18800/channels/ntfy/switch -H 'Content-Type: application/json' -d '{"on": false}'`. Run `curl -s http://127.0.0.1:18800/health`: `channels.ntfy` says `"up": false`. Send to it with `curl -s -X POST http://127.0.0.1:18800/send -H 'Content-Type: application/json' -d '{"channel":"ntfy","chatId":"default","text":"Test\nrefused"}'`: the answer is `503` with `"refused": true` and the reason. Switch it on again with `{"on": true}`.
+20. On the phone, run `agentx notify "Link test" --url https://example.com` and tap the notification: `https://example.com` opens. Run `agentx notify "Request test" --request <id>` with the id of an open request and tap it: that request opens on the Hub. With ntfy, this needs `notifications.publicUrl` or `calls.phone.appUrl`.
 
 `agentx doctor` runs the same helper check under **Notifications**, along with its other checks.
 
@@ -344,6 +350,8 @@ Other problems:
 | No banner at all | Turn off Do Not Disturb. If the helper is not installed, also allow **System Settings → Notifications → Script Editor**. |
 | The phone does not buzz | With the phone app, see [Notifications on your phone](../dashboard/mobile-alerts.md#if-something-is-wrong). With ntfy, check that the topic in the ntfy app matches `NTFY_TOPIC` exactly, that `agentx notifications show` lists `channel ntfy`, and that you restarted AgentX after saving. |
 | Nothing is held during Focus | Give Full Disk Access to the app that runs AgentX (step 4), or use `~/.agentx/focus.json`. |
+| A held message is still waiting after Focus or the call ended | Check that the AgentX daemon is running: it sends held messages within 30 seconds. Run `agentx notify --flush` to send them now. |
+| A held message is no longer wanted | Run `agentx notify --status`, copy its id, then run `agentx notify --drop <id>`. |
 | A scheduled job uses the wrong settings | Add `-c /path/to/agentx.json` to its `agentx notify` command. |
 | Tapping a phone notification opens nothing | On ntfy, AgentX does not know the address your phone reaches this computer at. Set `notifications.publicUrl` (or `calls.phone.appUrl`) to it, for example `https://my-mac.example.ts.net`, or send the notification with `--url`. |
 | A message you expected never came | Run `agentx notify --told`. `repeat` means you were already told the same thing (with the same `--key` in the last 24 hours, or the same words in the last 20); `digest` means it waits for the daily digest. Send it with `--urgent` if it cannot wait, or give a different `--key`. |

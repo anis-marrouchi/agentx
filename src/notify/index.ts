@@ -131,7 +131,9 @@ export async function flushHeld(
       channel: group.channel, chatId: group.chatId,
     })
   }
-  queue.drain()
+  // Clear only what was sent: a message held while the sends were in
+  // flight was not part of this digest and must still be waiting.
+  queue.remove(waiting)
   // One banner for the whole backlog, whatever channels it went to.
   const all = digest(waiting)
   if (all) await alertFor(opts.alert)?.(all.title, all.message)
