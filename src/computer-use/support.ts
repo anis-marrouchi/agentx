@@ -11,6 +11,10 @@
 //              click-through window, so no cursor overlay
 //   no display nothing to read or press (a server, an SSH shell)
 //
+// Decided on #1595 (option A): full support on "Ubuntu on Xorg"; on
+// Wayland, read and AT-SPI actions only, no cursor, and status says why.
+// The Windows port (#1594) comes first.
+//
 // Pure: the platform and environment are passed in, so it is unit tested
 // on any OS. `agentx daemon status` prints `supportLine` from the CLI
 // process, which carries the desktop session's variables; a daemon under
