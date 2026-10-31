@@ -39,14 +39,23 @@ struct VoiceSettings: Codable, Equatable {
         /// "off", "rarely", "sometimes" or "often". Nil from a daemon
         /// older than the animations.
         var animations: String?
+        /// When an answer is ready (#1455): "wait" until it is picked, or
+        /// "play" at once. Nil from a daemon older than the open-requests
+        /// list: the app waits.
+        var answers: String?
+        /// Half a second's hover on the pill opens the open-requests list.
+        /// Nil from an older daemon: on.
+        var listOnHover: Bool?
 
         init(provider: String, fallback: String, stt: String, localStt: String = "mlx-whisper",
              endOfTurn: String = "vad", hotkeys: Hotkeys, card: Card? = nil, look: String? = nil,
-             startReduced: Bool? = nil, stroll: Bool? = nil, animations: String? = nil) {
+             startReduced: Bool? = nil, stroll: Bool? = nil, animations: String? = nil,
+             answers: String? = nil, listOnHover: Bool? = nil) {
             self.provider = provider; self.fallback = fallback; self.stt = stt
             self.localStt = localStt; self.endOfTurn = endOfTurn; self.hotkeys = hotkeys
             self.card = card; self.look = look; self.startReduced = startReduced
             self.stroll = stroll; self.animations = animations
+            self.answers = answers; self.listOnHover = listOnHover
         }
 
         /// A daemon from before these fields leaves them out: the defaults.
@@ -63,6 +72,8 @@ struct VoiceSettings: Codable, Equatable {
             startReduced = try c.decodeIfPresent(Bool.self, forKey: .startReduced)
             stroll = try c.decodeIfPresent(Bool.self, forKey: .stroll)
             animations = try c.decodeIfPresent(String.self, forKey: .animations)
+            answers = try c.decodeIfPresent(String.self, forKey: .answers)
+            listOnHover = try c.decodeIfPresent(Bool.self, forKey: .listOnHover)
         }
     }
     struct Voice: Codable, Equatable {
@@ -125,6 +136,8 @@ struct VoiceSettings: Codable, Equatable {
         if let start = self.general.startReduced, start != old.general.startReduced { general["startReduced"] = start }
         if let stroll = self.general.stroll, stroll != old.general.stroll { general["stroll"] = stroll }
         if let often = self.general.animations, often != old.general.animations { general["animations"] = often }
+        if let answers = self.general.answers, answers != old.general.answers { general["answers"] = answers }
+        if let hover = self.general.listOnHover, hover != old.general.listOnHover { general["listOnHover"] = hover }
         var keys: [String: Any] = [:]
         if self.general.hotkeys.talk != old.general.hotkeys.talk { keys["talk"] = self.general.hotkeys.talk }
         if self.general.hotkeys.stop != old.general.hotkeys.stop { keys["stop"] = self.general.hotkeys.stop }

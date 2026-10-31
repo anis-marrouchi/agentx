@@ -62,6 +62,8 @@ export interface VoiceSettingsPatch {
     startReduced?: boolean
     stroll?: boolean
     animations?: VoiceAnimations
+    answers?: VoiceAnswers
+    listOnHover?: boolean
     /** The whole list, replacing the saved one; null or [] clears it. */
     pronunciations?: Pronunciation[] | null
   }
@@ -69,6 +71,8 @@ export interface VoiceSettingsPatch {
 }
 
 type LocalStt = "mlx-whisper" | "parakeet"
+/** When an answer is ready (#1455): wait until picked, or play at once. */
+type VoiceAnswers = "wait" | "play"
 type EndOfTurn = "vad" | "volume"
 
 export interface SettingsError { path: string; message: string }
@@ -92,6 +96,10 @@ export interface VoiceSettingsView {
     stroll: boolean
     /** How often the character plays a small animation by itself. */
     animations: VoiceAnimations
+    /** When an answer is ready: "wait" until picked, or "play" at once. */
+    answers: VoiceAnswers
+    /** Half a second's hover on the pill opens the open-requests list. */
+    listOnHover: boolean
     /** How words are said aloud without changing how they are written. */
     pronunciations: Pronunciation[]
   }
@@ -142,6 +150,8 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       startReduced: v.startReduced,
       stroll: v.stroll,
       animations: v.animations,
+      answers: v.answers ?? "wait",
+      listOnHover: v.listOnHover ?? true,
       pronunciations: v.pronunciations ?? [],
     },
     agents: Object.entries(config.agents).map(([id, a]) => {
@@ -190,7 +200,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   for (const k of Object.keys(patch)) if (k !== "general" && k !== "agents") err(k, `"${k}" is not a voice setting`)
 
   const g = patch.general ?? {}
-  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced", "stroll", "animations", "pronunciations"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
+  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced", "stroll", "animations", "answers", "listOnHover", "pronunciations"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
   if (g.provider !== undefined && !["system", "elevenlabs"].includes(g.provider)) err("general.provider", "Voice provider must be system or elevenlabs")
   if (g.stt !== undefined && !["auto", "elevenlabs", "local"].includes(g.stt)) err("general.stt", "Speech to text must be auto, elevenlabs or local")
   if (g.localStt !== undefined && !["mlx-whisper", "parakeet"].includes(g.localStt)) err("general.localStt", "The engine on this Mac must be mlx-whisper or parakeet")
@@ -199,6 +209,8 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   if (g.startReduced !== undefined && typeof g.startReduced !== "boolean") err("general.startReduced", "Start reduced must be on or off")
   if (g.stroll !== undefined && typeof g.stroll !== "boolean") err("general.stroll", "Character strolls when idle must be on or off")
   if (g.animations !== undefined && !VOICE_ANIMATIONS.includes(g.animations)) err("general.animations", `Character plays when idle must be ${VOICE_ANIMATIONS.slice(0, -1).join(", ")} or ${VOICE_ANIMATIONS.at(-1)}`)
+  if (g.answers !== undefined && !["wait", "play"].includes(g.answers)) err("general.answers", "When an answer is ready must be wait or play")
+  if (g.listOnHover !== undefined && typeof g.listOnHover !== "boolean") err("general.listOnHover", "Open the list on hover must be on or off")
   if (g.pronunciations != null) errors.push(...checkPronunciations(g.pronunciations))
   for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
     if (!["talk", "stop", "paste"].includes(k)) { err(`general.hotkeys.${k}`, `"${k}" is not a shortcut the window sets`); continue }
@@ -293,6 +305,8 @@ export function applyVoiceSettings(raw: any, patch: VoiceSettingsPatch): void {
     if (g.startReduced !== undefined) raw.voice.startReduced = g.startReduced
     if (g.stroll !== undefined) raw.voice.stroll = g.stroll
     if (g.animations !== undefined) raw.voice.animations = g.animations
+    if (g.answers !== undefined) raw.voice.answers = g.answers
+    if (g.listOnHover !== undefined) raw.voice.listOnHover = g.listOnHover
     if (g.pronunciations !== undefined) {
       const list = (g.pronunciations ?? []).map((p) => ({
         written: p.written.trim(), spoken: p.spoken.trim(),

@@ -208,6 +208,8 @@ To try a voice before keeping it:
 | **Smart paste** | Reshapes what you copied for the app you are typing in, then pastes it. Default **Command–Option–V** |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it |
 | **Open requests** | **Command–Option–O**. Opens the list of your requests. Fixed; shown so you don't reuse it |
+| **When an answer is ready** | **Wait until I pick it** (a soft sound and a blue dot, the default) or **Play it at once**, as before |
+| **Open the list on hover** | Pointing at the pill for half a second opens the list of your requests. Default on |
 | **Keep the answer open** | How long an [answer in the pill](#read-the-answer-in-the-pill) stays open after it has been spoken: from 10 seconds to 5 minutes, or **Until I close it**. Default 30 seconds |
 | **Tallest answer** | How tall the answer grows before it scrolls, from 120 to 800 points. Default 320 |
 | **Launch at login** | Starts the app when you log in. Greyed out and on when `agentx desktop install` already does it |
@@ -282,6 +284,16 @@ Each row in the list shows the agent, what it is doing, the first words of your 
 
 With the list open from the keyboard, hold **Option–Space** to talk to the agent of the row you are on. Press **Escape** to close the list. Moving the pointer away closes a list you opened by pointing.
 
+**Carry on with one agent.** Picking a row makes its agent the one you talk to next, and the pill says **Hold ⌥Space to continue it**. Hold **Option–Space** and say your follow-up: that agent still has your earlier question and its answer in mind.
+
+**Close a row.** Point at a row and click its **×**, or press **Command–Delete** on it:
+
+- An answered or failed row closes at once, with **Undo** for five seconds. The question and answer stay in **History…**.
+- A row that is still thinking asks first. **Close, let it finish** (press **Return**) lets the agent finish; its answer goes to History with no sound. **Stop Writer** (press **Tab**, then **Return**) stops the agent; it is never the default. **Keep** (press **Escape**) changes nothing.
+- **Close heard**, at the bottom of the list, closes every heard and failed row at once.
+
+The list is kept by AgentX itself, so it is still there after you quit the app or restart AgentX. A request that was still thinking when AgentX restarted says **Couldn't answer**: ask it again.
+
 While agents are working, or answers wait for you, a row of small orbs appears in the pill, one per agent in its colours. The big orb on the left keeps following the agent that is listening or speaking.
 
 ![Three pills with mini orbs, light mode: Writer drafting with small Writer and Planner orbs, both with a ring going round; Ops saying its answer with an Ops orb, a Planner orb with a 1 badge for one more question waiting and a Researcher orb with a steady ring; and the idle pill with one Planner orb still thinking](/screenshots/voice/pill-mini-orbs-light.png)
@@ -298,7 +310,7 @@ While agents are working, or answers wait for you, a row of small orbs appears i
 
 Point at a small orb to see the agent's name and the computer it runs on. Click the small orbs, or **1 new**, to open the list. Clicking anywhere else on the pill talks, and dragging moves it, as before.
 
-Prefer the old way, where each answer plays as soon as it is back? Tick **Play answers at once** in the menu. More rules are in [Ask several agents at once](../dashboard/voice.md#ask-several-agents-at-once).
+Prefer the old way, where each answer plays as soon as it is back? Tick **Play answers at once** in the menu, or set **When an answer is ready** to **Play it at once** in **Settings… › General**. To open the list only with a click or **Command–Option–O**, turn off **Open the list on hover** there. More rules are in [Ask several agents at once](../dashboard/voice.md#ask-several-agents-at-once).
 
 ### Interrupt or stop
 
@@ -391,6 +403,8 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.look` | `"orb"` | What shows the assistant's state: the `"orb"` in the pill, or the `"character"`, a small creature above the bottom edge of the screen. See [The character](../dashboard/voice.md#the-character) |
 | `voice.startReduced` | `false` | `true` starts the app with the pill [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb): a small circle you can drag anywhere. With the character, as the [character alone](../dashboard/voice.md#reduce-the-character), without its speech bubble |
 | `voice.stroll` | `false` | `true` lets the [character](../dashboard/voice.md#the-character) take a [slow stroll](../dashboard/voice.md#let-the-character-stroll) when the assistant has nothing to do |
+| `voice.answers` | `"wait"` | When an answer is ready: `"wait"` keeps it in the [open-requests list](#ask-several-agents-at-once) with a soft sound and a blue dot until you pick it; `"play"` plays it at once, as before. Same as **Play answers at once** in the menu |
+| `voice.listOnHover` | `true` | `false`: pointing at the pill no longer opens the open-requests list; a click or **Command–Option–O** still does |
 | `voice.animations` | `"sometimes"` | How often the character plays a [small animation by itself](../dashboard/voice.md#let-the-character-play-by-itself) when idle: `"off"`, `"rarely"`, `"sometimes"` or `"often"` |
 | `voice.floor.enabled` | `true` | Lets a demo, a recording or a script take [the floor](../dashboard/voice.md#one-speaker-at-a-time-the-floor): while it is held, every other voice and bubble waits. `false`: nobody can take it |
 | `voice.floor.defaultSeconds` | `120` | How long a holder keeps the floor when it names no time, `5` to `3600` |
@@ -428,7 +442,6 @@ These are menu choices, not in `agentx.json`. macOS saves them for your user, ex
 |---|---|
 | The ticked agent | the daemon's `node.defaultAgent`, else the first agent |
 | **Show floating pill** | off |
-| **Play answers at once** | off: answers wait until you pick them |
 | **Animated orb** | on |
 | **Hold notifications** | off |
 | Pill position | bottom-right corner of the main screen |

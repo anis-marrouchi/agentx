@@ -387,6 +387,24 @@ private struct GeneralTab: View {
                                     : Binding(get: { model.draft?.general.animations ?? "off" },
                                               set: { model.draft?.general.animations = $0 }))
                 }
+                if draft.general.answers != nil {
+                    Section {
+                        Picker("When an answer is ready", selection: Binding(
+                            get: { model.draft?.general.answers ?? "wait" },
+                            set: { model.draft?.general.answers = $0 })) {
+                            Text("Wait until I pick it").tag("wait")
+                            Text("Play it at once").tag("play")
+                        }
+                        Toggle("Open the list on hover", isOn: Binding(
+                            get: { model.draft?.general.listOnHover ?? true },
+                            set: { model.draft?.general.listOnHover = $0 }))
+                    } header: {
+                        Text("Answers")
+                    } footer: {
+                        Text("Waiting: a soft sound and a blue dot, and the answer plays when you pick it in the open-requests list (⌘⌥O). Off for hover: only a click or ⌘⌥O opens the list.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 if draft.general.card != nil {
                     AnswerCardSection(card: Binding(get: { model.draft?.general.card ?? .standard },
                                                     set: { model.draft?.general.card = $0 }))

@@ -123,6 +123,21 @@ strollsNow.general.stroll = true
 let strollPatch = strollsNow.patch(from: withStroll)["general"] as? [String: Any]
 check(strollPatch?["stroll"] as? Bool == true && strollPatch?.count == 1, "only the stroll setting is sent when it changes")
 
+// --- When an answer is ready (#1455) ---
+
+check(withStroll.general.answers == nil && withStroll.general.listOnHover == nil,
+      "a daemon older than the open-requests list sends neither setting")
+let withAnswers = try! JSONDecoder().decode(VoiceSettings.self, from: Data(newer.replacingOccurrences(
+    of: "\"card\":{\"timeout\":30,\"maxHeight\":320}",
+    with: "\"card\":{\"timeout\":30,\"maxHeight\":320},\"answers\":\"wait\",\"listOnHover\":true").utf8))
+check(withAnswers.general.answers == "wait" && withAnswers.general.listOnHover == true, "both settings decode")
+var playsNow = withAnswers
+playsNow.general.answers = "play"
+playsNow.general.listOnHover = false
+let answersPatch = playsNow.patch(from: withAnswers)["general"] as? [String: Any]
+check(answersPatch?["answers"] as? String == "play" && answersPatch?["listOnHover"] as? Bool == false
+      && answersPatch?.count == 2, "only the changed answer settings are sent")
+
 // --- The character's small animations when idle (#571) ---
 
 check(withStroll.general.animations == nil && withStroll.patch(from: withStroll)["general"] == nil,

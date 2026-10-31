@@ -193,6 +193,8 @@ describe("config", () => {
       hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
       look: "orb",
       startReduced: false,
+      answers: "wait",
+      listOnHover: true,
       stroll: false,
       animations: "sometimes",
       palette: "lagoon",

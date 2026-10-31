@@ -9,6 +9,11 @@ import Foundation
 /// agent that is still thinking waits behind the first and goes when it
 /// answers.
 ///
+/// The daemon keeps the list too (GET /voice/requests): each row has its
+/// daemon id (`key`), so it survives a restart of the app or the daemon,
+/// and heard on one client is heard on all of them. `sync` merges what the
+/// daemon says into what the app holds.
+///
 /// Kept free of AppKit and SwiftUI so the tests can check it without a
 /// window. The answers themselves live with the app; this holds what the
 /// list and the pill show.
@@ -36,6 +41,12 @@ struct OpenRequests {
         var since: Date
         /// Played or opened: its answer, or why it failed, has been seen.
         var heard = false
+        /// Its id on the daemon; nil until the daemon has it, or when the
+        /// daemon could not be reached.
+        var key: String? = nil
+        /// Run by this app: its /ask is ours, so the daemon's word on its
+        /// state waits for that answer. A row found on the daemon is not.
+        var local = true
 
         /// An answer or a failure the owner has not seen yet.
         var isNew: Bool {
@@ -53,8 +64,8 @@ struct OpenRequests {
     private(set) var requests: [Request] = []
     private var nextID = 1
 
-    /// Heard requests kept in the list. Closing a row by hand comes with
-    /// its own slice; until then the oldest heard ones leave by themselves.
+    /// Heard requests kept in the list; the oldest heard ones leave by
+    /// themselves, as they do on the daemon (voice-requests-api.ts).
     static let keptHeard = 8
 
     func request(_ id: Int) -> Request? { requests.first { $0.id == id } }
@@ -82,12 +93,13 @@ struct OpenRequests {
     }
 
     /// The oldest request waiting for `agentID`, now thinking, if there is
-    /// one and nothing else for that agent is.
+    /// one and nothing else for that agent is. This app runs it.
     mutating func startNext(for agentID: String, at now: Date) -> Int? {
         guard !requests.contains(where: { $0.agentID == agentID && $0.phase == .thinking }),
               let i = requests.firstIndex(where: { $0.agentID == agentID && $0.phase == .waiting }) else { return nil }
         requests[i].phase = .thinking
         requests[i].since = now
+        requests[i].local = true
         return requests[i].id
     }
 
@@ -104,6 +116,105 @@ struct OpenRequests {
     /// Gone without a trace: the daemon took the words for something else.
     mutating func remove(_ id: Int) {
         requests.removeAll { $0.id == id }
+    }
+
+    /// The daemon has the request under `key`.
+    mutating func setKey(_ id: Int, _ key: String) {
+        update(id) { $0.key = key }
+    }
+
+    func request(key: String) -> Request? { requests.first { $0.key == key } }
+
+    // MARK: Closing
+
+    /// Close a row: it leaves the list. Returned so Undo can put it back.
+    @discardableResult
+    mutating func close(_ id: Int) -> Request? {
+        guard let r = request(id) else { return nil }
+        requests.removeAll { $0.id == id }
+        return r
+    }
+
+    /// Undo a close: the row goes back to its place, by when it was sent.
+    mutating func restore(_ r: Request) {
+        guard request(r.id) == nil else { return }
+        let at = requests.firstIndex { $0.sentAt > r.sentAt } ?? requests.endIndex
+        requests.insert(r, at: at)
+    }
+
+    /// "Close heard": every heard answer and every failure leaves.
+    @discardableResult
+    mutating func closeHeard() -> [Request] {
+        let gone = requests.filter { r in
+            if case .failed = r.phase { return true }
+            return r.phase == .answered && r.heard
+        }
+        let ids = Set(gone.map(\.id))
+        requests.removeAll { ids.contains($0.id) }
+        return gone
+    }
+
+    /// What closing a row asks first: a row still with its agent asks
+    /// whether to let it finish or stop it; anything else closes at once.
+    static func closeNeedsConfirm(_ r: Request) -> Bool { r.phase == .thinking }
+
+    // MARK: The daemon's list
+
+    /// One row of GET /voice/requests.
+    struct Remote: Equatable {
+        let key: String
+        let agentID: String
+        let question: String
+        let sentAt: Date
+        let since: Date
+        /// "waiting", "thinking", "answered" or "failed".
+        let state: String
+        let heard: Bool
+        let error: String?
+
+        var phase: Phase {
+            switch state {
+            case "waiting": return .waiting
+            case "answered": return .answered
+            case "failed": return .failed(error ?? "Something went wrong.")
+            default: return .thinking
+            }
+        }
+    }
+
+    /// Merge the daemon's open rows. A row heard elsewhere is heard here; a
+    /// row the daemon no longer lists was closed elsewhere and leaves; a
+    /// row only the daemon has (after the app restarted) joins. The state
+    /// of a row this app is running is the app's until its /ask answers.
+    /// Rows the daemon doesn't have yet (no key) are left alone. Returns
+    /// the ids that joined.
+    @discardableResult
+    mutating func sync(_ remote: [Remote]) -> [Int] {
+        let byKey = Dictionary(remote.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+        requests.removeAll { r in r.key.map { byKey[$0] == nil } ?? false }
+        for i in requests.indices {
+            guard let key = requests[i].key, let theirs = byKey[key] else { continue }
+            if theirs.heard { requests[i].heard = true }
+            if !requests[i].local && requests[i].phase != theirs.phase {
+                requests[i].phase = theirs.phase
+                requests[i].since = theirs.since
+            }
+        }
+        var joined: [Int] = []
+        for theirs in remote where request(key: theirs.key) == nil {
+            let id = nextID
+            nextID += 1
+            restore(Request(id: id, agentID: theirs.agentID, question: theirs.question, sentAt: theirs.sentAt,
+                            phase: theirs.phase, since: theirs.since, heard: theirs.heard,
+                            key: theirs.key, local: false))
+            joined.append(id)
+        }
+        return joined
+    }
+
+    /// This app runs a row it found on the daemon (one waiting its turn).
+    mutating func adopt(_ id: Int) {
+        update(id) { $0.local = true }
     }
 
     private mutating func update(_ id: Int, _ change: (inout Request) -> Void) {
@@ -219,6 +330,22 @@ struct OpenRequests {
 
     /// How long those lines stay before the pill goes back to its own.
     static let noteSeconds: TimeInterval = 4
+
+    /// The pill's line once a row is picked: the next words go to its agent
+    /// and continue that conversation.
+    static func continueNote(name: String) -> String { "\(name) · Hold ⌥Space to continue it" }
+
+    /// The line after a close, with Undo beside it.
+    static func closedNote(name: String) -> String { "Closed \(name)’s request" }
+
+    /// How long Undo stays after a close.
+    static let undoSeconds: TimeInterval = 5
+
+    /// The confirm a thinking row turns into when closed.
+    static func stillThinking(name: String) -> String { "\(name) is still thinking" }
+    static let letItFinish = "Close, let it finish"
+    static func stopAgent(name: String) -> String { "Stop \(name)" }
+    static let keep = "Keep"
 
     // MARK: Picking a row
 
