@@ -34,7 +34,7 @@ class PlanModel implements LineModel {
   close() { this.closed = true }
 }
 
-function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: boolean; userActsAfter?: number; speakMs?: number; planMs?: number; stuckOn?: string } = {}) {
+function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: boolean; userActsAfter?: number; speakMs?: number; planMs?: number; stuckOn?: string; readMsWhileWaiting?: number } = {}) {
   const app = fakeApp()
   const log: string[] = []
   const presence: Presence = {
@@ -42,11 +42,12 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
     say: (t) => { if (t) log.push(`bubble ${t}`) },
     clear: () => log.push("clear"), park: () => log.push("park"), close: () => log.push("close"),
     onDismiss: (fn) => { dismiss = fn },
-    waiting: (s) => log.push(`wait ${s}`),
+    waiting: (s) => { waitingNow = s > 0; log.push(`wait ${s}`) },
     onSkip: (fn) => { skip = fn },
   }
   let dismiss = () => {}
   let skip = () => {}
+  let waitingNow = false
   const said: string[] = []
   let stopped = 0
   const speech = {
@@ -58,7 +59,8 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
   const acted: string[] = []
   const model = new PlanModel(replies, opts.planMs)
   const deps: TeachDeps = {
-    readScreen: async () => app.view(), presence, speech, model,
+    readScreen: async () => { if (waitingNow && opts.readMsWhileWaiting) await sleep(opts.readMsWhileWaiting); return app.view() },
+    presence, speech, model,
     act: async (s) => { acted.push(s.action === "key" ? `key ${s.keys}` : `${s.action} ${s.label}`); app.open(); return { error: null } },
   }
   if (opts.userActsAfter !== undefined) setTimeout(app.open, opts.userActsAfter)
@@ -336,16 +338,35 @@ describe("LiveTeach", () => {
     expect(s.t.step).toBe(4)
   })
 
-  it("Skip outside a wait does nothing (#1591)", async () => {
-    const s = setup("watch", [STEP1], { speakMs: 100 })
+  it("Skip outside a wait does nothing: the line plays out and the next wait is not skipped (#1591)", async () => {
+    const WAIT = "TARGET: 1\nACTION: point\nSAY: New is up here."
+    const s = setup("teach", [WAIT, DONE], { speakMs: 100, userActsAfter: 250 })
     const events: any[] = []
     s.t.on((e) => events.push(e))
     const run = s.t.run()
-    await sleep(20)
+    while (!s.said.includes("New is up here.")) await sleep(2)
     s.skip()
-    s.t.door("stop")
+    // A Skip that woke the lesson would cut the line short and start the wait now.
+    await sleep(50)
+    expect(s.log).not.toContain("wait 0.3")
     await run
-    expect(events.some((e) => e.type === "changed" && e.skipped)).toBe(false)
+    expect(s.log).toContain("wait 0.3")
+    expect(events.filter((e) => e.type === "changed")).toEqual([{ type: "changed", n: 1, changed: true }])
+  })
+
+  it("Skip pressed while the last read of the wait runs late still counts as Skip (#1591)", async () => {
+    const WAIT = "TARGET: 1\nACTION: point\nSAY: New is up here."
+    // Each read during the wait outlasts the 300 ms wait itself.
+    const s = setup("teach", [WAIT, DONE], { readMsWhileWaiting: 400 })
+    const events: any[] = []
+    s.t.on((e) => events.push(e))
+    const run = s.t.run()
+    while (!s.log.includes("wait 0.3")) await sleep(2)
+    await sleep(50)
+    s.skip()
+    await run
+    expect(events.filter((e) => e.type === "changed").map((e) => !!e.skipped)).toEqual([true])
+    expect(s.model.prompts[1]).toContain("pressed Skip")
   })
 
   it("ends itself when the listener leaves two steps in a row undone (#1493)", async () => {
