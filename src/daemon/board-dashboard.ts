@@ -522,6 +522,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   const guestsPath = wallGuestsTarget(method, path) ?? path
   if ((method === "GET" && guestsPath === "/api/guests") || (method === "POST" && /^\/api\/guests\/[^/]+\/(pause|resume|end|update)$/.test(guestsPath))) {
+    // The proxy sends dashboard.token to the daemon, so it is the owner's
+    // alone: reading the grants needs the owner, and a change needs what a
+    // Wall write needs, whether it came by the Hub's path or the old one.
+    if (method === "GET" ? !isDashboardOwner(req, ctx) : !wallOwnerOk(req, ctx)) {
+      sendJson(res, 401, { error: "unauthorized" })
+      return
+    }
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" }
       if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`

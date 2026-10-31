@@ -77,6 +77,42 @@ describe("dashboard pages off-box (#1306)", () => {
     expect((await fetch(`${base}/api/admin/state`, { headers: wrong })).status).toBe(401)
   })
 
+  // The classic /guests page's routes (#1449): the proxy carries
+  // dashboard.token to the daemon, so neither may answer an off-box caller
+  // that is not the owner, or the Hub's owner guard would be got around.
+  it("refuses an off-box GET /api/guests without a token or session", async () => {
+    for (const withToken of [true, false]) {
+      const base = await start(withToken)
+      const r = await fetch(`${base}/api/guests`, { headers: OFF })
+      expect(r.status, `token set: ${withToken}`).toBe(401)
+      await new Promise<void>((done) => server!.close(() => done()))
+      server = undefined
+    }
+  })
+
+  it("refuses an off-box POST /api/guests/<id>/<op> without a token or session", async () => {
+    for (const withToken of [true, false]) {
+      const base = await start(withToken)
+      for (const op of ["pause", "resume", "end", "update"]) {
+        const r = await fetch(`${base}/api/guests/g1/${op}`, {
+          method: "POST", headers: { ...OFF, "Content-Type": "application/json", "X-Requested-With": "fetch" }, body: "{}",
+        })
+        expect(r.status, `${op}, token set: ${withToken}`).toBe(401)
+      }
+      await new Promise<void>((done) => server!.close(() => done()))
+      server = undefined
+    }
+  })
+
+  it("lets a signed-in off-box owner through to the guests proxy", async () => {
+    const base = await start()
+    const cookie = ((await signIn(base, TOKEN)).headers.get("set-cookie") || "").split(";")[0]
+    const headers = { ...OFF, Cookie: cookie, "Content-Type": "application/json", "X-Requested-With": "fetch" }
+    // Past the guard, the test's daemon is unreachable: 502, not 401.
+    expect((await fetch(`${base}/api/guests`, { headers })).status).toBe(502)
+    expect((await fetch(`${base}/api/guests/g1/pause`, { method: "POST", headers, body: "{}" })).status).toBe(502)
+  })
+
   it("signs a browser in with the token: an HttpOnly, SameSite=Strict cookie that is not the token", async () => {
     const base = await start()
     const bad = await signIn(base, "guess")
