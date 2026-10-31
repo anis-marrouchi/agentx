@@ -30,6 +30,8 @@
 // itself (wall-settings-machine.client.ts), the wiki notes inbox under
 // Schedules, and the approval and request settings that /approvals held
 // (wall-settings-approvals.client.ts: Approvals under Inbox, and Requests).
+// Diagnostics, four tabs of classic /admin/health, read-only
+// (wall-settings-diagnostics.client.ts, #1449).
 // Only Guests and People link out, to their own pages.
 //
 // A section repaints when it opens or after a save, never on the Wall's
@@ -45,6 +47,7 @@ import { WALL_SETTINGS_MESH_CSS, WALL_SETTINGS_MESH_SCRIPT } from "./wall-settin
 import { WALL_SETTINGS_BUSINESS_SCRIPT } from "./wall-settings-business.client"
 import { WALL_SETTINGS_ACTIONS_CSS, WALL_SETTINGS_ACTIONS_SCRIPT } from "./wall-settings-actions.client"
 import { WALL_SETTINGS_MACHINE_SCRIPT } from "./wall-settings-machine.client"
+import { WALL_SETTINGS_DIAGNOSTICS_CSS, WALL_SETTINGS_DIAGNOSTICS_SCRIPT } from "./wall-settings-diagnostics.client"
 import { WALL_SETTINGS_APPROVALS_SCRIPT } from "./wall-settings-approvals.client"
 import { HUB_NAME } from "../hub-name"
 
@@ -68,7 +71,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       ['tokens', 'Tokens', '', 'Keys for apps and scripts'],
     ]],
     ['Machines', [
-      ['health', 'Health', '', 'Agents online, channels and what needs you'], ['screen', 'Screen capture', '', 'How agents see the screen'],
+      ['health', 'Health', '', 'Agents online, channels and what needs you'], ['diagnostics', 'Diagnostics', '', 'Errors, routing, rotations and checks'], ['screen', 'Screen capture', '', 'How agents see the screen'],
       ['advanced', 'Advanced', '', 'agentx.json itself'],
     ]],
   ].map(function (g) { return [g[0], g[1].filter(function (s) { return s[0] !== 'business' || (ST && ST.business); })]; });
@@ -181,7 +184,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       S.st.confirm = '';
       // What a section read or made is read again when it opens: a new
       // token is shown once, agentx.json and the approval settings fresh.
-      S.st.newToken = null; S.st.adv = null; S.st.apv = null; S.st.req = null; S.st.bdEdit = ''; S.st.acEdit = ''; S.st.acRuns = null; S.st.wnList = null;
+      S.st.newToken = null; S.st.adv = null; S.st.apv = null; S.st.req = null; S.st.bdEdit = ''; S.st.acEdit = ''; S.st.acRuns = null; S.st.wnList = null; S.st.dg = null;
       // The draft of an agent's form stays across its tabs, not to another agent.
       if (S.st.draft && S.st.draft.agent !== S.st.agent) S.st.draft = null;
       if (S.st.files && S.st.files.agent !== S.st.agent) S.st.files = null;
@@ -275,6 +278,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (sec === 'actions') return stActionsHtml();
     if (sec === 'screen') return stScreenHtml();
     if (sec === 'advanced') return stAdvancedHtml();
+    if (sec === 'diagnostics') return stDiagnosticsHtml();
     return S.st.agent ? stAgentHtml(S.st.agent) : stAgentsHtml();
   }
 
@@ -688,6 +692,7 @@ ${WALL_SETTINGS_MESH_SCRIPT}
 ${WALL_SETTINGS_BUSINESS_SCRIPT}
 ${WALL_SETTINGS_ACTIONS_SCRIPT}
 ${WALL_SETTINGS_MACHINE_SCRIPT}
+${WALL_SETTINGS_DIAGNOSTICS_SCRIPT}
 ${WALL_SETTINGS_APPROVALS_SCRIPT}
 `
 
@@ -839,4 +844,4 @@ export const WALL_SETTINGS_CSS = `
   .wsl { grid-template-columns: minmax(0, 1fr); }
   .wsa { padding: 12px 10px; }
 }
-` + WALL_SETTINGS_AGENT_CSS + WALL_SETTINGS_JOBS_CSS + WALL_SETTINGS_CHANNELS_CSS + WALL_SETTINGS_WHATSAPP_CSS + WALL_SETTINGS_MESH_CSS + WALL_SETTINGS_ACTIONS_CSS
+` + WALL_SETTINGS_AGENT_CSS + WALL_SETTINGS_JOBS_CSS + WALL_SETTINGS_CHANNELS_CSS + WALL_SETTINGS_WHATSAPP_CSS + WALL_SETTINGS_MESH_CSS + WALL_SETTINGS_ACTIONS_CSS + WALL_SETTINGS_DIAGNOSTICS_CSS

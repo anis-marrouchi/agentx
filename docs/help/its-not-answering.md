@@ -19,7 +19,7 @@ The dashboard can load while the daemon is stopped. A working browser page does 
    ```sh
    agentx daemon start --detach
    ```
-3. **Browser:** open `/admin/health` on your dashboard (for example `http://127.0.0.1:4202/admin/health`). The older address `/admin/observability` takes you to the same page.
+3. **Browser:** in the Hub, open **Settings** › **Diagnostics**.
 4. Select the **Routing** tab. Each row is one message and the agent AgentX chose for it (a "route trace").
 5. Look for your message. If it isn't there, the message never reached AgentX: check the channel's connection (see [If something is wrong](#if-something-is-wrong)).
 6. If the row names the wrong agent, open **Settings** › **Channels** and change which agent the channel is bound to.

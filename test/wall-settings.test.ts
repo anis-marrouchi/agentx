@@ -98,7 +98,7 @@ describe("Wall Settings: the shell (#1428)", () => {
     expect(groups).toEqual([
       ["Fleet", ["Agents", "Channels", "Schedules", "Webhooks", "Mesh", "Boards", "Actions", "Inbox", "Requests"]],
       ["Access", ["Guests", "People", "Tokens"]],
-      ["Machines", ["Health", "Screen capture", "Advanced"]],
+      ["Machines", ["Health", "Diagnostics", "Screen capture", "Advanced"]],
     ])
     expect(html).toContain("3 agents, their pictures, models and on/off")
     // Every section is on the Hub (#1428 phase 3): only Guests and People open their own pages.

@@ -48,8 +48,8 @@ Doctor exits with code 1 when there is at least one error, and 0 otherwise.
 
 The same checks are on the dashboard.
 
-1. **Browser:** open `/admin/health` on your dashboard (for example `http://127.0.0.1:4202/admin/health`).
-2. Select the **Doctor** tab.
+1. **Browser:** in the Hub, open **Settings** › **Diagnostics**.
+2. Select the **Doctor** tab. **Run the checks again** runs them once more.
 
 ![The Doctor tab of the Health page, with the Re-run checks button and the first group of checks](/screenshots/doctor/tab.png)
 
