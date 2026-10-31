@@ -228,7 +228,7 @@ Some features hand a small, fixed-choice question to a fast "decision" model ins
 
 ### Computer use on Linux and Windows
 
-Computer use runs on macOS only today. A Windows version and an Ubuntu version are planned. On Linux, what is allowed depends on the **display session**: the part of the desktop that draws windows. Ubuntu offers two at the login screen, Wayland (the default) and Xorg, also called X11.
+Computer use runs on macOS only today. A Windows version and an Ubuntu version are planned. On Linux, what is allowed depends on the **display session** you log in to: the part of the desktop that draws windows. Ubuntu offers two at the login screen, Wayland (the default) and Xorg, also called X11.
 
 | Session | Read the screen | Press controls | Move the pointer and draw over other apps |
 |---|---|---|---|
@@ -239,7 +239,7 @@ Computer use runs on macOS only today. A Windows version and an Ubuntu version a
 To see what your machine allows:
 
 1. **Terminal:** open a terminal inside your desktop session, not over SSH.
-2. **Terminal:** run `agentx daemon status` with the daemon running. The line does not print while the daemon is stopped.
+2. **Terminal:** run `agentx daemon status`. The daemon can be running or stopped.
 3. Read the **Computer use** line. On a Mac it says `available (AgentX Helper)`. On Linux it names your session and what that session allows.
 
 `agentx daemon status --json` gives the same answer under `computerUse`.
