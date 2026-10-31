@@ -19,6 +19,9 @@ export interface AssistantMessage {
   /** assistant rows only: "pending" until the turn returns. */
   status: "pending" | "done" | "error"
   createdAt: number
+  /** assistant rows only: the run answering it, once it has started, so the
+   *  page can stream it, stop it and link to it (#1528). */
+  taskId?: string | null
 }
 export interface AssistantThread {
   id: string
@@ -39,6 +42,8 @@ export class AssistantStore {
       content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'done',
       created_at INTEGER NOT NULL, PRIMARY KEY (thread_id, seq));
       CREATE INDEX IF NOT EXISTS assistant_threads_recent ON assistant_threads(updated_at DESC);`)
+    const cols = db.prepare("PRAGMA table_info(assistant_messages)").all() as Array<{ name: string }>
+    if (!cols.some(c => c.name === "task_id")) db.exec("ALTER TABLE assistant_messages ADD COLUMN task_id TEXT")
     // A turn in flight when the daemon stopped is never coming back; leaving
     // it "pending" would spin the drawer forever.
     db.prepare("UPDATE assistant_messages SET status='error', content=? WHERE status='pending'")
@@ -70,7 +75,7 @@ export class AssistantStore {
   }
 
   messages(threadId: string): AssistantMessage[] {
-    return this.db.prepare(`SELECT seq, role, content, status, created_at AS createdAt
+    return this.db.prepare(`SELECT seq, role, content, status, created_at AS createdAt, task_id AS taskId
       FROM assistant_messages WHERE thread_id=? ORDER BY seq`).all(threadId) as any
   }
 
@@ -85,13 +90,19 @@ export class AssistantStore {
     const now = Date.now()
     const next = (this.db.prepare("SELECT COALESCE(MAX(seq),-1) AS s FROM assistant_messages WHERE thread_id=?")
       .get(threadId) as { s: number }).s + 1
-    const insert = this.db.prepare("INSERT INTO assistant_messages VALUES (?,?,?,?,?,?)")
+    const insert = this.db.prepare(`INSERT INTO assistant_messages (thread_id, seq, role, content, status, created_at)
+      VALUES (?,?,?,?,?,?)`)
     this.db.transaction(() => {
       insert.run(threadId, next, "user", question, "done", now)
       insert.run(threadId, next + 1, "assistant", "", "pending", now)
       this.db.prepare("UPDATE assistant_threads SET updated_at=? WHERE id=?").run(now, threadId)
     })()
     return next + 1
+  }
+
+  /** The run answering a pending row has started. */
+  setTask(threadId: string, seq: number, taskId: string): void {
+    this.db.prepare("UPDATE assistant_messages SET task_id=? WHERE thread_id=? AND seq=?").run(taskId, threadId, seq)
   }
 
   resolve(threadId: string, seq: number, content: string, status: "done" | "error"): void {

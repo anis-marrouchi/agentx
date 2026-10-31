@@ -9,7 +9,7 @@ import { openWall } from "./wall-settings-harness"
 
 type Reply = { status: number; body: unknown } | "down"
 
-function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; route?: (url: string, init: any) => Reply | Promise<Reply> | undefined } = {}) {
+function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; node?: string; route?: (url: string, init: any) => Reply | Promise<Reply> | undefined } = {}) {
   const page = renderWallPage({ owner: opts.owner ?? true, signIn: opts.signIn })
   const els = new Map<string, any>()
   const on = (e: any) => (t: string, f: (ev: any) => void) => { (e.on[t] ??= []).push(f) }
@@ -35,7 +35,10 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; ro
   const wall = { classList: { toggle: (c: string, v: boolean) => { v ? wallCls.add(c) : wallCls.delete(c) } } }
   const docOn: any = { on: {} }
   const doc = { getElementById: el, querySelector: (s: string) => (s === ".ax-wall" ? wall : null), addEventListener: on(docOn) }
-  const ls = new Map<string, string>(opts.thread ? [["ax-assistant-thread", opts.thread]] : [])
+  const ls = new Map<string, string>([
+    ...(opts.thread ? [["ax-assistant-thread", opts.thread] as [string, string]] : []),
+    ...(opts.node ? [["ax-hub-chat-node", opts.node] as [string, string]] : []),
+  ])
   const storage = { getItem: (k: string) => ls.get(k) ?? null, setItem: (k: string, v: string) => { ls.set(k, v) }, removeItem: (k: string) => { ls.delete(k) } }
   const calls: Array<{ url: string; method: string; body: any; headers: any }> = []
   const fetchStub = (url: string, init: any = {}) => {
@@ -51,10 +54,22 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; ro
       return { ok: r.status < 400, status: r.status, json: async () => r.body }
     })
   }
-  const win: any = { AX_LOCAL_TOKEN: "tok", addEventListener: () => {}, axPageContext: () => ({ page: "Hub", view: "feed", status: "failed", count: 2, inView: ["Nightly backup", "Weekly digest"] }) }
+  // One EventSource per stream the panel opens; emit() plays an event in.
+  const streams: Array<{ url: string; closed: boolean; on: Record<string, (ev: any) => void>; emit: (t: string, d?: unknown) => void }> = []
+  class FakeES {
+    s: any
+    constructor(url: string) {
+      this.s = { url, closed: false, on: {}, emit: (t: string, d?: unknown) => this.s.on[t]?.({ data: JSON.stringify(d ?? {}) }) }
+      streams.push(this.s)
+    }
+    addEventListener(t: string, f: (ev: any) => void) { this.s.on[t] = f }
+    close() { this.s.closed = true }
+  }
+  const win: any = { AX_LOCAL_TOKEN: "tok", EventSource: FakeES, addEventListener: () => {}, axPageContext: () => ({ page: "Hub", view: "feed", status: "failed", count: 2, inView: ["Nightly backup", "Weekly digest"] }) }
   const timers: Array<() => void> = []
+  const delays: number[] = []
   new Function("document", "window", "fetch", "location", "localStorage", "setTimeout", "clearTimeout", WALL_CHAT_SCRIPT)(
-    doc, win, fetchStub, { pathname: "/hub", hash: "#status=failed" }, storage, (f: () => void) => { timers.push(f); return timers.length }, () => {},
+    doc, win, fetchStub, { pathname: "/hub", hash: "#status=failed" }, storage, (f: () => void, ms: number) => { timers.push(f); delays.push(ms); return timers.length }, () => {},
   )
   const settle = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   const fire = async (id: string, type: string, ev: any = {}) => {
@@ -65,7 +80,7 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; ro
     for (const f of docOn.on.keydown ?? []) f({ preventDefault() {}, defaultPrevented: false, target: {}, ...ev })
     await settle()
   }
-  return { page, el, calls, ls, wallCls, fire, settle, timers, docOn, key }
+  return { page, el, calls, ls, wallCls, fire, settle, timers, delays, streams, docOn, key }
 }
 
 describe("Hub chat: what it draws (#1528)", () => {
@@ -98,6 +113,22 @@ describe("Hub chat: what it draws (#1528)", () => {
     expect(html).toContain("data-hc-retry")
     expect(html).toContain("data-hc-other")
     expect(chatLogHtml([...failed, { role: "user", content: "again", status: "done" }], { agent: "Atlas" })).not.toContain("data-hc-retry")
+  })
+
+  it("streams a started answer with Stop and Open the run", () => {
+    const msgs = [
+      { role: "user" as const, content: "Why?", status: "done" as const },
+      { role: "assistant" as const, content: "", status: "pending" as const, taskId: "task-7" },
+    ]
+    const html = chatLogHtml(msgs, { agent: "Scout", md: (s) => "<p>" + s + "</p>", live: "Looking at the log", runHref: "#page=task&task=task-7" })
+    expect(html).toContain("<p>Looking at the log</p>")
+    expect(html).not.toContain("Thinking…")
+    expect(html).toContain('data-hc-stop="task-7"')
+    expect(html).toContain('<a class="hc__run" href="#page=task&amp;task=task-7">Open the run</a>')
+    // Not started yet: no run to stop or open.
+    const waiting = chatLogHtml([msgs[0], { ...msgs[1], taskId: null }], { agent: "Scout" })
+    expect(waiting).toContain("Thinking…")
+    expect(waiting).not.toContain("data-hc-stop")
   })
 
   it("keeps a message the node did not take, marked Not sent", () => {
@@ -257,6 +288,63 @@ describe("Hub chat: on the page (#1528)", () => {
     await w.fire("hc-hist-list", "click", { target: del })
     expect(w.el("hc-hist-err").hidden).toBe(true)
     expect(w.ls.get("ax-assistant-thread")).toBeUndefined()
+  })
+
+  it("streams the pending run from its node, stops it, and closes the stream with the panel", async () => {
+    let pending = true
+    const thread = () => ({ status: 200, body: {
+      node: "http://studio",
+      thread: { id: "t1", title: "Why?", agentId: "scout" },
+      messages: [{ role: "user", content: "Why?", status: "done" }, pending
+        ? { role: "assistant", content: "", status: "pending", taskId: "task-7" }
+        : { role: "assistant", content: "Stopped", status: "error", taskId: "task-7" }],
+    } })
+    const w = openChat({
+      thread: "t1", node: "http://studio",
+      route: (url, init) => url === "/api/assistant/thread?id=t1&node=http%3A%2F%2Fstudio" ? thread()
+        : url.startsWith("/api/task/action") && init.method === "POST" ? (pending = false, { status: 200, body: { ok: true } })
+        : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.streams.map((s) => s.url)).toEqual(["/api/task/stream?node=http%3A%2F%2Fstudio&agent=scout&task=task-7"])
+    w.streams[0].emit("start", { initial: "Reading " })
+    w.streams[0].emit("chunk", { text: "the log" })
+    const log = w.el("hc-log").innerHTML
+    expect(log).toContain("Reading the log")
+    expect(log).toContain('href="#page=task&amp;task=task-7&amp;agent=scout&amp;node=http%3A%2F%2Fstudio&amp;ask=Why%3F">Open the run</a>')
+    // The stream is open: the thread read is only the fallback.
+    expect(w.delays.at(-1)).toBe(5000)
+
+    const stop = { disabled: false, textContent: "Stop", getAttribute: () => "task-7" }
+    await w.fire("hc-log", "click", { target: { closest: (s: string) => (s === "[data-hc-stop]" ? stop : null) } })
+    const cancel = w.calls.find((c) => c.url.startsWith("/api/task/action"))!
+    expect(cancel.url).toBe("/api/task/action?node=http%3A%2F%2Fstudio&task=task-7&kind=cancel")
+    expect(w.el("hc-log").innerHTML).toContain("could not answer")
+    expect(w.streams[0].closed).toBe(true)
+
+    // A pending answer with the panel closed: no stream, a read every 10 s.
+    pending = true
+    await w.fire("hc-btn", "click")
+    expect(w.el("hc").hidden).toBe(true)
+    w.timers.at(-1)!()
+    await w.settle()
+    expect(w.delays.at(-1)).toBe(10000)
+    expect(w.streams.filter((s) => !s.closed)).toEqual([])
+  })
+
+  it("sends a conversation's next message to the node that holds it", async () => {
+    const w = openChat({
+      thread: "t1", node: "http://studio",
+      route: (url, init) => url === "/api/assistant" && init.method === "POST" ? { status: 200, body: { threadId: "t1", node: "http://studio" } }
+        : url.startsWith("/api/assistant/thread?id=t1") ? { status: 200, body: { thread: { id: "t1", title: "Why?", agentId: "scout" }, messages: [] } }
+        : undefined,
+    })
+    await w.settle()
+    w.el("hc-text").value = "And now?"
+    await w.fire("hc-form", "submit")
+    expect(w.calls.find((c) => c.method === "POST")!.body.node).toBe("http://studio")
+    expect(w.ls.get("ax-hub-chat-node")).toBe("http://studio")
   })
 
   it("the Hub publishes its page context for the chat", async () => {
