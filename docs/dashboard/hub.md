@@ -360,6 +360,10 @@ The line under the tabs says what was saved, or why not.
 2. **Chats:** select **Show chats and contacts** to list the first 100 of each that WhatsApp shows the daemon. **Sweep now** writes them into an agent's wiki, as `agentx whatsapp ingest-all` does. **Dry run** is ticked at first: it counts what would be written and writes nothing.
 3. **Watched chats:** the switch turns WhatsApp triage on or off. The tab shows the address wacli sends to and whether its secret is set in `.env` (its variable's name, never the value). Under **Add a watch rule**, type a name, pick the agent, list the chats, then select **Add watch rule**. **Turn off** pauses a rule; **Delete** asks you first. See [Watch a WhatsApp chat](../jobs/watch-whatsapp.md).
 
+![Settings › Channels › WhatsApp on the Hub: waiting for scan with the code, the chats and contacts, and one watch rule](/screenshots/wall/settings-whatsapp.png)
+
+*Example data on a test setup; your chats will differ.*
+
 ### Choose how the inbox reaches you
 
 **Inbox**, under **Fleet**, is the classic **Notifications routing**: where AgentX tells you that a task finished, failed or runs long. It saves the same settings as `agentx notifications`. See [Get notified](../jobs/notifications.md).
@@ -370,6 +374,8 @@ The line under the tabs says what was saved, or why not.
 4. Under **On this machine**, choose the banner and sound `agentx notify` uses on the machine that serves the dashboard.
 5. Under **Phone push (ntfy)**, the topic and token are passwords: put each in `.env`, then type only the variable's name, such as `NTFY_TOPIC`. The page says whether each is set and never shows it. Restart the daemon after a phone push change.
 6. Select **Save**. The line at the top says it was saved, or why not.
+
+![Settings › Inbox on the Hub: where it goes, when, this machine's banner and sound, and phone push](/screenshots/wall/settings-inbox.png)
 
 ### Add or remove a schedule
 
