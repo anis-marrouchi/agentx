@@ -40,6 +40,9 @@ final class App: NSObject, NSApplicationDelegate {
     private var settings: VoiceSettings?
     /// The agent a per-agent shortcut is asking; nil for the talk key.
     private var forcedAgent: String?
+    /// The open request the talk key continues: its row was picked by the
+    /// keyboard in the list when the key went down (#1455).
+    private var forcedRequest: Int?
     /// Set by a stop: the answer being spoken ends without reopening the mic.
     private var silenced = false
     private var busy = false
@@ -224,9 +227,14 @@ final class App: NSObject, NSApplicationDelegate {
         }
 
         // Hold to talk; release sends. With a row picked by the keyboard in
-        // the open-requests list, the words go to that row's agent.
+        // the open-requests list, the words go to that row's agent and, on
+        // a request's row, continue that request in its row.
         let talk = Hotkey(id: 1,
-                          onPress: { [weak self] in self?.forcedAgent = self?.listAgent; self?.startListening() },
+                          onPress: { [weak self] in
+                              self?.forcedAgent = self?.listAgent
+                              self?.forcedRequest = self?.listRequest
+                              self?.startListening()
+                          },
                           onRelease: { [weak self] in self?.stopAndSend() })
         register(talk, spec(keys?.talk, "opt+space"), "talk")
         hotkey = talk
@@ -391,6 +399,7 @@ final class App: NSObject, NSApplicationDelegate {
             stopPolling()
             _ = recorder.stop()
             forcedAgent = nil
+            forcedRequest = nil
             talkCheck = nil
         }
         stopSpeaking()
@@ -501,9 +510,16 @@ final class App: NSObject, NSApplicationDelegate {
         panel.answer.onOpenChat = { [weak self] in self?.openChat() }
         // The open-requests list (#1455): a click on the mini orbs or "1 new",
         // half a second's hover, ⌘⌥O or the menu opens it.
-        requestsWindow.rows = { [weak self] newestLast in self?.listRows(newestLast: newestLast) ?? [] }
+        requestsWindow.rows = { [weak self] newestLast, agent in
+            self?.listRows(newestLast: newestLast, agent: agent) ?? []
+        }
         requestsWindow.pillFrame = { [weak self] in self?.panel.frame ?? .zero }
+        requestsWindow.agentName = { [weak self] id in self?.statusMenu.name(of: id) ?? id }
         requestsWindow.model.onPick = { [weak self] id in self?.pick(id) }
+        requestsWindow.model.onHistory = { [weak self] agent in
+            self?.requestsWindow.dismissList()
+            HistoryWindow.shared.show(agent: agent)
+        }
         panel.onOpenList = { [weak self] in self?.openList(keyboard: false) }
         panel.onHover = { [weak self] inside in self?.pillHover(inside) }
         statusMenu.onOpenRequests = { [weak self] in self?.openList(keyboard: true) }
@@ -844,6 +860,8 @@ final class App: NSObject, NSApplicationDelegate {
         talkCheck = nil
         let forced = forcedAgent
         forcedAgent = nil
+        let continued = forcedRequest
+        forcedRequest = nil
         guard let wav = recorder.stop() else {
             // Nothing said, so no door follows the hush: let the queue play on.
             Task { _ = await door.value; await AgentClient.resume() }
@@ -907,7 +925,12 @@ final class App: NSObject, NSApplicationDelegate {
             if activeCall == nil {
                 if !midTurn { busy = false }
                 if Self.isStop(heard) { stopSpeaking(); return }
-                send(heard, agent: agent)
+                // A request's row picked: the words continue it, in its row.
+                if let continued, requests.request(continued)?.agentID == agent {
+                    continueRequest(continued, heard)
+                } else {
+                    send(heard, agent: agent)
+                }
                 return
             }
             if midTurn {
@@ -956,6 +979,27 @@ final class App: NSObject, NSApplicationDelegate {
         note("\(statusMenu.name(of: agent)) · \(OpenRequests.sentNote)")
     }
 
+    /// Words said with a request's row picked: they continue that request
+    /// in its row rather than adding one. The daemon's voice session keeps
+    /// the conversation, so the agent hears them as a follow-up.
+    private func continueRequest(_ id: Int, _ heard: String) {
+        guard let result = requests.followUp(id, question: heard, at: Date()) else { return }
+        let agent = requests.request(id)?.agentID ?? ""
+        switch result {
+        case .ask:
+            Log.info("request \(id) → \(agent), follow-up: \(heard)")
+            answers[id] = nil
+            run(id)
+        case .waits:
+            Log.info("request \(id) → \(agent), follow-up (waits its turn): \(heard)")
+            answers[id] = nil
+        case .afterAnswer:
+            Log.info("request \(id) → \(agent), follow-up after the answer in flight: \(heard)")
+        }
+        requestsChanged()
+        note("\(statusMenu.name(of: agent)) · \(OpenRequests.followUpNote)")
+    }
+
     /// Ask the agent. The answer waits as not heard, with a soft sound, or
     /// plays at once with "Play answers at once" ticked. The agent's next
     /// request goes as soon as this one is back.
@@ -966,6 +1010,14 @@ final class App: NSObject, NSApplicationDelegate {
             do { result = .success(try await ask(r.question, agent: r.agentID)) }
             catch { result = .failure(error) }
             let now = Date()
+            // Words said while it thought go now, in its row, in place of
+            // this answer: the owner had already moved on.
+            if requests.askPending(id, at: now) {
+                Log.info("request \(id): the follow-up goes in place of this answer")
+                requestsChanged()
+                run(id)
+                return
+            }
             switch result {
             case .success(let answer) where answer.dropped:
                 Log.info("request \(id): the daemon took the words for the floor holder's sound")
@@ -1041,7 +1093,13 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// The agent of the row the keyboard is on in the open list.
     private var listAgent: String? {
-        requestsWindow.selectedRow.flatMap { requests.request($0)?.agentID }
+        requestsWindow.selectedRow.flatMap { requests.request($0)?.agentID ?? requests.agent(ofGroup: $0) }
+    }
+
+    /// The request whose row the keyboard is on in the open list; nil on
+    /// an agent's row, whose words start a new request for that agent.
+    private var listRequest: Int? {
+        requestsWindow.selectedRow.flatMap { requests.request($0)?.id }
     }
 
     /// Open the list: by a click (no keyboard), or by ⌘⌥O or the menu
@@ -1050,7 +1108,7 @@ final class App: NSObject, NSApplicationDelegate {
         hoverOpen?.cancel()
         hoverOpen = nil
         if keyboard { summonPill() }
-        requestsWindow.open(.pinned, select: keyboard ? requests.firstSelection : nil)
+        requestsWindow.open(.pinned, select: keyboard ? requests.firstEntry : nil)
     }
 
     /// Half a second on the pill opens the list, while there is a request
@@ -1070,10 +1128,31 @@ final class App: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: open)
     }
 
-    /// The list's rows, as OpenRequests words them.
-    private func listRows(newestLast: Bool) -> [RequestsModel.Row] {
+    /// The list's rows, as OpenRequests words them: one agent's requests
+    /// when `agent` is set; past five requests one row per agent; else
+    /// every request.
+    private func listRows(newestLast: Bool, agent: String? = nil) -> [RequestsModel.Row] {
         let now = Date()
-        return requests.rows(newestLast: newestLast).map { r in
+        if agent == nil && requests.isGrouped {
+            return requests.groups(newestLast: newestLast).map { g in
+                let name = statusMenu.name(of: g.agentID)
+                let cue: RequestsModel.Row.Cue
+                if g.requests.contains(where: { $0.phase == .answered && !$0.heard }) { cue = .ready }
+                else if g.requests.contains(where: { if case .failed = $0.phase { return !$0.heard }; return false }) { cue = .failed }
+                else if g.requests.contains(where: { $0.phase == .thinking }) { cue = .thinking }
+                else if g.requests.contains(where: { $0.phase == .waiting }) { cue = .waiting }
+                else { cue = .heard }
+                return RequestsModel.Row(
+                    id: g.id, group: g.agentID, name: name, state: OpenRequests.groupState(g, now: now),
+                    words: OpenRequests.firstWords(g.latest.question),
+                    ago: OpenRequests.ago(Int(now.timeIntervalSince(g.latest.sentAt))),
+                    cue: cue, isNew: g.newCount > 0,
+                    tint: statusMenu.color(of: g.agentID), colors: statusMenu.palette(of: g.agentID),
+                    voiceOver: OpenRequests.groupVoiceOver(name: name, g, now: now), action: "Open")
+            }
+        }
+        let shown = agent.map { requests.rows(for: $0, newestLast: newestLast) } ?? requests.rows(newestLast: newestLast)
+        return shown.map { r in
             let name = statusMenu.name(of: r.agentID)
             let cue: RequestsModel.Row.Cue
             let action: String?

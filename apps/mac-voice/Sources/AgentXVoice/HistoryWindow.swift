@@ -249,7 +249,15 @@ final class HistoryWindow: NSObject {
     let store = HistoryStore()
     private var window: NSWindow?
 
-    func show() {
+    /// Open on one agent's earlier conversations: from that agent's
+    /// requests in the open-requests list (#1455).
+    func show(agent: String) {
+        show(filter: agent)
+    }
+
+    func show() { show(filter: store.agent) }
+
+    private func show(filter agent: String?) {
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -261,7 +269,8 @@ final class HistoryWindow: NSObject {
             window = w
         }
         store.agents = []
-        store.reload()
+        // Changing the agent reloads by itself.
+        if store.agent != agent { store.agent = agent } else { store.reload() }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

@@ -11,6 +11,10 @@ import SwiftUI
 /// row is the app's to do (`onPick`). What the rows say comes from
 /// OpenRequests.swift, which is tested without a window.
 ///
+/// Past five requests it shows one row per agent. Picking an agent's row
+/// opens that agent's requests in the list, with its earlier
+/// conversations a click away; ← or Esc goes back to the agents.
+///
 /// A floating non-activating panel like the pill, so opening it never
 /// takes the keyboard from the app in front unless the owner asked for
 /// the keyboard (a click or the shortcut).
@@ -30,10 +34,13 @@ final class RequestsWindow: NSPanel {
     /// The list is above the pill: its newest row at the bottom, next to it.
     private(set) var above = true
 
-    /// The rows now, the newest last when true. Set by the app.
-    var rows: (_ newestLast: Bool) -> [RequestsModel.Row] = { _ in [] }
+    /// The rows now, the newest last when true: one agent's requests when
+    /// `agent` is set, else the whole list. Set by the app.
+    var rows: (_ newestLast: Bool, _ agent: String?) -> [RequestsModel.Row] = { _, _ in [] }
     /// Where the pill is, to stand beside it and to stay open over it.
     var pillFrame: () -> NSRect = { .zero }
+    /// An agent's name, for the header over its requests. Set by the app.
+    var agentName: (String) -> String = { $0 }
 
     static let width: CGFloat = 360
     /// The header, one row, and the padding under the last row.
@@ -41,6 +48,8 @@ final class RequestsWindow: NSPanel {
     private static let rowHeight: CGFloat = 52
     private static let bottomPadding: CGFloat = 8
     private static let emptyHeight: CGFloat = 92
+    /// "Earlier conversations with …", under one agent's requests.
+    private static let footerHeight: CGFloat = 36
 
     /// Counts the thinking clocks while the list shows.
     private var tick: Timer?
@@ -63,6 +72,18 @@ final class RequestsWindow: NSPanel {
 
         let surface = Surface(frame: frame)
         contentView = surface
+        model.onOpenAgent = { [weak self] agent in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.openAgent(agent)
+            }
+        }
+        model.onBack = { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.backToAgents()
+            }
+        }
         let host = RequestsHost(rootView: RequestsView(model: model))
         host.frame = surface.bounds
         host.autoresizingMask = [.width, .height]
@@ -110,7 +131,30 @@ final class RequestsWindow: NSPanel {
         leaveCheck = nil
         model.keyboard = false
         model.selected = nil
+        model.agent = nil
         orderOut(nil)
+    }
+
+    /// One agent's requests in place of the agents, the keyboard on the
+    /// newest, next to the pill.
+    @MainActor
+    func openAgent(_ agent: String) {
+        // A click on an agent's row in a list opened by hovering keeps it
+        // open: its rows change under the pointer.
+        if mode == .hover { mode = .pinned; makeKey() }
+        model.agentName = agentName(agent)
+        model.agent = agent
+        reload()
+        model.selected = above ? model.rows.last?.id : model.rows.first?.id
+    }
+
+    /// Back from one agent's requests to the agents, on that agent's row.
+    @MainActor
+    func backToAgents() {
+        guard let agent = model.agent else { return }
+        model.agent = nil
+        reload()
+        model.selected = model.rows.first { $0.group == agent }?.id
     }
 
     /// The rows again, and the list's size and place for them. Cheap:
@@ -119,14 +163,19 @@ final class RequestsWindow: NSPanel {
     func reload() {
         guard mode != nil else { return }
         let pill = pillFrame()
-        let count = rows(true).count
+        // The agent's requests all left, or the list is flat again.
+        if let agent = model.agent, rows(true, agent).isEmpty || !rows(true, nil).contains(where: { $0.group != nil }) {
+            model.agent = nil
+        }
+        let count = rows(true, model.agent).count
         let height = count == 0 ? Self.emptyHeight
             : Self.headerHeight + CGFloat(count) * Self.rowHeight + Self.bottomPadding
+                + (model.agent == nil ? 0 : Self.footerHeight)
         let screen = NSScreen.screens.first { $0.frame.intersects(pill) } ?? NSScreen.main ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
         let spot = PillPlacement.list(width: Self.width, height: height, pill: pill, visible: visible)
         above = spot.above
-        let fresh = rows(above)
+        let fresh = rows(above, model.agent)
         if model.rows != fresh { model.rows = fresh }
         if let s = model.selected, !fresh.contains(where: { $0.id == s }) { model.selected = nil }
         if frame != spot.frame { setFrame(spot.frame, display: true) }
@@ -187,11 +236,19 @@ final class RequestsWindow: NSPanel {
             model.selected = OpenRequests.move(model.selected, by: event.keyCode == 125 ? 1 : -1, in: ids)
             return true
         case 36, 76: // Return, Enter
-            guard let id = model.selected else { return true }
-            model.onPick?(id)
+            guard let id = model.selected, let row = model.rows.first(where: { $0.id == id }) else { return true }
+            model.pick(row)
             return true
-        case 53: // Esc
-            dismissList()
+        case 124: // →: into an agent's requests
+            guard let id = model.selected, let agent = model.rows.first(where: { $0.id == id })?.group else { return false }
+            openAgent(agent)
+            return true
+        case 123: // ←: back to the agents
+            guard model.agent != nil else { return false }
+            backToAgents()
+            return true
+        case 53: // Esc: back to the agents first, then hide
+            if model.agent != nil { backToAgents() } else { dismissList() }
             return true
         default:
             return false
@@ -216,6 +273,9 @@ final class RequestsModel: ObservableObject {
     struct Row: Identifiable, Equatable {
         enum Cue: Equatable { case waiting, thinking, ready, heard, failed }
         let id: Int
+        /// An agent's row in a grouped list: picking it opens that agent's
+        /// requests. Nil for a request's own row.
+        var group: String? = nil
         let name: String
         /// "Thinking, 1:12", "Answer ready", "Heard", "Couldn’t answer".
         let state: String
@@ -240,8 +300,22 @@ final class RequestsModel: ObservableObject {
     @Published var selected: Int?
     /// The keyboard is in the list: the selected row has a ring.
     @Published var keyboard = false
-    /// A row was clicked, or Return pressed on it. Set by the app.
+    /// The agent whose requests the list shows; nil shows them all.
+    @Published var agent: String?
+    /// The agent's name, for the header while its requests show.
+    var agentName = ""
+    /// A request's row was clicked, or Return pressed on it. Set by the app.
     var onPick: ((Int) -> Void)?
+    /// An agent's row was picked. Set by the window.
+    var onOpenAgent: ((String) -> Void)?
+    /// "Earlier conversations with …": the agent's history. Set by the app.
+    var onHistory: ((String) -> Void)?
+    /// Back to the agents. Set by the window.
+    var onBack: (() -> Void)?
+
+    func pick(_ row: Row) {
+        if let agent = row.group { onOpenAgent?(agent) } else { onPick?(row.id) }
+    }
 }
 
 struct RequestsView: View {
@@ -250,8 +324,19 @@ struct RequestsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Text("Open requests")
-                    .font(.system(size: 13, weight: .bold))
+                if model.agent != nil {
+                    Button(action: { model.onBack?() }) {
+                        Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back to all agents")
+                    Text(model.agentName)
+                        .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
+                } else {
+                    Text("Open requests")
+                        .font(.system(size: 13, weight: .bold))
+                }
                 if !model.rows.isEmpty {
                     Text("\(model.rows.count)")
                         .font(.system(size: 11, weight: .bold).monospacedDigit())
@@ -288,7 +373,7 @@ struct RequestsView: View {
                                 RequestRow(row: row,
                                            selected: model.selected == row.id,
                                            ring: model.keyboard && model.selected == row.id,
-                                           pick: { model.onPick?(row.id) })
+                                           pick: { model.pick(row) })
                                     .id(row.id)
                             }
                         }
@@ -298,6 +383,21 @@ struct RequestsView: View {
                     .onChange(of: model.selected) { _, id in
                         if let id { scroller.scrollTo(id) }
                     }
+                }
+                if let agent = model.agent {
+                    Button(action: { model.onHistory?(agent) }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock.arrow.circlepath")
+                            Text("Earlier conversations with \(model.agentName)")
+                                .lineLimit(1)
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(RequestRow.blue)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+                    .accessibilityHint("Opens History for this agent")
                 }
             }
         }

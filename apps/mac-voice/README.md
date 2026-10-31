@@ -248,7 +248,12 @@ over to the next build.
   answers at once" in the menu (UserDefaults `playAnswersAtOnce`) plays
   them as they come, as before. The list is kept by the app for now: it
   does not survive a restart, and the phone does not see it yet. Closing a
-  row is not built yet; the eight newest heard rows are kept. During a call
+  row is not built yet; the eight newest heard rows are kept. Talking with
+  a request's row picked by the keyboard continues that request in its row
+  (`OpenRequests.followUp`); words said while it still thinks go once its
+  answer is back, in place of that answer. Past five requests the list
+  shows one row per agent (`OpenRequests.groups`), each opening that
+  agent's requests and a link to its History. During a call
   the turn works as before.
 - ⌥Space is the default talk key (`⌃Space` is commonly bound to
   input-source switching). Talk, stop, paste and per-agent shortcuts are
