@@ -132,7 +132,7 @@ ${bar("Connecting…", `
 }
 
 /** Shown with 401 when /member is opened without a valid key. */
-export function renderMemberLockedPage(): string {
+export function renderMemberLockedPage(signIn = false): string {
   return `<!doctype html>
 <html lang="en">
 <head>${head("Pair this machine · AgentX")}<style>${LOCKED_CSS}</style></head>
@@ -154,6 +154,7 @@ ${bar("This machine is not paired yet")}
       <p id="pair-msg" class="pair-msg" role="status" aria-live="polite"></p>
     </form>
     <p class="help">No code? Ask the person who invited you for one. A code works once, for 10 minutes.</p>
+    ${signIn ? `<p class="help">Or <a href="/member/signin">sign in with your email</a>.</p>` : ""}
   </div>
 </main>
 <script>${injectFns({ formatPairInput })}${LOCKED_SCRIPT}</script>
@@ -161,22 +162,70 @@ ${bar("This machine is not paired yet")}
 </html>`
 }
 
-/** Shown with 202 while the owner has not answered the pairing card. */
-export function renderMemberWaitingPage(): string {
+/** /member/signin (#1478): ask for a link by email, or, opened from the
+ *  link (the code after #), name this browser and press Sign in. Opening
+ *  the link spends nothing; only the button does. */
+export function renderMemberSignInPage(enabled: boolean): string {
+  const body = !enabled
+    ? `<h2>Sign in with your email</h2>
+    <p>Signing in by email is not set up here. Ask the person who invited you for a pairing code, and <a href="/member">pair this machine</a>.</p>`
+    : `<div id="ask">
+      <h2>Sign in with your email</h2>
+      <p>Type the address the owner has for you. If it may sign in here, a link comes by mail.</p>
+      <form id="ask-form" class="pair-form" novalidate>
+        <label for="email">Your email address</label>
+        <input id="email" name="email" type="email" maxlength="254" autocomplete="email" inputmode="email" required>
+        <button type="submit" id="ask-btn">Send me a link</button>
+        <p id="ask-msg" class="pair-msg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+    <div id="spend" hidden>
+      <h2>Sign in</h2>
+      <p>Give this browser a name, so you know it later. The first time you sign in, the owner lets you in once; then your page opens.</p>
+      <form id="spend-form" class="pair-form" novalidate>
+        <label for="machine">This browser's name</label>
+        <input id="machine" name="machine" type="text" maxlength="60" placeholder="Work laptop" autocomplete="off" required>
+        <button type="submit" id="spend-btn">Sign in</button>
+        <p id="spend-msg" class="pair-msg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+    <p class="help">Have a pairing code instead? <a href="/member">Pair this machine</a>.</p>`
+  return `<!doctype html>
+<html lang="en">
+<head>${head("Sign in · AgentX")}<style>${LOCKED_CSS}</style></head>
+<body>
+${bar("Sign in")}
+<main class="narrow">
+  <div class="card">
+    ${body}
+  </div>
+</main>
+${enabled ? `<script>${SIGNIN_SCRIPT}</script>` : ""}
+</body>
+</html>`
+}
+
+/** Shown with 202 while the owner has not answered the pairing card, or
+ *  the card of a person's first sign-in by email (`signedIn`). */
+export function renderMemberWaitingPage(signedIn = false): string {
   return `<!doctype html>
 <html lang="en">
 <head>${head("Waiting for the owner · AgentX")}<style>${WAITING_CSS}</style></head>
 <body>
-${bar("This machine is paired")}
+${bar(signedIn ? "You are signed in" : "This machine is paired")}
 <main class="narrow">
-  ${pairSteps(1)}
+  ${signedIn ? "" : pairSteps(1)}
   <div class="card">
     <h2><span class="pulse" aria-hidden="true"></span>Waiting for the owner</h2>
-    <p id="msg" role="status">This machine is paired. The owner has to approve it once; this page opens your work by itself when they do.</p>
-    <p class="help">If they say no, this page asks for a new code.</p>
+    <p id="msg" role="status">${signedIn
+      ? "This is your first sign-in. The owner has to let you in once; this page opens your work by itself when they do."
+      : "This machine is paired. The owner has to approve it once; this page opens your work by itself when they do."}</p>
+    <p class="help">${signedIn ? "If they say no, this page asks you to sign in again." : "If they say no, this page asks for a new code."}</p>
   </div>
 </main>
-<script>${WAITING_SCRIPT}</script>
+<script>${WAITING_SCRIPT.replace("__REFUSED__", signedIn
+  ? "The owner did not let this sign-in through. Ask them, then sign in again."
+  : "The owner did not approve this machine. Ask the person who invited you for a new code.").replace("__AGAIN__", signedIn ? "/member/signin" : "/member")}</script>
 </body>
 </html>`
 }
@@ -258,13 +307,60 @@ const LOCKED_SCRIPT = `
 })();
 `
 
+const SIGNIN_SCRIPT = `
+(function () {
+  var code = location.hash.slice(1);
+  if (code) { try { history.replaceState(null, '', '/member/signin'); } catch (x) {} }
+  function post(path, body) {
+    return fetch(path, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
+    });
+  }
+  function wire(formId, btnId, msgId, send) {
+    var form = document.getElementById(formId), btn = document.getElementById(btnId), msg = document.getElementById(msgId);
+    function say(text, bad) { msg.textContent = text; msg.className = bad ? 'pair-msg bad' : 'pair-msg'; }
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      if (btn.disabled) return;
+      var p = send(say);
+      if (!p) return;
+      btn.disabled = true; say('One moment…', false);
+      p.then(function (r) {
+        btn.disabled = false;
+        if (r.status === 200) { say(r.body.message || 'Done.', false); if (r.body.state) location.replace('/member'); return; }
+        say(r.body.error || 'That did not work. Try again.', true);
+      }).catch(function () { btn.disabled = false; say('No connection. Check the network and try again.', true); });
+    });
+  }
+  if (code) {
+    document.getElementById('ask').hidden = true;
+    document.getElementById('spend').hidden = false;
+    wire('spend-form', 'spend-btn', 'spend-msg', function (say) {
+      var name = document.getElementById('machine').value.replace(/ +/g, ' ').trim();
+      if (!name) { say('Give this browser a name.', true); return null; }
+      return post('/api/member/signin', { code: code, machine: name });
+    });
+  } else {
+    wire('ask-form', 'ask-btn', 'ask-msg', function (say) {
+      var email = document.getElementById('email').value.trim();
+      if (email.indexOf('@') < 1) { say('Type your email address.', true); return null; }
+      return post('/api/member/signin-link', { email: email });
+    });
+  }
+})();
+`
+
 const WAITING_SCRIPT = `
 (function () {
   var msg = document.getElementById('msg');
   function check() {
     fetch('/api/member/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
       if (r.status === 200) { location.replace('/member'); return; }
-      if (r.status === 401) { msg.textContent = 'The owner did not approve this machine. Ask the person who invited you for a new code.'; setTimeout(function () { location.replace('/member'); }, 4000); return; }
+      if (r.status === 401) { msg.textContent = '__REFUSED__'; setTimeout(function () { location.replace('__AGAIN__'); }, 4000); return; }
     }).catch(function () {});
   }
   setInterval(check, 5000);

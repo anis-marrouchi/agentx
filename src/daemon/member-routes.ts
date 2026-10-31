@@ -7,6 +7,8 @@ import { RejectLog, credentialState, rejectFields } from "./app-auth-log"
 import { appIconPng } from "./app-icon"
 import { MemberStore } from "@/members/store"
 import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
+import { PERSON_COOKIE, PERSON_SESSION_MAX_AGE_S, PersonSessionStore } from "@/members/person-sessions"
+import { SendLimiter, SignInLinkStore, askSignInLink, personAccess, signInWithLink, type SignInDeps, type SignInSetup } from "@/members/signin"
 import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor, type PersonWork, type SentItem, type WorkItem } from "@/members/work"
 import { agentIdsFor, agentsOf, type AgentCard } from "@/members/agents"
@@ -17,6 +19,7 @@ import {
   renderMemberLockedPage,
   renderMemberManifest,
   renderMemberPage,
+  renderMemberSignInPage,
   renderMemberWaitingPage,
 } from "./ui/pages/member"
 import { CLIENT_MANIFEST_PATH, renderClientManifest, renderClientPage } from "./ui/pages/client"
@@ -34,6 +37,10 @@ import { CLIENT_MANIFEST_PATH, renderClientManifest, renderClientPage } from "./
 // `client` gets "Your project" (client.ts), which shows no agent ids and
 // no cards about the owner's agents, so /api/member/work sends a client
 // no agent cards.
+//
+// A browser signed in by an email link (#1478, members/signin.ts) holds an
+// ax_person session instead of a key; it opens the same page for the same
+// person, once the owner has let that person in.
 
 export const MEMBER_COOKIE = "agentx_member"
 const COOKIE_MAX_AGE = 90 * 86400
@@ -53,9 +60,18 @@ export interface MemberRouteCtx {
   rejectLog?: RejectLog
   log?: (line: string) => void
   now?: () => number
+  /** Signing in by email (#1478): null while it is not set up. */
+  signInSetup?: () => SignInSetup | null
+  sessions?: PersonSessionStore
+  signInLinks?: SignInLinkStore
+  signInPerAddress?: SendLimiter
+  signInPerClient?: SendLimiter
+  sendMail?: SignInDeps["send"]
 }
 
 const defaultPairLimiter = new PairAttemptLimiter()
+const defaultPerAddress = new SendLimiter(5)
+const defaultPerClient = new SendLimiter(20)
 const asMember = (line: string) => line.replace(/^\[app\]/, "[member]")
 const defaultRejectLog = new RejectLog((line) => console.log(asMember(line)))
 /** One reject log per log sink, so its once-a-minute rule spans requests. */
@@ -115,15 +131,43 @@ export async function handleMemberRequest(
     return sendJson(res, result.status, result.body)
   }
 
+  // Signing in with a link sent by email (#1478, members/signin.ts).
+  const signIn: SignInDeps = {
+    links: ctx.signInLinks ?? new SignInLinkStore(ctx.root), sessions: ctx.sessions ?? new PersonSessionStore(ctx.root),
+    members, people: ctx.people, root: ctx.root, limiter: deps.limiter, setup: ctx.signInSetup ?? (() => null),
+    perAddress: ctx.signInPerAddress ?? defaultPerAddress, perClient: ctx.signInPerClient ?? defaultPerClient,
+    send: ctx.sendMail, minMs: ctx.pairMinMs, log: ctx.log, now: ctx.now,
+  }
+  if (method === "GET" && path === "/member/signin") return send(res, 200, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup()))
+  if (method === "POST" && path === "/api/member/signin-link") {
+    const result = await askSignInLink(req, signIn)
+    return sendJson(res, result.status, result.body)
+  }
+  if (method === "POST" && path === "/api/member/signin") {
+    const result = await signInWithLink(req, signIn)
+    if (result.status === 200) res.setHeader("Set-Cookie", personCookie(result.value))
+    if (result.status === 429) res.setHeader("Retry-After", String(result.retryAfter))
+    return sendJson(res, result.status, result.body)
+  }
+
+  // Who this is: a paired machine's key, else a signed-in browser's session.
   const access = memberAccess(memberToken(req), deps, clientAddress(req))
-  if (!access.ok) {
+  const signed = !access.ok && access.status === 401 ? personAccess(cookie(req, PERSON_COOKIE), signIn) : null
+  if (signed && !signed.ok && signed.waiting) {
+    if (path === "/member") return send(res, 202, "text/html; charset=utf-8", renderMemberWaitingPage(true))
+    return sendJson(res, 403, { error: "waiting for the owner to let you in", waiting: true })
+  }
+  const who = access.ok
+    ? { personId: access.personId, device: access.device.name, since: access.device.approvedAt ?? access.device.createdAt }
+    : signed?.ok ? { personId: signed.person.id, device: signed.session.label, since: signed.session.approvedAt ?? signed.session.startedAt } : null
+  if (!access.ok && !who) {
     if (access.status === 401) {
       const sent = bearer(req)
       rejectLogFor(ctx).record(
         path.slice(0, 120),
         rejectFields(req, credentialState(cookie(req, MEMBER_COOKIE), tokens), sent ? credentialState(sent, tokens) : null),
       )
-      if (path === "/member") return send(res, 401, "text/html; charset=utf-8", renderMemberLockedPage())
+      if (path === "/member") return send(res, 401, "text/html; charset=utf-8", renderMemberLockedPage(!!signIn.setup()))
       return sendJson(res, 401, { error: access.error, hint: "ask the owner to run: agentx people invite <you>" })
     }
     // Paired, waiting for the owner. 202 on the page: the service worker
@@ -132,18 +176,19 @@ export async function handleMemberRequest(
     if (path === "/member") return send(res, 202, "text/html; charset=utf-8", renderMemberWaitingPage())
     return sendJson(res, 403, { error: access.error, waiting: true })
   }
+  if (!who) return sendJson(res, 401, { error: "not signed in" })
 
-  const person = ctx.people().find((p) => p.id === access.personId)
+  const person = ctx.people().find((p) => p.id === who.personId)
   const client = person?.role === "client"
   if (method === "GET" && path === "/member") {
-    const c = cookie(req, MEMBER_COOKIE)
+    const c = access.ok ? cookie(req, MEMBER_COOKIE) : null
     if (c && !bearer(req)) res.setHeader("Set-Cookie", sessionCookie(c))
     return send(res, 200, "text/html; charset=utf-8", client ? renderClientPage() : renderMemberPage())
   }
   if (method === "GET" && path === "/api/member/me") {
     return sendJson(res, 200, {
-      person: access.personId, name: person?.name ?? access.personId, role: person?.role ?? "member",
-      device: access.device.name, since: access.device.approvedAt ?? access.device.createdAt,
+      person: who.personId, name: person?.name ?? who.personId, role: person?.role ?? "member",
+      device: who.device, since: who.since,
       node: ctx.nodeName ?? null,
     })
   }
@@ -151,7 +196,7 @@ export async function handleMemberRequest(
     const db = ctx.db?.() ?? null
     if (!db) return sendJson(res, 503, { error: "the work list needs the database" })
     const now = (ctx.now ?? Date.now)()
-    const work = workOf(db, access.personId, { now, linkFor: ctx.linkFor })
+    const work = workOf(db, who.personId, { now, linkFor: ctx.linkFor })
     // No task_traces or queued_messages yet means nothing to read; anything else is logged.
     const quiet = (what: string, err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err)
@@ -159,14 +204,14 @@ export async function handleMemberRequest(
     }
     // The messages waiting behind each of this person's agents, and their own among them (#443).
     let queue: { byAgent: Map<string, QueueView>; mine: QueuedItem[] } = { byAgent: new Map(), mine: [] }
-    try { queue = queueOf(db, access.personId, { linkFor: ctx.linkFor }) } catch (err) { quiet("the line", err) }
+    try { queue = queueOf(db, who.personId, { linkFor: ctx.linkFor }) } catch (err) { quiet("the line", err) }
     // The agents this person uses, and what each is doing (#443). Not for
     // a client: their page names no agent, so their data carries none (#453).
     let agents: AgentCard[] = []
     if (client) return sendJson(res, 200, { ...withoutAgents(work), agents })
     try {
-      const ids = agentIdsFor(db, person ?? { id: access.personId }, now)
-      agents = agentsOf(db, access.personId, ids, { people: ctx.people(), linkFor: ctx.linkFor, queue: queue.byAgent })
+      const ids = agentIdsFor(db, person ?? { id: who.personId }, now)
+      agents = agentsOf(db, who.personId, ids, { people: ctx.people(), linkFor: ctx.linkFor, queue: queue.byAgent })
     } catch (err) { quiet("agent cards", err) }
     return sendJson(res, 200, { ...work, agents, queued: queue.mine })
   }
@@ -186,6 +231,11 @@ export function withoutAgents(work: PersonWork): Omit<PersonWork, "open" | "rece
 
 export function sessionCookie(token: string): string {
   return `${MEMBER_COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`
+}
+
+/** The ax_person cookie a sign-in by email sets (#1478). */
+export function personCookie(value: string): string {
+  return `${PERSON_COOKIE}=${value}; Path=/; Max-Age=${PERSON_SESSION_MAX_AGE_S}; HttpOnly; Secure; SameSite=Lax`
 }
 
 function memberToken(req: IncomingMessage): string | null {

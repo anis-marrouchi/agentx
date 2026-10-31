@@ -36,6 +36,12 @@ export interface PersonSession {
   endedAt?: string
   /** Why it ended: "ended by the owner (dashboard)", "expired". */
   endedReason?: string
+  /** The person's first sign-in waits for the owner's card (#1478, slice 3). */
+  state?: "pending"
+  cardId?: string
+  /** When the owner let the person in, on this session's card or by the
+   *  `auto` setting. A person with one approved session goes straight in. */
+  approvedAt?: string
 }
 
 interface SessionsFile { sessions: PersonSession[] }
@@ -50,10 +56,10 @@ export class PersonSessionStore {
   }
 
   /** A new session for `personId`. The value goes in the cookie, once; only its hash is kept. */
-  create(personId: string, label: string): { session: PersonSession; value: string } {
+  create(personId: string, label: string, extra: Pick<PersonSession, "state" | "cardId" | "approvedAt"> = {}): { session: PersonSession; value: string } {
     const value = randomBytes(32).toString("base64url")
     const at = new Date(this.now()).toISOString()
-    const session: PersonSession = { id: randomBytes(8).toString("hex"), hash: sha256(value), personId, label, startedAt: at, lastUsedAt: at }
+    const session: PersonSession = { id: randomBytes(8).toString("hex"), hash: sha256(value), personId, label, startedAt: at, lastUsedAt: at, ...extra }
     const data = this.load()
     data.sessions.push(session)
     this.save(data)
@@ -66,8 +72,25 @@ export class PersonSessionStore {
     return (personId ? all.filter((s) => s.personId === personId) : all).sort((a, b) => b.startedAt.localeCompare(a.startedAt))
   }
 
+  /** Whether the owner has let this person in before, by any session. */
+  approved(personId: string): boolean {
+    return this.load().sessions.some((s) => s.personId === personId && !!s.approvedAt)
+  }
+
+  /** The owner said yes on a waiting session's card. */
+  approve(id: string): PersonSession | null {
+    const data = this.load()
+    const session = data.sessions.find((s) => s.id === id)
+    if (!session || session.endedAt) return null
+    delete session.state
+    session.approvedAt = new Date(this.now()).toISOString()
+    this.save(data)
+    return session
+  }
+
   /** The person a cookie value belongs to, when its session is live and the
-   *  person is still on the list with a role that may sign in. */
+   *  person is still on the list with a role that may sign in. A session
+   *  still waiting for the owner is returned too: callers check `state`. */
   verify(value: string, people: Person[]): { session: PersonSession; person: Person } | null {
     if (!value) return null
     const hash = sha256(value)
