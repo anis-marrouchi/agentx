@@ -102,6 +102,14 @@ final class App: NSObject, NSApplicationDelegate {
     private var hoverOpen: DispatchWorkItem?
     /// Puts the pill back to rest after a passing line.
     private var noteReset: DispatchWorkItem?
+    /// Counts changes this app sends to the daemon's list: a read of the
+    /// list that started before one of them is stale and is dropped.
+    private var requestsEpoch = 0
+    /// The row closed last, with its answer, while Undo shows.
+    private var lastClosed: (request: OpenRequests.Request, answer: AgentClient.Answer?)?
+    private var undoReset: DispatchWorkItem?
+    /// voice.answers is "play": an answer plays as soon as it is back.
+    private var playsAtOnce: Bool { settings?.general.answers == "play" }
 
     // An agent ringing the owner (#321).
     private let callWatcher = CallWatcher()
@@ -127,10 +135,10 @@ final class App: NSObject, NSApplicationDelegate {
     private var activeCall: IncomingCall?
 
     /// /ask, counted in flight for the menu while it thinks.
-    private func ask(_ heard: String, agent: String, handsFree: Bool = false) async throws -> AgentClient.Answer {
+    private func ask(_ heard: String, agent: String, handsFree: Bool = false, request: String? = nil) async throws -> AgentClient.Answer {
         track(agent, 1)
         defer { track(agent, -1) }
-        return try await AgentClient.ask(heard, agent: agent, handsFree: handsFree)
+        return try await AgentClient.ask(heard, agent: agent, handsFree: handsFree, request: request)
     }
 
     /// The floor was taken, renewed or freed (#924). A recording takes
@@ -282,6 +290,7 @@ final class App: NSObject, NSApplicationDelegate {
         character.setShown(asCharacter)
         character.strolls = saved.general.stroll == true
         character.animates = IdlePlay.gap(saved.general.animations)
+        statusMenu.playsAnswersAtOnce = saved.general.answers == "play"
         if !asCharacter { panel.detach() }
         idleWords()
         // voice.startReduced is how the assistant starts: read once. With
@@ -504,6 +513,19 @@ final class App: NSObject, NSApplicationDelegate {
         requestsWindow.rows = { [weak self] newestLast in self?.listRows(newestLast: newestLast) ?? [] }
         requestsWindow.pillFrame = { [weak self] in self?.panel.frame ?? .zero }
         requestsWindow.model.onPick = { [weak self] id in self?.pick(id) }
+        requestsWindow.model.onClose = { [weak self] id in self?.closeRow(id) }
+        requestsWindow.model.onConfirm = { [weak self] id, choice in self?.confirmClose(id, choice) }
+        requestsWindow.model.onUndo = { [weak self] in self?.undoClose() }
+        requestsWindow.model.onCloseHeard = { [weak self] in self?.closeHeard() }
+        statusMenu.onPlayAtOnce = { [weak self] on in self?.setPlayAtOnce(on) }
+        // The daemon keeps the list (#1455): read it now and every few
+        // seconds, for rows kept across a restart and heard elsewhere.
+        Task { @MainActor [weak self] in
+            while true {
+                await self?.syncRequests()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
         panel.onOpenList = { [weak self] in self?.openList(keyboard: false) }
         panel.onHover = { [weak self] inside in self?.pillHover(inside) }
         statusMenu.onOpenRequests = { [weak self] in self?.openList(keyboard: true) }
@@ -950,10 +972,19 @@ final class App: NSObject, NSApplicationDelegate {
     /// one its agent is still thinking about.
     private func send(_ heard: String, agent: String) {
         let id = requests.add(agentID: agent, question: heard, at: Date())
-        Log.info("request \(id) → \(agent)\(requests.request(id)?.phase == .waiting ? " (waits its turn)" : ""): \(heard)")
-        if requests.request(id)?.phase == .thinking { run(id) }
+        let waits = requests.request(id)?.phase == .waiting
+        Log.info("request \(id) → \(agent)\(waits ? " (waits its turn)" : ""): \(heard)")
         requestsChanged()
         note("\(statusMenu.name(of: agent)) · \(OpenRequests.sentNote)")
+        // The daemon keeps the row too, so it outlives the app and every
+        // client sees it. Without the daemon the app's own list goes on.
+        requestsEpoch += 1
+        Task { @MainActor in
+            if let key = await AgentClient.openRequest(agentID: agent, question: heard, waiting: waits) {
+                requests.setKey(id, key)
+            }
+            if !waits, requests.request(id)?.phase == .thinking { run(id) }
+        }
     }
 
     /// Ask the agent. The answer waits as not heard, with a soft sound, or
@@ -963,7 +994,7 @@ final class App: NSObject, NSApplicationDelegate {
         guard let r = requests.request(id) else { return }
         Task { @MainActor in
             let result: Result<AgentClient.Answer, Error>
-            do { result = .success(try await ask(r.question, agent: r.agentID)) }
+            do { result = .success(try await ask(r.question, agent: r.agentID, request: requests.request(id)?.key)) }
             catch { result = .failure(error) }
             let now = Date()
             switch result {
@@ -981,7 +1012,7 @@ final class App: NSObject, NSApplicationDelegate {
             if let next = requests.startNext(for: r.agentID, at: now) { run(next) }
             requestsChanged()
             guard let done = requests.request(id) else { return }
-            if done.phase == .answered && Config.playAnswersAtOnce {
+            if done.phase == .answered && playsAtOnce {
                 await waitForFloor(r.agentID, ownTurn: false)
                 if requests.request(id)?.heard == false { play(id) }
                 return
@@ -1059,7 +1090,8 @@ final class App: NSObject, NSApplicationDelegate {
         hoverOpen?.cancel()
         hoverOpen = nil
         guard inside else { requestsWindow.pointerLeft(); return }
-        guard !requests.requests.isEmpty, !requestsWindow.isOpen, !recorder.isRecording else { return }
+        // voice.listOnHover off: only a click or ⌘⌥O opens it.
+        guard settings?.general.listOnHover != false, !requests.requests.isEmpty, !requestsWindow.isOpen, !recorder.isRecording else { return }
         let open = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.panel.hovering, !self.recorder.isRecording else { return }
@@ -1095,19 +1127,45 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// A row picked in the list: an answer not heard plays, a heard one
     /// shows its text again (Listen again plays it), a failure says why.
+    /// Its agent becomes the one the next words go to, so they continue
+    /// that conversation (the daemon keeps one voice conversation per
+    /// agent).
     private func pick(_ id: Int) {
         guard let r = requests.request(id) else { return }
-        let action = OpenRequests.pick(r)
-        guard action != .nothing else { return }
         requestsWindow.dismissList()
-        switch action {
-        case .nothing: return
-        case .listen: play(id)
-        case .show: showAgain(id)
+        statusMenu.choose(r.agentID)
+        let name = statusMenu.name(of: r.agentID)
+        switch OpenRequests.pick(r) {
+        case .nothing: note(OpenRequests.continueNote(name: name))
+        case .listen: withAnswer(id) { [weak self] in self?.play(id) }
+        case .show: withAnswer(id) { [weak self] in self?.showAgain(id) }
         case .reason(let why):
-            requests.heard(id)
-            requestsChanged()
-            note("\(statusMenu.name(of: r.agentID)) couldn’t answer: \(why)")
+            markHeard(id)
+            note("\(name) couldn’t answer: \(why)")
+        }
+    }
+
+    /// Heard here and, through the daemon, on every client.
+    private func markHeard(_ id: Int) {
+        requests.heard(id)
+        requestsChanged()
+        guard let key = requests.request(id)?.key else { return }
+        requestsEpoch += 1
+        Task { await AgentClient.requestHeard(key) }
+    }
+
+    /// Run `then` once the row's answer is here: a row found on the
+    /// daemon (after a restart) fetches the answer it kept.
+    private func withAnswer(_ id: Int, then: @escaping () -> Void) {
+        if answers[id] != nil { then(); return }
+        guard let key = requests.request(id)?.key else { return }
+        Task { @MainActor in
+            guard let answer = await AgentClient.requestAnswer(key) else {
+                note("That answer is no longer kept. Open History to find it.")
+                return
+            }
+            answers[id] = answer
+            then()
         }
     }
 
@@ -1116,8 +1174,7 @@ final class App: NSObject, NSApplicationDelegate {
     /// the stop shortcut, stops it.
     private func play(_ id: Int) {
         guard let r = requests.request(id), let answer = answers[id] else { return }
-        requests.heard(id)
-        requestsChanged()
+        markHeard(id)
         let agent = answer.agentID ?? r.agentID
         Log.info("request \(id): playing (\(agent))")
         endReplay()
@@ -1155,6 +1212,110 @@ final class App: NSObject, NSApplicationDelegate {
         panel.showAnswer(spoken: answer.text, written: answer.written,
                          buttons: answer.buttons, imageURL: answer.imageURL)
         shownAnswer = (answer.text, answer.agentID ?? r.agentID, answer.voice)
+        note(OpenRequests.continueNote(name: statusMenu.name(of: r.agentID)))
+    }
+
+    // --- Closing a row ---
+
+    /// The row's ×, or ⌘⌫ on it. A row still thinking asks first; the
+    /// rest close at once, with Undo.
+    private func closeRow(_ id: Int) {
+        guard let r = requests.request(id) else { return }
+        if OpenRequests.closeNeedsConfirm(r) { requestsWindow.model.confirming = id; return }
+        close(id, stop: false)
+    }
+
+    /// The confirm's answer for a thinking row.
+    private func confirmClose(_ id: Int, _ choice: RequestsModel.CloseChoice) {
+        requestsWindow.model.confirming = nil
+        switch choice {
+        case .letItFinish: close(id, stop: false)
+        case .stop: close(id, stop: true)
+        case .keep: return
+        }
+    }
+
+    /// The row leaves the list, here and on the daemon. `stop` also stops
+    /// its agent; never the default. A closed row's answer, when it comes,
+    /// goes to History with no sound.
+    private func close(_ id: Int, stop: Bool) {
+        guard let r = requests.close(id) else { return }
+        lastClosed = (r, answers[id])
+        requestsChanged()
+        Log.info("request \(id) closed\(stop ? ", stopping \(r.agentID)" : "")")
+        if let key = r.key {
+            requestsEpoch += 1
+            Task { await AgentClient.closeRequest(key, stop: stop) }
+        }
+        offerUndo(OpenRequests.closedNote(name: statusMenu.name(of: r.agentID)))
+    }
+
+    /// "Close heard": every heard answer and every failure.
+    private func closeHeard() {
+        let gone = requests.closeHeard()
+        guard !gone.isEmpty else { return }
+        requestsChanged()
+        requestsEpoch += 1
+        Task { await AgentClient.closeHeardRequests() }
+    }
+
+    /// "Closed Ops’s request · Undo" for five seconds.
+    private func offerUndo(_ text: String) {
+        undoReset?.cancel()
+        requestsWindow.model.undo = text
+        requestsWindow.reload()
+        let reset = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.requestsWindow.model.undo = nil
+                self?.lastClosed = nil
+                self?.requestsWindow.reload()
+            }
+        }
+        undoReset = reset
+        DispatchQueue.main.asyncAfter(deadline: .now() + OpenRequests.undoSeconds, execute: reset)
+    }
+
+    private func undoClose() {
+        undoReset?.cancel()
+        requestsWindow.model.undo = nil
+        requestsWindow.reload()
+        guard let closed = lastClosed else { return }
+        let (r, answer) = (closed.request, closed.answer)
+        lastClosed = nil
+        requests.restore(r)
+        if let answer { answers[r.id] = answer }
+        requestsChanged()
+        if let key = r.key {
+            requestsEpoch += 1
+            Task { await AgentClient.reopenRequest(key) }
+        }
+    }
+
+    // --- The daemon's list ---
+
+    /// Read the daemon's list and merge it: rows heard or closed on another
+    /// client, and rows kept across a restart of the app or the daemon.
+    private func syncRequests() async {
+        let epoch = requestsEpoch
+        guard let remote = await AgentClient.openRequests(), epoch == requestsEpoch else { return }
+        let before = requests.requests
+        requests.sync(remote)
+        // A row found waiting its turn goes once its agent is free.
+        let now = Date()
+        for agent in Set(requests.requests.filter { $0.phase == .waiting }.map(\.agentID)) {
+            if let next = requests.startNext(for: agent, at: now) { run(next) }
+        }
+        if requests.requests != before { requestsChanged() }
+    }
+
+    /// "Play answers at once" in the menu: saved as voice.answers.
+    private func setPlayAtOnce(_ on: Bool) {
+        Task { @MainActor in
+            switch await AgentClient.saveSettings(["general": ["answers": on ? "play" : "wait"]]) {
+            case .success(let saved): apply(saved)
+            case .failure(let failure): Log.warn("answers setting: \(failure.message)")
+            }
+        }
     }
 
     /// Someone holds the floor (#924): the answer is kept, and shown and

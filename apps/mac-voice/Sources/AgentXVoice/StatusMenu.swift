@@ -45,6 +45,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var shortcut: (String) -> String? = { _ in nil }
     /// "Open requests…": the list, with the keyboard in it.
     var onOpenRequests: (() -> Void)?
+    /// voice.answers is "play": answers play as soon as they are back.
+    /// Set by the app from the daemon's settings.
+    var playsAnswersAtOnce = false {
+        didSet { if playsAnswersAtOnce != oldValue { rebuild() } }
+    }
+    /// "Play answers at once" ticked or unticked: the app saves it.
+    var onPlayAtOnce: ((Bool) -> Void)?
 
     /// Set by the app.
     var onStop: (() -> Void)?
@@ -265,7 +272,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         // Answers wait as "not heard" until picked (#1455); ticked, they play
         // as soon as they are back, as before.
         let atOnce = action("Play answers at once", #selector(togglePlayAtOnce), key: "")
-        atOnce.state = Config.playAnswersAtOnce ? .on : .off
+        atOnce.state = playsAnswersAtOnce ? .on : .off
         menu.addItem(atOnce)
         if let held = floor.menuTitle(now: Date().timeIntervalSince1970) {
             menu.addItem(disabled(held))
@@ -343,7 +350,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func stop() { onStop?() }
     @objc private func openRequests() { onOpenRequests?() }
-    @objc private func togglePlayAtOnce() { Config.playAnswersAtOnce.toggle(); rebuild() }
+    @objc private func togglePlayAtOnce() { onPlayAtOnce?(!playsAnswersAtOnce) }
+
+    /// Talk to `id` from now on, as picking it in the menu does.
+    func choose(_ id: String) {
+        guard id != Config.effectiveAgentID else { return }
+        Config.chosenAgentID = id
+        onTargetChanged?(id)
+        rebuild()
+    }
     @objc private func takeFloorBack() { onTakeFloorBack?() }
 
     @objc private func toggleHold() {

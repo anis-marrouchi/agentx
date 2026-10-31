@@ -120,6 +120,60 @@ check(thinkingSaid == "Writer. Thinking, 1 minute. You asked: and a shorter one.
 check(OpenRequests.newBadge(1) == "1 new", "the pill's badge")
 check(OpenRequests.readyNote(name: "Ops") == "Ops answered · hover or ⌘⌥O to hear it", "the pill's line when an answer waits")
 
+// --- Close, Undo and Close heard ---
+
+var closing = OpenRequests()
+let c1 = closing.add(agentID: "writer", question: "first", at: t0)
+let c2 = closing.add(agentID: "ops", question: "second", at: at(1))
+let c3 = closing.add(agentID: "researcher", question: "third", at: at(2))
+closing.answered(c1, at: at(10)); closing.heard(c1)
+closing.failed(c2, reason: "timed out", at: at(11))
+check(OpenRequests.closeNeedsConfirm(closing.request(c3)!), "closing a thinking row asks first")
+check(!OpenRequests.closeNeedsConfirm(closing.request(c1)!), "a heard row closes at once")
+let gone = closing.close(c1)
+check(gone?.id == c1 && closing.request(c1) == nil, "a closed row leaves the list")
+closing.restore(gone!)
+check(closing.requests.map(\.id) == [c1, c2, c3], "Undo puts it back in its place")
+let swept = closing.closeHeard()
+check(Set(swept.map(\.id)) == [c1, c2] && closing.requests.map(\.id) == [c3],
+      "Close heard takes every heard answer and every failure, not a thinking row")
+check(OpenRequests.closedNote(name: "Ops") == "Closed Ops’s request", "the line after a close")
+check(OpenRequests.stillThinking(name: "Writer") == "Writer is still thinking"
+      && OpenRequests.stopAgent(name: "Writer") == "Stop Writer", "the confirm's words")
+check(OpenRequests.continueNote(name: "Ops") == "Ops · Hold ⌥Space to continue it", "a picked row says how to continue it")
+
+// --- The daemon's list ---
+
+func remote(_ key: String, _ agent: String, _ state: String, heard: Bool = false, sent: TimeInterval = 0) -> OpenRequests.Remote {
+    OpenRequests.Remote(key: key, agentID: agent, question: "asked \(key)", sentAt: at(sent), since: at(sent + 1),
+                        state: state, heard: heard, error: state == "failed" ? "AgentX restarted" : nil)
+}
+
+var synced = OpenRequests()
+let mine = synced.add(agentID: "writer", question: "mine", at: at(5))
+synced.setKey(mine, "rmine0001")
+let pending = synced.add(agentID: "ops", question: "not on the daemon yet", at: at(6))
+let joined = synced.sync([
+    remote("rold00001", "ops", "answered", sent: 1),
+    remote("rmine0001", "writer", "answered", heard: true, sent: 5),
+    remote("rlost0001", "researcher", "failed", sent: 3),
+])
+check(joined.count == 2, "rows only the daemon has join the list (after the app restarted)")
+check(synced.requests.map(\.question) == ["asked rold00001", "asked rlost0001", "mine", "not on the daemon yet"],
+      "joined rows take their place by when they were sent")
+check(synced.request(mine)?.heard == true, "heard on another client is heard here")
+check(synced.request(mine)?.phase == .thinking, "a row this app runs keeps its own state until its answer is back")
+check(synced.request(key: "rlost0001")?.phase == .failed("AgentX restarted"), "a joined row takes the daemon's state")
+check(synced.request(pending) != nil, "a row the daemon doesn't have yet is left alone")
+synced.sync([remote("rold00001", "ops", "answered", sent: 1)])
+check(synced.request(mine) == nil && synced.request(key: "rlost0001") == nil,
+      "a row the daemon no longer lists was closed elsewhere and leaves")
+check(synced.request(key: "rold00001")?.local == false, "a joined row is not run by this app")
+var found = OpenRequests()
+found.sync([remote("rwait0001", "ops", "waiting")])
+let next = found.startNext(for: "ops", at: at(9))
+check(next != nil && found.request(next!)?.local == true, "a joined row waiting its turn is run by this app")
+
 if failures > 0 {
     print("\(failures) failed")
     exit(1)

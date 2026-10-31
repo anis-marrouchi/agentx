@@ -269,7 +269,8 @@ enum AgentClient {
     }
 
     /// `handsFree`: the microphone had opened by itself, no key held.
-    static func ask(_ message: String, agent: String, handsFree: Bool = false) async throws -> Answer {
+    /// `request`: the open-requests row on the daemon this answers (#1455).
+    static func ask(_ message: String, agent: String, handsFree: Bool = false, request: String? = nil) async throws -> Answer {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)/ask")!)
         req.httpMethod = "POST"
         // An agent turn routinely takes minutes. The default 60s would cut
@@ -280,9 +281,16 @@ enum AgentClient {
         // No agent known: the daemon answers with its default agent.
         if !agent.isEmpty { payload["agent"] = agent }
         if handsFree { payload["handsFree"] = true }
+        if let request { payload["request"] = request }
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let (data, response) = try await URLSession.shared.data(for: req)
+        return try answer(from: data, status: (response as? HTTPURLResponse)?.statusCode)
+    }
+
+    /// An /ask reply as the app uses it. Also reads the reply the daemon
+    /// kept for an open request (GET /voice/requests/:id).
+    static func answer(from data: Data, status: Int?) throws -> Answer {
         struct UiButton: Decodable { let label: String; let url: String }
         struct UiMedia: Decodable { let type: String; let url: String; let caption: String? }
         struct Ui: Decodable { let buttons: [UiButton]?; let media: UiMedia? }
@@ -309,15 +317,15 @@ enum AgentClient {
         // speakable explanation into `text`. Falling through to the error
         // path here is what made "she is still working" sound like "that
         // didn't work".
-        if let http = response as? HTTPURLResponse, http.statusCode == 202,
+        if status == 202,
            let queuedText = reply?.text, !queuedText.isEmpty {
             return Answer(text: queuedText, written: nil, buttons: [], imageURL: nil,
                           durationMs: reply?.duration, agentID: reply?.agentId, voice: voice)
         }
 
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        if let status, !(200..<300).contains(status) {
             let detail = reply?.error ?? String(data: data.prefix(200), encoding: .utf8) ?? ""
-            throw VoiceError.api("daemon HTTP \(http.statusCode): \(detail)")
+            throw VoiceError.api("daemon HTTP \(status): \(detail)")
         }
         if let err = reply?.error, !err.isEmpty { throw VoiceError.api(err) }
         guard let text = reply?.text ?? reply?.full, !text.isEmpty else {
@@ -336,5 +344,85 @@ enum AgentClient {
                       buttons: buttons + extra, imageURL: image,
                       durationMs: reply?.duration, agentID: reply?.agentId, voice: voice,
                       presenceMode: reply?.presence?.mode)
+    }
+
+    // MARK: Open requests
+    //
+    // The open-requests list is kept by the daemon (#1455), so it survives
+    // a restart and heard on one client is heard on all. See
+    // src/daemon/voice-requests-api.ts. None of these throw: without the
+    // daemon the app keeps its own list as before.
+
+    private struct RemoteRow: Decodable {
+        let id: String
+        let agentId: String
+        let question: String
+        let state: String
+        let sentAt: Double
+        let since: Double
+        let heard: Bool
+        let error: String?
+
+        var remote: OpenRequests.Remote {
+            OpenRequests.Remote(key: id, agentID: agentId, question: question,
+                                sentAt: Date(timeIntervalSince1970: sentAt / 1000),
+                                since: Date(timeIntervalSince1970: since / 1000),
+                                state: state, heard: heard, error: error)
+        }
+    }
+
+    /// A new row on the daemon: its id, or nil when the daemon has none.
+    static func openRequest(agentID: String, question: String, waiting: Bool) async -> String? {
+        struct Reply: Decodable { let request: RemoteRow? }
+        guard let (data, _) = try? await post("/voice/requests",
+                                              ["agentId": agentID, "question": question, "waiting": waiting], timeout: 3)
+        else { return nil }
+        return (try? JSONDecoder().decode(Reply.self, from: data))?.request?.id
+    }
+
+    /// The daemon's open rows, or nil when it cannot be reached (or is
+    /// older than the list).
+    static func openRequests() async -> [OpenRequests.Remote]? {
+        struct Reply: Decodable { let requests: [RemoteRow] }
+        guard let url = URL(string: "\(Config.daemonURL)/voice/requests") else { return nil }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return (try? JSONDecoder().decode(Reply.self, from: data))?.requests.map(\.remote)
+    }
+
+    /// The answer the daemon kept for a row, for one the app did not ask
+    /// itself (found on the daemon after a restart).
+    static func requestAnswer(_ key: String) async -> Answer? {
+        guard let url = URL(string: "\(Config.daemonURL)/voice/requests/\(key)") else { return nil }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 5
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let reply = obj["reply"] as? [String: Any],
+              let replyData = try? JSONSerialization.data(withJSONObject: reply) else { return nil }
+        return try? answer(from: replyData, status: 200)
+    }
+
+    /// Played or opened: heard on every client.
+    static func requestHeard(_ key: String) async {
+        _ = try? await post("/voice/requests/\(key)/heard", [:], timeout: 3)
+    }
+
+    /// The row leaves the list; `stop` also stops its agent's turn.
+    static func closeRequest(_ key: String, stop: Bool) async {
+        _ = try? await post("/voice/requests/\(key)/close", ["stop": stop], timeout: 5)
+    }
+
+    /// Undo a close.
+    static func reopenRequest(_ key: String) async {
+        _ = try? await post("/voice/requests/\(key)/reopen", [:], timeout: 3)
+    }
+
+    /// "Close heard": every heard answer and every failure.
+    static func closeHeardRequests() async {
+        _ = try? await post("/voice/requests/close-heard", [:], timeout: 3)
     }
 }

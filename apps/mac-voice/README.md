@@ -244,12 +244,18 @@ over to the next build.
   so several agents think in parallel. A second request for an agent that
   is still thinking waits behind the first. Answers wait as "not heard" in
   the open-requests list (`OpenRequests.swift`, `RequestsWindow.swift`,
-  tested in `Tests/OpenRequests`) until picked, with one soft sound; "Play
-  answers at once" in the menu (UserDefaults `playAnswersAtOnce`) plays
-  them as they come, as before. The list is kept by the app for now: it
-  does not survive a restart, and the phone does not see it yet. Closing a
-  row is not built yet; the eight newest heard rows are kept. During a call
-  the turn works as before.
+  tested in `Tests/OpenRequests`) until picked, with one soft sound;
+  `voice.answers: "play"` (Settings › General, or "Play answers at once"
+  in the menu) plays them as they come, as before. Picking a row makes its
+  agent the target, so the next words continue that agent's voice
+  conversation. Rows close with ×, ⌘⌫ or "Close heard"; a thinking row
+  asks first, and only "Stop …" stops the agent. The list is kept by the
+  daemon (`/voice/requests`, `src/daemon/voice-requests-api.ts`): it
+  survives a restart of the app or the daemon, and heard is shared by
+  every client that reads it. A row that was thinking when the daemon
+  stopped turns to "Couldn't answer". The phone's Chat strip does not read
+  this list yet, and the voice conversation is not the phone tab's
+  conversation with that agent. During a call the turn works as before.
 - ⌥Space is the default talk key (`⌃Space` is commonly bound to
   input-source switching). Talk, stop, paste and per-agent shortcuts are
   set in Settings… and stored in agentx.json (`voice.hotkeys`,

@@ -7,8 +7,10 @@ import SwiftUI
 /// It opens three ways. Hovering the pill for half a second opens it for
 /// as long as the pointer is on the pill or the list. A click on the mini
 /// orbs or on "1 new", or ⌘⌥O, opens it until Esc or a click elsewhere,
-/// with the keyboard in it: ↑ ↓ move, Return picks, Esc hides. Picking a
-/// row is the app's to do (`onPick`). What the rows say comes from
+/// with the keyboard in it: ↑ ↓ move, Return picks, ⌘⌫ closes, Esc hides.
+/// Picking or closing a row is the app's to do (`onPick`, `onClose`). A
+/// thinking row asks before it closes: let it finish (Return), stop the
+/// agent (Tab, then Return or Space), or keep it (Esc). What the rows say comes from
 /// OpenRequests.swift, which is tested without a window.
 ///
 /// A floating non-activating panel like the pill, so opening it never
@@ -40,6 +42,8 @@ final class RequestsWindow: NSPanel {
     private static let headerHeight: CGFloat = 40
     private static let rowHeight: CGFloat = 52
     private static let bottomPadding: CGFloat = 8
+    /// "Close heard", and Undo after a close.
+    private static let footerHeight: CGFloat = 34
     private static let emptyHeight: CGFloat = 92
 
     /// Counts the thinking clocks while the list shows.
@@ -110,6 +114,7 @@ final class RequestsWindow: NSPanel {
         leaveCheck = nil
         model.keyboard = false
         model.selected = nil
+        model.confirming = nil
         orderOut(nil)
     }
 
@@ -120,8 +125,9 @@ final class RequestsWindow: NSPanel {
         guard mode != nil else { return }
         let pill = pillFrame()
         let count = rows(true).count
-        let height = count == 0 ? Self.emptyHeight
-            : Self.headerHeight + CGFloat(count) * Self.rowHeight + Self.bottomPadding
+        let footer = count > 0 || model.undo != nil ? Self.footerHeight : 0
+        let height = (count == 0 ? Self.emptyHeight
+            : Self.headerHeight + CGFloat(count) * Self.rowHeight + Self.bottomPadding) + footer
         let screen = NSScreen.screens.first { $0.frame.intersects(pill) } ?? NSScreen.main ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
         let spot = PillPlacement.list(width: Self.width, height: height, pill: pill, visible: visible)
@@ -129,6 +135,7 @@ final class RequestsWindow: NSPanel {
         let fresh = rows(above)
         if model.rows != fresh { model.rows = fresh }
         if let s = model.selected, !fresh.contains(where: { $0.id == s }) { model.selected = nil }
+        if let c = model.confirming, !fresh.contains(where: { $0.id == c && $0.cue == .thinking }) { model.confirming = nil }
         if frame != spot.frame { setFrame(spot.frame, display: true) }
     }
 
@@ -181,7 +188,22 @@ final class RequestsWindow: NSPanel {
     @MainActor
     private func key(_ event: NSEvent) -> Bool {
         let ids = model.rows.map(\.id)
+        // A thinking row asking before it closes: Return lets it finish,
+        // Tab moves to Stop (never the default), Esc keeps it.
+        if let id = model.confirming {
+            switch event.keyCode {
+            case 48: model.confirmOnStop.toggle() // Tab
+            case 36, 76: model.onConfirm?(id, model.confirmOnStop ? .stop : .letItFinish)
+            case 49 where model.confirmOnStop: model.onConfirm?(id, .stop) // Space
+            case 53: model.onConfirm?(id, .keep)
+            default: break
+            }
+            return true
+        }
         switch event.keyCode {
+        case 51 where event.modifierFlags.contains(.command): // ⌘⌫
+            if let id = model.selected { model.onClose?(id) }
+            return true
         case 125, 126: // ↓ ↑
             model.keyboard = true
             model.selected = OpenRequests.move(model.selected, by: event.keyCode == 125 ? 1 : -1, in: ids)
@@ -242,6 +264,24 @@ final class RequestsModel: ObservableObject {
     @Published var keyboard = false
     /// A row was clicked, or Return pressed on it. Set by the app.
     var onPick: ((Int) -> Void)?
+
+    /// The row's × or ⌘⌫. Set by the app.
+    var onClose: ((Int) -> Void)?
+    /// What to do with a thinking row being closed.
+    enum CloseChoice { case letItFinish, stop, keep }
+    /// The thinking row asking before it closes.
+    @Published var confirming: Int? {
+        didSet { if confirming != oldValue { confirmOnStop = false } }
+    }
+    /// Tab moved the confirm to "Stop".
+    @Published var confirmOnStop = false
+    var onConfirm: ((Int, CloseChoice) -> Void)?
+    /// "Closed Ops’s request", with Undo, for a few seconds after a close.
+    @Published var undo: String?
+    var onUndo: (() -> Void)?
+    /// "Close heard": every heard answer and every failure.
+    var onCloseHeard: (() -> Void)?
+    var hasHeard: Bool { rows.contains { $0.cue == .heard || $0.cue == .failed } }
 }
 
 struct RequestsView: View {
@@ -285,11 +325,19 @@ struct RequestsView: View {
                     ScrollView(.vertical) {
                         VStack(spacing: 0) {
                             ForEach(model.rows) { row in
-                                RequestRow(row: row,
-                                           selected: model.selected == row.id,
-                                           ring: model.keyboard && model.selected == row.id,
-                                           pick: { model.onPick?(row.id) })
-                                    .id(row.id)
+                                Group {
+                                    if model.confirming == row.id {
+                                        CloseConfirm(row: row, onStop: model.confirmOnStop,
+                                                     choose: { model.onConfirm?(row.id, $0) })
+                                    } else {
+                                        RequestRow(row: row,
+                                                   selected: model.selected == row.id,
+                                                   ring: model.keyboard && model.selected == row.id,
+                                                   pick: { model.onPick?(row.id) },
+                                                   close: { model.onClose?(row.id) })
+                                    }
+                                }
+                                .id(row.id)
                             }
                         }
                         .padding(.horizontal, 6)
@@ -302,6 +350,69 @@ struct RequestsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !model.rows.isEmpty || model.undo != nil { footer }
+        }
+    }
+
+    /// "Close heard" on the left; after a close, its line and Undo.
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if !model.rows.isEmpty {
+                Button("Close heard") { model.onCloseHeard?() }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12))
+                    .disabled(!model.hasHeard)
+                    .accessibilityHint("Closes every heard answer and every failure")
+            }
+            Spacer(minLength: 0)
+            if let undo = model.undo {
+                Text(undo)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Button("Undo") { model.onUndo?() }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 34)
+        .overlay(alignment: .top) { Divider().opacity(0.5) }
+    }
+}
+
+/// A thinking row being closed asks first: "Writer is still thinking",
+/// let it finish (the default), stop it (never the default), or keep it.
+struct CloseConfirm: View {
+    let row: RequestsModel.Row
+    /// Tab moved the keyboard to Stop.
+    let onStop: Bool
+    let choose: (RequestsModel.CloseChoice) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(OpenRequests.stillThinking(name: row.name))
+                .font(.system(size: 12.5, weight: .semibold))
+                .lineLimit(1)
+            HStack(spacing: 6) {
+                Button(OpenRequests.letItFinish) { choose(.letItFinish) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(onStop ? Color.secondary : RequestRow.blue)
+                Button(OpenRequests.stopAgent(name: row.name)) { choose(.stop) }
+                    .buttonStyle(.bordered)
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(RequestRow.red, lineWidth: onStop ? 2 : 0))
+                Button(OpenRequests.keep) { choose(.keep) }
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.small)
+            .font(.system(size: 11.5))
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.06)))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(OpenRequests.stillThinking(name: row.name))
     }
 }
 
@@ -313,6 +424,8 @@ struct RequestRow: View {
     /// The keyboard is on this row.
     let ring: Bool
     let pick: () -> Void
+    /// The × on hover and on the keyboard's row.
+    let close: () -> Void
     @State private var hovering = false
 
     /// The "not heard" blue, lighter in dark so it reads on the dark pill.
@@ -354,9 +467,21 @@ struct RequestRow: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 4)
-            Text(row.ago)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            if hovering || selected {
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color.primary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help("Close (⌘⌫)")
+                .accessibilityLabel("Close")
+            } else {
+                Text(row.ago)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52, alignment: .leading)
@@ -374,6 +499,7 @@ struct RequestRow: View {
             if let action = row.action {
                 Button(action, action: pick)
             }
+            Button("Close", action: close)
         }
     }
 
