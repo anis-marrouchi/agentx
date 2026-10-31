@@ -18,6 +18,8 @@ import { renderShell, esc, type TopbarPeer } from ".."
 export interface ProjectsPageOpts {
   peers?: TopbarPeer[]
   currentPeerId?: string
+  /** dashboard.token for a caller on this machine (pageToken). */
+  localToken?: string
 }
 
 export function renderProjectsPage(opts: ProjectsPageOpts = {}): string {
@@ -56,6 +58,7 @@ export function renderProjectsPage(opts: ProjectsPageOpts = {}): string {
     subtitle: "Projects",
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
+    localToken: opts.localToken,
     body,
     css: PROJECTS_PAGE_CSS,
     scripts: `<script>${PROJECTS_PAGE_SCRIPT}</script>`,

@@ -47,6 +47,12 @@ export interface ShellOpts {
   body: string
   /** Opt out of the ask-an-agent drawer (used by full-canvas surfaces). */
   noAssistant?: boolean
+  /**
+   * dashboard.token for a caller on this machine (pageToken), published as
+   * window.AX_LOCAL_TOKEN so the drawer and the topbar can call the owner's
+   * routes without a session cookie. Leave unset off the box.
+   */
+  localToken?: string
   /** Optional HTML inserted as a second row under the topbar. */
   subheader?: string
   /**
@@ -102,11 +108,17 @@ ${opts.headExtras || ""}
 ${header}
 ${main}
 ${opts.noAssistant ? "" : ASSISTANT_HTML}
+${opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${scriptJson(opts.localToken)};</script>` : ""}
 ${TOPBAR_SCRIPT}
 ${opts.scripts || ""}
 ${opts.noAssistant ? "" : `<script>${injectFns({ markdownToHtml })}${ASSISTANT_SCRIPT}</script>`}
 </body>
 </html>`
+}
+
+/** JSON for inside a <script>: no "</script>" can close the tag early. */
+function scriptJson(v: unknown): string {
+  return JSON.stringify(v).replace(/</g, "\\u003c")
 }
 
 function escapeTitle(s: string): string {

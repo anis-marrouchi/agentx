@@ -142,6 +142,24 @@ describe("dashboard pages off-box (#1306)", () => {
     }
   })
 
+  // #1608 follow-up: these pages render the ask-an-agent drawer, whose
+  // /api/assistant calls are the owner's. On this machine the page carries
+  // the token for them; off the box it never does.
+  it("gives the drawer pages the token on this machine, never off the box", async () => {
+    const base = await start()
+    for (const page of ["/mesh", "/monitor", "/workflows", "/admin/projects", "/guests"]) {
+      const local = await (await fetch(base + page, { redirect: "manual" })).text()
+      expect(local, page).toContain('id="ax-as-dock"')
+      expect(local, page).toContain(`window.AX_LOCAL_TOKEN = "${TOKEN}"`)
+      const off = await (await fetch(base + page, { headers: OFF, redirect: "manual" })).text()
+      expect(off, page).not.toContain(TOKEN)
+    }
+    // Setup comes before any agent: no drawer to feed.
+    const setup = await (await fetch(base + "/setup", { redirect: "manual" })).text()
+    expect(setup).not.toContain('id="ax-as-dock"')
+    expect(setup).not.toContain(TOKEN)
+  })
+
   it("changes nothing when no dashboard.token is set", async () => {
     const base = await start(false)
     expect((await fetch(`${base}/admin`, { headers: OFF, redirect: "manual" })).status).toBe(200)

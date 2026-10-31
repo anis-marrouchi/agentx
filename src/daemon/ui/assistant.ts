@@ -198,6 +198,19 @@ function axAuth(h){
 const t=window.AX_LOCAL_TOKEN||(()=>{try{return localStorage.getItem('ax_token')||''}catch{return ''}})();
 return t?Object.assign({},h,{Authorization:'Bearer '+t}):(h||{});
 }
+/* A 401 means this browser is not the owner yet: no token on the page and no
+   session cookie. Say so, with the way in, rather than look empty. */
+function signInLink(){
+const a=document.createElement('a');
+a.href='/login?next='+encodeURIComponent(location.pathname+location.search);
+a.textContent='Sign in';
+return a;
+}
+function addSignIn(){
+const el=add('err','');
+el.append(signInLink(),' to ask an agent from this page.');
+return el;
+}
 function pageContext(){
 const base={path:location.pathname,tab:document.querySelector('.ax-topbar__tab.is-active')?.textContent?.trim()||null};
 try{ if(typeof window.axPageContext==='function') return {...base,...(window.axPageContext()||{})}; }catch(e){}
@@ -280,7 +293,7 @@ async function loadThread(id,{quiet}={}){
 if(!id){renderMessages([]);$('ax-as-title').textContent='Ask an agent';return;}
 try{
  const r=await fetch('/api/assistant/thread?id='+encodeURIComponent(id),{headers:axAuth()});
- if(!r.ok){setThread(null);renderMessages([]);return;}
+ if(!r.ok){setThread(null);renderMessages([]);if(r.status===401)addSignIn();return;}
  const d=await r.json();
  $('ax-as-title').textContent=d.thread.title||'Ask an agent';
  if(d.thread.agentId)$('ax-as-agent').value=d.thread.agentId;
@@ -295,9 +308,16 @@ try{
 async function loadHistory(){
 try{
  const r=await fetch('/api/assistant/threads',{headers:axAuth()});
+ const empty=$('ax-as-hist-empty');
+ if(r.status===401){
+  $('ax-as-hist-list').innerHTML='';
+  empty.replaceChildren(signInLink(),' to see past conversations.');
+  empty.hidden=false;return;
+ }
+ empty.textContent='No past conversations yet.';
  const d=await r.json();
  const list=d.threads||[];
- $('ax-as-hist-empty').hidden=list.length>0;
+ empty.hidden=list.length>0;
  $('ax-as-hist-list').innerHTML=list.map(t=>
   '<li data-thread="'+esc(t.id)+'"'+(t.id===threadId?' class="is-on"':'')+'>'
   +'<span class="ax-as__hist-t">'+esc(t.title)+'</span>'
@@ -343,6 +363,7 @@ try{
  const r=await fetch('/api/assistant',{method:'POST',headers:axAuth({'Content-Type':'application/json'}),
   body:JSON.stringify({threadId:threadId||undefined,agentId:agent,node:$('ax-as-node').value||undefined,
    message:text,context:pageContext()})});
+ if(r.status===401){input.value=text;addSignIn();return;}
  const d=await r.json();
  if(!r.ok||d.error)throw new Error(d.error||('HTTP '+r.status));
  setThread(d.threadId);
