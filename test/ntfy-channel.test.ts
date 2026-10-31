@@ -114,6 +114,70 @@ describe("NtfyAdapter", () => {
     expect(actions).not.toContain("Dropped")
   })
 
+  describe("what a tap opens (#1652)", () => {
+    const headersOf = (fn: ReturnType<typeof mockFetch>) => (fn.mock.calls[0] as any)[1].headers
+
+    it("sends the push's own link as Click", async () => {
+      const fetchMock = mockFetch()
+      const a = new NtfyAdapter({ topic: "t", hubOrigin: () => "https://hub.example.ts.net" }, quiet)
+      await a.send({ channel: "ntfy", chatId: "", text: "hi", click: "https://example.com/video" })
+      expect(headersOf(fetchMock)["Click"]).toBe("https://example.com/video")
+    })
+
+    it("uses the first button's link when there is no Click of its own", async () => {
+      const fetchMock = mockFetch()
+      const a = new NtfyAdapter({ topic: "t" }, quiet)
+      await a.send({ channel: "ntfy", chatId: "", text: "hi", buttons: [{ label: "Open", url: "https://example.com/a" }] })
+      const h = headersOf(fetchMock)
+      expect(h["Click"]).toBe("https://example.com/a")
+      expect(h["Actions"]).toBe("view, Open, https://example.com/a")
+    })
+
+    it("opens the request's Hub page when the push has no link", async () => {
+      const fetchMock = mockFetch()
+      const a = new NtfyAdapter({ topic: "t", hubOrigin: () => "https://hub.example.ts.net" }, quiet)
+      await a.send({ channel: "ntfy", chatId: "", text: "hi", told: { requestId: "req 7" } })
+      expect(headersOf(fetchMock)["Click"]).toBe("https://hub.example.ts.net/hub#post=req%207")
+    })
+
+    it("opens the Hub when there is neither a link nor a request", async () => {
+      const fetchMock = mockFetch()
+      const a = new NtfyAdapter({ topic: "t", hubOrigin: () => "https://hub.example.ts.net" }, quiet)
+      await a.send({ channel: "ntfy", chatId: "", text: "hi" })
+      expect(headersOf(fetchMock)["Click"]).toBe("https://hub.example.ts.net/hub")
+    })
+
+    it("sends no Click when there is nothing the phone can open", async () => {
+      const fetchMock = mockFetch()
+      const a = new NtfyAdapter({ topic: "t" }, quiet)
+      await a.send({ channel: "ntfy", chatId: "", text: "hi" })
+      expect(headersOf(fetchMock)["Click"]).toBeUndefined()
+    })
+
+    it("never sends a localhost or 127.0.0.1 link", async () => {
+      const fetchMock = mockFetch()
+      const a = new NtfyAdapter({ topic: "t", hubOrigin: () => "https://hub.example.ts.net" }, quiet)
+      await a.send({
+        channel: "ntfy", chatId: "", text: "hi",
+        click: "http://127.0.0.1:18800/hub",
+        buttons: [{ label: "Local", url: "http://localhost:18800/x" }],
+      })
+      const h = headersOf(fetchMock)
+      expect(h["Click"]).toBe("https://hub.example.ts.net/hub")
+      expect(h["Actions"]).toBeUndefined()
+    })
+
+    it("keeps a ringing call's own tap link", async () => {
+      const fetchMock = mockFetch()
+      const a = new NtfyAdapter({ topic: "t" }, quiet)
+      await a.send({
+        channel: "ntfy", chatId: "", text: "hi", click: "https://example.com/other",
+        ring: { callId: "c1", state: "ringing", urgent: false, url: "https://hub.example.ts.net/app#call=c1" },
+      })
+      expect(headersOf(fetchMock)["Click"]).toBe("https://hub.example.ts.net/app#call=c1")
+    })
+  })
+
   it("sends the access token for protected topics", async () => {
     const fetchMock = mockFetch()
     const a = new NtfyAdapter({ topic: "t", token: "tk_123" }, quiet)

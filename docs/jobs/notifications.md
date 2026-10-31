@@ -234,6 +234,7 @@ Scripts and scheduled jobs can call `agentx notify`:
 ```sh
 agentx notify "Build finished" --title "CI"
 agentx notify "Production is down" --title "Alert" --todo "Open the status page" --urgent
+agentx notify "The new video is ready" --url https://example.com/video --button "Notes=https://example.com/notes"
 agentx notify --status        # Focus state and anything held
 agentx notify --flush         # deliver what is held now
 ```
@@ -245,7 +246,9 @@ agentx notify --flush         # deliver what is held now
 | `--priority <1-5>` | ntfy priority (default 4); the phone app ignores it |
 | `--urgent` | Deliver even during Focus, and even if you were already told the same thing |
 | `--key <id>` | What the message is about, for example `backup:nightly`. A message with the same key is told once across all channels within `notifications.told.repeatWindowHours`. Without it, a message of 40 characters or more is its own key |
-| `--request <id>` | The open request the message belongs to |
+| `--request <id>` | The open request the message belongs to. Without `--url`, tapping the notification opens this request on the Hub |
+| `--url <url>` | The page that opens when you tap the notification. It also shows as an **Open** button |
+| `--button "<label>=<url>"` | Add a button that opens a page, for example `--button "Notes=https://example.com/notes"`. You can repeat it. A notification holds at most 3 links, and `--url` counts as one |
 | `--digest` | A system reminder, such as disk space or a channel that stopped. It waits for the daily digest instead of a notification now |
 | `--told` | Show what you were told in the last 24 hours: how many were sent, held, kept for the digest or not repeated, and the latest ones |
 | `--from <who>` | Shown in a held digest, so you know who sent what |
@@ -261,6 +264,22 @@ agentx notify --flush         # deliver what is held now
 - Every notice from `agentx notify` ends with a **To do** line after the message, so you know at a glance whether it wants anything from you. Notices the daemon sends by itself (a failed job, a request that needs you) do not have one.
 - A message must read in about ten seconds: the title can be up to 120 characters and the message up to 300, counting the To do line. A longer one is not sent. The command says why and exits with an error, so the agent or script that sent it can shorten it. AgentX never cuts it.
 - A title must say what the notice is in words. A title that is only a reference, such as `#402`, `group/project#402`, a link, a commit hash or a request id, is not sent; put the reference in the message instead. A short plain title such as `Backups` is fine, and so is a reference next to words, such as `Login fix ready (#402)`.
+
+### What a tap opens
+
+Every phone notification opens a page when you tap it. AgentX picks the first of these that exists:
+
+1. The link the sender gave (`--url`, or the first `--button`).
+2. The request the notification belongs to (`--request`), on the Hub.
+3. The Hub itself.
+
+Options 2 and 3 need the address your phone reaches this computer at. AgentX uses `notifications.publicUrl`, or `calls.phone.appUrl` if you already set that for calls. This is usually your Tailscale (private network) address, for example `https://my-mac.example.ts.net`. AgentX never sends a `localhost` or `127.0.0.1` link: your phone could not open it.
+
+To set the address:
+
+1. Open the `agentx.json` file in your AgentX folder.
+2. Inside `"notifications"`, add `"publicUrl": "https://my-mac.example.ts.net"` with your own address. Write only the address, with no path after it.
+3. Save the file. The next notification uses it. You do not need to restart.
 
 ## 6. Told once, and the daily digest
 
@@ -318,6 +337,7 @@ AgentX also keeps where you were last seen: the phone app, its Desk tab, and eac
 17. Switch a channel off: `curl -s -X POST http://127.0.0.1:18800/channels/ntfy/switch -H 'Content-Type: application/json' -d '{"on": false}'`. Run `curl -s http://127.0.0.1:18800/health`: `channels.ntfy` says `"up": false`. Send to it with `curl -s -X POST http://127.0.0.1:18800/send -H 'Content-Type: application/json' -d '{"channel":"ntfy","chatId":"default","text":"Test\nrefused"}'`: the answer is `503` with `"refused": true` and the reason. Switch it on again with `{"on": true}`.
 
 `agentx doctor` runs the same helper check under **Notifications**, along with its other checks.
+18. With `notifications.publicUrl` set, run `agentx notify "Link test" --url https://example.com`. On the phone, tap the notification: `https://example.com` opens. Run `agentx notify "Request test" --request <id>` with the id of an open request: a tap opens that request on the Hub.
 
 ## If something is wrong
 
@@ -340,6 +360,8 @@ Other problems:
 | Nothing is held during Focus | Give Full Disk Access to the app that runs AgentX (step 4), or use `~/.agentx/focus.json`. |
 | A scheduled job uses the wrong settings | Add `-c /path/to/agentx.json` to its `agentx notify` command. |
 | A message you expected never came | Run `agentx notify --told`. `repeat` means you were already told the same thing (with the same `--key` in the last 24 hours, or the same words in the last 20); `digest` means it waits for the daily digest. Send it with `--urgent` if it cannot wait, or give a different `--key`. |
+| Tapping a phone notification opens nothing | It has no link, and AgentX does not know your phone's address for this computer. Set `notifications.publicUrl` (see [What a tap opens](#what-a-tap-opens)), or send it with `--url`. |
+| `agentx notify` says `the phone cannot open http://localhost...` | The link points at this computer's own address, which the phone cannot reach. Use the Tailscale address instead, for example `https://my-mac.example.ts.net/...`. |
 | A message stays `sent` although you read it | Seen comes from the phone app's read mark and the Desk. Reading the notification on the lock screen does not count. Tap it in **Alerts**. |
 | `/send` answers `refused` | The channel is down. Check `channels` in `curl -s http://127.0.0.1:18800/health` for the reason, fix it, or switch it on again if you switched it off. |
 | A script's message is sent every time even though it says the same thing | A message shorter than 40 characters is never taken for a repeat. Give it a `--key`. |

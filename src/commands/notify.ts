@@ -17,6 +17,7 @@ import { resolveRegion } from "@/computer-use/capture"
 import { readScreenSettings } from "@/computer-use/capture-settings"
 import { defaultNotifyChannel } from "@/notify/push-settings"
 import { noticeRuleBreak, withTodo } from "@/approvals/screen-gate"
+import { notifyLinks, type PushButton } from "@/notify/links"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -38,7 +39,7 @@ const DAEMON = process.env.AGENTX_DAEMON_URL ?? "http://127.0.0.1:18800"
  *  than passed alongside. Sending it as its own field looked like it
  *  worked: the push arrived, with the default title, and the real one
  *  silently discarded. */
-function daemonSender(defaultChannel: string, defaultChatId: string, told?: Record<string, unknown>): { send: Sender; keptBack: () => string | null } {
+function daemonSender(defaultChannel: string, defaultChatId: string, told?: Record<string, unknown>, links?: { click?: string; buttons: PushButton[] }): { send: Sender; keptBack: () => string | null } {
   // The told-the-owner gate (#1126) may keep a notice back: already told,
   // or a nag kept for the daily digest. The daemon says so in its answer.
   let keptBack: string | null = null
@@ -54,6 +55,10 @@ function daemonSender(defaultChannel: string, defaultChatId: string, told?: Reco
         chatId: chatId ?? defaultChatId,
         text,
         ...(told ? { told } : {}),
+        // What a tap opens (#1652); without it the daemon picks the
+        // request's Hub page, or the Hub.
+        ...(links?.click ? { click: links.click } : {}),
+        ...(links?.buttons.length ? { buttons: links.buttons } : {}),
       }),
     })
     if (!res.ok) {
@@ -94,7 +99,9 @@ export const notify = new Command()
   .option("--priority <n>", "1 (min) to 5 (max)", "4")
   .option("--urgent", "deliver even during Focus, and even if the same thing was told already")
   .option("--key <id>", "what it is about, so it is told once across channels (default: its text)")
-  .option("--request <id>", "the open request it belongs to")
+  .option("--request <id>", "the open request it belongs to; with no --url, a tap on the push opens its Hub page")
+  .option("--url <url>", "the link a tap on the push opens; also shown as an Open button")
+  .option("--button <label=url>", "a link button, repeatable; at most 3 links with --url", (v: string, acc: string[] = []) => [...acc, v])
   .option("--digest", "a nag (disk low, a channel down): wait for the daily digest instead of a push")
   .option("--told", "what the owner was told in the last 24 hours, by outcome")
   .option("--channel <name>", "delivery channel (default: notifications.channel, else push when it is on, else ntfy)")
@@ -170,7 +177,15 @@ export const notify = new Command()
       textKey: true,
       from: opts.from,
     }
-    const sender = daemonSender(channel, opts.chatId, told)
+    // Links the phone cannot open are refused here, before anything is sent.
+    let links: { click?: string; buttons: PushButton[] }
+    try {
+      links = notifyLinks(opts.url, opts.button)
+    } catch (e: any) {
+      console.log(chalk.red(`  not sent: ${e?.message ?? e}`))
+      process.exit(1)
+    }
+    const sender = daemonSender(channel, opts.chatId, told, links)
     const send = sender.send
     // Kept back by the gate: nothing reached the phone, so nothing shows here either.
     const gatedAlert = async (title: string, text: string) => { if (!sender.keptBack()) await sendAlert(title, text) }

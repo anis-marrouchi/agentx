@@ -1070,6 +1070,10 @@ Show or change screen capture settings (agentx.json `screen`).
 | `--priority <n>` | `4` | 1 (min) to 5 (max). Used by ntfy only. |
 | `--urgent` | — | Deliver even during Focus. |
 | `--channel <name>` | `notifications.channel`, else `push` when it is on, else `ntfy` | Delivery channel. |
+| `--key <id>` | its text | What it is about, so it is told once across channels. |
+| `--request <id>` | — | The open request it belongs to. With no `--url`, a tap on the push opens its Hub page. |
+| `--url <url>` | — | The link a tap on the push opens. Also shown as an **Open** button. |
+| `--button <label=url>` | — | A link button. Repeatable; at most 3 links, `--url` included. |
 | `--chat-id <id>` | `default` | Channel address. |
 | `--no-sound` | — | Do not play a sound on this machine. |
 | `--no-banner` | — | Do not show a banner on this machine. |

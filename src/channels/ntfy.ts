@@ -1,4 +1,5 @@
 import type { CallRing, ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
+import { defaultPushLink, isPhoneLink, MAX_PUSH_BUTTONS } from "@/notify/links"
 
 // --- ntfy channel — push notifications to the operator's phone ---
 //
@@ -29,6 +30,11 @@ export interface NtfyConfig {
   defaultPriority?: number
   /** Notification title. Per-message titles override it. */
   defaultTitle?: string
+  /** Not in the channel's config schema: the origin a phone reaches the
+   *  Hub at (notifications.publicUrl). A push with no link of its own
+   *  opens its request's Hub page, or the Hub, when this is set (#1652).
+   *  A function, so a config reload takes effect without a restart. */
+  hubOrigin?: () => string | undefined
   /** Test hook, not in the config schema: waits between attempts when a
    *  publish is safe to repeat. One attempt more than there are entries. */
   retryDelaysMs?: number[]
@@ -152,13 +158,22 @@ export class NtfyAdapter implements ChannelAdapter {
     Object.assign(headers, ringHeaders(msg.ring))
 
     // URL buttons map onto ntfy's view actions, so an alert can carry
-    // "open the MR" without the operator hunting for it.
-    if (msg.buttons?.length) {
-      const actions = msg.buttons
-        .slice(0, 3)  // ntfy caps at 3
+    // "open the MR" without the operator hunting for it. Links the phone
+    // cannot open (loopback, not http) are left out.
+    const buttons = (msg.buttons ?? []).filter(b => isPhoneLink(b.url)).slice(0, MAX_PUSH_BUTTONS)
+    if (buttons.length) {
+      const actions = buttons
         .map(b => `view, ${b.label.replace(/[,;]/g, " ")}, ${b.url}`)
         .join("; ")
       headers["Actions"] = encodeHeader(actions)
+    }
+    // A tap on the notification itself opens something (#1652): the
+    // push's own link, else its first button, else its request's Hub page
+    // or the Hub. A ringing call keeps its own tap link (set above).
+    if (!headers["Click"]) {
+      const click = [msg.click, buttons[0]?.url, defaultPushLink(this.config.hubOrigin?.(), msg.told?.requestId)]
+        .find(u => isPhoneLink(u))
+      if (click) headers["Click"] = click
     }
 
     const url = `${this.serverUrl()}/${encodeURIComponent(topic)}`

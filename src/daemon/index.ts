@@ -224,6 +224,7 @@ import { GUIDE_INSTRUCTION } from "@/voice/guide"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { callAppPath, type CallRing } from "@/channels/types"
+import { hubOrigin } from "@/notify/links"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath } from "@/daemon/voice-requests-api"
@@ -3721,6 +3722,8 @@ export class AgentXDaemon {
             token: ntfyCfg.token,
             defaultPriority: ntfyCfg.defaultPriority,
             defaultTitle: ntfyCfg.defaultTitle,
+            // A push with no link opens its request's Hub page (#1652).
+            hubOrigin: () => hubOrigin(this.config),
           },
           this.log,
         )
@@ -7819,6 +7822,9 @@ export class AgentXDaemon {
               buttons: body.buttons as any,
               poll: body.poll as any,
               media: body.media as any,
+              // What a tap on a phone push opens (#1652). `url` is the
+              // short form `agentx notify --url` sends.
+              click: typeof body.click === "string" ? body.click : typeof body.url === "string" ? body.url : undefined,
               told,
             }).catch((e) => {
               if (row !== undefined) gate?.outcome(row, "failed")
@@ -9374,6 +9380,8 @@ export class AgentXDaemon {
         parseMode: typeof body.parseMode === "string" ? body.parseMode : undefined,
         replyTo: typeof body.replyTo === "string" ? body.replyTo : undefined,
         buttons: Array.isArray(body.buttons) ? body.buttons : undefined,
+        // What a tap on the push opens (#1652); a relay carries it on.
+        click: typeof body.click === "string" ? body.click : undefined,
         // Posts as this agent (GitLab/GitHub identity), like a live reply.
         agentId: typeof body.agentId === "string" ? body.agentId : undefined,
         // Set by a push relay, so a relay never forwards a relayed message.

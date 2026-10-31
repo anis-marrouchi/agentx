@@ -87,7 +87,7 @@ export function buildPushPayload(msg: OutgoingMessage, defaultTitle = "AgentX"):
   const payload: PushPayload = {
     title: clip(split.title || defaultTitle, MAX_TITLE),
     body: split.body,
-    url: msg.ring?.state === "ringing" ? callAppPath(msg.ring.callId) : actions[0]?.url ?? DEFAULT_OPEN_URL,
+    url: msg.ring?.state === "ringing" ? callAppPath(msg.ring.callId) : (msg.click && msg.click.length <= MAX_URL ? msg.click : actions[0]?.url ?? DEFAULT_OPEN_URL),
     actions,
     ...(msg.ring ? { call: { id: msg.ring.callId, state: msg.ring.state, urgent: msg.ring.urgent } } : {}),
   }
@@ -190,6 +190,7 @@ export interface PushRelayPayload {
   chatId: string
   text: string
   buttons?: OutgoingMessage["buttons"]
+  click?: string
   relayed: true
   /** The relaying node's name, so the host can find its phones. */
   origin?: string
@@ -225,6 +226,7 @@ export class PushRelayAdapter implements ChannelAdapter {
       chatId: msg.chatId || "default",
       text: msg.text,
       ...(msg.buttons?.length ? { buttons: msg.buttons } : {}),
+      ...(msg.click ? { click: msg.click } : {}),
       relayed: true,
       ...(this.origin ? { origin: this.origin } : {}),
     })

@@ -1292,6 +1292,14 @@ const notificationsSchema = z.object({
    *  Unset: `push` (the phone app) when channels.push is enabled, else
    *  `ntfy`, so upgrading never points notify at a channel that is off. */
   channel: z.string().optional(),
+  /** The address a phone reaches the Hub at, such as
+   *  https://my-mac.example.ts.net (#1652). A push with no link of its own
+   *  opens its request's Hub page, or the Hub, when tapped. Unset:
+   *  calls.phone.appUrl. Never localhost: the phone could not open it. */
+  publicUrl: z.string()
+    .regex(/^https?:\/\/[^/\s]+$/, "use an origin like https://my-mac.example.ts.net")
+    .refine((u) => !/^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1?\])/i.test(u), "the phone cannot open localhost or 127.0.0.1: use the tailnet address")
+    .optional(),
   /** Notify on these events */
   on: z.object({
     taskComplete: z.boolean().default(true),

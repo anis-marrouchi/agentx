@@ -216,6 +216,7 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 | `notifications.destination.chatId` | string | required | The chat on that channel. |
 | `notifications.destination.accountId` | string | — | Which account on that channel. |
 | `notifications.channel` | string | — | Where `agentx notify` and messages held during Focus go when no channel is given, for example `push` or `ntfy`. Unset: `push` when `channels.push.enabled` is on, otherwise `ntfy`. |
+| `notifications.publicUrl` | string (an origin) | unset | The address your phone reaches this computer at, such as `https://my-mac.example.ts.net`. A phone notification with no link of its own opens its request on the Hub, or the Hub, when tapped. Unset: `calls.phone.appUrl`. `localhost` and `127.0.0.1` are refused. |
 | `notifications.on` | object | `{}` | Which events send a message. |
 | `notifications.on.taskComplete` | boolean | `true` | A long task finished. |
 | `notifications.on.taskError` | boolean | `true` | A task failed. |

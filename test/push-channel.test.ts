@@ -30,6 +30,11 @@ function adapter(sender: PushSender, over: Partial<ConstructorParameters<typeof 
 }
 
 describe("buildPushPayload", () => {
+  it("opens the push's own link when tapped, ahead of its first button (#1652)", () => {
+    const p = buildPushPayload({ channel: "push", chatId: "default", text: "hi", click: "https://example.com/v", buttons: [{ label: "B", url: "https://example.com/b" }] })
+    expect(p.url).toBe("https://example.com/v")
+  })
+
   it("takes the title from the first line and buttons as actions", () => {
     const p = buildPushPayload({
       channel: "push", chatId: "default", text: "Build failed\nThe nightly job stopped.",
