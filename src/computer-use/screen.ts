@@ -1,5 +1,6 @@
 import { homedir } from "node:os"
-import { packageRoot, resolveHelper } from "@/desktop/install"
+import { packageRoot } from "@/desktop/install"
+import { helperMissingMessage, resolveDesktopHelper } from "./helper"
 import { execFile } from "child_process"
 import { promisify } from "util"
 import { existsSync } from "fs"
@@ -9,7 +10,14 @@ import type { UICandidate } from "@/decisions/seats/ui-element"
 
 const run = promisify(execFile)
 
-export const HELPER = resolveHelper(packageRoot(), homedir(), process.env.AGENTX_MAC_HELPER)
+/** The desktop helper for this OS (./helper.ts). Empty where this OS has
+ *  none, so `existsSync(HELPER)` is false and callers show HELPER_MISSING. */
+export const HELPER = resolveDesktopHelper({
+  platform: process.platform, root: packageRoot(), home: homedir(), env: process.env, exists: existsSync,
+}) ?? ""
+
+/** Why HELPER cannot run here, in plain words. */
+export const HELPER_MISSING = helperMissingMessage(process.platform)
 
 // --- Reading the screen, with a fallback that changes what is possible ---
 //
@@ -55,7 +63,7 @@ const THIN_TREE = 6
 export const READ_MAX = 1000
 
 export async function readScreen(opts: { max?: number; ocr?: boolean; request?: string } = {}): Promise<ScreenRead> {
-  if (!existsSync(HELPER)) throw new Error("helper not built — run apps/mac-helper/build.sh")
+  if (!existsSync(HELPER)) throw new Error(HELPER_MISSING)
 
   const { stdout } = await run(HELPER, ["read", "--max", String(READ_MAX)], { maxBuffer: 8 * 1024 * 1024 })
   const snap = JSON.parse(stdout) as {

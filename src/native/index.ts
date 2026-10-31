@@ -1,5 +1,6 @@
 import { macosAdapter, type MacosIo } from "./macos"
 import { noneAdapter } from "./none"
+import { windowsAdapter, type WindowsIo } from "./windows"
 import type { NativeAdapter } from "./types"
 
 export * from "./types"
@@ -10,13 +11,14 @@ export type NativeAdapterChoice = "auto" | "none"
 export type NativeConfig = { native?: { adapter?: NativeAdapterChoice }; reminders?: { command?: string } }
 
 /** Programs an adapter runs, so tests can stand in for them. */
-export type NativeIo = MacosIo
+export type NativeIo = MacosIo & WindowsIo
 
 /** Builds the adapter for one OS. Each OS adapter registers here. */
 export type NativeAdapterFactory = (cfg: NativeConfig, io: NativeIo) => NativeAdapter
 
 const FACTORIES: Partial<Record<NodeJS.Platform, NativeAdapterFactory>> = {
   darwin: macosAdapter,
+  win32: windowsAdapter,
 }
 
 /** The adapter for this machine. `native.adapter: "none"` forces none on

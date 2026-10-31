@@ -13,7 +13,7 @@ import {
   type UICandidate,
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
-import { HELPER, readScreen, rectFor, type ScreenRead } from "@/computer-use/screen"
+import { HELPER, HELPER_MISSING, readScreen, rectFor, type ScreenRead } from "@/computer-use/screen"
 import { closeBlocked } from "@/computer-use/candidates"
 import { daemon } from "@/commands/call"
 import { GUIDE_EXPRESSIONS, GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
@@ -131,7 +131,7 @@ export const point = new Command()
       process.exit(1)
     }
     if (!existsSync(HELPER)) {
-      console.log(chalk.red(`  helper not built — run apps/mac-helper/build.sh`))
+      console.log(chalk.red(`  ${HELPER_MISSING}`))
       process.exit(1)
     }
 

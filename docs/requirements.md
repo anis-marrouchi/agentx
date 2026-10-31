@@ -211,7 +211,7 @@ Official help: [Accessibility access](https://support.apple.com/guide/mac-help/a
 
 ## Computer use
 
-Install the desktop helper and grant the permissions above first. Then choose the capability:
+Computer use runs on macOS today; Windows support is in progress (see [Desktop helper and Windows](reference/desktop-helper.md)). Install the desktop helper and grant the permissions above first. Then choose the capability:
 
 | Capability | Additional requirement | Check |
 |---|---|---|

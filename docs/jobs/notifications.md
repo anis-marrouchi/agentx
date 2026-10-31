@@ -173,7 +173,7 @@ agentx notifications local --icon ""   # back to the AgentX logo
 :::
 
 ::: details Where AgentX looks for the helper
-In this order: the path in the `AGENTX_MAC_HELPER` environment variable, if set; then `~/Applications/AgentX Helper.app`; then a helper built inside the AgentX installation (`apps/mac-helper/build`). It does not depend on the folder you run `agentx` from.
+In this order: the path in the `AGENTX_DESKTOP_HELPER` environment variable, if set (the older `AGENTX_MAC_HELPER` also works on a Mac); then `~/Applications/AgentX Helper.app`; then a helper built inside the AgentX installation (`apps/mac-helper/build`). It does not depend on the folder you run `agentx` from. For Windows, see [Desktop helper and Windows](../reference/desktop-helper.md).
 :::
 
 ## 3. Get task messages in a chat app

@@ -2,7 +2,7 @@ import { spawn } from "child_process"
 import { existsSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { HELPER } from "./screen"
+import { HELPER, HELPER_MISSING } from "./screen"
 import { BUILT_IN_REGIONS, DEFAULT_SCREEN, type ScreenSettings } from "./capture-settings"
 
 // --- Capturing the screen at the right moment ---
@@ -122,7 +122,7 @@ export function captureShot(
   deps: { settings?: ScreenSettings; maxPixels?: number; helper?: string; spawn?: Spawn } = {},
 ): Promise<Shot> {
   const helper = deps.helper ?? HELPER
-  if (!existsSync(helper)) return Promise.reject(new Error("helper not built — run apps/mac-helper/build.sh"))
+  if (!existsSync(helper)) return Promise.reject(new Error(HELPER_MISSING))
   const settings = deps.settings ?? DEFAULT_SCREEN
   const out = opts.out ?? join(tmpdir(), `agentx-capture-${Date.now()}-${process.pid}.png`)
   const args = captureArgs(region, out, opts, settings, deps.maxPixels)
