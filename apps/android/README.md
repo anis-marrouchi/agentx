@@ -134,7 +134,9 @@ WhatsApp call? The debug APK has a second icon, **AgentX watch spike**.
    first with Telecom's Bluetooth route and then with
    `setCommunicationDevice` (`startBluetoothSco` before Android 12).
    Next it says a test phrase, records 5 s and plays the recording back.
-   Hanging up on the watch ends the call.
+   Hanging up on the watch ends the call. Keep the spike screen open and
+   the phone's screen on during a run: Android 11+ records silence for an
+   app in the background, which shows as a false microphone FAIL.
 
 The screen and `adb logcat -s WatchSpike` show each step, with PASS or
 FAIL where the phone can tell: the audio route, the microphone's device

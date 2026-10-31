@@ -27,6 +27,8 @@ import android.telecom.TelecomManager
 import android.util.Log
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.math.abs
 
@@ -69,6 +71,7 @@ object SpikeAccount {
         if (Build.VERSION.SDK_INT >= 29) extras.putBoolean(PhoneAccount.EXTRA_ADD_SELF_MANAGED_CALLS_TO_INCALLSERVICE, true)
         val account = PhoneAccount.builder(handle(ctx), "AgentX")
             .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
+            .setSupportedUriSchemes(listOf(PhoneAccount.SCHEME_SIP))
             .setExtras(extras)
             .build()
         ctx.getSystemService(TelecomManager::class.java).registerPhoneAccount(account)
@@ -107,7 +110,7 @@ class SpikeConnection(private val ctx: Context) : Connection() {
     }
 
     @Volatile private var ended = false
-    private var started = false
+    @Volatile private var started = false
     private val audio = ctx.getSystemService(AudioManager::class.java)
 
     init {
@@ -142,7 +145,8 @@ class SpikeConnection(private val ctx: Context) : Connection() {
         SpikeLog.add("Route: ${routeName(state.route)} (supported: ${routeNames(state.supportedRouteMask)})")
     }
 
-    fun end(cause: Int) {
+    /** Called from Telecom's thread and the test thread; runs once. */
+    @Synchronized fun end(cause: Int) {
         if (ended) return
         ended = true
         setDisconnected(DisconnectCause(cause))
@@ -234,24 +238,26 @@ class SpikeConnection(private val ctx: Context) : Connection() {
     private fun speak(text: String): Boolean {
         val ready = CountDownLatch(1)
         val done = CountDownLatch(1)
-        var ok = false
-        var tts: TextToSpeech? = null
+        // Written on the TTS threads, read here.
+        val ok = AtomicBoolean(false)
+        val tts = AtomicReference<TextToSpeech?>()
         Handler(Looper.getMainLooper()).post {
-            tts = TextToSpeech(ctx) { status -> ok = status == TextToSpeech.SUCCESS; ready.countDown() }
+            tts.set(TextToSpeech(ctx) { status -> ok.set(status == TextToSpeech.SUCCESS); ready.countDown() })
         }
-        if (!ready.await(10, TimeUnit.SECONDS) || !ok) return false
-        val t = tts ?: return false
+        if (!ready.await(10, TimeUnit.SECONDS) || !ok.get()) return false
+        val t = tts.get() ?: return false
         t.setAudioAttributes(voiceAttrs)
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) {}
             override fun onDone(id: String?) { done.countDown() }
             @Deprecated("Deprecated in Java")
-            override fun onError(id: String?) { ok = false; done.countDown() }
+            override fun onError(id: String?) { ok.set(false); done.countDown() }
         })
         t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "phrase")
-        done.await(20, TimeUnit.SECONDS)
+        val finished = done.await(20, TimeUnit.SECONDS)
         t.shutdown()
-        return ok
+        if (!finished) SpikeLog.add("Test phrase timed out after 20 s")
+        return finished && ok.get()
     }
 
     /** 5 s from the call's microphone, with the device it came from. */
