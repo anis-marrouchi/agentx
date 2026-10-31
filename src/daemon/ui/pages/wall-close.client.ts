@@ -11,7 +11,8 @@
 // anyone else anyway (#1454). The calls are Needs you's,
 // /api/admin/wall/request/handoff and /close, sent to the node that keeps
 // the post, like a comment. The words in the comment box go with it: the
-// hand-off note, or why it is done or dropped.
+// hand-off note, or why it is done or dropped. They are read when Confirm is
+// pressed, so an edit made while the confirm line shows is what is sent.
 
 export const WALL_CLOSE_SCRIPT = String.raw`
   /** The agents on the post's node: a request is handed to one of those,
@@ -21,6 +22,7 @@ export const WALL_CLOSE_SCRIPT = String.raw`
     return (node && node.agents) || [];
   }
   /** The row under the comment box: Hand to…, Done and Drop, then the confirm. */
+  function closeWords() { return ($('wdo-text') && $('wdo-text').value || '').trim(); }
   function closeHtml(p) {
     if (!window.AX_WALL_SETTINGS || !isOpen(p)) return '';
     var c = S.closing && S.closing.id === p.id ? S.closing : null, off = c && c.sending ? ' disabled' : '';
@@ -32,7 +34,7 @@ export const WALL_CLOSE_SCRIPT = String.raw`
     if (c) {
       var t = '“' + (p.headline || p.id) + '”';
       var lead = c.kind === 'handoff' ? 'Hand ' + t + ' to ' + nameOf(c.agent) + '.' : c.kind === 'done' ? 'Close ' + t + ' as done.' : 'Drop ' + t + '.';
-      var said = c.text ? ' Your words above go with it.' : '';
+      var said = closeWords() ? ' Your words above go with it.' : '';
       confirm = '<div class="wdc__confirm" role="group" aria-label="Confirm"><p><b>' + esc(lead) + '</b>' + esc(said) + ' It cannot be taken back.</p>' +
         '<span class="wdc__cbtns"><button type="button" class="ax-btn ax-btn--primary" data-act="close-go"' + off + '>Confirm</button>' +
         '<button type="button" class="ax-btn ax-btn--ghost" data-act="close-back"' + off + '>Back</button></span></div>';
@@ -49,13 +51,14 @@ export const WALL_CLOSE_SCRIPT = String.raw`
   function closeAsk(kind, agent) {
     var p = findPost(S.post);
     if (!p) return;
-    S.closing = { id: p.id, kind: kind, agent: agent || '', text: ($('wdo-text') && $('wdo-text').value || '').trim() };
+    S.closing = { id: p.id, kind: kind, agent: agent || '', said: !!closeWords() };
     paintClose();
   }
   async function closeSend() {
     var p = findPost(S.post), c = S.closing;
     if (!p || !c || c.id !== p.id || c.sending) return;
     c.sending = true;
+    c.text = closeWords();
     paintClose();
     note('Sending…');
     var r = c.kind === 'handoff'
@@ -71,5 +74,12 @@ export const WALL_CLOSE_SCRIPT = String.raw`
   document.addEventListener('change', function (ev) {
     var t = ev.target;
     if (t && t.id === 'wdo-hand' && t.value) closeAsk('handoff', t.value);
+  });
+  /** The confirm line says whether the box's words go with it; keep it true as they are typed. */
+  document.addEventListener('input', function (ev) {
+    var c = S.closing;
+    if (!ev.target || ev.target.id !== 'wdo-text' || !c || c.sending || c.id !== S.post) return;
+    var has = !!closeWords();
+    if (has !== !!c.said) { c.said = has; paintClose(); }
   });
 `
