@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "fs"
 import { restartCommand } from "./daemon-restart"
 import { checkoutMoved, pinnedBuildEnv, soakCommand, soakGate } from "./daemon-soak"
 import { lastBoot, statusBlock, stoppedBlock, type StatusService } from "./daemon-status"
+import { computerUseSupport, supportLine } from "@/computer-use/support"
 
 // --- agentx daemon: start/stop/status/logs ---
 
@@ -257,8 +258,11 @@ daemon
         if (r.ok) { const d = await r.json() as any; service = { service: d.service, selfRestart: d.selfRestart } }
       } catch { /* no Service line */ }
 
+      // Read here, not by the daemon: this shell carries the desktop
+      // session's variables (X11 or Wayland), a service may not (#1595).
+      const computerUse = computerUseSupport(process.platform, process.env)
       if (opts.json) {
-        console.log(JSON.stringify({ ...data, ...service }, null, 2))
+        console.log(JSON.stringify({ ...data, ...service, computerUse }, null, 2))
         return
       }
 
@@ -266,6 +270,7 @@ daemon
       console.log(chalk.bold(`  ${data.node.name}`) + chalk.dim(` (${data.node.id})`))
       console.log(chalk.green("  Status: running") + chalk.dim(` — uptime ${formatDuration(data.uptime)}`))
       for (const line of statusBlock(data, service, Date.now(), Intl.DateTimeFormat().resolvedOptions().timeZone)) console.log(`  ${line}`)
+      console.log(`  ${"Computer use".padEnd(16)}${supportLine(computerUse)}`)
       // A GitLab token GitLab now rejects: every write with it fails (#984).
       if (data.gitlab?.warning) console.log(chalk.red(`  GitLab: ${data.gitlab.warning}`))
       console.log()

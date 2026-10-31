@@ -226,6 +226,24 @@ Some features hand a small, fixed-choice question to a fast "decision" model ins
 
 **Ready when:** the specific command you intend to use works. `point` highlights without clicking; lessons can click and type. [The computer-use walkthrough](tutorials/record-vscode.md) explains how to check results.
 
+### Computer use on Linux and Windows
+
+Computer use runs on macOS only today. A Windows version and an Ubuntu version are planned. On Linux, what a future version can do depends on the **display session**: the part of the desktop that draws windows. Ubuntu offers two at the login screen, Wayland (the default) and Xorg, also called X11.
+
+| Session | Read the screen | Press controls | Move the pointer and show the AgentX cursor |
+|---|---|---|---|
+| X11 ("Ubuntu on Xorg") | Yes | Yes | Yes |
+| Wayland (Ubuntu's default) | Yes | Yes, through accessibility only | No, Wayland does not allow it |
+| No desktop (a server or SSH shell) | No | No | No |
+
+To see what your machine allows:
+
+1. **Terminal:** open a terminal inside your desktop session, not over SSH.
+2. **Terminal:** run `agentx daemon status`.
+3. Read the **Computer use** line. On a Mac it says `available (AgentX Helper)`. On Linux it names your session and what will work there.
+
+`agentx daemon status --json` gives the same answer under `computerUse`.
+
 ## Terminal interface
 
 1. Install OpenCode (a terminal-based coding assistant) using its [official v2 instructions](https://opencode.ai/v2/docs).
@@ -279,6 +297,7 @@ There is no measured universal RAM or disk minimum for AgentX yet. Local speech 
 - **`docker version` shows no server:** Docker Desktop isn't running. Start it and try again.
 - **`node --version` is below `v22.19` or above `v26`:** install Node.js 22 from [nodejs.org](https://nodejs.org/en/download). AgentX doesn't run on other versions: every `agentx` command stops with `AgentX needs Node.js 22.19 or newer, up to 26`.
 - **Installing reports a native compilation error:** install the [node-gyp platform prerequisites](https://github.com/nodejs/node-gyp#installation), then install again.
+- **The Computer use line says Wayland and you want the AgentX cursor:** log out, click the gear icon on the login screen, pick **Ubuntu on Xorg**, and log in again.
 - **An app is missing from System Settings › Privacy & Security:** use the feature once so the app asks for access, then look again.
 - **`ffmpeg was not found` during `agentx desktop install`:** finish the FFmpeg step under local Whisper, then run the install again.
 - **Anything else:** run `agentx doctor` and follow [It's not answering](help/its-not-answering.md).
