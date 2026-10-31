@@ -85,6 +85,35 @@ describe("Hub Settings: Diagnostics (#1449)", () => {
     expect(w.writes()).toEqual([])
   })
 
+  it("closes the stream when the owner leaves Settings for another Hub page", async () => {
+    const w = open()
+    await w.settle()
+    await w.click({ "data-st-act": "dg-tab", "data-id": "logs" })
+    const es = w.sources[0]
+    es.on.open({})
+    es.on.line({ data: "[cx] before" })
+    expect(es.closed).toBe(false)
+    await w.go("#status=open&view=feed")
+    es.on.line({ data: "[cx] after" })
+    expect(es.closed).toBe(true)
+    expect(w.sources).toHaveLength(1)
+  })
+
+  // Guard for the per-open token: only the latest open may make a stream.
+  it("opens one stream when Resume, Pause and Resume come before the first ticket", async () => {
+    const w = open()
+    await w.settle()
+    await w.click({ "data-st-act": "dg-tab", "data-id": "logs" })
+    await w.click({ "data-st-act": "dg-pause" })
+    expect(w.sources[0].closed).toBe(true)
+    // Three clicks in one go: each open is still waiting for its ticket.
+    void w.click({ "data-st-act": "dg-pause" })
+    void w.click({ "data-st-act": "dg-pause" })
+    await w.click({ "data-st-act": "dg-pause" })
+    expect(w.sources).toHaveLength(2)
+    expect(w.sources[1].closed).toBe(false)
+  })
+
   it("switches tabs, filters by agent and row count, and reads the doctor checks", async () => {
     const w = open()
     await w.settle()

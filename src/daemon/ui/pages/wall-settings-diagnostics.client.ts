@@ -130,10 +130,12 @@ export const WALL_SETTINGS_DIAGNOSTICS_SCRIPT = String.raw`
       '<pre class="wsdg__logs" id="st-dg-logs">' + stDgLinesHtml(d) + '</pre>';
   }
   function stDgStatus(d, text) { d.status = text; var el = $('st-dg-status'); if (el && S.st.dg === d) el.textContent = text; }
-  function stDgWanted(d) { return S.st.dg === d && d.tab === 'logs' && !d.paused; }
+  // Only while the owner is on Settings › Diagnostics › Logs: leaving for
+  // another Hub page (the feed, a task) closes the stream too.
+  function stDgWanted(d) { return S.page === 'settings' && S.st.dg === d && d.tab === 'logs' && !d.paused; }
   function stDgLine(d, line) {
     if (!line) return;
-    if (S.st.dg !== d || d.tab !== 'logs') { stDgClose(d); return; }
+    if (S.st.dg !== d || d.tab !== 'logs' || S.page !== 'settings') { stDgClose(d); return; }
     d.logs.push(line);
     if (d.logs.length > ST_DG_MAX_LINES) d.logs.splice(0, d.logs.length - ST_DG_MAX_LINES);
     var box = $('st-dg-logs'), f = d.filter.toLowerCase();
@@ -153,10 +155,13 @@ export const WALL_SETTINGS_DIAGNOSTICS_SCRIPT = String.raw`
   }
   function stDgOpen(d) {
     if (d.es || !stDgWanted(d)) return;
-    d.es = 'opening';
+    // A token per open: Pause then Resume while the ticket is in flight
+    // starts a second open, and only the latest one may make a stream.
+    var me = { opening: true };
+    d.es = me;
     stDgStatus(d, 'connecting…');
     stDgTicket().then(function (st) {
-      if (d.es !== 'opening') return;
+      if (d.es !== me) return;
       var es = new EventSource('/api/admin/logs/stream' + st, { withCredentials: true });
       d.es = es;
       es.addEventListener('line', function (ev) { stDgLine(d, ev.data); });
@@ -168,16 +173,18 @@ export const WALL_SETTINGS_DIAGNOSTICS_SCRIPT = String.raw`
         if (d.es === es && es.readyState === 2) { d.es = null; stDgRetry(d, 3000); }
       });
     }).catch(function () {
-      if (d.es === 'opening') d.es = null;
+      if (d.es !== me) return;
+      d.es = null;
       stDgStatus(d, 'disconnected (retrying)');
       stDgRetry(d, 5000);
     });
   }
   function stDgRetry(d, ms) { setTimeout(function () { stDgOpen(d); }, ms); }
-  /** Called by settingsShow() when another section opens, and on a tab change. */
+  /** Called by settingsShow() when another section opens, on a tab change,
+   *  on Pause, and by stDgLine() once the owner has left Settings. */
   function stDgClose(d) {
     if (!d) return;
-    if (d.es && d.es !== 'opening') { try { d.es.close(); } catch (e) { /* already closed */ } }
+    if (d.es && !d.es.opening) { try { d.es.close(); } catch (e) { /* already closed */ } }
     d.es = null;
   }
 
