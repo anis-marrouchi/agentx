@@ -56,6 +56,12 @@ describe("Windows adapter (#1594)", () => {
     expect(await windowsAdapter({}, down).banner!.post({ title: "t", message: "m" })).toBe("failed")
   })
 
+  it("hands the helper a title or message that starts with -- as the flag's value", async () => {
+    const io = fakeIo()
+    await windowsAdapter({}, io).banner!.post({ title: "--message", message: "--help" })
+    expect(io.run.mock.calls[0]).toEqual([HELPER, ["notify", "--title", "--message", "--message", "--help"]])
+  })
+
   it("keeps quotes in a banner from becoming PowerShell", () => {
     const s = toastScript("it's", "a ’curly’ $(Remove-Item x)")
     expect(s).toContain("CreateTextNode('it''s')")

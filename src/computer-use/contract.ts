@@ -5,6 +5,11 @@
 // and prints {"ok":false,"error":"..."}. Long-lived verbs read lines on
 // stdin until EOF, so they never outlive the process that started them.
 //
+// A flag's value is always the argument right after it, even when that
+// value starts with `--` ("--help" as a banner message is text). A helper
+// reads flags left to right by position; it never searches argv for a
+// flag's name, which would match a value spelled like one.
+//
 // Every helper, whatever the OS, answers these verbs with the same output.
 // The macOS helper (apps/mac-helper) is the reference; a Windows helper
 // answers the same verbs, so src/computer-use, point, teach and live-teach

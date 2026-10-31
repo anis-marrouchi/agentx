@@ -55,6 +55,33 @@ describe("helperStatus", () => {
   })
 })
 
+describe("helperStatus on Windows (#1594)", () => {
+  const win = { platform: "win32" as const, helper: "C:\\AgentX\\agentx-helper.exe" }
+
+  it("names PowerShell and the Windows helper path when the helper is missing, never Script Editor", async () => {
+    const s = await helperStatus({ platform: "win32", helper: null })
+    expect(s.state).toBe("missing")
+    expect(s.message).toContain("Windows PowerShell")
+    expect(s.fix).toContain("%LOCALAPPDATA%\\Programs\\AgentX")
+    expect(s.fix).toContain("AGENTX_DESKTOP_HELPER")
+    expect(`${s.message} ${s.fix}`).not.toMatch(/Script Editor|desktop install|macOS/)
+  })
+
+  it("points at Windows Settings when notifications are not allowed", async () => {
+    const s = await helperStatus({ ...win, run: answer('{"ok":true,"authorization":"denied"}') })
+    expect(s.state).toBe("not-allowed")
+    expect(s.message).toContain("Windows does not allow")
+    expect(s.fix).toContain("Settings › System › Notifications")
+  })
+
+  it("asks for a newer helper, not agentx desktop install, when it is outdated", async () => {
+    const s = await helperStatus({ ...win, run: answer(null) })
+    expect(s.state).toBe("outdated")
+    expect(s.fix).toContain("newer agentx-helper.exe")
+    expect(s.fix).not.toContain("desktop install")
+  })
+})
+
 describe("agentx doctor › Notifications", () => {
   const notAllowed = async () => ({ state: "not-allowed" as const, message: "macOS does not allow AgentX Helper to notify", fix: "Open System Settings" })
 
