@@ -20,7 +20,7 @@ import type { WorkSource, WorkItem } from "@/business/work-pool"
 import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
 import { handleWizardGet, handleWizardPost, handleStartDaemonPost, wizardState } from "./setup-wizard"
-import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
+import { handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
@@ -594,10 +594,15 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
-  // Admin panel — ongoing management without editing JSON.
-  if (method === "GET" && path === "/admin") {
-    if (!pageAllowed(req, res, ctx, path)) return
-    handleAdminGet(req, res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
+  // /admin was classic Settings. The Hub's Settings has a section for each
+  // of its tabs (#1428), so old links and bookmarks land there
+  // (classic-routes.ts). Off-box with no session, sign in first with Hub
+  // Settings as next, as /approvals does. /api/admin/... stays.
+  if (method === "GET" && (path === "/admin" || path === "/admin/")) {
+    const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)!
+    if (!pageAllowed(req, res, ctx, to)) return
+    res.writeHead(301, { Location: to })
+    res.end()
     return
   }
   // /approvals was the classic inbox. The Hub's Needs you answers every

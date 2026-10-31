@@ -60,7 +60,7 @@ export interface WallPageOpts {
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
   ["Operations", "/mesh"], ["Monitor", "/monitor"],
-  ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"], ["Settings", "/admin"],
+  ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"],
 ]
 
 /** The status tabs over the feed and the list (#1355): filter value, label. */
@@ -180,8 +180,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const navItems = groups.map((g) =>
     (g.label ? `    <span class="ax-wall__navlbl" aria-hidden="true">${g.label}</span>\n` : "") + g.items.map((i) => `    ${navItemHtml(i)}`).join("\n"),
   ).join("\n") + `\n    <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
-  // The owner's Settings link stays on the Wall (#1428, #1449).
-  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${owner && label === "Settings" ? WALL_SETTINGS_HREF : href}">${label}</a>`).join("")
+  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")
   // Take B's three columns (#1242): a nav on the left, the feed in the
   // middle, Running now, Agents and the dashboard links on the right.
   const body = `<div class="ax-wall">
