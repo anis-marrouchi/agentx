@@ -137,6 +137,16 @@ playsNow.general.listOnHover = false
 let answersPatch = playsNow.patch(from: withAnswers)["general"] as? [String: Any]
 check(answersPatch?["answers"] as? String == "play" && answersPatch?["listOnHover"] as? Bool == false
       && answersPatch?.count == 2, "only the changed answer settings are sent")
+check(withAnswers.general.readySound == nil && withAnswers.general.readySounds == nil,
+      "a daemon from before the soft-sound picker leaves it out")
+let withSound = try! JSONDecoder().decode(VoiceSettings.self, from: Data(newer.replacingOccurrences(
+    of: "\"card\":{\"timeout\":30,\"maxHeight\":320}",
+    with: "\"card\":{\"timeout\":30,\"maxHeight\":320},\"readySound\":\"Pop\",\"readySounds\":[\"Pop\",\"Glass\"]").utf8))
+check(withSound.general.readySound == "Pop" && withSound.general.readySounds == ["Pop", "Glass"], "the soft sound and its choices decode")
+var glass = withSound
+glass.general.readySound = "Glass"
+let soundPatch = glass.patch(from: withSound)["general"] as? [String: Any]
+check(soundPatch?["readySound"] as? String == "Glass" && soundPatch?.count == 1, "only the soft sound is sent")
 
 // --- The character's small animations when idle (#571) ---
 

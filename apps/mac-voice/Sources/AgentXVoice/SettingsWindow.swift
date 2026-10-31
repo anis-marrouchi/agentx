@@ -395,6 +395,15 @@ private struct GeneralTab: View {
                             Text("Wait until I pick it").tag("wait")
                             Text("Play it at once").tag("play")
                         }
+                        if let sounds = draft.general.readySounds, !sounds.isEmpty {
+                            // Picking one plays it once, so the choice is heard.
+                            Picker("Soft sound", selection: Binding(
+                                get: { model.draft?.general.readySound ?? "Pop" },
+                                set: { model.draft?.general.readySound = $0; NSSound(named: $0)?.play() })) {
+                                ForEach(sounds, id: \.self) { Text($0).tag($0) }
+                            }
+                            .disabled((model.draft?.general.answers ?? "wait") != "wait")
+                        }
                         Toggle("Open the list on hover", isOn: Binding(
                             get: { model.draft?.general.listOnHover ?? true },
                             set: { model.draft?.general.listOnHover = $0 }))

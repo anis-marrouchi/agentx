@@ -109,6 +109,9 @@ final class App: NSObject, NSApplicationDelegate {
     /// Counts changes this app sends to the daemon's list: a read of the
     /// list that started before one of them is stale and is dropped.
     private var requestsEpoch = 0
+    /// Did the daemon answer the last read of the list? Nil before the
+    /// first answer.
+    private var daemonReachable: Bool?
     /// The row closed last, with its answer, while Undo shows.
     private var lastClosed: (request: OpenRequests.Request, answer: AgentClient.Answer?)?
     private var undoReset: DispatchWorkItem?
@@ -524,6 +527,11 @@ final class App: NSObject, NSApplicationDelegate {
         requestsWindow.model.onHistory = { [weak self] agent in
             self?.requestsWindow.dismissList()
             HistoryWindow.shared.show(agent: agent)
+        }
+        requestsWindow.model.onAskAgain = { [weak self] id in self?.askAgain(id) }
+        requestsWindow.model.onRetry = { [weak self] in Task { @MainActor in await self?.syncRequests() } }
+        requestsWindow.model.onDashboard = {
+            if let url = URL(string: Config.dashboardURL + "/admin") { NSWorkspace.shared.open(url) }
         }
         statusMenu.onPlayAtOnce = { [weak self] on in self?.setPlayAtOnce(on) }
         // The daemon keeps the list (#1455): read it now and every few
@@ -1084,7 +1092,10 @@ final class App: NSObject, NSApplicationDelegate {
         else { note(OpenRequests.readyNote(name: name)) }
         // Quiet while notifications are held, while someone holds the floor,
         // and while the microphone is open, which would hear it.
-        if !Hold.isOn && !floorWatcher.state.held && !recorder.isRecording { NSSound(named: "Pop")?.play() }
+        // The sound picked in Settings › General › Answers (voice.readySound).
+        if !Hold.isOn && !floorWatcher.state.held && !recorder.isRecording {
+            NSSound(named: settings?.general.readySound ?? "Pop")?.play()
+        }
     }
 
     /// A passing line on the pill at rest, back to the pill's own after
@@ -1147,6 +1158,20 @@ final class App: NSObject, NSApplicationDelegate {
         hoverOpen = nil
         if keyboard { summonPill() }
         requestsWindow.open(.pinned, select: keyboard ? requests.firstSelection : nil)
+        loadingIfSlow()
+    }
+
+    /// Placeholder rows in the list, only while the daemon has not
+    /// answered its first read half a second after the list opened.
+    private func loadingIfSlow() {
+        guard daemonReachable == nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + OpenRequests.loadingAfter) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.daemonReachable == nil, self.requestsWindow.isOpen else { return }
+                self.requestsWindow.model.status = .loading
+                self.requestsWindow.reload()
+            }
+        }
     }
 
     /// Half a second on the pill opens the list, while there is a request
@@ -1161,6 +1186,7 @@ final class App: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self, self.panel.hovering, !self.recorder.isRecording else { return }
                 self.requestsWindow.open(.hover)
+                self.loadingIfSlow()
             }
         }
         hoverOpen = open
@@ -1203,35 +1229,53 @@ final class App: NSObject, NSApplicationDelegate {
             case .answered: cue = r.heard ? .heard : .ready; action = r.heard ? "Show the answer" : "Listen"
             case .failed: cue = .failed; action = "See why"
             }
+            var reason: String?
+            if case .failed(let why) = r.phase { reason = why }
             return RequestsModel.Row(
                 id: r.id, name: name, state: OpenRequests.stateWords(r, now: now),
                 words: OpenRequests.firstWords(r.question),
                 ago: OpenRequests.ago(Int(now.timeIntervalSince(r.sentAt))),
                 cue: cue, isNew: r.isNew,
                 tint: statusMenu.color(of: r.agentID), colors: statusMenu.palette(of: r.agentID),
-                voiceOver: OpenRequests.voiceOver(name: name, r, now: now), action: action)
+                voiceOver: OpenRequests.voiceOver(name: name, r, now: now), action: action, reason: reason)
         }
     }
 
     /// A row picked in the list: an answer not heard plays, a heard one
-    /// shows its text again (Listen again plays it), a failure says why.
-    /// Its agent becomes the one the next words go to, and they continue
-    /// this row: no new row (the daemon keeps one voice conversation per
-    /// agent).
+    /// shows its text again (Listen again plays it), a failure opens in
+    /// place with why and Ask again. Its agent becomes the one the next
+    /// words go to, so they continue that conversation: the daemon runs
+    /// every request in the phone's conversation with the agent, so it is
+    /// the same session and thread as the phone's.
     private func pick(_ id: Int) {
         guard let r = requests.request(id) else { return }
-        requestsWindow.dismissList()
         statusMenu.choose(r.agentID)
         picked = id
         let name = statusMenu.name(of: r.agentID)
+        if case .reason = OpenRequests.pick(r) {
+            markHeard(id)
+            requestsWindow.model.selected = id
+            requestsWindow.model.expanded = requestsWindow.model.expanded == id ? nil : id
+            requestsWindow.reload()
+            return
+        }
+        requestsWindow.dismissList()
         switch OpenRequests.pick(r) {
         case .nothing: note(OpenRequests.continueNote(name: name))
         case .listen: withAnswer(id) { [weak self] in self?.play(id) }
         case .show: withAnswer(id) { [weak self] in self?.showAgain(id) }
-        case .reason(let why):
-            markHeard(id)
-            note("\(name) couldn’t answer: \(why)")
+        case .reason: break
         }
+    }
+
+    /// "Ask again" on a failed row: the same words, in the same row, as a
+    /// follow-up (it waits its turn if the agent has another request out).
+    private func askAgain(_ id: Int) {
+        guard let r = requests.request(id), case .failed = r.phase else { return }
+        requestsWindow.model.expanded = nil
+        picked = id
+        Log.info("request \(id): asked again (\(r.agentID))")
+        follow(id, r.question)
     }
 
     /// Heard here and, through the daemon, on every client.
@@ -1386,7 +1430,18 @@ final class App: NSObject, NSApplicationDelegate {
     /// client, and rows kept across a restart of the app or the daemon.
     private func syncRequests() async {
         let epoch = requestsEpoch
-        guard let remote = await AgentClient.openRequests(), epoch == requestsEpoch else { return }
+        let read = await AgentClient.openRequests()
+        let reachable: Bool
+        if case .unreachable = read { reachable = false } else { reachable = true }
+        if reachable != daemonReachable {
+            // Stopped answering: once, on the pill. The rows stay; the
+            // list says they come back when AgentX does.
+            if !reachable && daemonReachable == true { note(OpenRequests.unreachableNote) }
+            daemonReachable = reachable
+            requestsWindow.model.status = reachable ? .ready : .unreachable
+            requestsWindow.reload()
+        }
+        guard case .rows(let remote) = read, epoch == requestsEpoch else { return }
         let before = requests.requests
         requests.sync(remote)
         // A row found waiting its turn goes once its agent is free.
