@@ -87,7 +87,7 @@ class WatchSpikeConnectionService : ConnectionService() {
     }
 
     override fun onCreateIncomingConnection(account: PhoneAccountHandle?, request: ConnectionRequest?): Connection {
-        SpikeLog.add("Telecom: incoming call created, ringing. Answer on the watch, or with Answer here.")
+        SpikeLog.add("Telecom: incoming call created, ringing. To check the watch, answer on the watch only and don't touch the phone.")
         return SpikeConnection(applicationContext).apply { setRinging() }
     }
 
@@ -125,14 +125,27 @@ class SpikeConnection(private val ctx: Context) : Connection() {
         SpikeLog.add("Telecom: show the incoming call. Check the watch: does it ring and show answer / hang up?")
     }
 
+    // Telecom calls onAnswer for the watch's answer button and for the
+    // phone's own call screen alike; it can't say which. The spike screen's
+    // Answer uses answerHere instead, so that case at least is told apart.
     override fun onAnswer() {
-        SpikeLog.add("Answered")
+        SpikeLog.add("Answered through Telecom: on the watch, or on the phone's own call screen. Write down which on #1636.")
+        activate()
+    }
+
+    /** The spike screen's Answer button. Proves nothing about the watch. */
+    fun answerHere() {
+        SpikeLog.add("Answered on the spike screen, not on the watch. The watch call screen is not checked by this run.")
+        activate()
+    }
+
+    private fun activate() {
         setActive()
         startTest()
     }
 
-    override fun onReject() { SpikeLog.add("Rejected"); end(DisconnectCause.REJECTED) }
-    override fun onDisconnect() { SpikeLog.add("Hung up (watch or phone)"); end(DisconnectCause.LOCAL) }
+    override fun onReject() { SpikeLog.add("Rejected through Telecom (watch or the phone's call screen)"); end(DisconnectCause.REJECTED) }
+    override fun onDisconnect() { SpikeLog.add("Hung up through Telecom (watch or the phone's call screen)"); end(DisconnectCause.LOCAL) }
     override fun onAbort() { SpikeLog.add("Aborted"); end(DisconnectCause.CANCELED) }
 
     override fun onStateChanged(state: Int) {

@@ -3,12 +3,7 @@
      in a release build. See apps/android/README.md, "Watch call spike". -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- A self-managed call: the app's own calls through Telecom. -->
-    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- The call permissions come from the main manifest (Talk to AgentX). -->
 
     <application>
         <activity

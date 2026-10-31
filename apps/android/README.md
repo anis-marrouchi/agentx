@@ -45,6 +45,18 @@ How to build, install, pair and use it, step by step:
 - `PlacesActivity` is the settings screen: the switch, the permissions, the
   places watched, and the way out. The phone app links to it with
   `intent://places#Intent;scheme=agentx;package=<package>;end`.
+- `TalkActivity` is **Talk to AgentX** (#1664), with its own launcher icon
+  and a long-press shortcut: it rings a Bluetooth watch or headset with a
+  self-managed call (`TalkConnectionService`). Only the incoming direction
+  puts the watch's microphone on the call (#1636, step 1). `TalkService`
+  holds the microphone in the foreground while the call lasts. Each turn
+  (`TalkSession`): a beep, record until a pause (`Endpointer`), WAV to
+  `POST /api/app/voice/transcribe`, `POST /api/app/chat` read to its
+  `final` event (so the call is a Chat conversation), then
+  `POST /api/app/voice/speak` or the phone's own voice. Hanging up on the
+  watch ends it; a running answer still lands in Chat. `adb logcat -s
+  AgentXTalk` names the microphone used per turn. Guide:
+  [docs/dashboard/mobile-talk.md](../../docs/dashboard/mobile-talk.md).
 
 ## Build
 
@@ -128,8 +140,11 @@ WhatsApp call? The debug APK has a second icon, **AgentX watch spike**.
 2. Open **AgentX watch spike**. Allow the microphone and, on Android 12+,
    nearby devices.
 3. Tap **Call the watch (outgoing)**. Then try **Ring the watch
-   (incoming)** and answer it on the watch, or with **Answer** if the
-   watch doesn't ring.
+   (incoming)** and answer it on the watch only. Don't touch the phone
+   until the call ends: the phone's own green accept button and the
+   watch both reach the spike the same way, so the log can't tell them
+   apart. Use **Answer** only if the watch doesn't ring; the log then
+   says the watch call screen was not checked.
 4. Each run opens a self-managed call. It moves the audio to the watch,
    first with Telecom's Bluetooth route and then with
    `setCommunicationDevice` (`startBluetoothSco` before Android 12).
@@ -141,6 +156,8 @@ WhatsApp call? The debug APK has a second icon, **AgentX watch spike**.
 The screen and `adb logcat -s WatchSpike` show each step, with PASS or
 FAIL where the phone can tell: the audio route, the microphone's device
 type (7 = Bluetooth SCO), and whether the microphone heard anything.
-Check the rest by eye and ear: the watch shows the call screen, the
-phrase plays on the watch, and the recording comes back. Report one
-result per phone and watch on #1636.
+Check the rest by eye and ear: the watch shows the call screen with
+answer and hang-up, the phrase plays on the watch, and the recording
+comes back. Report one result per phone and watch on #1636, and say
+where you answered and hung up (watch, phone's call screen or spike
+screen).
