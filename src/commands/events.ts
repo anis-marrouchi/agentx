@@ -35,12 +35,13 @@ export function eventsUrl(baseUrl: string, opts: { agent?: string; since?: strin
  *  agent and keeps the turn's root. Exported for tests. */
 export function emitBody(
   name: string,
-  opts: { summary?: string; ref?: string; by?: string },
+  opts: { summary?: string; ref?: string; by?: string; expiresIn?: string },
   env: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   const body: Record<string, string> = { name }
   if (opts.summary) body.summary = opts.summary
   if (opts.ref) body.ref = opts.ref
+  if (opts.expiresIn) body.expiresIn = opts.expiresIn
   const by = opts.by || env.AGENTX_AGENT_ID
   if (by) body.by = by
   if (env.AGENTX_AGENT_ID) body.senderAgentId = env.AGENTX_AGENT_ID
@@ -72,8 +73,9 @@ const emitCmd = new Command()
   .option("--summary <text>", "one short line on what happened")
   .option("--ref <ref>", "pointer to the details: an issue, a path, a run id")
   .option("--by <name>", "who emitted it (an agent id or a person's name; default: the running agent)")
+  .option("--expires-in <duration>", "drop wakes not started within this time, for example 90s, 5m or 2h")
   .action(async (name: string, _opts, cmd: Command) => {
-    const opts = cmd.optsWithGlobals() as { summary?: string; ref?: string; by?: string; config?: string; node?: string; token?: string; json?: boolean }
+    const opts = cmd.optsWithGlobals() as { summary?: string; ref?: string; by?: string; expiresIn?: string; config?: string; node?: string; token?: string; json?: boolean }
     const { baseUrl, token } = daemonTarget(opts)
     const headers: Record<string, string> = { "Content-Type": "application/json" }
     if (token) headers["Authorization"] = `Bearer ${token}`

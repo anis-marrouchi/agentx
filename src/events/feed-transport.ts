@@ -59,6 +59,9 @@ export function toEnvelope(raw: unknown): EventEnvelope | null {
   if (str("parentId")) e.parentId = String(r.parentId).slice(0, MAX_ID)
   if (str("agentId")) e.agentId = String(r.agentId).slice(0, MAX_ID)
   if (str("ref")) e.ref = String(r.ref).slice(0, MAX_ID)
+  if (str("expiresAt") && (r.expiresAt as string).length <= 40 && !Number.isNaN(Date.parse(r.expiresAt as string))) {
+    e.expiresAt = r.expiresAt as string
+  }
   return e
 }
 

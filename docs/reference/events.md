@@ -16,6 +16,7 @@ Everything the daemon does is published as an event on one in-process bus. Examp
 | `at` | string | ISO-8601 time. |
 | `summary` | string | A short description of at most 280 characters. It never contains a prompt or an answer. |
 | `ref` | string, optional | ID of the durable record for full details: a trace ID (`agentx trace show <id>`), run ID or task ID. |
+| `expiresAt` | string, optional | ISO-8601 time after which the event is no longer worth acting on. Only named events carry it, when the sender set `--expires-in`. A wake that has not started by then is dropped. |
 
 ## Kinds and types
 
@@ -87,7 +88,7 @@ An announcement is a short note to every machine in the mesh, for example planne
 
 The daemon publishes one `announce` event, and every other machine picks it up through its feed. Programs can do the same with `POST /mesh/announce` and a body of `{ "text": "…", "by": "…" }`. Off this machine that request needs `Authorization: Bearer <mesh-token>`. Text longer than 2,000 characters is refused, and the summary keeps the first 280.
 
-A named event works the same way but can wake agents: `agentx events emit <name>`, the `agentx_emit` tool, or `POST /events` with a body of `{ "name": "render:ready", "summary": "…", "ref": "…", "by": "…" }`. Off this machine that request needs `Authorization: Bearer <mesh-token>`. See [Send your own named events](/automations/event-subscriptions#send-your-own-named-events).
+A named event works the same way but can wake agents: `agentx events emit <name>`, the `agentx_emit` tool, or `POST /events` with a body of `{ "name": "render:ready", "summary": "…", "ref": "…", "by": "…" }`. Add `"expiresIn": "5m"` (or `"expiresAt"` with an ISO time) to give the event a deadline. Off this machine that request needs `Authorization: Bearer <mesh-token>`. See [Send your own named events](/automations/event-subscriptions#send-your-own-named-events).
 
 The phone app lists recent announcements from every machine in its **Alerts** tab and can send a notification for each new one. See [Announcements on the phone](/dashboard/mobile-alerts#announcements).
 

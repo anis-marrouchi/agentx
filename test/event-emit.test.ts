@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { TypedEventBus } from "../src/events/bus"
 import { publishNamedEvent } from "../src/events/emit"
-import { EventWaker, RETRY_ATTEMPTS, RETRY_BASE_MS, wakeMessage } from "../src/events/wake"
+import { EventWaker, RETRY_ATTEMPTS, RETRY_BASE_MS, wakeDeadline, wakeMessage } from "../src/events/wake"
+import { toEnvelope } from "../src/events/feed-transport"
+import { parseDuration } from "../src/events/emit"
 import type { EventEnvelope } from "../src/events/envelope"
 import type { SubscriptionInput } from "../src/events/subscriptions"
 import { isControlPost } from "../src/daemon/mesh-auth"
@@ -18,18 +20,20 @@ function setup(agents: Record<string, { subscriptions?: SubscriptionInput[] }>, 
   const woke: Array<{ agentId: string; e: EventEnvelope; message: string }> = []
   const logs: string[] = []
   let held: string | undefined
+  const deadlines: Array<number | undefined> = []
   const waker = new EventWaker({
     agents: () => agents,
-    dispatch: (agentId, e, sub) => {
+    dispatch: (agentId, e, sub, opts) => {
+      deadlines.push(opts.deadline)
       if (held) return Promise.resolve({ held })
-      woke.push({ agentId, e, message: wakeMessage(e, sub.prompt) })
+      woke.push({ agentId, e, message: wakeMessage(e, sub.prompt, opts.deadline) })
       return Promise.resolve({ content: "ok" })
     },
     log: (m) => logs.push(m),
     isLocal: (e) => bus.isLocal(e),
   })
   const stop = waker.attach(bus)
-  return { bus, woke, logs, waker, stop, hold: (reason: string | undefined) => { held = reason } }
+  return { bus, woke, logs, waker, stop, deadlines, hold: (reason: string | undefined) => { held = reason } }
 }
 
 afterEach(() => { vi.useRealTimers() })
@@ -202,7 +206,79 @@ describe("a wake whose agent stays busy (#1596)", () => {
   })
 })
 
+describe("wake deadlines (#1596)", () => {
+  const sub = { kinds: ["daemon:restart-soon"], delivery: "wake" as const }
+
+  it("emit takes expiresIn or expiresAt, and refuses bad ones", () => {
+    const bus = new TypedEventBus().configure({ node: "node-a" })
+    const now = Date.parse("2026-10-31T16:30:58Z")
+    const a = publishNamedEvent(bus, { name: "daemon:restart-soon", expiresIn: "2m" }, AGENTS, null, now)
+    expect(a.ok && a.event.expiresAt).toBe("2026-10-31T16:32:58.000Z")
+    const b = publishNamedEvent(bus, { name: "x", expiresAt: "2026-10-31T17:00:00Z" }, AGENTS, null, now)
+    expect(b.ok && b.event.expiresAt).toBe("2026-10-31T17:00:00.000Z")
+    expect(publishNamedEvent(bus, { name: "x", expiresIn: "soon" }, AGENTS, null, now).ok).toBe(false)
+    expect(publishNamedEvent(bus, { name: "x", expiresAt: "2026-10-31T16:00:00Z" }, AGENTS, null, now).ok).toBe(false)
+    expect(publishNamedEvent(bus, { name: "x", expiresIn: "8d" }, AGENTS, null, now).ok).toBe(false)
+    expect(publishNamedEvent(bus, { name: "x", expiresIn: "1m", expiresAt: "2026-10-31T17:00:00Z" }, AGENTS, null, now).ok).toBe(false)
+    const none = publishNamedEvent(bus, { name: "x" }, AGENTS, null, now)
+    expect(none.ok && none.event.expiresAt).toBeUndefined()
+  })
+
+  it("parses durations", () => {
+    expect(parseDuration(90)).toBe(90_000)
+    expect(parseDuration("90")).toBe(90_000)
+    expect(parseDuration("5m")).toBe(300_000)
+    expect(parseDuration("2h")).toBe(7_200_000)
+    expect(parseDuration("0")).toBeUndefined()
+    expect(parseDuration("-1m")).toBeUndefined()
+  })
+
+  it("takes the earlier of the event's expiry and the subscription's maxDelayMin", () => {
+    const e = { id: "e", rootId: "e", node: "n", kind: "custom", type: "t", summary: "", at: "2026-10-31T16:30:00.000Z" }
+    expect(wakeDeadline(e, sub)).toBeUndefined()
+    expect(wakeDeadline(e, { ...sub, maxDelayMin: 5 })).toBe(Date.parse("2026-10-31T16:35:00Z"))
+    expect(wakeDeadline({ ...e, expiresAt: "2026-10-31T16:31:00Z" }, { ...sub, maxDelayMin: 5 })).toBe(Date.parse("2026-10-31T16:31:00Z"))
+  })
+
+  it("passes the deadline to dispatch and into the woken turn's message", async () => {
+    const { bus, woke, deadlines } = setup({ coder: { subscriptions: [sub] } })
+    publishNamedEvent(bus, { name: "daemon:restart-soon", expiresIn: "1m" }, AGENTS)
+    await tick(); await tick()
+    expect(deadlines[0]).toBeTypeOf("number")
+    expect(woke[0].message).toContain("Deadline: ")
+    expect(woke[0].message).toContain("reply only that the event expired")
+  })
+
+  it("does not wake for an event already past its deadline", () => {
+    const { bus, waker } = setup({ coder: { subscriptions: [{ ...sub, nodes: ["node-b"] }] } })
+    const out = waker.handle({ id: "old", rootId: "old", node: "node-b", kind: "custom", type: "daemon:restart-soon", summary: "", at: "2020-01-01T00:00:00Z", expiresAt: "2020-01-01T00:01:00Z" })
+    expect(out).toEqual([{ agentId: "coder", eventId: "old", woke: false, reason: "expired" }])
+    expect(bus.nodeName).toBe("node-a")
+  })
+
+  it("drops a held wake whose next retry falls after its deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    const { bus, woke, logs, waker, hold } = setup({ coder: { subscriptions: [sub] } })
+    hold(`Agent "coder" busy — slot wait timed out after 1m`)
+    publishNamedEvent(bus, { name: "daemon:restart-soon", expiresIn: "1m" }, AGENTS)
+    await tick(); await tick()
+    expect(waker.pendingRetries()).toBe(0)
+    expect(woke).toHaveLength(0)
+    expect(logs.some((l) => l.includes("expired, still held at its deadline"))).toBe(true)
+  })
+
+  it("keeps expiresAt across the mesh feed", () => {
+    const e = toEnvelope({ id: "a", node: "n", kind: "custom", type: "t", at: "2026-10-31T16:30:00Z", expiresAt: "2026-10-31T16:31:00Z" })
+    expect(e?.expiresAt).toBe("2026-10-31T16:31:00Z")
+    expect(toEnvelope({ id: "a", node: "n", kind: "custom", type: "t", at: "2026-10-31T16:30:00Z", expiresAt: "nope" })?.expiresAt).toBeUndefined()
+  })
+})
+
 describe("agentx events emit", () => {
+  it("sends --expires-in as expiresIn", () => {
+    expect(emitBody("daemon:restart-soon", { expiresIn: "2m" }, {} as any)).toEqual({ name: "daemon:restart-soon", expiresIn: "2m" })
+  })
+
   it("sends the running turn's ids so the daemon credits the agent", () => {
     const body = emitBody("render:ready", { summary: "done" }, { AGENTX_AGENT_ID: "renderer", AGENTX_TASK_ID: "T1" } as any)
     expect(body).toEqual({ name: "render:ready", summary: "done", by: "renderer", senderAgentId: "renderer", callerTaskId: "T1" })

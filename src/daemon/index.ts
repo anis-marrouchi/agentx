@@ -10,7 +10,7 @@ import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, type FS
 import { watchConfigFile } from "./config-watch"
 import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
-import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
+import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { activeProviderHolds, setDispatchBudget } from "@/agents/claude-code-quota"
@@ -558,6 +558,7 @@ export class AgentXDaemon {
     // event's root so what it causes cannot wake it again. A wake the
     // dispatch cap holds is handed back as held and retried (#1284), and
     // so is one whose agent stayed busy for the whole slot wait (#1596).
+    // A wake with a deadline waits for a slot no longer than that.
     // The chat id is the agent id: the conversation key is then
     // `events:<agent>`, not `events:events:<agent>`.
     // The journal notes when a woken turn really began: task:started on the
@@ -572,11 +573,12 @@ export class AgentXDaemon {
     const stopWaker = new EventWaker({
       agents: () => this.config.agents,
       journal: this.wakeJournal,
-      dispatch: async (agentId, e, sub) => {
+      dispatch: async (agentId, e, sub, { deadline }) => {
         const response = await withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
-          message: wakeMessage(e, sub.prompt),
+          message: wakeMessage(e, sub.prompt, deadline),
           agentId,
           context: { channel: "events", chatId: agentId },
+          ...(deadline !== undefined ? { slotWaitMs: Math.max(1_000, Math.min(DEFAULT_SLOT_WAIT_MS, deadline - Date.now())) } : {}),
         }))
         return response.errorKind === "dispatch_hold" || response.errorKind === "agent_busy"
           ? { held: response.error || "dispatch held" }

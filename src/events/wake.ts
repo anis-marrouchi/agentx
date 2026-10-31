@@ -1,4 +1,4 @@
-import type { EventEnvelope } from "./envelope"
+import { expiryOf, type EventEnvelope } from "./envelope"
 import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor, type SubscriptionInput } from "./subscriptions"
 import type { WakeJournal } from "./wake-journal"
 
@@ -24,18 +24,23 @@ import type { WakeJournal } from "./wake-journal"
 // until the window frees up, and each hold is logged with its reason.
 // An agent whose slots all stay busy for the whole slot wait is held the
 // same way (#1596), rather than the wake being lost after one try.
+// A wake can carry a deadline: the event's `expiresAt`, or the
+// subscription's `maxDelayMin` after the event. A wake not started by then
+// is dropped and logged, never run late, and the woken turn is told the
+// deadline so it can still skip when it starts just after it.
 
 export type WakeOutcome =
   | { agentId: string; eventId: string; woke: true }
-  | { agentId: string; eventId: string; woke: false; reason: "own-event" | "own-root" | "duplicate-root" | "rate-limit" }
+  | { agentId: string; eventId: string; woke: false; reason: "own-event" | "own-root" | "duplicate-root" | "rate-limit" | "expired" }
 
 export interface WakeDeps {
   /** Current agent definitions (read on every event, so reloads apply). */
   agents: () => Record<string, { subscriptions?: SubscriptionInput[] }>
   /** Start the turn. Called asynchronously, off the publish path. Resolve
    *  to `{ held: <reason> }` when the dispatch cap held it or the agent
-   *  stayed busy for the whole slot wait: it is retried. */
-  dispatch: (agentId: string, e: EventEnvelope, sub: SubscriptionInput) => Promise<WakeDispatch | unknown> | void
+   *  stayed busy: it is retried. `deadline` (epoch ms), when set, bounds
+   *  how long the dispatch may wait for a slot. */
+  dispatch: (agentId: string, e: EventEnvelope, sub: SubscriptionInput, opts: WakeRunOptions) => Promise<WakeDispatch | unknown> | void
   log: (msg: string) => void
   /** True for events this node published itself (bus.isLocal). Without
    *  it every event counts as local. */
@@ -47,6 +52,22 @@ export interface WakeDeps {
 
 /** What dispatch resolves to when the wake was held, not run. */
 export interface WakeDispatch { held: string }
+
+export interface WakeRunOptions {
+  /** Epoch ms after which the wake must not start. */
+  deadline?: number
+}
+
+/** When a wake for `e` through `sub` stops being worth starting: the
+ *  earlier of the event's `expiresAt` and `maxDelayMin` after the event. */
+export function wakeDeadline(e: EventEnvelope, sub: SubscriptionInput): number | undefined {
+  const own = expiryOf(e)
+  const at = Date.parse(e.at)
+  const bySub = sub.maxDelayMin && !Number.isNaN(at) ? at + sub.maxDelayMin * 60_000 : undefined
+  if (own === undefined) return bySub
+  if (bySub === undefined) return own
+  return Math.min(own, bySub)
+}
 
 const HOUR_MS = 60 * 60 * 1000
 /** Held wakes: first retry after this, doubling up to RETRY_MAX_MS. */
@@ -131,9 +152,16 @@ export class EventWaker {
       this.deps.log(`[events] wake of ${agentId} failed: ${err?.message ?? err}`)
       journal?.finished(agentId, e.id, String(err?.message ?? err) || "failed")
     }
+    const deadline = wakeDeadline(e, sub)
+    if (deadline !== undefined && this.now() >= deadline) {
+      const at = new Date(deadline).toISOString()
+      this.deps.log(`[events] wake of ${agentId} expired before it started (deadline ${at}) — ${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`)
+      journal?.held(agentId, e.id, `expired before it started (deadline ${at})`, false)
+      return
+    }
     if (attempt > 0) journal?.retrying(agentId, e.id)
     try {
-      Promise.resolve(this.deps.dispatch(agentId, e, sub)).then((result) => {
+      Promise.resolve(this.deps.dispatch(agentId, e, sub, { deadline })).then((result) => {
         const held = heldReason(result)
         if (held) this.retry(agentId, e, sub, attempt, held)
         else journal?.finished(agentId, e.id, errorOf(result))
@@ -156,8 +184,15 @@ export class EventWaker {
       this.deps.journal?.held(agentId, e.id, `${reason} (retry queue full)`, false)
       return
     }
-    this.deps.journal?.held(agentId, e.id, reason, true)
     const delay = Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
+    const deadline = wakeDeadline(e, sub)
+    if (deadline !== undefined && this.now() + delay >= deadline) {
+      const at = new Date(deadline).toISOString()
+      this.deps.log(`[events] wake of ${agentId} expired, still held at its deadline ${at}: ${reason} — ${line}`)
+      this.deps.journal?.held(agentId, e.id, `expired, still held at its deadline ${at}: ${reason}`, false)
+      return
+    }
+    this.deps.journal?.held(agentId, e.id, reason, true)
     this.deps.log(`[events] wake of ${agentId} held: ${reason} — retry ${attempt + 1}/${RETRY_ATTEMPTS} in ${Math.round(delay / 60_000)} min — ${line}`)
     const timer = setTimeout(() => {
       this.held.delete(key)
@@ -173,9 +208,13 @@ export class EventWaker {
     const base = { agentId, eventId: e.id }
     if (seen(this.own, agentId, e.rootId, t)) return { outcome: { ...base, woke: false, reason: "own-root" } }
     if (seen(this.woken, agentId, e.rootId, t)) return { outcome: { ...base, woke: false, reason: "duplicate-root" } }
+    // A subscription whose deadline for this event has passed (an old
+    // event from a peer's catch-up, say) does not take the wake.
+    const live = hits.filter(({ s }) => { const d = wakeDeadline(e, s); return d === undefined || t < d })
+    if (live.length === 0) return { outcome: { ...base, woke: false, reason: "expired" } }
     // The first matching subscription with room in its own hourly bucket
     // takes the wake; when every bucket is full the wake is skipped.
-    for (const { s, index } of hits) {
+    for (const { s, index } of live) {
       const key = `${agentId}#${index}`
       const recent = (this.wakes.get(key) ?? []).filter((w) => t - w < HOUR_MS)
       if (recent.length >= (s.maxPerHour ?? 4)) { this.wakes.set(key, recent); continue }
@@ -222,14 +261,18 @@ function errorOf(result: unknown): string | undefined {
 }
 
 /** The message a woken turn receives: what happened, who emitted it, where
- *  to read more, and the subscription's own instruction when it has one. */
-export function wakeMessage(e: EventEnvelope, prompt?: string): string {
+ *  to read more, its deadline when it has one, and the subscription's own
+ *  instruction when it has one. */
+export function wakeMessage(e: EventEnvelope, prompt?: string, deadline?: number): string {
   const lines = [
     "[Event] A subscription of yours matched:",
     formatEventLine(e),
     `Event: ${e.type} (kind ${e.kind}), emitted by ${e.agentId ? `${e.agentId} on ${e.node}` : e.node}${e.ref ? `, ref ${e.ref}` : ""}.`,
     `Event id ${e.id}, root ${e.rootId}. Call agentx_events for the surrounding events.`,
   ]
+  if (deadline !== undefined) {
+    lines.push(`Deadline: ${new Date(deadline).toISOString()}. If that time has passed when you read this, reply only that the event expired and take no action.`)
+  }
   if (prompt?.trim()) lines.push(`When this event arrives: ${prompt.trim()}`)
   else lines.push("Act on it if it needs you; otherwise reply briefly that no action is needed.")
   return lines.join("\n")

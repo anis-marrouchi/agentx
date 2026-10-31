@@ -24,6 +24,7 @@ A woken agent is protected against loops and floods:
 - Each `wake` subscription wakes the agent at most its own `maxPerHour` times in any hour. When every matching subscription has used up its hour, the event is skipped, and the daemon log says `wake skipped for <agent>: rate-limit`.
 - A second wake that arrives while the agent is still busy with the first waits for it to finish, then runs as its own task. Wakes are never merged into one task.
 - A wake waits up to 25 minutes for the agent to have a free slot. If the agent is still busy after that, the wake is not lost: it is held and tried again, like a wake held by a dispatch limit (next point). The daemon log says `wake of <agent> held: Agent "<agent>" busy — slot wait timed out`.
+- A wake can have a **deadline**. A warning such as "restarts in 1 minute" is no use 20 minutes later. The deadline is the event's own expiry time (set with `--expires-in` when it is sent) or the subscription's `maxDelayMin`, whichever comes first. A wake that has not started by its deadline is dropped, and the daemon log says `wake of <agent> expired`. The woken task's message also states the deadline, so the agent skips the event if it starts just too late.
 - Events from other machines (the [mesh feed](/reference/events#events-from-other-machines)) wake an agent only when the subscription lists that machine in `nodes`. Pull and digest subscriptions see them either way.
 - A wake starts a new conversation, so it counts against the [dispatch limits](/reference/config-agents#session) (`session.maxClaudeCodeDispatchesPerHour` and `session.maxClaudeCodeDispatchesPer5h`) and the plan window. When one of them holds the wake, it is not lost: the daemon tries again after 5 minutes, then 10, 20 and every 30 minutes, for about 7 hours. Each hold is logged as `wake of <agent> held: <reason>`. After the last try the log says `dropped after 16 retries`. At most 100 held wakes wait at once.
 
@@ -40,6 +41,7 @@ Subscriptions go in `agentx.json`, under `agents.<id>.subscriptions`. It is a li
 | `delivery` | `"pull"` \| `"digest"` \| `"wake"` | `"pull"` | How the agent hears about a match (see the table above). |
 | `maxPerHour` | number (1–60) | `4` | For `wake` only: the most times this subscription wakes the agent in an hour. Each subscription counts its own wakes. |
 | `prompt` | text (up to 2,000 characters) | — | For `wake` only: what the agent should do when this event arrives. It is added to the woken task's message, after the event. |
+| `maxDelayMin` | number (1–1440) | — | For `wake` only: the most minutes after the event that the woken task may start. A wake that is still waiting (for a busy agent, or a dispatch limit) after that is dropped. Without it, a wake can start hours late. |
 
 An agent does not see its own events unless it lists its own id in `agents`.
 
@@ -100,6 +102,7 @@ An agent sends one with the `agentx_emit` tool (`name`, and optionally `summary`
 | `--summary <text>` | One short line on what happened. Without it, the summary is the name. |
 | `--ref <ref>` | Where to find the details: an issue, a file path, a run ID. |
 | `--by <name>` | Who sent it. An agent ID is recorded as that agent. Any other name goes in front of the summary. Inside an agent's task, the default is that agent. |
+| `--expires-in <duration>` | How long the event stays worth acting on, for example `90s`, `5m` or `2h` (at most 7 days). A woken task that has not started by then is dropped. The `agentx_emit` tool takes the same value as `expiresIn`. |
 | `--node <url>`, `--token <token>` | Send it to another machine's daemon. That needs its mesh token. |
 
 The woken task's message gives the event's name, summary, `ref` and who sent it, followed by the subscription's `prompt`.
@@ -143,6 +146,7 @@ Anyone on the daemon's own machine can read any agent's list, just as they can r
 - **The agent isn't woken:** look in `agentx daemon logs` for `wake skipped for <agent>`. The reason follows: `rate-limit` (raise `maxPerHour` or wait), `own-root` (the event came from the agent's own work) or `duplicate-root` (it was already woken for that `rootId`).
 - **`agentx events emit` says `name must be 1-64 letters…`:** use only letters, digits and `:` `.` `_` `-`, and start with a letter or a digit.
 - **The log says `wake of <agent> held`:** a dispatch limit or the plan window is holding new conversations, or every slot of the agent stayed busy (`slot wait timed out`). The daemon tries again on its own. To let it through sooner, raise the limit named in the reason, or the agent's `maxConcurrent`.
+- **The log says `wake of <agent> expired` or `wake skipped for <agent>: expired`:** the wake did not start before its deadline (the event's `--expires-in` or the subscription's `maxDelayMin`), so it was dropped on purpose. If the agent should still have reacted, give the event a longer expiry or raise `maxDelayMin`.
 - **A fresh conversation shows no digest:** only events since the agent's last finished task are listed, and only for `digest` subscriptions. A continued conversation never gets one. The agent can call `agentx_events` instead.
 - **The same events show up in the digest again:** the digest counts from the agent's last task that returned an answer or an error. A task that was cancelled, timed out or was cut off by a restart does not count, so the events after it are listed again in the next fresh conversation.
 - **`agentx_events` answers `Unauthorized: mesh token required`:** the tool reached the daemon through an address other than this machine's own. It uses `AGENTX_DAEMON_URL` when set, and otherwise the address in `node.bind`. The call carries a token only when one is set: `AGENTX_TOKEN`, `MESH_TOKEN` or `dashboard.token`. Set `AGENTX_TOKEN` to the node's `MESH_TOKEN`, or set `AGENTX_DAEMON_URL` to `http://127.0.0.1:<port>` for the agent, or use a `node.bind` of the form `0.0.0.0:<port>`.

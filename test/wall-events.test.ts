@@ -79,6 +79,24 @@ describe("wake journal", () => {
     waker.stop()
   })
 
+  it("marks a held wake dropped when its retry would land after the deadline (#1647)", async () => {
+    vi.useFakeTimers()
+    const bus = new TypedEventBus().configure({ node: "alpha" })
+    const journal = new WakeJournal()
+    const waker = new EventWaker({
+      agents: () => ({ coder: { subscriptions: [{ kinds: ["daemon:restart-soon"], delivery: "wake", maxDelayMin: 3 }] } }),
+      dispatch: async () => ({ held: "dispatch cap" }),
+      log: () => {},
+      journal,
+    })
+    waker.attach(bus)
+    publishNamedEvent(bus, { name: "daemon:restart-soon" }, new Set())
+    await vi.advanceTimersByTimeAsync(10)
+    expect(journal.list()[0]).toMatchObject({ status: "dropped" })
+    expect(journal.list()[0].reason).toMatch(/^expired, still held at its deadline .*: dispatch cap$/)
+    waker.stop()
+  })
+
   it("marks a dispatch that threw as failed", async () => {
     const bus = new TypedEventBus().configure({ node: "alpha" })
     const journal = new WakeJournal()

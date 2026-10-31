@@ -30,6 +30,17 @@ export interface EventEnvelope {
   summary: string
   /** Pointer to the durable record: a trace id, run id or task id. */
   ref?: string
+  /** ISO time after which the event is no longer worth acting on, for
+   *  example a "restarts in 1 minute" warning. A wake that has not started
+   *  by then is dropped (#1596). */
+  expiresAt?: string
+}
+
+/** The `expiresAt` of an envelope as epoch ms, when it has a valid one. */
+export function expiryOf(e: Pick<EventEnvelope, "expiresAt">): number | undefined {
+  if (!e.expiresAt) return undefined
+  const t = Date.parse(e.expiresAt)
+  return Number.isNaN(t) ? undefined : t
 }
 
 export const SUMMARY_MAX = 280
