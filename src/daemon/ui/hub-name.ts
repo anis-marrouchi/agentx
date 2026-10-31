@@ -27,6 +27,12 @@ export function hubRedirect(path: string, search = ""): string | null {
   return HUB_PATH + path.slice(OLD_HUB_PATH.length) + search
 }
 
+/** One request on its own, with its thread (#1316). A push about the
+ *  request opens it when tapped (#1652). */
+export function hubPostPath(requestId: string): string {
+  return `${HUB_PATH}#post=${encodeURIComponent(requestId)}`
+}
+
 /** The Hub's Needs you view: what waits on the owner (#1440). /approvals,
  *  the classic page it replaced, redirects (301) here. */
 export const HUB_NEEDS_YOU = `${HUB_PATH}#status=open&view=decide`

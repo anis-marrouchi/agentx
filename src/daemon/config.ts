@@ -15,6 +15,7 @@ import { FLOOR_DEFAULTS } from "@/voice/floor"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
 import { unknownAgentxTools } from "@/mcp/tool-names"
+import { isPhoneLink } from "@/notify/phone-link"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -1292,6 +1293,14 @@ const notificationsSchema = z.object({
    *  Unset: `push` (the phone app) when channels.push is enabled, else
    *  `ntfy`, so upgrading never points notify at a channel that is off. */
   channel: z.string().optional(),
+  /** The address the phone opens the Hub at, such as
+   *  https://my-mac.example.ts.net (#1652). A tap on an ntfy push opens
+   *  its own link, else its request on the Hub, else the Hub. Unset: a
+   *  push without a link of its own opens nothing. */
+  publicUrl: z.string()
+    .regex(/^https?:\/\/[^/\s]+$/, "use an origin like https://my-mac.example.ts.net")
+    .refine(isPhoneLink, "use an address the phone can reach, not localhost or 127.0.0.1")
+    .optional(),
   /** Notify on these events */
   on: z.object({
     taskComplete: z.boolean().default(true),

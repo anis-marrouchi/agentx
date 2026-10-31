@@ -17,6 +17,7 @@ import { resolveRegion } from "@/computer-use/capture"
 import { readScreenSettings } from "@/computer-use/capture-settings"
 import { defaultNotifyChannel } from "@/notify/push-settings"
 import { noticeRuleBreak, withTodo } from "@/approvals/screen-gate"
+import { isPhoneLink } from "@/notify/phone-link"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -38,7 +39,7 @@ const DAEMON = process.env.AGENTX_DAEMON_URL ?? "http://127.0.0.1:18800"
  *  than passed alongside. Sending it as its own field looked like it
  *  worked: the push arrived, with the default title, and the real one
  *  silently discarded. */
-function daemonSender(defaultChannel: string, defaultChatId: string, told?: Record<string, unknown>): { send: Sender; keptBack: () => string | null } {
+function daemonSender(defaultChannel: string, defaultChatId: string, told?: Record<string, unknown>, buttons?: PushButton[]): { send: Sender; keptBack: () => string | null } {
   // The told-the-owner gate (#1126) may keep a notice back: already told,
   // or a nag kept for the daily digest. The daemon says so in its answer.
   let keptBack: string | null = null
@@ -54,6 +55,7 @@ function daemonSender(defaultChannel: string, defaultChatId: string, told?: Reco
         chatId: chatId ?? defaultChatId,
         text,
         ...(told ? { told } : {}),
+        ...(buttons?.length ? { buttons } : {}),
       }),
     })
     if (!res.ok) {
@@ -84,6 +86,27 @@ function configuredAlert(opts: { config?: string; sound: boolean; banner: boolea
   return { alert: localAlert(settings, { native: cfg?.native }), banner: settings.banner, channel }
 }
 
+type PushButton = { label: string; url: string }
+
+function collectButton(value: string, previous: string[]): string[] {
+  return [...previous, value]
+}
+
+/** --url and --button as the push's buttons (#1652). --url comes first, so
+ *  it is also what a tap on the push opens. ntfy shows at most three. */
+export function pushButtons(url: string | undefined, raw: string[] = []): PushButton[] {
+  const buttons: PushButton[] = url ? [{ label: "Open", url }] : []
+  for (const b of raw) {
+    const at = b.indexOf("=")
+    if (at < 1) throw new Error(`--button "${b}" needs the form "<label>=<url>"`)
+    buttons.push({ label: b.slice(0, at).trim(), url: b.slice(at + 1).trim() })
+  }
+  if (buttons.length > 3) throw new Error("a push has at most 3 buttons, --url included")
+  const bad = buttons.find((b) => !isPhoneLink(b.url))
+  if (bad) throw new Error(`${bad.url} is not a link the phone can open: use http(s) and an address other than localhost or 127.0.0.1`)
+  return buttons
+}
+
 export const notify = new Command()
   .name("notify")
   .description("tell the operator something, holding it if they are in Focus")
@@ -94,7 +117,9 @@ export const notify = new Command()
   .option("--priority <n>", "1 (min) to 5 (max)", "4")
   .option("--urgent", "deliver even during Focus, and even if the same thing was told already")
   .option("--key <id>", "what it is about, so it is told once across channels (default: its text)")
-  .option("--request <id>", "the open request it belongs to")
+  .option("--request <id>", "the open request it belongs to; a tap on the push opens it on the Hub")
+  .option("--url <url>", "what a tap on the push opens")
+  .option("--button <label=url>", "a button on the push, up to 3 with --url", collectButton, [])
   .option("--digest", "a nag (disk low, a channel down): wait for the daily digest instead of a push")
   .option("--told", "what the owner was told in the last 24 hours, by outcome")
   .option("--channel <name>", "delivery channel (default: notifications.channel, else push when it is on, else ntfy)")
@@ -170,7 +195,14 @@ export const notify = new Command()
       textKey: true,
       from: opts.from,
     }
-    const sender = daemonSender(channel, opts.chatId, told)
+    let buttons: PushButton[]
+    try {
+      buttons = pushButtons(opts.url, opts.button)
+    } catch (e: any) {
+      console.log(chalk.red(`  not sent: ${e.message}`))
+      process.exit(1)
+    }
+    const sender = daemonSender(channel, opts.chatId, told, buttons)
     const send = sender.send
     // Kept back by the gate: nothing reached the phone, so nothing shows here either.
     const gatedAlert = async (title: string, text: string) => { if (!sender.keptBack()) await sendAlert(title, text) }

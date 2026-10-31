@@ -3726,6 +3726,7 @@ export class AgentXDaemon {
             token: ntfyCfg.token,
             defaultPriority: ntfyCfg.defaultPriority,
             defaultTitle: ntfyCfg.defaultTitle,
+            publicUrl: this.config.notifications.publicUrl,
           },
           this.log,
         )

@@ -10,6 +10,7 @@ import { HandoverStore, type HandoverOverride } from "./handover-store"
 import { BlockStream } from "./block-stream"
 import { StreamingMessage } from "./streaming-message"
 import { splitMessageText, TG_CHUNK_CHARS } from "./message-chunks"
+import { hubPostPath } from "@/daemon/ui/hub-name"
 import { ellipsize, firstLines } from "@/utils/ellipsize"
 import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
@@ -501,8 +502,10 @@ export class MessageRouter {
       }
       toldRow = d.rowId
     }
-    const { told: _told, ...wire } = msg
+    const { told: toldMeta, ...wire } = msg
     msg = wire
+    // A push about a request opens that request when tapped (#1652).
+    if (toldMeta?.requestId && !msg.open) msg = { ...msg, open: hubPostPath(toldMeta.requestId) }
 
     // A channel that is down is refused with its reason, never reported
     // sent (#1138 step B): the caller hears it and can try elsewhere.

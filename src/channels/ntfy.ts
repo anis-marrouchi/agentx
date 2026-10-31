@@ -1,4 +1,6 @@
 import type { CallRing, ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
+import { HUB_PATH } from "@/daemon/ui/hub-name"
+import { isPhoneLink } from "@/notify/phone-link"
 
 // --- ntfy channel — push notifications to the operator's phone ---
 //
@@ -29,6 +31,8 @@ export interface NtfyConfig {
   defaultPriority?: number
   /** Notification title. Per-message titles override it. */
   defaultTitle?: string
+  /** notifications.publicUrl: the origin a tap opens the Hub at (#1652). */
+  publicUrl?: string
   /** Test hook, not in the config schema: waits between attempts when a
    *  publish is safe to repeat. One attempt more than there are entries. */
   retryDelaysMs?: number[]
@@ -110,6 +114,16 @@ export function ringHeaders(ring: CallRing | undefined): Record<string, string> 
   return out
 }
 
+/** What a tap on the notification body opens (#1652): the message's own
+ *  first link, else its `open` path (a request on the Hub), else the Hub,
+ *  both on the public address. Nothing when there is no public address. */
+export function clickUrl(link: string | undefined, open: string | undefined, publicUrl: string | undefined): string | undefined {
+  if (isPhoneLink(link)) return link
+  if (!isPhoneLink(publicUrl)) return undefined
+  const path = open?.startsWith("/") ? open : HUB_PATH
+  return publicUrl.replace(/\/+$/, "") + path
+}
+
 export class NtfyAdapter implements ChannelAdapter {
   readonly name = "ntfy"
   private config: NtfyConfig
@@ -152,14 +166,17 @@ export class NtfyAdapter implements ChannelAdapter {
     Object.assign(headers, ringHeaders(msg.ring))
 
     // URL buttons map onto ntfy's view actions, so an alert can carry
-    // "open the MR" without the operator hunting for it.
-    if (msg.buttons?.length) {
-      const actions = msg.buttons
-        .slice(0, 3)  // ntfy caps at 3
+    // "open the MR" without the operator hunting for it. A loopback link
+    // would open the phone itself, so it is left out (#1652).
+    const buttons = (msg.buttons ?? []).filter(b => isPhoneLink(b.url)).slice(0, 3)  // ntfy caps at 3
+    if (buttons.length) {
+      const actions = buttons
         .map(b => `view, ${b.label.replace(/[,;]/g, " ")}, ${b.url}`)
         .join("; ")
       headers["Actions"] = encodeHeader(actions)
     }
+    const click = clickUrl(buttons[0]?.url, msg.open, this.config.publicUrl)
+    if (click && !headers["Click"]) headers["Click"] = click
 
     const url = `${this.serverUrl()}/${encodeURIComponent(topic)}`
     const body = split.body || msg.text || ""

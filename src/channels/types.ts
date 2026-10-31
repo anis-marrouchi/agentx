@@ -111,6 +111,11 @@ export interface OutgoingMessage {
    *  told-the-owner gate (notify/told.ts). `passed`: the caller already
    *  went through the gate, so the router does not decide again. */
   told?: { key?: string; requestId?: string; kind?: "notice" | "nag"; urgent?: boolean; from?: string; passed?: boolean }
+  /** Where a tap on a phone notification opens when the message has no
+   *  link of its own (#1652): a path on this node, such as a request on
+   *  the Hub. A channel that can open links makes it absolute with
+   *  `notifications.publicUrl`. */
+  open?: string
   /** A voice call on the phone (#1605). "ringing": ntfy sends it as a
    *  call (priority 5 when urgent, else 4, a phone tag, a tap that opens
    *  `url`); Web Push keeps it on screen until tapped. "missed": the same
