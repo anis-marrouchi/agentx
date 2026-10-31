@@ -1,4 +1,4 @@
-import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
+import type { CallRing, ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
 
 // --- ntfy channel — push notifications to the operator's phone ---
 //
@@ -98,6 +98,18 @@ export function splitTitle(text: string): { title?: string; body: string } {
   return { title: first, body: rest }
 }
 
+/** A ringing call (#1605) goes out as a call: priority 5 when urgent, so
+ *  the ntfy app's "max priority" channel (set to a ringtone that overrides
+ *  Do Not Disturb) rings through; 4 otherwise, which follows Do Not
+ *  Disturb. The phone tag shows a receiver, and a tap opens the call in
+ *  the phone app. A missed call is an ordinary notice. */
+export function ringHeaders(ring: CallRing | undefined): Record<string, string> {
+  if (!ring || ring.state !== "ringing") return {}
+  const out: Record<string, string> = { "Priority": ring.urgent ? "5" : "4", "Tags": "telephone_receiver" }
+  if (ring.url && /^https?:\/\/\S+$/.test(ring.url)) out["Click"] = ring.url
+  return out
+}
+
 export class NtfyAdapter implements ChannelAdapter {
   readonly name = "ntfy"
   private config: NtfyConfig
@@ -137,6 +149,7 @@ export class NtfyAdapter implements ChannelAdapter {
     }
     if (this.config.token) headers["Authorization"] = `Bearer ${this.config.token}`
     if (msg.parseMode === "markdown") headers["Markdown"] = "yes"
+    Object.assign(headers, ringHeaders(msg.ring))
 
     // URL buttons map onto ntfy's view actions, so an alert can carry
     // "open the MR" without the operator hunting for it.

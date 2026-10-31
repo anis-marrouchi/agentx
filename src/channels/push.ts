@@ -1,4 +1,4 @@
-import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
+import { callAppPath, type ChannelAdapter, type IncomingMessage, type OutgoingMessage } from "./types"
 import type { PushStore, PushSubscriptionRow } from "./push-store"
 import type { PushKeys } from "./push-keys"
 import { splitTitle } from "./ntfy"
@@ -52,6 +52,10 @@ export interface PushPayload {
   /** Opened when the notification itself is tapped. */
   url: string
   actions: Array<{ action: string; title: string; url: string }>
+  /** A voice call (#1605): the service worker shows it as one
+   *  notification per call, kept on screen while it rings, and a missed
+   *  call replaces it. */
+  call?: { id: string; state: "ringing" | "missed"; urgent: boolean }
 }
 
 /** What web-push's sendNotification needs; injected so tests stay offline. */
@@ -83,8 +87,9 @@ export function buildPushPayload(msg: OutgoingMessage, defaultTitle = "AgentX"):
   const payload: PushPayload = {
     title: clip(split.title || defaultTitle, MAX_TITLE),
     body: split.body,
-    url: actions[0]?.url ?? DEFAULT_OPEN_URL,
+    url: msg.ring?.state === "ringing" ? callAppPath(msg.ring.callId) : actions[0]?.url ?? DEFAULT_OPEN_URL,
     actions,
+    ...(msg.ring ? { call: { id: msg.ring.callId, state: msg.ring.state, urgent: msg.ring.urgent } } : {}),
   }
   // Trim the body by bytes, not characters: Arabic, CJK and emoji take
   // several bytes each.
@@ -211,6 +216,8 @@ export class PushRelayAdapter implements ChannelAdapter {
   onMessage(_handler: (msg: IncomingMessage) => Promise<void>): void {}
 
   async send(msg: OutgoingMessage & { relayed?: boolean }): Promise<string | void> {
+    // A call (msg.ring) goes as a plain notice: it lives on this node, and
+    // the phone app answers only the calls of the node that hosts it.
     // Two nodes each set to relay to the other would bounce a message forever.
     if (msg.relayed) throw new Error(`push: this node relays too (channels.push.relayTo = ${this.peer}); set relayTo only on nodes that don't host the phone app`)
     return this.forward(this.peer, {

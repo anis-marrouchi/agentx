@@ -1263,6 +1263,18 @@ export const callsSchema = z.object({
     /** Its second line, under the caller's reason. */
     notice: z.string().min(1).max(200).default("AgentX Voice is busy. The call rings when it is free."),
   }).default({}),
+  /** Ringing the phone (#1605). A voice call also goes to the phone as a
+   *  call push (ntfy at priority 5 when urgent, else 4, tagged as a call;
+   *  Web Push that stays on screen), and the phone app answers it. */
+  phone: z.object({
+    /** "always": the phone rings with the widget, and the first to answer
+     *  takes the call. "away": only when AgentX Voice is not running. */
+    ring: z.enum(["always", "away"]).default("always"),
+    /** The address the phone opens the app at, such as
+     *  https://my-mac.example.ts.net (what `agentx app pair` showed). ntfy
+     *  needs it so a tap opens the call; Web Push does not. */
+    appUrl: z.string().regex(/^https?:\/\/[^/\s]+$/, "use an origin like https://my-mac.example.ts.net").optional(),
+  }).default({}),
 }).default({})
 
 export type CallsConfig = z.infer<typeof callsSchema>

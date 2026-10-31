@@ -223,6 +223,7 @@ import { handleFloor, isFloorPath } from "@/daemon/voice-floor-api"
 import { GUIDE_INSTRUCTION } from "@/voice/guide"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
+import { callAppPath, type CallRing } from "@/channels/types"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath } from "@/daemon/voice-requests-api"
@@ -3254,7 +3255,7 @@ export class AgentXDaemon {
    *  reached the owner (the send failed and there is no banner), unless
    *  `soft`: then the failure is only logged. */
   private async tellOwner(
-    input: { title: string; message: string; from: string; priority?: number; urgent?: boolean; channel?: string; chatId?: string } & TellMeta,
+    input: { title: string; message: string; from: string; priority?: number; urgent?: boolean; channel?: string; chatId?: string; ring?: CallRing } & TellMeta,
     opts: { soft?: boolean; localAlert?: boolean } = {},
   ): Promise<"sent" | "held" | "repeat" | "digest"> {
     // An urgent item goes where the owner was last seen (#1138 step B).
@@ -3282,6 +3283,9 @@ export class AgentXDaemon {
           priority: m.priority,
           agentId: input.from,
           told: { ...meta, passed: true },
+          // A call on the phone (#1605); a channel that has no call shape
+          // sends it as a plain notice.
+          ...(input.ring ? { ring: input.ring } : {}),
         } as any)
       } catch (e: any) {
         if (row !== undefined) gate?.outcome(row, "failed")
@@ -4783,15 +4787,28 @@ export class AgentXDaemon {
         return run ? { channel: run.context.channel, chatId: run.context.chatId } : null
       },
       // A push that fails must not take the Mac banner with it.
-      alert: async ({ title, message, urgent, from }) => {
-        await this.tellOwner({ title, message, urgent, from, priority: urgent ? 5 : 4 }, { soft: true })
+      // A ring is its own item, so a call back is not "already told" (#1605).
+      alert: async ({ title, message, urgent, from, ring }) => {
+        const appUrl = this.config.calls.phone?.appUrl
+        await this.tellOwner({
+          title, message, urgent, from, priority: urgent ? 5 : 4,
+          ...(ring ? {
+            key: `call:${ring.callId}:${ring.state}:${ring.since}`,
+            ring: { callId: ring.callId, state: ring.state, urgent, ...(appUrl ? { url: appUrl.replace(/\/+$/, "") + callAppPath(ring.callId) } : {}) },
+          } : {}),
+          // The widget already rings on this Mac: the push is for the phone.
+        }, { soft: true, ...(ring?.widget ? { localAlert: false } : {}) })
       },
-      // Same chat id as /ask, so the agent summarises the call it just had.
+      // Same chat id as /ask, so the agent summarises the call it just had;
+      // or the phone conversation it was answered in (#1605).
       summarize: async (call) => {
+        const where = call.kind === "voice" && call.channel === "app" && call.chatId
+          ? { channel: "app", sender: "App", chatId: call.chatId }
+          : { channel: "voice", sender: "Voice", chatId: `voice:${call.agentId}` }
         const r = await this.registry.execute({
           agentId: call.agentId,
           message: SUMMARY_PROMPT,
-          context: { channel: "voice", sender: "Voice", chatId: `voice:${call.agentId}` },
+          context: where,
         })
         return r.error ? null : (r.content ?? null)
       },

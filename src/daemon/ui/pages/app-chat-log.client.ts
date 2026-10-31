@@ -21,7 +21,12 @@ window.AXChatLog = function (o) {
     return el;
   }
   // A newer message ends the quick replies of the answers above it.
-  function userMsg(text) { V.retire(log); var el = bubble('cx-user'); el.textContent = text; return el; }
+  // An answered call's opener (#1605) is for the agent: it shows as a note.
+  function userMsg(text) {
+    V.retire(log);
+    if (String(text).indexOf('[Call answered]') === 0) { var n = bubble('cx-callnote'); n.textContent = 'Call answered'; return n; }
+    var el = bubble('cx-user'); el.textContent = text; return el;
+  }
   // A follow-up that waits for the agent to finish.
   function queuedMsg(text) { var q = userMsg(text); q.classList.add('cx-queued'); return { text: text, el: q }; }
   function agentMsg() {

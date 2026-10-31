@@ -129,7 +129,7 @@ export class CallStore {
     const statuses = Array.isArray(from) ? from : [from]
     const cols: Record<string, string> = {
       status: "status", ringingSince: "ringing_since", answeredAt: "answered_at", endedAt: "ended_at",
-      ringAgainAt: "ring_again_at", note: "note", summary: "summary",
+      ringAgainAt: "ring_again_at", note: "note", summary: "summary", channel: "channel", chatId: "chat_id",
     }
     const keys = Object.keys(patch).filter((k) => k in cols)
     const set = keys.map((k) => `${cols[k]}=?`).join(", ") + leaving(patch)

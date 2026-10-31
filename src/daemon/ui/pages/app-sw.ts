@@ -86,13 +86,30 @@ self.addEventListener('push', function (e) {
   var actions = Array.isArray(d.actions) ? d.actions : [];
   var urls = {};
   actions.forEach(function (a) { urls[a.action] = a.url; });
-  e.waitUntil(self.registration.showNotification(d.title || 'AgentX', {
+  var opts = {
     body: d.body || '',
     icon: '/app/icon-192.png',
     badge: '/app/icon-192.png',
     data: { url: d.url, urls: urls },
     actions: actions.map(function (a) { return { action: a.action, title: a.title }; }),
-  }).then(function () {
+  };
+  // A voice call (#1605): one notification per call that stays until
+  // tapped, buzzes like a ring, and offers Decline. Its missed notice
+  // replaces it quietly.
+  var call = d.call && typeof d.call.id === 'string' && /^[A-Za-z0-9_-]{4,64}$/.test(d.call.id) ? d.call : null;
+  if (call) {
+    opts.tag = 'call-' + call.id;
+    opts.renotify = call.state === 'ringing';
+    opts.data.callId = call.id;
+    if (call.state === 'ringing') {
+      opts.requireInteraction = true;
+      opts.vibrate = [800, 400, 800, 400, 800, 400, 800, 1200, 800, 400, 800, 400, 800];
+      opts.actions = [{ action: 'call-answer', title: 'Answer' }, { action: 'call-decline', title: 'Decline' }];
+    } else {
+      opts.silent = true;
+    }
+  }
+  e.waitUntil(self.registration.showNotification(d.title || 'AgentX', opts).then(function () {
     return self.clients.matchAll({ type: 'window' });
   }).then(function (cs) {
     cs.forEach(function (c) { c.postMessage({ type: 'agentx-push' }); });
@@ -101,6 +118,10 @@ self.addEventListener('push', function (e) {
 self.addEventListener('notificationclick', function (e) {
   e.notification.close();
   var data = e.notification.data || {};
+  if (e.action === 'call-decline' && data.callId) {
+    e.waitUntil(fetch('/api/app/calls/' + encodeURIComponent(data.callId) + '/decline', { method: 'POST', credentials: 'same-origin' }).catch(function () {}));
+    return;
+  }
   var target = safeUrl((e.action && data.urls && data.urls[e.action]) || data.url) || safeUrl('/app#alerts');
   var inApp = new URL(target).origin === self.location.origin;
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (cs) {

@@ -243,7 +243,7 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 
 ## `calls`
 
-Agents ringing you for a live voice call on AgentX Voice. See [Calls from your agents](/dashboard/calls). The same settings cover an agent asking to see through your phone camera ([Share your phone camera](/dashboard/mobile-camera#when-an-agent-asks-to-see)): a camera ask counts as a call here.
+Agents ringing you for a live voice call on AgentX Voice and your phone. See [Calls from your agents](/dashboard/calls). The same settings cover an agent asking to see through your phone camera ([Share your phone camera](/dashboard/mobile-camera#when-an-agent-asks-to-see)): a camera ask counts as a call here.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -257,6 +257,8 @@ Agents ringing you for a live voice call on AgentX Voice. See [Calls from your a
 | `calls.busy.maxWaitMinutes` | number (1–240) | `10` | The longest a call waits. Still busy then, it counts as missed. |
 | `calls.busy.title` | string | `"Call waiting: {agent}"` | Title of the call-waiting notice. `{agent}` becomes the caller's name. |
 | `calls.busy.notice` | string | `"AgentX Voice is busy. The call rings when it is free."` | Second line of that notice, under the caller's reason. |
+| `calls.phone.ring` | `"always"` or `"away"` | `"always"` | When an agent's voice call also rings your phone. `always`: together with AgentX Voice; the first to answer takes the call. `away`: only when AgentX Voice is not running. See [Answer on your phone](/dashboard/calls#answer-on-your-phone). |
+| `calls.phone.appUrl` | string (an origin) | unset | The address your phone opens the app at, such as `https://my-mac.example.ts.net`. With ntfy, a tap on the call opens it in the phone app. Not needed for Web Push. |
 
 ## `approvals`
 

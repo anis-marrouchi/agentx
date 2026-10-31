@@ -34,7 +34,9 @@
 //                               opener through /ask so the agent speaks first
 //   POST /calls/:id/decline
 //   POST /calls/:id/later       {minutes?}: rings again then (default 10)
-//   POST /calls/:id/hangup      ends it; the summary follows in the background
+//   POST /calls/:id/hangup      ends it; the summary follows in the background.
+//                               {channel: "app", chatId: "app:<conv>"}: it was
+//                               answered on the phone, in that conversation
 //
 // All of it is mesh-gated (isMeshGatedPath): reasons are agent-written text,
 // and placing or answering a call makes this host ring and speak.
@@ -115,9 +117,16 @@ export async function handleCalls(
     }
     case "decline": return reply(calls.decline(id))
     case "later": return reply(calls.later(id, body.minutes))
-    case "hangup": return reply(calls.hangup(id))
+    case "hangup": return reply(calls.hangup(id, appSession(body)))
     default: return notFound
   }
+}
+
+/** A hang-up from the phone app names the conversation the call was in
+ *  (#1605), so the agent summarises that one. Only an app chat id. */
+export function appSession(body: Record<string, unknown>): { channel: string; chatId: string } | undefined {
+  const chatId = typeof body.chatId === "string" ? body.chatId : ""
+  return body.channel === "app" && /^app:c[a-z0-9]{8,32}$/.test(chatId) ? { channel: "app", chatId } : undefined
 }
 
 const notFound: Reply = { status: 404, body: { error: "Not found" } }

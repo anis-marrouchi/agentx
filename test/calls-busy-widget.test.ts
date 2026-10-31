@@ -20,7 +20,9 @@ let inFocus: boolean
 
 beforeEach(async () => {
   now = 1_000_000
-  cfg = callsSchema.parse({ allow: ["*"] })
+  // These tests are about the widget's wait; the phone ringing with it
+  // (#1605) is covered in calls-phone.test.ts.
+  cfg = callsSchema.parse({ phone: { ring: "away" }, allow: ["*"] })
   notices = []
   inFocus = false
   deps = {
@@ -137,7 +139,7 @@ describe("a call while the widget is busy", () => {
   })
 
   it("the waiting notice is told again every retryMinutes, and its words are settings", async () => {
-    cfg = callsSchema.parse({ allow: ["*"], busy: { retryMinutes: 2, maxWaitMinutes: 7, title: "{agent} on the other line", notice: "Rings when you hang up." } })
+    cfg = callsSchema.parse({ phone: { ring: "away" }, allow: ["*"], busy: { retryMinutes: 2, maxWaitMinutes: 7, title: "{agent} on the other line", notice: "Rings when you hang up." } })
     await place("writer")
     await poll(retry() - POLL_MS, { busy: true })
     expect(notices).toHaveLength(1)
@@ -256,7 +258,7 @@ describe("the caller of a busy owner (#969)", () => {
   })
 
   it("a waiting call counts once against maxPerHour, however long it waits", async () => {
-    cfg = callsSchema.parse({ allow: ["*"], maxPerHour: 2 })
+    cfg = callsSchema.parse({ phone: { ring: "away" }, allow: ["*"], maxPerHour: 2 })
     const first = await place("writer")
     await talk(first.id)
     const waiting = await place("ops")

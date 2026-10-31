@@ -50,6 +50,7 @@ import { SCAN_BODY, SCAN_CSS, SCAN_SCRIPT } from "./app-scan.client"
 import { markdownToHtml } from "@/utils/markdown-html"
 import { CAMERA_BODY, CAMERA_BUTTON, CAMERA_CSS, CAMERA_SCRIPT } from "./app-camera.client"
 import { CAMERA_ASKS_BODY, CAMERA_ASKS_CSS, CAMERA_ASKS_SCRIPT } from "./app-camera-asks.client"
+import { CALLS_BODY, CALLS_CSS, CALLS_SCRIPT } from "./app-calls.client"
 import { cameraConstraints, shareClock, streamLabel, talkRelease } from "./app-camera-logic"
 import { APP_SWIPE_CSS, APP_SWIPE_SCRIPT } from "./app-swipe.client"
 import { swipeAxis, swipeLanding, swipeMayStart, swipeOffset } from "./app-swipe-logic"
@@ -103,7 +104,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -114,6 +115,7 @@ export function renderAppPage(): string {
 </header>
 ${APP_PINS_BAR}
 <p id="offline" class="offline" role="status" hidden>Offline. Showing the saved app; live data needs a connection.</p>
+${CALLS_BODY}
 ${CAMERA_ASKS_BODY}
 <main>${panels}</main>
 <nav class="tabs" role="tablist" aria-label="Sections">${tabs}</nav>
@@ -132,6 +134,7 @@ ${CAMERA_BODY}
 <script>${APP_CHAT_STRIP_SCRIPT}</script>
 <script>${injectFns({ cameraConstraints, shareClock, streamLabel, talkRelease })}${CAMERA_SCRIPT}</script>
 <script>${CAMERA_ASKS_SCRIPT}</script>
+<script>${CALLS_SCRIPT}</script>
 </body>
 </html>`
 }

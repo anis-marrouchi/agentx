@@ -45,6 +45,7 @@ main { min-height: 0; }
 .cx-log { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .cx-msg { max-width: 92%; padding: 10px 12px; border-radius: var(--ax-radius); line-height: 1.5; overflow-wrap: anywhere; }
 .cx-user { align-self: flex-end; background: color-mix(in oklch, var(--ax-accent) 15%, var(--ax-surface)); border: var(--ax-border-w) solid color-mix(in oklch, var(--ax-accent) 45%, var(--ax-border)); white-space: pre-wrap; }
+.cx-callnote { align-self: center; padding: 4px 12px; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-text-2); font-size: .9em; }
 .cx-queued { opacity: 0.7; }
 .cx-queued::after { content: "Sent when the agent finishes"; display: block; font-size: var(--ax-fs-xs); color: var(--ax-text-2); margin-top: 4px; }
 .cx-agent { align-self: flex-start; background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border); }
