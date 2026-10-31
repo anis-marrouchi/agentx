@@ -38,11 +38,11 @@ In a source checkout, type `node dist/cli.js` instead of `agentx`.
 
 ## Try it out
 
-1. **Browser:** open the **Settings** tab. The **Agents** section opens first.
-2. Select **Test drive** next to your new agent.
-3. Send a small question with an answer you can check. This uses your model and may cost money.
+1. **Browser:** open the Hub and select **Settings**. The **Agents** section opens first.
+2. Select your new agent's card.
+3. Under **Test drive**, send a small question with an answer you can check. This uses your model and may cost money.
 
-![Settings, Agents tab, with a Test drive button beside each agent](/screenshots/settings.png)
+![Settings › Agents on the Hub, with one card per agent](/screenshots/wall/settings.png)
 
 Then [connect Telegram](./connect-telegram.md) if you want to talk to the agent from your phone.
 

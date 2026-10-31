@@ -26,8 +26,9 @@ function pages(dir) {
 }
 
 const tabNames = cfg.tabs.names.join("|")
-// "the Live tab", "**Settings** tab", "Settings › Schedules", "the top bar".
-const tabRe = new RegExp(`\\*{0,2}\\b(${tabNames})\\b\\*{0,2}\\s+tabs?\\b|\\*{0,2}\\b(Settings)\\b\\*{0,2}\\s*›|(?<!\\bno (?:dashboard )?|column's )\\b(top bar)\\b`, "gi")
+// "the Live tab", "**Settings** tab", "the top bar". "Settings › Schedules"
+// is the Hub's Settings now that /admin opens it (#1447).
+const tabRe = new RegExp(`\\*{0,2}\\b(${tabNames})\\b\\*{0,2}\\s+tabs?\\b|(?<!\\bno (?:dashboard )?|column's )\\b(top bar)\\b`, "gi")
 const shotRe = /(?:\]\(|src=["'])\/screenshots\/([^)"'\s]+)/g
 // A classic address in inline code or after a dashboard host.
 const urlRe = /`(?:https?:\/\/[^`\s/]+|<dashboard>)?(\/[a-z][^`\s]*)`|(?:127\.0\.0\.1|localhost):\d+(\/[a-z][^\s)`'"]*)/gi

@@ -33,7 +33,12 @@
     { "shots": "tui/", "why": "the terminal UI" },
     { "shots": "live/running-task-workflow.png", "why": "the Hub Live page (captured from /hub#page=live)" },
     { "shots": "workflows/editor", "why": "the Hub workflow editor (/workflows/editor redirects to /hub#page=editor)" },
-    { "shots": "costs/", "why": "the Hub Cost page (captured from /hub view=cost)" }
+    { "shots": "costs/", "why": "the Hub Cost page (captured from /hub view=cost)" },
+    { "shots": "settings-", "why": "Hub Settings (captured from /hub#page=settings, which /admin opens, #1447)" },
+    { "shots": "settings/", "why": "Hub Settings (captured from /hub#page=settings, which /admin opens, #1447)" },
+    { "shots": "notifications/dashboard-", "why": "Hub Settings › Inbox (captured from /hub#page=settings)" },
+    { "shots": "wiki-notes/", "why": "Hub Settings › Schedules (captured from /hub#page=settings)" },
+    { "shots": "channels/gitlab.png", "why": "Hub Settings › Channels (captured from /hub#page=settings)" }
   ],
   "classic": [
     { "shots": "live/running-build.png", "feature": "Daemon version and restart-pending line", "child": "#1444" },
@@ -48,12 +53,9 @@
     { "shots": "content/approvals-post.png", "feature": "Answer decision cards and inbox items", "child": "#1440" },
     { "shots": "activity", "feature": "Activity and agent history", "child": "#1429" },
     { "shots": "operations", "feature": "Activity, then remove /mesh", "child": "#1446" },
-    { "shots": "settings", "feature": "Settings on the Hub", "child": "#1428" },
-    { "shots": "notifications/dashboard-", "feature": "Settings on the Hub", "child": "#1428" },
     { "shots": "channels/", "feature": "Settings on the Hub", "child": "#1428" },
     { "shots": "agents/", "feature": "Settings on the Hub (agent page)", "child": "#1428" },
     { "shots": "agent-memory/", "feature": "Settings on the Hub (agent page)", "child": "#1428" },
-    { "shots": "wiki-notes/", "feature": "Settings on the Hub", "child": "#1428" },
     { "shots": "guests/", "feature": "Settings on the Hub (guests)", "child": "#1428" },
     { "shots": "doctor/", "feature": "Settings on the Hub (health)", "child": "#1428" },
     { "shots": "health/", "feature": "Settings on the Hub (health)", "child": "#1428" },

@@ -22,15 +22,15 @@ Wiki notes are off until you turn them on.
 
 ## Turn it on from the dashboard
 
-1. **Browser:** open the dashboard and go to **Settings**.
-2. Click the **Schedules** tab.
+1. **Browser:** open the Hub and go to **Settings**.
+2. Select **Schedules**.
 3. Scroll to **Wiki notes inbox**.
 4. Type the inbox agent's id in **Inbox agent**.
 5. Tick each schedule that should read the inbox. Only schedules that run as the inbox agent are accepted.
 6. Tick **Wiki notes on**.
 7. Click **Save**.
 
-![The Wiki notes inbox section on the Schedules tab: Wiki notes on is ticked, the inbox agent is filled in, one schedule is ticked, Absorb that reads the inbox names an agent, Most notes per run is 20 and Deferrals before a note expires is 3](/screenshots/wiki-notes/settings.png)
+![The Wiki notes inbox section on Settings › Schedules: Wiki notes on is ticked, the inbox agent is filled in, one schedule is ticked, Absorb that reads the inbox names an agent, Most notes per run is 20 and Deferrals before a note expires is 3](/screenshots/wiki-notes/settings.png)
 
 ## Turn it on from the terminal
 
@@ -54,7 +54,7 @@ If a schedule answers a note while absorb is still working, the schedule's answe
 **Browser:**
 
 1. Open the dashboard on the inbox agent's machine and go to **Settings**.
-2. Click the **Schedules** tab and scroll to **Wiki notes inbox**.
+2. Select **Schedules** and scroll to **Wiki notes inbox**.
 3. Type the agent's id in **Absorb that reads the inbox**. It must be an agent on this machine.
 4. Click **Save**.
 
@@ -113,9 +113,9 @@ The run's record also lists the notes it was given, under `wikiNotes`.
 1. **Terminal:** on the inbox agent's machine, run `agentx wiki notes list`. It shows the notes still waiting.
 2. **Terminal:** run `agentx wiki notes list --status all` to see every note and how it was handled.
 
-On the dashboard, open **Recent notes** under **Wiki notes inbox**. Click **details** under a note for its source and the run it was given to.
+On the dashboard, select **Show recent notes** under **Wiki notes inbox**. Each note shows its status, id, author, date and change, and how it was handled once it was.
 
-![Recent notes open under the Wiki notes inbox: one open note with its id, author, date and change, and its details showing the source](/screenshots/wiki-notes/recent.png)
+![Recent notes under the Wiki notes inbox: one open note with its id, author, date and change](/screenshots/wiki-notes/recent.png)
 
 ## Settings
 
