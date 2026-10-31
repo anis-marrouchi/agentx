@@ -71,7 +71,7 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
   return `<section class="hc" id="hc" aria-label="Chat" hidden>
     <div class="hc__head">${close}<div class="hc__title"><b>Chat</b><small id="hc-sub">New conversation</small></div>
       <button type="button" class="hc__ib" id="hc-hist" aria-expanded="false" aria-controls="hc-hist-panel">History</button><button type="button" class="hc__ib" id="hc-new">New</button>${x}</div>
-    <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
+    <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe hc__histe--err" id="hc-hist-err" role="alert" hidden></p><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
     <div class="hc__to"><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
     <form class="hc__foot" id="hc-form">
@@ -99,8 +99,23 @@ export const WALL_CHAT_SCRIPT = String.raw`
   if ($('hc-btn')) $('hc-btn').addEventListener('click', function () { open(panel.hidden); });
   $('hc-close').addEventListener('click', function () { open(false); });
   $('hc-back').addEventListener('click', function () { open(false); });
+  // Another Hub dialog (a workflow, a settings confirm, the More sheet) is
+  // open or holds the focus: Escape is its own, the panel stays.
+  function otherDialog(t) {
+    var inPanel = function (n) { return panel.contains ? panel.contains(n) : false; };
+    var d = t && t.closest ? t.closest('[role="dialog"], [aria-modal="true"], dialog') : null;
+    if (d && !inPanel(d)) return true;
+    var ms = document.querySelectorAll ? document.querySelectorAll('[aria-modal="true"], dialog[open]') : [];
+    for (var i = 0; i < ms.length; i++) if (!inPanel(ms[i]) && ms[i].getClientRects && ms[i].getClientRects().length) return true;
+    return false;
+  }
+  // Capture phase: this runs before the page's own Escape handlers close
+  // their dialog, so it still sees that dialog open.
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && !panel.hidden) { open(false); return; }
+    if (e.key === 'Escape' && !panel.hidden && !e.defaultPrevented && !otherDialog(e.target)) open(false);
+  }, true);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') return;
     // '/' asks, unless the cursor is already in a field.
     var t = e.target || {}, tag = String(t.tagName || '').toLowerCase();
     if (e.key !== '/' || guest || e.metaKey || e.ctrlKey || e.altKey || tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable) return;
@@ -180,6 +195,8 @@ export const WALL_CHAT_SCRIPT = String.raw`
     }, 500);
     return fetch('/api/assistant/thread?id=' + encodeURIComponent(id), { headers: headers() }).then(function (r) {
       clearTimeout(slow);
+      // A read of a conversation no longer open: drop it, whatever it says.
+      if (id !== threadId) return;
       if (r.status === 401) { signedOut(); return; }
       if (!r.ok) { setThread(null); thread = null; msgs = []; loaded = true; paintLog(); return; }
       return r.json().then(function (d) {
@@ -278,9 +295,19 @@ export const WALL_CHAT_SCRIPT = String.raw`
   $('hc-hist-list').addEventListener('click', function (e) {
     var del = e.target.closest('[data-hc-del]'), pick = e.target.closest('[data-hc-thread]');
     if (del) {
-      var id = del.getAttribute('data-hc-del');
+      var id = del.getAttribute('data-hc-del'), err = $('hc-hist-err');
+      err.hidden = true;
       fetch('/api/assistant/delete', { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ threadId: id }) })
-        .then(function () { if (id === threadId) { setThread(null); loadThread(null); } paintHist(); });
+        .then(function (r) {
+          if (r.status === 401) { $('hc-hist-panel').hidden = true; $('hc-hist').setAttribute('aria-expanded', 'false'); signedOut(); return; }
+          return r.json().catch(function () { return {}; }).then(function (d) {
+            if (!r.ok || (d && d.error)) throw new Error((d && d.error) || ('HTTP ' + r.status));
+            if (id === threadId) { setThread(null); loadThread(null); }
+            return paintHist();
+          });
+        })
+        // Not deleted: say so and keep the conversation, in the list and open.
+        .catch(function () { err.textContent = 'Not deleted. Try again.'; err.hidden = false; });
       return;
     }
     if (!pick) return;
@@ -326,6 +353,7 @@ export const WALL_CHAT_CSS = `
 .hc__back { display: none; color: var(--ax-text); }
 .hc__hist { border-bottom: 1px solid var(--ax-border); max-height: 40vh; overflow-y: auto; }
 .hc__histe { margin: 0; padding: 10px 14px; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
+.hc__histe--err { color: var(--ax-red-ink); }
 .hc__hist ul { list-style: none; margin: 0; padding: 0; }
 .hc__hist li { display: flex; align-items: center; border-top: 1px solid var(--ax-border); }
 .hc__hist li.is-on { background: var(--ax-blue-t); }

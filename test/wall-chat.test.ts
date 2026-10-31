@@ -9,7 +9,7 @@ import { openWall } from "./wall-settings-harness"
 
 type Reply = { status: number; body: unknown } | "down"
 
-function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; route?: (url: string, init: any) => Reply | undefined } = {}) {
+function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; route?: (url: string, init: any) => Reply | Promise<Reply> | undefined } = {}) {
   const page = renderWallPage({ owner: opts.owner ?? true, signIn: opts.signIn })
   const els = new Map<string, any>()
   const on = (e: any) => (t: string, f: (ev: any) => void) => { (e.on[t] ??= []).push(f) }
@@ -46,8 +46,10 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; ro
         : url === "/api/monitor" ? { status: 200, body: { nodes: [{ name: "studio", url: "http://studio", ok: true }] } }
         : url === "/api/assistant/threads" ? { status: 200, body: { threads: [] } }
         : { status: 404, body: { error: "not found" } })
-    if (r === "down") return Promise.reject(new TypeError("Failed to fetch"))
-    return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    return Promise.resolve(r).then((r) => {
+      if (r === "down") throw new TypeError("Failed to fetch")
+      return { ok: r.status < 400, status: r.status, json: async () => r.body }
+    })
   }
   const win: any = { AX_LOCAL_TOKEN: "tok", addEventListener: () => {}, axPageContext: () => ({ page: "Hub", view: "feed", status: "failed", count: 2, inView: ["Nightly backup", "Weekly digest"] }) }
   const timers: Array<() => void> = []
@@ -59,7 +61,11 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; ro
     for (const f of el(id).on[type] ?? []) f({ preventDefault() {}, ...ev })
     await settle()
   }
-  return { page, el, calls, ls, wallCls, fire, settle, timers, docOn }
+  const key = async (ev: any) => {
+    for (const f of docOn.on.keydown ?? []) f({ preventDefault() {}, defaultPrevented: false, target: {}, ...ev })
+    await settle()
+  }
+  return { page, el, calls, ls, wallCls, fire, settle, timers, docOn, key }
 }
 
 describe("Hub chat: what it draws (#1528)", () => {
@@ -193,6 +199,64 @@ describe("Hub chat: on the page (#1528)", () => {
     await w.fire("hc-btn", "click")
     expect(w.el("hc-dot").hidden).toBe(true)
     expect(w.el("hc-last").innerHTML).toContain("Last: Scout, “Backup?”")
+  })
+
+  it("ignores a slow failed read of a conversation no longer open", async () => {
+    let failOld!: () => void
+    const old = new Promise<Reply>((res) => { failOld = () => res({ status: 500, body: { error: "boom" } }) })
+    const w = openChat({
+      thread: "old",
+      route: (url) => url === "/api/assistant/thread?id=old" ? old
+        : url === "/api/assistant/thread?id=new" ? { status: 200, body: { thread: { id: "new", title: "Disk space?", agentId: "scout" }, messages: [] } }
+        : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const pick = { closest: (s: string) => (s === "[data-hc-thread]" ? { getAttribute: () => "new" } : null) }
+    await w.fire("hc-hist-list", "click", { target: pick })
+    expect(w.el("hc-sub").textContent).toBe("Disk space?")
+    failOld()
+    await w.settle()
+    expect(w.ls.get("ax-assistant-thread")).toBe("new")
+    expect(w.el("hc-sub").textContent).toBe("Disk space?")
+  })
+
+  it("leaves Escape to another Hub dialog that holds the focus", async () => {
+    const w = openChat()
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    await w.key({ key: "Escape", target: { closest: () => ({ id: "wf-dlg" }) } })
+    expect(w.el("hc").hidden).toBe(false)
+    await w.key({ key: "Escape", defaultPrevented: true })
+    expect(w.el("hc").hidden).toBe(false)
+    await w.key({ key: "Escape" })
+    expect(w.el("hc").hidden).toBe(true)
+  })
+
+  it("keeps a conversation the node did not delete, and says so", async () => {
+    let reply: Reply = { status: 500, body: { error: "disk full" } }
+    const w = openChat({
+      thread: "t1",
+      route: (url) => url === "/api/assistant/delete" ? reply
+        : url === "/api/assistant/thread?id=t1" ? { status: 200, body: { thread: { id: "t1", title: "Backup?", agentId: "scout" }, messages: [] } }
+        : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const del = { closest: (s: string) => (s === "[data-hc-del]" ? { getAttribute: () => "t1" } : null) }
+    await w.fire("hc-hist-list", "click", { target: del })
+    expect(w.el("hc-hist-err").hidden).toBe(false)
+    expect(w.el("hc-hist-err").textContent).toBe("Not deleted. Try again.")
+    expect(w.ls.get("ax-assistant-thread")).toBe("t1")
+    expect(w.el("hc-sub").textContent).toBe("Backup?")
+    reply = { status: 401, body: { error: "unauthorized" } }
+    await w.fire("hc-hist-list", "click", { target: del })
+    expect(w.el("hc-log").innerHTML).toContain("Chat is for the owner")
+    expect(w.ls.get("ax-assistant-thread")).toBe("t1")
+    reply = { status: 200, body: { ok: true } }
+    await w.fire("hc-hist-list", "click", { target: del })
+    expect(w.el("hc-hist-err").hidden).toBe(true)
+    expect(w.ls.get("ax-assistant-thread")).toBeUndefined()
   })
 
   it("the Hub publishes its page context for the chat", async () => {
