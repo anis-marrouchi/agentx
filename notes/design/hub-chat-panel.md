@@ -1,6 +1,6 @@
-# Hub chat panel, round 1 (#1528, epic #1449)
+# Hub chat panel (#1528, epic #1449)
 
-Design proposal for review. Nothing here is built. Per #1528, the chat panel goes through the same gate as the #1451 pages: it is built only after the owner accepts a layout.
+Accepted by the owner on 31 October 2026: **option A**, the not-the-owner state as drawn, and Chat and New post kept apart (see [Owner decisions](#owner-decisions)). The build follows on #1528 as its own PR.
 
 Every screen is in this note as an image (under `img/hub-chat-panel/`), so it opens on GitHub without any other tool. Comment here or on #1528.
 
@@ -103,6 +103,14 @@ Drawing the full run transcript inside the panel is not proposed: tool calls mak
 2. **Not the owner**: show the chat button with "Chat is for the owner · Sign in" (drawn), or no chat at all?
 3. **Chat and New post**: the Hub's composer gives an agent a task that shows as a post; the chat asks a question and leaves no post. Keep both as drawn, or should a chat answer offer **Post as a task**?
 
+## Owner decisions
+
+Answered by the owner on 31 October 2026:
+
+1. **Layout**: A. The side column becomes the chat (screens 1 and 2). Option B is not built.
+2. **Not the owner**: show the chat button with "Chat is for the owner · Sign in", as drawn.
+3. **Chat and New post**: keep both as drawn. A chat answer gets no **Post as a task** button.
+
 ## Next step
 
-Once a layout is accepted, the build goes on #1528: the panel in `renderWallPage()`, the Hub's `axPageContext`, the run id on pending turns, the Wall page check (`scripts/wall-page-check.json`) at 390 px and desktop, and the Hub docs page with new screenshots. The owner guard on `/api/assistant` is already in place (#1608).
+The build goes on #1528: the panel in `renderWallPage()`, the Hub's `axPageContext`, the run id on pending turns, the Wall page check (`scripts/wall-page-check.json`) at 390 px and desktop, and the Hub docs page with new screenshots. The owner guard on `/api/assistant` is already in place (#1608).
