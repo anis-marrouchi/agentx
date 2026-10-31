@@ -135,6 +135,11 @@ WhatsApp call? The debug APK has a second icon, **AgentX watch spike**.
    `setCommunicationDevice` (`startBluetoothSco` before Android 12).
    Next it says a test phrase, records 5 s and plays the recording back.
    Hanging up on the watch ends the call.
+5. Keep the spike screen open and the phone screen on for the whole run,
+   including when you answer on the watch. On Android 11+ the app only
+   gets the microphone while it is in the foreground; otherwise it records
+   silence and the log shows "FAIL microphone heard almost nothing" even
+   though the watch works.
 
 The screen and `adb logcat -s WatchSpike` show each step, with PASS or
 FAIL where the phone can tell: the audio route, the microphone's device

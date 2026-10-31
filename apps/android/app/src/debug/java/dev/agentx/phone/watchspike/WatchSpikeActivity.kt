@@ -78,7 +78,7 @@ class WatchSpikeActivity : Activity() {
     private fun ring() {
         val telecom = getSystemService(TelecomManager::class.java)
         val handle = SpikeAccount.handle(this)
-        if (!telecom.isIncomingCallPermitted(handle)) {
+        if (Build.VERSION.SDK_INT >= 28 && !telecom.isIncomingCallPermitted(handle)) {
             SpikeLog.add("FAIL Telecom does not permit a call now (another call active?)")
             return
         }
