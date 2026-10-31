@@ -1029,9 +1029,15 @@ final class App: NSObject, NSApplicationDelegate {
             let now = Date()
             // Words spoken while it thought go now, in the same row; the
             // answer they talked over is not played (it stays in History).
+            // When the daemon dropped the first words, the kept follow-up
+            // still goes: it is the owner's own words, not lost with them.
             let dropped = (try? result.get())?.dropped == true
-            if !dropped, requests.takePending(id, at: now) {
-                Log.info("request \(id): asking the follow-up kept while it thought")
+            let again = dropped ? requests.dropped(id, at: now) : requests.takePending(id, at: now)
+            if dropped && !again {
+                Log.info("request \(id): the daemon took the words for the floor holder's sound")
+            }
+            if again {
+                Log.info("request \(id): asking the follow-up kept while it thought\(dropped ? " (the first words were dropped)" : "")")
                 requestsChanged()
                 if let key = requests.request(id)?.key, let q = requests.request(id)?.question {
                     requestsEpoch += 1
@@ -1042,8 +1048,7 @@ final class App: NSObject, NSApplicationDelegate {
             }
             switch result {
             case .success(let answer) where answer.dropped:
-                Log.info("request \(id): the daemon took the words for the floor holder's sound")
-                requests.remove(id)
+                break // the row already left in requests.dropped
             case .success(let answer):
                 Log.info("request \(id) answered (\(answer.agentID ?? r.agentID)): \(answer.text)")
                 answers[id] = answer

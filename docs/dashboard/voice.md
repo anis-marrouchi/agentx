@@ -170,7 +170,7 @@ Each agent has one ongoing voice conversation on this computer. Picking a row le
 3. The follow-up goes to that agent, which still has your earlier question and its answer in mind. The pill says **Ops · Added to the same request**. No new row is added: the picked row shows your follow-up and thinks again, and its new answer waits with a blue dot.
 
 - The row stays picked for every follow-up, until you close it or talk to another agent (for example "Writer, …"). Then a new row starts.
-- Picking a row that is still thinking keeps your follow-up for when that answer is back, then asks it in the same row. The answer you talked over is not played; it stays in [History](#history-of-what-you-asked).
+- Picking a row that is still thinking keeps your follow-up for when that answer is back, then asks it in the same row. The answer you talked over is not played; it stays in [History](#history-of-what-you-asked). If AgentX set aside the first words (for example, it took them as a sound while another agent held the floor), your follow-up is still asked in that row.
 - Picking a row that is waiting its turn adds your words to that request, which hasn't gone yet.
 
 #### Close a request
