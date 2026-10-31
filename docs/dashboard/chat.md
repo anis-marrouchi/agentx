@@ -2,7 +2,7 @@
 
 Use **Ask an agent** to ask about what you are looking at without leaving the dashboard. It needs a running dashboard and daemon, plus an agent with a working model connection. See [core setup](../requirements.md#core-setup).
 
-The Hub does not have it yet: it is on the classic dashboard pages, such as Monitor (`/monitor`). Each of them has two ways in: the input bar at the bottom (**Ask an agent about this page…**), and the **Ask an agent** tab on the right edge, which opens the conversation panel directly.
+On the Hub it is the **Chat** box at the top of the side column (see [Chat on the Hub](#chat-on-the-hub)). On the classic dashboard pages, such as Monitor (`/monitor`), there are two ways in: the input bar at the bottom (**Ask an agent about this page…**), and the **Ask an agent** tab on the right edge, which opens the conversation panel directly.
 
 ![The Ask an agent input bar at the bottom of a dashboard page, and the tab on the right edge](/screenshots/monitor-only-you.png)
 
@@ -21,6 +21,23 @@ The Hub does not have it yet: it is on the classic dashboard pages, such as Moni
 Only the dashboard's owner can use it. On the machine that runs the dashboard it just works. On another computer, when `dashboard.token` is set, sign in at `/login` first. With no token set, it only works on the dashboard's own machine.
 
 The question carries the page you're on and its tab. Some pages also send their current filters, counts or the rows in view. All of this goes to the agent's model provider with your question (see [Your data](../your-data.md)). The agent doesn't see a picture of the page and can't browse on its own. It works with its usual tools, so if you ask it to *do* something, it really does it.
+
+## Chat on the Hub
+
+1. **Browser:** open the Hub. On a computer, the **Chat** box is the first box of the side column. Under 1180 px wide, and on a phone, select the chat button in the Hub's header instead.
+2. Type your question in the Chat box and select **Ask**, or press `/` to put the cursor there. The side column becomes the chat; the feed and the open post stay where they are. On a phone the chat opens full screen, with **←** back to the page.
+3. Pick who answers in **To**. A node list shows only when there is more than one machine to pick.
+4. Read the reply in the panel. Type again in **Message…** and select **Send**, or press Enter (Shift+Enter for a new line).
+
+Under the message box, **Goes with it** says what the Hub sends with your message: the page, the status tab, the filters that are set, the open post or run, and up to ten headlines in view. Select it to see the exact fields.
+
+The Hub and the classic pages share the open conversation: a question asked on `/monitor` continues on the Hub, and back. While the agent is answering, the panel says **is answering** and checks again every second and a half. Under the Chat box, the last conversation stays one tap away, with a blue dot while an answer is not opened yet (on the header's chat button too).
+
+When an agent cannot answer, its reply shows in red with **Try again** and **Ask another agent**. When the machine does not take the message, it shows **Not sent**, and your text stays in the message box to send again.
+
+Chat and **New post** stay separate: the chat asks a question and leaves no post; to give an agent a task that shows on the Hub, use [Post a task](./hub.md#post-a-task).
+
+Anyone who is not the owner sees **Chat is for the owner**, with **Sign in** when `dashboard.token` is set. The rest of the Hub stays readable.
 
 ## Continue or start over
 

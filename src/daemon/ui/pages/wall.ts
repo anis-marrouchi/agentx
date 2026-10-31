@@ -10,7 +10,8 @@
 //
 // Reads records the daemon already keeps (requests, plan events, task
 // traces, the live fleet snapshot). It writes only when the owner does:
-// a post, a comment, a call, a Space, an answer on Needs you (#1440), or,
+// a post, a comment, a call, a Space, an answer on Needs you (#1440), a
+// chat message (#1528, wall-chat.client.ts), or,
 // owner-only where a classic page wrote (#1449), Settings (#1428), drawn
 // only when `owner` is set (wall-settings.client.ts).
 //
@@ -45,6 +46,7 @@ import { WALL_SETTINGS_CSS } from "./wall-settings.client"
 import { WALL_ACTIVITY_CSS } from "./wall-activity.client"
 import { WALL_BUILD_CSS } from "./wall-build.client"
 import { HUB_NAME, HUB_PATH } from "../hub-name"
+import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml, wallChatQuickHtml } from "./wall-chat.client"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -182,6 +184,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   // The workflow editor's bundle, loaded when its page opens (#1524).
   const editorCfg = `<script>window.AX_WALL_EDITOR = ${JSON.stringify({ src: assetUrl("workflow-editor.global.js"), owner })};</script>`
   const groups = wallNavGroups(owner)
+  // The chat panel (#1528): the owner chats; anyone else is told it is the owner's.
+  const chat = { owner, signIn: !!opts.signIn }
   const navItems = groups.map((g) =>
     (g.label ? `    <span class="ax-wall__navlbl" aria-hidden="true">${g.label}</span>\n` : "") + g.items.map((i) => `    ${navItemHtml(i)}`).join("\n"),
   ).join("\n") + `\n    <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
@@ -206,7 +210,7 @@ ${navItems}
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
         <span class="ax-wall__switch" id="wall-act-switch" aria-label="Show as" hidden><button type="button" class="is-on" aria-pressed="true">Feed</button><a href="/activity" title="The classic lane view, and the Map">Timeline</a></span>
         <a class="ax-btn ax-btn--ghost wwf__new" id="wall-wf-new" href="#page=editor&amp;e-new=1" hidden>New workflow</a>
-        <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a></div>
+        <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a>${wallChatButtonHtml()}</div>
       <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
       <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
         ${WALL_STATUS_TABS.map(([v, label]) => `<button type="button" role="tab" data-tab="${v}">${label}</button>`).join("")}
@@ -268,6 +272,7 @@ ${navItems}
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
   </div>
   <aside class="ax-wall__aside" id="wall-aside">
+    ${wallChatQuickHtml(chat)}
     <section id="wall-org-rail" class="ax-wall__box ax-wall__orgrail" aria-labelledby="wall-org-rail-h" hidden>
       <h2 id="wall-org-rail-h">In the org</h2>
       <div id="wall-org-rail-body"></div>
@@ -289,14 +294,15 @@ ${navItems}
       <details class="ax-wall__classicd"><summary>Dashboard pages</summary><nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav></details>
     </section>
   </aside>
+  ${wallChatPanelHtml(chat)}
   <div id="wall-wf-dialog" hidden></div>
 </div>`
 
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS,
-    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script>`,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
+    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }
 
