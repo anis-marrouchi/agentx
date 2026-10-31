@@ -223,6 +223,7 @@ import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
+import { VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath } from "@/daemon/voice-requests-api"
 import { toSpeakable } from "@/voice/speakable"
 import { pronouncer } from "@/voice/pronounce"
 import { isNoiseTranscript, NOISE_REPLY } from "@/voice/noise"
@@ -344,6 +345,8 @@ export class AgentXDaemon {
   private _assistant?: AssistantStore
   /** Agents ringing the owner (src/calls); needs SQLite. */
   private calls?: CallService
+  /** AgentX Voice's open-requests list (#1455); needs SQLite. */
+  private voiceRequests: VoiceRequestStore | null = null
   /** Watched WhatsApp chats (src/whatsapp-triage). Null without SQLite. */
   private waTriage: TriageService | null = null
   private assistantStore(): AssistantStore | undefined { return this._assistant }
@@ -778,6 +781,7 @@ export class AgentXDaemon {
         this.sessionMonitor.start()
         this._assistant = new AssistantStore(db)
         this.calls = this.createCallService(new CallStore(db))
+        this.voiceRequests = new VoiceRequestStore(db)
         this.waTriage = this.createWhatsappTriage(db)
         this.log(`  SQLite: ${db.name}`)
         // Procedure miner's on-task trigger — counts recurring activity
@@ -5075,6 +5079,18 @@ export class AgentXDaemon {
         this.json(res, reply.status, reply.body)
         return
       }
+      // AgentX Voice's open-requests list (#1455). Gated by isMeshGatedPath
+      // before this point.
+      if (isVoiceRequestsPath(path)) {
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const reply = handleVoiceRequests({
+          store: this.voiceRequests,
+          knows: (id) => !!this.registry.getAgent(id) || this.voiceMesh.isRemote(id),
+          stop: (id) => this.registry.cancelChatTasks(id, "voice", `voice:${id}`, "stopped from the open-requests list"),
+        }, req.method || "GET", path, body)
+        this.json(res, reply.status, reply.body)
+        return
+      }
       // The phone app's voice: a recording in, words out; an answer in, the
       // agent's ElevenLabs voice out. Gated by isMeshGatedPath above.
       if (isVoiceIoPath(path)) {
@@ -8151,12 +8167,22 @@ export class AgentXDaemon {
           let voiceSession = url.searchParams.get("session") || ""
           // The microphone opened by itself, no key held (#924).
           let handsFree = url.searchParams.get("handsFree") === "true"
+          // A row of the open-requests list this asks for (#1455).
+          let requestId = url.searchParams.get("request") || ""
           if (req.method === "POST") {
             const body = await readBody(req)
             message = (body.message as string) || (body.q as string) || message
             requestedAgent = (body.agent as string) || (body.agentId as string) || requestedAgent
             voiceSession = (body.session as string) || voiceSession
             handsFree = body.handsFree === true || handsFree
+            if (typeof body.request === "string") requestId = body.request
+          }
+          // The row follows the turn: thinking now, then answered or failed
+          // with what is sent back, so any client can read it later.
+          if (requestId) this.voiceRequests?.start(requestId)
+          const reply = (status: number, out: Record<string, unknown>) => {
+            if (requestId) this.voiceRequests?.settle(requestId, status, out)
+            this.json(res, status, requestId ? { ...out, request: requestId } : out)
           }
 
           // An explicit agent is what makes this endpoint useful for more than
@@ -8164,11 +8190,11 @@ export class AgentXDaemon {
           // different agents with different context, not one default.
           const requested = requestedAgent.trim() || this.config.node.defaultAgent
           if (!requested) {
-            this.json(res, 400, { error: "No agent (pass ?agent=... or set node.defaultAgent)" })
+            reply(400, { error: "No agent (pass ?agent=... or set node.defaultAgent)" })
             return
           }
           if (!message) {
-            this.json(res, 400, { error: "Missing message (pass as ?q=... or {message:...})" })
+            reply(400, { error: "Missing message (pass as ?q=... or {message:...})" })
             return
           }
 
@@ -8188,7 +8214,7 @@ export class AgentXDaemon {
           const floor = this.voiceTalk.floor.view()
           if (handsFree && floor.held && floor.sound) {
             this.log(`[floor] ${requested}: hands-free words dropped while ${floor.holder} holds the floor (${JSON.stringify(message.slice(0, 60))})`)
-            this.json(res, 200, { agentId: requested, voice: null, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
+            reply(200, { agentId: requested, voice: null, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
             break
           }
 
@@ -8201,14 +8227,14 @@ export class AgentXDaemon {
             const voice = remoteSwitch ? this.voiceMesh.voices.voice(switched) : resolveAgentVoice(switched, this.config.agents, this.config.voice)
             const text = this.voiceIntros.needsIntro(session, switched) ? voice.intro : "I'm here."
             this.voiceIntros.spoke(session, switched)
-            this.json(res, 200, { agentId: switched, voice: voiceForText(voice, text), presence: null, text: this.sayAs(text), full: text, ui: null, switched: true })
+            reply(200, { agentId: switched, voice: voiceForText(voice, text), presence: null, text: this.sayAs(text), full: text, ui: null, switched: true })
             break
           }
 
           const agentId = this.voiceMesh.target(session, requested)
           const remote = !this.registry.getAgent(agentId) && this.voiceMesh.isRemote(agentId)
           if (!remote && !this.registry.getAgent(agentId)) {
-            this.json(res, 404, { error: `Unknown agent: "${agentId}"`, agents: this.voiceMesh.known() })
+            reply(404, { error: `Unknown agent: "${agentId}"`, agents: this.voiceMesh.known() })
             return
           }
 
@@ -8223,7 +8249,7 @@ export class AgentXDaemon {
           const noise = this.config.voice.noiseFilter
           if (noise.enabled && isNoiseTranscript(message, noise.markers)) {
             this.log(`[voice] ${agentId}: noise transcript dropped (${JSON.stringify(message.slice(0, 60))})`)
-            this.json(res, 200, { agentId, voice: voiceForText(voice, NOISE_REPLY), presence: null, text: NOISE_REPLY, full: NOISE_REPLY, ui: null, noise: true })
+            reply(200, { agentId, voice: voiceForText(voice, NOISE_REPLY), presence: null, text: NOISE_REPLY, full: NOISE_REPLY, ui: null, noise: true })
             break
           }
 
@@ -8239,24 +8265,24 @@ export class AgentXDaemon {
               this.voiceIntros.spoke(session, agentId)
               // The way out is said up front: a lesson is never a surprise to end (#1493).
               const text = (presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen.") + " Say stop when you're done."
-              this.json(res, 200, { agentId, voice, presence, text, full: text, ui: null })
+              reply(200, { agentId, voice, presence, text, full: text, ui: null })
               break
             }
           }
 
           if (remote) {
-            const reply = await this.voiceMesh.ask(agentId, message, voice, introduce)
-            const { cleanText, ui } = extractUiDirective(reply.content)
-            if (!reply.error) this.voiceIntros.spoke(session, agentId)
-            const spoken = reply.error ? null : toSpeakable(cleanText, this.config.voice.spokenMaxChars)
-            this.json(res, reply.error ? 502 : 200, {
+            const answer = await this.voiceMesh.ask(agentId, message, voice, introduce)
+            const { cleanText, ui } = extractUiDirective(answer.content)
+            if (!answer.error) this.voiceIntros.spoke(session, agentId)
+            const spoken = answer.error ? null : toSpeakable(cleanText, this.config.voice.spokenMaxChars)
+            reply(answer.error ? 502 : 200, {
               agentId, voice: voiceForText(voice, spoken), presence: null,
               text: spoken && this.sayAs(spoken),
-              full: reply.error ? null : cleanText,
+              full: answer.error ? null : cleanText,
               ui: ui ?? null,
-              error: reply.error,
-              duration: reply.duration,
-              peer: reply.peer,
+              error: answer.error,
+              duration: answer.duration,
+              peer: answer.peer,
             })
             break
           }
@@ -8296,7 +8322,7 @@ export class AgentXDaemon {
           const queued = parseQueued(response.error)
           if (queued) {
             const pending = queued.pending
-            this.json(res, 202, {
+            reply(202, {
               ...speaker,
               text: pending > 1
                 ? `I'm still on your last request, and ${pending} more are waiting. Give me a moment.`
@@ -8322,7 +8348,7 @@ export class AgentXDaemon {
           // this agent stays on screen. Only a lesson shows its pointer.
           this.voiceTalk.presence.hide(agentId)
 
-          this.json(res, response.error ? 500 : 200, {
+          reply(response.error ? 500 : 200, {
             ...speaker,
             // The voice of the reply's language, when the agent has one.
             voice: voiceForText(voice, speakable),
