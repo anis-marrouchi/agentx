@@ -42,7 +42,7 @@ export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/approvals", label: "Approvals", status: "wall", wall: HUB_NEEDS_YOU, note: "Needs you (#1440); its settings are in Settings › Inbox and Requests (#1428). Redirected (301) in board-dashboard.ts." },
   { path: "/admin", label: "Settings", status: "wall", wall: HUB_PATH + "#page=settings", note: "Every tab has its Settings section (#1428). Redirected (301) in board-dashboard.ts; a #tab hash is not carried." },
   { path: "/admin/agents/<id>", label: "Agent settings", status: "pending", blockedBy: [1449, 1528], note: "Settings › Agents (#1428) has five of its tabs. Left: the chat `agentx start` opens (#1528), Capability, and deleting an agent; no child issue for those two." },
-  { path: "/admin/health", label: "Observability", status: "pending", blockedBy: [1449], note: "Settings › Diagnostics has its Errors, Routing, Rotations and Doctor tabs. Left: Overview, Activity and the live Logs tail; no child issue yet. Also /admin/observability." },
+  { path: "/admin/health", label: "Observability", status: "wall", wall: HUB_PATH + "#page=settings&section=diagnostics", note: "Settings › Diagnostics has all seven tabs (#1449). Redirected (301) in board-dashboard.ts, as is /admin/observability; a #tab hash is not carried." },
   { path: "/guests", label: "Guests", status: "pending", blockedBy: [1449], note: "Settings › Guests (#1428) links here; no Hub view yet, no child issue." },
   { path: "/admin/cost", label: "Cost", status: "wall", wall: HUB_PATH + "#status=open&view=cost", note: "Redirected in board-dashboard.ts (#1423, #1466)." },
   // Owner decision on #1420 (B): the org chart is edited on /org and the
@@ -122,6 +122,8 @@ export function classicRedirect(path: string, params: URLSearchParams, daemonUrl
   // Classic Settings kept its tab in the hash, which never reaches the
   // server: every old link opens the Hub's Settings list.
   if (path === "/admin" || path === "/admin/") return HUB_PATH + "#page=settings"
+  // Health kept its tab in the hash too: every old link opens Diagnostics.
+  if (path === "/admin/health" || path === "/admin/observability") return HUB_PATH + "#page=settings&section=diagnostics"
   const hist = path.match(/^\/agents\/([^/]+)\/history$/)
   if (hist) {
     // The Activity filter keys (wall-activity.client.ts ACT_KEYS). The classic

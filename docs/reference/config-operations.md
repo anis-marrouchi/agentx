@@ -13,7 +13,7 @@ The dashboard is the web page served by `agentx board serve`. See [Dashboard](/d
 | `dashboard.enabled` | boolean | `false` | Turns the dashboard server on. |
 | `dashboard.port` | number | `4202` | Port the dashboard listens on. |
 | `dashboard.bind` | string | `"127.0.0.1"` | Address the dashboard listens on. Keep it local unless a reverse proxy sits in front ([your own address](/jobs/reverse-proxy)). |
-| `dashboard.token` | string | — | Bearer token required for changes made through the dashboard and for its admin data, such as the Health, Cost and Ledger pages' spend, budgets, errors and checks, the live log on the Health page, and the Activity map. Pages served by the dashboard send it for you. For live views, the page swaps it for a pass that works for one minute, so the token itself never goes in a web address. Unset means no token is needed. |
+| `dashboard.token` | string | — | Bearer token required for changes made through the dashboard and for its admin data, such as the Cost and Ledger pages' spend and budgets, the errors, checks and live log in Settings › Diagnostics, and the Activity map. Pages served by the dashboard send it for you. For live views, the page swaps it for a pass that works for one minute, so the token itself never goes in a web address. Unset means no token is needed. |
 | `dashboard.daemonUrl` | string | `"http://localhost:18800"` | The main daemon the dashboard reads live data from. |
 | `dashboard.daemons` | list of objects | `[]` | Extra daemons to show, beyond the peers the main daemon already knows. |
 | `dashboard.draftAgent` | string | — | Agent that drafts text when you create an issue from a board. |
@@ -472,7 +472,7 @@ What the node reports about itself: read it with `agentx node`. How it works: [A
 - **`config check` names a field:** fix the value to match the type in the tables above. Ids for boards and columns must be lowercase.
 - **Dashboard changes don't show:** the dashboard is its own process. Restart it after changing `dashboard` settings.
 - **A script that reads the dashboard's admin data gets `401`:** with `dashboard.token` set, every `/api/admin/` address needs it. Send the header `Authorization: Bearer <your token>` with each request.
-- **The Health page's log or the Activity map stays empty on another computer:** sign in at `/login` on that dashboard first, then reload the page.
+- **The live log in Settings › Diagnostics or the Activity map stays empty on another computer:** sign in at `/login` on that dashboard first, then reload the page.
 - **A mesh peer shows as down:** check its `url` and `token`, then raise `mesh.healthCheck.timeout` if the link is slow.
 - **`agentx demo` says `Timed out waiting for …`:** the machine is too busy for the startup limit. Run it again with `--startup-timeout 300`, or set `demo.startupTimeoutSeconds`. The line `Startup limit: …` at the top shows the value in use and where it came from.
 - **A backend key is empty at runtime:** the variable named in `apiKeyEnv` is missing from `.env`. Add it, then restart the daemon.

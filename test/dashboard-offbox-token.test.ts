@@ -12,7 +12,7 @@ import { isOffBox, pageToken, sessionValue } from "../src/daemon/dashboard-sessi
 
 const TOKEN = "dash-secret"
 const OFF = { "X-Forwarded-For": "100.64.0.9" }
-const PAGES = ["/hub", "/admin/graph", "/admin/agents/ops", "/admin/health", "/admin/ledger"]
+const PAGES = ["/hub", "/admin/graph", "/admin/agents/ops", "/admin/ledger"]
 
 let server: Server | undefined
 
@@ -55,6 +55,9 @@ describe("dashboard pages off-box (#1306)", () => {
     // /admin moved to the Hub's Settings (#1428): off-box it signs in with Settings as next.
     const admin = await fetch(base + "/admin", { headers: OFF, redirect: "manual" })
     expect(admin.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/hub#page=settings"))
+    // /admin/health moved to Settings › Diagnostics (#1449): the same.
+    const health = await fetch(base + "/admin/health", { headers: OFF, redirect: "manual" })
+    expect(health.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/hub#page=settings&section=diagnostics"))
     // /people moved to the Wall (#1441): off-box it still signs in first.
     const people = await fetch(base + "/people", { headers: OFF, redirect: "manual" })
     expect(people.headers.get("location")).toBe("/login?next=%2Fpeople")

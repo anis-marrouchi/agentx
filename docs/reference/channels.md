@@ -56,5 +56,5 @@ Both WhatsApp routes, the WhatsApp channel above and [Watch a WhatsApp chat](../
 - **Telegram stays silent:** check the allow list above, then look for `not in allowlist` in `agentx daemon logs`.
 - **Email stays silent:** check the account's `allowFrom`, then look for `[email]` lines in `agentx daemon logs`. Only mail that arrives after the first read is answered. See [Answer customer email](../jobs/answer-email.md#if-something-is-wrong).
 - **WhatsApp stays silent:** check `channels.whatsapp.allowFrom` (see [Before you pair WhatsApp](#before-you-pair-whatsapp)), then look for `not in allowlist` in `agentx daemon logs`.
-- **A webhook event never arrives:** first check that the other tool sent it (its webhook delivery log), then open `/admin/health` on the dashboard and [Activity](../dashboard/activity.md).
+- **A webhook event never arrives:** first check that the other tool sent it (its webhook delivery log), then open **Settings** › **Diagnostics** in the Hub and [Activity](../dashboard/activity.md).
 - **Still stuck:** run `agentx doctor` and follow [It's not answering](../help/its-not-answering.md).
