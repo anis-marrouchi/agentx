@@ -48,7 +48,13 @@ final class RequestsWindow: NSPanel {
     private static let bottomPadding: CGFloat = 8
     /// "Close heard", and Undo after a close.
     private static let footerHeight: CGFloat = 34
-    private static let emptyHeight: CGFloat = 92
+    private static let emptyHeight: CGFloat = 104
+    /// A failed row opened: its reason and Ask again under it.
+    private static let reasonHeight: CGFloat = 56
+    /// "Can’t reach AgentX on this Mac", with Try now and the dashboard.
+    private static let unreachableHeight: CGFloat = 92
+    /// Two placeholder rows while the daemon is slow to answer.
+    private static let loadingRows = 2
 
     /// Counts the thinking clocks while the list shows.
     private var tick: Timer?
@@ -122,6 +128,7 @@ final class RequestsWindow: NSPanel {
         model.selected = nil
         model.confirming = nil
         model.opened = nil
+        model.expanded = nil
         orderOut(nil)
     }
 
@@ -153,8 +160,19 @@ final class RequestsWindow: NSPanel {
         if model.opened != nil && rows(true).isEmpty { model.opened = nil }
         let count = rows(true).count
         let footer = count > 0 || model.undo != nil ? Self.footerHeight : 0
-        let height = (count == 0 ? Self.emptyHeight
-            : Self.headerHeight + CGFloat(count) * Self.rowHeight + Self.bottomPadding) + footer
+        var height: CGFloat
+        switch model.status {
+        case .loading where count == 0:
+            height = Self.headerHeight + CGFloat(Self.loadingRows) * Self.rowHeight + Self.bottomPadding
+        case .unreachable:
+            height = Self.headerHeight + Self.unreachableHeight + CGFloat(count) * Self.rowHeight + Self.bottomPadding + footer
+        default:
+            height = (count == 0 ? Self.emptyHeight
+                : Self.headerHeight + CGFloat(count) * Self.rowHeight + Self.bottomPadding) + footer
+        }
+        if let open = model.expanded, rows(true).contains(where: { $0.id == open && $0.reason != nil }) {
+            height += Self.reasonHeight
+        }
         let screen = NSScreen.screens.first { $0.frame.intersects(pill) } ?? NSScreen.main ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
         let spot = PillPlacement.list(width: Self.width, height: height, pill: pill, visible: visible)
@@ -163,6 +181,7 @@ final class RequestsWindow: NSPanel {
         if model.rows != fresh { model.rows = fresh }
         if let s = model.selected, !fresh.contains(where: { $0.id == s }) { model.selected = nil }
         if let c = model.confirming, !fresh.contains(where: { $0.id == c && $0.cue == .thinking }) { model.confirming = nil }
+        if let e = model.expanded, !fresh.contains(where: { $0.id == e && $0.reason != nil }) { model.expanded = nil }
         if frame != spot.frame { setFrame(spot.frame, display: true) }
     }
 
@@ -240,7 +259,8 @@ final class RequestsWindow: NSPanel {
             return true
         case 36, 76: // Return, Enter
             guard let id = model.selected else { return true }
-            model.pick(id)
+            // A failed row already opened: Return asks again.
+            if model.expanded == id { model.onAskAgain?(id) } else { model.pick(id) }
             return true
         case 53: // Esc: back from an agent's rows, else hide
             if model.opened != nil { back() } else { dismissList() }
@@ -298,9 +318,30 @@ final class RequestsModel: ObservableObject {
         let action: String?
         /// An agent's row in the grouped list: the agent it opens.
         var agent: String? = nil
+        /// Why it failed, in one line: shown under the row once picked.
+        var reason: String? = nil
+    }
+
+    /// Where the list stands with the daemon that keeps it.
+    enum Status: Equatable {
+        /// The daemon answered the last read.
+        case ready
+        /// The first read is taking longer than half a second.
+        case loading
+        /// The daemon did not answer: the rows come back when it does.
+        case unreachable
     }
 
     @Published var rows: [Row] = []
+    @Published var status: Status = .ready
+    /// The failed row opened in place, with its reason and Ask again.
+    @Published var expanded: Int?
+    /// "Ask again" on a failed row. Set by the app.
+    var onAskAgain: ((Int) -> Void)?
+    /// "Try now" while the daemon is unreachable. Set by the app.
+    var onRetry: (() -> Void)?
+    /// "Open the dashboard". Set by the app.
+    var onDashboard: (() -> Void)?
     /// The row the keyboard is on.
     @Published var selected: Int?
     /// The keyboard is in the list: the selected row has a ring.
@@ -390,11 +431,23 @@ struct RequestsView: View {
             .accessibilityElement(children: model.opened == nil ? .combine : .contain)
             .accessibilityAddTraits(.isHeader)
 
-            if model.rows.isEmpty {
+            if model.status == .unreachable {
+                Unreachable(retry: { model.onRetry?() }, dashboard: { model.onDashboard?() })
+            }
+            if model.rows.isEmpty && model.status == .loading {
+                VStack(spacing: 0) {
+                    ForEach(0..<2, id: \.self) { _ in LoadingRow() }
+                }
+                .padding(.horizontal, 6)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Loading open requests")
+            } else if model.rows.isEmpty && model.status == .unreachable {
+                EmptyView()
+            } else if model.rows.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Nothing open")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Hold ⌥Space and ask any agent.")
+                    Text("Hold ⌥Space and ask any agent. Each request shows here until you close it.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -410,11 +463,16 @@ struct RequestsView: View {
                                         CloseConfirm(row: row, onStop: model.confirmOnStop,
                                                      choose: { model.onConfirm?(row.id, $0) })
                                     } else {
-                                        RequestRow(row: row,
-                                                   selected: model.selected == row.id,
-                                                   ring: model.keyboard && model.selected == row.id,
-                                                   pick: { model.pick(row.id) },
-                                                   close: { model.onClose?(row.id) })
+                                        VStack(alignment: .leading, spacing: 0) {
+                                            RequestRow(row: row,
+                                                       selected: model.selected == row.id,
+                                                       ring: model.keyboard && model.selected == row.id,
+                                                       pick: { model.pick(row.id) },
+                                                       close: { model.onClose?(row.id) })
+                                            if model.expanded == row.id, let reason = row.reason {
+                                                FailedReason(reason: reason, askAgain: { model.onAskAgain?(row.id) })
+                                            }
+                                        }
                                     }
                                 }
                                 .id(row.id)
@@ -459,6 +517,73 @@ struct RequestsView: View {
         .padding(.horizontal, 14)
         .frame(height: 34)
         .overlay(alignment: .top) { Divider().opacity(0.5) }
+    }
+}
+
+/// A failed row, picked: why, in one line, and Ask again, which sends the
+/// same words to the same agent as a new request.
+struct FailedReason: View {
+    let reason: String
+    let askAgain: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(reason)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Button(OpenRequests.askAgain, action: askAgain)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .font(.system(size: 11.5))
+        }
+        .padding(.leading, 40)
+        .padding(.trailing, 8)
+        .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// The daemon did not answer the last read: the rows are kept by AgentX
+/// and come back when it answers. The app tries again every few seconds.
+struct Unreachable: View {
+    let retry: () -> Void
+    let dashboard: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(OpenRequests.unreachableTitle)
+                .font(.system(size: 13, weight: .semibold))
+            Text(OpenRequests.unreachableBody)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Button("Try now", action: retry)
+                Button("Open the dashboard", action: dashboard)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .font(.system(size: 11.5))
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 92, maxHeight: 92, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A grey placeholder row while the daemon is slow with the first read.
+struct LoadingRow: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(Color.primary.opacity(0.08)).frame(width: 22, height: 22)
+            VStack(alignment: .leading, spacing: 6) {
+                Capsule().fill(Color.primary.opacity(0.08)).frame(width: 130, height: 9)
+                Capsule().fill(Color.primary.opacity(0.06)).frame(width: 220, height: 9)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52, alignment: .leading)
     }
 }
 

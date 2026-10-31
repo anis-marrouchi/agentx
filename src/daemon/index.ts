@@ -206,7 +206,7 @@ import { REMEMBER_SKILL_FILENAME, rememberSkillBody, upgradeRememberSkill } from
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, checkAutonomyPayload, checkPersonLimitPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
-import { extractUiDirective } from "@/channels/ui-directive"
+import { extractUiDirective, type UiDirective } from "@/channels/ui-directive"
 import { MISSING_REFRESH_MS, setMissingVoiceHook, setVoiceLog } from "@/voice/system-voices"
 import { elevenLabsKey, restoreSpokenVoice, siriSayScript } from "@/voice/speaker"
 import { VoiceHealth } from "@/voice/voice-health"
@@ -225,6 +225,8 @@ import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath } from "@/daemon/voice-requests-api"
+import { beginPhoneThread, finishPhoneThread, VOICE_SENDER, type PhoneThread } from "@/daemon/voice-phone-thread"
+import { safeUi } from "@/daemon/app-chat-relay"
 import { toSpeakable } from "@/voice/speakable"
 import { pronouncer } from "@/voice/pronounce"
 import { isNoiseTranscript, NOISE_REPLY } from "@/voice/noise"
@@ -5087,7 +5089,10 @@ export class AgentXDaemon {
         const reply = handleVoiceRequests({
           store: this.voiceRequests,
           knows: (id) => !!this.registry.getAgent(id) || this.voiceMesh.isRemote(id),
-          stop: (id) => this.registry.cancelChatTasks(id, "voice", `voice:${id}`, "stopped from the open-requests list"),
+          // A request in the phone's conversation runs under its key (#1455).
+          stop: (r) => r.conversationId
+            ? this.registry.cancelChatTasks(r.agentId, "app", `app:${r.conversationId}`, "stopped from the open-requests list", VOICE_SENDER)
+            : this.registry.cancelChatTasks(r.agentId, "voice", `voice:${r.agentId}`, "stopped from the open-requests list"),
         }, req.method || "GET", path, body)
         this.json(res, reply.status, reply.body)
         return
@@ -8184,6 +8189,13 @@ export class AgentXDaemon {
           // A throw after start() would skip reply() and leave the row
           // thinking until the next restart: settle it with the error.
           let settled = false
+          // The phone conversation the request runs in (#1455): its question
+          // gets one answer, or why there is none, whichever way /ask ends.
+          let thread: PhoneThread | null = null
+          const finishThread = (answer: { content: string; error?: string; ui?: UiDirective }) => {
+            if (thread && this.voiceRequests) finishPhoneThread(this.voiceRequests.chats, thread, answer)
+            thread = null
+          }
           const reply = (status: number, out: Record<string, unknown>) => {
             settled = true
             if (requestId) this.voiceRequests?.settle(requestId, status, out)
@@ -8301,6 +8313,14 @@ export class AgentXDaemon {
               // Recorded under the surface it came from; the turn below is the owner's.
               operatorPerson(this.config.people)?.id ?? null,
             )
+            // A row of the open-requests list continues the agent's
+            // conversation with the phone: same session, same thread (#1455).
+            const def = this.registry.getAgent(agentId)
+            thread = requestId && this.voiceRequests
+              ? beginPhoneThread(this.voiceRequests, requestId,
+                { id: agentId, name: def?.name, color: presenceLook(agentId, this.config.agents[agentId]).color },
+                message, this.config.node.name || this.config.node.id || "This computer")
+              : null
             const response = await this.registry.execute({
               agentId,
               message,
@@ -8308,7 +8328,9 @@ export class AgentXDaemon {
                 // With the character on screen, the agent may send it to show something (#482).
                 (this.config.voice.look === "character" && this.voiceTalk.guide.listening ? `\n${GUIDE_INSTRUCTION}` : ""),
               // The owner spoke to this node: the turn is theirs (#393).
-              context: operatorContext({ channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
+              context: operatorContext(thread
+                ? { channel: "app", sender: VOICE_SENDER, chatId: thread.chatId, via: "voice" as const }
+                : { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
               intentRef,
             })
 
@@ -8328,11 +8350,13 @@ export class AgentXDaemon {
             const queued = parseQueued(response.error)
             if (queued) {
               const pending = queued.pending
+              const text = pending > 1
+                ? `I'm still on your last request, and ${pending} more are waiting. Give me a moment.`
+                : "I'm still working on your last request. Give me a moment."
+              finishThread({ content: "", error: text })
               reply(202, {
                 ...speaker,
-                text: pending > 1
-                  ? `I'm still on your last request, and ${pending} more are waiting. Give me a moment.`
-                  : "I'm still working on your last request. Give me a moment.",
+                text,
                 full: null,
                 ui: null,
                 queued: true,
@@ -8349,6 +8373,10 @@ export class AgentXDaemon {
             // voice prompt: two parsers drift.
             const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
             const speakable = toSpeakable(withoutDirective, this.config.voice.spokenMaxChars)
+            const ui = safeUi(directive)
+            finishThread({
+              content: withoutDirective, ...(response.error ? { error: String(response.error) } : {}), ...(ui ? { ui } : {}),
+            })
             if (!response.error) this.voiceIntros.spoke(session, agentId)
             // The answer is in the pill or the character's bubble: nothing of
             // this agent stays on screen. Only a lesson shows its pointer.
@@ -8371,8 +8399,10 @@ export class AgentXDaemon {
             })
             break
           } catch (err) {
+            const why = err instanceof Error ? err.message : String(err)
+            finishThread({ content: "", error: why })
             if (requestId && !settled) {
-              this.voiceRequests?.settle(requestId, 500, { error: err instanceof Error ? err.message : String(err) })
+              this.voiceRequests?.settle(requestId, 500, { error: why })
             }
             throw err
           }

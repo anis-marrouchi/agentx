@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
@@ -16,7 +16,7 @@ vi.mock("../src/agents/request-planner", async (importOriginal) => {
   }
 })
 
-import { AgentRegistry } from "../src/agents/registry"
+import { AgentRegistry, richReplyPrompt } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 let dir: string
@@ -33,15 +33,15 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-const config = () => daemonConfigSchema.parse({
+const config = (maxConcurrent = 1) => daemonConfigSchema.parse({
   node: { id: "test", name: "test" },
-  agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
+  agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent } },
 })
 
-function start(r: AgentRegistry, channel: string, chatId: string) {
+function start(r: AgentRegistry, channel: string, chatId: string, via?: "voice") {
   let onStart!: (taskId: string) => void
   const started = new Promise<string>((resolve) => { onStart = resolve })
-  const run = r.execute({ message: "hello", agentId: "ops", context: { channel, chatId }, onStart })
+  const run = r.execute({ message: "hello", agentId: "ops", context: { channel, chatId, ...(via ? { via } : {}) }, onStart })
   return { started, run }
 }
 
@@ -105,5 +105,62 @@ describe("a voice question while the same voice chat is busy", () => {
     r.cancelRunningTask(voiceId, "done")
     r.cancelRunningTask(busyId, "done")
     await Promise.all([busy.run, voice.run])
+  })
+})
+
+// AgentX Voice runs a spoken question in the phone's conversation (#1455):
+// channel "app", the phone's chat id. One turn at a time on that chat,
+// whoever sent it, and a spoken one does not wait for the agent's slots.
+describe("a spoken question in a phone conversation", () => {
+  it("waits for the phone's own turn on the same chat, even with a free slot", async () => {
+    const r = new AgentRegistry(config(2), () => {})
+    const phone = start(r, "app", "app:c1")
+    const phoneId = await phone.started
+
+    const spoken = start(r, "app", "app:c1", "voice")
+    expect(await Promise.race([spoken.run, spoken.started, pending()])).toBe("pending")
+
+    r.cancelRunningTask(phoneId, "done")
+    await phone.run
+    const spokenId = await spoken.started
+    r.cancelRunningTask(spokenId, "done")
+    expect((await spoken.run).error ?? "").not.toMatch(/__queued__/)
+  })
+
+  it("holds the phone's next turn on that chat until it is answered", async () => {
+    const r = new AgentRegistry(config(2), () => {})
+    const spoken = start(r, "app", "app:c1", "voice")
+    const spokenId = await spoken.started
+
+    const phone = start(r, "app", "app:c1")
+    expect(await Promise.race([phone.run, phone.started, pending()])).toBe("pending")
+    // Another conversation is not held.
+    const other = start(r, "app", "app:c2")
+    const otherId = await other.started
+
+    r.cancelRunningTask(spokenId, "done")
+    await spoken.run
+    const phoneId = await phone.started
+    r.cancelRunningTask(phoneId, "done")
+    r.cancelRunningTask(otherId, "done")
+    await Promise.all([phone.run, other.run])
+  })
+
+  it("runs beside the agent's other work instead of waiting for a slot", async () => {
+    const r = new AgentRegistry(config(1), () => {})
+    const busy = start(r, "cron", "cron:x")
+    const busyId = await busy.started
+
+    const spoken = start(r, "app", "app:c1", "voice")
+    const spokenId = await spoken.started
+    r.cancelRunningTask(spokenId, "done")
+    r.cancelRunningTask(busyId, "done")
+    await Promise.all([busy.run, spoken.run])
+  })
+
+  it("gets no phone prompt for quick replies and buttons", () => {
+    const src = readFileSync(join(__dirname, "../src/agents/registry.ts"), "utf8")
+    expect(src).toContain('richReplyPrompt(state.def.richMessages, task.context?.via === "voice" ? "voice" : channel)')
+    expect(richReplyPrompt(undefined, "voice")).toBe("")
   })
 })

@@ -36,6 +36,12 @@ export type VoiceLook = (typeof VOICE_LOOKS)[number]
 export const VOICE_ANIMATIONS = ["off", "rarely", "sometimes", "often"] as const
 export type VoiceAnimations = (typeof VOICE_ANIMATIONS)[number]
 
+/** The soft sound AgentX Voice plays once when an answer is ready and
+ *  waits to be picked (voice.readySound, #1455): one of the Mac's own
+ *  alert sounds, by name. */
+export const VOICE_READY_SOUNDS = ["Pop", "Tink", "Glass", "Ping", "Purr", "Bottle", "Blow", "Frog", "Funk", "Hero", "Morse", "Submarine", "Basso", "Sosumi"] as const
+export type VoiceReadySound = (typeof VOICE_READY_SOUNDS)[number]
+
 export const ORB_PALETTE_IDS = ORB_PALETTES.map((p) => p.id) as [string, ...string[]]
 
 /** #RRGGBB to its hue in degrees, or null when it is grey or not a colour. */

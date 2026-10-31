@@ -472,6 +472,22 @@ struct OpenRequests {
     static func stopAgent(name: String) -> String { "Stop \(name)" }
     static let keep = "Keep"
 
+    // MARK: Failed, loading, unreachable
+
+    /// Under a failed row once picked: the same words to the same agent.
+    static let askAgain = "Ask again"
+
+    /// The list while the daemon does not answer.
+    static let unreachableTitle = "Can’t reach AgentX on this Mac"
+    static let unreachableBody = "Your open requests are kept by AgentX and come back when it answers. Trying again every few seconds."
+
+    /// The pill's line when the daemon stops answering.
+    static let unreachableNote = "AgentX isn’t answering · Requests come back when it does"
+
+    /// The list shows placeholder rows only when the daemon has not
+    /// answered the first read after this long.
+    static let loadingAfter: TimeInterval = 0.5
+
     // MARK: Picking a row
 
     enum Pick: Equatable {

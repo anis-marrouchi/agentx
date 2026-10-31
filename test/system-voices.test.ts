@@ -194,6 +194,7 @@ describe("config", () => {
       look: "orb",
       startReduced: false,
       answers: "wait",
+      readySound: "Pop",
       listOnHover: true,
       stroll: false,
       animations: "sometimes",

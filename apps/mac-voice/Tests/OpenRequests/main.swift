@@ -240,6 +240,27 @@ for r in grouping.requests where r.isOpen { grouping.answered(r.id, at: at(10));
 check(OpenRequests.groupState(grouping.groups(newestLast: true)[0]) == "2 requests", "all heard: how many")
 check(OpenRequests.requestsCount(1) == "1 request", "one request, singular")
 
+// --- Heard on the phone (#1455) ---
+
+var phone = OpenRequests()
+phone.sync([remote("rphone001", "ops", "answered", sent: 1)])
+let fromPhone = phone.request(key: "rphone001")!.id
+check(phone.request(fromPhone)?.isNew == true, "an answer not opened anywhere is new")
+phone.sync([remote("rphone001", "ops", "answered", heard: true, sent: 1)])
+check(phone.request(fromPhone)?.heard == true && phone.newCount == 0,
+      "opened on the phone, the daemon says heard: heard here at the next read")
+
+// --- A failed row, picked: why, and Ask again ---
+
+var failing = OpenRequests()
+let failed1 = failing.add(agentID: "planner", question: "what's on thursday", at: t0)
+failing.failed(failed1, reason: "The calendar didn’t answer in time.", at: at(3))
+check(OpenRequests.pick(failing.request(failed1)!) == .reason("The calendar didn’t answer in time."), "a failed row says why")
+check(failing.follow(failed1, with: "what's on thursday", at: at(4)) == .ask, "Ask again: the same words, asked at once")
+check(failing.requests.count == 1 && failing.request(failed1)?.phase == .thinking
+      && failing.request(failed1)?.question == "what's on thursday", "in the same row, thinking")
+check(OpenRequests.askAgain == "Ask again" && OpenRequests.loadingAfter == 0.5, "the words and the half second of screen 7")
+
 if failures > 0 {
     print("\(failures) failed")
     exit(1)

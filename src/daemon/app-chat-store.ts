@@ -7,8 +7,9 @@ import { ARTIFACT_LIMITS, artifactType, type DeclaredArtifact } from "@/utils/ar
 //
 // Same home as the push tables (push-store.ts): the dashboard opens the
 // node's .agentx/db.sqlite, and the tables are created here with IF NOT
-// EXISTS rather than as a numbered migration. Only the dashboard process
-// touches them.
+// EXISTS rather than as a numbered migration. The dashboard process holds
+// the phone's turns; the daemon adds AgentX Voice's requests to the same
+// conversations (voice-phone-thread.ts, #1455).
 //
 // Every conversation belongs to one paired phone (its device token id), so
 // one phone never lists or opens another's, and it is pinned to one agent on
@@ -206,6 +207,21 @@ export class AppChatStore {
   markRead(deviceId: string, id: string, now = Date.now()): void {
     if (!isConversationId(id)) return
     this.db.prepare("UPDATE app_chat_conversations SET read_at = MAX(COALESCE(read_at, 0), ?) WHERE id = ? AND device_id = ?").run(now, id, deviceId)
+  }
+
+  /** The conversation most recently used with `agent` on `node`, on any
+   *  phone: where AgentX Voice continues that agent's thread (#1455). */
+  latestWith(node: string, agent: string): { id: string; deviceId: string } | null {
+    const row = this.db.prepare(`SELECT id, device_id FROM app_chat_conversations WHERE node = ? AND agent = ?
+      ORDER BY updated_at DESC, rowid DESC LIMIT 1`).get(node, agent) as { id: string; device_id: string } | undefined
+    return row ? { id: row.id, deviceId: row.device_id } : null
+  }
+
+  /** The phone that chatted last, or null when no phone ever has. */
+  latestDevice(): string | null {
+    const row = this.db.prepare("SELECT device_id FROM app_chat_conversations ORDER BY updated_at DESC, rowid DESC LIMIT 1")
+      .get() as { device_id: string } | undefined
+    return row?.device_id ?? null
   }
 
   /** Conversations whose newest message is an answer saved after the phone
