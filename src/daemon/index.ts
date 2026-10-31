@@ -248,7 +248,7 @@ import {
 } from "@/decisions/seats/voice-narration"
 import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus"
 import { withNewRoot, withRoot } from "@/events/envelope"
-import { EventWaker, wakeMessage } from "@/events/wake"
+import { EventWaker, wakeDroppedEnvelope, wakeMessage } from "@/events/wake"
 import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { recentFeed, streamEnvelopes } from "@/events/feed-http"
 import { MeshFeedFollower } from "@/events/peer-feed"
@@ -554,18 +554,24 @@ export class AgentXDaemon {
     // dispatch cap holds is handed back as held and retried (#1284), and
     // so is one whose agent stayed busy for the whole slot wait (#1596).
     // The chat id is the agent id: the conversation key is then
-    // `events:<agent>`, not `events:events:<agent>`.
+    // `events:<agent>`, not `events:events:<agent>`. A wake that starts
+    // late is told its event's age (eventAt), and one that is given up is
+    // published as `wake:dropped` under the event's root (#1647).
     this.stopEventWaker = new EventWaker({
       agents: () => this.config.agents,
       dispatch: async (agentId, e, sub) => {
         const response = await withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
           message: wakeMessage(e, sub.prompt),
           agentId,
+          eventAt: Date.parse(e.at),
           context: { channel: "events", chatId: agentId },
         }))
         return response.errorKind === "dispatch_hold" || response.errorKind === "agent_busy"
           ? { held: response.error || "dispatch held" }
           : response
+      },
+      onDropped: (agentId, e, reason) => {
+        getAgentEventBus().publish(wakeDroppedEnvelope(agentId, e, reason))
       },
       log: (msg) => this.log(msg),
       // Peer events (mesh feed) wake only subscriptions naming their node.

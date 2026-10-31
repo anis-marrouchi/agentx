@@ -28,7 +28,7 @@ Everything the daemon does is published as an event on one in-process bus. Examp
 | `signal` | `emitted` (a workflow signal); `signal:stop`, `signal:stopped`, `signal:resume`, `signal:resume-failed` ([pause and resume a task](/jobs/pause-and-resume)) | the stopped task's ID for the pause and resume types |
 | `mesh` | `forward` (a task sent to a peer), `recovered`, `lost`, `skills-changed`, `added`, `removed`, and from the [mesh feed](#events-from-other-machines): `feed:down`, `feed:up`, `feed:gap` | — |
 | `announce` | `announce` (a note to the whole mesh, see [Announcements](#announcements)) | — |
-| `custom` | any name a script or agent sends, such as `render:ready` (see [Send your own named events](/automations/event-subscriptions#send-your-own-named-events)) | what the sender gave as `--ref` |
+| `custom` | any name a script or agent sends, such as `render:ready` (see [Send your own named events](/automations/event-subscriptions#send-your-own-named-events)); `wake:dropped`, published by the daemon when a wake is given up (see [Late and dropped wakes](/automations/event-subscriptions#late-and-dropped-wakes)) | what the sender gave as `--ref`; for `wake:dropped`, the id of the event that did not wake the agent |
 | `reminder` | `reminder:due`, `reminder:dispatched`, `reminder:skipped` ([due reminders](/automations/reminders)) | Apple Reminders ID |
 | `channel` | `in`, `out` | channel message ID |
 | `status` | `status` | — |
