@@ -55,6 +55,8 @@ function makePlan(checkCount: string | null = COUNT) {
   ], clock)
   // Handed to coder, and its count read once.
   plans.updateStep(REQ, 1, { dispatchedAt: clock, ...(checkCount ? { lastCount: 13, lastCountAt: clock } : {}) })
+  // The tracker links the pick-up turn's run when it starts.
+  requests.link(REQ, "step_run", "turn-1", clock)
 }
 
 function deps(over: Partial<ContinueDeps> = {}): ContinueDeps {
@@ -69,7 +71,7 @@ function deps(over: Partial<ContinueDeps> = {}): ContinueDeps {
 
 /** A turn of `minutes` on the request's chat ends now. */
 const turnEnds = (over: Partial<Parameters<typeof continueOnTurnEnd>[1]> = {}, minutes = 10) =>
-  continueOnTurnEnd(deps(), { agentId: "coder", chatId: REQ, durationMs: minutes * MIN, ...over })
+  continueOnTurnEnd(deps(), { taskId: "turn-1", agentId: "coder", chatId: REQ, durationMs: minutes * MIN, ...over })
 
 describe("the count check", () => {
   it("reads open counts from GitHub's search total and GitLab's X-Total", async () => {
@@ -202,11 +204,27 @@ describe("continue when a turn ends", () => {
     expect(await turnEnds()).toBe("continued")
   })
 
-  it("does nothing once the count is met: the plan check marks it done", async () => {
+  it("marks the step done at once when the count is met at the turn's end", async () => {
     makePlan()
     open = 0
-    expect(await turnEnds()).toBeNull()
+    let kicked = 0
+    expect(await continueOnTurnEnd(deps({ onDone: () => { kicked++ } }), { taskId: "turn-1", agentId: "coder", chatId: REQ, durationMs: 10 * MIN })).toBeNull()
     expect(turns).toEqual([])
+    expect(plans.step(REQ, 1)).toMatchObject({ state: "done", evidence: "0 open issues in acme/app" })
+    expect(plans.events(REQ).map((e) => e.kind)).toContain("done")
+    expect(kicked).toBe(1)
+  })
+
+  it("only follows a run the daemon linked to the request: naming the requests channel is not enough", async () => {
+    makePlan()
+    open = 11
+    expect(await turnEnds({ taskId: undefined })).toBeNull()
+    expect(await turnEnds({ taskId: "someone-elses-run" })).toBeNull()
+    requests.addCandidate({ id: "req-other", runId: "run-other", channel: "voice", chatId: "voice:x", agentId: "secretary", text: "Other", now: clock })
+    requests.link("req-other", "step_run", "turn-other", clock)
+    expect(await turnEnds({ taskId: "turn-other" })).toBeNull()
+    expect(turns).toEqual([])
+    expect(await turnEnds()).toBe("continued")
   })
 })
 
