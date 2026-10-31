@@ -81,7 +81,8 @@ describe("request", () => {
     expect(r.ok && r.rang).toBe("widget")
     if (!r.ok) return
     expect(r.call).toMatchObject({ agentId: "writer", reason: "The deploy needs you", status: "ringing", urgency: "normal" })
-    expect(notices).toEqual([])
+    // The phone rings with it (#1605, calls.phone.ring "always").
+    expect(notices.map((n) => (n as any).ring?.state)).toEqual(["ringing"])
     expect((await calls.ringing()).map((c) => c.id)).toEqual([r.call.id])
   })
 

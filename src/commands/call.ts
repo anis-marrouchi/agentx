@@ -65,7 +65,7 @@ const request = new Command("request")
     const r = await daemon("POST", "/calls", { agentId, reason: opts.reason, urgency: opts.urgent ? "urgent" : "normal" }, callerHeaders())
     if (opts.json) { console.log(JSON.stringify(r, null, 2)); return }
     const how = r.rang === "widget" ? "ringing on AgentX Voice"
-      : r.rang === "notify" ? "AgentX Voice is not running; sent a notification instead"
+      : r.rang === "notify" ? "AgentX Voice is not running; ringing on the phone instead"
       : r.rang === "waiting" && r.busy ? `waiting. ${busyText(r.busy)} To withdraw it: agentx call cancel`
       : `not rung: ${r.call.note ?? "held"} — it is listed as a missed call`
     console.log(`  ${r.rang ? chalk.green("☎") : chalk.yellow("⏸")} ${r.call.id} ${how}`)

@@ -111,6 +111,24 @@ export interface OutgoingMessage {
    *  told-the-owner gate (notify/told.ts). `passed`: the caller already
    *  went through the gate, so the router does not decide again. */
   told?: { key?: string; requestId?: string; kind?: "notice" | "nag"; urgent?: boolean; from?: string; passed?: boolean }
+  /** A voice call on the phone (#1605). "ringing": ntfy sends it as a
+   *  call (priority 5 when urgent, else 4, a phone tag, a tap that opens
+   *  `url`); Web Push keeps it on screen until tapped. "missed": the same
+   *  notification on the phone is replaced where the channel can. */
+  ring?: CallRing
+}
+
+export interface CallRing {
+  callId: string
+  state: "ringing" | "missed"
+  urgent: boolean
+  /** Absolute link that opens the call in the phone app, for ntfy. */
+  url?: string
+}
+
+/** Where the phone app opens a call (#1605). */
+export function callAppPath(callId: string): string {
+  return `/app#call=${encodeURIComponent(callId)}`
 }
 
 export interface ChannelAdapter {

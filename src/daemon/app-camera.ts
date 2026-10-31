@@ -199,7 +199,7 @@ export function watchingAgent(to: string): string | null {
 
 /** One request to the daemon, with its status and JSON body. A daemon that
  *  cannot be reached answers 502 in the same shape. */
-async function relay(base: string, auth: Record<string, string>, method: string, path: string, body?: unknown, timeoutMs = 15_000): Promise<{ status: number; body: any }> {
+export async function relay(base: string, auth: Record<string, string>, method: string, path: string, body?: unknown, timeoutMs = 15_000): Promise<{ status: number; body: any }> {
   try {
     const r = await fetch(`${base}${path}`, {
       method,

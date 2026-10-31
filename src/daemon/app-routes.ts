@@ -11,6 +11,7 @@ import { handleAppAnnounce, type AppAnnounceDeps } from "./app-announce"
 import { handleAppChat, type AppChatDeps } from "./app-chat"
 import { handleAppFiles } from "./app-files"
 import { handleAppVoice, type AppVoiceDeps } from "./app-voice"
+import { handleAppCalls } from "./app-calls"
 import { handleAppCamera, type AppCameraDeps } from "./app-camera"
 import { handleAppPlaces, type PlacesDeps } from "./app-places"
 import { handleAppPins, type PinsDeps } from "./app-pins"
@@ -165,6 +166,7 @@ export async function handleAppRequest(
   if (ctx.chat && await handleAppChat(req, res, path, method, rec, ctx.chat)) return true
   if (ctx.chat && await handleAppFiles(req, res, path, method, rec, ctx.chat)) return true
   if (ctx.voice && await handleAppVoice(req, res, path, method, rec, ctx.voice)) return true
+  if (ctx.voice && await handleAppCalls(req, res, path, method, rec, ctx.voice)) return true
   if (ctx.camera && await handleAppCamera(req, res, path, method, ctx.camera)) return true
   if (ctx.places && await handleAppPlaces(req, res, path, method, rec, ctx.places)) return true
   if (ctx.pins && await handleAppPins(req, res, path, method, ctx.pins)) return true

@@ -121,6 +121,8 @@ const defaults = {
   announcements: "none" as "none" | "two",
   // An agent asking to see through the camera.
   ask: false,
+  // An agent calling (#1605): none, a normal call, or an urgent one.
+  call: "none" as "none" | "normal" | "urgent",
   // What the microphone "heard" (speech to text answers this).
   heard: "Voice test message",
   // The pairing page: the phone is not known, and the code may be rate limited.
@@ -236,6 +238,10 @@ function api(path: string): any {
             ],
           }
         : { items: [], notify: false }
+    case "/api/app/calls":
+      return { calls: scene.call === "none" ? [] : [demoCall()] }
+    case "/api/app/calls/call-demo":
+      return { call: { ...demoCall(), status: scene.call === "none" ? "missed" : "ringing" } }
     case "/api/app/camera/asks":
       return { asks: scene.ask ? [{ id: "cam-ask-demo", agentId: "helper", reason: "Show me the switch at the top of the rack" }] : [] }
     case "/api/app/camera/config":
@@ -263,6 +269,10 @@ function api(path: string): any {
   const conv = /^\/api\/app\/conversations\/([a-z0-9]+)$/.exec(path)
   if (conv) return conversations[conv[1]] || 404
   return 404
+}
+
+function demoCall() {
+  return { id: "call-demo", agentId: "helper", reason: "The backup failed twice tonight. Can we decide what to do?", urgency: scene.call === "urgent" ? "urgent" : "normal", status: "ringing", ringingSince: Date.now() - 5000 }
 }
 
 const require = createRequire(import.meta.url)
@@ -333,6 +343,13 @@ createServer(async (req, res) => {
     const finish = () => res.end("event: final\ndata: " + JSON.stringify({ content: "Demo answer received.", status: "done" }) + "\n\n")
     if (scene.slow) setTimeout(finish, 15000)
     else finish()
+    return
+  }
+  const callAction = /^\/api\/app\/calls\/call-demo\/(answer|decline|hangup)$/.exec(path)
+  if (callAction && req.method === "POST") {
+    const was = demoCall()
+    scene.call = "none"
+    json(200, { call: { ...was, status: callAction[1] === "answer" ? "answered" : "ended" }, ...(callAction[1] === "answer" ? { opener: "[Call answered] The owner just picked up the voice call you asked for." } : {}) })
     return
   }
   if (path === "/api/app/desk/reply" && req.method === "POST") {

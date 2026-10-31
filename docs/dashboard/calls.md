@@ -1,6 +1,6 @@
 # Calls from your agents
 
-An agent that needs you directly can **ring you**. The call shows up on the [AgentX Voice](voice.md) pill, much like a phone call. You see who is calling and why, and you hear a ring. Answer, and the agent speaks first and tells you why it called. Then you talk hands-free until you hang up. The agent writes a short summary of the call afterwards.
+An agent that needs you directly can **ring you**. The call shows up on the [AgentX Voice](voice.md) pill on your Mac and rings your phone, much like a phone call. You see who is calling and why, and you hear a ring. Answer, and the agent speaks first and tells you why it called. Then you talk hands-free until you hang up. The agent writes a short summary of the call afterwards.
 
 Nobody can call you until you allow them. Calls that aren't urgent don't ring during Focus. Each agent can call only a few times an hour.
 
@@ -8,7 +8,7 @@ The same permission lets an agent ask to **see** through your phone camera. That
 
 ## Before you start
 
-- [AgentX Voice](voice.md) is installed and running on your Mac.
+- [AgentX Voice](voice.md) is installed and running on your Mac, or the [phone app](mobile-app.md) is installed on your phone, or both.
 - AgentX is running (`agentx daemon status` says it is up).
 - You know the id of the agent you want to allow. `agentx agent list` shows it.
 
@@ -42,6 +42,51 @@ To hang up, do one of these:
 
 After you hang up, the agent writes a two-to-three-sentence summary. It appears in the dashboard's **Ask** drawer history, titled **Call: …** followed by the reason.
 
+## Answer on your phone
+
+A call from an agent also rings your phone, as a notification that looks and sounds like a call. It works with the [phone app](mobile-app.md) and with [ntfy](../jobs/notifications.md#1-get-messages-on-your-phone), whichever your notifications go to.
+
+- **The notification** says **Helper is calling**, with the reason. In the phone app it stays on screen until you tap it, and the phone buzzes like a ring. With ntfy it plays the sound you picked for urgent messages (see [Make the phone ring like a call](#make-the-phone-ring-like-a-call)).
+- **Both ring at once.** The phone rings together with AgentX Voice on your Mac. Answer on either one: the other stops ringing. To ring the phone only when AgentX Voice isn't running, set `calls.phone.ring` to `"away"`.
+- **Urgent calls** ring through Focus and, with the ntfy setup below, through Do Not Disturb. **Other calls** follow Focus: they don't ring, and show as missed calls once Focus ends.
+
+To answer:
+
+1. **Phone:** tap the notification. The phone app opens with the call at the top: the agent's name, the reason, and **Answer** and **Decline**. While the app is open, it rings too.
+
+   ![The phone app showing an incoming call from Helper, with Answer and Decline](/screenshots/mobile-app/call-ringing.png)
+
+2. **Phone:** tap **Answer**. The app opens a new conversation with that agent in Chat, turns on **read answers aloud**, and the agent speaks first and says why it called.
+3. **Phone:** hold the orb and speak, then let go. Each answer is read aloud. You can also type.
+
+   ![The phone app during a call: the bar says On a call, with Hang up](/screenshots/mobile-app/call-answered.png)
+
+4. **Phone:** tap **Hang up** when you are done. The agent writes a short summary of that conversation.
+
+Tap **Decline** to turn the call down. In the phone app's notification, **Decline** works without opening the app.
+
+The phone answers the calls of the computer that hosts the phone app. A call from an agent on another computer still reaches your phone as a notification; answer it in AgentX Voice on that computer.
+
+On the phone, talking is push-to-talk (hold the orb), not hands-free as on the Mac.
+
+### Make the phone ring like a call
+
+The phone app's notifications use your phone's normal notification sound. For a real ringtone, and for urgent calls that ring through Do Not Disturb, use ntfy on Android. You set this up once.
+
+1. **Terminal:** set up ntfy as in [Get messages on your phone](../jobs/notifications.md#1-get-messages-on-your-phone), if it isn't already.
+2. **Terminal:** tell AgentX the address your phone opens the app at, so a tap on the call opens it. Use the address `agentx app pair` showed, without `/app`:
+   ```sh
+   agentx config set calls.phone.appUrl https://my-mac.example.ts.net
+   ```
+3. **Phone:** open **Settings › Apps › ntfy › Notifications**.
+4. **Phone:** tap the **Max priority** category. Urgent calls use it.
+5. **Phone:** under **Sound**, pick a ringtone.
+6. **Phone:** turn on **Override Do Not Disturb** (on some phones: **Ignore Do Not Disturb**).
+7. **Phone:** go back and tap the **High priority** category. Other calls use it. Pick the same ringtone, and leave Do Not Disturb as it is.
+8. **Phone:** in the ntfy app, open **Settings** and turn on **Keep alerting for highest priority**, if your version has it. The ringtone then repeats until you tap the notification.
+
+On phones that close apps in the background (Xiaomi, POCO, Huawei and others), allow ntfy to start by itself and set its battery use to **No restrictions**. Otherwise a call can arrive late.
+
 ## When you are already in a call
 
 A second agent can call while you talk to the first. It works like call waiting on a phone:
@@ -73,7 +118,7 @@ A call counts only when it comes from a turn of that agent that is running now. 
 ## Focus, missed calls and limits
 
 - **Focus (Do Not Disturb), or the widget's hold switch:** a call that isn't urgent doesn't ring. It is recorded as a missed call, and you get a notice once Focus ends. Urgent calls ring anyway, the same way `agentx notify --urgent` does.
-- **AgentX Voice isn't running:** you get a notification instead, with the caller and the reason. If you open AgentX Voice while the call is still ringing, the pill rings.
+- **AgentX Voice isn't running:** the call rings your phone. If you open AgentX Voice while the call is still ringing, the pill rings too.
 - **You are busy:** see [When you are already in a call](#when-you-are-already-in-a-call).
 - **Missed calls:** run `agentx call list --status missed`.
 - **Limits:** one call in progress per agent, and at most `calls.maxPerHour` calls per agent in an hour (3 by default).
@@ -94,6 +139,8 @@ All settings are under `calls` in `agentx.json`:
 | `calls.busy.maxWaitMinutes` | `10` | The longest a call waits for you. Still busy then, it counts as missed. |
 | `calls.busy.title` | `"Call waiting: {agent}"` | Title of the call-waiting notification. `{agent}` becomes the caller's name. |
 | `calls.busy.notice` | `"AgentX Voice is busy. The call rings when it is free."` | Its second line, under the caller's reason. |
+| `calls.phone.ring` | `"always"` | When a call also rings your phone. `"always"`: together with AgentX Voice. `"away"`: only when AgentX Voice isn't running. |
+| `calls.phone.appUrl` | not set | The address your phone opens the app at, for example `https://my-mac.example.ts.net`. With ntfy, a tap on the call opens it in the phone app. |
 
 For example:
 
@@ -110,13 +157,26 @@ For example:
 5. **Mac:** say "bye". The call ends.
 6. **Terminal:** run `agentx call list`. The call shows as `ended`, and a moment later it has a summary.
 
+To check the phone:
+
+1. **Terminal:** run `agentx daemon send writer "Call me with agentx_call_owner, reason: Phone test"`.
+2. **Phone:** a notification says **Writer is calling**. Tap it.
+3. **Phone:** the app shows the call. Tap **Answer**. The agent speaks first.
+4. **Mac:** AgentX Voice stops ringing.
+5. **Phone:** tap **Hang up**.
+
 ## If something is wrong
 
 - **`may not call the owner`**: the agent isn't allowed yet. Run `agentx call allow <agent>` in the folder that holds `agentx.json`.
 - **`No running turn of <agent> placed this call`**: the call didn't come from inside that agent's run, for example from a terminal. Ask the agent to call you instead. On version 0.81.0 or earlier, a run started with `agentx daemon send` or `POST /task` and no chat was refused the same way: update AgentX.
 - **`has placed 3 calls in the last hour`**: the agent hit `calls.maxPerHour`. Wait, or raise the limit.
 - **`already has a call in progress`**: answer, decline or hang up that call first. An answered call that was never hung up ends by itself after `calls.maxCallMinutes`. `agentx call list` shows it, and `agentx call decline <id>` ends it.
-- **The command says `sent a notification instead`**: AgentX Voice isn't running. Start it with `agentx desktop start`.
+- **The command says `ringing on the phone instead`**: AgentX Voice isn't running. Answer on your phone, or start AgentX Voice with `agentx desktop start`.
+- **The phone doesn't ring**: check that notifications reach it (`agentx notify "test"`). If `calls.phone.ring` is `"away"`, the phone rings only while AgentX Voice isn't running. A normal call in Focus doesn't ring; it shows as missed.
+- **The phone shows a plain notification, with no ringtone**: set up the ntfy categories in [Make the phone ring like a call](#make-the-phone-ring-like-a-call). The phone app's own notifications use the phone's normal notification sound.
+- **Tapping the ntfy notification opens ntfy, not the call**: set `calls.phone.appUrl`.
+- **The app says `This call is not on this computer`**: the agent runs on another computer than the one that hosts the phone app. Answer it in AgentX Voice there.
+- **The app says `Answered somewhere else` or `Missed call`**: the call was answered on the Mac, or rang out, before you tapped.
 - **The agent says you are busy, but you are not in a call**: AgentX Voice was in a turn of yours or recording. The call rings as soon as that ends.
 - **`has no call waiting or ringing`**: the agent tried to withdraw a call that was already answered, missed or ended.
 - **The command says `not rung`**: you are in Focus, or the widget's hold switch is on, and the call wasn't urgent. It is listed as a missed call.

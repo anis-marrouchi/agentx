@@ -233,6 +233,6 @@ export const APP_VOICE_SCRIPT = `
   setSpeaker(v.speakOn);
   tint();
   idle();
-  window.AXVoice = { show: show, orb: orb, state: function () { return v.state; }, queued: function () { return speech.length; } };
+  window.AXVoice = { show: show, orb: orb, state: function () { return v.state; }, queued: function () { return speech.length; }, speaker: setSpeaker };
 })();
 `

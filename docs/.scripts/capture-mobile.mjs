@@ -319,6 +319,13 @@ try {
       await wait("js:(() => document.querySelector('#cam-msg').textContent.includes('can see the camera'))()"); await sleep(600)
       await shot("camera-ask-live"); await stopCamera(); await scene({ ask: false })
     },
+    // --- Calls (#1605) ---
+    "call-ringing": async () => { await scene({ call: "normal" }); await open("/app", { conv: "cdemo" }); await wait("#call-bar:not([hidden])"); await sleep(300); await shot("call-ringing"); await scene({ call: "none" }) },
+    "call-answered": async () => {
+      await scene({ call: "urgent" }); await open("/app", { conv: "cdemo" }); await wait("#call-bar:not([hidden])")
+      await click("#call-answer"); await wait("#call-hangup:not([hidden])"); await sleep(800)
+      await shot("call-answered"); await click("#call-hangup"); await scene({ call: "none" })
+    },
     // --- Pairing ---
     "not-paired": async () => {
       await scene({ locked: true }); await open("/app/locked"); await wait("#scan-btn:not([hidden])")

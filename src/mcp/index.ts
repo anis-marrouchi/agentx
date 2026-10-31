@@ -1759,7 +1759,7 @@ async function handleToolCall(
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok) return { content: [{ type: "text", text: `Call not placed: ${data?.error || `HTTP ${res.status}`}` }] }
       const how = data.rang === "widget" ? "It is ringing on the owner's desktop widget. When they answer you will be asked to open the conversation."
-        : data.rang === "notify" ? "The desktop widget is not running, so the owner got a notification instead."
+        : data.rang === "notify" ? "The desktop widget is not running, so it is ringing on the owner's phone instead."
         : data.rang === "waiting" && data.busy ? `${busyText(data.busy)} If a message will do, withdraw the call (cancel: true) and send the message.`
         : `It did not ring (${data.call?.note ?? "held"}); the owner sees it as a missed call.`
       return { content: [{ type: "text", text: `Call ${data.call?.id} placed. ${how}` }] }

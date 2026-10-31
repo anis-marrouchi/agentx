@@ -21,6 +21,13 @@
 //      and its notice goes through notify, which holds it until Focus
 //      ends. Urgent calls ring through, as `notify --urgent` does.
 //
+// The phone rings too (#1605): a voice call an agent places goes to the
+// phone as a call push (`ring` on the notice), with the widget or, with
+// calls.phone.ring "away", only when the widget is not running. The phone
+// app answers it through the same `answer`, so the first to pick up takes
+// the call and the other stops ringing. A missed call is marked, so the
+// phone can replace its ringing notification.
+//
 // A camera ask (#325 phase 3, kind "camera") goes through the same checks
 // and the same table. It never rings the widget: the notice goes to the
 // phone through notify, and the phone app polls `asking()` to show a
@@ -96,8 +103,9 @@ export interface CallDeps {
    *  camera ask is answered where it was asked. Unset: only a proof that
    *  names them itself is kept. */
   turnSession?: (agentId: string, proof: CallerProof) => { channel?: string; chatId?: string } | null
-  /** Tell the owner through notify. `urgent` passes Focus, like notify --urgent. */
-  alert: (notice: { title: string; message: string; urgent: boolean; from: string }) => Promise<void>
+  /** Tell the owner through notify. `urgent` passes Focus, like notify
+   *  --urgent. `ring`: the notice is a call on the phone (#1605). */
+  alert: (notice: { title: string; message: string; urgent: boolean; from: string; ring?: PhoneRing }) => Promise<void>
   /** Ask the agent, in its voice session, to summarise the call. */
   summarize?: (call: Call) => Promise<string | null>
   /** File a finished summary where the dashboard shows it. */
@@ -262,21 +270,40 @@ export class CallService {
     }
     if (this.widgetAlive()) {
       // Busy by its last poll, or by a call placed since that it will show first.
-      if (!this.widget.busy && !this.otherCalls(call).length) return "widget"
+      if (!this.widget.busy && !this.otherCalls(call).length) {
+        await this.ringPhone(call, true)
+        return "widget"
+      }
       this.startWaiting(call)
       await this.callWaiting(call)
       return "waiting"
     }
-    await this.notice(call, `${this.name(call.agentId)} is calling`,
-      `Open AgentX Voice to answer within ${this.deps.config().ringSeconds} s.`)
+    await this.ringPhone(call, false)
     return "notify"
   }
 
-  private async notice(call: Call, title: string, extra?: string): Promise<void> {
+  /** The phone rings for an agent's voice call (#1605): with the widget
+   *  (`withWidget`) unless calls.phone.ring is "away", and always when the
+   *  widget is not running. A call the owner placed rings the widget only;
+   *  without it, the owner is told to open AgentX Voice, as before. */
+  private async ringPhone(call: Call, withWidget: boolean): Promise<void> {
+    const cfg = this.deps.config()
+    if (call.placedBy === "owner") {
+      if (!withWidget) await this.notice(call, `${this.name(call.agentId)} is calling`, `Open AgentX Voice to answer within ${cfg.ringSeconds} s.`)
+      return
+    }
+    if (withWidget && cfg.phone?.ring === "away") return
+    await this.notice(call, `${this.name(call.agentId)} is calling`,
+      `Answer on your phone${withWidget ? " or in AgentX Voice" : ""} within ${cfg.ringSeconds} s.`,
+      { callId: call.id, state: "ringing", since: call.ringingSince ?? this.now(), ...(withWidget ? { widget: true } : {}) })
+  }
+
+  private async notice(call: Call, title: string, extra?: string, ring?: PhoneRing): Promise<void> {
     try {
       await this.deps.alert({
         title, message: extra ? `${call.reason}\n${extra}` : call.reason,
         urgent: call.urgency === "urgent", from: call.agentId,
+        ...(ring ? { ring } : {}),
       })
     } catch (e: any) {
       this.deps.log?.(`[calls] notice for ${call.id} failed: ${e?.message ?? e}`)
@@ -359,13 +386,16 @@ export class CallService {
     // Told after the loop: a poll that overlaps a slow notice must not
     // carry on from a list and a widget state that are out of date.
     const tell: Call[] = []
+    const shown: Call[] = []
     const live = this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 })
     for (const id of [...this.waiting.keys()]) if (!live.some((c) => c.id === id)) this.setWaiting(id, null)
     for (const call of live) {
       if (call.id === widget.showing) {
         if (this.waiting.has(call.id)) {
           this.setWaiting(call.id, null)
-          this.deps.store.transition(call.id, "ringing", { ringingSince: now })
+          const again = this.deps.store.transition(call.id, "ringing", { ringingSince: now })
+          // It rings now: on the phone too.
+          if (again) shown.push(again)
         }
         continue
       }
@@ -379,6 +409,7 @@ export class CallService {
       tell.push(call)
     }
     for (const call of tell) await this.callWaiting(call)
+    for (const call of shown) await this.ringPhone(call, true)
   }
 
   /** The phone app's poll: camera asks waiting for the owner, oldest first.
@@ -400,7 +431,7 @@ export class CallService {
       if (call.status === "ringing" && call.ringingSince !== null && now - call.ringingSince >= ringFor) {
         if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: this.waiting.has(call.id) ? "widget busy" : "not answered" })) continue
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} missed`)
-        await this.notice(call, this.missedTitle(call))
+        await this.notice(call, this.missedTitle(call), undefined, call.kind === "voice" ? { callId: call.id, state: "missed", since: now } : undefined)
       } else if (call.status === "answered" && call.answeredAt !== null && now - call.answeredAt >= talkFor) {
         if (!this.deps.store.transition(call.id, "answered", { status: "ended", endedAt: now, note: "no hang-up" })) continue
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} ended: no hang-up in ${this.deps.config().maxCallMinutes} min`)
@@ -446,10 +477,13 @@ export class CallService {
 
   /** End an answered call. The summary is written in the background;
    *  `summarized` settles when it is filed (tests wait on it). */
-  hangup(id: string): CallResult & { summarized?: Promise<void> } {
+  hangup(id: string, where?: { channel: string; chatId: string }): CallResult & { summarized?: Promise<void> } {
     const call = this.deps.store.get(id)
     if (!call) return unknown(id)
-    const ended = this.deps.store.transition(id, "answered", { status: "ended", endedAt: this.now() })
+    // Answered on the phone (#1605): the conversation it had there is the
+    // one the agent summarises.
+    const session = where && call.kind === "voice" ? { channel: where.channel, chatId: where.chatId } : {}
+    const ended = this.deps.store.transition(id, "answered", { status: "ended", endedAt: this.now(), ...session })
     if (!ended) return { ok: false, status: 409, error: `call is ${call.status}, not answered` }
     this.deps.log?.(`[calls] ${id} ended (${call.agentId})`)
     const summarize = this.deps.summarize
@@ -481,6 +515,16 @@ export class CallService {
   get(id: string): Call | undefined { return this.deps.store.get(id) }
 
   list(opts: Parameters<CallStore["list"]>[0] = {}): Call[] { return this.deps.store.list(opts) }
+}
+
+/** A notice that is a call on the phone (#1605). `since`: when this ring
+ *  started, so each ring is its own item for the told-the-owner record. */
+export interface PhoneRing {
+  callId: string
+  state: "ringing" | "missed"
+  since: number
+  /** It rings on the widget too: no banner or sound on this computer. */
+  widget?: boolean
 }
 
 /** How a call reached the owner: on the widget, through notify, waiting

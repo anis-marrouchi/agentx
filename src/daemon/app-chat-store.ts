@@ -331,7 +331,10 @@ function toMessage(r: any): AppChatMessage {
 }
 
 /** First words of the question, so the history list reads like what you asked. */
-function titleFrom(message: string): string {
+export function titleFrom(message: string): string {
+  // An answered call's opener (#1605) names the call by its reason.
+  const call = /^\[Call answered\][^"]*"([^"]+)"/.exec(message)
+  if (call) return titleFrom(`Call: ${call[1]}`)
   const t = message.replace(/\s+/g, " ").trim()
   return (t.length > 60 ? t.slice(0, 59) + "…" : t) || "Untitled"
 }
