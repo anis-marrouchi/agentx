@@ -806,6 +806,22 @@ describe("Wall post actions (#1316)", () => {
     expect(sent(w, "/api/admin/wall/request/handoff")).toEqual([{ method: "POST", body: { id: "r1", agentId: "reviewer", note: "" } }])
     expect(w.el("wdo-note").textContent).toBe("Done.")
   })
+
+  it("sends the comment box's words as they are at Confirm, and says so as they are typed", async () => {
+    const w = openWall({ hash: "#status=open&post=r1", owner: true })
+    await w.settle()
+    w.el("wdo-text").value = ""
+    w.click({ "data-act": "close-drop" })
+    expect(w.el("wdo-close").innerHTML).not.toContain("Your words above go with it.")
+    w.el("wdo-text").value = "Out of scope"
+    w.field("input", { id: "wdo-text", value: "Out of scope" })
+    expect(w.el("wdo-close").innerHTML).toContain("<b>Drop “Post r1”.</b> Your words above go with it.")
+    w.el("wdo-text").value = " Out of scope this quarter "
+    w.click({ "data-act": "close-go" })
+    await w.settle()
+    expect(sent(w, "/api/admin/wall/request/close")).toEqual([{ method: "POST", body: { id: "r1", action: "drop", reason: "Out of scope this quarter" } }])
+    expect(w.el("wdo-text").value).toBe("")
+  })
 })
 
 describe("Wall v2 feed (#1355)", () => {
