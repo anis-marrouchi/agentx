@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { accessSync, closeSync, constants, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -58,6 +58,19 @@ export function adoptLoginItem(dir: string, items: { file: string; plist: string
 export function findOnPath(bin: string, path: string, isExecutable: (file: string) => boolean): string | null {
   for (const dir of path.split(':')) if (dir && isExecutable(join(dir, bin))) return join(dir, bin)
   return null
+}
+/** True for an executable file that is not a `#!` script. A wrapper script
+ *  named ffmpeg can sit ahead of the real one on a shell's PATH; its folder
+ *  would then shadow every other tool for the login item. */
+export function isNativeExecutable(file: string): boolean {
+  try {
+    accessSync(file, constants.X_OK)
+    if (!statSync(file).isFile()) return false
+    const fd = openSync(file, 'r')
+    const head = Buffer.alloc(2)
+    try { readSync(fd, head, 0, 2, 0) } finally { closeSync(fd) }
+    return head.toString('latin1') !== '#!'
+  } catch { return false }
 }
 /** Without `agent` the app talks to the agent picked in its menu-bar
  *  icon; with it, that agent is pinned and the menu cannot switch. */

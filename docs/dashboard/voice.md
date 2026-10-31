@@ -736,7 +736,7 @@ In `agentx.json` a shortcut is written as modifiers and a key joined by `+`, for
 | `AGENTX_VOICE_PROVIDER` | `system`; which engine speaks before the daemon has named one (e.g. an error line) |
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper`, the local transcription executable |
 | `AGENTX_MLX_MODEL` | `mlx-community/whisper-large-v3-turbo` |
-| `AGENTX_VOICE_PATH` | Read by the installer, not the app: the full `PATH` to give the login service. By default, this is the folder of the `ffmpeg` found at install time plus macOS's standard folders |
+| `AGENTX_VOICE_PATH` | Read by the installer, not the app: the full `PATH` to give the login service. By default, this is the folder of the `ffmpeg` found at install time plus macOS's standard folders. The installer skips an `ffmpeg` that is a script (a file starting with `#!`, such as a wrapper you put earlier in your `PATH`) and uses the first real program instead |
 | `AGENTX_MODELS_DIR` | `~/.agentx/models`, where the voice detection and Parakeet models are downloaded |
 
 Without an ElevenLabs key, transcription needs a working local `mlx_whisper` installation. Speech uses the free macOS voices unless you choose ElevenLabs (see [Agent voices](#agent-voices)). ElevenLabs usage and the agent's model usage are separate costs. The app checks the key environment variable first, then `~/.elevenlabs/key` and `~/.agentx/elevenlabs-key.txt`.

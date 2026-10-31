@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { homedir, release, tmpdir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { loadDaemonConfig } from '@/daemon/config'
-import { DESKTOP_APP, HELPER_APP, type LoginItem, adoptLoginItem, desktopPath, desktopPlatformError, desktopPlist, helperBuildArgs, installedHelper, isVoiceLoginItemFile, packageRoot, selectDesktopAgent } from '@/desktop/install'
+import { DESKTOP_APP, HELPER_APP, type LoginItem, adoptLoginItem, desktopPath, desktopPlatformError, desktopPlist, findOnPath, helperBuildArgs, installedHelper, isNativeExecutable, isVoiceLoginItemFile, packageRoot, selectDesktopAgent } from '@/desktop/install'
 
 function checkPlatform() {
   const error = desktopPlatformError(process.platform, process.arch, release())
@@ -65,8 +65,7 @@ desktop.command('install').description('build, install, and start voice and comp
     try { execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'pipe' }) }
     catch { throw new Error('Apple command-line tools are required. Run xcode-select --install, finish installation, then retry.') }
     // A login item gets launchd's bare PATH, where local Whisper cannot find ffmpeg.
-    let ffmpeg: string | null = null
-    try { ffmpeg = execFileSync('/bin/sh', ['-c', 'command -v ffmpeg'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null } catch { /* not installed */ }
+    const ffmpeg = findOnPath('ffmpeg', process.env.PATH || '', isNativeExecutable)
     if (!ffmpeg && !process.env.AGENTX_VOICE_PATH) console.warn('ffmpeg was not found. Local Whisper transcription needs it: install ffmpeg (for example brew install ffmpeg), then rerun this install.')
     // Compile in a temporary directory: npm installations may be read-only.
     const stage = mkdtempSync(join(tmpdir(), 'agentx-desktop-'))
