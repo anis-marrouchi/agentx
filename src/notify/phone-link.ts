@@ -19,3 +19,13 @@ export function isPhoneLink(value: string | undefined): value is string {
   const host = url.hostname.toLowerCase()
   return !LOOPBACK_HOSTS.has(host) && !host.endsWith(".localhost") && !/^127\./.test(host)
 }
+
+/** The origin a phone opens the Hub at (#1655): `notifications.publicUrl`,
+ *  else `calls.phone.appUrl` (the same machine, already set for calls).
+ *  Nothing when neither is a link the phone can open. */
+export function phonePublicUrl(cfg: { notifications?: { publicUrl?: string }; calls?: { phone?: { appUrl?: string } } } | undefined): string | undefined {
+  for (const raw of [cfg?.notifications?.publicUrl, cfg?.calls?.phone?.appUrl]) {
+    if (isPhoneLink(raw)) return raw.replace(/\/+$/, "")
+  }
+  return undefined
+}
