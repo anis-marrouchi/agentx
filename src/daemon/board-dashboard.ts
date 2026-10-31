@@ -465,7 +465,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/monitor") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   // Wall Live's "Connect a CLI session" (#1439) is the monitor's discover and
@@ -506,14 +506,14 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/mesh") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   // Guest meshes (#380): the host's panel, with its data proxied to the
   // daemon's /mesh/guests (loopback-trusted there, like the other panels).
   if (method === "GET" && path === "/guests") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderGuestsPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderGuestsPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   if ((method === "GET" && path === "/api/guests") || (method === "POST" && /^\/api\/guests\/[^/]+\/(pause|resume|end|update)$/.test(path))) {
@@ -533,7 +533,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/workflows") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   // /tasks/:id — watching an agent work is a place, not a popup. The Wall's
@@ -750,7 +750,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // /api/admin/* path-prefix proxy so the mesh selector works.
   if (method === "GET" && path === "/admin/projects") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderProjectsPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderProjectsPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
   // /admin/wiki/* — wiki UI mounted natively into the dashboard. Same

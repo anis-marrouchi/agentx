@@ -182,6 +182,22 @@ describe("Wall owner-only write guard (#1454)", () => {
     expect(await post(noToken, "/api/assistant")).not.toBe(401)
   })
 
+  // #1609: the classic pages show the drawer, so on this machine they carry
+  // the token its owner-only calls need; off the machine they never do.
+  it("gives the drawer's pages the owner's token on this machine only", async () => {
+    const wrong: string[] = []
+    for (const p of ["/mesh", "/monitor", "/workflows", "/admin/projects", "/guests"]) {
+      const on = await (await fetch(withToken + p)).text()
+      if (!on.includes('id="ax-as"')) wrong.push(`${p}: no drawer`)
+      if (!on.includes('window.AX_LOCAL_TOKEN = "tok-wall"')) wrong.push(`${p}: no token on this machine`)
+      const off = await (await fetch(withToken + p, { headers: { "X-Forwarded-For": "203.0.113.7" } })).text()
+      if (off.includes("tok-wall")) wrong.push(`${p}: token sent off the machine`)
+    }
+    expect(wrong).toEqual([])
+    // The first-run wizard has no agents to ask and no drawer.
+    expect(await (await fetch(withToken + "/setup")).text()).not.toContain('id="ax-as"')
+  })
+
   // #1524: the workflow editor is a Wall page, and what it writes is the owner's.
   const EDITOR_WRITES: Array<[string, string]> = [
     ["POST", "/api/workflows"], ["PUT", "/api/workflows/deploy"], ["DELETE", "/api/workflows/deploy"],

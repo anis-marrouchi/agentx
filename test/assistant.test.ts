@@ -29,6 +29,20 @@ describe("ask-an-agent drawer", () => {
     expect(MONITOR_SCRIPT).toContain("slice(0,8)")
   })
 
+  // #1609: a 401 from the owner-only API reads as "sign in", not as an
+  // empty history or a bare HTTP status.
+  it("says sign in when /api/assistant refuses this browser", () => {
+    expect(ASSISTANT_SCRIPT.match(/r\.status===401/g)?.length).toBe(3)
+    expect(ASSISTANT_SCRIPT).toContain("'/login?next='")
+    expect(ASSISTANT_SCRIPT).toContain("Only the dashboard owner can ask an agent here.")
+  })
+
+  it("embeds the page token safely", () => {
+    const html = renderMonitorPage({ localToken: "a</script>b" })
+    expect(html).toContain('window.AX_LOCAL_TOKEN = "a\\u003c/script>b"')
+    expect(renderMonitorPage()).not.toContain("AX_LOCAL_TOKEN =")
+  })
+
   it("keeps the drawer usable by keyboard", () => {
     expect(ASSISTANT_SCRIPT).toContain("e.key==='Escape'")
     // The composer is a <form>, so Enter submits without a key handler.

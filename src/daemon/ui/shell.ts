@@ -47,6 +47,12 @@ export interface ShellOpts {
   body: string
   /** Opt out of the ask-an-agent drawer (used by full-canvas surfaces). */
   noAssistant?: boolean
+  /**
+   * dashboard.token for a caller on this machine (pageToken), embedded as
+   * window.AX_LOCAL_TOKEN. The drawer's /api/assistant calls are the owner's
+   * alone (#1608), so a page that shows the drawer passes it (#1609).
+   */
+  localToken?: string
   /** Optional HTML inserted as a second row under the topbar. */
   subheader?: string
   /**
@@ -87,6 +93,10 @@ export function renderShell(opts: ShellOpts): string {
         }))
 
   const main = opts.noMain ? opts.body : `<main>${opts.body}</main>`
+  // `<` escaped so the token can never close the script tag.
+  const tokenScript = opts.localToken
+    ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken).replace(/</g, "\\u003c")};</script>\n`
+    : ""
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -99,7 +109,7 @@ ${opts.headExtras || ""}
 <style>${css}</style>
 </head>
 <body>
-${header}
+${tokenScript}${header}
 ${main}
 ${opts.noAssistant ? "" : ASSISTANT_HTML}
 ${TOPBAR_SCRIPT}

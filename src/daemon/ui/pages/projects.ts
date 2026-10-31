@@ -17,6 +17,8 @@ import { renderShell, esc, type TopbarPeer } from ".."
 
 export interface ProjectsPageOpts {
   peers?: TopbarPeer[]
+  /** pageToken(): carried as AX_LOCAL_TOKEN for the drawer (#1609). */
+  localToken?: string
   currentPeerId?: string
 }
 
@@ -55,6 +57,7 @@ export function renderProjectsPage(opts: ProjectsPageOpts = {}): string {
     activeTab: "projects",
     subtitle: "Projects",
     peers: opts.peers,
+    localToken: opts.localToken,
     currentPeerId: opts.currentPeerId,
     body,
     css: PROJECTS_PAGE_CSS,

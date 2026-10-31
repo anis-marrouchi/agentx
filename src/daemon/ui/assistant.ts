@@ -225,6 +225,21 @@ log.appendChild(el); log.scrollTop=log.scrollHeight;
 return el;
 }
 
+/* /api/assistant is the owner's alone (#1608). A 401 means this browser is
+   not signed in as the owner: say so, rather than an empty history or a bare
+   "HTTP 401" (#1609). Off the box, /login sets the session cookie. */
+const SIGN_IN='Only the dashboard owner can ask an agent here.';
+function signInHref(){return '/login?next='+encodeURIComponent(location.pathname+location.search);}
+function showSignIn(){
+const log=$('ax-as-log');
+if(log.querySelector('.ax-as__signin'))return;
+log.innerHTML='';
+const el=document.createElement('p');
+el.className='ax-as__empty ax-as__signin';
+el.innerHTML=esc(SIGN_IN)+' <a href="'+esc(signInHref())+'">Sign in</a>';
+log.appendChild(el);
+}
+
 /* Who can answer, and where. Both pickers degrade to a plain statement
    rather than an empty dropdown that looks like it is still loading. */
 fetch('/api/agents').then(r=>r.json()).then(d=>{
@@ -280,6 +295,7 @@ async function loadThread(id,{quiet}={}){
 if(!id){renderMessages([]);$('ax-as-title').textContent='Ask an agent';return;}
 try{
  const r=await fetch('/api/assistant/thread?id='+encodeURIComponent(id),{headers:axAuth()});
+ if(r.status===401){showSignIn();return;}
  if(!r.ok){setThread(null);renderMessages([]);return;}
  const d=await r.json();
  $('ax-as-title').textContent=d.thread.title||'Ask an agent';
@@ -295,8 +311,16 @@ try{
 async function loadHistory(){
 try{
  const r=await fetch('/api/assistant/threads',{headers:axAuth()});
+ if(r.status===401){
+  $('ax-as-hist-list').innerHTML='';
+  $('ax-as-hist-empty').innerHTML=esc(SIGN_IN)+' <a href="'+esc(signInHref())+'">Sign in</a>';
+  $('ax-as-hist-empty').hidden=false;
+  showSignIn();
+  return;
+ }
  const d=await r.json();
  const list=d.threads||[];
+ $('ax-as-hist-empty').textContent='No past conversations yet.';
  $('ax-as-hist-empty').hidden=list.length>0;
  $('ax-as-hist-list').innerHTML=list.map(t=>
   '<li data-thread="'+esc(t.id)+'"'+(t.id===threadId?' class="is-on"':'')+'>'
@@ -343,6 +367,7 @@ try{
  const r=await fetch('/api/assistant',{method:'POST',headers:axAuth({'Content-Type':'application/json'}),
   body:JSON.stringify({threadId:threadId||undefined,agentId:agent,node:$('ax-as-node').value||undefined,
    message:text,context:pageContext()})});
+ if(r.status===401){input.value=text;showSignIn();return;}
  const d=await r.json();
  if(!r.ok||d.error)throw new Error(d.error||('HTTP '+r.status));
  setThread(d.threadId);

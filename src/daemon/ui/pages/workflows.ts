@@ -20,6 +20,8 @@ import { workflowHealth } from "../../workflow-health"
 
 export interface WorkflowsPageOpts {
   peers?: TopbarPeer[]
+  /** pageToken(): carried as AX_LOCAL_TOKEN for the drawer (#1609). */
+  localToken?: string
   currentPeerId?: string
 }
 
@@ -129,6 +131,7 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     activeTab: "workflows",
     subtitle: "Workflows",
     peers: opts.peers,
+    localToken: opts.localToken,
     currentPeerId: opts.currentPeerId,
     body,
     css: WORKFLOWS_PAGE_CSS,

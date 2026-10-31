@@ -143,6 +143,9 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
     subtitle: "Setup",
     customHeader,
     noMain: true,
+    // First-run wizard: no agents to ask yet, and the page carries no token
+    // for /api/assistant, which is the owner's alone (#1608, #1609).
+    noAssistant: true,
     body,
     css: SETUP_PAGE_CSS,
     scripts: SETUP_SCRIPT,
