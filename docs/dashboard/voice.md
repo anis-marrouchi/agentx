@@ -107,7 +107,7 @@ Each agent gets one request at a time from the assistant. A second request to an
 
 Say "stop" to silence every voice without sending anything. During a [call](./calls.md), the call works as before: the agent answers out loud and the microphone opens again after each answer.
 
-To hear answers as soon as they are back, as before, tick **Play answers at once** in the menu. Answers then play one after the other through the [speaking queue](#one-queue-for-everything-spoken), and still show in the list as heard.
+To hear answers as soon as they are back, as before, tick **Play answers at once** in the menu, or set **When an answer is ready** to **Play it at once** in [Settings › General](#general-tab). Both are the same setting, saved in `agentx.json` as `voice.answers`. Answers then play one after the other through the [speaking queue](#one-queue-for-everything-spoken), and still show in the list as heard.
 
 #### Open requests
 
@@ -127,6 +127,8 @@ Open it one of three ways:
 | **Heard** | You have heard it | See its text again. **Listen again** in the pill plays it |
 | **Couldn't answer** | The agent could not answer | See why, in the pill |
 
+Picking a row also makes its agent the one you talk to next: see [Continue a conversation](#continue-a-conversation).
+
 Pick a row with a click, or with the keyboard:
 
 | Key | What it does |
@@ -134,11 +136,47 @@ Pick a row with a click, or with the keyboard:
 | **Up** and **Down** arrows | Move between rows |
 | **Return** | Pick the row |
 | **Option–Space** (hold) | Talk to the agent of the row you are on |
+| **Command–Delete** | Close the row you are on (see [Close a request](#close-a-request)) |
 | **Escape** | Close the list |
 
 - VoiceOver reads each row in full, for example "Ops. Answer ready, not heard. You asked: check last night's backups finished. 2 minutes ago.", then offers **Listen**, **Show the answer** or **See why**.
-- Heard rows stay in the list. The eight most recent heard rows are kept; older ones leave by themselves.
-- The list lives in the app for now. Quitting the app, or a restart of the daemon, empties it; your questions and answers stay in [History](#history-of-what-you-asked).
+- Heard rows stay in the list until you close them. The eight most recent heard rows are kept; older ones leave by themselves.
+- The list is kept by the AgentX daemon, not the app. Quitting the app or restarting the daemon keeps it. A request that was still thinking when the daemon stopped says **Couldn't answer**, with the reason "AgentX restarted before the answer came back. Ask again."
+- Heard is the same everywhere: a row you heard on this Mac shows as heard to any other app that reads the list from the daemon (see [Open requests for scripts](#open-requests-for-scripts)). The phone's Chat strip doesn't read this list yet.
+- To open the list only with a click or **Command–Option–O**, turn off **Open the list on hover** in [Settings › General](#general-tab).
+
+#### Continue a conversation
+
+Each agent has one ongoing voice conversation on this computer. Picking a row lets you carry on with that agent:
+
+1. **Mac:** open the list and pick the row. Its agent becomes the ticked agent, and the pill says, for example, **Ops · Hold ⌥Space to continue it**.
+2. **Mac:** hold **Option–Space** and say your follow-up, for example "and the night before?".
+3. The follow-up goes to that agent, which still has your earlier question and its answer in mind.
+
+Picking a row that is still thinking does the same: your next words go to that agent and wait their turn behind the first request.
+
+#### Close a request
+
+Each row has a **×** that shows when you point at it, or when the keyboard is on it. Closing takes the row out of the list. The question and its answer stay in [History](#history-of-what-you-asked).
+
+![The open-requests list in light mode, made-up data: Ops heard, Researcher with an answer ready and a blue dot, Writer thinking for 1:12, and Close heard at the bottom](/screenshots/voice/requests-close-light.png)
+
+![The same list in dark mode, with the keyboard on the Ops row and its close button showing](/screenshots/voice/requests-close-dark.png)
+
+- **Mac:** a row that is answered, heard or failed closes at once. For five seconds the bottom of the list says, for example, **Closed Ops's request**, with **Undo**.
+
+![The list after closing Ops's row: Researcher and Writer remain, and the bottom says Closed Ops's request with Undo](/screenshots/voice/requests-undo-light.png)
+- **Mac:** a row that is still thinking asks first: **Writer is still thinking**, with three choices.
+
+![Writer's thinking row turned into the confirm: Writer is still thinking, with Close, let it finish, Stop Writer and Keep](/screenshots/voice/requests-confirm-light.png)
+
+| Choice | Key | What it does |
+|---|---|---|
+| **Close, let it finish** | **Return** (the default) | The row goes; the agent keeps working. Its answer goes to History, with no sound |
+| **Stop Writer** | **Tab**, then **Return** or **Space** | The row goes and the agent stops working on it. Never the default |
+| **Keep** | **Escape** | Nothing changes |
+
+- **Close heard**, at the bottom of the list, closes every heard answer and every failed request at once. Unheard answers and thinking rows stay.
 
 #### Small orbs in the pill
 
@@ -168,7 +206,7 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 | Menu item | What it does |
 |---|---|
 | **Open requests…** | Opens the [open-requests list](#open-requests) with the keyboard in it. Same as **Command–Option–O** |
-| **Play answers at once** | Plays each answer as soon as it is back, instead of waiting until you pick it. Off by default |
+| **Play answers at once** | Plays each answer as soon as it is back, instead of waiting until you pick it. Off by default. Saved in `agentx.json` as `voice.answers` |
 | **Stop speaking** | Silences every voice (see [Stop every voice at once](#stop-every-voice-at-once)) |
 | **Hold notifications** | Holds agent notifications until you turn it off |
 | **Show floating pill** | Keeps the [pill](#the-pill-and-its-orb) on screen when idle. Off by default: the pill appears only while listening or answering. Unticked while the pill is hidden, so one click brings it back |
@@ -695,6 +733,8 @@ To hear a voice before you keep it:
 | **Smart paste** | Reshapes the clipboard, then pastes. Default **Command–Option–V** | `voice.hotkeys.paste` |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
 | **Open requests** | **Command–Option–O**. Opens the [open-requests list](#open-requests). Fixed; shown so you don't reuse it | not saved |
+| **When an answer is ready** | **Wait until I pick it** (a soft sound and a blue dot, the default) or **Play it at once**, as before. Same as **Play answers at once** in the menu | `voice.answers`: `"wait"` or `"play"` |
+| **Open the list on hover** | Half a second's pointing at the pill opens the [open-requests list](#open-requests). Off: only a click or **Command–Option–O** opens it. Default on | `voice.listOnHover` |
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
 | **Start reduced** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb), or the character [without its speech bubble](#reduce-the-character). Default off | `voice.startReduced` |
 | **Character strolls when idle** | The [character](#the-character) takes a [slow stroll](#let-the-character-stroll) when the assistant has nothing to do. Default off | `voice.stroll` |
@@ -1097,6 +1137,22 @@ The same records are available to scripts from the daemon. Requests from the sam
 
 Each row of the list has an `id`, the `agentId`, `at` (when you asked, in milliseconds since 1970), `durationMs`, `status` (`ok`, `error`, `in-flight`, `canceled` or `timeout`), your `question` (up to 200 characters), `answerPreview`, `answerChars` and `error`.
 
+### Open requests for scripts
+
+The [open-requests list](#open-requests) is kept by the daemon, so any app on this computer can read it and mark answers heard. The same rules apply as for History: requests from the same Mac need nothing more; from another computer they need the mesh token.
+
+| Address | What it does |
+|---|---|
+| `GET /voice/requests` | The open rows, oldest first: `{"requests": [...]}` |
+| `POST /voice/requests` | Add a row: `{"agentId": "<id>", "question": "<words>"}`. Add `"waiting": true` for one that waits behind another request to the same agent. Replies `201` with the row. Then ask with `POST /ask` and `"request": "<row id>"` in the body: the row turns to thinking, then to answered or failed |
+| `GET /voice/requests/<id>` | One row, with `reply`: its answer as `/ask` returned it |
+| `POST /voice/requests/<id>/heard` | Mark it heard, for every app |
+| `POST /voice/requests/<id>/close` | Close it. Add `{"stop": true}` to also stop an agent that is still thinking on it |
+| `POST /voice/requests/<id>/reopen` | Undo a close |
+| `POST /voice/requests/close-heard` | Close every heard answer and every failure: `{"closed": <how many>}` |
+
+Each row has an `id`, the `agentId`, your `question`, its `state` (`waiting`, `thinking`, `answered` or `failed`), `sentAt` and `since` (in milliseconds since 1970), `heard`, and `error` (why it failed). At most 50 rows are listed; closed rows are forgotten after seven days.
+
 ## Task narration
 
 With narration on, an agent tells you out loud what it is doing while it works on a real task, in its own voice. For example: "I'm reading the latest test results now."
@@ -1375,25 +1431,28 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 8. **Mac:** ask the ticked agent something that takes a while.
 9. **Mac:** while it thinks, hold **Option–Space** and say another agent's name followed by a question, for example "Researcher, what time is it?".
 10. **Mac:** open the AgentX menu. Both agents show **thinking**, and the ticked agent is still ticked. The pill shows a small orb for each of the two agents. When both have answered, the pill shows **2 new** and nothing is spoken.
-11. **Mac:** press **Command–Option–O**. The open-requests list opens with both answers marked with a blue dot. The keyboard is on the first one. Press **Return**: that answer is spoken, and its row says **Heard** when you open the list again.
-12. **Mac:** hold **Option–Space**. The pill appears with its orb in the ticked agent's palette, and the orb swells as you speak. Let go: the pill says **Sent. Ask the next one**, and a small orb in the pill turns while the agent thinks. Pick the answer in the list: the big orb pulses while it is spoken.
-13. **Mac:** drag the pill to another place on the screen. Quit the app from its menu and start it again: the pill comes back in the same place.
-14. **Mac:** while an answer is spoken, move the pointer over the pill and click **×**. The pill goes and the voice stops. Hold **Option–Space**: the pill is back.
-15. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice. Choose **Save**, then ask that agent something: the answer uses the new voice.
-16. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/settings`. It prints the saved settings, including the change you just made.
-17. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
-18. **Mac:** open the AgentX menu and choose **History…**. The question you asked in step 3 is listed under **Today**, with the agent's name and how long it took.
-19. **Mac:** choose one agent from the **Agent** menu at the top of the window. Only that agent's questions are listed.
-20. **Mac:** select a question and choose **Replay**. The answer is spoken again, after anything already speaking.
-21. **Terminal:** run `curl -s 'http://127.0.0.1:18800/voice/history?limit=3'`. It prints your last three questions, each with an `answerPreview` and not the whole answer.
-22. **Terminal:** to check the on-device models, run `~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local status`. `vad: installed` appears once the microphone has been used; `parakeet: installed` once Parakeet has been chosen and downloaded.
-23. **Mac:** click the pill so the microphone opens without a key, say a sentence with a short pause in the middle, then stop. The question is sent about a second after your last word, not during the pause.
-24. **Mac:** ask "Give me three links about macOS design.", then pick its answer in the open-requests list. The pill grows into the answer, with no second window. Once it has been spoken and you move the pointer away, it shrinks back after the time set in **Keep the answer open**.
-25. **Mac:** while that answer is open, move the pointer over it and click **Listen again**. It is spoken again from the start, and the button shows a stop square. Click it again: the voice stops.
-26. **Terminal:** run `agentx voice palette <agent-id> forest`, then open the AgentX menu and hold **Option–Space**. The orb is moss to fern green. Run `agentx voice palette <agent-id> default` to undo it.
-27. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again and pick its answer: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
-28. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
-29. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
+11. **Mac:** press **Command–Option–O**. The open-requests list opens with both answers marked with a blue dot. The keyboard is on the first one. Press **Return**: that answer is spoken, and its row says **Heard** when you open the list again. The pill says that agent's name and **Hold ⌥Space to continue it**.
+12. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/requests`. Both rows are listed, and the one you heard has `"heard": true`.
+13. **Mac:** quit AgentX Voice from its menu and start it again, then press **Command–Option–O**. Both rows are still there, one heard and one not.
+14. **Mac:** move to the heard row and press **Command–Delete**. It leaves the list, and **Closed …'s request** with **Undo** shows for five seconds.
+15. **Mac:** hold **Option–Space**. The pill appears with its orb in the ticked agent's palette, and the orb swells as you speak. Let go: the pill says **Sent. Ask the next one**, and a small orb in the pill turns while the agent thinks. Pick the answer in the list: the big orb pulses while it is spoken.
+16. **Mac:** drag the pill to another place on the screen. Quit the app from its menu and start it again: the pill comes back in the same place.
+17. **Mac:** while an answer is spoken, move the pointer over the pill and click **×**. The pill goes and the voice stops. Hold **Option–Space**: the pill is back.
+18. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice. Choose **Save**, then ask that agent something: the answer uses the new voice.
+19. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/settings`. It prints the saved settings, including the change you just made.
+20. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
+21. **Mac:** open the AgentX menu and choose **History…**. The question you asked in step 3 is listed under **Today**, with the agent's name and how long it took.
+22. **Mac:** choose one agent from the **Agent** menu at the top of the window. Only that agent's questions are listed.
+23. **Mac:** select a question and choose **Replay**. The answer is spoken again, after anything already speaking.
+24. **Terminal:** run `curl -s 'http://127.0.0.1:18800/voice/history?limit=3'`. It prints your last three questions, each with an `answerPreview` and not the whole answer.
+25. **Terminal:** to check the on-device models, run `~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local status`. `vad: installed` appears once the microphone has been used; `parakeet: installed` once Parakeet has been chosen and downloaded.
+26. **Mac:** click the pill so the microphone opens without a key, say a sentence with a short pause in the middle, then stop. The question is sent about a second after your last word, not during the pause.
+27. **Mac:** ask "Give me three links about macOS design.", then pick its answer in the open-requests list. The pill grows into the answer, with no second window. Once it has been spoken and you move the pointer away, it shrinks back after the time set in **Keep the answer open**.
+28. **Mac:** while that answer is open, move the pointer over it and click **Listen again**. It is spoken again from the start, and the button shows a stop square. Click it again: the voice stops.
+29. **Terminal:** run `agentx voice palette <agent-id> forest`, then open the AgentX menu and hold **Option–Space**. The orb is moss to fern green. Run `agentx voice palette <agent-id> default` to undo it.
+30. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again and pick its answer: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
+31. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
+32. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
 
 ## If something is wrong
 
@@ -1413,7 +1472,9 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **A second question to the same agent waits a long time:** it waits until that agent has finished answering the request before it. The assistant gives up after 10 minutes, and the row says **Couldn't answer**. Pick it to see why.
 - **An answer is never spoken:** answers wait until you pick them in the [open-requests list](#open-requests). Point at the pill or press **Command–Option–O**, then pick the row with the blue dot. To hear answers as soon as they are back, tick **Play answers at once** in the menu.
 - **No soft sound when an answer is ready:** **Hold notifications** is ticked, or someone holds [the floor](#one-speaker-at-a-time-the-floor). The blue dot and **1 new** still show.
-- **The open-requests list is empty after a restart:** the list is kept by the app, not the daemon, for now. Your questions and answers are in **History…**.
+- **The open-requests list is empty after a restart:** the app reads the list from the daemon every few seconds. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/requests`. An empty `requests` means every row was closed; your questions and answers are in **History…**. An error means the daemon is older than the list or not running: run `agentx daemon status`.
+- **A row says "AgentX restarted before the answer came back":** the daemon stopped while the agent was thinking, so that answer is lost. Ask again.
+- **Closing a thinking row didn't stop the agent:** stopping is never the default. Close it again and choose **Stop …** in the confirm.
 - **Command–Option–O does nothing:** another app uses it. The app log says `shortcut ⌘⌥O for open requests is taken by another app`. Use **Open requests…** in the menu instead.
 - **The settings window says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then open **Settings…** again.
 - **Save shows a red message:** the value was refused and `agentx.json` was not changed. If it names a shortcut used twice, change one of them and save again. A message that starts `agentx.json would not be valid` means another part of the file is wrong; the lines after it name the setting to fix.
