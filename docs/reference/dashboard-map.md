@@ -33,7 +33,7 @@ These classic pages are gone. Their addresses still work and open the matching H
 | `/wall` | **Hub** (`/hub`) |
 | `/live` | **Live** |
 | `/people` | **People** |
-| `/admin/cost`, `/cost` | **Cost** |
+| `/admin/cost` | **Cost** |
 | `/agents/<agent-id>/history` | the agent's profile, with its **Activity** open |
 | `/workflows/editor?id=<id>` | the workflow editor |
 
