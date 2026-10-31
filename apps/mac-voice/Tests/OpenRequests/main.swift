@@ -200,6 +200,16 @@ check(follow.follow(f1, with: "please", at: at(121)) == .waits && follow.request
 check(follow.follow(999, with: "x", at: at(122)) == nil, "a row gone continues nothing")
 check(follow.request(f2)?.phase == .thinking, "the other request is untouched")
 
+// The daemon drops the words of a row that kept a follow-up: the follow-up
+// is asked in the same row, not lost. With none kept, the row leaves.
+var drop = OpenRequests()
+let d1 = drop.add(agentID: "ops", question: "uh", at: at(0))
+check(drop.follow(d1, with: "check the backups", at: at(5)) == .after, "a thinking row keeps the follow-up")
+check(drop.dropped(d1, at: at(9)) && drop.request(d1)?.question == "check the backups"
+      && drop.request(d1)?.phase == .thinking && drop.request(d1)?.pending == nil,
+      "dropped words: the kept follow-up is asked in the same row")
+check(!drop.dropped(d1, at: at(20)) && drop.request(d1) == nil, "dropped words with nothing kept: the row leaves")
+
 // A row continued on another client: its new words, thinking, not heard.
 var elsewhere = OpenRequests()
 elsewhere.sync([remote("rcont0001", "ops", "answered", heard: true)])
