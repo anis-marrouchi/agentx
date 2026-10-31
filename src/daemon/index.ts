@@ -8180,190 +8180,201 @@ export class AgentXDaemon {
           // The row follows the turn: thinking now, then answered or failed
           // with what is sent back, so any client can read it later.
           if (requestId) this.voiceRequests?.start(requestId)
+          // A throw after start() would skip reply() and leave the row
+          // thinking until the next restart: settle it with the error.
+          let settled = false
           const reply = (status: number, out: Record<string, unknown>) => {
+            settled = true
             if (requestId) this.voiceRequests?.settle(requestId, status, out)
             this.json(res, status, requestId ? { ...out, request: requestId } : out)
           }
 
-          // An explicit agent is what makes this endpoint useful for more than
-          // one voice persona — "ask the secretary" and "ask devops" are
-          // different agents with different context, not one default.
-          const requested = requestedAgent.trim() || this.config.node.defaultAgent
-          if (!requested) {
-            reply(400, { error: "No agent (pass ?agent=... or set node.defaultAgent)" })
-            return
-          }
-          if (!message) {
-            reply(400, { error: "Missing message (pass as ?q=... or {message:...})" })
-            return
-          }
+          try {
+            // An explicit agent is what makes this endpoint useful for more than
+            // one voice persona — "ask the secretary" and "ask devops" are
+            // different agents with different context, not one default.
+            const requested = requestedAgent.trim() || this.config.node.defaultAgent
+            if (!requested) {
+              reply(400, { error: "No agent (pass ?agent=... or set node.defaultAgent)" })
+              return
+            }
+            if (!message) {
+              reply(400, { error: "Missing message (pass as ?q=... or {message:...})" })
+              return
+            }
 
-          // The desktop assistant is a URLSession client whose default
-          // User-Agent starts with its bundle name; anything else (Siri,
-          // phone shortcuts) is plain voice. Only the ledger sees the
-          // difference — the session key stays "voice" for both.
-          const origin = /^AgentXVoice\//.test(String(req.headers["user-agent"] || "")) ? "desktop" : "voice"
-          // Introduce once per voice session (or after a long silence),
-          // then talk like a colleague. A client that sends no session id
-          // shares one per origin, which the 8h gap still keeps sensible.
-          const session = voiceSession.trim() || origin
+            // The desktop assistant is a URLSession client whose default
+            // User-Agent starts with its bundle name; anything else (Siri,
+            // phone shortcuts) is plain voice. Only the ledger sees the
+            // difference — the session key stays "voice" for both.
+            const origin = /^AgentXVoice\//.test(String(req.headers["user-agent"] || "")) ? "desktop" : "voice"
+            // Introduce once per voice session (or after a long silence),
+            // then talk like a colleague. A client that sends no session id
+            // shares one per origin, which the 8h gap still keeps sensible.
+            const session = voiceSession.trim() || origin
 
-          // The floor's holder plays sound, and nobody held a key to say
-          // this: the microphone heard the holder, not the owner (#924).
-          // It wakes no agent, switches to none, and nothing is said back.
-          const floor = this.voiceTalk.floor.view()
-          if (handsFree && floor.held && floor.sound) {
-            this.log(`[floor] ${requested}: hands-free words dropped while ${floor.holder} holds the floor (${JSON.stringify(message.slice(0, 60))})`)
-            reply(200, { agentId: requested, voice: null, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
-            break
-          }
-
-          // "talk to Atlas" points this session at another agent, local or
-          // on a mesh peer, until "back to secretary". The new agent
-          // answers at once with its introduction; no agent turn is run.
-          const switched = this.voiceMesh.switchTo(session, message, requested)
-          if (switched) {
-            const remoteSwitch = !this.registry.getAgent(switched)
-            const voice = remoteSwitch ? this.voiceMesh.voices.voice(switched) : resolveAgentVoice(switched, this.config.agents, this.config.voice)
-            const text = this.voiceIntros.needsIntro(session, switched) ? voice.intro : "I'm here."
-            this.voiceIntros.spoke(session, switched)
-            reply(200, { agentId: switched, voice: voiceForText(voice, text), presence: null, text: this.sayAs(text), full: text, ui: null, switched: true })
-            break
-          }
-
-          const agentId = this.voiceMesh.target(session, requested)
-          const remote = !this.registry.getAgent(agentId) && this.voiceMesh.isRemote(agentId)
-          if (!remote && !this.registry.getAgent(agentId)) {
-            reply(404, { error: `Unknown agent: "${agentId}"`, agents: this.voiceMesh.known() })
-            return
-          }
-
-          // The voice instruction rides in the system append, NOT in the
-          // message (see VOICE_MODE_INSTRUCTION). A remote agent's node
-          // builds it from the few voice fields the proxy sends.
-          const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents, this.config.voice)
-          const introduce = this.voiceIntros.needsIntro(session, agentId)
-
-          // A transcript with no words ("[background noise]") wakes no
-          // agent: no presence decision, no task, one fixed line (#614).
-          const noise = this.config.voice.noiseFilter
-          if (noise.enabled && isNoiseTranscript(message, noise.markers)) {
-            this.log(`[voice] ${agentId}: noise transcript dropped (${JSON.stringify(message.slice(0, 60))})`)
-            reply(200, { agentId, voice: voiceForText(voice, NOISE_REPLY), presence: null, text: NOISE_REPLY, full: NOISE_REPLY, ui: null, noise: true })
-            break
-          }
-
-          // How the agent shows up on screen this turn (the presence-mode
-          // seat, decided on every voice turn). When the seat is active and
-          // says teach, watch or act, a live lesson on this screen answers
-          // instead of a full agent turn; the app only speaks the hand-off.
-          // Remote agents have no presence on this screen.
-          const presence = remote ? null : await this.voiceTalk.presence.decide(agentId, message)
-          if (presence?.seat === "active" && (presence.mode === "teach" || presence.mode === "watch" || presence.mode === "act")) {
-            const started = this.voiceTalk.startLesson(agentId, message, presence.mode, presence.app ?? undefined)
-            if (started.status === 201) {
-              this.voiceIntros.spoke(session, agentId)
-              // The way out is said up front: a lesson is never a surprise to end (#1493).
-              const text = (presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen.") + " Say stop when you're done."
-              reply(200, { agentId, voice, presence, text, full: text, ui: null })
+            // The floor's holder plays sound, and nobody held a key to say
+            // this: the microphone heard the holder, not the owner (#924).
+            // It wakes no agent, switches to none, and nothing is said back.
+            const floor = this.voiceTalk.floor.view()
+            if (handsFree && floor.held && floor.sound) {
+              this.log(`[floor] ${requested}: hands-free words dropped while ${floor.holder} holds the floor (${JSON.stringify(message.slice(0, 60))})`)
+              reply(200, { agentId: requested, voice: null, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
               break
             }
-          }
 
-          if (remote) {
-            const answer = await this.voiceMesh.ask(agentId, message, voice, introduce)
-            const { cleanText, ui } = extractUiDirective(answer.content)
-            if (!answer.error) this.voiceIntros.spoke(session, agentId)
-            const spoken = answer.error ? null : toSpeakable(cleanText, this.config.voice.spokenMaxChars)
-            reply(answer.error ? 502 : 200, {
-              agentId, voice: voiceForText(voice, spoken), presence: null,
-              text: spoken && this.sayAs(spoken),
-              full: answer.error ? null : cleanText,
-              ui: ui ?? null,
-              error: answer.error,
-              duration: answer.duration,
-              peer: answer.peer,
+            // "talk to Atlas" points this session at another agent, local or
+            // on a mesh peer, until "back to secretary". The new agent
+            // answers at once with its introduction; no agent turn is run.
+            const switched = this.voiceMesh.switchTo(session, message, requested)
+            if (switched) {
+              const remoteSwitch = !this.registry.getAgent(switched)
+              const voice = remoteSwitch ? this.voiceMesh.voices.voice(switched) : resolveAgentVoice(switched, this.config.agents, this.config.voice)
+              const text = this.voiceIntros.needsIntro(session, switched) ? voice.intro : "I'm here."
+              this.voiceIntros.spoke(session, switched)
+              reply(200, { agentId: switched, voice: voiceForText(voice, text), presence: null, text: this.sayAs(text), full: text, ui: null, switched: true })
+              break
+            }
+
+            const agentId = this.voiceMesh.target(session, requested)
+            const remote = !this.registry.getAgent(agentId) && this.voiceMesh.isRemote(agentId)
+            if (!remote && !this.registry.getAgent(agentId)) {
+              reply(404, { error: `Unknown agent: "${agentId}"`, agents: this.voiceMesh.known() })
+              return
+            }
+
+            // The voice instruction rides in the system append, NOT in the
+            // message (see VOICE_MODE_INSTRUCTION). A remote agent's node
+            // builds it from the few voice fields the proxy sends.
+            const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents, this.config.voice)
+            const introduce = this.voiceIntros.needsIntro(session, agentId)
+
+            // A transcript with no words ("[background noise]") wakes no
+            // agent: no presence decision, no task, one fixed line (#614).
+            const noise = this.config.voice.noiseFilter
+            if (noise.enabled && isNoiseTranscript(message, noise.markers)) {
+              this.log(`[voice] ${agentId}: noise transcript dropped (${JSON.stringify(message.slice(0, 60))})`)
+              reply(200, { agentId, voice: voiceForText(voice, NOISE_REPLY), presence: null, text: NOISE_REPLY, full: NOISE_REPLY, ui: null, noise: true })
+              break
+            }
+
+            // How the agent shows up on screen this turn (the presence-mode
+            // seat, decided on every voice turn). When the seat is active and
+            // says teach, watch or act, a live lesson on this screen answers
+            // instead of a full agent turn; the app only speaks the hand-off.
+            // Remote agents have no presence on this screen.
+            const presence = remote ? null : await this.voiceTalk.presence.decide(agentId, message)
+            if (presence?.seat === "active" && (presence.mode === "teach" || presence.mode === "watch" || presence.mode === "act")) {
+              const started = this.voiceTalk.startLesson(agentId, message, presence.mode, presence.app ?? undefined)
+              if (started.status === 201) {
+                this.voiceIntros.spoke(session, agentId)
+                // The way out is said up front: a lesson is never a surprise to end (#1493).
+                const text = (presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen.") + " Say stop when you're done."
+                reply(200, { agentId, voice, presence, text, full: text, ui: null })
+                break
+              }
+            }
+
+            if (remote) {
+              const answer = await this.voiceMesh.ask(agentId, message, voice, introduce)
+              const { cleanText, ui } = extractUiDirective(answer.content)
+              if (!answer.error) this.voiceIntros.spoke(session, agentId)
+              const spoken = answer.error ? null : toSpeakable(cleanText, this.config.voice.spokenMaxChars)
+              reply(answer.error ? 502 : 200, {
+                agentId, voice: voiceForText(voice, spoken), presence: null,
+                text: spoken && this.sayAs(spoken),
+                full: answer.error ? null : cleanText,
+                ui: ui ?? null,
+                error: answer.error,
+                duration: answer.duration,
+                peer: answer.peer,
+              })
+              break
+            }
+
+            const intentRef = this.recordInboundDispatch(
+              agentId,
+              { channel: origin, sender: origin === "desktop" ? "Desktop" : "Voice", chatId: `${origin}:${agentId}` },
+              message,
+              undefined,
+              // Recorded under the surface it came from; the turn below is the owner's.
+              operatorPerson(this.config.people)?.id ?? null,
+            )
+            const response = await this.registry.execute({
+              agentId,
+              message,
+              systemPromptAppend: `${VOICE_MODE_INSTRUCTION}\n${introInstruction(voice, introduce)}` +
+                // With the character on screen, the agent may send it to show something (#482).
+                (this.config.voice.look === "character" && this.voiceTalk.guide.listening ? `\n${GUIDE_INSTRUCTION}` : ""),
+              // The owner spoke to this node: the turn is theirs (#393).
+              context: operatorContext({ channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
+              intentRef,
             })
-            break
-          }
 
-          const intentRef = this.recordInboundDispatch(
-            agentId,
-            { channel: origin, sender: origin === "desktop" ? "Desktop" : "Voice", chatId: `${origin}:${agentId}` },
-            message,
-            undefined,
-            // Recorded under the surface it came from; the turn below is the owner's.
-            operatorPerson(this.config.people)?.id ?? null,
-          )
-          const response = await this.registry.execute({
-            agentId,
-            message,
-            systemPromptAppend: `${VOICE_MODE_INSTRUCTION}\n${introInstruction(voice, introduce)}` +
-              // With the character on screen, the agent may send it to show something (#482).
-              (this.config.voice.look === "character" && this.voiceTalk.guide.listening ? `\n${GUIDE_INSTRUCTION}` : ""),
-            // The owner spoke to this node: the turn is theirs (#393).
-            context: operatorContext({ channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
-            intentRef,
-          })
+            // Who is speaking, and in what voice — the client has no other
+            // way to know which agent answered.
+            const speaker = { agentId, voice }
 
-          // Who is speaking, and in what voice — the client has no other
-          // way to know which agent answered.
-          const speaker = { agentId, voice }
+            // Being busy is not an error.
+            //
+            // When the agent already has a turn running, execute returns the
+            // `__queued__` sentinel: the request IS accepted and will run,
+            // but a synchronous caller cannot observe its result. /ask was
+            // reporting that as HTTP 500, so the widget said "Sorry, that
+            // didn't work" while the agent was in fact working on what the
+            // person asked for thirty seconds earlier. The honest answer is
+            // to say so, out loud, rather than to claim a failure.
+            const queued = parseQueued(response.error)
+            if (queued) {
+              const pending = queued.pending
+              reply(202, {
+                ...speaker,
+                text: pending > 1
+                  ? `I'm still on your last request, and ${pending} more are waiting. Give me a moment.`
+                  : "I'm still working on your last request. Give me a moment.",
+                full: null,
+                ui: null,
+                queued: true,
+                pending,
+                duration: response.duration,
+              })
+              return
+            }
 
-          // Being busy is not an error.
-          //
-          // When the agent already has a turn running, execute returns the
-          // `__queued__` sentinel: the request IS accepted and will run,
-          // but a synchronous caller cannot observe its result. /ask was
-          // reporting that as HTTP 500, so the widget said "Sorry, that
-          // didn't work" while the agent was in fact working on what the
-          // person asked for thirty seconds earlier. The honest answer is
-          // to say so, out loud, rather than to claim a failure.
-          const queued = parseQueued(response.error)
-          if (queued) {
-            const pending = queued.pending
-            reply(202, {
+            // Rich content rides the same in-band directive Telegram and
+            // WhatsApp already use, so an agent has ONE way to attach a link
+            // or an image regardless of where it is speaking. Parsed here
+            // rather than in each client, for the same reason /ask owns the
+            // voice prompt: two parsers drift.
+            const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
+            const speakable = toSpeakable(withoutDirective, this.config.voice.spokenMaxChars)
+            if (!response.error) this.voiceIntros.spoke(session, agentId)
+            // The answer is in the pill or the character's bubble: nothing of
+            // this agent stays on screen. Only a lesson shows its pointer.
+            this.voiceTalk.presence.hide(agentId)
+
+            reply(response.error ? 500 : 200, {
               ...speaker,
-              text: pending > 1
-                ? `I'm still on your last request, and ${pending} more are waiting. Give me a moment.`
-                : "I'm still working on your last request. Give me a moment.",
-              full: null,
-              ui: null,
-              queued: true,
-              pending,
+              // The voice of the reply's language, when the agent has one.
+              voice: voiceForText(voice, speakable),
+              presence,
+              // As the voice says it: names as their owners pronounce them.
+              text: this.sayAs(speakable),
+              // The answer as written — what a client SHOWS, while `text` is
+              // what it speaks. They differ: spoken text drops URLs and
+              // markdown, which are exactly what is worth reading.
+              full: withoutDirective,
+              ui: directive ?? null,
+              error: response.error,
               duration: response.duration,
             })
-            return
+            break
+          } catch (err) {
+            if (requestId && !settled) {
+              this.voiceRequests?.settle(requestId, 500, { error: err instanceof Error ? err.message : String(err) })
+            }
+            throw err
           }
-
-          // Rich content rides the same in-band directive Telegram and
-          // WhatsApp already use, so an agent has ONE way to attach a link
-          // or an image regardless of where it is speaking. Parsed here
-          // rather than in each client, for the same reason /ask owns the
-          // voice prompt: two parsers drift.
-          const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
-          const speakable = toSpeakable(withoutDirective, this.config.voice.spokenMaxChars)
-          if (!response.error) this.voiceIntros.spoke(session, agentId)
-          // The answer is in the pill or the character's bubble: nothing of
-          // this agent stays on screen. Only a lesson shows its pointer.
-          this.voiceTalk.presence.hide(agentId)
-
-          reply(response.error ? 500 : 200, {
-            ...speaker,
-            // The voice of the reply's language, when the agent has one.
-            voice: voiceForText(voice, speakable),
-            presence,
-            // As the voice says it: names as their owners pronounce them.
-            text: this.sayAs(speakable),
-            // The answer as written — what a client SHOWS, while `text` is
-            // what it speaks. They differ: spoken text drops URLs and
-            // markdown, which are exactly what is worth reading.
-            full: withoutDirective,
-            ui: directive ?? null,
-            error: response.error,
-            duration: response.duration,
-          })
-          break
         }
 
         case "POST /mesh/task": {

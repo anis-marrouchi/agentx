@@ -216,5 +216,16 @@ describe("voice requests gate and wiring", () => {
     expect(ask).toContain("this.voiceRequests?.settle(requestId, status, out)")
     // Every answer of /ask goes through the one reply that settles the row.
     expect(ask.match(/this\.json\(res,/g)).toHaveLength(1)
+    // A throw before reply() still settles the row, with the error.
+    expect(ask).toMatch(/catch \(err\) \{\s*if \(requestId && !settled\) \{\s*this\.voiceRequests\?\.settle\(requestId, 500,/)
+    expect(ask).toContain("throw err")
+  })
+
+  it("a turn that throws leaves its row failed with the error, not thinking", () => {
+    const store = new VoiceRequestStore(db, T0)
+    const r = store.create("writer", "draft the summary", false, T0)
+    store.start(r.id, T0 + 1000)
+    store.settle(r.id, 500, { error: "agent crashed" }, T0 + 2000)
+    expect(store.get(r.id)).toMatchObject({ state: "failed", error: "agent crashed", since: T0 + 2000 })
   })
 })
