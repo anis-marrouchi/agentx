@@ -128,8 +128,11 @@ WhatsApp call? The debug APK has a second icon, **AgentX watch spike**.
 2. Open **AgentX watch spike**. Allow the microphone and, on Android 12+,
    nearby devices.
 3. Tap **Call the watch (outgoing)**. Then try **Ring the watch
-   (incoming)** and answer it on the watch, or with **Answer** if the
-   watch doesn't ring.
+   (incoming)** and answer it on the watch only. Don't touch the phone
+   until the call ends: the phone's own green accept button and the
+   watch both reach the spike the same way, so the log can't tell them
+   apart. Use **Answer** only if the watch doesn't ring; the log then
+   says the watch call screen was not checked.
 4. Each run opens a self-managed call. It moves the audio to the watch,
    first with Telecom's Bluetooth route and then with
    `setCommunicationDevice` (`startBluetoothSco` before Android 12).
@@ -141,6 +144,8 @@ WhatsApp call? The debug APK has a second icon, **AgentX watch spike**.
 The screen and `adb logcat -s WatchSpike` show each step, with PASS or
 FAIL where the phone can tell: the audio route, the microphone's device
 type (7 = Bluetooth SCO), and whether the microphone heard anything.
-Check the rest by eye and ear: the watch shows the call screen, the
-phrase plays on the watch, and the recording comes back. Report one
-result per phone and watch on #1636.
+Check the rest by eye and ear: the watch shows the call screen with
+answer and hang-up, the phrase plays on the watch, and the recording
+comes back. Report one result per phone and watch on #1636, and say
+where you answered and hung up (watch, phone's call screen or spike
+screen).

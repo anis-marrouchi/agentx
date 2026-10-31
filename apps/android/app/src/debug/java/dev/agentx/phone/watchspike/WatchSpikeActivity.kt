@@ -28,8 +28,8 @@ class WatchSpikeActivity : Activity() {
 
         button("Call the watch (outgoing)") { if (ready()) place() }
         button("Ring the watch (incoming)") { if (ready()) ring() }
-        button("Answer") { SpikeConnection.current?.onAnswer() ?: SpikeLog.add("No call is ringing") }
-        button("Hang up") { SpikeConnection.current?.end(DisconnectCause.LOCAL) ?: SpikeLog.add("No call") }
+        button("Answer") { SpikeConnection.current?.answerHere() ?: SpikeLog.add("No call is ringing") }
+        button("Hang up") { SpikeConnection.current?.let { SpikeLog.add("Hung up on the spike screen"); it.end(DisconnectCause.LOCAL) } ?: SpikeLog.add("No call") }
         button("Clear the log") { SpikeLog.clear() }
 
         log = TextView(this).apply { setTextIsSelectable(true); setPadding(0, pad, 0, 0) }
