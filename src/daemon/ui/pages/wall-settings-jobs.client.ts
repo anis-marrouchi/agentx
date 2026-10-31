@@ -13,6 +13,9 @@
 //              event-type triggers and the default workflow.
 // The classic guided builder becomes presets that fill the cron field.
 // WhatsApp triage, on the classic Webhooks tab, moves with Channels.
+// Phase 3: the classic Schedules tab's Wiki notes inbox, below the
+// schedules: on/off, the inbox agent, the schedules and the absorb pass
+// that read it (POST wiki-notes), and the recent notes (a read).
 
 export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
   /** Presets for the schedule field, as the classic guided builder offers. */
@@ -72,6 +75,46 @@ export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
     if (!r.ok) { stNote('cron-add', 'err', 'Not added: ' + r.error); return; }
     S.st.notes.cron = { kind: 'ok', text: r.body.summary || 'Added ' + body.id + '.' };
     await settingsLoad();
+  }
+
+  // --- Wiki notes inbox (classic Schedules tab) ---
+  function stWikiNotesHtml() {
+    var d = S.st.data || {}, n = d.wikiNotes || {}, picked = n.crons || [], crons = d.crons || [], l = S.st.wnList;
+    var agents = '<datalist id="st-wn-agents">' + (d.agents || []).map(function (a) { return '<option value="' + esc(a.id) + '"></option>'; }).join('') + '</datalist>';
+    var list = !l ? '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="wn-list">Show recent notes</button>'
+      : l.loading ? '<p class="ax-wall__empty">Loading…</p>'
+      : l.error ? '<p class="wst__err">Could not read them: ' + esc(l.error) + '</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="wn-list">Try again</button>'
+      : l.notes.length ? '<ul class="wsj__trig">' + l.notes.map(function (x) {
+          return '<li><b>' + esc(x.status) + '</b> <code>' + esc(x.id) + '</code> <small>from ' + esc(x.from) + ' · ' + esc(x.date) + '</small><p class="wsj__sub">' + esc(x.change) + '</p>' +
+            (x.handled ? '<p class="wsj__sub">' + esc(x.handled.outcome) + ' by ' + esc(x.handled.by) + ': ' + esc(x.handled.reason) + '</p>' : '') + '</li>';
+        }).join('') + '</ul>' : '<p class="ax-wall__empty">No notes on this machine.</p>';
+    return '<section class="wsc"><h3>Wiki notes inbox ' + stChState(n.enabled) + '</h3>' +
+      '<p class="wsj__sub">Agents leave short notes (what changed, the source, the date) for the agent that runs your wiki schedule. The schedules and the absorb pass you pick read them first. The same as <code>agentx wiki notes config</code>.</p>' +
+      '<form class="wsf" data-st-form="wn">' + agents +
+        '<label class="wsf__check"><input type="checkbox" id="st-wn-on"' + (n.enabled ? ' checked' : '') + '> Wiki notes on</label>' +
+        '<label>Inbox agent <small>(runs the wiki schedule; may be on another machine)</small><input id="st-wn-inbox" list="st-wn-agents" value="' + esc(n.inbox || '') + '" placeholder="agent id" autocomplete="off"></label>' +
+        '<fieldset class="wst-scopes"><legend>Schedules on this machine that read the inbox</legend>' + (crons.length ? crons.map(function (c, i) {
+          return '<label class="wsf__check"><input type="checkbox" id="st-wn-cron-' + i + '"' + (picked.indexOf(c.id) >= 0 ? ' checked' : '') + '> <code>' + esc(c.id) + '</code> runs as @' + esc(c.agent || '?') + '</label>';
+        }).join('') : '<p class="wsf__hint">No schedules on this machine.</p>') + '</fieldset>' +
+        '<label>Absorb that reads the inbox <small>(the agent whose wiki absorb pass answers the notes; empty for none)</small><input id="st-wn-absorb" list="st-wn-agents" value="' + esc(n.absorbAgent || '') + '" placeholder="agent id" autocomplete="off"></label>' +
+        '<div class="wsf__row">' + stChField('st-wn-max', 'Most notes per run', String(n.maxNotesPerRun || 20), '20', '(1 to 100)') +
+        stChField('st-wn-defer', 'Deferrals before a note expires', String(n.maxDeferrals || 3), '3', '(1 to 20)') + '</div>' +
+        '<div class="wsf__foot"><button type="submit" class="ax-btn">Save</button>' + stNoteHtml('wn') + '</div></form>' +
+      '<h4>Recent notes</h4>' + list + '</section>';
+  }
+  function stWikiNotesSave() {
+    var crons = ((S.st.data && S.st.data.crons) || []).filter(function (c, i) { return stChecked('st-wn-cron-' + i); }).map(function (c) { return c.id; });
+    stSetSave('wn', 'POST', 'wiki-notes', {
+      enabled: stChecked('st-wn-on'), inbox: stVal('st-wn-inbox').trim(), crons: crons, absorbAgent: stVal('st-wn-absorb').trim(),
+      maxNotesPerRun: Number(stVal('st-wn-max')), maxDeferrals: Number(stVal('st-wn-defer')),
+    });
+  }
+  async function stWikiNotesList() {
+    S.st.wnList = { loading: true };
+    stPaint();
+    try { S.st.wnList = { notes: (await stGet('/api/admin/wiki-notes/list')).notes || [] }; }
+    catch (e) { S.st.wnList = { error: String(e.message || e) }; }
+    stPaint();
   }
 
   // --- Webhooks ---
@@ -165,6 +208,7 @@ export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
     var t = ev.target.closest('[data-st-act]');
     if (!t) return;
     var a = t.getAttribute('data-st-act'), id = t.getAttribute('data-id');
+    if (a === 'wn-list') { stWikiNotesList(); return; }
     if (a === 'cron-preset') { var f = $('st-c-schedule'); if (f) { f.value = t.getAttribute('data-cron'); stCronPreview(); } }
     else if (a === 'wh-toggle') stToggleHook(id);
     else if (a === 'wh-copy') {
@@ -181,9 +225,10 @@ export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
     var form = ev.target && ev.target.closest && ev.target.closest('[data-st-form]');
     if (!form) return;
     var kind = form.getAttribute('data-st-form'), id = form.getAttribute('data-id');
-    if (kind !== 'cron' && kind.indexOf('wh') !== 0) return;
+    if (kind !== 'cron' && kind !== 'wn' && kind.indexOf('wh') !== 0) return;
     ev.preventDefault();
     if (kind === 'cron') stAddCron();
+    else if (kind === 'wn') stWikiNotesSave();
     else if (kind === 'wh') stAddHook();
     else if (kind === 'wh-trig') {
       var evt = stVal('st-wt-ev-' + id).trim(), wf = stVal('st-wt-wf-' + id).trim();

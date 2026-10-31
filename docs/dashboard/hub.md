@@ -248,10 +248,10 @@ Avatars show an agent's or a person's profile picture when one is set on the mac
 
 **Settings** on the Hub is where you, the owner, change your agents. It is the only Hub page that changes settings; every other Hub page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
 
-It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents**, **Channels**, **Schedules**, **Webhooks**, **Inbox** and **Health** sections; each other section opens its classic page.
+It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. Every classic tab is here, with the approval and request settings that were on [Approvals](./approvals.md). Only **Guests** and **People** open pages of their own.
 
 1. **Browser:** in the nav, select **Settings**, under **Owner**. On a phone, select **More**, then **Settings**.
-2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Advanced). The one you picked is on the right; **Agents** opens first.
+2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, Requests, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Screen capture, Advanced). The one you picked is on the right; **Agents** opens first.
 3. An amber number on a section counts what needs you there: on **Agents**, agents waiting for your approval or missing a credential; on **Mesh**, machines that do not answer; on **Health**, those machines plus the ones waiting for a restart. Without one, **Agents** shows how many agents this machine has.
 
    ![Settings on the Hub: the grouped sections on the left and one card per agent, in the isolated demo](/screenshots/wall/settings.png)
@@ -386,6 +386,14 @@ A schedule has an agent do something on a timer, such as a report every Monday.
 3. Type **What to do**, then select **Add schedule**. The line at the top says it was added, or why not.
 4. To remove one, select **Delete** on it, then confirm.
 
+### Point wiki notes at a schedule
+
+**Wiki notes inbox**, at the bottom of **Settings** › **Schedules**, is the classic Schedules tab's block of the same name, as `agentx wiki notes config`. Agents leave short notes for the agent that runs your wiki schedule.
+
+1. **Browser:** in **Settings** › **Schedules**, tick **Wiki notes on** and type the **Inbox agent**.
+2. Tick the schedules on this machine that read the inbox, and optionally the agent whose absorb pass answers the notes.
+3. Select **Save**. **Show recent notes** lists the last 20 and what was done with each.
+
 ### Add a webhook
 
 A webhook is an address another service, such as GitHub or Stripe, calls when something happens there. It goes to the agent you pick. The fields are the same as on the classic page: see [Webhooks](./settings.md#webhooks).
@@ -396,6 +404,44 @@ A webhook is an address another service, such as GitHub or Stripe, calls when so
 4. On its card, select **Copy** next to the address, and paste the address and the secret in the other service.
 
 Each card says **receiving**, **off**, or **signing secret missing**. **Turn off** refuses calls until you select **Turn on**; **Delete** asks you first. Open **Routing** to send one event type to a workflow (type the event, such as `issues.opened`, and the workflow id, then **Add trigger**), or to set the **default workflow** for every other event.
+
+### Choose approvals and requests
+
+**Inbox** also has **Approvals**, and **Requests** is its own section under **Fleet**. These are the settings that were at the bottom of the [Approvals](./approvals.md) page, with the same saves.
+
+1. **Browser:** in **Settings** › **Inbox**, under **Approvals**, pick what is sent to your phone and shown on this computer at once, how long cards wait, how long **Later** hides an item, and the daily digest. Select **Save**.
+2. In **Settings** › **Requests**, choose whether your requests are recorded and followed, what counts as you on shared channels, when a quiet request comes back, the plan rules and the loop checks. Select **Save**. See [Open requests](../jobs/open-requests.md).
+
+### Link another machine (Mesh)
+
+1. **Browser:** in **Settings**, select **Mesh**, under **Fleet**. It says whether mesh is on and lists each peer with its address and whether a token is set. The switch turns mesh on or off.
+2. On the other machine, make a token with the `mesh:peer` scope (**Settings** › **Tokens** there), and put it in this machine's `.env`, for example `PEER_TOKEN=<the token>`.
+3. Under **Add a peer**, type a name, the peer's address (such as `http://192.168.1.50:18800`) and the token's variable name, `PEER_TOKEN`. The form takes only the name, never the token. Select **Add peer**.
+4. **Remove** on a peer asks you first. **Health check** sets how often this machine checks that each peer answers. See [Add a second machine](../jobs/second-machine.md).
+
+### Make or revoke a token
+
+1. **Browser:** in **Settings**, select **Tokens**, under **Access**. Each token shows its name, the start of its value, its scopes, when it was last used and when it expires.
+2. Under **Make a token**, type who it is for, tick the fewest scopes that work, and optionally the days until it expires. Select **Make token**.
+3. The token is shown once, in a box. Select **Copy** and keep it somewhere safe: leaving the section forgets it, and it is never shown again.
+4. **Revoke** asks you first; anything that uses the token fails at once.
+
+### Business, Boards and Actions
+
+- **Business** (when `business.enabled` is on): the org chart, projects, clients and the contact map, each with a form to add or update one and **Remove** (or **Reset** for a client), which asks you first. The same as `agentx business`.
+- **Boards**: each board with its GitLab projects and columns. **Edit** fills the form below it; **Add column** and **×** change its columns; **Remove** asks you first. The same as `agentx board`.
+- **Actions**: each shell command or web call workflows run by id. Open **Run** to fill its inputs and run it now; what it printed shows under it. **Edit** fills the form, **Remove** asks you first. A secret in a web call's headers goes in as its `$VAR`, read from the daemon's environment. The same as `agentx actions`.
+
+![Settings › Actions on the Hub: one shell action with its input, Run, Edit and Remove, in the isolated demo](/screenshots/wall/settings-actions.png)
+
+### Screen capture and Advanced
+
+- **Screen capture**, under **Machines**: how agents capture the screen, and the recent-frames buffer. The same as `agentx screen config`; it applies without a restart.
+- **Advanced**: `agentx.json` itself, in an editor. A secret typed into the file, rather than a `${NAME}` reference to `.env`, shows as `[hidden secret: kept on save]` and never reaches the page; leave it as it is and the save keeps it. Select **Save**: invalid JSON is refused, and the file gets a backup next to it. **Reload from disk** throws away what you typed.
+
+![Settings › Advanced on the Hub: agentx.json in an editor, with the dashboard token and an API key shown as hidden secrets, in the isolated demo](/screenshots/wall/settings-advanced.png)
+
+*Scripted demo data; your settings will differ.*
 
 ## Live sessions
 

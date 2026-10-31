@@ -115,7 +115,16 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 //   POST   /api/admin/wall/settings/channels/request-status  {channel, enabled}
 //   POST   /api/admin/wall/settings/agent/<id>/handovers   hand a chat over
 //   DELETE /api/admin/wall/settings/agent/<id>/handovers   release one
-// (the last two are the classic agent page's, served by agent-panel.ts)
+// (those two are the classic agent page's, served by agent-panel.ts)
+//   POST|DELETE /api/admin/wall/settings/mesh/peers, POST …/mesh/toggle, …/mesh/health
+//   POST|DELETE /api/admin/wall/settings/business/{orgchart,project,client,contact}
+//   POST|DELETE /api/admin/wall/settings/boards, …/boards/columns
+//   POST|DELETE /api/admin/wall/settings/actions, POST …/actions/run
+//   POST|DELETE /api/admin/wall/settings/tokens               mint, revoke
+//   POST   /api/admin/wall/settings/screen, …/wiki-notes      screen capture, wiki notes
+//   POST   /api/admin/wall/settings/config/raw                agentx.json itself
+//   POST   /api/admin/wall/settings/approvals/settings        approvals (approvals-panel.ts)
+//   POST   /api/admin/wall/settings/approvals/requests/settings  requests (requests-panel.ts)
 export const WALL_SETTINGS_PREFIX = `${WALL_ACTIONS_PREFIX}/settings`
 const WALL_SETTINGS_WRITES = new Set([
   "POST /org/hold", "POST /agents", "PATCH /agents", "DELETE /agents", "POST /agents/access",
@@ -132,6 +141,16 @@ const WALL_SETTINGS_WRITES = new Set([
   // Phase 2: WhatsApp (sweep, watched chats) and Inbox (notification routing).
   "POST /channels/whatsapp/ingest", "POST /whatsapp-triage", "POST /whatsapp-triage/rules", "PATCH /whatsapp-triage/rules", "DELETE /whatsapp-triage/rules",
   "POST /notifications",
+  // Phase 3: Mesh, Business, Boards, Actions, Tokens, Screen capture, wiki
+  // notes and Advanced (agentx.json itself), then the approval and request
+  // settings that /approvals had (served by approvals-panel.ts).
+  "POST /mesh/peers", "DELETE /mesh/peers", "POST /mesh/toggle", "POST /mesh/health",
+  "POST /business/orgchart", "DELETE /business/orgchart", "POST /business/project", "DELETE /business/project",
+  "POST /business/client", "DELETE /business/client", "POST /business/contact", "DELETE /business/contact",
+  "POST /boards", "DELETE /boards", "POST /boards/columns", "DELETE /boards/columns",
+  "POST /actions", "DELETE /actions", "POST /actions/run",
+  "POST /tokens", "DELETE /tokens", "POST /screen", "POST /wiki-notes", "POST /config/raw",
+  "POST /approvals/settings", "POST /approvals/requests/settings",
 ])
 /** An agent's handovers, written from its Handovers tab (agent-panel.ts's id shape). */
 const WALL_SETTINGS_HANDOVERS = /^\/agent\/[a-z0-9][a-z0-9_-]*\/handovers$/

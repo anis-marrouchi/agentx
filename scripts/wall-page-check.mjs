@@ -88,7 +88,7 @@ const profile = mkdtempSync(join(tmpdir(), "agentx-wall-check-"))
 // GitHub's ubuntu-26.04 image from 20261025 refuses Chrome's sandbox, so
 // Chrome exits at once there. CI only: on a desktop the sandbox stays on.
 const ciFlags = process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : []
-const chrome = spawn(chromePath, ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0", ...ciFlags, `--user-data-dir=${profile}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] })
+const chrome = spawn(chromePath, ["--headless=new", "--mute-audio", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0", ...ciFlags, `--user-data-dir=${profile}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] })
 let launchError
 chrome.on("error", (e) => { launchError = e })
 // Chrome's last words, for when it does not start.

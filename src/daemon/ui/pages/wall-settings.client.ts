@@ -23,8 +23,14 @@
 // and Webhooks (wall-settings-jobs.client.ts), Channels
 // (wall-settings-channels.client.ts, WhatsApp in
 // wall-settings-whatsapp.client.ts) and Inbox, how notifications reach the
-// owner (wall-settings-inbox.client.ts). The other sections open their
-// classic page until they are ported.
+// owner (wall-settings-inbox.client.ts). Phase 3: Mesh and Tokens
+// (wall-settings-mesh.client.ts), Business and Boards
+// (wall-settings-business.client.ts), Actions
+// (wall-settings-actions.client.ts), Screen capture and Advanced, agentx.json
+// itself (wall-settings-machine.client.ts), the wiki notes inbox under
+// Schedules, and the approval and request settings that /approvals held
+// (wall-settings-approvals.client.ts: Approvals under Inbox, and Requests).
+// Only Guests and People link out, to their own pages.
 //
 // A section repaints when it opens or after a save, never on the Wall's
 // minute refresh, so a field being typed in stays as it is. A save that
@@ -35,6 +41,11 @@ import { WALL_SETTINGS_JOBS_CSS, WALL_SETTINGS_JOBS_SCRIPT } from "./wall-settin
 import { WALL_SETTINGS_CHANNELS_CSS, WALL_SETTINGS_CHANNELS_SCRIPT } from "./wall-settings-channels.client"
 import { WALL_SETTINGS_WHATSAPP_CSS, WALL_SETTINGS_WHATSAPP_SCRIPT } from "./wall-settings-whatsapp.client"
 import { WALL_SETTINGS_INBOX_SCRIPT } from "./wall-settings-inbox.client"
+import { WALL_SETTINGS_MESH_CSS, WALL_SETTINGS_MESH_SCRIPT } from "./wall-settings-mesh.client"
+import { WALL_SETTINGS_BUSINESS_SCRIPT } from "./wall-settings-business.client"
+import { WALL_SETTINGS_ACTIONS_CSS, WALL_SETTINGS_ACTIONS_SCRIPT } from "./wall-settings-actions.client"
+import { WALL_SETTINGS_MACHINE_SCRIPT } from "./wall-settings-machine.client"
+import { WALL_SETTINGS_APPROVALS_SCRIPT } from "./wall-settings-approvals.client"
 import { HUB_NAME } from "../hub-name"
 
 export const WALL_SETTINGS_SCRIPT = String.raw`
@@ -46,16 +57,17 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     ['Fleet', [
       ['agents', 'Agents', '', ''], ['channels', 'Channels', '', 'Chat apps and developer tools'],
       ['schedules', 'Schedules', '', 'Recurring jobs'], ['webhooks', 'Webhooks', '', 'Calls from other services'],
-      ['mesh', 'Mesh', '/admin#tab=mesh', 'Your other machines'], ['business', 'Business', '/admin#tab=business', 'Org chart and business settings'],
-      ['boards', 'Boards', '/admin#tab=boards-cfg', 'Task boards'], ['actions', 'Actions', '/admin#tab=actions', 'Buttons that start a task'],
-      ['inbox', 'Inbox', '', 'How the inbox reaches you'],
+      ['mesh', 'Mesh', '', 'Your other machines'], ['business', 'Business', '', 'Org chart and business settings'],
+      ['boards', 'Boards', '', 'Task boards'], ['actions', 'Actions', '', 'Commands and web calls workflows run'],
+      ['inbox', 'Inbox', '', 'How the inbox reaches you, and approvals'], ['requests', 'Requests', '', 'Open requests and plans'],
     ]],
     ['Access', [
       ['guests', 'Guests', '/guests', 'Who else may use your agents'], ['people', 'People', '#page=people', 'The people your agents work with'],
-      ['tokens', 'Tokens', '/admin#tab=tokens', 'Keys for apps and scripts'],
+      ['tokens', 'Tokens', '', 'Keys for apps and scripts'],
     ]],
     ['Machines', [
-      ['health', 'Health', '', 'Agents online, channels and what needs you'], ['advanced', 'Advanced', '/admin#tab=advanced', 'agentx.json itself'],
+      ['health', 'Health', '', 'Agents online, channels and what needs you'], ['screen', 'Screen capture', '', 'How agents see the screen'],
+      ['advanced', 'Advanced', '', 'agentx.json itself'],
     ]],
   ].map(function (g) { return [g[0], g[1].filter(function (s) { return s[0] !== 'business' || (ST && ST.business); })]; });
   var ST_SECTIONS = ST_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
@@ -162,6 +174,9 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       S.st.notes = S.st.flash ? { list: { kind: 'ok', text: S.st.flash } } : {};
       S.st.flash = '';
       S.st.confirm = '';
+      // What a section read or made is read again when it opens: a new
+      // token is shown once, agentx.json and the approval settings fresh.
+      S.st.newToken = null; S.st.adv = null; S.st.apv = null; S.st.req = null; S.st.bdEdit = ''; S.st.acEdit = ''; S.st.acRuns = null; S.st.wnList = null;
       // The draft of an agent's form stays across its tabs, not to another agent.
       if (S.st.draft && S.st.draft.agent !== S.st.agent) S.st.draft = null;
       if (S.st.files && S.st.files.agent !== S.st.agent) S.st.files = null;
@@ -218,7 +233,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
         return '<h3 class="wst__grp">' + esc(g[0]) + '</h3>' + g[1].map(function (s) {
           var on = s[0] === sec, sub = s[0] === 'agents' ? n + (n === 1 ? ' agent' : ' agents') + ', their pictures, models and on/off' : s[3];
           return '<a href="' + esc(stHref(s[0])) + '" class="wst__sec' + (on ? ' is-on' : '') + (s[2] ? ' is-classic' : '') + '"' + (on ? ' aria-current="page"' : '') +
-            (s[2] ? ' title="Not on the ${HUB_NAME} yet: opens its classic page"' : '') + '>' +
+            (s[2] ? ' title="Opens its own page"' : '') + '>' +
             '<span>' + esc(s[1]) + '<small class="wst__sub">' + esc(sub) + '</small></span>' + stCountHtml(s[0], att) + '</a>';
         }).join('');
       }).join('') + '</nav>';
@@ -234,17 +249,27 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (!S.st.data.exists) return '<p class="wst__err">This machine has no agentx.json yet. <a href="/setup">Run the setup</a> first.</p>';
     if (sec === 'health') return '<header class="wst__h"><h2>Health</h2><p>Your machines, your channels and what needs fixing, as classic Settings shows them.</p></header>' +
       '<div id="st-health-main">' + stHealthHtml(false) + '</div>';
+    // An unknown section, or Business with the business layer off, is Agents.
     var s = ST_SECTIONS.find(function (x) { return x[0] === sec; }) || ST_SECTIONS[0];
+    sec = s[0];
     if (s[2]) {
       var wall = s[2].charAt(0) === '#';
       return '<header class="wst__h"><h2>' + esc(s[1]) + '</h2></header>' +
-        '<p class="wst__todo">' + (wall ? esc(s[1]) + ' has its own page on the ${HUB_NAME}.' : esc(s[1]) + ' is not on the ${HUB_NAME} yet: it comes in a later step of #1428. Until then, change it on its classic page.') + '</p>' +
-        '<a class="ax-btn" href="' + esc(s[2]) + '">' + (wall ? 'Open ' + esc(s[1]) : 'Open ' + esc(s[1]) + ' on the classic page') + '</a>';
+        '<p class="wst__todo">' + esc(s[1]) + ' has its own page' + (wall ? ' on the ${HUB_NAME}' : '') + '.</p>' +
+        '<a class="ax-btn" href="' + esc(s[2]) + '">Open ' + esc(s[1]) + '</a>';
     }
     if (sec === 'channels') return stChannelsHtml();
-    if (sec === 'schedules') return stCronsHtml();
+    if (sec === 'schedules') return stCronsHtml() + stWikiNotesHtml();
     if (sec === 'webhooks') return stHooksHtml();
-    if (sec === 'inbox') return stInboxHtml();
+    if (sec === 'inbox') return stInboxHtml() + stApprovalsHtml();
+    if (sec === 'requests') return stRequestsHtml();
+    if (sec === 'mesh') return stMeshHtml();
+    if (sec === 'tokens') return stTokensHtml();
+    if (sec === 'business') return stBusinessHtml();
+    if (sec === 'boards') return stBoardsHtml();
+    if (sec === 'actions') return stActionsHtml();
+    if (sec === 'screen') return stScreenHtml();
+    if (sec === 'advanced') return stAdvancedHtml();
     return S.st.agent ? stAgentHtml(S.st.agent) : stAgentsHtml();
   }
 
@@ -480,7 +505,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   async function stConfirmed(key) {
     var id = S.st.agent, a = stAgentOf(id);
     S.st.confirm = '';
-    if (await stJobsConfirmed(key) || await stChannelsConfirmed(key) || await stWhatsAppConfirmed(key)) return;
+    if (await stJobsConfirmed(key) || await stChannelsConfirmed(key) || await stWhatsAppConfirmed(key) ||
+      await stMeshConfirmed(key) || await stBizConfirmed(key) || await stActionsConfirmed(key)) return;
     if (key === 'delete') {
       stPaint();
       stNote('delete', '', 'Deleting…');
@@ -653,6 +679,11 @@ ${WALL_SETTINGS_JOBS_SCRIPT}
 ${WALL_SETTINGS_CHANNELS_SCRIPT}
 ${WALL_SETTINGS_WHATSAPP_SCRIPT}
 ${WALL_SETTINGS_INBOX_SCRIPT}
+${WALL_SETTINGS_MESH_SCRIPT}
+${WALL_SETTINGS_BUSINESS_SCRIPT}
+${WALL_SETTINGS_ACTIONS_SCRIPT}
+${WALL_SETTINGS_MACHINE_SCRIPT}
+${WALL_SETTINGS_APPROVALS_SCRIPT}
 `
 
 export const WALL_SETTINGS_CSS = `
@@ -803,4 +834,4 @@ export const WALL_SETTINGS_CSS = `
   .wsl { grid-template-columns: minmax(0, 1fr); }
   .wsa { padding: 12px 10px; }
 }
-` + WALL_SETTINGS_AGENT_CSS + WALL_SETTINGS_JOBS_CSS + WALL_SETTINGS_CHANNELS_CSS + WALL_SETTINGS_WHATSAPP_CSS
+` + WALL_SETTINGS_AGENT_CSS + WALL_SETTINGS_JOBS_CSS + WALL_SETTINGS_CHANNELS_CSS + WALL_SETTINGS_WHATSAPP_CSS + WALL_SETTINGS_MESH_CSS + WALL_SETTINGS_ACTIONS_CSS

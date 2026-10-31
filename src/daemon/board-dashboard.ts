@@ -919,7 +919,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     await handleAgentApi(req, res, settingsTarget)
     return
   }
-  if (settingsTarget) {
+  if (settingsTarget && !settingsTarget.startsWith("/api/admin/approvals/")) {
     await handleAdminApi(req, res, settingsTarget, { owner: isDashboardOwner(req, ctx) })
     return
   }
@@ -931,7 +931,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   // A Wall answer (#1440) is served by the Approvals or graph route it
   // stands for; its own path keeps it under the Wall's guard (#1454).
-  const answerRoute = wallAnswerRoute(method, path)
+  // The approval and request settings from Settings (#1428) go there too.
+  const answerRoute = wallAnswerRoute(method, path) ?? settingsTarget
   if (answerRoute?.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, answerRoute)
     return

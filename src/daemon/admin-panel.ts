@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSyn
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
+import { HIDDEN_SECRET, hideConfigSecrets, restoreConfigSecrets } from "./config-hidden"
 import { configRelationsProblem } from "@/business/relations"
 import { cronValueOf } from "@/crons/value-line"
 import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
@@ -80,6 +81,9 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/crons": () => addCron(body),
       "DELETE /api/admin/crons": () => deleteCron(body),
       "POST /api/admin/config/raw": () => replaceConfigRaw(body),
+      // agentx.json for the Hub's Settings › Advanced (#1428): its literal
+      // secrets hidden (config-hidden.ts); the save above gives them back.
+      "GET /api/admin/config/hidden": () => readConfigHidden(),
       "GET /api/admin/tokens": () => listTokens(),
       "POST /api/admin/tokens": () => createToken(body),
       "DELETE /api/admin/tokens": () => revokeToken(body),
@@ -1224,12 +1228,27 @@ function deleteCron(body: any) {
   return { summary }
 }
 
+/** agentx.json as text with its literal secrets hidden, for the Hub. */
+function readConfigHidden(): { exists: boolean; raw?: string; hidden?: number } {
+  const cfg = readConfigRaw()
+  if (!cfg) return { exists: false }
+  const { config, hidden } = hideConfigSecrets(cfg)
+  return { exists: true, raw: JSON.stringify(config, null, 2), hidden }
+}
+
 function replaceConfigRaw(body: any): { summary: string; backupPath?: string } {
   const raw = String(body?.raw || "")
   if (!raw.trim()) throw new Error("Config body is empty.")
   let parsed: any
   try { parsed = JSON.parse(raw) }
   catch (e: any) { throw new Error(`Invalid JSON: ${e.message}`) }
+  // A secret the Hub's editor showed hidden keeps the file's value. Only
+  // then is the file read: classic Advanced may be fixing a broken one.
+  if (raw.includes(HIDDEN_SECRET)) {
+    let current: unknown = null
+    try { current = readConfigRaw() } catch { /* unreadable: nothing to give back */ }
+    parsed = restoreConfigSecrets(parsed, current)
+  }
   // Rules across sections (#1062): refused here rather than at the next
   // daemon start.
   const checked = daemonConfigSchema.safeParse(expandEnvVars(parsed))
