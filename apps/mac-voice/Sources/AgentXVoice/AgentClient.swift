@@ -386,16 +386,25 @@ enum AgentClient {
         _ = try? await post("/voice/requests/\(key)/continue", ["question": question, "waiting": waiting], timeout: 3)
     }
 
-    /// The daemon's open rows, or nil when it cannot be reached (or is
-    /// older than the list).
-    static func openRequests() async -> [OpenRequests.Remote]? {
+    /// What reading the daemon's list gave.
+    enum RequestsRead {
+        case rows([OpenRequests.Remote])
+        /// It answered, but keeps no list (older than it, or no SQLite).
+        case noList
+        /// It did not answer at all.
+        case unreachable
+    }
+
+    /// The daemon's open rows.
+    static func openRequests() async -> RequestsRead {
         struct Reply: Decodable { let requests: [RemoteRow] }
-        guard let url = URL(string: "\(Config.daemonURL)/voice/requests") else { return nil }
+        guard let url = URL(string: "\(Config.daemonURL)/voice/requests") else { return .unreachable }
         var req = URLRequest(url: url)
         req.timeoutInterval = 3
-        guard let (data, response) = try? await URLSession.shared.data(for: req),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return (try? JSONDecoder().decode(Reply.self, from: data))?.requests.map(\.remote)
+        guard let (data, response) = try? await URLSession.shared.data(for: req) else { return .unreachable }
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let rows = (try? JSONDecoder().decode(Reply.self, from: data))?.requests else { return .noList }
+        return .rows(rows.map(\.remote))
     }
 
     /// The answer the daemon kept for a row, for one the app did not ask

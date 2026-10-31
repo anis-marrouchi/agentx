@@ -43,6 +43,10 @@ struct VoiceSettings: Codable, Equatable {
         /// "play" at once. Nil from a daemon older than the open-requests
         /// list: the app waits.
         var answers: String?
+        /// The Mac sound played once when an answer is ready and waits,
+        /// and the sounds it may be. Nil from an older daemon: "Pop".
+        var readySound: String?
+        var readySounds: [String]?
         /// Half a second's hover on the pill opens the open-requests list.
         /// Nil from an older daemon: on.
         var listOnHover: Bool?
@@ -50,12 +54,14 @@ struct VoiceSettings: Codable, Equatable {
         init(provider: String, fallback: String, stt: String, localStt: String = "mlx-whisper",
              endOfTurn: String = "vad", hotkeys: Hotkeys, card: Card? = nil, look: String? = nil,
              startReduced: Bool? = nil, stroll: Bool? = nil, animations: String? = nil,
-             answers: String? = nil, listOnHover: Bool? = nil) {
+             answers: String? = nil, readySound: String? = nil, readySounds: [String]? = nil,
+             listOnHover: Bool? = nil) {
             self.provider = provider; self.fallback = fallback; self.stt = stt
             self.localStt = localStt; self.endOfTurn = endOfTurn; self.hotkeys = hotkeys
             self.card = card; self.look = look; self.startReduced = startReduced
             self.stroll = stroll; self.animations = animations
             self.answers = answers; self.listOnHover = listOnHover
+            self.readySound = readySound; self.readySounds = readySounds
         }
 
         /// A daemon from before these fields leaves them out: the defaults.
@@ -73,6 +79,8 @@ struct VoiceSettings: Codable, Equatable {
             stroll = try c.decodeIfPresent(Bool.self, forKey: .stroll)
             animations = try c.decodeIfPresent(String.self, forKey: .animations)
             answers = try c.decodeIfPresent(String.self, forKey: .answers)
+            readySound = try c.decodeIfPresent(String.self, forKey: .readySound)
+            readySounds = try c.decodeIfPresent([String].self, forKey: .readySounds)
             listOnHover = try c.decodeIfPresent(Bool.self, forKey: .listOnHover)
         }
     }
@@ -137,6 +145,7 @@ struct VoiceSettings: Codable, Equatable {
         if let stroll = self.general.stroll, stroll != old.general.stroll { general["stroll"] = stroll }
         if let often = self.general.animations, often != old.general.animations { general["animations"] = often }
         if let answers = self.general.answers, answers != old.general.answers { general["answers"] = answers }
+        if let sound = self.general.readySound, sound != old.general.readySound { general["readySound"] = sound }
         if let hover = self.general.listOnHover, hover != old.general.listOnHover { general["listOnHover"] = hover }
         var keys: [String: Any] = [:]
         if self.general.hotkeys.talk != old.general.hotkeys.talk { keys["talk"] = self.general.hotkeys.talk }
