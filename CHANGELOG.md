@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.198.0](https://github.com/anis-marrouchi/agentx/compare/v0.197.0...v0.198.0) (2026-10-31)
+
+
+### Features
+
+* **events:** add wake deadlines ([#1596](https://github.com/anis-marrouchi/agentx/issues/1596)) ([#1643](https://github.com/anis-marrouchi/agentx/issues/1643)) ([b476806](https://github.com/anis-marrouchi/agentx/commit/b4768062acf02bac57663474fc49a0bfcadf087a))
+* **hub:** events feed for broadcasts, wakes and replies ([#1648](https://github.com/anis-marrouchi/agentx/issues/1648)) ([#1653](https://github.com/anis-marrouchi/agentx/issues/1653)) ([b4e8bd6](https://github.com/anis-marrouchi/agentx/commit/b4e8bd641779123415a73343ebc14f3068bc9d6e))
+
+
+### Bug Fixes
+
+* **notify:** Web Push opens a push's request, publicUrl falls back to calls.phone.appUrl ([#1655](https://github.com/anis-marrouchi/agentx/issues/1655)) ([#1657](https://github.com/anis-marrouchi/agentx/issues/1657)) ([c296d14](https://github.com/anis-marrouchi/agentx/commit/c296d1413484487571f2399b8cfd34e4ca08a75e))
+* **plans:** no nudge or block while the request waits until its due time ([#1662](https://github.com/anis-marrouchi/agentx/issues/1662)) ([d4bfbe4](https://github.com/anis-marrouchi/agentx/commit/d4bfbe417bdb80a6fdb49c1c7e691f799cf4301c)), closes [#1661](https://github.com/anis-marrouchi/agentx/issues/1661)
+
 ## [0.197.0](https://github.com/anis-marrouchi/agentx/compare/v0.196.0...v0.197.0) (2026-10-31)
 
 
