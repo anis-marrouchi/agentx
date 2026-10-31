@@ -48,6 +48,7 @@ A call from an agent also rings your phone, as a notification that looks and sou
 
 - **The notification** says **Helper is calling**, with the reason. In the phone app it stays on screen until you tap it, and the phone buzzes like a ring. With ntfy it plays the sound you picked for urgent messages (see [Make the phone ring like a call](#make-the-phone-ring-like-a-call)).
 - **Both ring at once.** The phone rings together with AgentX Voice on your Mac. Answer on either one: the other stops ringing. To ring the phone only when AgentX Voice isn't running, set `calls.phone.ring` to `"away"`.
+- **No Mac notification while the pill rings.** The pill already rings, so the Mac doesn't also show a notification banner or play a notification sound for the call.
 - **Urgent calls** ring through Focus and, with the ntfy setup below, through Do Not Disturb. **Other calls** follow Focus: they don't ring, and show as missed calls once Focus ends.
 
 To answer:
@@ -175,6 +176,8 @@ To check the phone:
 - **The phone doesn't ring**: check that notifications reach it (`agentx notify "test"`). If `calls.phone.ring` is `"away"`, the phone rings only while AgentX Voice isn't running. A normal call in Focus doesn't ring; it shows as missed.
 - **The phone shows a plain notification, with no ringtone**: set up the ntfy categories in [Make the phone ring like a call](#make-the-phone-ring-like-a-call). The phone app's own notifications use the phone's normal notification sound.
 - **Tapping the ntfy notification opens ntfy, not the call**: set `calls.phone.appUrl`.
+- **The phone now rings for every call, and you only want it when you are away from the Mac**: since version 0.197.0, the phone rings together with AgentX Voice by default. Set `calls.phone.ring` to `"away"` in `agentx.json`, then run `agentx daemon restart`. The phone then rings only while AgentX Voice isn't running.
+- **No notification banner on the Mac for a call**: this is expected while the pill rings. Look at the pill. If AgentX Voice isn't running, the call goes to your phone instead.
 - **The app says `This call is not on this computer`**: the agent runs on another computer than the one that hosts the phone app. Answer it in AgentX Voice there.
 - **The app says `Answered somewhere else` or `Missed call`**: the call was answered on the Mac, or rang out, before you tapped.
 - **The agent says you are busy, but you are not in a call**: AgentX Voice was in a turn of yours or recording. The call rings as soon as that ends.
