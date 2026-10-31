@@ -248,7 +248,9 @@ import {
   toNarration,
 } from "@/decisions/seats/voice-narration"
 import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus"
-import { withNewRoot, withRoot } from "@/events/envelope"
+import { currentRoot, withNewRoot, withRoot } from "@/events/envelope"
+import { WakeJournal } from "@/events/wake-journal"
+import { nodeEventsFeed } from "@/events/hub-feed"
 import { EventWaker, wakeMessage } from "@/events/wake"
 import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { recentFeed, streamEnvelopes } from "@/events/feed-http"
@@ -316,6 +318,8 @@ export class AgentXDaemon {
   private landscape: LandscapeBuilder
   private heartbeat: HeartbeatManager
   private stopEventWaker?: () => void
+  /** What each event wake did, for the Hub's events feed (#1648). */
+  private readonly wakeJournal = new WakeJournal()
   /** Stop and resume signals (agents/signals, #857). */
   private signals!: SignalService
   private stopAllReporter!: StopAllReporter
@@ -556,8 +560,18 @@ export class AgentXDaemon {
     // so is one whose agent stayed busy for the whole slot wait (#1596).
     // The chat id is the agent id: the conversation key is then
     // `events:<agent>`, not `events:events:<agent>`.
-    this.stopEventWaker = new EventWaker({
+    // The journal notes when a woken turn really began: task:started on the
+    // `events` channel fires under the event's root (the withRoot below),
+    // so a wake that waited for a slot shows how long it waited (#1648).
+    const noteWakeStart = (p: AgentXEvents["task:started"]) => {
+      if (p.channel !== "events") return
+      const root = currentRoot()
+      if (root) this.wakeJournal.started(p.agentId, root.rootId, p.taskId)
+    }
+    getAgentEventBus().on("task:started", noteWakeStart)
+    const stopWaker = new EventWaker({
       agents: () => this.config.agents,
+      journal: this.wakeJournal,
       dispatch: async (agentId, e, sub) => {
         const response = await withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
           message: wakeMessage(e, sub.prompt),
@@ -572,6 +586,7 @@ export class AgentXDaemon {
       // Peer events (mesh feed) wake only subscriptions naming their node.
       isLocal: (e) => getAgentEventBus().isLocal(e),
     }).attach(getAgentEventBus())
+    this.stopEventWaker = () => { stopWaker(); getAgentEventBus().off("task:started", noteWakeStart) }
 
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
@@ -5835,6 +5850,14 @@ export class AgentXDaemon {
         return
       }
 
+      // The Hub's events feed (#1648): this node's named events and
+      // announcements, and what each wake they caused did. Mesh-gated like
+      // /events/recent. Summaries and capped errors only.
+      if (req.method === "GET" && path === "/events/hub") {
+        this.json(res, 200, nodeEventsFeed(getAgentEventBus(), this.wakeJournal))
+        return
+      }
+
       // One agent's subscriptions, read back as a bounded digest: the pull
       // delivery behind the agentx_events MCP tool and `agentx events`.
       // #277 — a phone-app reply after a delegation, for the dashboard to
@@ -5874,7 +5897,13 @@ export class AgentXDaemon {
       if (req.method === "POST" && path === "/events") {
         const body = await readBody(req)
         const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
-        const caller = turn ? { agentId: turn.agentId, rootId: turn.taskId ? this.registry.runningTaskRoot(turn.taskId) : undefined } : null
+        // A turn a wake started names the event that woke it, so the Hub
+        // files this event as its reply (#1648).
+        const caller = turn ? {
+          agentId: turn.agentId,
+          rootId: turn.taskId ? this.registry.runningTaskRoot(turn.taskId) : undefined,
+          parentId: turn.taskId ? this.wakeJournal.eventForTask(turn.taskId) : undefined,
+        } : null
         const result = publishNamedEvent(getAgentEventBus(), body, new Set(Object.keys(this.config.agents || {})), caller)
         if (!result.ok) { this.json(res, 400, { error: result.error }); return }
         this.log(`[events] emitted ${result.event.type}${result.event.agentId ? ` by ${result.event.agentId}` : ""}: ${result.event.summary}`)
