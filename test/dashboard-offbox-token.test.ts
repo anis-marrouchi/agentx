@@ -91,6 +91,19 @@ describe("dashboard pages off-box (#1306)", () => {
     expect((await fetch(`${base}/api/guests/g-1/end`, { method: "POST", headers })).status).toBe(502)
   })
 
+  // With no dashboard.token set there is no owner to sign in as, so the
+  // guest grant routes stay shut off the box, by either path (#1627).
+  it("refuses off-box guest grant reads and changes when no token is set (#1449)", async () => {
+    const base = await start(false)
+    expect((await fetch(`${base}/api/guests`, { headers: OFF })).status).toBe(401)
+    for (const op of ["pause", "resume", "end", "update"]) {
+      expect((await fetch(`${base}/api/guests/g-1/${op}`, { method: "POST", headers: OFF })).status, op).toBe(401)
+    }
+    for (const op of ["pause", "resume", "end"]) {
+      expect((await fetch(`${base}/api/admin/wall/settings/guests/g-1/${op}`, { method: "POST", headers: OFF })).status, op).toBe(401)
+    }
+  })
+
   it("signs a browser in with the token: an HttpOnly, SameSite=Strict cookie that is not the token", async () => {
     const base = await start()
     const bad = await signIn(base, "guess")
