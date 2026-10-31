@@ -12,6 +12,16 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Lets the phone app's notifications show under this app's name. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Talk to AgentX (#1664): a self-managed call to a Bluetooth watch or
+         headset. The app's own calls through Telecom, no phone number. -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Keeps the microphone while the call lasts, with the screen off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
         android:label="@string/app_name"
@@ -89,6 +99,37 @@
             android:name="com.google.androidbrowserhelper.locationdelegation.PermissionRequestActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Talk to AgentX: its own icon, and the long-press shortcut. -->
+        <activity
+            android:name=".TalkActivity"
+            android:exported="true"
+            android:label="@string/talk_title"
+            android:launchMode="singleTask"
+            android:taskAffinity="dev.agentx.phone.talk">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="dev.agentx.phone.action.TALK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".TalkService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <service
+            android:name=".TalkConnectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
 
         <receiver
             android:name=".GeofenceReceiver"

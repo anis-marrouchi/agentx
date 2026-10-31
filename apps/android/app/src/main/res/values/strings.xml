@@ -55,4 +55,42 @@
     <string name="err_location_off">Location is off on this phone. Turn it on in quick settings; places are watched again at the next check.</string>
     <string name="err_too_many">Android watches at most 100 places per app. Remove some places.</string>
     <string name="err_register">Android could not watch the places: %1$s</string>
+
+    <!-- Talk to AgentX (#1664): talk to an agent through a Bluetooth watch or headset -->
+    <string name="talk_title">Talk to AgentX</string>
+    <string name="talk_short">Talk</string>
+    <string name="talk_to">Talk to %1$s</string>
+    <string name="talk_lead">Pair your watch or headset with this phone, as for phone calls. Tap Start: the watch rings. Answer on the watch, then speak after each beep. Hang up on the watch to end.</string>
+    <string name="talk_no_agent">Choose the agent to talk to.</string>
+    <string name="talk_start">Start</string>
+    <string name="talk_answer_here">Answer on the phone</string>
+    <string name="talk_hang_up">Hang up</string>
+    <string name="talk_change">Choose another agent</string>
+    <string name="talk_loading">Looking for agents…</string>
+    <string name="talk_none">No agent is online. Check that AgentX is running on the computer.</string>
+    <string name="talk_unreachable">Could not reach the computer. Check that Tailscale is on, on this phone and on the computer.</string>
+    <string name="talk_pick_first">Choose an agent first.</string>
+    <string name="talk_ringing">Ringing your watch. Answer on the watch.</string>
+    <string name="talk_missed">The watch did not answer. Tap Start to ring it again.</string>
+    <string name="talk_busy">Another call is on, so the watch can\'t ring now.</string>
+    <string name="talk_no_calls">This phone does not let AgentX place calls.</string>
+    <string name="talk_ended">Call ended. The conversation is in the phone app\'s Chat.</string>
+    <string name="talk_mic_denied">AgentX may not use the microphone, so it can\'t hear you. Allow it in Android settings for AgentX, then tap Start.</string>
+    <string name="talk_on_watch">On your watch with %1$s.</string>
+    <string name="talk_on_phone">No watch or headset took the call, so it is on the phone\'s speaker. Talking to %1$s.</string>
+    <string name="talk_listening">Listening…</string>
+    <string name="talk_writing">Writing down what you said…</string>
+    <string name="talk_thinking">You said: %1$s. Waiting for the answer…</string>
+    <string name="talk_speaking">%1$s is answering.</string>
+    <!-- Said on the call -->
+    <string name="talk_say_hello">You are talking to %1$s. Speak after the beep.</string>
+    <string name="talk_say_nothing">I didn\'t hear anything. Speak after the beep, or hang up.</string>
+    <string name="talk_say_bye">Nothing heard. Goodbye.</string>
+    <string name="talk_say_again">I didn\'t catch that. Please say it again.</string>
+    <string name="talk_say_error">The agent could not answer. %1$s</string>
+    <string name="talk_say_empty">The agent finished without an answer.</string>
+    <string name="talk_say_offline">I could not reach your computer. Check the connection.</string>
+    <string name="talk_say_unpaired">This phone is no longer paired with your computer. Pair it again in the AgentX app.</string>
+    <string name="talk_say_failed">Something went wrong. Ending the call.</string>
+    <string name="talk_say_no_mic">The microphone could not open.</string>
 </resources>

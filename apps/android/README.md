@@ -45,6 +45,18 @@ How to build, install, pair and use it, step by step:
 - `PlacesActivity` is the settings screen: the switch, the permissions, the
   places watched, and the way out. The phone app links to it with
   `intent://places#Intent;scheme=agentx;package=<package>;end`.
+- `TalkActivity` is **Talk to AgentX** (#1664), with its own launcher icon
+  and a long-press shortcut: it rings a Bluetooth watch or headset with a
+  self-managed call (`TalkConnectionService`). Only the incoming direction
+  puts the watch's microphone on the call (#1636, step 1). `TalkService`
+  holds the microphone in the foreground while the call lasts. Each turn
+  (`TalkSession`): a beep, record until a pause (`Endpointer`), WAV to
+  `POST /api/app/voice/transcribe`, `POST /api/app/chat` read to its
+  `final` event (so the call is a Chat conversation), then
+  `POST /api/app/voice/speak` or the phone's own voice. Hanging up on the
+  watch ends it; a running answer still lands in Chat. `adb logcat -s
+  AgentXTalk` names the microphone used per turn. Guide:
+  [docs/dashboard/mobile-talk.md](../../docs/dashboard/mobile-talk.md).
 
 ## Build
 

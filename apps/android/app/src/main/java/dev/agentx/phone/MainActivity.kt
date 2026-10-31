@@ -24,7 +24,7 @@ class MainActivity : Activity() {
         finish()
     }
 
-    /** Long-press the app icon: Place reminders. */
+    /** Long-press the app icon: Place reminders, and Talk once an agent is chosen. */
     private fun addShortcut() {
         val sm = getSystemService(ShortcutManager::class.java) ?: return
         val shortcut = ShortcutInfo.Builder(this, "places")
@@ -32,7 +32,7 @@ class MainActivity : Activity() {
             .setIcon(Icon.createWithResource(this, R.drawable.ic_place))
             .setIntent(Intent(this, PlacesActivity::class.java).setAction(Intent.ACTION_VIEW))
             .build()
-        try { sm.dynamicShortcuts = listOf(shortcut) } catch (_: Exception) { /* launcher without shortcuts */ }
+        try { sm.dynamicShortcuts = listOfNotNull(shortcut, TalkActivity.shortcut(this, Prefs(this).talkTarget)) } catch (_: Exception) { /* launcher without shortcuts */ }
     }
 
     companion object {

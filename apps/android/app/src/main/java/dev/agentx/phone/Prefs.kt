@@ -58,6 +58,11 @@ class Prefs(context: Context) {
         get() = p.getInt("syncMinutes", 60)
         set(v) = p.edit().putInt("syncMinutes", v).apply()
 
+    /** The agent "Talk to AgentX" calls (TalkTarget.toJson), or null. */
+    var talkTarget: TalkTarget?
+        get() = TalkTarget.fromJson(p.getString("talkTarget", null))
+        set(v) = p.edit().putString("talkTarget", v?.toJson()).apply()
+
     val paired: Boolean get() = baseUrl != null && token != null
 
     fun forget() {
