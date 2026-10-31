@@ -167,6 +167,16 @@ struct OpenRequests {
         }
     }
 
+    /// The daemon took the row's words for something else (the floor
+    /// holder's sound). A follow-up kept while it thought is the owner's own
+    /// words, so it is not lost: the row asks it now and stays. With none
+    /// kept, the row leaves. True when the row asks again.
+    mutating func dropped(_ id: Int, at now: Date) -> Bool {
+        if takePending(id, at: now) { return true }
+        remove(id)
+        return false
+    }
+
     /// Gone without a trace: the daemon took the words for something else.
     mutating func remove(_ id: Int) {
         requests.removeAll { $0.id == id }
