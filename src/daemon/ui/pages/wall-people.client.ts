@@ -13,7 +13,9 @@
 // turn to the Wall's Task page.
 //
 // Writes, the ones the classic page had: End access for one machine,
-// POST /api/admin/people/<id>/devices/<tokenId>/end, and the person's
+// POST /api/admin/people/<id>/devices/<tokenId>/end, End access for one
+// signed-in browser (#1478), POST /api/admin/people/<id>/sessions/<id>/end,
+// and the person's
 // picture (#1425, wall-pictures.client.ts), behind the dashboard token
 // gate like every /api/admin write. Adding and editing people stays
 // with `agentx people` and Settings (#1428).
@@ -93,6 +95,19 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
         '</dl></li>';
     }).join('') + '</ul>';
   }
+  /** Browsers signed in as the person (#1478). Nothing shown until one has. */
+  function personSessionsHtml(p, sessions) {
+    if (!sessions.length) return '';
+    return '<h3>Signed-in browsers</h3><ul class="wpp__machines">' + sessions.map(function (s) {
+      var end = s.endedAt ? '' : '<button type="button" class="ax-btn wpp__end" data-pp-end-session="' + esc(s.id) + '" data-pp-person="' + esc(p.id) + '" data-pp-name="' + esc(s.label) + '">End access</button>';
+      var state = s.endedAt ? ppState('Ended', 'chip--ghost') + (s.endedReason ? ' <small>' + esc(plain(s.endedReason)) + '</small>' : '') : ppState('Signed in', 'chip--done');
+      return '<li><div class="wpp__mhead"><b>' + esc(s.label) + '</b> ' + state + end + '</div>' +
+        '<dl class="wpp__facts">' +
+          '<div><dt>Signed in</dt><dd>' + when(Date.parse(s.startedAt)) + '</dd></div>' +
+          '<div><dt>Last use</dt><dd>' + when(Date.parse(s.lastUsedAt)) + '</dd></div>' +
+        '</dl></li>';
+    }).join('') + '</ul>';
+  }
   function requestHtml(r) {
     var s = PP_REQUEST[r.state] || [String(r.state).replace(/_/g, ' '), 'chip--ghost'];
     return '<li><a href="#post=' + encodeURIComponent(r.id) + '" class="wpp__text">' + esc(plain(r.text) || 'Request') + '</a>' +
@@ -119,7 +134,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
     var d = PP.detail[p.id];
     if (!d) return '<p class="wpp__quiet">Loading…</p>';
     if (d.error) return '<p class="wpp__quiet">Could not read this person: ' + esc(d.error) + '.</p>';
-    return '<h3>Machines</h3>' + personMachinesHtml(p, d.devices || []) +
+    return '<h3>Machines</h3>' + personMachinesHtml(p, d.devices || []) + personSessionsHtml(p, d.sessions || []) +
       '<h3>Requests</h3>' + requestsHtml(p, d) +
       '<h3>Latest turns they started</h3>' + runsHtml(d.runs || []);
   }
@@ -168,11 +183,18 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
     if (key) { var again = el.querySelector(key); if (again && again.focus) again.focus(); }
   }
   function endAccess(b) {
-    var id = b.getAttribute('data-pp-person'), token = b.getAttribute('data-pp-end'), name = b.getAttribute('data-pp-name');
-    if (typeof confirm === 'function' && !confirm('End access for "' + name + '"? This machine stops at once. To use it again, the person needs a new invite.')) return;
+    var id = b.getAttribute('data-pp-person'), name = b.getAttribute('data-pp-name');
+    var session = b.getAttribute('data-pp-end-session');
+    var url = '/api/admin/people/' + encodeURIComponent(id) + (session
+      ? '/sessions/' + encodeURIComponent(session) + '/end'
+      : '/devices/' + encodeURIComponent(b.getAttribute('data-pp-end')) + '/end');
+    var ask = session
+      ? 'End access for "' + name + '"? This browser is signed out at once. The person can sign in again.'
+      : 'End access for "' + name + '"? This machine stops at once. To use it again, the person needs a new invite.';
+    if (typeof confirm === 'function' && !confirm(ask)) return;
     b.disabled = true;
     var h = headers(); h['Content-Type'] = 'application/json';
-    fetch('/api/admin/people/' + encodeURIComponent(id) + '/devices/' + encodeURIComponent(token) + '/end', { method: 'POST', headers: h, body: '{}' })
+    fetch(url, { method: 'POST', headers: h, body: '{}' })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status)); return d; }); })
       .then(function () {
         PP.note = 'Access ended for "' + name + '".'; PP.bad = false;
@@ -184,10 +206,10 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
       }, function (e) { PP.note = 'Could not end access: ' + e.message; PP.bad = true; b.disabled = false; render(); });
   }
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-pp-open],[data-pp-end],[data-asker-clear]');
+    var t = ev.target.closest('[data-pp-open],[data-pp-end],[data-pp-end-session],[data-asker-clear]');
     if (!t) return;
     if (t.hasAttribute('data-asker-clear')) { $('f-asker').value = ''; writeHash(); render(); return; }
-    if (t.hasAttribute('data-pp-end')) { endAccess(t); return; }
+    if (t.hasAttribute('data-pp-end') || t.hasAttribute('data-pp-end-session')) { endAccess(t); return; }
     var id = t.getAttribute('data-pp-open');
     if (PP.open[id]) { delete PP.open[id]; delete PP.detail[id]; render(); return; }
     PP.open[id] = true;

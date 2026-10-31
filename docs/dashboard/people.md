@@ -61,6 +61,18 @@ This does the same as `agentx people revoke-device <id>`. To let that machine in
 
 Ending a machine does not remove the share in Tailscale. If the person should no longer reach this computer at all, remove the share there too.
 
+## End one signed-in browser
+
+Once sign-in by email link is set up (it is being built, see #1478), a person who signs in gets a session of their own in that browser. They are listed under **Signed-in browsers**, below the machines, with the browser's name, when it signed in and its last use. The heading shows only once someone has signed in.
+
+1. **Browser:** open the person and find the browser under **Signed-in browsers**.
+2. Select **End access**, then confirm.
+3. That browser is signed out at once and its line turns to **Ended**. The person's other browsers and machines keep working, and they can sign in again.
+
+![A person opened on People: under Machines, Signed-in browsers lists one ended browser and one signed in, with End access](/screenshots/wall/people-sessions.png)
+
+A sign-in also ends by itself after 30 days, and at the next request once you take the person off the people list. For now, a sign-in never counts as yours: it opens none of the owner's pages, settings or writes, even with your own address. Signing in as the owner comes in a later step, and the first time from each new browser it must be confirmed on this computer.
+
 Adding people, changing their role or identities, and inviting them stay with the `agentx people` commands in the terminal: the People page only reads, apart from **End access**.
 
 ## When nobody is paired

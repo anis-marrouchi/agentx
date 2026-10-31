@@ -13,6 +13,7 @@ import { handleLogin, hasSession, hasStreamTicket, isOffBox, pageToken, redirect
 import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
 import { currentPeople, handleMemberRequest } from "./member-routes"
 import { MemberStore } from "@/members/store"
+import { PersonSessionStore } from "@/members/person-sessions"
 import { forgeLink } from "@/members/work"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
 import { deriveStage, transitionDiff } from "@/boards/config"
@@ -1008,7 +1009,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/people" && !pageAllowed(req, res, ctx, path)) return
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
-    root: process.cwd(), db: () => dashboardDb(),
+    sessions: new PersonSessionStore(process.cwd()), root: process.cwd(), db: () => dashboardDb(),
   })) return
   if (path.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, path)
