@@ -770,7 +770,7 @@ describe("Wall post actions (#1316)", () => {
     const page = owner.el("wall-post").innerHTML
     expect(page).toContain('data-act="close-done"')
     expect(page).toContain('data-act="close-drop"')
-    expect(page).toContain('<select id="wdo-hand" aria-label="Hand it to"><option value="">Hand to…</option><option value="reviewer">Reviewer</option></select>')
+    expect(page).toContain('<select id="wdo-hand" aria-label="Hand it to"><option value="">Hand to…</option><option value="cx">Customer Desk (has it: try again)</option><option value="reviewer">Reviewer</option></select>')
     const guest = openWall({ hash: "#status=open&post=r1" })
     await guest.settle()
     expect(guest.el("wall-post").innerHTML).not.toContain("close-done")

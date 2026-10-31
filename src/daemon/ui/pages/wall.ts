@@ -503,7 +503,7 @@ const WALL_PAGE_CSS = `
 .wdo__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .wdo__row .wdo__t { flex: 1; min-width: 160px; width: auto; }
 .wdo__sp { display: inline-flex; gap: 6px; align-items: center; }
-.wdo__sp select { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 5px 10px; }
+.wdo__sp select, #wdo-hand { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 5px 10px; }
 .wdo__n { margin: 0; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
 .wdo__n:empty { display: none; }
 .wsp { border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-lg); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }

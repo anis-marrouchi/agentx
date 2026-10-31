@@ -192,7 +192,7 @@ Every open post is a request you gave an agent. As the owner, you can close it o
 1. **Browser:** open the post on its own.
 2. **Browser:** to leave a note, a link to the evidence or a reason, type it in the comment box first. It is sent with what you pick next.
 3. **Browser:** under the comment box, pick one:
-   - **Hand to…**: choose an agent on the same machine. It has the request from now on and is told within a minute.
+   - **Hand to…**: choose an agent on the same machine. It has the request from now on and is told within a minute. The agent marked **(has it: try again)** gets it back to try again.
    - **Done**: closes the request as done. When the request had a check that closes it, the note says why you closed it by hand.
    - **Drop**: drops the request.
 4. **Browser:** a line opens that says exactly what happens, for example **Close "Relaunch the demo shop" as done.** Select **Confirm**, or **Back** to change your mind.

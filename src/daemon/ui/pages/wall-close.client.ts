@@ -14,10 +14,11 @@
 // hand-off note, or why it is done or dropped.
 
 export const WALL_CLOSE_SCRIPT = String.raw`
-  /** The agents on the post's node: a request is handed to one of those. */
+  /** The agents on the post's node: a request is handed to one of those,
+   *  its own agent included, to make it try again (as /approvals had it). */
   function closeAgents(p) {
     var node = ((S.live && S.live.nodes) || []).filter(function (n) { return p.node && n.name === p.node.name; })[0];
-    return ((node && node.agents) || []).filter(function (a) { return a.id !== p.owner; });
+    return (node && node.agents) || [];
   }
   /** The row under the comment box: Hand to…, Done and Drop, then the confirm. */
   function closeHtml(p) {
@@ -25,7 +26,7 @@ export const WALL_CLOSE_SCRIPT = String.raw`
     var c = S.closing && S.closing.id === p.id ? S.closing : null, off = c && c.sending ? ' disabled' : '';
     var agents = closeAgents(p);
     var hand = agents.length ? '<select id="wdo-hand" aria-label="Hand it to"' + off + '><option value="">Hand to…</option>' + agents.map(function (a) {
-      return '<option value="' + esc(a.id) + '"' + (c && c.kind === 'handoff' && c.agent === a.id ? ' selected' : '') + '>' + esc(a.name || a.id) + '</option>';
+      return '<option value="' + esc(a.id) + '"' + (c && c.kind === 'handoff' && c.agent === a.id ? ' selected' : '') + '>' + esc(a.name || a.id) + (a.id === p.owner ? ' (has it: try again)' : '') + '</option>';
     }).join('') + '</select>' : '';
     var confirm = '';
     if (c) {
