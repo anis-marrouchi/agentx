@@ -64,8 +64,9 @@ describe("Wall Settings: owner only (#1428)", () => {
 
 describe("Wall Settings: the shell (#1428)", () => {
   it("points the owner's Settings and Agent page links at the Wall", async () => {
-    expect(renderWallPage({ owner: true })).toContain('<a href="#page=settings">Settings</a>')
-    expect(renderWallPage({ owner: false })).toContain('<a href="/admin">Settings</a>')
+    expect(renderWallPage({ owner: true })).toContain('data-nav="settings" href="#page=settings"')
+    // Classic Settings redirects to the Hub's now (#1447): no one is sent there.
+    for (const owner of [true, false]) expect(renderWallPage({ owner })).not.toContain('href="/admin"')
     const w = openWall({ hash: "#page=agents" })
     await w.settle()
     const html = w.el("wall-agents-page").innerHTML

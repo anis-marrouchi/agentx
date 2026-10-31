@@ -56,6 +56,14 @@ describe("classic routes registry", () => {
     for (const r of CLASSIC_ROUTES) expect(r.blockedBy ?? [], r.path).not.toContain(1440)
   })
 
+  it("lists /admin as on the Hub, at Settings, and waits on no closed child (#1428, #1445)", () => {
+    expect(classicRouteFor("/admin")).toMatchObject({ status: "wall", wall: "/hub#page=settings" })
+    for (const r of CLASSIC_ROUTES) {
+      expect(r.blockedBy ?? [], r.path).not.toContain(1428)
+      expect(r.blockedBy ?? [], r.path).not.toContain(1445)
+    }
+  })
+
   it("matches ids, queries and hashes", () => {
     expect(classicRouteFor("/agents/a1/history?node=x")?.path).toBe("/agents/<id>/history")
     expect(classicRouteFor("/admin/agents/a1")?.path).toBe("/admin/agents/<id>")
@@ -83,7 +91,7 @@ describe("the Wall's links (link crawl)", () => {
     const linked = new Set(wallHrefs().map((h) => classicRouteFor(h)).filter((r) => r?.status === "pending").map((r) => r!.path))
     // Shrinks as each child of #1449 lands; empty once #1447 is done.
     expect([...linked].sort()).toEqual([
-      "/activity", "/admin", "/admin/agents/<id>",
+      "/activity", "/admin/agents/<id>",
       "/mesh", "/monitor", "/workflows",
     ])
   })
@@ -165,6 +173,15 @@ describe("classic Task page redirect", () => {
       }
       // Not a sub-page: anything else under /approvals is still not a page here.
       expect((await fetch(`${base}/approvals/c1`, { redirect: "manual" })).status).not.toBe(301)
+    })
+
+    it("redirects /admin for good to the Hub's Settings (#1428)", async () => {
+      const base = await start()
+      for (const path of ["/admin", "/admin/", "/admin?x=1"]) {
+        const r = await fetch(base + path, { redirect: "manual" })
+        expect([path, r.status]).toEqual([path, 301])
+        expect(r.headers.get("location")).toBe("/hub#page=settings")
+      }
     })
 
     it("still answers 400 without an agent", async () => {

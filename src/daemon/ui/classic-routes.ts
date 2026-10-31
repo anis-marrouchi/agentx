@@ -40,16 +40,16 @@ export const CLASSIC_ROUTES: ClassicRoute[] = [
   { path: "/activity", label: "Activity", status: "pending", blockedBy: [1449], note: "Timeline lane view and the Map; no child issue yet. The Hub's Activity (#1429) has the run list." },
   { path: "/agents/<id>/history", label: "Agent history", status: "wall", wall: HUB_PATH + "#page=activity", note: "The agent's profile with its Activity tab (#1429)." },
   { path: "/approvals", label: "Approvals", status: "wall", wall: HUB_NEEDS_YOU, note: "Needs you (#1440); its settings are in Settings › Inbox and Requests (#1428). Redirected (301) in board-dashboard.ts." },
-  { path: "/admin", label: "Settings", status: "pending", blockedBy: [1428] },
-  { path: "/admin/agents/<id>", label: "Agent settings", status: "pending", blockedBy: [1428] },
-  { path: "/admin/health", label: "Observability", status: "pending", blockedBy: [1428], note: "Also /admin/observability." },
-  { path: "/guests", label: "Guests", status: "pending", blockedBy: [1428] },
+  { path: "/admin", label: "Settings", status: "wall", wall: HUB_PATH + "#page=settings", note: "Every tab has its Settings section (#1428). Redirected (301) in board-dashboard.ts; a #tab hash is not carried." },
+  { path: "/admin/agents/<id>", label: "Agent settings", status: "pending", blockedBy: [1449, 1528], note: "Settings › Agents (#1428) has five of its tabs. Left: the chat `agentx start` opens (#1528), Capability, and deleting an agent; no child issue for those two." },
+  { path: "/admin/health", label: "Observability", status: "pending", blockedBy: [1449], note: "Route traces, rotations and errors; Settings › Health (#1428) shows machines and channels only. No child issue yet. Also /admin/observability." },
+  { path: "/guests", label: "Guests", status: "pending", blockedBy: [1449], note: "Settings › Guests (#1428) links here; no Hub view yet, no child issue." },
   { path: "/admin/cost", label: "Cost", status: "wall", wall: HUB_PATH + "#status=open&view=cost", note: "Redirected in board-dashboard.ts (#1423, #1466)." },
   // Owner decision on #1420 (B): the org chart is edited on /org and the
   // Wall's Org page stays read-only (#1486 closed for it).
   { path: "/org", label: "Org chart editor", status: "tool", note: "Editing who reports to whom; the Hub's Org page reads it." },
   { path: "/people", label: "People", status: "wall", wall: HUB_PATH + "#page=people", note: "Redirected in people-panel.ts (#1441)." },
-  { path: "/workflows", label: "Workflows", status: "pending", blockedBy: [1445] },
+  { path: "/workflows", label: "Workflows", status: "pending", blockedBy: [1449], note: "The Hub's Workflows page (#1445) links here for the follow-up runs and the every-task-in-a-workflow switch; no child issue yet." },
   { path: "/admin/graph", label: "Intent graph", status: "pending", blockedBy: [1449], note: "The taxonomy editor; no child issue yet. Reviews are decided on the Hub (#1440). Also /graph." },
   { path: "/admin/projects", label: "Projects", status: "pending", blockedBy: [1449], note: "Creating and editing projects; no child issue yet." },
   { path: "/admin/ledger", label: "Intent ledger", status: "pending", blockedBy: [1449], note: "Not covered by the spike; no child issue yet." },
@@ -119,6 +119,9 @@ export function classicRedirect(path: string, params: URLSearchParams, daemonUrl
     else q.set("page", "workflows")
     return HUB_PATH + "#" + q.toString()
   }
+  // Classic Settings kept its tab in the hash, which never reaches the
+  // server: every old link opens the Hub's Settings list.
+  if (path === "/admin" || path === "/admin/") return HUB_PATH + "#page=settings"
   const hist = path.match(/^\/agents\/([^/]+)\/history$/)
   if (hist) {
     // The Activity filter keys (wall-activity.client.ts ACT_KEYS). The classic

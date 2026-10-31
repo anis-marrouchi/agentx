@@ -20,8 +20,6 @@ import { emailAccountBlock, passwordEnvFor } from "@/channels/email/settings"
 import { holdAgent, holdsRoot, readHolds, releaseAgent } from "@/agents/holds"
 import { buildOrgView } from "@/business/org-view"
 import { applyOrgEdit, orgChoices, readOrgSetup } from "@/business/org-edit"
-import type { TopbarPeer } from "./topbar"
-import { renderAdminPage } from "./ui/pages/admin"
 
 // --- /admin panel: form-driven management for agents, channels, crons ---
 //
@@ -38,11 +36,6 @@ import { renderAdminPage } from "./ui/pages/admin"
 // ========================================================================
 // HTTP entry points
 // ========================================================================
-
-export function handleAdminGet(_req: IncomingMessage, res: ServerResponse, peers: TopbarPeer[] = [], localToken?: string): void {
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-  res.end(renderAdminPage({ peers, localToken }))
-}
 
 export async function handleAdminConfigGet(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   const cfg = readConfigRaw()
