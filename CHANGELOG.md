@@ -2,6 +2,24 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.197.0](https://github.com/anis-marrouchi/agentx/compare/v0.196.0...v0.197.0) (2026-10-31)
+
+
+### Features
+
+* **android:** debug-only watch call spike ([#1636](https://github.com/anis-marrouchi/agentx/issues/1636) step 1) ([#1638](https://github.com/anis-marrouchi/agentx/issues/1638)) ([35c3cee](https://github.com/anis-marrouchi/agentx/commit/35c3cee186332cd0d086e958616ac9324a348ef3))
+* **calls:** ring the owner's phone like an incoming call ([#1605](https://github.com/anis-marrouchi/agentx/issues/1605)) ([#1612](https://github.com/anis-marrouchi/agentx/issues/1612)) ([96e9e0b](https://github.com/anis-marrouchi/agentx/commit/96e9e0b9d5a5fb0cb4312fcf79d7b1d11cb643f2))
+* **goals:** goal record and crons.&lt;id&gt;.goal ([#1568](https://github.com/anis-marrouchi/agentx/issues/1568) part 3) ([#1641](https://github.com/anis-marrouchi/agentx/issues/1641)) ([e12f002](https://github.com/anis-marrouchi/agentx/commit/e12f002b76b626cc7d7dde99075e733153402dd7))
+* **hub:** chat panel streams the answer, with Stop and Open the run ([#1528](https://github.com/anis-marrouchi/agentx/issues/1528)) ([#1637](https://github.com/anis-marrouchi/agentx/issues/1637)) ([a5c9e82](https://github.com/anis-marrouchi/agentx/commit/a5c9e827fcd01d14ca36a820846f7496f9a12376))
+
+
+### Bug Fixes
+
+* **crons:** record a missed run skipped for a closed goal ([#1641](https://github.com/anis-marrouchi/agentx/issues/1641) follow-up) ([#1645](https://github.com/anis-marrouchi/agentx/issues/1645)) ([fb3b498](https://github.com/anis-marrouchi/agentx/commit/fb3b4980c064a8b389156965f0ea65dd0deb899c))
+* **events:** retry a busy agent's wake, fix the events chat key ([#1596](https://github.com/anis-marrouchi/agentx/issues/1596)) ([#1650](https://github.com/anis-marrouchi/agentx/issues/1650)) ([5353bbb](https://github.com/anis-marrouchi/agentx/commit/5353bbb7a850d0c3aff66c665fd120a29207a878))
+* **hub:** chat panel stream follow-ups from [#1637](https://github.com/anis-marrouchi/agentx/issues/1637) ([#1528](https://github.com/anis-marrouchi/agentx/issues/1528)) ([#1640](https://github.com/anis-marrouchi/agentx/issues/1640)) ([ffe32b1](https://github.com/anis-marrouchi/agentx/commit/ffe32b1ea244346cb5d45b7bd72a35a508a305a5))
+* **notify:** a tap on a phone push opens its link, request or the Hub ([#1652](https://github.com/anis-marrouchi/agentx/issues/1652)) ([#1654](https://github.com/anis-marrouchi/agentx/issues/1654)) ([6a2e95a](https://github.com/anis-marrouchi/agentx/commit/6a2e95a96d95eaf4f9fb9a5829d87eed8fc57e4e))
+
 ## [0.196.0](https://github.com/anis-marrouchi/agentx/compare/v0.195.0...v0.196.0) (2026-10-31)
 
 
