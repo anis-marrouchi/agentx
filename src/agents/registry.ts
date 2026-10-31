@@ -4237,11 +4237,16 @@ export class AgentRegistry {
   }
 
   /** Stop every in-flight run of `agentId` in one chat. Used when a streaming
-   *  caller disconnects (the phone app's Stop). Returns how many it aborted. */
-  cancelChatTasks(agentId: string, channel: string, chatId: string, reason = "operator"): number {
+   *  caller disconnects (the phone app's Stop). With `sender`, only the runs
+   *  that sender started: AgentX Voice stopping its own turn in a phone
+   *  conversation leaves a turn the phone started there alone (#1455).
+   *  Returns how many it aborted. */
+  cancelChatTasks(agentId: string, channel: string, chatId: string, reason = "operator", sender?: string): number {
     let n = 0
     for (const [taskId, e] of this.taskAborts) {
-      if (e.agentId === agentId && e.channel === channel && e.chatId === chatId && this.cancelRunningTask(taskId, reason)) n++
+      if (e.agentId !== agentId || e.channel !== channel || e.chatId !== chatId) continue
+      if (sender !== undefined && e.sender !== sender) continue
+      if (this.cancelRunningTask(taskId, reason)) n++
     }
     return n
   }

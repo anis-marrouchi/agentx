@@ -365,6 +365,81 @@ describe("voice requests in the phone's conversations", () => {
     expect(seen).toEqual([thread.conversationId])
   })
 
+  it("hearing one answer leaves the agent's other answers not heard, here and on the phone", () => {
+    const store = new VoiceRequestStore(db, T0)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 1000)
+    const a = store.create("writer", "check the backups", false, T0)
+    const ta = beginPhoneThread(store, a.id, agent, "check the backups", "Home", T0)!
+    const b = store.create("writer", "draft the summary", false, T0 + 10)
+    const tb = beginPhoneThread(store, b.id, agent, "draft the summary", "Home", T0 + 10)!
+    expect(tb.conversationId).toBe(ta.conversationId)
+    finishPhoneThread(store.chats, ta, { content: "A." }, T0 + 100)
+    store.settle(a.id, 200, answer, T0 + 100)
+    finishPhoneThread(store.chats, tb, { content: "B." }, T0 + 200)
+    store.settle(b.id, 200, answer, T0 + 200)
+
+    store.heard(b.id, T0 + 300)
+    expect(store.get(b.id)?.heard).toBe(true)
+    expect(store.get(a.id)?.heard).toBe(false)
+    // The phone keeps its New chip for the answer still not heard.
+    expect(store.chats.unread("phone-1", 10).map((u) => u.id)).toEqual([ta.conversationId])
+    // Neither Close heard nor the kept-heard trim takes the one not heard.
+    expect(store.closeHeard(T0 + 400)).toBe(1)
+    expect(store.list().map((r) => r.id)).toEqual([a.id])
+
+    // The last one heard reads the conversation on the phone.
+    store.heard(a.id, T0 + 500)
+    expect(store.chats.unread("phone-1", 10)).toEqual([])
+  })
+
+  it("closing one unheard answer leaves the phone unread while another waits", () => {
+    const store = new VoiceRequestStore(db, T0)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 1000)
+    const a = store.create("writer", "q1", false, T0)
+    const ta = beginPhoneThread(store, a.id, agent, "q1", "Home", T0)!
+    const b = store.create("writer", "q2", false, T0 + 10)
+    beginPhoneThread(store, b.id, agent, "q2", "Home", T0 + 10)
+    finishPhoneThread(store.chats, ta, { content: "A." }, T0 + 100)
+    store.settle(a.id, 200, answer, T0 + 100)
+    store.settle(b.id, 200, answer, T0 + 200)
+
+    store.close(b.id, T0 + 300)
+    expect(store.get(a.id)?.heard).toBe(false)
+    store.close(a.id, T0 + 400)
+    expect(store.chats.unread("phone-1", 10)).toEqual([])
+  })
+
+  it("a row asked for another agent (the session was switched) runs in no phone conversation", () => {
+    const store = new VoiceRequestStore(db, T0)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "writer" }, "first", T0 - 1000)
+    store.chats.create("phone-1", { node: "local", nodeName: "Home", agent: "researcher" }, "other", T0 - 500)
+    const r = store.create("writer", "q", false, T0)
+    const writers = beginPhoneThread(store, r.id, agent, "q", "Home", T0)!
+    const before = store.chats.get("phone-1", writers.conversationId)!.messages.length
+
+    // "talk to Researcher", then a follow-up or Ask again on Writer's row.
+    const thread = beginPhoneThread(store, r.id, { id: "researcher", name: "Researcher" }, "and the night before?", "Home", T0 + 10)
+    expect(thread).toBeNull()
+    expect(store.chats.get("phone-1", writers.conversationId)!.messages).toHaveLength(before)
+    // The row leaves Writer's conversation: hearing it no longer reads Writer's thread.
+    expect(store.get(r.id)?.conversationId).toBeNull()
+  })
+
+  it("/ask saves what came of the question in the thread on every way out", () => {
+    const src = readFileSync(path.join(__dirname, "../src/daemon/index.ts"), "utf8")
+    const ask = src.slice(src.indexOf('case "POST /ask":'), src.indexOf('case "POST /mesh/task":'))
+    // One finisher, idempotent, used by the answer, the queued 202 and the throw.
+    expect(ask).toContain("finishPhoneThread(this.voiceRequests.chats, thread, answer)")
+    expect(ask.match(/finishPhoneThread\(/g)).toHaveLength(1)
+    const queued = ask.slice(ask.indexOf("if (queued) {"), ask.indexOf("reply(202,"))
+    expect(queued).toContain('finishThread({ content: "", error: text })')
+    const caught = ask.slice(ask.indexOf("} catch (err) {"))
+    expect(caught.slice(0, caught.indexOf("throw err"))).toContain("finishThread({ content: \"\", error: why })")
+    // The turn in a phone conversation is the Mac's, so Stop can tell it apart.
+    expect(ask).toContain('{ channel: "app", sender: VOICE_SENDER, chatId: thread.chatId, via: "voice" as const }')
+    expect(src).toContain('"stopped from the open-requests list", VOICE_SENDER)')
+  })
+
   it("a database from before the phone link gains the column", () => {
     db.exec(`CREATE TABLE voice_requests (
       id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, question TEXT NOT NULL,

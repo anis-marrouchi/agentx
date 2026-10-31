@@ -225,7 +225,7 @@ import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath } from "@/daemon/voice-requests-api"
-import { beginPhoneThread, finishPhoneThread, type PhoneThread } from "@/daemon/voice-phone-thread"
+import { beginPhoneThread, finishPhoneThread, VOICE_SENDER, type PhoneThread } from "@/daemon/voice-phone-thread"
 import { safeUi } from "@/daemon/app-chat-relay"
 import { toSpeakable } from "@/voice/speakable"
 import { pronouncer } from "@/voice/pronounce"
@@ -5091,7 +5091,7 @@ export class AgentXDaemon {
           knows: (id) => !!this.registry.getAgent(id) || this.voiceMesh.isRemote(id),
           // A request in the phone's conversation runs under its key (#1455).
           stop: (r) => r.conversationId
-            ? this.registry.cancelChatTasks(r.agentId, "app", `app:${r.conversationId}`, "stopped from the open-requests list")
+            ? this.registry.cancelChatTasks(r.agentId, "app", `app:${r.conversationId}`, "stopped from the open-requests list", VOICE_SENDER)
             : this.registry.cancelChatTasks(r.agentId, "voice", `voice:${r.agentId}`, "stopped from the open-requests list"),
         }, req.method || "GET", path, body)
         this.json(res, reply.status, reply.body)
@@ -8329,7 +8329,7 @@ export class AgentXDaemon {
                 (this.config.voice.look === "character" && this.voiceTalk.guide.listening ? `\n${GUIDE_INSTRUCTION}` : ""),
               // The owner spoke to this node: the turn is theirs (#393).
               context: operatorContext(thread
-                ? { channel: "app", sender: "Voice", chatId: thread.chatId, via: "voice" as const }
+                ? { channel: "app", sender: VOICE_SENDER, chatId: thread.chatId, via: "voice" as const }
                 : { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
               intentRef,
             })

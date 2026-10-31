@@ -84,7 +84,7 @@ A row of *chips*, small rounded buttons, appears at the top of Chat: one for eac
 - **Keyboard:** Tab reaches the row; the arrow keys move between chips, and Enter opens one.
 - **Follow-ups:** a message you add to a running conversation still waits for that agent (*Sent when the agent finishes*). If you switch away before the agent finishes, the phone keeps the message and sends it as soon as that answer is done.
 - The row only shows when there is more than the conversation on screen.
-- **From the Mac:** a question you ask an agent with [AgentX Voice](./voice.md#the-same-requests-on-the-phone) on the computer goes into your last conversation with that agent here, and its answer gets a **New** chip. Hear it on the Mac and the chip goes; open it here and the Mac marks it heard.
+- **From the Mac:** a question you ask an agent with [AgentX Voice](./voice.md#the-same-requests-on-the-phone) on the computer goes into your last conversation with that agent here, and its answer gets a **New** chip. Hear it on the Mac and the chip goes, once no other answer from that agent is waiting there. Open the conversation here and the Mac marks every answer in it heard.
 
 ### When an answer finishes out of sight
 

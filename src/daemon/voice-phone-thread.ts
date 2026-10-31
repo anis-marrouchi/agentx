@@ -16,6 +16,10 @@ import type { AppChatStore } from "@/daemon/app-chat-store"
 import type { UiDirective } from "@/channels/ui-directive"
 import type { VoiceRequestStore } from "@/daemon/voice-requests-api"
 
+/** The sender of AgentX Voice's turns, so Stop from the list can tell its
+ *  own turn in a phone conversation from one the phone started there. */
+export const VOICE_SENDER = "Voice"
+
 export interface PhoneThread {
   conversationId: string
   /** The phone's session key for the agent turn. */
@@ -31,7 +35,10 @@ export interface ThreadAgent {
 /** The phone conversation request `requestId` runs in, with the question
  *  saved in it: the one it already has, else the newest with the agent on
  *  any phone, else a new one on the phone used last. Null for an unknown
- *  request or when no phone ever chatted. */
+ *  request, when no phone ever chatted, or when the row is another agent's
+ *  (the voice session was switched, "talk to Atlas"): that turn runs in
+ *  the voice session, and the row leaves the other agent's conversation,
+ *  which never sees this answer. */
 export function beginPhoneThread(
   requests: VoiceRequestStore,
   requestId: string,
@@ -42,6 +49,10 @@ export function beginPhoneThread(
 ): PhoneThread | null {
   const row = requests.get(requestId)
   if (!row) return null
+  if (row.agentId !== agent.id) {
+    if (row.conversationId) requests.link(requestId, null)
+    return null
+  }
   const chats = requests.chats
   let conv: { id: string; deviceId: string } | null = null
   if (row.conversationId) {

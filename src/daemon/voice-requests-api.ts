@@ -160,8 +160,8 @@ export class VoiceRequestStore {
     return this.get(id)
   }
 
-  /** It runs in the phone's conversation `conversationId`. */
-  link(id: string, conversationId: string): void {
+  /** It runs in the phone's conversation `conversationId`, or in none. */
+  link(id: string, conversationId: string | null): void {
     if (!ID_RE.test(id)) return
     this.db.prepare("UPDATE voice_requests SET conversation_id = ? WHERE id = ?").run(conversationId, id)
   }
@@ -216,9 +216,16 @@ export class VoiceRequestStore {
     return r
   }
 
-  /** The row's phone conversation is read up to `now`, on its own phone. */
+  /** The row's phone conversation is read up to `now`, on its own phone.
+   *  Every request to one agent shares that conversation, and the phone
+   *  reads a whole conversation at once: while another open answer in it
+   *  is not heard, it stays unread, so hearing one row never hears its
+   *  siblings and the phone's New chip stays for the one left. */
   private readOnPhone(r: VoiceRequest, now: number): void {
     if (!r.conversationId) return
+    const others = this.db.prepare(`SELECT COUNT(*) AS n FROM voice_requests WHERE conversation_id = ? AND id != ?
+      AND closed_at IS NULL AND state IN ('answered', 'failed') AND NOT ${HEARD_SQL}`).get(r.conversationId, r.id) as { n: number }
+    if (others.n > 0) return
     const owner = this.chats.ownerOf(r.conversationId)
     if (owner) this.chats.markRead(owner, r.conversationId, now)
   }

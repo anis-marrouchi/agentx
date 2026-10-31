@@ -126,6 +126,17 @@ describe("a run stuck before spawn", () => {
     expect(agentState(r).runningTasks).toEqual([])
   })
 
+  it("with a sender, cancelling its chat stops only that sender's run (#1455)", async () => {
+    const r = registry()
+    const { started, run } = startRun(r, { context: { channel: "app", chatId: "app:c1", sender: "operator" } })
+    await started
+    // AgentX Voice's Stop leaves the turn the phone started in the same conversation.
+    expect(r.cancelChatTasks("ops", "app", "app:c1", "stopped from the open-requests list", "Voice")).toBe(0)
+    expect(agentState(r).runningTasks).toHaveLength(1)
+    expect(r.cancelChatTasks("ops", "app", "app:c1", "client-interrupt", "operator")).toBe(1)
+    expect((await run).error).toMatch(/client-interrupt/)
+  })
+
   it("is ended by its deadline without an operator", async () => {
     const r = registry()
     const { started, run } = startRun(r, { timeoutMinutes: 0.001 })

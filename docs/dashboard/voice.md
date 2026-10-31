@@ -197,12 +197,18 @@ The agent takes one turn at a time in a conversation. A question from the Mac wa
 | **Thinking** | Your question shows in the conversation. No chip until the answer is back |
 | A blue dot and **Answer ready** | A chip with **New** |
 | **Couldn't answer**, not seen | A chip with **New**; the conversation says why |
-| **Heard** | No chip: the conversation is read |
-| Closed before you heard it | No chip: the conversation is read |
+| **Heard**, and no other answer from that agent waits | No chip: the conversation is read |
+| Closed before you heard it, and no other answer from that agent waits | No chip: the conversation is read |
 
-Open the conversation on the phone and the Mac row turns to **Heard** within five seconds. Hear the answer on the Mac and the phone's **New** chip goes. The phone reads the whole conversation then, so an answer to a question you typed on the phone in that conversation is no longer marked **New** either.
+Open the conversation on the phone and the Mac row turns to **Heard** within five seconds. The phone shows the whole conversation at once, so every answer from that agent in it turns to **Heard**.
+
+On the Mac, each answer is heard on its own. If you asked the same agent two things, hearing one leaves the other with its blue dot, and the phone keeps its **New** chip until you have heard both. When the chip goes, the phone reads the whole conversation, so an answer to a question you typed on the phone in that conversation is no longer marked **New** either.
 
 If the agent could not answer, or was still busy, the conversation on the phone says so under your question.
+
+If you switched the Mac to another agent (for example "talk to Researcher") and then follow up on an earlier row, that answer stays on the Mac. It doesn't go into the first agent's conversation on the phone.
+
+**Stop** in the list stops only the Mac's own request. A message you sent from the phone in the same conversation keeps running.
 
 Agents on another computer in your mesh keep a conversation of their own with the Mac, apart from the phone's.
 
@@ -1206,7 +1212,7 @@ The [open-requests list](#open-requests) is kept by the daemon, so any app on th
 | `POST /voice/requests/<id>/continue` | A follow-up for the row: `{"question": "…", "waiting": false}`. The same row asks again with these words, not heard; its last answer goes. A closed row comes back |
 | `POST /voice/requests/close-heard` | Close every heard answer and every failure: `{"closed": <how many>}` |
 
-Each row has an `id`, the `agentId`, your `question`, its `state` (`waiting`, `thinking`, `answered` or `failed`), `sentAt` and `since` (in milliseconds since 1970), `heard`, `error` (why it failed), and `conversationId`: the phone app's conversation it ran in, or `null`. `heard` is also `true` once that conversation was opened on the phone after the answer came. At most 50 rows are listed; closed rows are forgotten after seven days.
+Each row has an `id`, the `agentId`, your `question`, its `state` (`waiting`, `thinking`, `answered` or `failed`), `sentAt` and `since` (in milliseconds since 1970), `heard`, `error` (why it failed), and `conversationId`: the phone app's conversation it ran in, or `null`. `heard` is also `true` once that conversation was opened on the phone after the answer came. Marking one row heard reads the phone conversation only when no other open answer in it is still not heard. At most 50 rows are listed; closed rows are forgotten after seven days.
 
 ## Task narration
 
@@ -1518,8 +1524,9 @@ To check the phone side, with the [phone app](./mobile-chat.md) paired and a pas
 3. **Phone:** tap the chip. Within five seconds, the Mac row says **Heard**.
 4. **Mac:** ask the same agent "what did I just ask you?". It answers with the question from step 1: one session for both.
 5. **Mac:** ask it something else and pick the answer in the list when it is ready. On the phone, the **New** chip goes at the next look.
-6. **Terminal:** stop the daemon, then press **Command–Option–O** on the Mac. The list says **Can't reach AgentX on this Mac**. Start the daemon and choose **Try now**: the rows come back.
-7. **Mac:** in **Settings › General**, pick another **Soft sound**. It plays once; the next answer that waits plays it.
+6. **Mac:** ask that agent two things, and wait until both rows have a blue dot. Pick one. The other keeps its blue dot, and the phone still shows **New**.
+7. **Terminal:** stop the daemon, then press **Command–Option–O** on the Mac. The list says **Can't reach AgentX on this Mac**. Start the daemon and choose **Try now**: the rows come back.
+8. **Mac:** in **Settings › General**, pick another **Soft sound**. It plays once; the next answer that waits plays it.
 
 ## If something is wrong
 
