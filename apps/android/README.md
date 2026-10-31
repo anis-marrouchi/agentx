@@ -116,3 +116,29 @@ Steps (each one has its expected result):
 
 Report the phone model, Android version, build (`versionCode`) and which
 steps passed on #681.
+
+## Watch call spike (#1636, debug builds only)
+
+The question: can a Bluetooth-calling watch that runs no apps (Redmi Watch
+6 Lite and similar) be an agent's mic and speaker, the way it is for a
+WhatsApp call? The debug APK has a second icon, **AgentX watch spike**.
+`src/debug/` holds it, so a release build never includes it.
+
+1. Pair the watch with the phone as a headset, as for phone calls.
+2. Open **AgentX watch spike**. Allow the microphone and, on Android 12+,
+   nearby devices.
+3. Tap **Call the watch (outgoing)**. Then try **Ring the watch
+   (incoming)** and answer it on the watch, or with **Answer** if the
+   watch doesn't ring.
+4. Each run opens a self-managed call. It moves the audio to the watch,
+   first with Telecom's Bluetooth route and then with
+   `setCommunicationDevice` (`startBluetoothSco` before Android 12).
+   Next it says a test phrase, records 5 s and plays the recording back.
+   Hanging up on the watch ends the call.
+
+The screen and `adb logcat -s WatchSpike` show each step, with PASS or
+FAIL where the phone can tell: the audio route, the microphone's device
+type (7 = Bluetooth SCO), and whether the microphone heard anything.
+Check the rest by eye and ear: the watch shows the call screen, the
+phrase plays on the watch, and the recording comes back. Report one
+result per phone and watch on #1636.
