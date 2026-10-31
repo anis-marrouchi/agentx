@@ -7,7 +7,7 @@ It shows what `agentx people` already records. There is nothing to set up: with 
 ## Open it
 
 1. **Browser:** open the dashboard. The Hub is the first page you see.
-2. Select **People** in the nav on the left. The number next to it is how many people are listed. On a phone, select **More** in the bottom bar, then **People**. The page's address is `/hub#page=people`. The old address, `/people`, opens this page too.
+2. Select **People** in the nav on the left. The number next to it is how many people are listed. On a phone, select **More** in the bottom bar, then **People**. The page's address is `/hub#page=people`. Old links to the classic People page open it too.
 3. Every person is one row: a round picture with their initials, their name, their handle (such as `@sara`), and their role (**Owner**, **Member**, **Client** or **Guest**). Under it, the channel identities you gave them, such as `gitlab:sara.b`, and the agents they may reach, when you limited them.
 4. The last line counts their machines, how many of those wait for your approval, and their open requests on the Hub.
 5. Under it, **Upload picture** gives them a picture in place of the initials; see [Give agents and people a picture](../jobs/profile-pictures.md).
@@ -81,14 +81,14 @@ The page is the same, one column wide. Each machine's facts stack under its name
 
 Only you. The page is part of the dashboard, which listens on your own computer. A teammate's machine reaches two paths and nothing else, `/member` and `/api/member`, and this page is under neither. If you set a dashboard token (`dashboard.token`), the page's data and **End access** need it, like the rest of the dashboard: anyone else is refused.
 
-Never publish `/hub`, `/people` or the whole dashboard with `tailscale serve`. `agentx people invite` refuses to make a code while a path other than the member page's and the phone app's (including the Android app's `/.well-known/assetlinks.json`) is published.
+Never publish `/hub` or the whole dashboard with `tailscale serve`. `agentx people invite` refuses to make a code while a path other than the member page's and the phone app's (including the Android app's `/.well-known/assetlinks.json`) is published.
 
 ## Check it worked
 
-1. **Browser:** open `http://127.0.0.1:4202/people`. The Hub opens on **People**, and you see at least one row: yourself.
+1. **Browser:** open `http://127.0.0.1:4202/hub#page=people`. The Hub opens on **People**, and you see at least one row: yourself.
 2. **Terminal:** run `agentx people list` and `agentx people devices` from the folder that holds `agentx.json`. The page shows the same people and the same machines.
 3. **Browser:** select **open requests on the Hub** on a person who asked for something. The feed shows only their posts.
-4. **Teammate's browser:** opening `https://<your computer>/people` shows nothing of yours.
+4. **Teammate's browser:** opening `https://<your computer>/hub` shows nothing of yours.
 
 ## If something is wrong
 

@@ -71,7 +71,7 @@ If an agent withdraws its own request before you approve it, the request is simp
 ## Check it worked
 
 1. **Terminal:** run `agentx schedule list`. Your new job is listed without the `◐` mark and with a next run time.
-2. **Browser:** open the dashboard's **Operations** tab. The job appears under **Routines** as a schedule. See [Routines](../dashboard/operations.md#routines).
+2. **Browser:** open the dashboard. On the Hub, select **Jobs** in the nav, under **Automation**. The job has a row under its machine, marked **on**, with its schedule and next run. See [See recurring jobs](../dashboard/hub.md#see-recurring-jobs-and-their-value-line).
 3. After its first run, the agent's answer arrives in the chat you asked from.
 
 ## If something is wrong
@@ -84,6 +84,6 @@ If an agent withdraws its own request before you approve it, the request is simp
   1. **Terminal:** run `agentx schedule list`. The job's `notify:` line should name the chat and say `(results and failures)`.
   2. If it says `(failures only)`, open `agentx.json` and remove `"deliverResult": false` from the job.
   3. If there is no `notify:` line, the request was made from a place that isn't a chat (for example another schedule). Add a `notify` destination to the job, as in [Send a daily report](../jobs/daily-report.md#deliver-the-report-to-a-chat).
-  4. A run that ends with an empty answer sends nothing. Check the run in the dashboard's **Operations** tab.
+  4. A run that ends with an empty answer sends nothing. Check the run on the Hub: select **Jobs** in the nav, then the job's row, to read the last run's summary.
   5. If the `notify:` line says `voice`, check that push notifications reach your phone. Without them a voice result can't be sent, and the daemon log shows `result delivery failed`.
 - **The timing is wrong:** check the phrase with `agentx schedule parse "<phrase>"`, then ask the agent to change it.

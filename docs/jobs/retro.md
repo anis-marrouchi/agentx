@@ -184,7 +184,7 @@ Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings)
 2. **Terminal:** run `agentx retro <taskId>`. It prints `✓ card:… raised for <agent>`.
 3. **Browser:** open **Approvals**. The card is there with its fixes and **Expires in 3 days, then: discard**.
 4. **Browser:** pick a fix and click **Yes**. The page says `<agent> will be told yes (<your pick>)`.
-5. **Browser:** within a minute, the **Activity** tab shows a run for that agent on the `approvals` channel. That is the agent starting on the fix.
+5. **Browser:** within a minute, **Activity** in the Hub's nav shows a new run for that agent. That is the agent starting on the fix.
 6. **Terminal:** run `agentx retro sweep`. It prints `struggled run(s), one per failure` and how much room is left today, and raises nothing.
 7. **Terminal:** run `agentx retro checks`. It prints `check(s) added by a retro` with each tagged rule's numbers, or `No guard rule carries a retro:<taskId> tag yet`, and raises nothing.
 

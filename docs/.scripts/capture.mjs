@@ -50,6 +50,13 @@ const shots = [
   // #1355: Projects as cards, Jobs per machine, the Creator, the phone dark.
   { name: "wall/projects", path: "/hub#status=open&view=projects", wait: ".wpc" },
   { name: "wall/jobs", path: "/hub#status=open&view=jobs", wait: ".wjb" },
+  // The Hub pages the docs link from every page (#1448): its nav groups on a
+  // phone, the build line, and the Activity and Workflows pages.
+  { name: "wall/more-phone", path: "/hub", wait: ".wp", phone: true, steps: [{ click: "[data-more-nav]" }, { wait: "#wall-more:not([hidden])" }] },
+  { name: "wall/build-line", path: "/hub", wait: "#wall-build:not(.is-wait)", clipTo: ".ax-wall__head" },
+  { name: "wall/activity", path: "/hub#page=activity", wait: "#wall-activity > *" },
+  { name: "wall/workflows", path: "/hub#page=workflows", wait: "#wall-workflows .wwf__tabs" },
+  { name: "wall/failures", path: "/hub#status=open&view=failures", wait: "#wall-failures .wf" },
   { name: "wall/needs-you", path: "/hub#status=open&view=decide", wait: "#wall-decide .wdc" },
   { name: "wall/needs-you-phone", path: "/hub#status=open&view=decide", wait: "#wall-decide .wdc", phone: true },
   { name: "wall/creator", path: "/hub#page=creator", wait: ".wcr__a", steps: [{ click: ".wcr__a" }, { wait: ".wcr__a.is-on" }, { type: "#cr-text", text: "Summarise the open support tickets by topic" }, { type: "#cr-done", text: "A short list in the post" }] },
@@ -195,7 +202,7 @@ function client(ws) {
 }
 
 const profile = mkdtempSync(join(tmpdir(), "agentx-docs-chrome-"))
-const chrome = spawn(chromePath, ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" })
+const chrome = spawn(chromePath, ["--headless=new", "--mute-audio", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" })
 let launchError
 chrome.on("error", e => { launchError = e })
 let ws
@@ -243,6 +250,8 @@ try {
       : { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
     // Dark for the shots that say so (#1355); light after.
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: shot.dark ? "dark" : "light" }, { name: "prefers-reduced-motion", value: "reduce" }] })
+    // A hash-only move keeps the page, and with it the last shot's theme.
+    await cdp("Page.navigate", { url: "about:blank" })
     await cdp("Page.navigate", { url: target + shot.path })
     await sleep(500)
     await wait(shot.wait)

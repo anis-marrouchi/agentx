@@ -24,7 +24,7 @@ The dashboard can load while the daemon is stopped. A working browser page does 
 5. Look for your message. If it isn't there, the message never reached AgentX: check the channel's connection (see [If something is wrong](#if-something-is-wrong)).
 6. If the row names the wrong agent, open **Settings** › **Channels** and change which agent the channel is bound to.
 7. Select the **Errors** tab. A failed model login, a missing API key or a missing workspace folder shows up here.
-8. **Browser:** open the **Activity** tab of the dashboard to see whether the agent started a run for your message.
+8. **Browser:** select **Activity** in the Hub's nav (under **More** on a phone) to see whether the agent started a run for your message.
 9. **Terminal:** run the health check:
    ```sh
    agentx doctor

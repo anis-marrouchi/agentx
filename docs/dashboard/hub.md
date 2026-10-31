@@ -10,7 +10,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 ## Open the Hub
 
-1. **Browser:** open the dashboard. The Hub is the first page you see. On every other dashboard page it is the **Hub** tab in the top bar, and you can open it at `/hub`.
+1. **Browser:** open the dashboard. The Hub is the first page you see. Its address is `/hub`. From a classic dashboard page, select **Hub** to come back.
 2. The nav on the left starts with **Hub** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
    - **Work:** **Live**, **Running now**, **Projects** and **Activity**.
    - **Automation:** **Jobs**, **Workflows**, **Reviews** and **Failures**.
@@ -22,7 +22,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
-4. The **Quiet by design** box on the right says the Hub never pings you. Select **Dashboard pages** in it to list every classic page: **Operations**, **Monitor**, **Approvals**, **Org**, **Activity**, **Workflows** and **Settings**. Their addresses have not changed. Cost is a Hub page now (see [See what the fleet costs](#see-what-the-fleet-costs)), and so is Live: `/live` opens [Live](#live-sessions). People moved to the Hub: `/people` opens the Hub's [People](./people.md) page. Workflows has a Hub page too ([See your workflows](#see-your-workflows)), and so does the workflow editor: `/workflows/editor` opens it on the Hub. The classic `/workflows` page stays for **Follow-ups** and the full history of each run.
+4. The **Quiet by design** box on the right says the Hub never pings you. Select **Dashboard pages** in it to list the classic pages that still hold something the Hub does not have yet: **Operations**, **Monitor**, **Approvals**, **Org**, **Activity**, **Workflows** and **Settings**. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
 5. **Light / dark**, at the bottom of the nav, switches the Hub's colours. The Hub keeps its own choice; until you pick one, it follows your system.
 6. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Hub**, **Needs you**, **Running now**, **Projects** and **More**. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
@@ -208,7 +208,7 @@ Passwords, keys and tokens in what agents wrote are replaced with **[redacted]**
      ![The same profile on a phone in dark mode, the relations wrapping onto a second line](/screenshots/wall/org-relations-phone.png)
 
      *Fictional data; your org will differ.*
-   - **Org chart** opens the Hub's [Org page](#see-the-org-chart). The Hub only shows the org: setting up members and relations, pausing and resuming an agent stay on the classic **Org** page at `/org`.
+   - **Org chart** opens the Hub's [Org page](#see-the-org-chart). The Hub only shows the org: setting up members and relations, pausing and resuming an agent stay on the org chart page at `/org`.
 3. Under the counts, one line shows what the agent has spent this month against its monthly budget (its cap), for example **Spent $12.50 of $100.00 this month**. The month runs on UTC time, the time zone AgentX uses for budgets.
    - **near cap**: the agent has used 80% of its budget, or the share set with `warnRatio`.
    - **paused: cap reached**: the agent has used all of its budget and does no work until the next month or until you raise the budget. **paused: fleet cap reached** means the budget for all agents together is used up.
@@ -235,7 +235,7 @@ The spend line uses the same figures as **Monthly budgets** on the Cost page, fr
 4. Select **Last summary** to read what it last reported.
 5. Select its name, its avatar or **posts** to see its profile over its own posts. Select **Activity** for its runs, or **Settings** to change it (see [Change settings](#change-settings)). An agent on another machine shows **Agent page** instead, which opens its classic page.
 6. Select **Call** to have the agent call you on AgentX Voice, as from a post. When it is working now, **● Join live** opens what it is doing. Its profile has the same two buttons.
-7. Select **Open the org chart** at the top of the page to open the classic Org page at `/org`, where the owner changes who reports to whom.
+7. Select **Open the org chart** at the top of the page to open the org chart page at `/org`, where the owner changes who reports to whom.
 
 ![The Agents page in the isolated demo](/screenshots/wall/agents.png)
 
@@ -374,7 +374,7 @@ Each card says **receiving**, **off**, or **signing secret missing**. **Turn off
 
 ## Live sessions
 
-The **Live** page lists everything live on your machines: Spaces and lessons on top, then the sessions and jobs running now, the tasks you paused, one card per machine, and what comes up next. While the page is open it updates every two seconds. The old address `/live` opens it. Its own page, [Live](./live.md), walks through each part.
+The **Live** page lists everything live on your machines: Spaces and lessons on top, then the sessions and jobs running now, the tasks you paused, one card per machine, and what comes up next. While the page is open it updates every two seconds. Old links to the classic Live page open it. Its own page, [Live](./live.md), walks through each part.
 
 Here and everywhere else on the Hub (cards, a run's Task page, a post's thread, the review queue), the internal `[agentx:…]` markers the daemon adds to the turns it sends an agent are left out. A text that held only a marker reads as one plain line, such as **Result from dev-session**.
 
@@ -435,9 +435,9 @@ The **Activity** page lists every run of every agent on your machines, newest fi
 2. The profile stays on top, with **Activity** underlined, and the list shows only that agent's runs, each led by what it worked on. **All** and **Failed** (with how many failed) pick the result, and **24 h**, **7 d** or **30 d** the period. The line above the runs adds them up: runs, failed runs, agent time and cost.
 3. **Posts** goes back to its posts; **All agents** goes back to every agent's runs.
 
-This tab takes the place of the classic history page. An old history address (`/agents/<agent>/history`, from a bookmark or a classic page) opens this tab, with **30 d** picked. On another device that has not signed in yet, the address asks for the dashboard token first and then opens the same tab.
+This tab takes the place of the classic history page. An old link to an agent's history, from a bookmark or a message, opens this tab, with **30 d** picked. On another device that has not signed in yet, the link asks for the dashboard token first and then opens the same tab.
 
-![An agent's profile on a phone with its Activity tab open: All and Failed, the period, the total line, and two runs, one failed](/screenshots/wall/activity-profile.png)
+![An agent's profile on a phone with Activity open under the profile: All and Failed, the period, the total line, and two runs, one failed](/screenshots/wall/activity-profile.png)
 
 *Scripted demo data; your team's names and machines will differ.*
 
@@ -671,7 +671,7 @@ The **People** page lists everyone who talks to your agents: you, your teammates
 
 ## See what the fleet costs
 
-The **Cost** page shows what your agents spent, in total and per agent, on every machine the Hub reads. It also holds everything the old Cost page had: the token mix, cache use, every day's figures, the CSV export and the monthly budgets. The old addresses `/admin/cost` and `/cost` now open this page. For what the dollar figures mean, see [Costs](../help/costs.md).
+The **Cost** page shows what your agents spent, in total and per agent, on every machine the Hub reads. It also holds everything the old Cost page had: the token mix, cache use, every day's figures, the CSV export and the monthly budgets. Old links to the classic Cost page open this page. For what the dollar figures mean, see [Costs](../help/costs.md).
 
 1. **Browser:** select **Cost** in the nav (under **More** on a phone). The amount next to it is what every machine spent this month.
 2. The top line shows this month's total, against the budget for all agents when one is set, with **near cap** or **fleet cap reached** when that applies. Under it: today, the last 7 days and the change against the 7 days before. The small line on the right is the spend per day over the last 30 days.
@@ -725,7 +725,7 @@ The **Org** page draws your org chart from the top down: whoever reports to no o
 9. The box on the right, **In the org**, counts the people, agents and levels, and lists the agents that are not in the chart. Select one to open its profile.
 10. **Phone:** the chart becomes a list. Each card is indented under its boss, on a line like a thread's, and shows its dotted lines as words. The page says **Only the owner can change the org** and has no **Open the org chart** link.
 
-A person has a grey card with a **person** chip. The page only reads: the Hub has no forms for the org. **Open the org chart** opens the classic Org page at `/org`, where you, the owner, change the chart (see [Edit the org chart](./org.md#edit-the-org-chart)).
+A person has a grey card with a **person** chip. The page only reads: the Hub has no forms for the org. **Open the org chart** opens the org chart page at `/org`, where you, the owner, change the chart (see [Edit the org chart](./org.md#edit-the-org-chart)).
 
 ![The Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager; dotted lines are shown](/screenshots/wall/org.png)
 
@@ -802,7 +802,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 4. Select **Agents** in the nav. Every agent on your machines is listed, and the number next to **Agents** matches the list.
 5. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or the **Waiting** tab). The card shows on that task's post, with its expiry and what happens with no answer.
 6. Open a post that is in progress, type a comment and select **Comment**. The note under the buttons says it was sent to the agent, and a **comment** line by **owner** appears in its thread. Within a minute, a new **run** of that agent follows it. Select **Call** *agent*: your AgentX Voice widget rings.
-7. Open `/live` in the browser. The Hub's **Live** page opens.
+7. Select **Live** in the nav. The Hub's **Live** page opens.
 8. Select **Refresh**. **Happening now** fills in while the feed still says **Loading…**; it does not wait for the posts.
 9. **Browser:** open the Hub in a private window on a phone-sized screen. The first posts appear within about a second and a half. A machine that is slow to answer says **checking…** under **Happening now**, then its usual line a few seconds later.
 10. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
@@ -825,7 +825,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 27. Goal: ask an agent for some work and tell it the goal, for example "this is for the shop relaunch goal". After **Refresh**, its post shows **Goal:** with the goal's title. Select it: the line above the posts shows the goal with `0 of 1 done` and the same cost as **Goals** on the Approvals page.
 28. Open a done post and select **Task record and trace**: the run opens on the Hub's **Task** page. Copy the task id from the address (after `task=`) and the agent (after `agent=`), then open `/tasks/<task-id>?agent=<agent>`: the same **Task** page opens on the Hub.
 29. Spend: select an agent to open its profile. Its spend line shows the same amount, budget and state as that agent's line under **Monthly budgets** on the Cost page. Select **Cost** on that line: the Hub's Cost page opens.
-30. Cost page: select **Cost** in the nav, then **7 days**. The address ends with `range=7` and the total changes. Select an agent: its profile opens. Open `/admin/cost` in the browser: the same Cost page opens.
+30. Cost page: select **Cost** in the nav, then **7 days**. The address ends with `range=7` and the total changes. Select an agent: its profile opens.
 31. Budget: on the Cost page, select **Set a cap** on a test agent's row. Under **Monthly budgets**, the form shows that agent. Type `5` and select **Save**. The line says **Saved**, and the agent's row shows **of $5.00 this month**. Empty the box and select **Save** again to remove the cap.
 32. CSV: select **Export CSV**. Your browser saves a file named like `agentx-cost-30d-<date>.csv` with one line per day.
 33. Select **Activity** in the nav. The run of the task you sent in step 2 is at the top, with its agent and **Done** (or **Running** if it is still working). Select the **Failed** tab: only failed runs are left, and the address now has `a-result=failed`. Select a row: it opens in place with what it was asked.
@@ -836,8 +836,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
 39. Needs you: with a decision card pending, select **Needs you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
 40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back. Select **Health**: **agents online** matches the agents on [Live](#live-sessions), and a machine you stop turns red within a minute. Open an agent's **Handovers** tab and hand a test chat to another agent: it is listed under **Routed away from**, and under **Routed to** on the other agent's tab. Select **Release**, then **Release** again: it leaves both lists.
-41. Workflows page: select **Workflows** in the nav. It lists the same workflows as the classic `/workflows` page, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
-42. Old history link: open `/agents/<agent>/history` in the browser, with the name of one of your agents. The Hub opens that agent's profile with **Activity** underlined and **30 d** picked.
+41. Workflows page: select **Workflows** in the nav. It lists the same workflows as `agentx workflow list` in a terminal, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
+42. One agent's runs: select an agent's name, then **Activity** under its profile. **Activity** is underlined and the list shows only that agent's runs.
 43. Schedules and Webhooks: in **Settings** › **Schedules**, select the preset **Every hour**: the line under **When** says when it runs and the next three times. Add a schedule named `check-test`, then open the classic `/admin#tab=crons`: `check-test` is listed. Delete it on the Hub. In **Settings** › **Webhooks**, add one named `check-test`, select **Turn off**: its card says **off**. Delete it.
 44. Channels: in **Settings** › **Channels**, the Telegram account you use is listed with its agent and its token's variable name, never the token. Select **Email**, then **GitLab**: each matches the classic `/admin#tab=channels`. Turn **Request status** on GitLab off and on again: the line under the tabs says so each time, and the classic page shows the same.
 
@@ -909,7 +909,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **The Org page says "Something in the org chart does not hold":** a relation names someone unknown, loops back, or gives a member two bosses. The message names it. Fix it in `agentx.json`; see [Org relations](../reference/config-operations.md).
 - **A person is missing from the Org page:** a person gets a card only when a **reports to** or **dotted line** names them. A person an agent only acts for shows on that agent's card as **acts for** *name*.
 - **The org chart is cut off on the right:** it is wider than the screen. Scroll it sideways, or select **−** to zoom out.
-- **A link from the old home page stopped working:** only `/` changed. Every other address works as before; `/live` opens the Hub's **Live** page.
+- **A link from the old home page stopped working:** only `/` changed. Every other address works as before, and an old link to a classic page the Hub replaced opens the matching Hub page.
 - **No Settings in the nav, or "Settings are for the owner":** the dashboard does not see you as the owner. Open it on the machine that serves it, or sign in with the dashboard token, then reload.
 - **Settings says "Only the owner can change settings":** your sign-in ended or the dashboard token changed. Sign in again at `/login`.
 - **"Not saved: …" in Settings:** the value was refused, for example an agent id with capitals or no wake word. The form keeps what you typed. Fix it as the message says and select **Save…** again; nothing was written.

@@ -158,12 +158,13 @@ These steps delete your settings, agents and task history. Copy anything you wan
 ## Check it worked
 
 1. **Terminal:** check the daemon. In Docker, run `docker compose ps`: `daemon` and `dashboard` are both running. Otherwise run `agentx daemon status` (from source: `node dist/cli.js daemon status`). It prints `Status: running` and lists your agent.
-2. **Browser:** open `http://127.0.0.1:4202/live`. Your agent appears on the **Live** tab.
+2. **Browser:** open `http://127.0.0.1:4202`. The Hub opens.
+3. **Browser:** select **Agents** in the Hub's nav (under **More** on a phone). Your agent is listed.
 
 ## If something is wrong
 
 - **Docker: something failed to start:** read the last lines of the logs with `docker compose logs --tail=50 daemon dashboard`.
-- **The agent doesn't appear in Live:** the daemon was already running when you added it. Restart the daemon (Docker: `docker compose restart daemon dashboard`; otherwise `agentx daemon stop`, then `agentx daemon start --detach`).
+- **The agent isn't listed on the Hub's Agents page:** the daemon was already running when you added it. Restart the daemon (Docker: `docker compose restart daemon dashboard`; otherwise `agentx daemon stop`, then `agentx daemon start --detach`).
 - **npm install fails with `MODULE_NOT_FOUND`:** you have version 0.27.0, which was published with a missing file. Install `agentix-cli@latest`.
 - **`Unsupported engine` or other Node.js errors:** check `node --version`. AgentX needs 22.19 or newer, up to 26.
 - **`agentx: command not found` after the installer added Node.js:** open a new terminal, so it reads the PATH line the installer added. Or run `export PATH="$HOME/.agentx/node/bin:$PATH"` in the current one.

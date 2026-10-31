@@ -15,7 +15,7 @@ AgentX has two parts that run side by side:
 - The **daemon** is the background service that receives messages, runs agents and runs schedules (work that starts at set times).
 - The **dashboard** is the website you open in your browser to set things up and watch the work.
 
-![The Live tab of the dashboard in the demo](/screenshots/live.png)
+![The Hub in the demo: the nav on the left, Running now per machine, and every task as a post](/screenshots/wall/wall.png)
 
 ## Where to start
 
@@ -26,7 +26,7 @@ AgentX has two parts that run side by side:
   2. [Create your first agent](./first-agent.md).
   3. [Connect Telegram](./connect-telegram.md).
 
-The dashboard has eight main tabs: [Live](./dashboard/live.md), [Operations](./dashboard/operations.md), [Monitor](./dashboard/monitor.md), [Approvals](./dashboard/approvals.md), [People](./dashboard/people.md), [Activity](./dashboard/activity.md), [Workflows](./dashboard/workflows.md), and [Settings](./dashboard/settings.md). Start with Monitor to understand what still needs a person and what agents can handle.
+The dashboard opens on the [Hub](./dashboard/hub.md): every task as a post, with its thread. Its nav on the left (a bar at the bottom on a phone) starts with **Hub** and **Needs you** (what waits on you), then **Live**, **Running now**, **Projects**, **Activity**, **Jobs**, **Workflows**, **Reviews**, **Failures**, **Agents**, **People**, **Org** and **Cost**. Start with **Needs you** to see what still needs a person. [The dashboard](./dashboard/index.md) says where each thing is.
 
 New words, such as *node*, *mesh* or *schedule*, are explained in plain terms in the [glossary](reference/glossary.md).
 
@@ -51,7 +51,8 @@ New words, such as *node*, *mesh* or *schedule*, are explained in plain terms in
 Once AgentX is installed:
 
 1. **Terminal:** run `agentx daemon status`. It prints `Status: running` and lists your agents.
-2. **Browser:** open the dashboard (by default `http://127.0.0.1:4202/live`). The **Live** tab shows your agents.
+2. **Browser:** open the dashboard (by default `http://127.0.0.1:4202`). The Hub opens.
+3. **Browser:** select **Agents** in the Hub's nav (under **More** on a phone). It lists your agents.
 
 ## If something is wrong
 

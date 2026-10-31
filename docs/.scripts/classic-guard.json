@@ -18,6 +18,7 @@
     { "shots": "wiki/", "why": "the wiki, a space of its own" },
     { "shots": "setup/", "why": "the first-run setup tool page, kept" },
     { "shots": "editor-", "why": "the workflow editor tool page, kept" },
+    { "shots": "pictures/wall-", "why": "the Hub's agent pictures, captured from the Hub" },
     { "shots": "approvals/mac-card", "why": "the Mac card" },
     { "shots": "approvals/email-reply.png", "why": "the email reply card" },
     { "shots": "approvals/phone.png", "why": "the phone app" },
@@ -29,7 +30,10 @@
     { "shots": "record-vscode/", "why": "VS Code" },
     { "shots": "requirements/", "why": "macOS System Settings" },
     { "shots": "see-it-first/", "why": "a terminal" },
-    { "shots": "tui/", "why": "the terminal UI" }
+    { "shots": "tui/", "why": "the terminal UI" },
+    { "shots": "live/running-task-workflow.png", "why": "the Hub Live page (captured from /hub#page=live)" },
+    { "shots": "workflows/editor", "why": "the Hub workflow editor (/workflows/editor redirects to /hub#page=editor)" },
+    { "shots": "costs/", "why": "the Hub Cost page (captured from /hub view=cost)" }
   ],
   "classic": [
     { "shots": "live/running-build.png", "feature": "Daemon version and restart-pending line", "child": "#1444" },
@@ -53,8 +57,6 @@
     { "shots": "guests/", "feature": "Settings on the Hub (guests)", "child": "#1428" },
     { "shots": "doctor/", "feature": "Settings on the Hub (health)", "child": "#1428" },
     { "shots": "health/", "feature": "Settings on the Hub (health)", "child": "#1428" },
-    { "shots": "costs/page.png", "feature": "Hub Cost page", "child": "fix now" },
-    { "shots": "costs/budgets.png", "feature": "Set a budget from the Hub Cost page", "child": "#1428" },
     { "shots": "org/", "feature": "Org page on the Hub", "child": "#1419" },
     { "shots": "people/", "feature": "People page on the Hub", "child": "#1441" },
     { "shots": "workflows", "feature": "Workflows page on the Hub", "child": "#1445" },
@@ -72,7 +74,7 @@
   "urls": [
     { "path": "/live", "child": "#1439" },
     { "path": "/monitor", "child": "#1439" },
-    { "path": "/mesh", "child": "#1446" },
+    { "path": "/mesh", "child": "#1446", "except": ["/mesh/task"] },
     { "path": "/activity", "child": "#1429" },
     { "path": "/agents/", "child": "#1429" },
     { "path": "/approvals", "child": "#1440" },

@@ -111,7 +111,7 @@ Put `"*"` on the public bot's account, not in `"policy"`, so your other bots sta
 
 1. **Telegram app:** send your bot a short message, such as `hello`.
 2. The bot replies in the same chat, within a minute.
-3. **Browser:** the **Activity** tab lists the conversation.
+3. **Browser:** select **Activity** in the Hub's nav (under **More** on a phone). It lists the conversation.
 4. For a public bot: ask someone who is not on any list to message it. The bot answers them too.
 
 ## If something is wrong

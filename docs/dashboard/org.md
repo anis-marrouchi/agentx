@@ -4,7 +4,7 @@ Your org chart lists who reports to whom: you and other people, and your agents.
 
 ![The Hub's Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager](/screenshots/wall/org.png)
 
-Changing the chart, pausing an agent, and approving an agent that another agent created are done on the classic **Org** page at `/org`. The Hub only shows the chart. Open `/org` from the Hub's **Open the org chart** link, or under **Dashboard pages**. When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
+The Hub only shows the chart. Changing the chart and pausing an agent are done on the org chart page at `/org`, kept as a tool page for these forms. Open it from the Hub's **Open the org chart** link. When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
 
 ## Edit the org chart
 
@@ -46,9 +46,9 @@ The chart comes from `business.orgChart` in `agentx.json`. Until you fill it in,
    agentx business orgchart add dev --role Engineer --reports-to pm
    ```
 
-2. **Browser:** open the dashboard and click the **Org** tab (or go to `/org`).
+2. **Browser:** open the dashboard. On the Hub, select **Org** in the nav (under **More** on a phone).
 
-The role shows under the agent's name. On the classic page, the line under it is the first sentence of the role's first responsibility in `business.roles`, or else of the agent's instructions. An org chart needs nothing else: `business.enabled` can stay off.
+The role shows under the agent's name. On the `/org` page, the line under it is the first sentence of the role's first responsibility in `business.roles`, or else of the agent's instructions. An org chart needs nothing else: `business.enabled` can stay off.
 
 ## People and kinds of relation
 
@@ -81,13 +81,11 @@ The `--reports-to` of `agentx business orgchart add` is a `reports-to` relation,
 4. **Terminal:** list every relation with `agentx business relation list`, and remove one with `agentx business relation remove <from> <type> <to>`.
 5. **Terminal:** run `agentx daemon restart` if the business layer is on, so it reads the new chart.
 6. **Browser:** on the Hub, select **Org**, then **Refresh**. A person sits in the chart with the agents that report to them under them. A **dotted-line** shows as **dotted line to** *name* on the card, and as a dashed arrow with **Show dotted lines**. An **acts-for** shows as **acts for** *name* on the agent's card.
-7. **Browser:** on the classic page at `/org`, a person's card says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
-
-   ![The Org tab with a person at the top; the assistant under them acts for them, and an engineer further down has a dotted line to a second person](/screenshots/org/people.png)
+7. **Browser:** on the `/org` page, a person's card says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
 
 The relations are saved under `business.relations` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
 
-## What each card shows on the classic page
+## What each card shows on the `/org` page
 
 | Status | What it means |
 |---|---|
@@ -122,7 +120,7 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 
 ## Check it worked
 
-1. **Browser:** on the Hub, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On the classic page at `/org`, each agent is a card under its boss.
+1. **Browser:** on the Hub, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On `/org`, each agent is a card under its boss.
 2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
 3. Click **Resume**. The card says **Idle** again.
 4. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.

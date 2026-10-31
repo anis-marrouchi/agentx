@@ -26,7 +26,7 @@ Words used across these docs, in plain terms.
 | **Peer** | Another node that this node is connected to in the mesh. |
 | **Provider** | The company or tool that supplies the model, such as an API key account or a signed-in CLI. |
 | **Review** | The check AgentX runs after a task finishes to write down what is left to do. Its results appear in [Monitor](../dashboard/monitor.md). |
-| **Routine** | Another word for a schedule. The dashboard's **Operations** tab lists schedules, and workflows that start by themselves, under **Routines**. See **Schedule**. |
+| **Routine** | Another word for a schedule. The Hub's **Jobs** page lists schedules (see [Jobs](../dashboard/hub.md#see-recurring-jobs-and-their-value-line)). See **Schedule**. |
 | **Run** | One execution of a task or workflow. |
 | **Schedule** | Work that starts at set times by itself, such as a summary every Friday. Also called a *scheduled job*, *cron job* or *routine*. `agentx schedule` and `agentx cron` manage them. |
 | **Seat** | One named kind of small question AgentX can hand to a decision model (Jev), such as "which on-screen control matches this description?". Each seat can be off, watching only, or active. |

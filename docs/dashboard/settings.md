@@ -152,7 +152,7 @@ To change how often peers are checked:
 
 ## Boards
 
-The **Boards** tab (titled **Kanban boards**) sets up task boards. The dashboard's old **Boards** page (`/boards`) is retired and now opens the Hub's **Projects** view; the board API (`/api/boards`) still serves these boards. A board shows the issues of one or more GitLab projects as cards in columns. Moving a card to a column adds that column's GitLab label, for example `Status::Doing`. See the [boards settings reference](../reference/config-operations.md#boards).
+The **Boards** tab (titled **Kanban boards**) sets up task boards. The dashboard has no board page: the Hub's [Projects](./hub.md#see-every-project-at-once) view shows the work per project, and old links to the board page open it; the board API (`/api/boards`) still serves these boards. A board shows the issues of one or more GitLab projects as cards in columns. Moving a card to a column adds that column's GitLab label, for example `Status::Doing`. See the [boards settings reference](../reference/config-operations.md#boards).
 
 Each board is listed with its name and id, its projects, its label filter, its time windows, and its columns, with **Edit** and **Remove** buttons.
 

@@ -5,7 +5,7 @@ AgentX can do work without anyone asking for it:
 - A **schedule** starts an agent at a set time, such as every morning at 9. See [Send a daily report](../jobs/daily-report.md) or [Schedules from chat](./schedules-from-chat.md).
 - A **workflow** ties several steps together: something starts it (a message, a GitLab event, a time of day, or you), one or more agents do the work, and the result goes somewhere. Workflows can include steps that must survive a restart, such as waiting for a person to approve.
 
-![The Workflows tab with two demo workflows](/screenshots/workflows-list.png)
+![The Workflows page on the Hub: one row per workflow, one opened on its last run](/screenshots/wall/workflows.png)
 
 ## Build your first one
 
@@ -16,8 +16,8 @@ AgentX can do work without anyone asking for it:
 
 ## Check it worked
 
-- **Browser:** the **Workflows** tab lists your workflow.
-- After a run, the workflow's card no longer says **never run yet**.
+1. **Browser:** on the Hub, select **Workflows** in the nav, under **Automation**. Your workflow has a row.
+2. After a run, its row shows a square for that run instead of **Never run**.
 
 ## If something is wrong
 
