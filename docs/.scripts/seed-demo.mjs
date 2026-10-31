@@ -130,6 +130,15 @@ for (const [id, title] of [["demo-report", "Draft the demo shop report"], ["demo
 for (const f of ["demo-deploy", "demo-owner-sweep", "demo-merge-verify", "demo-whatsapp-intake"]) {
   execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "workflow", "add", resolve(repo, `docs/public/examples/editor/${f}.json`), "--no-reload"], { cwd: root, stdio: "pipe" })
 }
+// Two wiki notes for the wiki-notes/recent shot: the Hub list shows only
+// when the inbox has notes. Written straight into the demo's wiki folder,
+// so the Wiki notes settings stay as they are.
+for (const [change, source, date] of [
+  ["The demo shop moved its weekly report to Mondays.", "owner said", "2026-03-09"],
+  ["The demo office queue now closes at 17:00.", "demo office notice board", "2026-03-06"],
+]) {
+  execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "wiki", "notes", "add", "--from", "cx", "--to", "cx", "--dir", resolve(root, ".agentx/wiki"), "--change", change, "--source", source, "--date", date], { cwd: root, stdio: "pipe" })
+}
 await post("/reload")
 for (const [channel, chatId] of [["gitlab", "demo/shop:issue:47"], ["telegram", "demo-office"]]) {
   const result = await post("/task", { agent: "cx", message: "Prepare the demo shop report.", context: { channel, chatId, sender: "Demo operator" } })

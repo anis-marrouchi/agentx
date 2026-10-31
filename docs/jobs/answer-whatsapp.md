@@ -50,7 +50,7 @@ The terminal also reminds you that no chat is answered until you list the allowe
 
 You can also pair from the dashboard: with the WhatsApp channel turned on and the daemon running, **Settings › Channels › WhatsApp** shows the QR code to scan.
 
-![Settings › Channels, with the WhatsApp card under Chat apps](/screenshots/settings-channels.png)
+![Settings › Channels › WhatsApp on the Hub, waiting for a scan with the code](/screenshots/wall/settings-whatsapp.png)
 
 ## 3. List who may write
 
@@ -77,9 +77,9 @@ A number matches when it contains an entry, so always write the full number. A s
 
 With either option, the chat you have with yourself on the paired phone ("message yourself") is answered too, so you can test from there.
 
-Or in the browser: **Settings › Advanced › Edit**, find `"whatsapp"` under `"channels"`, add `"allowFrom": ["*"]` (or your list of numbers), and select **Save**.
+Or in the browser: **Settings › Advanced**, find `"whatsapp"` under `"channels"`, add `"allowFrom": ["*"]` (or your list of numbers), and select **Save**.
 
-![Settings › Advanced, showing agentx.json with Tree, Raw and Edit views and a Save button](/screenshots/settings/advanced-tree.png)
+![Settings › Advanced, showing agentx.json in the editor with a Save button](/screenshots/settings/advanced.png)
 
 ## 4. Start the daemon
 

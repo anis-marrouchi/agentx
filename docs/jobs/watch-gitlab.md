@@ -16,15 +16,15 @@ Start with a test project. Give AgentX the smallest access that lets it do the j
 
 ## 2. Connect GitLab in AgentX
 
-1. **Browser:** open the dashboard and select **Settings**.
-2. Select the **Channels** tab.
-3. Select the **GitLab** card.
+1. **Browser:** open the Hub and select **Settings**.
+2. Select **Channels**.
+3. Select **GitLab** at the top.
 4. Under **Host**, enter your GitLab address, such as `https://gitlab.com` or your own GitLab server.
-5. Under **Admin token env-var**, enter `GITLAB_TOKEN` (the name of the line you added, not the token itself).
+5. Under **Admin token (api scope), as an environment variable name**, enter `GITLAB_TOKEN` (the name of the line you added, not the token itself).
 6. Leave **Webhook listen port** at `18810` unless that port is taken.
 7. Select **Connect**.
 
-![Settings › Channels › GitLab, with Host, Admin token env-var set to GITLAB_TOKEN, and Webhook listen port](/screenshots/channels/gitlab.png)
+![Settings › Channels › GitLab, with Host, the admin token variable set to GITLAB_TOKEN, and Webhook listen port](/screenshots/channels/gitlab.png)
 
 GitLab sends events to that port on the AgentX machine, not to the dashboard. GitLab must be able to reach it, for example over a private network (see [Tailscale setup](tailscale.md)). Don't open it to the whole internet without a secret (step 3.6 below).
 

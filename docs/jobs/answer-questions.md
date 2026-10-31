@@ -9,19 +9,19 @@ Every question the agent answers uses your model account. See [What this costs](
 ## Set the agent up
 
 1. Put the approved source material (FAQ, policy pages, price list) in the agent's **workspace**, the folder the agent works in, so the agent can read it. For an agent added from the dashboard or the setup page, that is `agents/<id>/` next to `agentx.json`, for example `agents/helper/`. If you chose another folder, it is the `workspace` value of the agent in `agentx.json`.
-2. **Browser:** open **Settings** and stay on the **Agents** tab.
-3. Select **Manage** next to the agent.
-4. Select the **Personality** tab and open the instructions file.
+2. **Browser:** open **Settings** on the Hub. **Agents** opens first.
+3. Select the agent's card.
+4. Select **Personality** and open the instructions file.
 5. Say what the agent answers, and that it must say "I don't know" when the material doesn't cover a question, instead of guessing.
 6. Select **Save**. The change applies from the agent's next reply.
-7. Go back to **Settings** and select the **Channels** tab.
-8. Check that the channel is bound to this agent. For Telegram, open the Telegram card: each account shows `agent:` followed by the agent's ID.
+7. Go back to **Settings** and select **Channels**.
+8. Check that the channel is bound to this agent. For Telegram, each account shows `answers as @` followed by the agent's ID.
 
-![Settings › Agents, with a Manage button beside each agent](/screenshots/settings.png)
+![Settings › Agents on the Hub, with one card per agent](/screenshots/wall/settings.png)
 
 ![The agent page's Personality tab, with the instruction files on the left and the editor with its Save button](/screenshots/agents/personality.png)
 
-![Settings › Channels, showing the Telegram card](/screenshots/settings-channels.png)
+![Settings › Channels, showing Telegram](/screenshots/settings-channels.png)
 
 ## Test it
 

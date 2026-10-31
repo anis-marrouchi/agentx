@@ -61,15 +61,15 @@ Whichever way you pick, the person or machine reaches you over your private netw
 
 A **token** is a password for software. Anything that talks to AgentX from outside (a script, a chat bridge, another AgentX machine) should use its own token, limited to what it needs, so you can cut it off without affecting anything else.
 
-1. **Browser:** open the dashboard and select **Settings**.
-2. Select the **Tokens** tab.
-3. Under **Name**, say who or what the token is for.
+1. **Browser:** open the Hub and select **Settings**.
+2. Select **Tokens**.
+3. Under **Make a token**, in **Name**, say who or what the token is for.
 4. Under **Scopes**, tick only what it needs. For example, **dashboard:read** only lets it read the dashboard.
-5. Optional: under **Expires after**, enter a number of days.
-6. Select **Create token**.
-7. Copy the token straight away and store it in the tool that needs it. You can't see it again after you leave the page.
+5. Optional: under **Expires after (days)**, enter a number of days.
+6. Select **Make token**.
+7. Select **Copy** straight away and store the token in the tool that needs it. You can't see it again after you select **Done** or leave the page.
 
-![Settings › Tokens with the form to mint a new token](/screenshots/settings-tokens.png)
+![Settings › Tokens with the Make a token form](/screenshots/settings-tokens.png)
 
 From the terminal, `agentx token create --name "<label>" --scope dashboard:read` does the same, and `agentx token list` shows existing tokens without their secrets.
 

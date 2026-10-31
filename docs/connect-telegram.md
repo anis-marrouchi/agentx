@@ -38,18 +38,18 @@ If you connect Telegram from the setup page instead (**Connect Telegram now** on
 
 ## 3. Add the bot in the dashboard
 
-1. **Browser:** open the **Settings** tab.
-2. Select **Channels**.
-3. Select the **Telegram** card.
-4. Under **Add a Telegram account**, enter an **Account id**: a short label of your choice, such as `support`.
-5. In **Bind to agent**, choose the agent that should answer.
+1. **Browser:** open the Hub and select **Settings**.
+2. Select **Channels**. **Telegram** opens first.
+3. Open **Add a Telegram account**.
+4. Enter an **Account name**: a short label of your choice, such as `support`.
+5. In **Agent**, choose the agent that should answer.
 6. Optionally enter the **Bot username**.
-7. In **Bot token env-var**, enter the name you used in `.env`, such as `TG_SUPPORT_BOT_TOKEN`. Enter the name, not the token itself.
+7. In **Bot token, as an environment variable name**, enter the name you used in `.env`, such as `TG_SUPPORT_BOT_TOKEN`. Enter the name, not the token itself.
 8. Select **Add account**.
 
 AgentX saves the change and the running daemon picks it up.
 
-![Settings, Channels tab, with the Telegram card](/screenshots/settings-channels.png)
+![Settings › Channels with Telegram](/screenshots/settings-channels.png)
 
 ## 4. Allow people to talk to the bot
 

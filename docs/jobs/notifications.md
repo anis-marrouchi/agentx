@@ -12,10 +12,10 @@ AgentX also respects **Focus** and **calls**. While your Mac is in Focus (Do Not
 
 You can change every setting in two places. Both save to the same settings file, `agentx.json`:
 
-- **The dashboard:** open **Settings**, choose the **Channels** tab, and open **Notifications routing**.
+- **The dashboard:** open **Settings** on the Hub and select **Inbox**.
 - **The terminal:** the `agentx notifications` command.
 
-![The Notifications routing section in the dashboard](/screenshots/notifications/dashboard-routing.png)
+![Settings › Inbox on the Hub: where notifications go, when, on this machine, and phone push](/screenshots/notifications/dashboard-routing.png)
 
 ## 1. Get messages on your phone
 
@@ -42,10 +42,10 @@ A **topic** is the name of your private message box on ntfy. On the public `ntfy
    NTFY_TOPIC=agentx-8f3c1e0a9b7d
    ```
 
-6. In the dashboard, open **Settings → Channels → Notifications routing**.
-7. Under **Phone push (ntfy)**, tick **Enabled**.
-8. In **Topic**, type `${NTFY_TOPIC}`. AgentX reads the real name from `.env`.
-9. Select **Save notifications**.
+6. In the dashboard, open **Settings › Inbox**.
+7. Under **Phone push (ntfy)**, tick **Phone push on**.
+8. In **Topic, as an environment variable name**, type `NTFY_TOPIC`. AgentX reads the real name from `.env`.
+9. Select **Save**.
 10. Restart AgentX so the change takes effect. In the terminal, run:
 
     ```sh
@@ -138,11 +138,11 @@ Run `agentx notify "Hello" --title "Test"` again. The banner should now show the
 
 ### Choose the sound and volume
 
-1. In the dashboard, open **Settings → Channels → Notifications routing**.
-2. Under **On this Mac**, tick or untick **Show a banner** and **Play a sound**.
+1. In the dashboard, open **Settings › Inbox**.
+2. Under **On this machine**, tick or untick **Show a banner** and **Play a sound**.
 3. In **Sound**, type the name of a macOS sound: Glass (the default), Ping, Tink, Submarine, or any other name in `/System/Library/Sounds`.
 4. In **Volume**, type a number from 0 (silent) to 1 (full). The default is 0.4.
-5. Select **Save notifications**.
+5. Select **Save**.
 
 ::: info The same steps in the terminal
 ```sh
@@ -155,12 +155,12 @@ agentx notifications local --banner on --sound on --sound-name Tink --volume 0.6
 The banner shows the AgentX logo unless you choose another picture. macOS takes the icon from the app that posts the banner, so a new icon means rebuilding AgentX Helper.
 
 1. Save a square picture of at least 512 × 512 pixels as `.png`, `.jpg` or `.icns`.
-2. In the dashboard, under **On this Mac**, type the picture's full path in **Banner icon**, for example `/Users/you/Pictures/team-logo.png`.
-3. Select **Save notifications**.
+2. In the dashboard, in **Settings › Inbox**, under **On this machine**, type the picture's full path in **Banner icon**, for example `/Users/you/Pictures/team-logo.png`.
+3. Select **Save**.
 4. In the terminal, run `agentx desktop install` to rebuild the helper with the new icon.
 5. If macOS asks again whether AgentX Helper may send notifications, choose **Allow**. A rebuilt app counts as new to macOS.
 
-![The On this Mac settings with a banner icon path filled in](/screenshots/notifications/dashboard-this-mac.png)
+![The On this machine settings with a banner icon path filled in](/screenshots/notifications/dashboard-this-mac.png)
 
 To go back to the AgentX logo, empty **Banner icon**, save, and run `agentx desktop install` again.
 
@@ -181,15 +181,15 @@ In this order: the path in the `AGENTX_DESKTOP_HELPER` environment variable, if 
 Agents can report on their own work: when a task finishes, fails, or waits in line. These messages go to one chat.
 
 1. Connect the chat app first ([Telegram](../connect-telegram.md) or WhatsApp).
-2. In the dashboard, open **Settings → Channels → Notifications routing**.
-3. In **Channel**, type `telegram` or `whatsapp`.
-4. In **Chat ID**, type the chat's ID. For a Telegram group it starts with `-100`.
-5. Fill in **Account ID** only if you run more than one bot on that channel.
-6. Under **Events to ping on**, tick the events you want: **Task complete**, **Task error**, **Task queued**.
-7. In **Long-task threshold**, type how many seconds a task may run before AgentX tells you it is still working. `0` turns this off. The default is 30.
-8. Select **Save notifications**.
+2. In the dashboard, open **Settings › Inbox**.
+3. Under **Where it goes**, in **Channel**, pick **Telegram** or **WhatsApp**.
+4. In **Chat id**, type the chat's ID. For a Telegram group it starts with `-100`.
+5. Fill in **Account** only if you run more than one bot on that channel.
+6. Under **When**, tick the events you want: **A task is done**, **A task failed**, **A task is queued**.
+7. In **A task runs longer than (seconds)**, type how many seconds a task may run before AgentX tells you it is still working. `0` turns this off. The default is 30.
+8. Select **Save**.
 
-To stop these messages, select **Clear destination**.
+To stop these messages, select **Clear the destination**.
 
 ::: info The same steps in the terminal
 ```sh
