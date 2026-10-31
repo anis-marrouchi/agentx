@@ -45,6 +45,28 @@ export function staleQueueNote(queuedAt: number, now: number = Date.now()): stri
   return `[queued at ${hhmm(queuedAt)} UTC, running at ${hhmm(now)} UTC — anything it refers to (PR head, issue state, files) may have changed; re-check the current state before acting or replying]`
 }
 
+/** How old an event is, in words: "45s", "14m", "2h 5m". */
+export function formatAge(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return m % 60 ? `${h}h ${m % 60}m` : `${h}h`
+}
+
+/**
+ * The note an event wake carries when it starts more than a minute after
+ * its event was emitted, usually because it waited for the agent to be
+ * free (#1647). The wake message still reads as if the event just
+ * happened; a time-bound event (a restart warning) may no longer apply.
+ * Null when the wake starts promptly or the emit time is unknown.
+ */
+export function staleEventNote(eventAt: number, now: number = Date.now()): string | null {
+  if (!Number.isFinite(eventAt) || now - eventAt <= STALE_QUEUE_NOTE_AFTER_MS) return null
+  return `[event age: ${formatAge(now - eventAt)} — emitted at ${hhmm(eventAt)} UTC, running at ${hhmm(now)} UTC. It may no longer apply; check it is still current before acting, and take no action if it has passed]`
+}
+
 interface SessionQueue {
   mode: QueueMode
   /** Messages waiting to be processed */

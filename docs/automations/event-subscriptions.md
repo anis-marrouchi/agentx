@@ -23,8 +23,27 @@ A woken agent is protected against loops and floods:
 - One `rootId` wakes an agent at most once.
 - Each `wake` subscription wakes the agent at most its own `maxPerHour` times in any hour. When every matching subscription has used up its hour, the event is skipped, and the daemon log says `wake skipped for <agent>: rate-limit`.
 - A second wake that arrives while the agent is still busy with the first waits for it to finish, then runs as its own task. Wakes are never merged into one task.
+- A wake waits at most 25 minutes for a busy agent. If the agent is still busy after that, the wake is dropped. See [Late and dropped wakes](#late-and-dropped-wakes).
 - Events from other machines (the [mesh feed](/reference/events#events-from-other-machines)) wake an agent only when the subscription lists that machine in `nodes`. Pull and digest subscriptions see them either way.
 - A wake starts a new conversation, so it counts against the [dispatch limits](/reference/config-agents#session) (`session.maxClaudeCodeDispatchesPerHour` and `session.maxClaudeCodeDispatchesPer5h`) and the plan window. When one of them holds the wake, it is not lost: the daemon tries again after 5 minutes, then 10, 20 and every 30 minutes, for about 7 hours. Each hold is logged as `wake of <agent> held: <reason>`. After the last try the log says `dropped after 16 retries`. At most 100 held wakes wait at once.
+
+### Late and dropped wakes
+
+An event can be old by the time its wake starts, for example when the agent was busy with a long task. A warning such as "the daemon restarts in 1 minute" may no longer apply 14 minutes later.
+
+- **A late wake shows the event's age.** Every wake message says when the event was sent (`emitted by … at <time>`). When the task starts more than one minute after the event, its message begins with a line like this:
+
+  ```text
+  [event age: 14m — emitted at 16:30 UTC, running at 16:44 UTC. It may no longer apply; check it is still current before acting, and take no action if it has passed]
+  ```
+
+  The agent decides what to do. To make the choice explicit, say it in the subscription's `prompt`, for example "If the event is more than 5 minutes old, reply that no action is needed."
+- **A dropped wake is published as an event.** When a wake is given up (the agent stayed busy for 25 minutes, or a held wake ran out of tries), the daemon publishes a `wake:dropped` event. It is a `custom` event, like a [named event](#send-your-own-named-events):
+  - its agent is the agent that was not woken;
+  - its `ref` is the id of the event that did not wake it, and it shares that event's `rootId`;
+  - its summary says why and how old the event was, for example `Wake of coder for daemon:restart-soon (event 4b63f428) dropped: Agent "coder" busy — slot wait timed out after 25m, event age 25m`.
+
+  Read it with `agentx events --kind custom` and look for `wake:dropped` lines. An agent that sends time-bound events can follow it with a subscription whose `kinds` is `["wake:dropped"]`. It is not woken by a `wake:dropped` for its own event, because that event shares the root of its own work; use `pull` or `digest` delivery.
 
 ## The settings
 
@@ -124,7 +143,8 @@ Anyone on the daemon's own machine can read any agent's list, just as they can r
 1. **Terminal:** send the followed agent a task, for example `agentx daemon send reviewer "Reply with a short hello"`.
 2. **Terminal:** when it has answered, run `agentx events --agent helper`. You see a `task:completed reviewer@<machine>` line.
 3. For a `wake` subscription, **Terminal:** run `agentx daemon logs`. You see `waking helper`, followed by a task for `helper` on the `events` channel.
-4. For a named event, **Terminal:** run `agentx events emit test:ping --summary "hello"`, then `agentx events --kind custom`. You see a `test:ping` line.
+4. For a `wake` subscription, **Terminal:** run `agentx events --kind custom`. No `wake:dropped` line means no wake was given up.
+5. For a named event, **Terminal:** run `agentx events emit test:ping --summary "hello"`, then `agentx events --kind custom`. You see a `test:ping` line.
 
 ## If something is wrong
 
@@ -134,6 +154,8 @@ Anyone on the daemon's own machine can read any agent's list, just as they can r
 - **The agent isn't woken by another machine's events:** add that machine's `node.name` to the subscription's `nodes`.
 - **The agent isn't woken:** look in `agentx daemon logs` for `wake skipped for <agent>`. The reason follows: `rate-limit` (raise `maxPerHour` or wait), `own-root` (the event came from the agent's own work) or `duplicate-root` (it was already woken for that `rootId`).
 - **`agentx events emit` says `name must be 1-64 letters…`:** use only letters, digits and `:` `.` `_` `-`, and start with a letter or a digit.
+- **A woken agent acted on an old event:** look at the start of its task for the `[event age: …]` line. Add an age rule to the subscription's `prompt`, or give the agent fewer long tasks so wakes wait less.
+- **The log says `wake of <agent> dropped`, or `agentx events --kind custom` lists a `wake:dropped` line:** the agent was busy for the whole wait, or a dispatch limit held the wake for about 7 hours. The event is not tried again. Send it again once the agent is free, or lower the agent's load.
 - **The log says `wake of <agent> held`:** a dispatch limit or the plan window is holding new conversations. The daemon tries again on its own. To let it through sooner, raise the limit named in the reason.
 - **A fresh conversation shows no digest:** only events since the agent's last finished task are listed, and only for `digest` subscriptions. A continued conversation never gets one. The agent can call `agentx_events` instead.
 - **The same events show up in the digest again:** the digest counts from the agent's last task that returned an answer or an error. A task that was cancelled, timed out or was cut off by a restart does not count, so the events after it are listed again in the next fresh conversation.

@@ -1,4 +1,5 @@
 import type { EventEnvelope } from "./envelope"
+import { formatAge } from "@/agents/message-queue"
 import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor, type SubscriptionInput } from "./subscriptions"
 
 // --- Wake on event ---
@@ -20,6 +21,10 @@ import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor,
 // A wake is a cold dispatch, so the dispatch cap can hold it (#1284). A
 // held wake is not dropped: it is queued and retried with a growing delay
 // until the window frees up, and each hold is logged with its reason.
+// A wake that is given up (the agent stayed busy past its slot wait, or a
+// held wake ran out of retries) is reported through `onDropped`, which the
+// daemon publishes as a `wake:dropped` event, so the emitter and anyone
+// reading the feed can see it, not only the daemon log (#1647).
 
 export type WakeOutcome =
   | { agentId: string; eventId: string; woke: true }
@@ -29,17 +34,22 @@ export interface WakeDeps {
   /** Current agent definitions (read on every event, so reloads apply). */
   agents: () => Record<string, { subscriptions?: SubscriptionInput[] }>
   /** Start the turn. Called asynchronously, off the publish path. Resolve
-   *  to `{ held: <reason> }` when the dispatch cap held it: it is retried. */
+   *  to `{ held: <reason> }` when the dispatch cap held it: it is retried.
+   *  Resolve to `{ dropped: <reason> }` when it was not run and will not
+   *  be: it is reported through `onDropped`. */
   dispatch: (agentId: string, e: EventEnvelope, sub: SubscriptionInput) => Promise<WakeDispatch | unknown> | void
   log: (msg: string) => void
+  /** A wake given up without running. Called once per dropped wake. */
+  onDropped?: (agentId: string, e: EventEnvelope, reason: string) => void
   /** True for events this node published itself (bus.isLocal). Without
    *  it every event counts as local. */
   isLocal?: (e: EventEnvelope) => boolean
   now?: () => number
 }
 
-/** What dispatch resolves to when the wake was held, not run. */
-export interface WakeDispatch { held: string }
+/** What dispatch resolves to when the wake was held (retried) or
+ *  dropped (given up), not run. */
+export type WakeDispatch = { held: string } | { dropped: string }
 
 const HOUR_MS = 60 * 60 * 1000
 /** Held wakes: first retry after this, doubling up to RETRY_MAX_MS. */
@@ -121,8 +131,13 @@ export class EventWaker {
     const failed = (err: any) => this.deps.log(`[events] wake of ${agentId} failed: ${err?.message ?? err}`)
     try {
       Promise.resolve(this.deps.dispatch(agentId, e, sub)).then((result) => {
-        const held = heldReason(result)
-        if (held) this.retry(agentId, e, sub, attempt, held)
+        const held = reasonOf(result, "held")
+        if (held) return this.retry(agentId, e, sub, attempt, held)
+        const dropped = reasonOf(result, "dropped")
+        if (dropped) {
+          this.deps.log(`[events] wake of ${agentId} dropped: ${dropped} — ${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`)
+          this.dropped(agentId, e, dropped)
+        }
       }, failed)
     } catch (err: any) {
       failed(err)
@@ -134,10 +149,12 @@ export class EventWaker {
     const line = `${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`
     if (attempt >= RETRY_ATTEMPTS) {
       this.deps.log(`[events] wake of ${agentId} dropped after ${attempt} retries, still held: ${reason} — ${line}`)
+      this.dropped(agentId, e, `still held after ${attempt} retries: ${reason}`)
       return
     }
     if (!this.held.has(key) && this.held.size >= RETRY_QUEUE_CAP) {
       this.deps.log(`[events] wake of ${agentId} dropped, ${RETRY_QUEUE_CAP} held wakes already queued: ${reason} — ${line}`)
+      this.dropped(agentId, e, `${RETRY_QUEUE_CAP} held wakes already queued: ${reason}`)
       return
     }
     const delay = Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
@@ -148,6 +165,12 @@ export class EventWaker {
     }, delay)
     timer.unref?.()
     this.held.set(key, timer)
+  }
+
+  private dropped(agentId: string, e: EventEnvelope, reason: string): void {
+    try { this.deps.onDropped?.(agentId, e, reason) } catch (err: any) {
+      this.deps.log(`[events] reporting the dropped wake of ${agentId} failed: ${err?.message ?? err}`)
+    }
   }
 
   private decide(
@@ -191,22 +214,45 @@ function seen(store: Map<string, Map<string, number>>, agentId: string, rootId: 
   return at !== undefined && t - at < ROOT_TTL_MS
 }
 
-function heldReason(result: unknown): string | undefined {
+function reasonOf(result: unknown, key: "held" | "dropped"): string | undefined {
   if (!result || typeof result !== "object") return undefined
-  const held = (result as Partial<WakeDispatch>).held
-  return typeof held === "string" && held ? held : undefined
+  const reason = (result as Record<string, unknown>)[key]
+  return typeof reason === "string" && reason ? reason : undefined
 }
 
-/** The message a woken turn receives: what happened, who emitted it, where
- *  to read more, and the subscription's own instruction when it has one. */
+/** The message a woken turn receives: what happened, who emitted it and
+ *  when, where to read more, and the subscription's own instruction when
+ *  it has one. A wake that starts late also gets the event's age, added
+ *  by the registry when the turn really starts (staleEventNote). */
 export function wakeMessage(e: EventEnvelope, prompt?: string): string {
   const lines = [
     "[Event] A subscription of yours matched:",
     formatEventLine(e),
-    `Event: ${e.type} (kind ${e.kind}), emitted by ${e.agentId ? `${e.agentId} on ${e.node}` : e.node}${e.ref ? `, ref ${e.ref}` : ""}.`,
+    `Event: ${e.type} (kind ${e.kind}), emitted by ${e.agentId ? `${e.agentId} on ${e.node}` : e.node} at ${e.at}${e.ref ? `, ref ${e.ref}` : ""}.`,
     `Event id ${e.id}, root ${e.rootId}. Call agentx_events for the surrounding events.`,
   ]
   if (prompt?.trim()) lines.push(`When this event arrives: ${prompt.trim()}`)
   else lines.push("Act on it if it needs you; otherwise reply briefly that no action is needed.")
   return lines.join("\n")
 }
+
+/** The `wake:dropped` event published when a wake is given up (#1647). It
+ *  names the agent that was not woken, carries the dropped event's root
+ *  (so the emitter, whose root that is, is not woken by it), points at the
+ *  dropped event through `ref` and `parentId`, and says why and how old the
+ *  event was. Subscribe with `kinds: ["wake:dropped"]` to be told. */
+export function wakeDroppedEnvelope(agentId: string, e: EventEnvelope, reason: string, now: number = Date.now()) {
+  const at = Date.parse(e.at)
+  const age = Number.isFinite(at) ? `, event age ${formatAge(now - at)}` : ""
+  return {
+    kind: "custom",
+    type: WAKE_DROPPED,
+    agentId,
+    rootId: e.rootId,
+    parentId: e.id,
+    ref: e.id,
+    summary: `Wake of ${agentId} for ${e.type} (event ${e.id.slice(0, 8)}) dropped: ${reason}${age}`,
+  }
+}
+
+export const WAKE_DROPPED = "wake:dropped"

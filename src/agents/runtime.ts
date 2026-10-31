@@ -87,6 +87,10 @@ export interface AgentTask {
    *  message that has to queue again keeps it, so the note is added once
    *  and reports the whole wait (#282). */
   queuedAt?: number
+  /** Set by an event wake: when its event was emitted (ms). The run
+   *  prepends the event's age when it starts more than a minute later,
+   *  for example after waiting for a slot (#1647). */
+  eventAt?: number
   /** Correlator threaded by the workflow engine. When the engine dispatches
    *  an agent as part of a state transition, this carries the run id so
    *  post:response can re-enter the engine with an agentResult condition. */

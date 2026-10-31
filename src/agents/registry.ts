@@ -30,7 +30,7 @@ import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
-import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
+import { MessageQueue, staleQueueNote, staleEventNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
@@ -1680,7 +1680,7 @@ export class AgentRegistry {
           if (Date.now() - start > maxWaitMs) {
             dropVoiceClaim()
             this.log(`[${task.agentId}] slot wait timed out after ${Math.round(maxWaitMs / 60000)}m chat=${qChannel}:${qChatId} — message not run`)
-            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
+            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m`, errorKind: "agent_busy" }
           }
           await new Promise((r) => setTimeout(r, pollIntervalMs))
         }
@@ -1822,6 +1822,13 @@ export class AgentRegistry {
       const staleNote = staleQueueNote(task.queuedAt)
       if (staleNote) task.message = `${staleNote}\n${task.message}`
       task.queuedAt = undefined
+    }
+    // An event wake that starts late (it waited for a slot) is told how
+    // old its event is (#1647), so a time-bound one is not acted on as new.
+    if (task.eventAt !== undefined) {
+      const ageNote = staleEventNote(task.eventAt)
+      if (ageNote) task.message = `${ageNote}\n${task.message}`
+      task.eventAt = undefined
     }
 
     // Another run of this agent on the same issue, in another chat (#1100):
