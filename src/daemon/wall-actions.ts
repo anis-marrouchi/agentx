@@ -129,6 +129,9 @@ const WALL_SETTINGS_WRITES = new Set([
   "POST /channels/email", "DELETE /channels/email", "POST /channels/email/toggle",
   "POST /channels/slack", "POST /channels/slack/toggle", "POST /channels/discord", "POST /channels/discord/toggle",
   "POST /channels/gitlab", "POST /channels/gitlab/toggle", "POST /channels/request-status",
+  // Phase 2: WhatsApp (sweep, watched chats) and Inbox (notification routing).
+  "POST /channels/whatsapp/ingest", "POST /whatsapp-triage", "POST /whatsapp-triage/rules", "PATCH /whatsapp-triage/rules", "DELETE /whatsapp-triage/rules",
+  "POST /notifications",
 ])
 /** An agent's handovers, written from its Handovers tab (agent-panel.ts's id shape). */
 const WALL_SETTINGS_HANDOVERS = /^\/agent\/[a-z0-9][a-z0-9_-]*\/handovers$/

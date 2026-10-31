@@ -110,7 +110,7 @@ function openWall(opts: { hash: string; owner?: boolean; business?: boolean; rou
         : url.startsWith("/api/admin/wall?") ? { status: 200, body: { node: "node-a", syncedAt: Date.now(), nodes: [{ name: "node-a", ok: true }], failures: [], posts: [] } }
         : method !== "GET" ? { status: 200, body: { summary: "ok" } }
         : { status: 200, body: { runs: [] } })
-    return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body, text: async () => (typeof r.body === "string" ? r.body : JSON.stringify(r.body)) })
   }
   const win: any = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }
   if (cfg) win.AX_WALL_SETTINGS = JSON.parse(cfg[1])
@@ -145,8 +145,14 @@ function openWall(opts: { hash: string; owner?: boolean; business?: boolean; rou
     for (const f of onDoc.keydown ?? []) f({ key: k, target: { id: "" }, preventDefault() {} })
     await settle()
   }
+  /** A switch flipped: the change event on an element carrying these attributes. */
+  const change = async (attrs: Record<string, string>, checked: boolean) => {
+    const t: any = { checked, getAttribute: (k: string) => attrs[k] ?? null, hasAttribute: (k: string) => k in attrs }
+    for (const f of onDoc.change ?? []) f({ target: t })
+    await settle()
+  }
   const writes = () => calls.filter((c) => c.method !== "GET")
-  return { page, el, calls, writes, settle, go, click, submit, type, key, paints: () => paints, wall }
+  return { page, el, calls, writes, settle, go, click, submit, type, change, key, paints: () => paints, wall }
 }
 
 const settingsHtml = (w: ReturnType<typeof openWall>) => w.el("wall-settings")!.innerHTML as string
@@ -221,13 +227,16 @@ describe("Wall Settings: the shell (#1428)", () => {
       ["Machines", ["Health", "Advanced"]],
     ])
     expect(html).toContain("3 agents, their pictures, models and on/off")
-    // Agents, Channels, Schedules, Webhooks and Health are built: the rest say they open their classic page.
-    expect(html.match(/is-classic/g)).toHaveLength(8)
+    // Agents, Channels, Schedules, Webhooks, Inbox and Health are built: the rest say they open their classic page.
+    expect(html.match(/is-classic/g)).toHaveLength(7)
     // No section in the link: on a phone the list is the screen.
     expect(html).toContain('<div class="wst">')
     await w.go("#page=settings&section=channels")
     expect(settingsHtml(w)).toContain('<div class="wst has-section">')
-    expect(settingsHtml(w)).toContain('href="/admin#tab=channels"')
+    expect(settingsHtml(w)).not.toContain('href="/admin#tab=channels"')
+    await w.go("#page=settings&section=inbox")
+    expect(settingsHtml(w)).not.toContain('href="/admin#tab=channels"')
+    expect(settingsHtml(w)).toContain("<h2>Inbox</h2>")
     await w.go("#page=settings&section=schedules")
     expect(settingsHtml(w)).not.toContain('href="/admin#tab=crons"')
     expect(settingsHtml(w)).toContain("Add a schedule")
@@ -756,7 +765,10 @@ describe("Wall Settings: Channels (#1428 phase 2)", () => {
     expect(html).toContain("<b>support</b>")
     expect(html).toContain("answers as @cx · token <code>${TG_SUPPORT}</code>")
     expect(html).toContain('data-st-ch-toggle="telegram/toggle" checked')
-    expect(html).toContain('href="/admin#tab=channels"')
+    // WhatsApp is a tab like the others: no link to the classic page is left.
+    expect(html).toContain('data-ch="whatsapp"')
+    expect(html).not.toContain("/admin#tab=channels")
+    expect(html).not.toContain("WhatsApp and routing")
     expect(w.writes()).toEqual([])
   })
 
@@ -811,6 +823,170 @@ describe("Wall Settings: Channels (#1428 phase 2)", () => {
     await w.click({ "data-st-act": "ch", "data-ch": "calls" })
     expect(settingsHtml(w)).toContain("@cx with owner · 1 min 15 s · 3 transcript parts")
     expect(w.writes()).toEqual([])
+  })
+})
+
+describe("Hub Settings: WhatsApp (#1428 phase 2)", () => {
+  const WA_STATE = {
+    ...STATE,
+    whatsapp: { enabled: true, sessionDir: ".agentx/whatsapp-sessions", routeCount: 1 },
+    whatsappTriage: { enabled: false, secretEnv: "WACLI_WEBHOOK_SECRET", secretSet: false, batchSeconds: 20, allowAutoAck: false,
+      rules: [{ id: "shop", agent: "cx", chats: ["+10000000000"], senders: [], enabled: true, quietHours: { start: "22:00", end: "07:00" } }] },
+  }
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>'
+  const openWa = (route?: Route, state: object = WA_STATE) => openWall({ hash: "#page=settings&section=channels", route: (u, i) => route?.(u, i)
+    ?? (u === "/api/admin/state" ? { status: 200, body: state }
+      : u === "/api/admin/channels/whatsapp/state" ? { status: 200, body: { connection: "connecting", qr: "pairing-code", qrUpdatedAt: "2026-10-31T10:00:00Z" } }
+      : u === "/api/admin/channels/whatsapp/qr.svg" ? { status: 200, body: SVG } : undefined) })
+
+  it("shows the pairing state and the code as an image while the tab is open, and writes nothing", async () => {
+    const w = openWa()
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "whatsapp" })
+    const html = settingsHtml(w)
+    expect(html).toContain("WhatsApp <span class=\"wsj__pill is-ok\">on</span>")
+    expect(html).toContain("session folder <code>.agentx/whatsapp-sessions</code> · 1 route(s)")
+    const pair = w.el("st-wa-pair").innerHTML as string
+    expect(pair).toContain("waiting for scan")
+    // The SVG is an image source, never markup in the page.
+    expect(pair).toContain('src="data:image/svg+xml;charset=utf-8,' + encodeURIComponent(SVG).replace(/'/g, "&#39;") + '"')
+    expect(pair).not.toContain("<svg")
+    expect(w.calls.some((c) => c.url === "/api/admin/channels/whatsapp/qr.svg")).toBe(true)
+    expect(w.writes()).toEqual([])
+  })
+
+  it("says when it is paired, and when WhatsApp is off reads no pairing state", async () => {
+    const w = openWa((u) => (u === "/api/admin/channels/whatsapp/state" ? { status: 200, body: { connection: "open", qr: null } } : undefined))
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "whatsapp" })
+    expect(w.el("st-wa-pair").innerHTML).toContain("Paired: the daemon is signed in to WhatsApp.")
+    expect(w.calls.some((c) => c.url.includes("qr.svg"))).toBe(false)
+    const off = openWa(undefined, { ...WA_STATE, whatsapp: { enabled: false, routeCount: 0 } })
+    await off.settle()
+    await off.click({ "data-st-act": "ch", "data-ch": "whatsapp" })
+    expect(settingsHtml(off)).toContain("WhatsApp is off in agentx.json.")
+    expect(off.calls.some((c) => c.url.startsWith("/api/admin/channels/whatsapp/"))).toBe(false)
+  })
+
+  it("lists chats and contacts, and sweeps them into a wiki under the Settings prefix", async () => {
+    const w = openWa((u) => u === "/api/admin/channels/whatsapp/chats" ? { status: 200, body: { chats: [{ jid: "1@s.whatsapp.net", name: "Example Shop", isGroup: false, unreadCount: 2 }, { jid: "2@g.us", name: "Team", isGroup: true }] } }
+      : u === "/api/admin/channels/whatsapp/contacts" ? { status: 200, body: { contacts: [{ jid: "1@s.whatsapp.net", phone: "+10000000000", name: "Example Shop" }] } }
+      : u.endsWith("/channels/whatsapp/ingest") ? { status: 200, body: { scannedContacts: 3, scannedGroups: 1, wroteContacts: 0, skippedUnchanged: 1, errors: [], dryRunEntries: [{}, {}] } } : undefined)
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "whatsapp" })
+    await w.click({ "data-st-act": "wa-lists" })
+    const html = settingsHtml(w)
+    expect(html).toContain("Example Shop <small>chat · 2 unread</small>")
+    expect(html).toContain("Team <small>group</small>")
+    expect(html).toContain("Example Shop <small>+10000000000</small>")
+    expect(w.writes()).toEqual([])
+    w.el("st-wa-ing-agent").value = "cx"; w.el("st-wa-ing-dry").checked = true
+    await w.submit({ "data-st-form": "wa-ingest" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/channels/whatsapp/ingest", method: "POST", body: { dryRun: true, force: false, agent: "cx" } }])
+    expect(w.el("st-n-wa-ingest").textContent).toBe("Dry run: 3 contacts and 1 groups read, 2 entries would be written, 1 unchanged.")
+  })
+
+  it("says why the chats could not be read", async () => {
+    const w = openWa((u) => (u === "/api/admin/channels/whatsapp/chats" ? { status: 500, body: { error: "daemon 503: WhatsApp channel not enabled" } } : undefined))
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "whatsapp" })
+    await w.click({ "data-st-act": "wa-lists" })
+    expect(settingsHtml(w)).toContain("Could not read them: daemon 503: WhatsApp channel not enabled")
+  })
+
+  it("turns watched chats on, and adds, turns off and deletes a watch rule with the classic calls", async () => {
+    const w = openWa()
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "whatsapp" })
+    const html = settingsHtml(w)
+    expect(html).toContain("<code>http://node-a:18800/webhook/wacli</code>")
+    expect(html).toContain("Secret <code>WACLI_WEBHOOK_SECRET</code> in .env: <b>not set</b>.")
+    expect(html).toContain("goes to @cx · quiet 22:00–07:00")
+    await w.change({ "data-st-wa-triage": "" }, true)
+    w.el("st-wa-id").value = "school"; w.el("st-wa-agent").value = "ops"; w.el("st-wa-chats").value = "+10000000001, +10000000002"
+    w.el("st-wa-quiet-start").value = "22:00"; w.el("st-wa-quiet-end").value = "07:00"
+    await w.submit({ "data-st-form": "wa-rule" })
+    await w.click({ "data-st-act": "wa-rule", "data-id": "shop", "data-on": "0" })
+    await w.click({ "data-st-act": "ask", "data-key": "wa:shop" })
+    expect(settingsHtml(w)).toContain("Delete the watch rule <b>shop</b>?")
+    await w.click({ "data-st-act": "confirm", "data-key": "wa:shop" })
+    expect(w.writes()).toEqual([
+      { url: "/api/admin/wall/settings/whatsapp-triage", method: "POST", body: { enabled: true } },
+      { url: "/api/admin/wall/settings/whatsapp-triage/rules", method: "POST", body: { id: "school", agent: "ops", chats: "+10000000001, +10000000002", senders: "", prompt: "", quietStart: "22:00", quietEnd: "07:00" } },
+      { url: "/api/admin/wall/settings/whatsapp-triage/rules", method: "PATCH", body: { id: "shop", patch: { enabled: false } } },
+      { url: "/api/admin/wall/settings/whatsapp-triage/rules", method: "DELETE", body: { id: "shop" } },
+    ])
+  })
+
+  it("shows why a watch rule was not added", async () => {
+    const w = openWa((u, i) => (u.endsWith("/whatsapp-triage/rules") && i.method === "POST" ? { status: 400, body: { error: 'Unknown agent "".' } } : undefined))
+    await w.settle()
+    await w.click({ "data-st-act": "ch", "data-ch": "whatsapp" })
+    w.el("st-wa-id").value = "school"
+    await w.submit({ "data-st-form": "wa-rule" })
+    expect(w.el("st-n-wa-add").textContent).toBe('Not saved: Unknown agent "".')
+  })
+})
+
+describe("Hub Settings: Inbox, how notifications reach the owner (#1428 phase 2)", () => {
+  const IN_STATE = {
+    ...STATE,
+    notifications: { longTaskThreshold: 30, destination: { channel: "telegram", chatId: "1001" }, on: { taskComplete: true, taskError: true, taskQueued: false },
+      local: { banner: true, sound: true, soundName: "Glass", volume: 0.4 }, ntfy: { enabled: false, server: "https://ntfy.sh", topicSet: true, tokenSet: false } },
+  }
+  const openInbox = (route?: Route) => openWall({ hash: "#page=settings&section=inbox", route: (u, i) => route?.(u, i) ?? (u === "/api/admin/state" ? { status: 200, body: IN_STATE } : undefined) })
+  const fill = (w: ReturnType<typeof openWall>, v: Record<string, string | boolean>) => {
+    for (const [id, x] of Object.entries(v)) { if (typeof x === "boolean") w.el(id).checked = x; else w.el(id).value = x }
+  }
+  const FORM = { "st-in-channel": "telegram", "st-in-chat": "1001", "st-in-account": "", "st-in-threshold": "45", "st-in-complete": true, "st-in-error": true, "st-in-queued": false,
+    "st-in-banner": true, "st-in-sound": false, "st-in-sound-name": "Glass", "st-in-volume": "0.4", "st-in-icon": "", "st-in-ntfy": false, "st-in-ntfy-server": "https://ntfy.sh",
+    "st-in-ntfy-topic": "", "st-in-ntfy-token": "" }
+
+  it("shows where the inbox goes, with no ntfy secret, and saves it with the classic call", async () => {
+    const w = openInbox()
+    await w.settle()
+    const html = settingsHtml(w)
+    expect(html).toContain("Goes to <code>telegram:1001</code>.")
+    expect(html).toContain('<option value="telegram" selected>Telegram</option>')
+    expect(html).toContain("(set; empty keeps it)")
+    expect(w.el("st-in-ntfy-topic").value).toBe("")
+    expect(w.writes()).toEqual([])
+    fill(w, { ...FORM, "st-in-ntfy": true, "st-in-ntfy-topic": "NTFY_TOPIC" })
+    await w.submit({ "data-st-form": "inbox" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/notifications", method: "POST", body: {
+      on: { taskComplete: true, taskError: true, taskQueued: false }, longTaskThreshold: 45,
+      local: { banner: true, sound: false, soundName: "Glass", volume: 0.4, icon: "" },
+      ntfy: { enabled: true, topic: "${NTFY_TOPIC}" },
+      destination: { channel: "telegram", chatId: "1001" },
+    } }])
+    expect(settingsHtml(w)).toContain("Saved. Restart the daemon for phone push: agentx daemon restart --when-idle.")
+  })
+
+  it("never sends a typed topic or token, only a variable's name", async () => {
+    const w = openInbox()
+    await w.settle()
+    for (const [id, v] of [["st-in-ntfy-topic", "my-secret-topic"], ["st-in-ntfy-token", "tk_example value"]]) {
+      fill(w, { ...FORM, [id]: v })
+      await w.submit({ "data-st-form": "inbox" })
+      expect(w.el("st-n-inbox-save").textContent).toBe("Not saved: type the name of the .env variable, such as NTFY_TOPIC, not the topic or token itself.")
+    }
+    expect(w.writes()).toEqual([])
+  })
+
+  it("asks for both a channel and a chat id, sends no ntfy change it did not make, and clears the destination", async () => {
+    const w = openInbox((u, i) => (u.endsWith("/notifications") && i.method === "POST" ? { status: 400, body: { error: "volume must be between 0 and 1" } } : undefined))
+    await w.settle()
+    fill(w, { ...FORM, "st-in-chat": "" })
+    await w.submit({ "data-st-form": "inbox" })
+    expect(w.el("st-n-inbox-save").textContent).toBe("Not saved: give both a channel and a chat id, or neither.")
+    expect(w.writes()).toEqual([])
+    fill(w, { ...FORM, "st-in-channel": "", "st-in-chat": "", "st-in-volume": "3" })
+    await w.submit({ "data-st-form": "inbox" })
+    expect(w.writes()[0].body).not.toHaveProperty("ntfy")
+    expect(w.writes()[0].body).not.toHaveProperty("destination")
+    expect(w.el("st-n-inbox-save").textContent).toBe("Not saved: volume must be between 0 and 1")
+    await w.click({ "data-st-act": "inbox-clear" })
+    expect(w.writes()[1]).toEqual({ url: "/api/admin/wall/settings/notifications", method: "POST", body: { destination: null } })
   })
 })
 
@@ -917,6 +1093,8 @@ describe("Every other Wall page sends no settings write (#1428)", () => {
 })
 
 describe("/wall gives Settings to the owner only (#1428)", () => {
+  const WA_INBOX_WRITES = [["POST", "channels/whatsapp/ingest"], ["POST", "whatsapp-triage"], ["POST", "whatsapp-triage/rules"], ["PATCH", "whatsapp-triage/rules"],
+    ["DELETE", "whatsapp-triage/rules"], ["POST", "notifications"]]
   const TOKEN = "dash-secret"
   const OFF = { "X-Forwarded-For": "100.64.0.9" }
   let server: Server | undefined
@@ -944,6 +1122,10 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     expect((await fetch(`${base}/api/admin/state`, { headers: OFF })).status).toBe(401)
     expect((await fetch(`${base}/api/admin/agents`, { method: "PATCH", headers: OFF, body: "{}" })).status).toBe(401)
     expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PATCH", headers: OFF, body: "{}" })).status).toBe(401)
+    // WhatsApp and Inbox writes too: refused before any handler runs.
+    for (const [method, path] of WA_INBOX_WRITES) {
+      expect((await fetch(`${base}/api/admin/wall/settings/${path}`, { method, headers: { ...OFF, "X-Requested-With": "agentx-board" }, body: "{}" })).status, `${method} ${path}`).toBe(401)
+    }
   })
 
   it("with no dashboard token, draws Settings on this machine only, as the writes allow", async () => {
@@ -966,7 +1148,10 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     expect((await fetch(`${base}/api/admin/wall/settings/boards`, { method: "POST", headers: auth, body: "{}" })).status).toBe(404)
     // Phase 2: Schedules and Webhooks reach their classic handlers.
     for (const [method, path] of [["POST", "crons"], ["DELETE", "crons"], ["POST", "crons/preview"], ["POST", "webhooks"], ["PATCH", "webhooks"], ["DELETE", "webhooks"], ["POST", "webhooks/triggers"],
-      ["POST", "channels/telegram"], ["PATCH", "channels/telegram"], ["DELETE", "channels/email"], ["POST", "channels/slack/toggle"], ["POST", "channels/request-status"]]) {
+      ["POST", "channels/telegram"], ["PATCH", "channels/telegram"], ["DELETE", "channels/email"], ["POST", "channels/slack/toggle"], ["POST", "channels/request-status"],
+      // WhatsApp watch rules and Inbox: an empty body is refused by the handler, so nothing is written
+      // (the sweep and the triage switch are left out: one calls the daemon, the other would write).
+      ["POST", "whatsapp-triage/rules"], ["PATCH", "whatsapp-triage/rules"], ["DELETE", "whatsapp-triage/rules"], ["POST", "notifications"]]) {
       expect((await fetch(`${base}/api/admin/wall/settings/${path}`, { method, headers: auth, body: "{}" })).status, `${method} ${path}`).not.toBe(404)
     }
     expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PUT", headers: auth, body: "{}" })).status).toBe(404)

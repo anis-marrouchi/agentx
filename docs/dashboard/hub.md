@@ -248,7 +248,7 @@ Avatars show an agent's or a person's profile picture when one is set on the mac
 
 **Settings** on the Hub is where you, the owner, change your agents. It is the only Hub page that changes settings; every other Hub page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
 
-It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents**, **Channels**, **Schedules**, **Webhooks** and **Health** sections; each other section opens its classic page.
+It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. For now it has the **Agents**, **Channels**, **Schedules**, **Webhooks**, **Inbox** and **Health** sections; each other section opens its classic page.
 
 1. **Browser:** in the nav, select **Settings**, under **Owner**. On a phone, select **More**, then **Settings**.
 2. The sections are listed on the left in three groups: **Fleet** (Agents, Channels, Schedules, Webhooks, Mesh, Boards, Actions, Inbox, and Business when it is on), **Access** (Guests, People, Tokens) and **Machines** (Health, Advanced). The one you picked is on the right; **Agents** opens first.
@@ -342,7 +342,7 @@ Health only reads. It refreshes with the Hub, without losing what you are typing
 
 ### Connect a chat app
 
-1. **Browser:** in **Settings**, select **Channels**, under **Fleet**. Pick one along the top: **Telegram**, **Email**, **Slack**, **Discord**, **GitLab**, **GitHub** or **Calls**. Each says **on**, **off** or **not set up**.
+1. **Browser:** in **Settings**, select **Channels**, under **Fleet**. Pick one along the top: **Telegram**, **WhatsApp**, **Email**, **Slack**, **Discord**, **GitLab**, **GitHub** or **Calls**. Each says **on**, **off** or **not set up**.
 2. Put the secret (a bot token or a password) in the `.env` file next to `agentx.json` first. The forms take only the *name* of that variable, such as `TG_SUPPORT_BOT_TOKEN`, and never show a secret.
 3. **Telegram:** under **Add a Telegram account**, type a name, pick the agent that answers, and type the token's variable name, then **Add account**. **Edit** changes an account in place; **Delete** asks you first.
 4. **Email:** under **Add a mailbox**, type the address, the IMAP and SMTP servers, the password's variable name and who may write. Replies wait in **Needs you** unless you tick **Send replies at once**.
@@ -350,7 +350,26 @@ Health only reads. It refreshes with the Hub, without losing what you are typing
 6. **GitLab** and **GitHub** also have **Request status**: when it is on, AgentX keeps one comment per request up to date on the issue.
 7. **GitHub** lists its webhooks; add one on **Webhooks** with source GitHub. **Calls** lists active and recent calls, and only reads.
 
-The line under the tabs says what was saved, or why not. WhatsApp pairing, WhatsApp triage and notification routing are still on the classic page: **WhatsApp and routing ↗** opens it.
+The line under the tabs says what was saved, or why not.
+
+### Pair WhatsApp and watch chats
+
+**WhatsApp** in **Settings** › **Channels** has what the classic page has for WhatsApp, in three parts. Routes, phone numbers and allow-lists stay under `channels.whatsapp` in **Advanced**.
+
+1. **Pairing:** with `channels.whatsapp.enabled` on and the daemon running, the tab shows **connected**, or **waiting for scan** with a code. **Phone:** open WhatsApp › **Settings** › **Linked devices** › **Link a device**, and scan it. The code changes about every 20 seconds; the tab reads the state every 3 seconds while it is open. See [Answer customers on WhatsApp](../jobs/answer-whatsapp.md).
+2. **Chats:** select **Show chats and contacts** to list the first 100 of each that WhatsApp shows the daemon. **Sweep now** writes them into an agent's wiki, as `agentx whatsapp ingest-all` does. **Dry run** is ticked at first: it counts what would be written and writes nothing.
+3. **Watched chats:** the switch turns WhatsApp triage on or off. The tab shows the address wacli sends to and whether its secret is set in `.env` (its variable's name, never the value). Under **Add a watch rule**, type a name, pick the agent, list the chats, then select **Add watch rule**. **Turn off** pauses a rule; **Delete** asks you first. See [Watch a WhatsApp chat](../jobs/watch-whatsapp.md).
+
+### Choose how the inbox reaches you
+
+**Inbox**, under **Fleet**, is the classic **Notifications routing**: where AgentX tells you that a task finished, failed or runs long. It saves the same settings as `agentx notifications`. See [Get notified](../jobs/notifications.md).
+
+1. **Browser:** in **Settings**, select **Inbox**. The first line says where notifications go now, or that they go to the daemon log only.
+2. Under **Where it goes**, pick the **Channel** and type the **Chat id**. **Clear the destination** removes it.
+3. Under **When**, tick the events, and set how long a task runs before a long-task ping (`0`: none).
+4. Under **On this machine**, choose the banner and sound `agentx notify` uses on the machine that serves the dashboard.
+5. Under **Phone push (ntfy)**, the topic and token are passwords: put each in `.env`, then type only the variable's name, such as `NTFY_TOPIC`. The page says whether each is set and never shows it. Restart the daemon after a phone push change.
+6. Select **Save**. The line at the top says it was saved, or why not.
 
 ### Add or remove a schedule
 
@@ -840,11 +859,14 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 42. Old history link: open `/agents/<agent>/history` in the browser, with the name of one of your agents. The Hub opens that agent's profile with **Activity** underlined and **30 d** picked.
 43. Schedules and Webhooks: in **Settings** › **Schedules**, select the preset **Every hour**: the line under **When** says when it runs and the next three times. Add a schedule named `check-test`, then open the classic `/admin#tab=crons`: `check-test` is listed. Delete it on the Hub. In **Settings** › **Webhooks**, add one named `check-test`, select **Turn off**: its card says **off**. Delete it.
 44. Channels: in **Settings** › **Channels**, the Telegram account you use is listed with its agent and its token's variable name, never the token. Select **Email**, then **GitLab**: each matches the classic `/admin#tab=channels`. Turn **Request status** on GitLab off and on again: the line under the tabs says so each time, and the classic page shows the same.
+45. WhatsApp and Inbox: in **Settings** › **Channels**, select **WhatsApp**: with WhatsApp on, it says **connected** (or shows a code to scan), and its watch rules match **WhatsApp triage** on the classic `/admin#tab=webhooks`. Select **Inbox**: **Where it goes** names the same chat as `agentx notifications`. Untick **A task is queued**, select **Save**, and the classic **Notifications routing** shows the same. In a private window without the dashboard key, `curl -X POST <dashboard>/api/admin/wall/settings/notifications` gets `401`.
 
 ## If something is wrong
 
 - **"Not answered: Only the owner can answer this":** the browser has no dashboard key. Sign in with the key, then answer again. Nothing was changed.
 - **Channels says "set in agentx.json as a literal value: move it to .env":** the secret itself is typed into `agentx.json` instead of the name of a variable, so the page hides it and leaves the form field empty. **Terminal**, on that machine: add a line such as `TG_SUPPORT_BOT_TOKEN=<the token>` to `.env`. Then **Browser:** type that name in the form and save it. The page then shows the name, and `agentx.json` no longer holds the secret.
+- **Inbox says "type the name of the .env variable":** the ntfy topic or token itself was typed in the form. Put it in `.env` as a line such as `NTFY_TOPIC=<the topic>`, then type `NTFY_TOPIC` and save again. Nothing was saved.
+- **WhatsApp chats say "WhatsApp channel not enabled":** the daemon has no WhatsApp channel running. Turn on `channels.whatsapp.enabled` in **Advanced** and restart the daemon.
 - **Workflows says "Could not read the workflows":** the dashboard could not ask the machine for them. The rest of the Hub still works; select **Try again**. See [Workflows](./workflows.md#if-something-is-wrong).
 
 - **Activity says a machine "does not answer":** the dashboard could not reach that machine's run records. Check the machine with `agentx daemon status`. The other machines' runs still show.
