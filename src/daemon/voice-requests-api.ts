@@ -181,7 +181,9 @@ export class VoiceRequestStore {
       this.db.prepare("DELETE FROM voice_requests WHERE id = ?").run(id)
       return
     }
-    const error = typeof body?.error === "string" && body.error ? body.error : null
+    // Queued (202): the answer goes to the agent's queue, never to this row.
+    const error = typeof body?.error === "string" && body.error ? body.error
+      : body?.queued === true ? (typeof body.text === "string" && body.text ? body.text : "The agent was busy.") : null
     if (status >= 200 && status < 300 && !error) {
       let reply = JSON.stringify(body)
       if (reply.length > LIMITS.reply) reply = JSON.stringify({ ...body, full: null, ui: null })

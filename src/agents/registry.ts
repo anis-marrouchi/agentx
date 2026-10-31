@@ -1349,6 +1349,23 @@ export class AgentRegistry {
 
   /** The answer for a run whose HTTP caller left before it got a slot
    *  (#822). Logged so the dropped request is visible on the node. */
+  /** Wait until no run holds or has claimed `chatId` (up to 25 min), then
+   *  claim it: the claim, or the response for a turn that will not run. */
+  private async waitForChat(agentId: string, channel: string, chatId: string, task?: AgentTask): Promise<string | AgentResponse> {
+    const start = Date.now()
+    const maxWaitMs = 25 * 60_000
+    const claim = `${agentId}\u0000${chatId}`
+    while (this.messageQueue.isBusy(agentId, channel, chatId) || this.voiceClaims.has(claim)) {
+      if (task?.callerSignal?.aborted) return this.callerGone(task, "chat wait")
+      if (Date.now() - start > maxWaitMs) {
+        return { content: "", error: `Agent "${agentId}" busy — ${channel} wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    this.voiceClaims.add(claim)
+    return claim
+  }
+
   private callerGone(task: AgentTask, during: string): AgentResponse {
     const reason = abortReason(task.callerSignal!).message
     this.log(`[${task.agentId}] caller gone during ${during} — not starting (${reason})`)
@@ -1570,6 +1587,9 @@ export class AgentRegistry {
     const { channel: qChannel, chatId: qChatId } = warmProcessChat(task.context)
     // Held from a voice wait ending until the chat is marked running.
     let voiceClaim: string | undefined
+    // A spoken question /ask runs in a phone conversation (#1455): waited
+    // for like a voice turn, on its own chat, not behind the agent's slots.
+    const spokenInApp = qChannel === "app" && task.context?.via === "voice"
 
     // An agent the owner paused, or one another agent created that waits
     // for the owner's yes (#1169), takes nothing: refused before it is
@@ -1612,6 +1632,16 @@ export class AgentRegistry {
       }
     }
 
+    // One turn at a time in a phone conversation: the dashboard keeps one
+    // per conversation for the phone, but a spoken question /ask runs in
+    // the same conversation (#1455) and the dashboard does not see it.
+    if (qChannel === "app") {
+      const waited = await this.waitForChat(task.agentId, qChannel, qChatId, task)
+      if (typeof waited !== "string") return waited
+      voiceClaim = waited
+    }
+    const dropVoiceClaim = () => { if (voiceClaim) this.voiceClaims.delete(voiceClaim) }
+
     if (state.activeTasks >= state.def.maxConcurrent) {
       // Synchronous API callers (mesh /task, /ask, direct curl) can't observe
       // a queued result — the queue's flush callback re-routes via channels,
@@ -1635,7 +1665,7 @@ export class AgentRegistry {
       // too, and has no adapter to flush a queued reply to. A sprint lane's
       // turn ("sprint", #1241) is awaited by the daemon, whose end hands
       // the lane its next item: queued, it would end at once, unrun.
-      if (qChannel === "api" || qChannel === "app" || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted) {
+      if (qChannel === "api" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted) {
         const start = Date.now()
         const maxWaitMs = task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
         const pollIntervalMs = 500
@@ -1643,8 +1673,9 @@ export class AgentRegistry {
           this.log(`[${task.agentId}] busy, waiting for a slot (up to ${Math.round(maxWaitMs / 60000)}m) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId}`)
         }
         while (state.activeTasks >= state.def.maxConcurrent) {
-          if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
+          if (task.callerSignal?.aborted) { dropVoiceClaim(); return this.callerGone(task, "slot wait") }
           if (Date.now() - start > maxWaitMs) {
+            dropVoiceClaim()
             this.log(`[${task.agentId}] slot wait timed out after ${Math.round(maxWaitMs / 60000)}m chat=${qChannel}:${qChatId} — message not run`)
             return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
           }
@@ -1654,22 +1685,17 @@ export class AgentRegistry {
         if (Date.now() - start >= 60_000) {
           this.log(`[${task.agentId}] slot free after ${Math.round((Date.now() - start) / 60000)}m wait chat=${qChannel}:${qChatId}`)
         }
-      } else if (qChannel === "voice") {
+      } else if (qChannel === "voice" || spokenInApp) {
         // /ask waits on the answer to speak it, and "voice" has no adapter
         // to re-route a queued reply to: queued, it was answered into
         // nothing. Wait for the same voice chat instead, as the queue
         // would — other work on the agent still runs alongside.
-        const start = Date.now()
-        const maxWaitMs = 25 * 60_000
-        const claim = `${task.agentId}\u0000${qChatId}`
-        while (this.messageQueue.isBusy(task.agentId, qChannel, qChatId) || this.voiceClaims.has(claim)) {
-          if (Date.now() - start > maxWaitMs) {
-            return { content: "", error: `Agent "${task.agentId}" busy — voice wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
-          }
-          await new Promise((r) => setTimeout(r, 500))
+        // A spoken question in a phone conversation holds its chat already.
+        if (!voiceClaim) {
+          const waited = await this.waitForChat(task.agentId, qChannel, qChatId)
+          if (typeof waited !== "string") return waited
+          voiceClaim = waited
         }
-        voiceClaim = claim
-        this.voiceClaims.add(claim)
       } else {
         // Channel callers (telegram/gitlab/whatsapp/...) already ack'd the
         // user's message, so queueing is the right behavior — the flush
@@ -1725,7 +1751,6 @@ export class AgentRegistry {
     // The voice claim is kept through the node wait below and dropped only
     // once the run holds its agent slot (or does not start), so a second
     // question on the same voice chat cannot slip past while this one waits.
-    const dropVoiceClaim = () => { if (voiceClaim) this.voiceClaims.delete(voiceClaim) }
     if (!rateResult.ok) {
       dropVoiceClaim()
       this.log(`[${task.agentId}] ${rateResult.reason}`)
@@ -2890,7 +2915,8 @@ export class AgentRegistry {
     // the agent hasn't opted out. Rides the cacheable system prompt so it
     // costs nothing per turn. Kept short and conditional ("when it genuinely
     // helps") so agents don't spray buttons on every reply.
-    const richReplyInstruction = richReplyPrompt(state.def.richMessages, channel)
+    // A spoken question in a phone conversation is still a voice turn (#1455).
+    const richReplyInstruction = richReplyPrompt(state.def.richMessages, task.context?.via === "voice" ? "voice" : channel)
 
     // Context Surgery — Fix 3: per-workspace CLAUDE.md auto-injection. Read
     // once at task-setup, cap at 4KB to bound prompt size, silent fallback so

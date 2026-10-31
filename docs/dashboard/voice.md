@@ -188,6 +188,10 @@ Each agent has one ongoing conversation, the same as on your phone: a request to
 
 Your requests from the Mac go into the [phone app's Chat](./mobile-chat.md), in the conversation you had last with that agent, and the agent answers in the same session. If you never chatted with that agent on the phone, a new conversation starts on the phone you used last. With no paired phone that ever chatted, the Mac keeps its own conversation with each agent.
 
+With more than one paired phone, "last" means across all of them: the request goes into the conversation with that agent used most recently on any phone, and a new conversation starts on whichever phone chatted last.
+
+The agent takes one turn at a time in a conversation. A question from the Mac waits while the phone's turn in the same conversation runs, and the phone's next message waits for the Mac's answer. Neither waits for the agent's other work.
+
 | On the Mac | On the phone |
 |---|---|
 | **Thinking** | Your question shows in the conversation. No chip until the answer is back |
@@ -196,7 +200,9 @@ Your requests from the Mac go into the [phone app's Chat](./mobile-chat.md), in 
 | **Heard** | No chip: the conversation is read |
 | Closed before you heard it | No chip: the conversation is read |
 
-Open the conversation on the phone and the Mac row turns to **Heard** within five seconds. Hear the answer on the Mac and the phone's **New** chip goes.
+Open the conversation on the phone and the Mac row turns to **Heard** within five seconds. Hear the answer on the Mac and the phone's **New** chip goes. The phone reads the whole conversation then, so an answer to a question you typed on the phone in that conversation is no longer marked **New** either.
+
+If the agent could not answer, or was still busy, the conversation on the phone says so under your question.
 
 Agents on another computer in your mesh keep a conversation of their own with the Mac, apart from the phone's.
 

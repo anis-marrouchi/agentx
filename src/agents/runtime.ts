@@ -256,6 +256,10 @@ export interface AgentTask {
     /** The issue or merge request the work is about, when the delegating
      *  agent named it (#1100). */
     home?: string
+    /** Set by /ask on a turn it runs in a phone conversation ("app"): the
+     *  question was spoken, so it waits on its own chat as a voice turn
+     *  does and gets no phone-only prompt (#1455). */
+    via?: "voice"
   }
 }
 
