@@ -7,7 +7,7 @@
 
 import { pageHead, renderShell, type TopbarPeer } from "../index"
 
-export function renderGuestsPage(opts: { peers?: TopbarPeer[] }): string {
+export function renderGuestsPage(opts: { peers?: TopbarPeer[]; localToken?: string }): string {
   const body = pageHead({
     kicker: "Operations",
     title: "Guest meshes",
@@ -21,6 +21,7 @@ export function renderGuestsPage(opts: { peers?: TopbarPeer[] }): string {
     activeTab: "mesh",
     subtitle: "Guest meshes",
     peers: opts.peers,
+    localToken: opts.localToken,
     body,
     css: GUESTS_CSS,
     scripts: `<script>${GUESTS_SCRIPT}</script>`,

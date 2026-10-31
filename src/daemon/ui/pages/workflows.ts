@@ -21,6 +21,8 @@ import { workflowHealth } from "../../workflow-health"
 export interface WorkflowsPageOpts {
   peers?: TopbarPeer[]
   currentPeerId?: string
+  /** dashboard.token for a caller on this machine (pageToken). */
+  localToken?: string
 }
 
 export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
@@ -130,6 +132,7 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     subtitle: "Workflows",
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
+    localToken: opts.localToken,
     body,
     css: WORKFLOWS_PAGE_CSS,
     scripts: `<script>${injectFns({ workflowHealth })}${WORKFLOWS_PAGE_SCRIPT}</script>`,
@@ -581,7 +584,7 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     sse: null,
   }
 
-  const token = (typeof localStorage !== "undefined" && localStorage.getItem("ax_token")) || ""
+  const token = window.AX_LOCAL_TOKEN || (() => { try { return localStorage.getItem("ax_token") || "" } catch { return "" } })()
   const headers = () => token ? { "Authorization": "Bearer " + token } : {}
 
   async function fetchJSON(url) {

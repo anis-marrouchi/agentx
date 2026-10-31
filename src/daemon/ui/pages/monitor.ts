@@ -39,9 +39,9 @@ const secLabel = (icon: string, text: string, countId?: string, rightHtml = "") 
   '<div class="ax-sec-label"><h3>' + svg(icon, 13) + text +
   (countId ? '<span class="ax-sec-label__n" id="' + countId + '"></span>' : "") + "</h3>" + rightHtml + "</div>"
 
-export function renderMonitorPage(opts: { peers?: TopbarPeer[] } = {}): string {
+export function renderMonitorPage(opts: { peers?: TopbarPeer[]; localToken?: string } = {}): string {
   return renderShell({
-    title: "AgentX · Monitor", activeTab: "monitor", subtitle: "Monitor", peers: opts.peers,
+    title: "AgentX · Monitor", activeTab: "monitor", subtitle: "Monitor", peers: opts.peers, localToken: opts.localToken,
     body: `<div class="bf">
 
 <div class="bf-head">

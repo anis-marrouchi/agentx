@@ -18,6 +18,8 @@ The Hub does not have it yet: it is on the classic dashboard pages, such as Moni
 
 ![The open Ask an agent panel on the Monitor page, with the Agent and Node lists, a question and the agent's reply](/screenshots/chat/panel.png)
 
+Only the dashboard's owner can use it. On the machine that runs the dashboard it just works. On another computer, when `dashboard.token` is set, sign in at `/login` first. With no token set, it only works on the dashboard's own machine.
+
 The question carries the page you're on and its tab. Some pages also send their current filters, counts or the rows in view. All of this goes to the agent's model provider with your question (see [Your data](../your-data.md)). The agent doesn't see a picture of the page and can't browse on its own. It works with its usual tools, so if you ask it to *do* something, it really does it.
 
 ## Continue or start over
@@ -41,4 +43,5 @@ The workflow editor has its own assistant, **Ask AI to build…**, which propose
 - **The Agent list says agents unavailable:** the dashboard can't reach the daemon. **Terminal:** run `agentx daemon status`. See [It's not answering](../help/its-not-answering.md).
 - **A question sent to another machine fails:** check the connection between the machines. See [Tailscale setup](../jobs/tailscale.md).
 - **No reply, or an error about the model:** the agent's model connection isn't working. Try the agent with **Test drive** in [Settings](./settings.md).
+- **The panel says "Sign in to ask an agent from this page", or History says "Sign in to see past conversations":** the dashboard did not recognise you as its owner. Select **Sign in**, enter the dashboard token, and you come back to the same page. With no `dashboard.token` set, open the dashboard on its own machine instead.
 - **Costs:** every question uses the chosen agent's normal model and billing.

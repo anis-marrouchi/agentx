@@ -66,7 +66,7 @@ const RANGES: Array<{ days: number; label: string }> = [
   { days: 90, label: "90d" },
 ]
 
-export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
+export function renderMeshPage(opts: { peers?: TopbarPeer[]; localToken?: string }): string {
   const chrome =
     pageHead({
       kicker: "Operations",
@@ -194,6 +194,7 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
     activeTab: "mesh",
     subtitle: "Operations",
     peers: opts.peers,
+    localToken: opts.localToken,
     noMain: true,
     body,
     css: MESH_CSS + MESH_ROUTINES_CSS,

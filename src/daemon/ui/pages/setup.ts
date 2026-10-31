@@ -143,6 +143,8 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
     subtitle: "Setup",
     customHeader,
     noMain: true,
+    // Before setup there is no agent to ask, and no token for the drawer.
+    noAssistant: true,
     body,
     css: SETUP_PAGE_CSS,
     scripts: SETUP_SCRIPT,
