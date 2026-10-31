@@ -44,6 +44,19 @@ describe("Wall Settings: owner only (#1428)", () => {
     expect(w.writes()).toEqual([])
   })
 
+  it("offers sign-in to a viewer who is not the owner only when the dashboard has a token (#1619)", async () => {
+    // No dashboard.token: the off-box viewer /admin now sends here; /login only goes back to /.
+    const open = openWall({ hash: "#page=settings", owner: false })
+    await open.settle()
+    expect(settingsHtml(open)).toContain("This dashboard has no sign-in")
+    expect(settingsHtml(open)).not.toContain('href="/login"')
+    const signed = openWall({ hash: "#page=settings", owner: false, signIn: true })
+    await signed.settle()
+    expect(settingsHtml(signed)).toContain('<a href="/login">sign in</a> with the dashboard token')
+    // The owner's page carries no sign-in flag.
+    expect(renderWallPage({ owner: true, signIn: true })).not.toContain("window.AX_WALL_SIGN_IN = true")
+  })
+
   it("says so when the API refuses the viewer", async () => {
     const w = openWall({ hash: "#page=settings&section=agents", route: (u) => (u === "/api/admin/state" ? { status: 401, body: { error: "unauthorized" } } : undefined) })
     await w.settle()

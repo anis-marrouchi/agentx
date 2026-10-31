@@ -37,8 +37,8 @@ export const LIVE = { nodes: [{ name: "node-a", url: "http://node-a", reachable:
 export type Reply = { status: number; body: unknown }
 export type Route = (url: string, init: any) => Reply | undefined
 
-export function openWall(opts: { hash: string; owner?: boolean; business?: boolean; route?: Route }) {
-  const page = renderWallPage({ owner: opts.owner ?? true, business: opts.business })
+export function openWall(opts: { hash: string; owner?: boolean; business?: boolean; signIn?: boolean; route?: Route }) {
+  const page = renderWallPage({ owner: opts.owner ?? true, business: opts.business, signIn: opts.signIn })
   const cfg = /<script>window\.AX_WALL_SETTINGS = (.*?);<\/script>/.exec(page)
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -101,6 +101,7 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
   }
   const win: any = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }
   if (cfg) win.AX_WALL_SETTINGS = JSON.parse(cfg[1])
+  if (page.includes("<script>window.AX_WALL_SIGN_IN = true;</script>")) win.AX_WALL_SIGN_IN = true
   class FakeEventSource { constructor() {} addEventListener() {} close() {} }
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "EventSource", "requestAnimationFrame", script)(
     doc, win, fetchStub, loc, { replaceState: (_: unknown, __: string, h: string) => { hash = h } },

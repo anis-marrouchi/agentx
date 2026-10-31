@@ -265,7 +265,9 @@ When a machine does not answer, the page names it at the top: agents that run on
 Avatars show an agent's or a person's profile picture when one is set on the machine that serves this dashboard, and the coloured circle with initials otherwise. An agent's profile has **Upload picture**, **Replace picture** and **Remove picture** for the agents this machine runs. See [Give agents and people a picture](../jobs/profile-pictures.md).
 ## Change settings
 
-**Settings** on the Hub is where you, the owner, change your agents. It is the only Hub page that changes settings; every other Hub page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address shows **Settings are for the owner**, and the settings API refuses them.
+**Settings** on the Hub is where you, the owner, change your agents. It is the only Hub page that changes settings; every other Hub page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address, or an old `/admin` link, shows **Settings are for the owner**, and the settings API refuses them. Without a dashboard token there is no sign-in, so that page tells them to use the machine that serves the dashboard.
+
+![Settings for a viewer who is not the owner, on a dashboard with no sign-in](/screenshots/wall/settings-not-owner.png)
 
 It saves to `agentx.json`, the AgentX settings file on the machine that serves the dashboard, with the same handlers as the classic [Settings](./settings.md) page. Every classic tab is here, with the approval and request settings the old Approvals page had. Only **Guests** and **People** open pages of their own.
 
@@ -1006,7 +1008,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **A person is missing from the Org page:** a person gets a card only when a **reports to** or **dotted line** names them. A person an agent only acts for shows on that agent's card as **acts for** *name*.
 - **The org chart is cut off on the right:** it is wider than the screen. Scroll it sideways, or select **−** to zoom out.
 - **A link from the old home page stopped working:** only `/` changed. Every other address works as before, and an old link to a classic page the Hub replaced opens the matching Hub page.
-- **No Settings in the nav, or "Settings are for the owner":** the dashboard does not see you as the owner. Open it on the machine that serves it, or sign in with the dashboard token, then reload.
+- **No Settings in the nav, or "Settings are for the owner":** the dashboard does not see you as the owner. Open it on the machine that serves it, or sign in with the dashboard token, then reload. If the page says **This dashboard has no sign-in**, no dashboard token is set: open the dashboard on the machine that serves it, or set `dashboard.token` there first (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)).
 - **Settings says "Only the owner can change settings":** your sign-in ended or the dashboard token changed. Sign in again at `/login`.
 - **"Not saved: …" in Settings:** the value was refused, for example an agent id with capitals or no wake word. The form keeps what you typed. Fix it as the message says and select **Save…** again; nothing was written.
 - **Save… does nothing:** no field differs from what is saved. A field you changed is blue; if none is, there is nothing to save.

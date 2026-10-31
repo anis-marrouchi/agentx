@@ -55,6 +55,10 @@ export interface WallPageOpts {
   owner?: boolean
   /** config.business.enabled: Settings lists the Business section. */
   business?: boolean
+  /** dashboard.token is set, so a viewer who is not the owner can sign in
+   *  (/login). Without one there is no sign-in: "Settings are for the
+   *  owner" says to use the machine that serves the Hub instead. */
+  signIn?: boolean
 }
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
@@ -173,7 +177,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   // Settings (#1428): only the owner gets its nav entry and config. Anyone
   // else who opens #page=settings is told it is for the owner.
   const owner = !!opts.owner
-  const settingsCfg = owner ? `<script>window.AX_WALL_SETTINGS = ${JSON.stringify({ business: !!opts.business })};</script>` : ""
+  const settingsCfg = owner ? `<script>window.AX_WALL_SETTINGS = ${JSON.stringify({ business: !!opts.business })};</script>`
+    : opts.signIn ? `<script>window.AX_WALL_SIGN_IN = true;</script>` : ""
   // The workflow editor's bundle, loaded when its page opens (#1524).
   const editorCfg = `<script>window.AX_WALL_EDITOR = ${JSON.stringify({ src: assetUrl("workflow-editor.global.js"), owner })};</script>`
   const groups = wallNavGroups(owner)

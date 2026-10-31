@@ -51,6 +51,8 @@ import { HUB_NAME } from "../hub-name"
 export const WALL_SETTINGS_SCRIPT = String.raw`
   // --- Settings (#1428) ---
   var ST = window.AX_WALL_SETTINGS || null;
+  // Not the owner, with dashboard.token set: /login can make them the owner.
+  var ST_SIGN_IN = !!window.AX_WALL_SIGN_IN;
   /** The sections in their groups: id, label, where it lives until it is on
    *  the Wall ('' once it is), and the line a phone shows under it. */
   var ST_GROUPS = [
@@ -162,7 +164,10 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       // Not the owner (#1451 frame 2): say so instead of the sections.
       if (box.innerHTML) return;
       box.innerHTML = '<div class="wst-owner"><h2>Settings are for the owner</h2>' +
-        '<p>Only the owner of this dashboard sees and changes settings. Open the ${HUB_NAME} on the machine that serves it, or <a href="/login">sign in</a> with the dashboard token.</p>' +
+        '<p>Only the owner of this dashboard sees and changes settings. ' + (ST_SIGN_IN
+          ? 'Open the ${HUB_NAME} on the machine that serves it, or <a href="/login">sign in</a> with the dashboard token.</p>'
+          // No dashboard.token: /login only sends back here, so no link.
+          : 'This dashboard has no sign-in, so settings change only in a browser on the machine that serves it. To change them from this device, the owner sets a dashboard token first.</p>') +
         '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=feed">Back to the ${HUB_NAME}</a></div>';
       return;
     }

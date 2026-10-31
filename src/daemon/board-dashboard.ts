@@ -598,6 +598,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // of its tabs (#1428), so old links and bookmarks land there
   // (classic-routes.ts). Off-box with no session, sign in first with Hub
   // Settings as next, as /approvals does. /api/admin/... stays.
+  // Intended (#1447, owner-only writes): the only viewer who reaches it and
+  // is not the owner is off the box on a board with no dashboard.token.
+  // Classic Settings let them in; the Hub says "Settings are for the owner".
   if (method === "GET" && (path === "/admin" || path === "/admin/")) {
     const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)!
     if (!pageAllowed(req, res, ctx, to)) return
@@ -3344,6 +3347,7 @@ function wallPageOpts(req: IncomingMessage, ctx: Ctx) {
     localToken: pageToken(req, ctx.token),
     owner: wallOwner(req, ctx),
     business: !!getTopbarFeatures().business,
+    signIn: !!ctx.token,
   }
 }
 
