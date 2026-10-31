@@ -392,7 +392,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // running agent registry, which only the main daemon has.
   // Ask-an-agent drawer. Every verb proxies to one node: `node` picks which,
   // and a conversation belongs to the node that holds it.
+  // The proxy sends the node's own token, so it is the owner's alone: reads
+  // too, as they hold the conversations.
   if (path === "/api/assistant" || path.startsWith("/api/assistant/")) {
+    if (!isDashboardOwner(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
     try {
       const targets = await resolveNodeTargets(ctx.config)
       const wanted = method === "POST" ? undefined : url.searchParams.get("node")
