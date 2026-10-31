@@ -380,6 +380,12 @@ enum AgentClient {
         return (try? JSONDecoder().decode(Reply.self, from: data))?.request?.id
     }
 
+    /// A follow-up continues the row `key` on the daemon: its words now,
+    /// not heard.
+    static func continueRequest(_ key: String, question: String, waiting: Bool) async {
+        _ = try? await post("/voice/requests/\(key)/continue", ["question": question, "waiting": waiting], timeout: 3)
+    }
+
     /// The daemon's open rows, or nil when it cannot be reached (or is
     /// older than the list).
     static func openRequests() async -> [OpenRequests.Remote]? {

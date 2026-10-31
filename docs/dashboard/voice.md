@@ -145,15 +145,33 @@ Pick a row with a click, or with the keyboard:
 - Heard is the same everywhere: a row you heard on this Mac shows as heard to any other app that reads the list from the daemon (see [Open requests for scripts](#open-requests-for-scripts)). The phone's Chat strip doesn't read this list yet.
 - To open the list only with a click or **Command–Option–O**, turn off **Open the list on hover** in [Settings › General](#general-tab).
 
+#### One row per agent
+
+With five requests or fewer, the list shows each request on its own row. From six, it shows one row per agent instead: the agent's name, what most needs you (for example **2 new**, **Thinking**, or **3 requests** when all are heard), how many requests it has, and the first words of the latest one.
+
+![The open-requests list grouped by agent in light mode, made-up data: Ops with 3 requests all heard, Writer thinking with 2 requests, and Researcher with 1 new, the keyboard on it](/screenshots/voice/requests-grouped-light.png)
+
+![The same grouped list in dark mode](/screenshots/voice/requests-grouped-dark.png)
+
+1. **Mac:** pick an agent's row, with a click or **Return**. The list shows that agent's requests only, with its name at the top.
+2. **Mac:** pick a request there as usual, or choose **History** at the top for that agent's earlier conversations.
+3. **Mac:** press the **Left** arrow or **Escape**, or click the arrow at the top, to go back to every agent.
+
+![Researcher opened from the grouped list, light mode: a back arrow, Researcher and History at the top, then its two requests, one heard and one with an answer ready](/screenshots/voice/requests-agent-light.png)
+
+With the keyboard on an agent's row, holding **Option–Space** asks that agent something new. An agent's row has no **×**: close its requests one by one, or with **Close heard**.
+
 #### Continue a conversation
 
-Each agent has one ongoing voice conversation on this computer. Picking a row lets you carry on with that agent:
+Each agent has one ongoing voice conversation on this computer. Picking a row lets you carry on with that agent, in the same row:
 
 1. **Mac:** open the list and pick the row. Its agent becomes the ticked agent, and the pill says, for example, **Ops · Hold ⌥Space to continue it**.
 2. **Mac:** hold **Option–Space** and say your follow-up, for example "and the night before?".
-3. The follow-up goes to that agent, which still has your earlier question and its answer in mind.
+3. The follow-up goes to that agent, which still has your earlier question and its answer in mind. The pill says **Ops · Added to the same request**. No new row is added: the picked row shows your follow-up and thinks again, and its new answer waits with a blue dot.
 
-Picking a row that is still thinking does the same: your next words go to that agent and wait their turn behind the first request.
+- The row stays picked for every follow-up, until you close it or talk to another agent (for example "Writer, …"). Then a new row starts.
+- Picking a row that is still thinking keeps your follow-up for when that answer is back, then asks it in the same row. The answer you talked over is not played; it stays in [History](#history-of-what-you-asked).
+- Picking a row that is waiting its turn adds your words to that request, which hasn't gone yet.
 
 #### Close a request
 
@@ -1149,6 +1167,7 @@ The [open-requests list](#open-requests) is kept by the daemon, so any app on th
 | `POST /voice/requests/<id>/heard` | Mark it heard, for every app |
 | `POST /voice/requests/<id>/close` | Close it. Add `{"stop": true}` to also stop an agent that is still thinking on it |
 | `POST /voice/requests/<id>/reopen` | Undo a close |
+| `POST /voice/requests/<id>/continue` | A follow-up for the row: `{"question": "…", "waiting": false}`. The same row asks again with these words, not heard; its last answer goes. A closed row comes back |
 | `POST /voice/requests/close-heard` | Close every heard answer and every failure: `{"closed": <how many>}` |
 
 Each row has an `id`, the `agentId`, your `question`, its `state` (`waiting`, `thinking`, `answered` or `failed`), `sentAt` and `since` (in milliseconds since 1970), `heard`, and `error` (why it failed). At most 50 rows are listed; closed rows are forgotten after seven days.
@@ -1436,6 +1455,8 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 13. **Mac:** quit AgentX Voice from its menu and start it again, then press **Command–Option–O**. Both rows are still there, one heard and one not.
 14. **Mac:** move to the heard row and press **Command–Delete**. It leaves the list, and **Closed …'s request** with **Undo** shows for five seconds.
 15. **Mac:** hold **Option–Space**. The pill appears with its orb in the ticked agent's palette, and the orb swells as you speak. Let go: the pill says **Sent. Ask the next one**, and a small orb in the pill turns while the agent thinks. Pick the answer in the list: the big orb pulses while it is spoken.
+    - **Mac:** open the list, pick that row, hold **Option–Space** and say a follow-up. The pill says **Added to the same request**, and the list still has one row for it, thinking again.
+    - **Mac:** ask until the list holds six requests. It shows one row per agent. Pick one: only that agent's requests show, with **History** at the top. Press **Escape** to go back.
 16. **Mac:** drag the pill to another place on the screen. Quit the app from its menu and start it again: the pill comes back in the same place.
 17. **Mac:** while an answer is spoken, move the pointer over the pill and click **×**. The pill goes and the voice stops. Hold **Option–Space**: the pill is back.
 18. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice. Choose **Save**, then ask that agent something: the answer uses the new voice.

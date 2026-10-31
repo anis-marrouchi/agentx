@@ -284,7 +284,9 @@ Each row in the list shows the agent, what it is doing, the first words of your 
 
 With the list open from the keyboard, hold **Option–Space** to talk to the agent of the row you are on. Press **Escape** to close the list. Moving the pointer away closes a list you opened by pointing.
 
-**Carry on with one agent.** Picking a row makes its agent the one you talk to next, and the pill says **Hold ⌥Space to continue it**. Hold **Option–Space** and say your follow-up: that agent still has your earlier question and its answer in mind.
+**Carry on with one agent.** Picking a row makes its agent the one you talk to next, and the pill says **Hold ⌥Space to continue it**. Hold **Option–Space** and say your follow-up: that agent still has your earlier question and its answer in mind. The follow-up goes in the same row, not a new one, until you close the row or talk to another agent.
+
+**Many requests.** From six requests, the list shows one row per agent. Pick an agent to see its requests, and **History** at the top for its earlier conversations. **Left** arrow or **Escape** goes back.
 
 **Close a row.** Point at a row and click its **×**, or press **Command–Delete** on it:
 

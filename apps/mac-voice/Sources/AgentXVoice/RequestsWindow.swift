@@ -13,6 +13,10 @@ import SwiftUI
 /// agent (Tab, then Return or Space), or keep it (Esc). What the rows say comes from
 /// OpenRequests.swift, which is tested without a window.
 ///
+/// Past five rows the list groups by agent: one row per agent, and picking
+/// it opens that agent's rows, with a way back (← or Esc) and to its
+/// History.
+///
 /// A floating non-activating panel like the pill, so opening it never
 /// takes the keyboard from the app in front unless the owner asked for
 /// the keyboard (a click or the shortcut).
@@ -67,6 +71,8 @@ final class RequestsWindow: NSPanel {
 
         let surface = Surface(frame: frame)
         contentView = surface
+        model.onOpenAgent = { [weak self] agent in MainActor.assumeIsolated { self?.openAgent(agent) } }
+        model.onBack = { [weak self] in MainActor.assumeIsolated { self?.back() } }
         let host = RequestsHost(rootView: RequestsView(model: model))
         host.frame = surface.bounds
         host.autoresizingMask = [.width, .height]
@@ -115,7 +121,26 @@ final class RequestsWindow: NSPanel {
         model.keyboard = false
         model.selected = nil
         model.confirming = nil
+        model.opened = nil
         orderOut(nil)
+    }
+
+    /// An agent's row in the grouped list was picked: its rows show.
+    @MainActor
+    func openAgent(_ agentID: String) {
+        model.opened = agentID
+        model.selected = nil
+        reload()
+        if model.keyboard { model.selected = model.rows.first?.id }
+    }
+
+    /// Back from an agent's rows to one row per agent, on that agent.
+    @MainActor
+    func back() {
+        guard let agent = model.opened else { return }
+        model.opened = nil
+        reload()
+        model.selected = model.rows.first { $0.agent == agent }?.id
     }
 
     /// The rows again, and the list's size and place for them. Cheap:
@@ -124,6 +149,8 @@ final class RequestsWindow: NSPanel {
     func reload() {
         guard mode != nil else { return }
         let pill = pillFrame()
+        // The agent opened has no rows left: back to every agent.
+        if model.opened != nil && rows(true).isEmpty { model.opened = nil }
         let count = rows(true).count
         let footer = count > 0 || model.undo != nil ? Self.footerHeight : 0
         let height = (count == 0 ? Self.emptyHeight
@@ -202,7 +229,10 @@ final class RequestsWindow: NSPanel {
         }
         switch event.keyCode {
         case 51 where event.modifierFlags.contains(.command): // ⌘⌫
-            if let id = model.selected { model.onClose?(id) }
+            if let id = model.selected, model.agent(of: id) == nil { model.onClose?(id) }
+            return true
+        case 123 where model.opened != nil: // ←
+            back()
             return true
         case 125, 126: // ↓ ↑
             model.keyboard = true
@@ -210,10 +240,10 @@ final class RequestsWindow: NSPanel {
             return true
         case 36, 76: // Return, Enter
             guard let id = model.selected else { return true }
-            model.onPick?(id)
+            model.pick(id)
             return true
-        case 53: // Esc
-            dismissList()
+        case 53: // Esc: back from an agent's rows, else hide
+            if model.opened != nil { back() } else { dismissList() }
             return true
         default:
             return false
@@ -221,9 +251,20 @@ final class RequestsWindow: NSPanel {
     }
 
     /// The row the keyboard is on, while the list shows: the talk key then
-    /// talks to its agent.
+    /// talks to its agent. Never an agent's row.
     @MainActor
-    var selectedRow: Int? { isOpen ? model.selected : nil }
+    var selectedRow: Int? {
+        guard isOpen, let id = model.selected, model.agent(of: id) == nil else { return nil }
+        return id
+    }
+
+    /// The agent of the agent's row the keyboard is on, while the list
+    /// shows; or the agent opened.
+    @MainActor
+    var selectedAgent: String? {
+        guard isOpen else { return nil }
+        return model.selected.flatMap(model.agent(of:)) ?? model.opened
+    }
 }
 
 /// Takes the first click even while the list is not the key window, so a
@@ -253,8 +294,10 @@ final class RequestsModel: ObservableObject {
         /// The whole row, as VoiceOver reads it.
         let voiceOver: String
         /// What picking it does, for VoiceOver: "Listen", "Show the
-        /// answer", "See why"; nil while there is nothing to hear yet.
+        /// answer", "See why", "Open"; nil while there is nothing to hear yet.
         let action: String?
+        /// An agent's row in the grouped list: the agent it opens.
+        var agent: String? = nil
     }
 
     @Published var rows: [Row] = []
@@ -264,6 +307,22 @@ final class RequestsModel: ObservableObject {
     @Published var keyboard = false
     /// A row was clicked, or Return pressed on it. Set by the app.
     var onPick: ((Int) -> Void)?
+    /// An agent's row picked: open it. Set by the window.
+    var onOpenAgent: ((String) -> Void)?
+    /// The agent whose rows show, in the grouped list; nil for all.
+    @Published var opened: String?
+    /// Its name, for the header.
+    @Published var openedName = ""
+    /// "History" beside an agent opened: its earlier conversations.
+    var onHistory: ((String) -> Void)?
+
+    func agent(of id: Int) -> String? { rows.first { $0.id == id }?.agent }
+
+    /// A row clicked, or Return on it: an agent's row opens, a request is
+    /// the app's to pick.
+    func pick(_ id: Int) {
+        if let agent = agent(of: id) { onOpenAgent?(agent) } else { onPick?(id) }
+    }
 
     /// The row's × or ⌘⌫. Set by the app.
     var onClose: ((Int) -> Void)?
@@ -281,7 +340,12 @@ final class RequestsModel: ObservableObject {
     var onUndo: (() -> Void)?
     /// "Close heard": every heard answer and every failure.
     var onCloseHeard: (() -> Void)?
-    var hasHeard: Bool { rows.contains { $0.cue == .heard || $0.cue == .failed } }
+    /// The header's back arrow, beside an agent opened. Set by the window.
+    var onBack: (() -> Void)?
+    /// Every request, however the rows are grouped. Set by the app.
+    @Published var total = 0
+    /// A heard answer or a failure in the list. Set by the app.
+    @Published var hasHeard = false
 }
 
 struct RequestsView: View {
@@ -290,10 +354,26 @@ struct RequestsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Text("Open requests")
-                    .font(.system(size: 13, weight: .bold))
-                if !model.rows.isEmpty {
-                    Text("\(model.rows.count)")
+                if let agent = model.opened {
+                    Button(action: { model.onBack?() }) {
+                        Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Every agent (←)")
+                    .accessibilityLabel("Back to every agent")
+                    Text(model.openedName)
+                        .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
+                    Button("History") { model.onHistory?(agent) }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12))
+                        .accessibilityHint("Opens \(model.openedName)’s earlier conversations")
+                } else {
+                    Text("Open requests")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                if model.opened == nil && model.total > 0 {
+                    Text("\(model.total)")
                         .font(.system(size: 11, weight: .bold).monospacedDigit())
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 7)
@@ -307,7 +387,7 @@ struct RequestsView: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 40)
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: model.opened == nil ? .combine : .contain)
             .accessibilityAddTraits(.isHeader)
 
             if model.rows.isEmpty {
@@ -333,7 +413,7 @@ struct RequestsView: View {
                                         RequestRow(row: row,
                                                    selected: model.selected == row.id,
                                                    ring: model.keyboard && model.selected == row.id,
-                                                   pick: { model.onPick?(row.id) },
+                                                   pick: { model.pick(row.id) },
                                                    close: { model.onClose?(row.id) })
                                     }
                                 }
@@ -467,7 +547,7 @@ struct RequestRow: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 4)
-            if hovering || selected {
+            if (hovering || selected) && row.agent == nil {
                 Button(action: close) {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
@@ -499,7 +579,7 @@ struct RequestRow: View {
             if let action = row.action {
                 Button(action, action: pick)
             }
-            Button("Close", action: close)
+            if row.agent == nil { Button("Close", action: close) }
         }
     }
 

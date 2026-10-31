@@ -23,6 +23,9 @@
 //        still lands in History. 200 {request, stopped}.
 //   POST /voice/requests/:id/reopen
 //        Undo a close.
+//   POST /voice/requests/:id/continue  {question, waiting?}
+//        A follow-up spoken with the row picked: the same row asks again
+//        with these words, not heard, instead of a new row being added.
 //   POST /voice/requests/close-heard
 //        Closes every heard answer and every failure. {closed}.
 //
@@ -121,6 +124,16 @@ export class VoiceRequestStore {
         WHERE closed_at IS NULL AND state IN ('answered', 'failed') ORDER BY heard_at IS NULL, sent_at LIMIT ?)`).run(now, extra)
     }
     return this.get(id)!
+  }
+
+  /** A follow-up spoken with the row picked: the row asks again with
+   *  `question`, its last answer and heard gone, instead of a new row. */
+  followUp(id: string, question: string, waiting = false, now = Date.now()): VoiceRequest | null {
+    if (!ID_RE.test(id)) return null
+    this.db.prepare(`UPDATE voice_requests SET question = ?, state = ?, since = ?,
+      heard_at = NULL, reply = NULL, error = NULL, closed_at = NULL WHERE id = ?`)
+      .run(question.slice(0, LIMITS.question), waiting ? "waiting" : "thinking", now, id)
+    return this.get(id)
   }
 
   /** /ask took it: thinking from now. */
@@ -247,6 +260,11 @@ export function handleVoiceRequests(
     }
     case "reopen":
       return { status: 200, body: { request: store.reopen(id) } }
+    case "continue": {
+      const question = typeof body.question === "string" ? body.question.trim() : ""
+      if (!question) return { status: 400, body: { error: "Send question" } }
+      return { status: 200, body: { request: store.followUp(id, question, body.waiting === true) } }
+    }
     default:
       return { status: 404, body: { error: "Not found" } }
   }
