@@ -23,6 +23,9 @@ export interface FriendlyError {
     /** A cold dispatch held by the plan window, overage gate or local
      *  dispatch cap; it goes through once the window frees up (#1284). */
     | "dispatch_hold"
+    /** Every slot of the agent stayed busy for the whole slot wait; the
+     *  message did not run. An event wake retries it (#1596). */
+    | "agent_busy"
     | "auth"
     | "permission"
     | "rate_limit"

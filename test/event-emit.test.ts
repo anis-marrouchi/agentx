@@ -186,6 +186,22 @@ describe("a wake held by the dispatch cap", () => {
   })
 })
 
+describe("a wake whose agent stays busy (#1596)", () => {
+  it("is retried rather than dropped after the slot wait", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    const { bus, woke, logs, waker, hold } = setup({ coder: { subscriptions: [{ kinds: ["daemon:restart-soon"], delivery: "wake" }] } })
+    hold(`Agent "coder" busy — slot wait timed out after 25m`)
+    publishNamedEvent(bus, { name: "daemon:restart-soon" }, AGENTS)
+    await tick(); await tick()
+    expect(waker.pendingRetries()).toBe(1)
+    expect(logs.find((l) => l.includes("held:"))).toContain("slot wait timed out")
+    hold(undefined)
+    await vi.advanceTimersByTimeAsync(RETRY_BASE_MS)
+    await tick(); await tick()
+    expect(woke.map((w) => w.agentId)).toEqual(["coder"])
+  })
+})
+
 describe("agentx events emit", () => {
   it("sends the running turn's ids so the daemon credits the agent", () => {
     const body = emitBody("render:ready", { summary: "done" }, { AGENTX_AGENT_ID: "renderer", AGENTX_TASK_ID: "T1" } as any)

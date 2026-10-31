@@ -1680,7 +1680,7 @@ export class AgentRegistry {
           if (Date.now() - start > maxWaitMs) {
             dropVoiceClaim()
             this.log(`[${task.agentId}] slot wait timed out after ${Math.round(maxWaitMs / 60000)}m chat=${qChannel}:${qChatId} — message not run`)
-            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
+            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m`, errorKind: "agent_busy" }
           }
           await new Promise((r) => setTimeout(r, pollIntervalMs))
         }

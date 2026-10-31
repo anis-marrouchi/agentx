@@ -20,6 +20,8 @@ import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor,
 // A wake is a cold dispatch, so the dispatch cap can hold it (#1284). A
 // held wake is not dropped: it is queued and retried with a growing delay
 // until the window frees up, and each hold is logged with its reason.
+// An agent whose slots all stay busy for the whole slot wait is held the
+// same way (#1596), rather than the wake being lost after one try.
 
 export type WakeOutcome =
   | { agentId: string; eventId: string; woke: true }
@@ -29,7 +31,8 @@ export interface WakeDeps {
   /** Current agent definitions (read on every event, so reloads apply). */
   agents: () => Record<string, { subscriptions?: SubscriptionInput[] }>
   /** Start the turn. Called asynchronously, off the publish path. Resolve
-   *  to `{ held: <reason> }` when the dispatch cap held it: it is retried. */
+   *  to `{ held: <reason> }` when the dispatch cap held it or the agent
+   *  stayed busy for the whole slot wait: it is retried. */
   dispatch: (agentId: string, e: EventEnvelope, sub: SubscriptionInput) => Promise<WakeDispatch | unknown> | void
   log: (msg: string) => void
   /** True for events this node published itself (bus.isLocal). Without
