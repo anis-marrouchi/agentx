@@ -243,6 +243,11 @@ daemon
   .option("-c, --config <path>", "path to agentx.json")
   .option("--json", "output as JSON")
   .action(async (opts) => {
+    // Read here, not by the daemon: this shell carries the desktop
+    // session's variables (X11 or Wayland), a service may not (#1595).
+    // Printed whether or not the daemon answers.
+    const computerUse = computerUseSupport(process.platform, process.env)
+    const computerUseLine = `  ${"Computer use".padEnd(16)}${supportLine(computerUse)}`
     // Try connecting to running daemon first
     try {
       const config = loadDaemonConfig(opts.config)
@@ -258,9 +263,6 @@ daemon
         if (r.ok) { const d = await r.json() as any; service = { service: d.service, selfRestart: d.selfRestart } }
       } catch { /* no Service line */ }
 
-      // Read here, not by the daemon: this shell carries the desktop
-      // session's variables (X11 or Wayland), a service may not (#1595).
-      const computerUse = computerUseSupport(process.platform, process.env)
       if (opts.json) {
         console.log(JSON.stringify({ ...data, ...service, computerUse }, null, 2))
         return
@@ -270,7 +272,7 @@ daemon
       console.log(chalk.bold(`  ${data.node.name}`) + chalk.dim(` (${data.node.id})`))
       console.log(chalk.green("  Status: running") + chalk.dim(` — uptime ${formatDuration(data.uptime)}`))
       for (const line of statusBlock(data, service, Date.now(), Intl.DateTimeFormat().resolvedOptions().timeZone)) console.log(`  ${line}`)
-      console.log(`  ${"Computer use".padEnd(16)}${supportLine(computerUse)}`)
+      console.log(computerUseLine)
       // A GitLab token GitLab now rejects: every write with it fails (#984).
       if (data.gitlab?.warning) console.log(chalk.red(`  GitLab: ${data.gitlab.warning}`))
       console.log()
@@ -317,12 +319,13 @@ daemon
         try { nodeId = loadDaemonConfig(opts.config).node.id } catch { /* the block still says stopped */ }
         const answered = e.name === "TimeoutError" ? "timeout" : "refused"
         if (opts.json) {
-          console.log(JSON.stringify({ status: answered === "timeout" ? "not answering" : "stopped", node: { id: nodeId }, lastBoot: boot }, null, 2))
+          console.log(JSON.stringify({ status: answered === "timeout" ? "not answering" : "stopped", node: { id: nodeId }, lastBoot: boot, computerUse }, null, 2))
           return
         }
         const [head, ...rest] = stoppedBlock(nodeId, boot, Date.now(), Intl.DateTimeFormat().resolvedOptions().timeZone, answered)
         console.log(chalk.red(`  ${head}`))
         for (const line of rest) console.log(`  ${line}`)
+        console.log(computerUseLine)
         if (answered === "refused") console.log(chalk.dim("  Start with: agentx daemon start"))
       } else {
         // No running daemon — show config info
@@ -333,6 +336,7 @@ daemon
           console.log(chalk.bold(`  ${config.node.name}`) + chalk.dim(` (${config.node.id})`))
           console.log(chalk.yellow("  Status: stopped"))
           console.log(chalk.dim(`  ${Object.keys(config.agents).length} agents, ${Object.keys(config.crons).length} crons configured`))
+          console.log(computerUseLine)
           if (warnings.length) {
             console.log()
             for (const w of warnings) console.log(chalk.yellow(`  ⚠ ${w}`))
