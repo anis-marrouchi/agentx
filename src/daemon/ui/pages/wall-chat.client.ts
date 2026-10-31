@@ -87,7 +87,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   var panel = $('hc'), wall = document.querySelector('.ax-wall');
   if (!panel || !wall) return;
   ${injectFns({ markdownToHtml, chatContextLine, chatLogHtml })}
-  var THREAD_KEY = 'ax-assistant-thread', SEEN_KEY = 'ax-hub-chat-seen';
+  var THREAD_KEY = 'ax-assistant-thread', NODE_KEY = 'ax-hub-chat-node', SEEN_KEY = 'ax-hub-chat-seen';
   var guest = !$('hc-form');
 
   function open(v) {
@@ -95,6 +95,8 @@ export const WALL_CHAT_SCRIPT = String.raw`
     wall.classList.toggle('hc-open', v);
     if ($('hc-btn')) $('hc-btn').setAttribute('aria-expanded', String(v));
     if (v && !guest) { paintCtx(); markSeen(); loadThread(threadId); }
+    // Closed: no stream; a pending answer is read every 10 s, for the dot.
+    if (!v && !guest) closeStream();
   }
   if ($('hc-btn')) $('hc-btn').addEventListener('click', function () { open(panel.hidden); });
   $('hc-close').addEventListener('click', function () { open(false); });
@@ -171,15 +173,59 @@ export const WALL_CHAT_SCRIPT = String.raw`
   }).catch(function () { /* one node: no picker */ });
 
   // --- The conversation: it lives on the daemon, the page keeps its id ---
-  var threadId = read(THREAD_KEY), thread = null, msgs = [], notSent = '', poll = null, busy = false, loaded = false;
-  function setThread(id) { threadId = id || null; store(THREAD_KEY, threadId); }
+  // threadNode: the node that holds it, as the Hub's proxy names it; its
+  // reads go there, and its run streams and stops from there.
+  var threadId = read(THREAD_KEY), threadNode = read(NODE_KEY), thread = null, msgs = [], notSent = '', poll = null, busy = false, loaded = false;
+  function setThread(id, node) {
+    if ((id || null) !== threadId) closeStream();
+    threadId = id || null; threadNode = (threadId && node) || null;
+    store(THREAD_KEY, threadId); store(NODE_KEY, threadNode);
+  }
+
+  // --- The pending answer, live: its run's stream (GET /api/task/stream) ---
+  // The thread read stays as the fallback: slower while the stream is open,
+  // and it settles the answer once the run is done.
+  var es = null, streamed = '', live = '';
+  function closeStream() {
+    if (es) { try { es.close(); } catch (e) { /* already closed */ } }
+    es = null; streamed = ''; live = '';
+  }
+  function stream(m) {
+    var ES = window.EventSource;
+    if (!ES || !threadNode || !m.taskId || !thread || streamed === m.taskId) return;
+    closeStream();
+    streamed = m.taskId;
+    var id = threadId;
+    try {
+      es = new ES('/api/task/stream?node=' + encodeURIComponent(threadNode) + '&agent=' + encodeURIComponent(thread.agentId) + '&task=' + encodeURIComponent(m.taskId));
+    } catch (e) { es = null; return; }
+    function ended() { if (es) { try { es.close(); } catch (e) { /* already closed */ } } es = null; loadThread(id); }
+    es.addEventListener('start', function (ev) {
+      try { var d = JSON.parse(ev.data); if (d.initial) { live = d.initial; paintLog(); } if (d.done) ended(); } catch (e) { /* not JSON: skip */ }
+    });
+    es.addEventListener('chunk', function (ev) {
+      try { live += JSON.parse(ev.data).text || ''; paintLog(); } catch (e) { /* not JSON: skip */ }
+    });
+    es.addEventListener('end', ended);
+  }
+  /** The pending answer's Task page on the Hub (wall-task.client.ts). */
+  function runHref(m) {
+    if (!m || !m.taskId || !threadNode || !thread) return '';
+    var q = new URLSearchParams();
+    q.set('page', 'task'); q.set('task', m.taskId); q.set('agent', thread.agentId); q.set('node', threadNode);
+    var ask = msgs.filter(function (x) { return x.role === 'user'; }).pop();
+    if (ask) q.set('ask', String(ask.content).slice(0, 400));
+    return '#' + q.toString();
+  }
+  function pendingMsg() { return msgs.filter(function (m) { return m.status === 'pending'; }).pop(); }
   function agentName() {
     var id = (thread && thread.agentId) || $('hc-agent').value;
     return agentNames[id] || id || 'The agent';
   }
   function paintLog() {
     var log = $('hc-log');
-    log.innerHTML = chatLogHtml(msgs, { agent: agentName(), md: markdownToHtml, notSent: notSent });
+    var p = pendingMsg();
+    log.innerHTML = chatLogHtml(msgs, { agent: agentName(), md: markdownToHtml, notSent: notSent, live: p && p.taskId === streamed ? live : '', runHref: runHref(p) });
     log.scrollTop = log.scrollHeight;
     $('hc-sub').textContent = (thread && thread.title) || 'New conversation';
   }
@@ -193,7 +239,8 @@ export const WALL_CHAT_SCRIPT = String.raw`
     var slow = loaded ? null : setTimeout(function () {
       $('hc-log').innerHTML = '<div class="hc__sk hc__sk--me"></div><div class="hc__sk hc__sk--them"></div><div class="hc__sk hc__sk--me"></div>';
     }, 500);
-    return fetch('/api/assistant/thread?id=' + encodeURIComponent(id), { headers: headers() }).then(function (r) {
+    var at = threadNode ? '&node=' + encodeURIComponent(threadNode) : '';
+    return fetch('/api/assistant/thread?id=' + encodeURIComponent(id) + at, { headers: headers() }).then(function (r) {
       clearTimeout(slow);
       // A read of a conversation no longer open: drop it, whatever it says.
       if (id !== threadId) return;
@@ -202,9 +249,13 @@ export const WALL_CHAT_SCRIPT = String.raw`
       return r.json().then(function (d) {
         if (id !== threadId) return;
         thread = d.thread || null; msgs = d.messages || []; loaded = true;
+        if (d.node && !threadNode) { threadNode = d.node; store(NODE_KEY, threadNode); }
         if (thread && thread.agentId) $('hc-agent').value = thread.agentId;
+        var p = pendingMsg();
+        if (p && !panel.hidden) stream(p);
+        if (!p) closeStream();
         paintLog();
-        if (msgs.some(function (m) { return m.status === 'pending'; })) poll = setTimeout(function () { loadThread(id); }, 1500);
+        if (p) poll = setTimeout(function () { loadThread(id); }, panel.hidden ? 10000 : es ? 5000 : 1500);
         else loadLast();
       });
     }).catch(function () { clearTimeout(slow); });
@@ -216,7 +267,8 @@ export const WALL_CHAT_SCRIPT = String.raw`
     var agent = $('hc-agent').value;
     if (!agent && !threadId) { $('hc-agent').focus(); return; }
     busy = true; notSent = ''; $('hc-send').disabled = true; $('hc-text').value = '';
-    var node = $('hc-node').hidden ? undefined : $('hc-node').value || undefined;
+    // A conversation stays on its node; a new one goes to the node picked.
+    var node = threadId ? threadNode || undefined : ($('hc-node').hidden ? undefined : $('hc-node').value || undefined);
     return fetch('/api/assistant', {
       method: 'POST', headers: headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ threadId: threadId || undefined, agentId: agent, node: node, message: text, context: pageContext() }),
@@ -224,7 +276,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
       if (r.status === 401) { $('hc-text').value = text; signedOut(); return; }
       return r.json().then(function (d) {
         if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
-        setThread(d.threadId);
+        setThread(d.threadId, d.node || node);
         return loadThread(d.threadId);
       });
     }).catch(function () {
@@ -245,8 +297,20 @@ export const WALL_CHAT_SCRIPT = String.raw`
     send(t);
   });
   $('hc-log').addEventListener('click', function (e) {
-    var t = e.target;
-    if (t.closest('[data-hc-retry]')) {
+    var t = e.target, stop = t.closest('[data-hc-stop]');
+    if (stop) {
+      // Stop ends the run (POST /api/task/action kind=cancel); the thread
+      // read then shows how it ended.
+      var id = threadId;
+      stop.disabled = true;
+      fetch('/api/task/action?node=' + encodeURIComponent(threadNode || '') + '&task=' + encodeURIComponent(stop.getAttribute('data-hc-stop')) + '&kind=cancel', {
+        method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ reason: 'Stopped from the Hub chat' }),
+      }).then(function (r) {
+        if (r.status === 401) { signedOut(); return; }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return loadThread(id);
+      }).catch(function () { stop.disabled = false; stop.textContent = 'Not stopped. Try again'; });
+    } else if (t.closest('[data-hc-retry]')) {
       var last = msgs.filter(function (m) { return m.role === 'user'; }).pop();
       if (last) send(last.content);
     } else if (t.closest('[data-hc-other]')) $('hc-agent').focus();
@@ -378,6 +442,8 @@ export const WALL_CHAT_CSS = `
 .hc__meta { font-size: 12px; color: var(--ax-muted); margin: 3px 0 0 2px; }
 .hc__live { display: inline-flex; align-items: center; gap: 6px; color: var(--ax-green-d); font-weight: 700; }
 .hc__live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ax-green); }
+.hc__stop, .hc__run { font: inherit; font-weight: 700; color: var(--ax-accent); background: none; border: 0; padding: 0; margin-left: 10px; cursor: pointer; text-decoration: none; }
+.hc__stop[disabled] { opacity: .45; cursor: default; }
 .hc__err .b { background: var(--ax-red-t); color: var(--ax-red-ink); }
 .hc__err .b b { display: block; margin-bottom: 2px; }
 .hc__btnrow { display: flex; gap: 8px; }

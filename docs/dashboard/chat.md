@@ -31,7 +31,7 @@ The question carries the page you're on and its tab. Some pages also send their 
 
 Under the message box, **Goes with it** says what the Hub sends with your message: the page, the status tab, the filters that are set, the open post or run, and up to ten headlines in view. Select it to see the exact fields.
 
-The Hub and the classic pages share the open conversation: a question asked on `/monitor` continues on the Hub, and back. While the agent is answering, the panel says **is answering** and checks again every second and a half. Under the Chat box, the last conversation stays one tap away, with a blue dot while an answer is not opened yet (on the header's chat button too).
+The Hub and the classic pages share the open conversation: a question asked on `/monitor` continues on the Hub, and back. While the agent is answering, the panel says **is answering**. Once its run starts, the answer streams into the panel as the agent writes it. Beside **is answering**, **Stop** ends the run, and **Open the run** opens its Task page on the Hub with the full log. A conversation stays on the machine it started on, so its next messages go there too. When the panel is closed, the stream stops and the Hub checks every 10 seconds for the answer. Under the Chat box, the last conversation stays one tap away, with a blue dot while an answer is not opened yet (on the header's chat button too).
 
 When an agent cannot answer, its reply shows in red with **Try again** and **Ask another agent**. When the machine does not take the message, it shows **Not sent**, and your text stays in the message box to send again.
 
@@ -63,4 +63,6 @@ The workflow editor has its own assistant, **Ask AI to build…**, which propose
 - **No reply, or an error about the model:** the agent's model connection isn't working. Try the agent with **Test drive** in [Settings](./settings.md).
 - **The panel says "Sign in to ask an agent from this page", or History says "Sign in to see past conversations":** the dashboard did not recognise you as its owner. Select **Sign in**, enter the dashboard token, and you come back to the same page. With no `dashboard.token` set, open the dashboard on its own machine instead.
 - **History says "Not deleted. Try again.":** the dashboard did not remove the conversation. Select **×** again; if it keeps failing, check the daemon. **Terminal:** run `agentx daemon status`.
+- **Stop says "Not stopped. Try again":** the machine running the answer did not take the stop. Select it again, or open the run with **Open the run** and stop it there.
+- **The answer only shows when it is finished, with no text arriving as it is written:** the panel can't reach the run's stream, so it falls back to checking every few seconds. The answer still lands. A Hub served by the daemon itself, rather than the dashboard, has no stream.
 - **Costs:** every question uses the chosen agent's normal model and billing.

@@ -408,7 +408,11 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         headers: { "Content-Type": "application/json", ...(node.token ? { Authorization: `Bearer ${node.token}` } : {}) },
         ...(method === "POST" ? { body: JSON.stringify({ ...body, node: undefined }) } : {}),
       })
-      sendJson(res, r.status, await r.json().catch(() => ({ error: `HTTP ${r.status}` })))
+      const out = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
+      // Which node holds it: the page reads the thread there again and
+      // streams or stops its run through /api/task/* (#1528).
+      if (out && typeof out === "object" && !Array.isArray(out)) out.node = node.url
+      sendJson(res, r.status, out)
     } catch (e: any) {
       sendJson(res, 502, { error: "could not reach the node", message: e?.message || String(e) })
     }

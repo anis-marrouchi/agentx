@@ -6010,6 +6010,8 @@ export class AgentXDaemon {
                 requestText: message,
                 // The owner typed in this node's dashboard: the turn is theirs (#393).
                 context: operatorContext({ channel: "dashboard", chatId: "assistant", sender: "operator" }) as any,
+                // The run's id, so the Hub's panel can stream and stop it (#1528).
+                onStart: (taskId: string) => store.setTask(thread!.id, seq, taskId),
               })
               store.resolve(thread!.id, seq, resp.error ? String(resp.error) : (resp.content ?? ""),
                 resp.error ? "error" : "done")

@@ -24,6 +24,19 @@ describe("assistant conversations", () => {
     expect(s.messages(t.id)[1]).toMatchObject({ role: "assistant", status: "done" })
   })
 
+  it("keeps the run answering a turn (#1528)", () => {
+    const s = store()
+    const t = s.createThread("atlas", null, "q")
+    const seq = s.appendTurn(t.id, "q")
+    expect(s.messages(t.id)[1].taskId).toBeNull()
+    s.setTask(t.id, seq, "task-42")
+    expect(s.messages(t.id)[1]).toMatchObject({ status: "pending", taskId: "task-42" })
+    // A database from before the column opens and gains it.
+    closeDb()
+    const again = new AssistantStore(openDb({ path: join(dir, "db.sqlite") })!)
+    expect(again.messages(t.id)[1].taskId).toBe("task-42")
+  })
+
   it("never leaves a turn spinning after a restart", () => {
     const s = store()
     const t = s.createThread("atlas", null, "q")
