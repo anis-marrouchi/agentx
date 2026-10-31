@@ -41,10 +41,20 @@ cp -R "build/$APP_NAME" "$DEST"
 # A login item gets launchd's bare PATH (/usr/bin:/bin:/usr/sbin:/sbin),
 # where mlx_whisper cannot find ffmpeg. Put the folder of the ffmpeg found
 # now in front of it. AGENTX_VOICE_PATH replaces the whole value.
+# Skip wrapper scripts named ffmpeg (a shell's PATH can put one ahead of the
+# real binary): their folder would also shadow every other tool for the app.
 LAUNCHD_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+real_ffmpeg() {
+  local d f IFS=:
+  for d in $PATH; do
+    f="$d/ffmpeg"
+    [ -x "$f" ] && [ "$(head -c2 "$f")" != '#!' ] && { echo "$f"; return 0; }
+  done
+  return 1
+}
 if [ -n "${AGENTX_VOICE_PATH:-}" ]; then
   VOICE_PATH="$AGENTX_VOICE_PATH"
-elif FFMPEG=$(command -v ffmpeg); then
+elif FFMPEG=$(real_ffmpeg); then
   VOICE_PATH="$(dirname "$FFMPEG"):$LAUNCHD_PATH"
 else
   echo "! ffmpeg not found: local Whisper transcription needs it (brew install ffmpeg), then rerun"

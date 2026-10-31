@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DESKTOP_LABEL, LAUNCHD_PATH, adoptLoginItem, desktopPath, isVoiceLoginItemFile, desktopPlatformError, desktopPlist, findOnPath, plistPathEnv, selectDesktopAgent, shellQuote, resolveHelper, packageRoot, installedHelper } from '../src/desktop/install'
+import { DESKTOP_LABEL, LAUNCHD_PATH, adoptLoginItem, desktopPath, isVoiceLoginItemFile, desktopPlatformError, desktopPlist, findOnPath, isNativeExecutable, plistPathEnv, selectDesktopAgent, shellQuote, resolveHelper, packageRoot, installedHelper } from '../src/desktop/install'
 
 describe('desktop installation', () => {
   it('rejects unsupported systems and supports macOS 14 on Apple Silicon', () => {
@@ -45,6 +46,18 @@ describe('desktop installation', () => {
     const exe = (f: string) => f === '/opt/homebrew/bin/ffmpeg'
     expect(findOnPath('ffmpeg', LAUNCHD_PATH, exe)).toBeNull()
     expect(findOnPath('ffmpeg', `/opt/homebrew/bin:${LAUNCHD_PATH}`, exe)).toBe('/opt/homebrew/bin/ffmpeg')
+  })
+  it('skips a #! wrapper named ffmpeg for the real binary behind it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentx-ffmpeg-'))
+    try {
+      mkdirSync(join(root, 'shim')); mkdirSync(join(root, 'bin'))
+      writeFileSync(join(root, 'shim', 'ffmpeg'), '#!/bin/sh\nexec ffmpeg "$@"\n', { mode: 0o755 })
+      writeFileSync(join(root, 'bin', 'ffmpeg'), '\xcf\xfa\xed\xfe', { mode: 0o755 })
+      writeFileSync(join(root, 'bin', 'plain'), 'x', { mode: 0o644 })
+      expect(isNativeExecutable(join(root, 'shim', 'ffmpeg'))).toBe(false)
+      expect(isNativeExecutable(join(root, 'bin', 'plain'))).toBe(false)
+      expect(findOnPath('ffmpeg', `${root}/shim:${root}/bin`, isNativeExecutable)).toBe(join(root, 'bin', 'ffmpeg'))
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
   it('adopts an older voice login item and retires the duplicates', () => {
     const item = (label: string, exe: string) => desktopPlist({ label, executable: exe, cwd: '/b', url: 'http://x', helper: '/h', cli: '/c', node: '/n', log: '/l', path: '/usr/bin' })
