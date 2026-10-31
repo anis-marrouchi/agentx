@@ -469,7 +469,7 @@ export function renderTopbar(opts: TopbarOpts): string {
         { id: "org", label: "Org", href: "/org" },
         { id: "activity", label: "Activity", href: "/activity" },
         { id: "workflows", label: "Workflows", href: "/workflows" },
-        { id: "admin", label: "Settings", href: "/admin" },
+        { id: "admin", label: "Settings", href: `${HUB_PATH}#page=settings` },
       ],
     },
   ]

@@ -1269,7 +1269,7 @@ function prefixHrefs(html: string, prefix: string): string {
   // de-dupe if already prefixed
   html = html.replace(new RegExp(`(${prefix})${prefix}/`, "g"), `${prefix}/`)
   // back-pill — fixed top-right, neutral styling so it works in any wiki theme
-  const pill = `<a href="/admin" style="position:fixed;top:10px;right:14px;z-index:9999;padding:5px 11px;background:rgba(0,0,0,0.55);color:#fff;font:12px/1.2 'IBM Plex Sans',system-ui,sans-serif;text-decoration:none;border-radius:6px;border:1px solid rgba(255,255,255,0.18);backdrop-filter:blur(6px)">← Dashboard</a>`
+  const pill = `<a href="/hub" style="position:fixed;top:10px;right:14px;z-index:9999;padding:5px 11px;background:rgba(0,0,0,0.55);color:#fff;font:12px/1.2 'IBM Plex Sans',system-ui,sans-serif;text-decoration:none;border-radius:6px;border:1px solid rgba(255,255,255,0.18);backdrop-filter:blur(6px)">← Dashboard</a>`
   html = html.replace(/<body([^>]*)>/, `<body$1>${pill}`)
   return html
 }
