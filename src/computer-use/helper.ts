@@ -68,12 +68,21 @@ export function resolveDesktopHelper(l: HelperLookup): string | null {
   return null
 }
 
+/** How to put the helper in place, as one instruction. */
+export function helperInstallHint(platform: NodeJS.Platform): string {
+  const os = helperOs(platform)
+  if (os === "macos") return "Run agentx desktop install (or build it with apps/mac-helper/build.sh)."
+  if (os === "windows") return `Put ${WINDOWS_HELPER_EXE} in %LOCALAPPDATA%\\Programs\\AgentX, or set AGENTX_DESKTOP_HELPER to its path.`
+  return "AgentX has no desktop helper for this system yet."
+}
+
 /** What to tell someone whose helper is not there, in plain words. */
 export function helperMissingMessage(platform: NodeJS.Platform): string {
   const os = helperOs(platform)
   if (os === "macos") return "helper not built — run apps/mac-helper/build.sh (or agentx desktop install)"
   if (os === "windows") {
-    return `Windows helper not found — put ${WINDOWS_HELPER_EXE} in %LOCALAPPDATA%\\Programs\\AgentX, or set AGENTX_DESKTOP_HELPER to its path`
+    const hint = helperInstallHint(platform)
+    return `Windows helper not found — ${hint[0].toLowerCase()}${hint.slice(1, -1)}`
   }
   return `computer use (point, teach, act) is not available on ${platform} yet — macOS now, Windows in progress (#1594)`
 }

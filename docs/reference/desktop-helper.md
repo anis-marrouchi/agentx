@@ -40,6 +40,8 @@ To use a helper from another folder:
 
 Every helper, on every system, answers the same requests, so `point`, `teach` and lessons work the same everywhere. Each request is the helper's name followed by a word (the **verb**) and options, for example `agentx-helper point --x 100 --y 200 --w 80 --h 24`. The helper prints one JSON reply (a small block of structured text). When something goes wrong it exits with an error and prints `{"ok":false,"error":"..."}`.
 
+An option's value is always the word right after it, even when that value starts with `--`. A banner whose message is `--help` shows the text `--help`.
+
 Positions are screen points measured from the top-left corner, the same for every verb, so a position from `read` can go straight to `point` or `click`. On Windows the helper reports positions in scaled pixels, so a 150% display gives the same numbers as the Mac would.
 
 | Verb | What it does | Needed for |
