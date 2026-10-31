@@ -21,6 +21,10 @@ import { cardWords } from "./card-view"
 
 /** How a turn on a request's chat ended (task:completed). */
 export interface TurnEnd {
+  /** The run's id: it must be a run the daemon linked to the request when
+   *  it started its pick-up turn. A /task call that only names the
+   *  requests channel is not one. */
+  taskId?: string
   agentId: string
   chatId: string
   durationMs: number
@@ -42,6 +46,8 @@ export interface ContinueDeps {
   /** Requests whose last turn this daemon started on its own: their next
    *  turn end is charged to the goal's daily cost. */
   started: Set<string>
+  /** A step was marked done here: run the plan check soon. */
+  onDone?: () => void
   log: (msg: string) => void
   now?: number
 }
@@ -97,6 +103,10 @@ export async function continueOnTurnEnd(deps: ContinueDeps, end: TurnEnd): Promi
   const now = deps.now ?? Date.now()
   const r = requests.get(end.chatId)
   if (!r || CLOSED_STATES.includes(r.state as any)) return null
+  // Only a turn the daemon started on this request (#1568 review): the
+  // tracker links a pick-up's run when it starts; any caller of /task can
+  // name the channel, but not make that link.
+  if (!end.taskId || ![requests.byLink("run", end.taskId), requests.byLink("step_run", end.taskId)].some((x) => x?.id === r.id)) return null
   const charged = deps.started.delete(r.id)
   const key = goalKey(r)
   const day = utcDay(now)
@@ -113,8 +123,16 @@ export async function continueOnTurnEnd(deps: ContinueDeps, end: TurnEnd): Promi
   const since = now - Math.max(0, end.durationMs)
   if (step.checkCount) {
     const res = await refreshCount(plans, step, deps.counter, now)
-    // Met: the plan check marks it done on its next pass and moves on.
-    if (res?.verdict === "met") return null
+    // Met: done now, as the plan check would mark it, rather than at its
+    // next count read up to 5 minutes later (#1568 review). The plan
+    // check hands on the next step.
+    if (res?.verdict === "met") {
+      plans.updateStep(r.id, step.idx, { state: "done", evidence: res.detail, updatedAt: now })
+      plans.event(r.id, step.idx, "done", `check: ${res.detail}`, now)
+      requests.progress(r.id, now)
+      deps.onDone?.()
+      return null
+    }
     step = plans.step(r.id, step.idx) ?? step
   }
   const moved = movedSince(plans, step, since)

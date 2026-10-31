@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs"
 import { getEventBus } from "@/events/bus"
 import { RequestStore } from "./store"
 import { PlanStore } from "./plan-store"
+import { GoalStore } from "./goal-store"
 import { SprintStore } from "./sprint-store"
 import { RequestTracker, type RequestSettings } from "./tracker"
 import { traceInbound, type InboundLog } from "./checkers/reply"
@@ -14,6 +15,8 @@ export interface AttachedRequests {
   store: RequestStore
   tracker: RequestTracker
   plans: PlanStore
+  /** Goal records (#1568). */
+  goals: GoalStore
   /** Sprint lanes (#1241). */
   sprints: SprintStore
   /** Inbound turns, for the reply checker (#1039). */
@@ -88,6 +91,7 @@ export function attachRequests(
     store,
     tracker,
     plans,
+    goals: new GoalStore(db),
     sprints: new SprintStore(db),
     inbound: traceInbound(db),
     drift: new DriftStore(db),

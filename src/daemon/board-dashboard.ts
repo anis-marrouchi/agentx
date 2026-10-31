@@ -2216,6 +2216,9 @@ export async function fetchDaemonAgents(
         retryPending: job.retryPending === true,
         consecutiveErrors: Number(job.consecutiveErrors) || 0,
         value: cronValueOf(job.value),
+        // The goal it serves, and whether it is closed (#1568).
+        ...(typeof job.goal === "string" ? { goal: job.goal } : {}),
+        ...(job.goalClosed && typeof job.goalClosed.state === "string" ? { goalClosed: { state: job.goalClosed.state } } : {}),
       }))
     }
     if (cronRunsRes && cronRunsRes.ok) {

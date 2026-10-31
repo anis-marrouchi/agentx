@@ -307,6 +307,26 @@ A closed request is kept for `retentionDays` (90 days by default). After that it
 
 See [Follow one goal](../dashboard/hub.md#follow-one-goal). Agents can read the same list with `{action:"goals"}`. From a script, `GET /requests/goals` on the daemon gives it as JSON.
 
+### A goal's own record
+
+A goal is also a record of its own, so it can end, and so crons can point at it. The first `accept` that names a goal makes its record, with that agent as its owner. An agent can also make one before any request names it, and say what done means:
+
+```
+{action:"goal", goalAction:"create", goal:{id:"zero-issues", title:"AgentX has no open issues"},
+ doneWhen:"0 open issues on anis-marrouchi/agentx",
+ check:{kind:"count", provider:"github", project:"anis-marrouchi/agentx", what:"issues", max:0}}
+```
+
+A record has a state: **active**, **done** or **dropped**.
+
+- With a `check`, the daemon runs it at the pace of the loop checks (every 10 minutes by default) and closes the goal as done when it is met. `check` is any `closeWhen` (`url`, `issue`, `git-ancestor`, `reply`) or a `count`, as on a plan step.
+- Its owner closes it by hand with `{action:"goal", goalAction:"close", id:"zero-issues", evidence:"<link>"}`, or gives it up with `goalAction:"drop"` and a `reason`. Only the owner closes or drops it.
+- `{action:"goal", id:"zero-issues"}` shows the record and its requests. `{action:"goals"}` gives each goal's state next to its counts.
+
+A closed goal stays closed. Requests can still name it, but a new aim needs a new id.
+
+Crons can serve a goal: see `crons.<id>.goal` in [Automation settings](../reference/config-automation.md). Once the goal is closed the cron stops running.
+
 ## Where a request landed
 
 When an agent takes a request on, waits on you, or closes it as done, it can say where the work lives: its **home**. One of:
@@ -381,7 +401,9 @@ Every reply says `total`, the number of requests that match, and `truncated: tru
 
 `GET /requests/flow?days=7` gives the [flow rate](#how-many-requests-get-closed-the-flow-rate): `zone`, `days` (oldest first, each with `day`, `asked`, `done`, `dropped`, `moving`, `waiting`, `stuck`, `rate`, `dropReasons`, `resent` and `resentDone`), and `today`. `days` is 1 to 90; without it, `requests.flow.days` (default 7).
 
-`GET /requests/goals` lists every goal a request names, most recently active first (at most 50): its `title`, the counts `open`, `done` and `dropped`, `progress` (0 to 1), `costUsd`, `runs`, `unpriced` (runs that reported no cost), and its newest requests (at most 50), each with its own `costUsd`. See [Group requests under a goal](#group-requests-under-a-goal).
+`GET /requests/goals` lists every goal a request names, most recently active first (at most 50): its `title`, the counts `open`, `done` and `dropped`, `progress` (0 to 1), `costUsd`, `runs`, `unpriced` (runs that reported no cost), and its newest requests (at most 50), each with its own `costUsd`. Its `records` are the goal records: `id`, `title`, `ownerAgent`, `state`, `doneWhen`, `check`, `evidence`, `lastCheck` and `lastCheckAt`. See [Group requests under a goal](#group-requests-under-a-goal).
+
+`GET /requests/goals/<id>` gives one goal: its `goal` record (or null) and its `summary` (or null). `POST /requests/goals` makes, closes or drops a record (`action` `create`, `close` or `drop`), from a running turn of the agent it names, like the other writes.
 
 ## Measure what agents tell you
 

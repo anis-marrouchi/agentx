@@ -36,7 +36,7 @@ export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
       var k = 'cron:' + c.id;
       return '<li class="wsj__row"><div class="wsj__main"><b>' + esc(c.id) + '</b> <code>' + esc(c.schedule) + '</code> <small>runs @' + esc(c.agent) + '</small>' +
         (c.prompt ? '<p class="wsj__sub">' + esc(c.prompt.length > 120 ? c.prompt.slice(0, 120) + '…' : c.prompt) + '</p>' : '') +
-        '<p class="wsj__sub">' + axCronValueHtml(c.value, esc) + '</p></div>' +
+        '<p class="wsj__sub">' + axCronValueHtml(c.value, esc) + axCronGoalHtml(c, esc) + '</p></div>' +
         '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="ask" data-key="' + esc(k) + '">Delete</button>' +
         stConfirmHtml(k, 'Delete the schedule <b>' + esc(c.id) + '</b>? It stops running.', 'Delete ' + c.id) + '</li>';
     }).join('') + '</ul>' : '<p class="ax-wall__empty">No schedules yet. Add one below to have an agent do something on a timer.</p>';

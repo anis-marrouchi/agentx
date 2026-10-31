@@ -26,7 +26,9 @@ A nudge only comes after 30 quiet minutes. With `requests.plans.continue` on, th
 - its count went down during the turn, if it has a count check (see `check.count` below), or
 - the agent reported new progress during the turn, if it has no count check. A report that only repeats the last one does not count.
 
-A turn that moved nothing is left to the nudge, as before. A step that is done, blocked, or past its count goes on as usual.
+A turn that moved nothing is left to the nudge, as before. A step that is done or blocked goes on as usual. A step whose count is met when the turn ends is marked done right then, and the next step is handed on within a second.
+
+Only turns the daemon itself started on the step count. A `POST /task` call that only names the request's chat does not start a continued turn.
 
 These turns have a daily cap per goal, or per request when it has no goal: 10 turns and $5 by default. At the cap you are told once, and the nudges take over until 00:00 UTC. Every such turn is written to the plan's log as `continued`.
 
@@ -139,7 +141,7 @@ Agents make a plan with their `agentx_request` tool, when they take the request 
 - `agent` is the step's owner. It defaults to the agent that makes the plan.
 - `kind` is one short word. The default is `task`. Only `message` changes what happens: the daemon sends it.
 - `check` is optional: an `http` or `https` address the daemon reads every minute, and the text it must show.
-- `check.count` is optional: a count of open items the daemon reads every 5 minutes, through the GitHub or GitLab connector of the `issue` check. The step is done when the count is at `max` or under. For example, `"check": { "count": { "provider": "github", "project": "acme/app", "what": "issues", "max": 0 } }`. `what` is `issues` (the default), `prs` or `all`, and `max` defaults to `0`. Each new count is written to the plan's log. A lower count is how a continued turn knows the step moved.
+- `check.count` is optional: a count of open items the daemon reads every 5 minutes, through the GitHub or GitLab connector of the `issue` check. The step is done when the count is at `max` or under. For example, `"check": { "count": { "provider": "github", "project": "acme/app", "what": "issues", "max": 0 } }`. `what` is `issues` (the default), `prs` or `all`, and `max` defaults to `0`. Each new count is written to the plan's log. A lower count is how a continued turn knows the step moved. On GitHub the count comes from its search, which can lag a few minutes behind issues just closed: a step can stay open for a few minutes after the last close.
 - `stallMinutes` is optional. It sets this step's own time before a nudge, for a step that is slow by nature.
 
 An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2, "status": "progress" | "done" | "blocked"}`. A `done` report needs `evidence`, and a `blocked` report needs a `note`. Only the step's owner, or the agent that made the plan, can report on a step.

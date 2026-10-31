@@ -3358,7 +3358,7 @@ function renderCrons() {
             ' runs <b>' + escapeHtml(c.agent) + '</b>' +
             (c.prompt ? ' · ' + escapeHtml(c.prompt.slice(0, 80) + (c.prompt.length > 80 ? '…' : '')) : '') +
           '</div>' +
-          '<div class="ax-sub">' + axCronValueHtml(c.value, escapeHtml) + '</div>' +
+          '<div class="ax-sub">' + axCronValueHtml(c.value, escapeHtml) + axCronGoalHtml(c, escapeHtml) + '</div>' +
         '</div>' +
         '<div class="ax-row-card__actions">' +
           '<button class="ax-btn ax-btn--danger" data-id="' + escapeHtml(c.id) + '">Delete</button>' +

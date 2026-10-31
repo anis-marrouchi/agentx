@@ -29,6 +29,12 @@ export interface CronJobState {
   onError: Array<"log" | "notify" | "disable">
   /** Why it runs and the number that proves it (#1183). */
   value?: CronValue
+  /** The goal it serves (#1568): once that goal is done or dropped, the
+   *  job stops running, and each run gets the goal's current state. */
+  goal?: string
+  /** Set when a run was skipped because its goal is closed: the Wall
+   *  shows "goal done, disable?". */
+  goalClosed?: { state: string; at: Date }
   /** Send each successful run's answer to the job's `notify` target.
    *  True whenever the job has `notify`, unless `deliverResult: false`. */
   deliverResult?: boolean

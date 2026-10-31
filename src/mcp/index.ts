@@ -1026,6 +1026,7 @@ const TOOLS = [
       "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
       "flow gives the daily flow rate (requests closed, done or dropped, out of those asked), today first then one line per day, with the stuck, waiting and dropped counts: use it when the owner asks how the requests are flowing or what the rate is. " +
       "When the request serves a larger goal (a launch, a client project, a quarter's target), name it on accept with goal {id, title}; goals lists every goal with its open and done requests, how far along it is and what it cost. " +
+      "A goal is also a record of its own: goal with goalAction create (goal {id, title}, doneWhen, optional check: a closeWhen or {kind:'count', provider, project, what, max}) makes it, with you as its owner; show reads it; close (evidence) or drop (reason) ends it. A goal with a check closes by itself when the check is met, and crons that name the goal (crons.<id>.goal) stop running. " +
       "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
       "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
       "The daemon hands each step to its agent in order, nudges a step that goes quiet, sends an owner-approved message itself, and tells the owner at the end or when a step is blocked. " +
@@ -1043,11 +1044,14 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals", "flow"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa, goals or flow (the daily flow rate: requests closed out of those asked, per day)." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals", "goal", "flow"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa, goals, goal (one goal record: see goalAction) or flow (the daily flow rate: requests closed out of those asked, per day)." },
+        goalAction: { type: "string", enum: ["show", "create", "close", "drop"], description: "goal: show (default; give id), create (give goal {id, title}, doneWhen, optional check), close (give id and evidence) or drop (give id and reason). Only the goal's owner closes or drops it." },
+        doneWhen: { type: "string", description: "goal create: what done means, in words (at most 300 characters)." },
+        check: { type: "object", description: "goal create, optional: what the daemon checks to close the goal by itself: a closeWhen spec, or {kind:'count', provider:'github'|'gitlab', project:'owner/repo', what:'issues'|'prs'|'all', max:0}." },
         days: { type: "integer", minimum: 1, maximum: 90, description: "flow, optional: how many days, today last (default 7)." },
         goal: {
           type: "object",
-          description: "accept, optional: the goal this request serves, {id, title}: id a short name (letters, digits, dashes), title a few plain words. A title alone gives the id. Reuse the id of a goal goals lists.",
+          description: "accept, optional: the goal this request serves (its record is made if it is new); goal create: the goal to make. {id, title}: id a short name (letters, digits, dashes), title a few plain words. A title alone gives the id. Reuse the id of a goal goals lists.",
           properties: { id: { type: "string" }, title: { type: "string" } },
           required: ["title"],
         },

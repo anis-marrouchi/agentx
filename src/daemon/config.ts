@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { cronValueSchema } from "@/crons/value-line"
+import { GOAL_ID_MAX } from "@/requests/goals"
 import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
@@ -811,6 +812,11 @@ const cronJobSchema = z.object({
   /** Why the job runs and the number that proves it (#1183). Optional;
    *  shown as written on the Wall and Settings › Schedules. */
   value: cronValueSchema.optional(),
+  /** The goal record it serves (#1568), by id. Once the goal is done or
+   *  dropped the job stops running (its config is left as it is: the Wall
+   *  asks whether to turn it off), and each run's prompt starts with the
+   *  goal's current state instead of numbers written into the prompt. */
+  goal: z.string().trim().min(1).max(GOAL_ID_MAX).regex(/^[a-z0-9][\w.:-]*$/i, "goal must be a goal id: letters, digits, dashes, dots or colons").optional(),
   schedule: z.string(),
   timezone: z.string().default("UTC"),
   agent: z.string(),
