@@ -551,16 +551,21 @@ export class AgentXDaemon {
     // Wake-on-event subscriptions (src/events/wake.ts). Reads the agents on
     // every event so a reload applies; the woken turn runs under the
     // event's root so what it causes cannot wake it again. A wake the
-    // dispatch cap holds is handed back as held and retried (#1284).
+    // dispatch cap holds is handed back as held and retried (#1284), and
+    // so is one whose agent stayed busy for the whole slot wait (#1596).
+    // The chat id is the agent id: the conversation key is then
+    // `events:<agent>`, not `events:events:<agent>`.
     this.stopEventWaker = new EventWaker({
       agents: () => this.config.agents,
       dispatch: async (agentId, e, sub) => {
         const response = await withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
           message: wakeMessage(e, sub.prompt),
           agentId,
-          context: { channel: "events", chatId: `events:${agentId}` },
+          context: { channel: "events", chatId: agentId },
         }))
-        return response.errorKind === "dispatch_hold" ? { held: response.error || "dispatch held" } : response
+        return response.errorKind === "dispatch_hold" || response.errorKind === "agent_busy"
+          ? { held: response.error || "dispatch held" }
+          : response
       },
       log: (msg) => this.log(msg),
       // Peer events (mesh feed) wake only subscriptions naming their node.

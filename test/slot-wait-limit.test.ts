@@ -64,6 +64,7 @@ describe("the slot wait of a caller that waits for a busy agent", () => {
     const long = start(r, "a2a", 60_000)
     const shortRes = await short.run
     expect(shortRes.error).toMatch(/slot wait timed out/)
+    expect(shortRes.errorKind).toBe("agent_busy")
     expect(short.didStart()).toBe(false)
     expect(long.didStart()).toBe(false)
     expect(logs.some((l) => /waiting for a slot \(up to 1m\)/.test(l))).toBe(true)
