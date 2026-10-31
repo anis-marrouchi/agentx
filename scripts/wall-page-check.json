@@ -18,6 +18,7 @@
     { "name": "settings-channels", "path": "/hub#page=settings&section=channels", "ready": "#wall-settings [data-st-form=tg]" },
     { "name": "settings-schedules", "path": "/hub#page=settings&section=schedules", "ready": "#wall-settings [data-st-form=cron]" },
     { "name": "settings-webhooks", "path": "/hub#page=settings&section=webhooks", "ready": "#wall-settings [data-st-form=wh]" },
+    { "name": "settings-inbox", "path": "/hub#page=settings&section=inbox", "ready": "#wall-settings [data-st-form=inbox]" },
     { "name": "workflows", "path": "/hub#page=workflows", "ready": "#wall-workflows .wwf__tabs, #wall-workflows h3" },
     { "name": "old-address", "path": "/wall#page=agents", "ready": "#wall-agents-page > *" }
   ]
