@@ -502,6 +502,12 @@ A login or password written straight into `agentx.json` is refused when the conf
 
 To check the setup, run `agentx mail test you@example.com` in the folder with `agentx.json`. It sends one short test mail. See [`agentx mail test`](./cli-commands.md#agentx-mail-test-address).
 
+### Sign-in links
+
+| Key | Default | What it does |
+|---|---|---|
+| `wall.signIn.origin` | — | The `https://` address, without a path, that the sign-in links in mails start with, for example `https://your-mac.tailnet-name.ts.net`. With `mail.sender` also set, teammates and clients can [sign in with their email](../jobs/members.md#or-let-them-sign-in-with-their-email). Unset: no sign-in by email. |
+
 ## Check it worked
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.

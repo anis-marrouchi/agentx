@@ -280,6 +280,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     nodeName: ctx.config.node?.name, root: process.cwd(), people: () => currentPeople(ctx.config.people),
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
+    signInSetup: () => {
+      const origin = ctx.config.wall.signIn?.origin, sender = ctx.config.mail.sender
+      return origin && sender ? { origin, sender } : null
+    },
   })) return
   // The Wall's portfolio summary (#1194): a `wall:portfolio` key or the
   // dashboard key, nothing else; counts and titles only (wall-portfolio.ts).
