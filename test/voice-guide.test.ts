@@ -4,6 +4,7 @@ import { handleGuide } from "../src/daemon/voice-guide-api"
 import { PresenceHost } from "../src/daemon/voice-presence"
 import { VoiceTalkService } from "../src/daemon/voice-talk-api"
 import { VoiceIntroTracker } from "../src/voice/agent-voice"
+import type { Presence } from "../src/voice/presence"
 
 const rect = { x: 100, y: 80, width: 90, height: 24 }
 const query = (after?: number) => new URLSearchParams(after === undefined ? "" : `after=${after}`)
@@ -235,8 +236,22 @@ describe("/voice/guide", () => {
 
 describe("a lesson's pointer", () => {
   const agents: any = { "coder-agent": { name: "Coder", systemPrompt: "You are Coder." } }
+  /** The tag beside the character, recorded instead of drawn. */
+  function controlsLog() {
+    const log: string[] = []
+    const fns: { dismiss?: () => void; skip?: () => void } = {}
+    const controls = (): Presence => ({
+      moveTo: () => log.push("move"), say: (t) => log.push(`say ${t}`), clear: () => log.push("clear"),
+      park: () => log.push("park"), close: () => log.push("close"), waiting: (s) => log.push(`wait ${s}`),
+      onDismiss: (fn) => { fns.dismiss = fn }, onSkip: (fn) => { fns.skip = fn },
+    })
+    return { log, fns, controls }
+  }
+
   it("is the character when the look is the character and the app waits", () => {
-    const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, { voiceSettings: () => ({ look: "character" }) })
+    const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, {
+      voiceSettings: () => ({ look: "character" }), presence: { controls: controlsLog().controls },
+    })
     void svc.guide.next(0, 60_000)
     const pointer = (svc.presence as any).lessonPointer("coder-agent")
     pointer.moveTo(rect)
@@ -248,13 +263,36 @@ describe("a lesson's pointer", () => {
   it("moves the character, and sends it home when the lesson ends", () => {
     const feed = new GuideFeed()
     void feed.next(0, 60_000)
-    const host = new PresenceHost(() => agents, () => {}, { character: (id) => new CharacterPresence(feed, id) })
+    const c = controlsLog()
+    const host = new PresenceHost(() => agents, () => {}, { character: (id) => new CharacterPresence(feed, id), controls: c.controls })
     const pointer = (host as any).lessonPointer("coder-agent")
     pointer.moveTo(rect, { highlight: true })
     expect(feed.current).toMatchObject({ rect, mark: "box" })
     pointer.close()
     expect(feed.current.rect).toBeNull()
     expect(host.onScreen).toEqual([])
+  })
+
+  it("gives the character a tag with ×, Skip and the lesson's line; the character still points (#1591)", () => {
+    const feed = new GuideFeed()
+    void feed.next(0, 60_000)
+    const c = controlsLog()
+    const host = new PresenceHost(() => agents, () => {}, { character: (id) => new CharacterPresence(feed, id), controls: c.controls })
+    const l = host.lesson("coder-agent", "open the pulls page", "teach",
+      { say: async () => true, cancel: () => {} } as any, () => ({ reply: () => (async function* () {})(), close() {} }))
+    const pointer = (host as any).lessonPointer("coder-agent")
+    pointer.moveTo(rect)
+    pointer.say("You asked: open the pulls page")
+    pointer.waiting(45)
+    expect(feed.current).toMatchObject({ rect, agentId: "coder-agent" })
+    expect(c.log).toEqual(["say You asked: open the pulls page", "wait 45"])
+    // The × on the tag ends the lesson on the character look too.
+    const ended: string[] = []
+    l.on((e) => { if (e.type === "end") ended.push(e.reason) })
+    c.fns.dismiss!()
+    expect(ended).toEqual(["dismissed on screen"])
+    expect(c.log.at(-1)).toBe("close")
+    expect(feed.current.rect).toBeNull()
   })
 })
 

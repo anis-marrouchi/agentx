@@ -75,7 +75,7 @@ export interface LiveTeachOpts {
 
 export type TeachEvent =
   | { type: "step"; n: number; action: StepAction; target: string | null; say: string; readMs?: number; planMs?: number }
-  | { type: "changed"; n: number; changed: boolean }
+  | { type: "changed"; n: number; changed: boolean; skipped?: boolean }
   | { type: "acted"; n: number; error: string | null }
   | { type: "replanned"; n: number; reason: string }
   | { type: "door"; text: string }
@@ -113,11 +113,16 @@ export class LiveTeach {
   private took = { readMs: 0, planMs: 0 }
   /** Steps in a row the listener left undone. */
   private idleSteps = 0
+  /** A step is waiting on the listener, and whether they pressed Skip. */
+  private waiting = false
+  private skipped = false
 
   constructor(private opts: LiveTeachOpts, private deps: TeachDeps) {
     this.listener = opts.listener ?? DEFAULT_LISTENER
     // The × on the agent's name tag ends the lesson, like saying "stop".
     deps.presence.onDismiss?.(() => this.stop("dismissed on screen"))
+    // Skip on the tag ends the wait for this step: on to the next one.
+    deps.presence.onSkip?.(() => this.skip())
   }
 
   on(fn: (e: TeachEvent) => void): void { this.listeners.push(fn) }
@@ -136,6 +141,13 @@ export class LiveTeach {
     if (this.state !== "running") return
     this.silence()
     this.state = "held"
+    this.poke()
+  }
+
+  /** Stop waiting for the listener to do this step and plan the next. */
+  skip(): void {
+    if (this.state !== "running" || !this.waiting) return
+    this.skipped = true
     this.poke()
   }
 
@@ -330,17 +342,20 @@ export class LiveTeach {
     }
 
     // Everything else waits for the listener to act on the step.
-    const changed = await this.waitForChange()
+    const result = await this.waitForChange()
+    const changed = result === true
+    const skipped = result === "skipped"
     // Hand control back: the cursor returns to the listener's own pointer,
     // still saying what the lesson is for and how to end it.
     presence.say(bubbleText(null, this.opts.goal))
     presence.park()
-    this.emit({ type: "changed", n, changed })
+    this.emit({ type: "changed", n, changed, ...(skipped ? { skipped } : {}) })
     this.history.push(`Step ${n}: you said "${plan.say}"${label ? ` about "${label}"` : ""}. ` +
-      (changed ? `${this.listener} did something; the screen changed.` : `Nothing changed on screen.`))
-    // Undone and unanswered: a wait that ran out, not one the door or a
-    // hush cut short. Enough of those in a row and the lesson steps back.
-    const idle = !changed && this.is("running") && !this.doorQueue.length
+      (changed ? `${this.listener} did something; the screen changed.`
+        : skipped ? `${this.listener} pressed Skip: move on to the next step.` : `Nothing changed on screen.`))
+    // Undone and unanswered: a wait that ran out, not one the door, a
+    // hush or Skip cut short. Enough of those in a row and the lesson steps back.
+    const idle = !changed && !skipped && this.is("running") && !this.doorQueue.length
     this.idleSteps = idle ? this.idleSteps + 1 : 0
     if (this.idleSteps >= (this.opts.maxIdleSteps ?? 2)) return this.stepBack()
     return "next"
@@ -385,20 +400,33 @@ export class LiveTeach {
    *  The baseline is read now, after the step was said, not before it was
    *  planned: apps keep loading while the model thinks (a file list
    *  filling in), and that is not the listener doing the step. A change
-   *  must also hold for two reads, so a spinner does not count. */
-  private async waitForChange(): Promise<boolean> {
+   *  must also hold for two reads, so a spinner does not count.
+   *
+   *  Meanwhile the tag shows Skip and the seconds left; "skipped" when
+   *  the listener pressed it. */
+  private async waitForChange(): Promise<boolean | "skipped"> {
     const before = await this.signature()
-    const deadline = Date.now() + (this.opts.waitMs ?? 45_000)
+    const waitMs = this.opts.waitMs ?? 45_000
+    const deadline = Date.now() + waitMs
     let candidate: string | null = null
-    while (Date.now() < deadline && this.is("running") && !this.doorQueue.length) {
-      await Promise.race([this.sleep(this.opts.pollMs ?? POLL_MS), this.poked()])
-      if (!this.is("running") || this.doorQueue.length) return false
-      const now = await this.signature()
-      if (now === null || now === before) { candidate = null; continue }
-      if (now === candidate) return true
-      candidate = now
+    this.waiting = true
+    this.skipped = false
+    this.deps.presence.waiting?.(waitMs / 1000)
+    try {
+      while (Date.now() < deadline && this.is("running") && !this.doorQueue.length) {
+        await Promise.race([this.sleep(this.opts.pollMs ?? POLL_MS), this.poked()])
+        if (this.skipped) return "skipped"
+        if (!this.is("running") || this.doorQueue.length) return false
+        const now = await this.signature()
+        if (now === null || now === before) { candidate = null; continue }
+        if (now === candidate) return true
+        candidate = now
+      }
+      return false
+    } finally {
+      this.waiting = false
+      if (!this.is("ended")) this.deps.presence.waiting?.(0)
     }
-    return false
   }
 
   /** After acting: wait until two reads in a row agree, at most 3 s. */

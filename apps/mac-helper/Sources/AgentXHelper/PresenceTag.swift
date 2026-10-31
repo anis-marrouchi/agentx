@@ -8,6 +8,7 @@ import AppKit
 ///
 ///   drag anywhere        move it; it stays there (pinned) for this agent
 ///   click ×              close: the owner ends what it was showing
+///   click Skip           while the owner waits on the person: stop waiting
 ///   double-click bubble  dismiss the bubble for the rest of this overlay
 ///   double-click name    unpin; it rides next to the arrow again
 ///
@@ -29,8 +30,15 @@ final class PresenceTag: NSView {
     var onUnpin: (() -> Void)?
     /// Called when the × in the badge row is clicked.
     var onClose: (() -> Void)?
+    /// Called when Skip is clicked, while there is a wait to skip.
+    var onSkip: (() -> Void)?
     /// A click that started on the × and has not moved: a close, not a drag.
     private var pressingClose = false
+    private var pressingSkip = false
+    /// While the owner waits on the person: when the wait runs out. Skip
+    /// and the seconds left show in the badge row until then.
+    private var waitUntil: Date?
+    private var countdown: Timer?
     /// A double-click on the bubble hides it; later lines stay hidden too.
     private(set) var dismissed = false
 
@@ -61,9 +69,27 @@ final class PresenceTag: NSView {
 
     private static let nameAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold)]
     private var nameWidth: CGFloat { (name as NSString).size(withAttributes: PresenceTag.nameAttrs).width + 14 }
-    private var rowWidth: CGFloat { 24 + 4 + nameWidth + 4 + 18 }
-    /// The close button, right of the name pill.
-    private var closeRect: NSRect { NSRect(x: 24 + 4 + nameWidth + 4, y: bounds.maxY - 24 + 3, width: 18, height: 18) }
+    /// "Skip · 45s" is measured at its widest, so the row does not jitter.
+    private static let skipWidth: CGFloat = ("Skip · 88s" as NSString).size(withAttributes: nameAttrs).width + 14
+    private var skipShown: Bool { waitUntil != nil }
+    private var rowWidth: CGFloat { 24 + 4 + nameWidth + 4 + (skipShown ? PresenceTag.skipWidth + 4 : 0) + 18 }
+    /// Skip, right of the name pill, while there is a wait.
+    private var skipRect: NSRect { NSRect(x: 24 + 4 + nameWidth + 4, y: bounds.maxY - 24 + 3, width: PresenceTag.skipWidth, height: 18) }
+    /// The close button, at the end of the row.
+    private var closeRect: NSRect { NSRect(x: rowWidth - 18, y: bounds.maxY - 24 + 3, width: 18, height: 18) }
+
+    /// Show Skip and count down `seconds`; 0 or less hides them.
+    func setWait(_ seconds: Double) {
+        countdown?.invalidate()
+        countdown = nil
+        waitUntil = seconds > 0 ? Date().addingTimeInterval(seconds) : nil
+        if waitUntil != nil {
+            countdown = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.needsDisplay = true }
+        }
+        refit()
+    }
+
+    private var secondsLeft: Int { max(0, Int((waitUntil?.timeIntervalSinceNow ?? 0).rounded(.up))) }
 
     override var fittingSize: NSSize {
         guard !box.isHidden else { return NSSize(width: rowWidth, height: PresenceTag.rowHeight) }
@@ -104,6 +130,14 @@ final class PresenceTag: NSView {
         color.setFill(); NSBezierPath(roundedRect: pill, xRadius: 9, yRadius: 9).fill()
         draw(name, in: pill, size: 11, weight: .semibold)
 
+        if skipShown {
+            let skip = skipRect
+            Brand.paper.setFill(); NSBezierPath(roundedRect: skip, xRadius: 9, yRadius: 9).fill()
+            color.setStroke()
+            let edge = NSBezierPath(roundedRect: skip.insetBy(dx: 0.75, dy: 0.75), xRadius: 8.25, yRadius: 8.25); edge.lineWidth = 1.5; edge.stroke()
+            draw("Skip · \(secondsLeft)s", in: skip, size: 11, weight: .semibold, color: color)
+        }
+
         let close = closeRect
         Brand.paper.setFill(); NSBezierPath(ovalIn: close).fill()
         color.setStroke()
@@ -139,7 +173,9 @@ final class PresenceTag: NSView {
             dragFrom = nil
             return
         }
-        pressingClose = closeRect.insetBy(dx: -3, dy: -3).contains(convert(event.locationInWindow, from: nil))
+        let p = convert(event.locationInWindow, from: nil)
+        pressingClose = closeRect.insetBy(dx: -3, dy: -3).contains(p)
+        pressingSkip = skipShown && skipRect.insetBy(dx: -2, dy: -3).contains(p)
         dragFrom = NSEvent.mouseLocation
         windowFrom = window?.frame.origin ?? .zero
         dragged = false
@@ -155,8 +191,9 @@ final class PresenceTag: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { dragFrom = nil; dragged = false; pressingClose = false }
+        defer { dragFrom = nil; dragged = false; pressingClose = false; pressingSkip = false }
         if pressingClose && !dragged { onClose?(); return }
+        if pressingSkip && !dragged { setWait(0); onSkip?(); return }
         guard dragged, let w = window else { return }
         onPin?(NSPoint(x: w.frame.minX, y: w.frame.maxY))
     }

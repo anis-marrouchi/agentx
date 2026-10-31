@@ -1302,6 +1302,10 @@ A lesson stays in the app it started in. If you switch to another app, the agent
 
 A lesson also ends by itself when you have not done two steps in a row: the screen did not change and you said nothing. The agent says "I'll leave it there. Ask me to show you again whenever you like." and its pointer goes.
 
+While a step waits for you, the name tag shows **Skip** and the seconds left, for example **Skip · 38s**. Click **Skip** to leave that step and go on to the next one; a skipped step does not count as one you did not do. The arrow itself fades out 6 seconds after it last moved, so it does not sit on your screen while you work. It comes back when the agent points at the next thing. The name tag stays, with **Skip** and **×**.
+
+With `voice.look` set to `character`, the character points instead of the arrow. The same name tag, with **Skip**, **×** and the lesson's bubble, sits at the top centre of your screen. Drag it elsewhere and it stays there.
+
 A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` or `act` for your question, or from a terminal.
 
 ### Start a lesson from the terminal
@@ -1332,7 +1336,7 @@ A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` 
 
 To end the lesson, say **stop** the same way. A short "okay, stop now", "please stop" or "cancel" ends it too. A longer sentence that only contains the word, such as "how do I stop the recording", goes to the lesson as a question. A lesson that hears nothing for one minute after it went quiet also ends.
 
-Pressing **Command–Option–.** also ends a lesson. So does clicking the **×** on the agent's name tag, beside its pointer: the tag fades out and the lesson stops. In the terminal where it runs, type `stop` and press Return, or press Control–C.
+Pressing **Command–Option–.** also ends a lesson. So does clicking the **×** on the agent's name tag, beside its pointer (or at the top of the screen with the character look): the tag fades out and the lesson stops. In the terminal where it runs, type `stop` and press Return, or press Control–C.
 
 ### Check a running lesson in the browser
 

@@ -314,7 +314,8 @@ case "presence":
     Presence.run(name: name, initial: flag("initial") ?? String(name.prefix(1)).uppercased(),
                  colorHex: flag("color"), parent: flag("parent").flatMap { pid_t($0) },
                  idle: flag("idle").flatMap { TimeInterval($0) } ?? 60,
-                 posFile: flag("pos-file"))
+                 posFile: flag("pos-file"), tagOnly: args.contains("--tag-only"),
+                 rest: flag("rest").flatMap { TimeInterval($0) } ?? 0)
 
 case "notify":
     // A banner under AgentX Helper's name and icon. Exit 2 means macOS has

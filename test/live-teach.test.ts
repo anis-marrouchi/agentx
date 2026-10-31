@@ -42,8 +42,11 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
     say: (t) => { if (t) log.push(`bubble ${t}`) },
     clear: () => log.push("clear"), park: () => log.push("park"), close: () => log.push("close"),
     onDismiss: (fn) => { dismiss = fn },
+    waiting: (s) => log.push(`wait ${s}`),
+    onSkip: (fn) => { skip = fn },
   }
   let dismiss = () => {}
+  let skip = () => {}
   const said: string[] = []
   let stopped = 0
   const speech = {
@@ -63,7 +66,7 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
     goal: "start a new note", mode, speaker: { name: "Coder", voice: { provider: "system", elevenlabs: "roger", system: null, fallback: true } },
     actionsAllowed: !!opts.actionsAllowed, waitMs: 300, pollMs: 10, holdMs: 100,
   }, deps)
-  return { t, log, said, acted, model, get stopped() { return stopped }, dismiss: () => dismiss() }
+  return { t, log, said, acted, model, get stopped() { return stopped }, dismiss: () => dismiss(), skip: () => skip() }
 }
 
 const STEP1 = "TARGET: 1\nACTION: click\nSAY: Click New to start a note."
@@ -304,6 +307,45 @@ describe("LiveTeach", () => {
     expect(s.t.state).toBe("ended")
     expect(events.at(-1)).toEqual({ type: "end", reason: "dismissed on screen" })
     expect(s.log.at(-1)).toBe("close")
+  })
+
+  it("a step that waits shows Skip with its seconds, and takes them away after (#1591)", async () => {
+    const WAIT = "TARGET: 1\nACTION: point\nSAY: New is up here."
+    const s = setup("teach", [WAIT, DONE], { userActsAfter: 100 })
+    await s.t.run()
+    const shown = s.log.indexOf("wait 0.3")
+    expect(shown).toBeGreaterThan(s.log.indexOf("move 10 point"))
+    expect(s.log.indexOf("wait 0", shown)).toBeLessThan(s.log.indexOf("park"))
+  })
+
+  it("Skip ends the wait and moves on, without counting the step as undone (#1591)", async () => {
+    const WAIT = "TARGET: 1\nACTION: point\nSAY: New is up here."
+    const s = setup("teach", [WAIT, WAIT, WAIT])
+    const events: any[] = []
+    s.t.on((e) => events.push(e))
+    const run = s.t.run()
+    // Skip the first two waits as soon as they show; the third runs out.
+    for (const n of [1, 2]) {
+      while (s.log.filter((l) => l === "wait 0.3").length < n) await sleep(2)
+      s.skip()
+    }
+    await run
+    expect(events.filter((e) => e.type === "changed").map((e) => !!e.skipped)).toEqual([true, true, false])
+    expect(s.model.prompts[1]).toContain("pressed Skip")
+    // Two skips and one wait that ran out: not yet two undone in a row.
+    expect(s.t.step).toBe(4)
+  })
+
+  it("Skip outside a wait does nothing (#1591)", async () => {
+    const s = setup("watch", [STEP1], { speakMs: 100 })
+    const events: any[] = []
+    s.t.on((e) => events.push(e))
+    const run = s.t.run()
+    await sleep(20)
+    s.skip()
+    s.t.door("stop")
+    await run
+    expect(events.some((e) => e.type === "changed" && e.skipped)).toBe(false)
   })
 
   it("ends itself when the listener leaves two steps in a row undone (#1493)", async () => {
