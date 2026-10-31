@@ -30,7 +30,7 @@
 // itself (wall-settings-machine.client.ts), the wiki notes inbox under
 // Schedules, and the approval and request settings that /approvals held
 // (wall-settings-approvals.client.ts: Approvals under Inbox, and Requests).
-// Diagnostics, four tabs of classic /admin/health, read-only
+// Diagnostics, the seven tabs of classic /admin/health, read-only
 // (wall-settings-diagnostics.client.ts, #1449).
 // Only Guests and People link out, to their own pages.
 //
@@ -184,6 +184,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       S.st.confirm = '';
       // What a section read or made is read again when it opens: a new
       // token is shown once, agentx.json and the approval settings fresh.
+      // A live Logs tail (Diagnostics) stops when its section closes.
+      stDgClose(S.st.dg);
       S.st.newToken = null; S.st.adv = null; S.st.apv = null; S.st.req = null; S.st.bdEdit = ''; S.st.acEdit = ''; S.st.acRuns = null; S.st.wnList = null; S.st.dg = null;
       // The draft of an agent's form stays across its tabs, not to another agent.
       if (S.st.draft && S.st.draft.agent !== S.st.agent) S.st.draft = null;

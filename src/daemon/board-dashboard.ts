@@ -27,7 +27,7 @@ import { handleApprovalsPanelApi } from "./approvals-panel"
 import { handlePeoplePanel } from "./people-panel"
 import { handlePicturesPanel, servePicture } from "./pictures-panel"
 import { IMPLICIT_OWNER } from "@/people/people"
-import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
+import { handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
@@ -627,18 +627,16 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     handleGraphGet(req, res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
     return
   }
-  // /admin/health — platform-health view over route_traces + rotations + errors.
-  // Renamed from /admin/observability — that name suggested business flow,
-  // but the page only ever covered platform health. Old URL redirects so
-  // existing bookmarks keep working.
+  // /admin/health (and its old name /admin/observability) was the classic
+  // platform-health page. The Hub's Settings › Diagnostics has all seven of
+  // its tabs (#1449), so old links and bookmarks land there. Off-box with no
+  // session, sign in first with Diagnostics as next, as /admin does. The
+  // /api/admin/observability/... reads and the logs stream stay.
   if (method === "GET" && (path === "/admin/health" || path === "/admin/observability")) {
-    if (path === "/admin/observability") {
-      res.writeHead(302, { Location: "/admin/health" })
-      res.end()
-      return
-    }
-    if (!pageAllowed(req, res, ctx, path)) return
-    handleObservabilityGet(req, res, buildTopbarPeers(ctx.config), pageToken(req, ctx.token))
+    const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)!
+    if (!pageAllowed(req, res, ctx, to)) return
+    res.writeHead(301, { Location: to })
+    res.end()
     return
   }
   // ── Cross-mesh API proxy (must precede every /api/admin/* handler) ──
@@ -1741,13 +1739,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && /^\/[a-z][a-z-]*\/?$/.test(path)) {
     const slug = path.replace(/^\/+|\/+$/g, "")
     const SLUG_TO_ADMIN: Record<string, string> = {
-      health: "/admin/health",
+      health: HUB_PATH + "#page=settings&section=diagnostics",
       ledger: "/admin/ledger",
       cost: WALL_COST_HREF,
       projects: "/admin/projects",
       graph: "/admin/graph",
       wiki: "/admin/wiki/",
-      observability: "/admin/health",
+      observability: HUB_PATH + "#page=settings&section=diagnostics",
     }
     const target = SLUG_TO_ADMIN[slug]
     if (target) {

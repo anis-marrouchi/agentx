@@ -184,6 +184,15 @@ describe("classic Task page redirect", () => {
       }
     })
 
+    it("redirects /admin/health and /admin/observability for good to Settings › Diagnostics (#1449)", async () => {
+      const base = await start()
+      for (const path of ["/admin/health", "/admin/observability", "/admin/health?x=1", "/health", "/observability"]) {
+        const r = await fetch(base + path, { redirect: "manual" })
+        expect([path, r.headers.get("location")]).toEqual([path, "/hub#page=settings&section=diagnostics"])
+      }
+      expect((await fetch(base + "/admin/health", { redirect: "manual" })).status).toBe(301)
+    })
+
     it("still answers 400 without an agent", async () => {
       const base = await start()
       const r = await fetch(`${base}/tasks/t1`, { redirect: "manual" })

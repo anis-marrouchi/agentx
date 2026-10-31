@@ -58,6 +58,7 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
       },
       getAttribute: (k: string) => e.attrs[k] ?? null, setAttribute: (k: string, v: string) => { e.attrs[k] = v }, removeAttribute: (k: string) => { delete e.attrs[k] },
       hasAttribute: (k: string) => k in e.attrs, addEventListener: () => {}, focus: () => {},
+      insertAdjacentHTML: (_: string, v: string) => { html += v },
       querySelector: () => null,
     }
     return e
@@ -102,7 +103,13 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
   const win: any = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }
   if (cfg) win.AX_WALL_SETTINGS = JSON.parse(cfg[1])
   if (page.includes("<script>window.AX_WALL_SIGN_IN = true;</script>")) win.AX_WALL_SIGN_IN = true
-  class FakeEventSource { constructor() {} addEventListener() {} close() {} }
+  const sources: FakeEventSource[] = []
+  class FakeEventSource {
+    url: string; readyState = 0; closed = false; on: Record<string, (ev: any) => void> = {}
+    constructor(url: string) { this.url = url; sources.push(this) }
+    addEventListener(t: string, f: (ev: any) => void) { this.on[t] = f }
+    close() { this.closed = true; this.readyState = 2 }
+  }
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "EventSource", "requestAnimationFrame", script)(
     doc, win, fetchStub, loc, { replaceState: (_: unknown, __: string, h: string) => { hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0, FakeEventSource, (f: () => void) => { f(); return 1 },
@@ -140,7 +147,7 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
     await settle()
   }
   const writes = () => calls.filter((c) => c.method !== "GET")
-  return { page, el, calls, writes, settle, go, click, submit, type, change, key, paints: () => paints, wall }
+  return { page, el, calls, writes, settle, go, click, submit, type, change, key, paints: () => paints, wall, sources }
 }
 
 export const settingsHtml = (w: ReturnType<typeof openWall>) => w.el("wall-settings")!.innerHTML as string

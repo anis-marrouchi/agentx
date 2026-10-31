@@ -51,7 +51,7 @@ The same checks are on the dashboard.
 1. **Browser:** in the Hub, open **Settings** › **Diagnostics**.
 2. Select the **Doctor** tab. **Run the checks again** runs them once more.
 
-![The Doctor tab of the Health page, with the Re-run checks button and the first group of checks](/screenshots/doctor/tab.png)
+![The Doctor tab of Settings › Diagnostics, with the summary line and the first group of checks](/screenshots/doctor/tab.png)
 
 ## Check it worked
 

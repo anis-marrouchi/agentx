@@ -155,8 +155,8 @@ const shots = [
   { name: "costs/budgets", path: "/hub#status=open&view=cost&range=30", wait: "#wall-cost .wc__form", clipTo: "#wall-cost-budgets" },
   // Only the first check group: the others describe this machine's desktop
   // app and home folder, which a screenshot must not publish.
-  { name: "doctor/tab", path: "/admin/health", wait: '[data-tab="doctor"]', steps: [{ click: '[data-tab="doctor"]' }, { wait: ".ax-obs__doctor-group" }], clipBefore: ".ax-obs__doctor-group + .ax-obs__doctor-group" },
-  { name: "health/routing", path: "/admin/health", wait: '[data-tab="routing"]', steps: [{ click: '[data-tab="routing"]' }] },
+  { name: "doctor/tab", path: "/hub#page=settings&section=diagnostics", wait: ".wsdg__tabs", steps: [{ click: "[data-st-act=dg-tab][data-id=doctor]" }, { wait: ".wsdg__checks" }], clipBefore: "#wall-settings .wsc + .wsc" },
+  { name: "health/routing", path: "/hub#page=settings&section=diagnostics", wait: ".wsdg__tabs", steps: [{ click: "[data-st-act=dg-tab][data-id=routing]" }, { wait: "#wall-settings .wsf__hint" }] },
   { name: "live/running-build", path: "/mesh", wait: ".ax-build", clipTo: ".ax-topbar__right" },
   // Last: the scripted reply takes a minute, so later shots would show it running.
   // Wall Live (#1439): a running task's page with Pause; the same task

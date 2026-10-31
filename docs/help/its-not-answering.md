@@ -32,7 +32,7 @@ The dashboard can load while the daemon is stopped. A working browser page does 
    It checks your settings, credentials and whether the daemon answers. See [Run a health check](./doctor.md).
 10. If you ask your installer for help, share the doctor output after removing any keys or tokens.
 
-![The Routing tab of the Health page. Each routing decision shows as a row; here there are none yet](/screenshots/health/routing.png)
+![The Routing tab of Settings › Diagnostics. Each routing decision shows as a row; here there are none yet](/screenshots/health/routing.png)
 
 ## Just added an agent?
 

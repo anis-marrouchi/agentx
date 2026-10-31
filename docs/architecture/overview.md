@@ -65,7 +65,7 @@ You can follow one request through the parts above:
 1. Send an agent a short message from any entry point (for example **Test drive** in **Settings** › **Agents**).
 2. **Browser:** open **Live** while it runs; the agent shows as working.
 3. **Browser:** open **Activity** afterwards; the run is recorded with its channel and agent.
-4. **Browser:** open `/admin/health` and select **Routing** to see which agent the daemon chose for it.
+4. **Browser:** in the Hub, open **Settings** › **Diagnostics** and select **Routing** to see which agent the daemon chose for it.
 5. **Browser:** the dashboard's tab shows the AX symbol, and `/favicon.svg` opens it on its own.
 
 ## If something is wrong
