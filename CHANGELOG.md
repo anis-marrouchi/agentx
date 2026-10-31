@@ -2,6 +2,35 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.194.0](https://github.com/anis-marrouchi/agentx/compare/v0.193.0...v0.194.0) (2026-10-31)
+
+
+### Features
+
+* **computer-use:** per-OS desktop helper and a Windows native adapter ([#1594](https://github.com/anis-marrouchi/agentx/issues/1594)) ([#1603](https://github.com/anis-marrouchi/agentx/issues/1603)) ([d21adb5](https://github.com/anis-marrouchi/agentx/commit/d21adb5b0cdd7b5735e3fd897f0dbc6da1f7e756))
+* **computer-use:** report what computer use can do on this machine ([#1595](https://github.com/anis-marrouchi/agentx/issues/1595) groundwork) ([#1597](https://github.com/anis-marrouchi/agentx/issues/1597)) ([9dd618c](https://github.com/anis-marrouchi/agentx/commit/9dd618c825d8b287e8117d4a842c121f97fdde55))
+* **hub:** /admin redirects to the Hub's Settings ([#1447](https://github.com/anis-marrouchi/agentx/issues/1447)) ([#1619](https://github.com/anis-marrouchi/agentx/issues/1619)) ([fa114fe](https://github.com/anis-marrouchi/agentx/commit/fa114fe8b65f3b942a4533740b4a56d5ae23314d))
+* **hub:** /approvals redirects to Needs you; close or hand off from a post ([#1440](https://github.com/anis-marrouchi/agentx/issues/1440)) ([#1599](https://github.com/anis-marrouchi/agentx/issues/1599)) ([0fab7bb](https://github.com/anis-marrouchi/agentx/commit/0fab7bb394509e9f78f4dc493691aa6154f0b5af))
+* **hub:** Settings phase 3: Mesh, Business, Boards, Actions, Tokens, Advanced, approvals ([#1428](https://github.com/anis-marrouchi/agentx/issues/1428)) ([#1589](https://github.com/anis-marrouchi/agentx/issues/1589)) ([d5ab731](https://github.com/anis-marrouchi/agentx/commit/d5ab7313515d0700ca0b0c19c3c917e91f0667c3))
+* **hub:** WhatsApp and Inbox in Settings on the Hub ([#1428](https://github.com/anis-marrouchi/agentx/issues/1428)) ([#1588](https://github.com/anis-marrouchi/agentx/issues/1588)) ([eb65e20](https://github.com/anis-marrouchi/agentx/commit/eb65e202a4f00602f380c9a4862e59aa86c8d5b3))
+* **voice:** close, continue and a daemon-kept open-requests list ([#1455](https://github.com/anis-marrouchi/agentx/issues/1455)) ([#1590](https://github.com/anis-marrouchi/agentx/issues/1590)) ([efaba87](https://github.com/anis-marrouchi/agentx/commit/efaba87b4e8c83bbe9466dc4e1ddb0845df2acdb))
+* **voice:** follow-ups stay in their request; group the list by agent ([#1455](https://github.com/anis-marrouchi/agentx/issues/1455)) ([#1598](https://github.com/anis-marrouchi/agentx/issues/1598)) ([236ef4d](https://github.com/anis-marrouchi/agentx/commit/236ef4dbf6fa17152b290f20c3afb4666e1bf759))
+* **voice:** give the lesson cursor a way out: rest, Skip, × on the character ([#1591](https://github.com/anis-marrouchi/agentx/issues/1591)) ([#1606](https://github.com/anis-marrouchi/agentx/issues/1606)) ([f725ff6](https://github.com/anis-marrouchi/agentx/commit/f725ff6c39b3fdde740e52f7b3cee4358b481802))
+* **voice:** phone heard sync, phone session for Mac requests, sound picker and list states ([#1455](https://github.com/anis-marrouchi/agentx/issues/1455)) ([#1611](https://github.com/anis-marrouchi/agentx/issues/1611)) ([ad521ba](https://github.com/anis-marrouchi/agentx/commit/ad521ba022dc99e193f38e2baf38bc9c58212352))
+
+
+### Bug Fixes
+
+* **computer-use:** print the Computer use line while the daemon is stopped ([#1595](https://github.com/anis-marrouchi/agentx/issues/1595)) ([#1618](https://github.com/anis-marrouchi/agentx/issues/1618)) ([ad022d7](https://github.com/anis-marrouchi/agentx/commit/ad022d79069635ece2c4a49fb8560ff1bf38c6b5))
+* **dashboard:** give the drawer pages the owner's token, say "sign in" on 401 ([#1613](https://github.com/anis-marrouchi/agentx/issues/1613)) ([91e601f](https://github.com/anis-marrouchi/agentx/commit/91e601f5c59d7106e6fecc29d4289ec367400fb1))
+* **dashboard:** keep the ask-an-agent proxy for the owner ([#1608](https://github.com/anis-marrouchi/agentx/issues/1608)) ([73d4ed4](https://github.com/anis-marrouchi/agentx/commit/73d4ed476a5abf1b700f7b6e4c10c2977820aabd))
+* **hub:** Done, Drop and Hand to send the comment box's words as they are at Confirm ([#1440](https://github.com/anis-marrouchi/agentx/issues/1440)) ([#1604](https://github.com/anis-marrouchi/agentx/issues/1604)) ([8601ee4](https://github.com/anis-marrouchi/agentx/commit/8601ee48733cf401132481054f927330fb399111))
+* **notify:** Windows words in the helper status; `--` values in the helper contract ([#1594](https://github.com/anis-marrouchi/agentx/issues/1594)) ([#1617](https://github.com/anis-marrouchi/agentx/issues/1617)) ([c9d278a](https://github.com/anis-marrouchi/agentx/commit/c9d278a615a39fad4e50d04c656b15f7265f8869))
+* **voice:** close the four follow-ups from the [#1606](https://github.com/anis-marrouchi/agentx/issues/1606) review ([#1615](https://github.com/anis-marrouchi/agentx/issues/1615)) ([e9ffa02](https://github.com/anis-marrouchi/agentx/commit/e9ffa02b3ae2d7cd4d28266722903669e78be361))
+* **voice:** keep a follow-up when the daemon drops the first words ([#1455](https://github.com/anis-marrouchi/agentx/issues/1455)) ([#1601](https://github.com/anis-marrouchi/agentx/issues/1601)) ([8dae56f](https://github.com/anis-marrouchi/agentx/commit/8dae56f41bf0c900d1f869c52a18a6e89ed252e3))
+* **voice:** settle the request row when /ask throws ([#1455](https://github.com/anis-marrouchi/agentx/issues/1455)) ([#1593](https://github.com/anis-marrouchi/agentx/issues/1593)) ([22aad47](https://github.com/anis-marrouchi/agentx/commit/22aad476852004ab86febdda74e49b25c0948387))
+* **voice:** skip wrapper-script ffmpeg when setting the login item PATH ([#1584](https://github.com/anis-marrouchi/agentx/issues/1584)) ([19156d6](https://github.com/anis-marrouchi/agentx/commit/19156d66018ba3d1dff192589cf1905c934f17e7))
+
 ## [0.193.0](https://github.com/anis-marrouchi/agentx/compare/v0.192.0...v0.193.0) (2026-10-30)
 
 
