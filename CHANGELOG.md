@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.196.0](https://github.com/anis-marrouchi/agentx/compare/v0.195.0...v0.196.0) (2026-10-31)
+
+
+### Features
+
+* **hub:** chat panel in the side column, option A ([#1528](https://github.com/anis-marrouchi/agentx/issues/1528)) ([#1633](https://github.com/anis-marrouchi/agentx/issues/1633)) ([475f55e](https://github.com/anis-marrouchi/agentx/commit/475f55e9147e79e05ca1746b933645ebc63dd59e))
+
+
+### Bug Fixes
+
+* **hub:** chat panel review follow-ups from [#1633](https://github.com/anis-marrouchi/agentx/issues/1633) ([#1528](https://github.com/anis-marrouchi/agentx/issues/1528)) ([#1635](https://github.com/anis-marrouchi/agentx/issues/1635)) ([8a2dbcf](https://github.com/anis-marrouchi/agentx/commit/8a2dbcf2c3929ac400ae21c76e962f6cd7ceaf0a))
+
 ## [0.195.0](https://github.com/anis-marrouchi/agentx/compare/v0.194.0...v0.195.0) (2026-10-31)
 
 
