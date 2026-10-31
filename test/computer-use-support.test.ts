@@ -25,7 +25,8 @@ describe("computerUseSupport", () => {
   it("Linux on X11 could do everything once ported", () => {
     const s = computerUseSupport("linux", { XDG_SESSION_TYPE: "x11" })
     expect(s).toMatchObject({ helper: false, read: true, act: "full", overlay: true })
-    expect(supportLine(s)).toMatch(/not on Linux yet.*X11 session/)
+    expect(supportLine(s)).toMatch(/not on Linux yet.*X11 session: it allows reading the screen, pressing controls, moving the pointer and drawing over other apps/)
+    expect(supportLine(s)).not.toMatch(/will/)
   })
   it("Linux on Wayland: read and accessibility actions, no overlay, and says so", () => {
     const s = computerUseSupport("linux", { XDG_SESSION_TYPE: "wayland" })

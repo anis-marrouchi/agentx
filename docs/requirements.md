@@ -228,18 +228,18 @@ Some features hand a small, fixed-choice question to a fast "decision" model ins
 
 ### Computer use on Linux and Windows
 
-Computer use runs on macOS only today. A Windows version and an Ubuntu version are planned. On Linux, what a future version can do depends on the **display session**: the part of the desktop that draws windows. Ubuntu offers two at the login screen, Wayland (the default) and Xorg, also called X11.
+Computer use runs on macOS only today. A Windows version and an Ubuntu version are planned. On Linux, what is allowed depends on the **display session**: the part of the desktop that draws windows. Ubuntu offers two at the login screen, Wayland (the default) and Xorg, also called X11.
 
-| Session | Read the screen | Press controls | Move the pointer and show the AgentX cursor |
+| Session | Read the screen | Press controls | Move the pointer and draw over other apps |
 |---|---|---|---|
 | X11 ("Ubuntu on Xorg") | Yes | Yes | Yes |
-| Wayland (Ubuntu's default) | Yes | Yes, through accessibility only | No, Wayland does not allow it |
+| Wayland (Ubuntu's default) | Yes | Yes, through accessibility only | No |
 | No desktop (a server or SSH shell) | No | No | No |
 
 To see what your machine allows:
 
 1. **Terminal:** open a terminal inside your desktop session, not over SSH.
-2. **Terminal:** run `agentx daemon status`.
+2. **Terminal:** run `agentx daemon status` with the daemon running. The line does not print while the daemon is stopped.
 3. Read the **Computer use** line. On a Mac it says `available (AgentX Helper)`. On Linux it names your session and what that session allows.
 
 `agentx daemon status --json` gives the same answer under `computerUse`.
@@ -297,7 +297,6 @@ There is no measured universal RAM or disk minimum for AgentX yet. Local speech 
 - **`docker version` shows no server:** Docker Desktop isn't running. Start it and try again.
 - **`node --version` is below `v22.19` or above `v26`:** install Node.js 22 from [nodejs.org](https://nodejs.org/en/download). AgentX doesn't run on other versions: every `agentx` command stops with `AgentX needs Node.js 22.19 or newer, up to 26`.
 - **Installing reports a native compilation error:** install the [node-gyp platform prerequisites](https://github.com/nodejs/node-gyp#installation), then install again.
-- **The Computer use line says Wayland and you want the AgentX cursor:** log out, click the gear icon on the login screen, pick **Ubuntu on Xorg**, and log in again.
 - **An app is missing from System Settings › Privacy & Security:** use the feature once so the app asks for access, then look again.
 - **`ffmpeg was not found` during `agentx desktop install`:** finish the FFmpeg step under local Whisper, then run the install again.
 - **Anything else:** run `agentx doctor` and follow [It's not answering](help/its-not-answering.md).

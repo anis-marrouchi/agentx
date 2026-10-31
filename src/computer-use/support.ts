@@ -67,7 +67,7 @@ export function supportLine(s: ComputerUseSupport): string {
   if (s.os === "windows") return "not on Windows yet (planned, #1594)"
   if (s.os !== "linux") return `not available on ${s.os}`
   const planned = "not on Linux yet (planned, #1595)"
-  if (s.session === "x11") return `${planned}. This is an X11 session: reading, acting and the cursor overlay will all work here`
+  if (s.session === "x11") return `${planned}. This is an X11 session: it allows reading the screen, pressing controls, moving the pointer and drawing over other apps`
   if (s.session === "wayland")
     return `${planned}. This is a Wayland session: it lets apps read the screen and press controls through accessibility, but blocks moving the pointer and drawing over other apps`
   return `${planned}. No desktop session in this shell, so there is no screen to read`
