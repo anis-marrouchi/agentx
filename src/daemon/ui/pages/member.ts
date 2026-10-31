@@ -132,7 +132,7 @@ ${bar("Connecting…", `
 }
 
 /** Shown with 401 when /member is opened without a valid key. */
-export function renderMemberLockedPage(): string {
+export function renderMemberLockedPage(signIn = false): string {
   return `<!doctype html>
 <html lang="en">
 <head>${head("Pair this machine · AgentX")}<style>${LOCKED_CSS}</style></head>
@@ -154,9 +154,53 @@ ${bar("This machine is not paired yet")}
       <p id="pair-msg" class="pair-msg" role="status" aria-live="polite"></p>
     </form>
     <p class="help">No code? Ask the person who invited you for one. A code works once, for 10 minutes.</p>
+    ${signIn ? `<p class="help">Or <a href="/member/signin">sign in with your email</a>.</p>` : ""}
   </div>
 </main>
 <script>${injectFns({ formatPairInput })}${LOCKED_SCRIPT}</script>
+</body>
+</html>`
+}
+
+/** /member/signin (#1478): ask for a link by email, or, opened from the
+ *  link (the code after #), name this machine and press Sign in. Opening
+ *  the link spends nothing; only the button does. */
+export function renderMemberSignInPage(enabled: boolean): string {
+  const body = !enabled
+    ? `<h2>Sign in with your email</h2>
+    <p>Signing in by email is not set up here. Ask the person who invited you for a pairing code, and <a href="/member">pair this machine</a>.</p>`
+    : `<div id="ask">
+      <h2>Sign in with your email</h2>
+      <p>Type the address the owner has for you. If it may sign in here, a link comes by mail.</p>
+      <form id="ask-form" class="pair-form" novalidate>
+        <label for="email">Your email address</label>
+        <input id="email" name="email" type="email" maxlength="254" autocomplete="email" inputmode="email" required>
+        <button type="submit" id="ask-btn">Send me a link</button>
+        <p id="ask-msg" class="pair-msg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+    <div id="spend" hidden>
+      <h2>Sign in</h2>
+      <p>Give this machine a name. The owner approves each new machine once, then your page opens.</p>
+      <form id="spend-form" class="pair-form" novalidate>
+        <label for="machine">This machine's name</label>
+        <input id="machine" name="machine" type="text" maxlength="60" placeholder="Work laptop" autocomplete="off" required>
+        <button type="submit" id="spend-btn">Sign in</button>
+        <p id="spend-msg" class="pair-msg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+    <p class="help">Have a pairing code instead? <a href="/member">Pair this machine</a>.</p>`
+  return `<!doctype html>
+<html lang="en">
+<head>${head("Sign in · AgentX")}<style>${LOCKED_CSS}</style></head>
+<body>
+${bar("Sign in")}
+<main class="narrow">
+  <div class="card">
+    ${body}
+  </div>
+</main>
+${enabled ? `<script>${SIGNIN_SCRIPT}</script>` : ""}
 </body>
 </html>`
 }
@@ -255,6 +299,53 @@ const LOCKED_SCRIPT = `
       say(r.body.error || 'That code did not work.', true);
     }).catch(function () { busy = false; btn.disabled = false; say('No connection. Check the private network and try again.', true); });
   });
+})();
+`
+
+const SIGNIN_SCRIPT = `
+(function () {
+  var code = location.hash.slice(1);
+  if (code) { try { history.replaceState(null, '', '/member/signin'); } catch (x) {} }
+  function post(path, body) {
+    return fetch(path, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
+    });
+  }
+  function wire(formId, btnId, msgId, send) {
+    var form = document.getElementById(formId), btn = document.getElementById(btnId), msg = document.getElementById(msgId);
+    function say(text, bad) { msg.textContent = text; msg.className = bad ? 'pair-msg bad' : 'pair-msg'; }
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      if (btn.disabled) return;
+      var p = send(say);
+      if (!p) return;
+      btn.disabled = true; say('One moment…', false);
+      p.then(function (r) {
+        btn.disabled = false;
+        if (r.status === 200) { say(r.body.message || 'Done.', false); if (r.body.state) location.replace('/member'); return; }
+        say(r.body.error || 'That did not work. Try again.', true);
+      }).catch(function () { btn.disabled = false; say('No connection. Check the network and try again.', true); });
+    });
+  }
+  if (code) {
+    document.getElementById('ask').hidden = true;
+    document.getElementById('spend').hidden = false;
+    wire('spend-form', 'spend-btn', 'spend-msg', function (say) {
+      var name = document.getElementById('machine').value.replace(/ +/g, ' ').trim();
+      if (!name) { say('Give this machine a name.', true); return null; }
+      return post('/api/member/signin', { code: code, machine: name });
+    });
+  } else {
+    wire('ask-form', 'ask-btn', 'ask-msg', function (say) {
+      var email = document.getElementById('email').value.trim();
+      if (email.indexOf('@') < 1) { say('Type your email address.', true); return null; }
+      return post('/api/member/signin-link', { email: email });
+    });
+  }
 })();
 `
 

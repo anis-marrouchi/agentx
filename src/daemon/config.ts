@@ -1934,6 +1934,12 @@ export const wallConfigSchema = z.object({
       project: z.string().regex(/^[\w.-]+(?:\/[\w.-]+)+$/, "owner/repo or group/project"),
     })).min(1).max(10),
   }).optional(),
+  /** Signing in with a link sent by email (#1478). Needs `mail.sender` too. */
+  signIn: z.object({
+    /** The fixed address the mailed links start with, never the one a request
+     *  came in on, e.g. https://studio.example-tailnet.ts.net */
+    origin: z.string().regex(/^https:\/\/[^/\s]+$/, "an https origin, without a path"),
+  }).optional(),
 }).default({})
 
 export const daemonConfigSchema = z.object({

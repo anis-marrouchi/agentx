@@ -7,6 +7,7 @@ import { RejectLog, credentialState, rejectFields } from "./app-auth-log"
 import { appIconPng } from "./app-icon"
 import { MemberStore } from "@/members/store"
 import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
+import { SendLimiter, SignInLinkStore, askSignInLink, signInWithLink, type SignInDeps, type SignInSetup } from "@/members/signin"
 import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor, type PersonWork, type SentItem, type WorkItem } from "@/members/work"
 import { agentIdsFor, agentsOf, type AgentCard } from "@/members/agents"
@@ -17,6 +18,7 @@ import {
   renderMemberLockedPage,
   renderMemberManifest,
   renderMemberPage,
+  renderMemberSignInPage,
   renderMemberWaitingPage,
 } from "./ui/pages/member"
 import { CLIENT_MANIFEST_PATH, renderClientManifest, renderClientPage } from "./ui/pages/client"
@@ -53,9 +55,17 @@ export interface MemberRouteCtx {
   rejectLog?: RejectLog
   log?: (line: string) => void
   now?: () => number
+  /** Signing in by email (#1478): null while it is not set up. */
+  signInSetup?: () => SignInSetup | null
+  signInLinks?: SignInLinkStore
+  signInPerAddress?: SendLimiter
+  signInPerClient?: SendLimiter
+  sendMail?: SignInDeps["send"]
 }
 
 const defaultPairLimiter = new PairAttemptLimiter()
+const defaultPerAddress = new SendLimiter(5)
+const defaultPerClient = new SendLimiter(20)
 const asMember = (line: string) => line.replace(/^\[app\]/, "[member]")
 const defaultRejectLog = new RejectLog((line) => console.log(asMember(line)))
 /** One reject log per log sink, so its once-a-minute rule spans requests. */
@@ -115,6 +125,23 @@ export async function handleMemberRequest(
     return sendJson(res, result.status, result.body)
   }
 
+  // Signing in with a link sent by email (#1478, members/signin.ts).
+  const signIn: SignInDeps = {
+    ...deps, links: ctx.signInLinks ?? new SignInLinkStore(ctx.root), setup: ctx.signInSetup ?? (() => null),
+    perAddress: ctx.signInPerAddress ?? defaultPerAddress, perClient: ctx.signInPerClient ?? defaultPerClient, send: ctx.sendMail,
+  }
+  if (method === "GET" && path === "/member/signin") return send(res, 200, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup()))
+  if (method === "POST" && path === "/api/member/signin-link") {
+    const result = await askSignInLink(req, signIn)
+    return sendJson(res, result.status, result.body)
+  }
+  if (method === "POST" && path === "/api/member/signin") {
+    const result = await signInWithLink(req, signIn)
+    if (result.status === 200) res.setHeader("Set-Cookie", sessionCookie(result.token))
+    if (result.status === 429) res.setHeader("Retry-After", String(result.retryAfter))
+    return sendJson(res, result.status, result.body)
+  }
+
   const access = memberAccess(memberToken(req), deps, clientAddress(req))
   if (!access.ok) {
     if (access.status === 401) {
@@ -123,7 +150,7 @@ export async function handleMemberRequest(
         path.slice(0, 120),
         rejectFields(req, credentialState(cookie(req, MEMBER_COOKIE), tokens), sent ? credentialState(sent, tokens) : null),
       )
-      if (path === "/member") return send(res, 401, "text/html; charset=utf-8", renderMemberLockedPage())
+      if (path === "/member") return send(res, 401, "text/html; charset=utf-8", renderMemberLockedPage(!!signIn.setup()))
       return sendJson(res, 401, { error: access.error, hint: "ask the owner to run: agentx people invite <you>" })
     }
     // Paired, waiting for the owner. 202 on the page: the service worker

@@ -90,6 +90,24 @@ The teammate follows [Join My work](./join-my-work.md), which walks them through
 2. Answer **Yes** if the teammate told you they just paired. **No** ends that key at once; a card nobody answers is treated as no after three days.
 3. **Their browser:** the waiting page turns into **My work** by itself.
 
+## Or let them sign in with their email
+
+Instead of a pairing code, a teammate or a client can ask for a link by mail. The link leads to the same place: the browser becomes one of their machines, you approve it on the same card, and it shows under their machines with **End access**.
+
+1. **Set it up once.** Set [`mail.sender`](../reference/config-operations.md#mail-sender) and `wall.signIn.origin` in `agentx.json`. The origin is the address people open, for example `"wall": { "signIn": { "origin": "https://your-mac.tailnet-name.ts.net" } }`. Every link starts with it, whatever address a request came in on. The page lives under `/member`, so [serving the member page](#serve-only-the-member-page) is all the network needs.
+2. **Give the person their address.** Run `agentx people link sara email:sara@example.com`. Only a `member` or a `client` can sign in this way. The owner keeps the dashboard token, and a guest gets no link.
+3. **Their browser:** they open `https://your-mac.tailnet-name.ts.net/member`, select **sign in with your email**, type their address and select **Send me a link**. The page gives the same answer for any address, so nobody can use it to find out who is on your list.
+
+   ![The sign-in page: an email address and a Send me a link button](/screenshots/members/signin-ask.png)
+
+4. **Their mail:** they open the link, give the machine a name and select **Sign in**. Opening the link spends nothing, so a mail filter that checks links does not use it up. The page then says **Waiting for the owner**.
+
+   ![The page the link opens: a name for this machine and a Sign in button](/screenshots/members/signin-link.png)
+
+5. **You:** answer the card as in [Approve the machine](#approve-the-machine). The card says the person signed in with the link mailed to them.
+
+A link works once, for 15 minutes, and a new one replaces the one before. An address gets at most 5 links an hour, and one network address can ask 20 times an hour. Only the link's hash is kept, in `.agentx/signin-links.json`. If you change or remove the person's `email:` address, a link already sent stops working.
+
 ## My work
 
 The page shows, for that person only:

@@ -203,21 +203,40 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
     return { status: 401, body: { error: MEMBER_CODE_FAILED } }
   }
   deps.limiter.succeed(client)
-  const { rec, personId } = verified
+  const begun = await startMachine(req, deps, verified.rec, verified.personId, machine, "pairing")
+  return begun.ok
+    ? { status: 200, body: { person: verified.personId, name: begun.name, state: "pending" }, token: redeemed.token }
+    : { status: begun.status, body: { error: begun.error } }
+}
+
+export type StartResult =
+  | { ok: true; name: string }
+  | { ok: false; status: 403 | 503; error: string }
+
+/** A new machine holds `rec`, a key for `personId`: check the person and the
+ *  network's word, then raise the owner's card and hold the machine until it
+ *  is answered. On a refusal the key is revoked. Shared by the pairing code
+ *  and the email link (#1478); `how` names the road in the log. */
+export async function startMachine(
+  req: ProxiedRequest, deps: MemberDeps, rec: TokenRecord, personId: string, machine: string, how: "pairing" | "email link",
+): Promise<StartResult> {
+  const now = deps.now ?? Date.now
+  const log = deps.log ?? ((line: string) => console.log(line))
+  const client = clientAddress(req)
   const person = deps.people().find((p) => p.id === personId)
   if (!person) {
     deps.tokens.revoke(rec.id)
     deps.members.log({ person: personId, device: rec.id, event: "refused", address: client, detail: "person no longer listed" })
-    log(`[member] pair-code for ${personId} refused from ${client}: person no longer listed`)
-    return { status: 403, body: { error: MEMBER_CODE_FAILED } }
+    log(`[member] ${how === "pairing" ? "pair-code" : how} for ${personId} refused from ${client}: person no longer listed`)
+    return { ok: false, status: 403, error: MEMBER_CODE_FAILED }
   }
   const login = networkLogin(req)
   const expected = networkIdentities(person)
   if (expected.length && (!login || !expected.includes(login))) {
     deps.tokens.revoke(rec.id)
     deps.members.log({ person: personId, device: rec.id, event: "refused", address: client, detail: `network login ${login ?? "missing"}; expected ${expected.join(" or ")}` })
-    log(`[member] ${personId}: pairing from ${client} refused: the network says "${login ?? "nobody"}", expected ${expected.join(" or ")}`)
-    return { status: 403, body: { error: NETWORK_MISMATCH } }
+    log(`[member] ${personId}: ${how} from ${client} refused: the network says "${login ?? "nobody"}", expected ${expected.join(" or ")}`)
+    return { ok: false, status: 403, error: NETWORK_MISMATCH }
   }
   const name = machine || "Unnamed machine"
   // Cut so the card's 300-character question always fits.
@@ -225,23 +244,25 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
   const card = createCard(deps.root, {
     title: `New machine for ${who}`,
     ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Machine name, as typed there: "${name}". Let it see ${who}'s own work?`,
-    recommend: `Yes if ${who} told you they just paired this machine. No if you did not expect it.`,
+    recommend: how === "pairing"
+      ? `Yes if ${who} told you they just paired this machine. No if you did not expect it.`
+      : `Signed in with the link mailed to ${who}. Yes if you expected it. No if you did not.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,
   }, { now: now() })
   if (!card.ok) {
     deps.tokens.revoke(rec.id)
     deps.members.log({ person: personId, device: rec.id, event: "refused", address: client, detail: card.error })
-    log(`[member] ${personId}: pairing from ${client} refused: ${card.error}`)
-    return { status: 503, body: { error: TOO_MANY_WAITING } }
+    log(`[member] ${personId}: ${how} from ${client} refused: ${card.error}`)
+    return { ok: false, status: 503, error: TOO_MANY_WAITING }
   }
   deps.members.add({
     tokenId: rec.id, personId, name, state: "pending", cardId: card.card.id,
     address: client, ...(login ? { network: login } : {}), createdAt: new Date(now()).toISOString(),
   })
-  deps.members.log({ person: personId, device: rec.id, event: "paired", address: client, detail: name })
-  log(`[member] ${personId} paired "${name}" from ${client}; waiting for the owner (card ${card.card.id})`)
-  return { status: 200, body: { person: personId, name, state: "pending" }, token: redeemed.token }
+  deps.members.log({ person: personId, device: rec.id, event: "paired", address: client, detail: how === "pairing" ? name : `${name} (${how})` })
+  log(`[member] ${personId} ${how === "pairing" ? "paired" : `signed in by ${how} on`} "${name}" from ${client}; waiting for the owner (card ${card.card.id})`)
+  return { ok: true, name }
 }
 
 export type AccessResult =
