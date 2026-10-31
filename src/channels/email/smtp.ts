@@ -43,6 +43,12 @@ export interface OutgoingMail {
 export async function sendMail(acc: EmailAccountConfig, fromName: string, mail: OutgoingMail, env: NodeJS.ProcessEnv = process.env): Promise<string> {
   const { smtp } = mailServers(acc, env)
   if (!smtp.password) throw new Error(`no SMTP password for ${acc.address}: set it in .env`)
+  return smtpSend(smtp, { name: fromName, address: acc.address }, mail, { "Auto-Submitted": "auto-replied" })
+}
+
+/** One mail through one SMTP server: the send that agents' mailboxes and the
+ *  system sender (src/mail/sender.ts) share. Returns its Message-ID. */
+export async function smtpSend(smtp: MailServer, from: { name: string; address: string }, mail: OutgoingMail, headers: Record<string, string>): Promise<string> {
   // Loaded on first send: the dashboard and the CLI import this file for the inbox.
   const { default: nodemailer } = await import("nodemailer")
   const transport = nodemailer.createTransport({
@@ -56,13 +62,13 @@ export async function sendMail(acc: EmailAccountConfig, fromName: string, mail: 
   })
   try {
     const info = await transport.sendMail({
-      from: { name: fromName, address: acc.address },
+      from,
       to: mail.toName ? { name: mail.toName, address: mail.to } : mail.to,
       subject: mail.subject,
       text: mail.text,
       ...(mail.inReplyTo ? { inReplyTo: mail.inReplyTo } : {}),
       ...(mail.references ? { references: mail.references } : {}),
-      headers: { "Auto-Submitted": "auto-replied" },
+      headers,
     })
     return info.messageId
   } finally {

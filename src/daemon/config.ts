@@ -521,6 +521,25 @@ export const emailAccountSchema = z.object({
 
 export type EmailAccountConfig = z.infer<typeof emailAccountSchema>
 
+/** The one sender for mail AgentX itself sends, such as sign-in links (#1478).
+ *  Not an agent's mailbox: it only sends. Any provider that takes SMTP. */
+export const mailSenderSchema = z.object({
+  kind: z.literal("smtp"),
+  /** The address mail comes from, on the provider's sending domain. */
+  from: z.string().email(),
+  /** Display name. Default: "AgentX". */
+  name: z.string().min(1).default("AgentX"),
+  host: z.string().min(1),
+  /** 587 with `secure: false` (STARTTLS), or 465 with `secure: true`. */
+  port: z.number().int().min(1).max(65535).default(587),
+  secure: z.boolean().default(false),
+  /** `${ENV_VAR}` only: a literal value is refused when the config loads. */
+  user: z.string().min(1),
+  password: z.string().min(1),
+})
+
+export type MailSenderConfig = z.infer<typeof mailSenderSchema>
+
 /** An agent watching the phone camera (#325 phase 2, src/camera/watch.ts). */
 export const cameraBotSchema = z.object({
   /** Seconds between frames the agent gets by itself. 0: only when asked
@@ -2064,6 +2083,10 @@ export const daemonConfigSchema = z.object({
   /** Linear and Jira issues as work for agents and as review criteria (#1292). */
   trackers: trackersConfigSchema,
   approvals: approvalsConfigSchema,
+  /** Mail AgentX sends itself (#1478). Unset: it sends none. */
+  mail: z.object({
+    sender: mailSenderSchema.optional(),
+  }).default({}),
   /** Quality gates for agent-written changes (#987). Each is off by default. */
   quality: z.object({
     /** Spec-first tests (#992): for an issue that names a pilot path and
@@ -2939,6 +2962,9 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Invalid JSON in ${foundPath}: ${e.message}`)
   }
 
+  const literal = literalSecretProblems(parsed)
+  if (literal.length) throw new Error(`Config validation failed (${foundPath}):\n${literal.map((p) => `  ${p}`).join("\n")}`)
+
   // Expand environment variables
   const expanded = expandEnvVars(parsed)
 
@@ -2957,6 +2983,16 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
   if (crossed.length) throw new Error(`Config validation failed (${foundPath}):\n${crossed.map((p) => `  ${p}`).join("\n")}`)
 
   return withSummariesJob(withContributionJobs(result.data))
+}
+
+/** Secrets that must stay in .env, checked on agentx.json before `${VAR}`
+ *  expansion (#1478): a literal value would sit in a file that gets copied. */
+export function literalSecretProblems(raw: any): string[] {
+  const sender = raw?.mail?.sender
+  if (!sender || typeof sender !== "object") return []
+  return (["user", "password"] as const)
+    .filter((k) => sender[k] !== undefined && !/^\$\{\w+\}$/.test(String(sender[k])))
+    .map((k) => `mail.sender.${k}: put the value in .env and write "\${AGENTX_MAIL_${k.toUpperCase()}}" here`)
 }
 
 /** Rules that span two sections, checked after the schema. */

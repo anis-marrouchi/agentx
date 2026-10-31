@@ -2227,6 +2227,18 @@ How many labels so far, and what they say.
 |---|---|---|
 | `--json` | — | Print JSON instead of a table. |
 
+## mail (advanced)
+
+`agentx mail`: The mail AgentX sends itself, such as sign-in links. **Advanced.**
+
+### `agentx mail test <address>`
+
+Send one test mail to `<address>` through [`mail.sender`](./config-operations.md#mail-sender), to check the setup. It prints the sender's name, address and server, never the login or password.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Config path. |
+
 ## memory (advanced)
 
 `agentx memory`: Audit + edit agent-memory (per-agent experiential notes). **Advanced.**
