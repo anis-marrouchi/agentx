@@ -216,7 +216,7 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 | `notifications.destination.chatId` | string | required | The chat on that channel. |
 | `notifications.destination.accountId` | string | — | Which account on that channel. |
 | `notifications.channel` | string | — | Where `agentx notify` and messages held during Focus go when no channel is given, for example `push` or `ntfy`. Unset: `push` when `channels.push.enabled` is on, otherwise `ntfy`. |
-| `notifications.publicUrl` | string | — | The address your phone opens the Hub at, such as `https://my-mac.example.ts.net`. A tap on an ntfy notification opens its own link, else its request on the Hub, else the Hub. Not `localhost` or `127.0.0.1`. Unset: a notification without a link of its own opens nothing. |
+| `notifications.publicUrl` | string | — | The address your phone opens the Hub at, such as `https://my-mac.example.ts.net`. A tap on an ntfy notification opens its own link, else its request on the Hub, else the Hub. Not `localhost` or `127.0.0.1`. Unset: `calls.phone.appUrl`; if that is unset too, an ntfy notification without a link of its own opens nothing. |
 | `notifications.on` | object | `{}` | Which events send a message. |
 | `notifications.on.taskComplete` | boolean | `true` | A long task finished. |
 | `notifications.on.taskError` | boolean | `true` | A task failed. |
@@ -259,7 +259,7 @@ Agents ringing you for a live voice call on AgentX Voice and your phone. See [Ca
 | `calls.busy.title` | string | `"Call waiting: {agent}"` | Title of the call-waiting notice. `{agent}` becomes the caller's name. |
 | `calls.busy.notice` | string | `"AgentX Voice is busy. The call rings when it is free."` | Second line of that notice, under the caller's reason. |
 | `calls.phone.ring` | `"always"` or `"away"` | `"always"` | When an agent's voice call also rings your phone. `always`: together with AgentX Voice; the first to answer takes the call. `away`: only when AgentX Voice is not running. See [Answer on your phone](/dashboard/calls#answer-on-your-phone). |
-| `calls.phone.appUrl` | string (an origin) | unset | The address your phone opens the app at, such as `https://my-mac.example.ts.net`. With ntfy, a tap on the call opens it in the phone app. Not needed for Web Push. |
+| `calls.phone.appUrl` | string (an origin) | unset | The address your phone opens the app at, such as `https://my-mac.example.ts.net`. With ntfy, a tap on the call opens it in the phone app. Also used for what a tap on an ntfy notification opens when `notifications.publicUrl` is unset. Not needed for Web Push. |
 
 ## `approvals`
 

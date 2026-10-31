@@ -78,6 +78,11 @@ export interface PushAdapterDeps {
   log?: (...args: unknown[]) => void
 }
 
+/** A path on this node the app can open, such as /hub#post=r1. */
+function openPath(open: string | undefined): string | undefined {
+  return open && open.startsWith("/") && !open.startsWith("//") && open.length <= MAX_URL ? open : undefined
+}
+
 export function buildPushPayload(msg: OutgoingMessage, defaultTitle = "AgentX"): PushPayload {
   const split = splitTitle(msg.text || "")
   const actions = (msg.buttons ?? [])
@@ -87,7 +92,9 @@ export function buildPushPayload(msg: OutgoingMessage, defaultTitle = "AgentX"):
   const payload: PushPayload = {
     title: clip(split.title || defaultTitle, MAX_TITLE),
     body: split.body,
-    url: msg.ring?.state === "ringing" ? callAppPath(msg.ring.callId) : actions[0]?.url ?? DEFAULT_OPEN_URL,
+    // A tap opens the push's own link, else its request on the Hub
+    // (msg.open, a path on this node, #1655), else Alerts.
+    url: msg.ring?.state === "ringing" ? callAppPath(msg.ring.callId) : actions[0]?.url ?? (openPath(msg.open) ?? DEFAULT_OPEN_URL),
     actions,
     ...(msg.ring ? { call: { id: msg.ring.callId, state: msg.ring.state, urgent: msg.ring.urgent } } : {}),
   }
@@ -190,6 +197,8 @@ export interface PushRelayPayload {
   chatId: string
   text: string
   buttons?: OutgoingMessage["buttons"]
+  /** What a tap opens when there is no button: a path on the host (#1655). */
+  open?: string
   relayed: true
   /** The relaying node's name, so the host can find its phones. */
   origin?: string
@@ -225,6 +234,7 @@ export class PushRelayAdapter implements ChannelAdapter {
       chatId: msg.chatId || "default",
       text: msg.text,
       ...(msg.buttons?.length ? { buttons: msg.buttons } : {}),
+      ...(msg.open ? { open: msg.open } : {}),
       relayed: true,
       ...(this.origin ? { origin: this.origin } : {}),
     })

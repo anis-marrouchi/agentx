@@ -224,6 +224,7 @@ import { GUIDE_INSTRUCTION } from "@/voice/guide"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { callAppPath, type CallRing } from "@/channels/types"
+import { phonePublicUrl } from "@/notify/phone-link"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath } from "@/daemon/voice-requests-api"
@@ -3726,7 +3727,8 @@ export class AgentXDaemon {
             token: ntfyCfg.token,
             defaultPriority: ntfyCfg.defaultPriority,
             defaultTitle: ntfyCfg.defaultTitle,
-            publicUrl: this.config.notifications.publicUrl,
+            // Read on each send, so a reload of either setting applies (#1655).
+            publicUrl: () => phonePublicUrl(this.config),
           },
           this.log,
         )
@@ -9380,6 +9382,9 @@ export class AgentXDaemon {
         parseMode: typeof body.parseMode === "string" ? body.parseMode : undefined,
         replyTo: typeof body.replyTo === "string" ? body.replyTo : undefined,
         buttons: Array.isArray(body.buttons) ? body.buttons : undefined,
+        // What a relayed push opens when tapped: a path, such as a request
+        // on the Hub (#1655).
+        open: typeof body.open === "string" && body.open.startsWith("/") ? body.open : undefined,
         // Posts as this agent (GitLab/GitHub identity), like a live reply.
         agentId: typeof body.agentId === "string" ? body.agentId : undefined,
         // Set by a push relay, so a relay never forwards a relayed message.

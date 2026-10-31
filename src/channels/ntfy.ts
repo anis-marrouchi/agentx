@@ -31,8 +31,10 @@ export interface NtfyConfig {
   defaultPriority?: number
   /** Notification title. Per-message titles override it. */
   defaultTitle?: string
-  /** notifications.publicUrl: the origin a tap opens the Hub at (#1652). */
-  publicUrl?: string
+  /** The origin a tap opens the Hub at (#1652): notifications.publicUrl,
+   *  else calls.phone.appUrl. A function, so a config reload takes effect
+   *  without a restart (#1655). */
+  publicUrl?: string | (() => string | undefined)
   /** Test hook, not in the config schema: waits between attempts when a
    *  publish is safe to repeat. One attempt more than there are entries. */
   retryDelaysMs?: number[]
@@ -175,7 +177,8 @@ export class NtfyAdapter implements ChannelAdapter {
         .join("; ")
       headers["Actions"] = encodeHeader(actions)
     }
-    const click = clickUrl(buttons[0]?.url, msg.open, this.config.publicUrl)
+    const publicUrl = typeof this.config.publicUrl === "function" ? this.config.publicUrl() : this.config.publicUrl
+    const click = clickUrl(buttons[0]?.url, msg.open, publicUrl)
     if (click && !headers["Click"]) headers["Click"] = click
 
     const url = `${this.serverUrl()}/${encodeURIComponent(topic)}`
