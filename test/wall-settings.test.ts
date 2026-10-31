@@ -101,8 +101,8 @@ describe("Wall Settings: the shell (#1428)", () => {
       ["Machines", ["Health", "Diagnostics", "Screen capture", "Advanced"]],
     ])
     expect(html).toContain("3 agents, their pictures, models and on/off")
-    // Every section is on the Hub (#1428 phase 3): only Guests and People open their own pages.
-    expect(html.match(/is-classic/g)).toHaveLength(2)
+    // Every section is on the Hub (#1428 phase 3, Guests #1449): only People opens its own page.
+    expect(html.match(/is-classic/g)).toHaveLength(1)
     expect(html).not.toContain('href="/admin')
     // No section in the link: on a phone the list is the screen.
     expect(html).toContain('<div class="wst">')
@@ -121,8 +121,8 @@ describe("Wall Settings: the shell (#1428)", () => {
       expect(settingsHtml(w), sec).not.toContain('href="/admin')
     }
     await w.go("#page=settings&section=guests")
-    expect(settingsHtml(w)).toContain("Guests has its own page.")
-    expect(settingsHtml(w)).toContain('href="/guests"')
+    expect(settingsHtml(w)).toContain("<h2>Guests</h2>")
+    expect(settingsHtml(w)).not.toContain('href="/guests"')
     await w.go("#page=settings&section=people")
     expect(settingsHtml(w)).toContain("People has its own page on the Hub.")
     expect(settingsHtml(w)).toContain('href="#page=people"')

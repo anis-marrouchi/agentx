@@ -31,8 +31,9 @@
 // Schedules, and the approval and request settings that /approvals held
 // (wall-settings-approvals.client.ts: Approvals under Inbox, and Requests).
 // Diagnostics, the seven tabs of classic /admin/health, read-only
-// (wall-settings-diagnostics.client.ts, #1449).
-// Only Guests and People link out, to their own pages.
+// (wall-settings-diagnostics.client.ts, #1449). Guests, the grants classic
+// /guests showed, with Pause, Resume and End (wall-settings-guests.client.ts).
+// Only People links out, to its own Hub page.
 //
 // A section repaints when it opens or after a save, never on the Wall's
 // minute refresh, so a field being typed in stays as it is. A save that
@@ -49,6 +50,7 @@ import { WALL_SETTINGS_ACTIONS_CSS, WALL_SETTINGS_ACTIONS_SCRIPT } from "./wall-
 import { WALL_SETTINGS_MACHINE_SCRIPT } from "./wall-settings-machine.client"
 import { WALL_SETTINGS_DIAGNOSTICS_CSS, WALL_SETTINGS_DIAGNOSTICS_SCRIPT } from "./wall-settings-diagnostics.client"
 import { WALL_SETTINGS_APPROVALS_SCRIPT } from "./wall-settings-approvals.client"
+import { WALL_SETTINGS_GUESTS_SCRIPT } from "./wall-settings-guests.client"
 import { HUB_NAME } from "../hub-name"
 
 export const WALL_SETTINGS_SCRIPT = String.raw`
@@ -67,7 +69,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       ['inbox', 'Inbox', '', 'How the inbox reaches you, and approvals'], ['requests', 'Requests', '', 'Open requests and plans'],
     ]],
     ['Access', [
-      ['guests', 'Guests', '/guests', 'Who else may use your agents'], ['people', 'People', '#page=people', 'The people your agents work with'],
+      ['guests', 'Guests', '', 'Who else may use your agents'], ['people', 'People', '#page=people', 'The people your agents work with'],
       ['tokens', 'Tokens', '', 'Keys for apps and scripts'],
     ]],
     ['Machines', [
@@ -186,7 +188,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       // token is shown once, agentx.json and the approval settings fresh.
       // A live Logs tail (Diagnostics) stops when its section closes.
       stDgClose(S.st.dg);
-      S.st.newToken = null; S.st.adv = null; S.st.apv = null; S.st.req = null; S.st.bdEdit = ''; S.st.acEdit = ''; S.st.acRuns = null; S.st.wnList = null; S.st.dg = null;
+      S.st.newToken = null; S.st.adv = null; S.st.apv = null; S.st.req = null; S.st.bdEdit = ''; S.st.acEdit = ''; S.st.acRuns = null; S.st.wnList = null; S.st.dg = null; S.st.gu = null;
       // The draft of an agent's form stays across its tabs, not to another agent.
       if (S.st.draft && S.st.draft.agent !== S.st.agent) S.st.draft = null;
       if (S.st.files && S.st.files.agent !== S.st.agent) S.st.files = null;
@@ -281,6 +283,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (sec === 'screen') return stScreenHtml();
     if (sec === 'advanced') return stAdvancedHtml();
     if (sec === 'diagnostics') return stDiagnosticsHtml();
+    if (sec === 'guests') return stGuestsHtml();
     return S.st.agent ? stAgentHtml(S.st.agent) : stAgentsHtml();
   }
 
@@ -517,7 +520,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     var id = S.st.agent, a = stAgentOf(id);
     S.st.confirm = '';
     if (await stJobsConfirmed(key) || await stChannelsConfirmed(key) || await stWhatsAppConfirmed(key) ||
-      await stMeshConfirmed(key) || await stBizConfirmed(key) || await stActionsConfirmed(key)) return;
+      await stMeshConfirmed(key) || await stBizConfirmed(key) || await stActionsConfirmed(key) || await stGuestsConfirmed(key)) return;
     if (key === 'delete') {
       stPaint();
       stNote('delete', '', 'Deleting…');
@@ -696,6 +699,7 @@ ${WALL_SETTINGS_ACTIONS_SCRIPT}
 ${WALL_SETTINGS_MACHINE_SCRIPT}
 ${WALL_SETTINGS_DIAGNOSTICS_SCRIPT}
 ${WALL_SETTINGS_APPROVALS_SCRIPT}
+${WALL_SETTINGS_GUESTS_SCRIPT}
 `
 
 export const WALL_SETTINGS_CSS = `

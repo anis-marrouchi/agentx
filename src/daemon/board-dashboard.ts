@@ -39,7 +39,6 @@ import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH, hubRedirect } from "./ui/hub-name"
 import { renderOrgPage } from "./ui/pages/org"
 import { renderMeshPage } from "./ui/pages/mesh"
-import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { classicRedirect } from "./ui/classic-routes"
@@ -86,7 +85,7 @@ import { claimPost, projectOverview, wallProjects } from "./wall-projects"
 import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
-import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallSettingsTarget, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallGuestsTarget, wallSettingsTarget, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -509,20 +508,28 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
     return
   }
-  // Guest meshes (#380): the host's panel, with its data proxied to the
-  // daemon's /mesh/guests (loopback-trusted there, like the other panels).
+  // Guest meshes (#380): the grants are in the Hub's Settings › Guests
+  // (#1449), so the classic page's address lands there. Off-box with no
+  // session, sign in first, as /admin does. The data is proxied to the
+  // daemon's /mesh/guests (loopback-trusted there, like the other panels);
+  // the Hub's Pause, Resume and End come under the Wall's owner guard.
   if (method === "GET" && path === "/guests") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderGuestsPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    const to = classicRedirect(path, url.searchParams, ctx.config.dashboard.daemonUrl)!
+    if (!pageAllowed(req, res, ctx, to)) return
+    res.writeHead(301, { Location: to })
+    res.end()
     return
   }
-  if ((method === "GET" && path === "/api/guests") || (method === "POST" && /^\/api\/guests\/[^/]+\/(pause|resume|end|update)$/.test(path))) {
+  const guestsPath = wallGuestsTarget(method, path) ?? path
+  if ((method === "GET" && guestsPath === "/api/guests") || (method === "POST" && /^\/api\/guests\/[^/]+\/(pause|resume|end|update)$/.test(guestsPath))) {
+    // The proxy sends the dashboard's own token on, so only the owner may use it.
+    if (method === "GET" ? !isDashboardOwner(req, ctx) : !wallOwnerOk(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" }
       if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
       const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
       const body = method === "POST" ? await readJson(req).catch(() => ({})) : undefined
-      const r = await fetch(`${daemonUrl}${path.replace(/^\/api\/guests/, "/mesh/guests")}`, {
+      const r = await fetch(`${daemonUrl}${guestsPath.replace(/^\/api\/guests/, "/mesh/guests")}`, {
         method, headers, ...(body !== undefined ? { body: JSON.stringify(body ?? {}) } : {}),
       })
       sendJson(res, r.status, await r.json().catch(() => ({ error: `HTTP ${r.status}` })))

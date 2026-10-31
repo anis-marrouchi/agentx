@@ -58,6 +58,9 @@ describe("dashboard pages off-box (#1306)", () => {
     // /admin/health moved to Settings › Diagnostics (#1449): the same.
     const health = await fetch(base + "/admin/health", { headers: OFF, redirect: "manual" })
     expect(health.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/hub#page=settings&section=diagnostics"))
+    // /guests moved to Settings › Guests (#1449): the same.
+    const guests = await fetch(base + "/guests", { headers: OFF, redirect: "manual" })
+    expect(guests.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/hub#page=settings&section=guests"))
     // /people moved to the Wall (#1441): off-box it still signs in first.
     const people = await fetch(base + "/people", { headers: OFF, redirect: "manual" })
     expect(people.headers.get("location")).toBe("/login?next=%2Fpeople")
@@ -72,6 +75,20 @@ describe("dashboard pages off-box (#1306)", () => {
     expect((await fetch(`${base}/api/admin/people`, { headers: OFF })).status).toBe(401)
     const wrong = { ...OFF, Cookie: "ax_session=" + sessionValue("not-the-token") }
     expect((await fetch(`${base}/api/admin/state`, { headers: wrong })).status).toBe(401)
+  })
+
+  it("refuses off-box guest grant reads and changes without a token or session (#1449)", async () => {
+    const base = await start()
+    expect((await fetch(`${base}/api/guests`, { headers: OFF })).status).toBe(401)
+    for (const op of ["pause", "resume", "end", "update"]) {
+      expect((await fetch(`${base}/api/guests/g-1/${op}`, { method: "POST", headers: OFF })).status, op).toBe(401)
+    }
+    expect((await fetch(`${base}/api/admin/wall/settings/guests/g-1/end`, { method: "POST", headers: OFF })).status).toBe(401)
+    // Signed in, they reach the daemon proxy (unreachable here, so 502).
+    const cookie = ((await signIn(base, TOKEN)).headers.get("set-cookie") || "").split(";")[0]
+    const headers = { ...OFF, Cookie: cookie }
+    expect((await fetch(`${base}/api/guests`, { headers })).status).toBe(502)
+    expect((await fetch(`${base}/api/guests/g-1/end`, { method: "POST", headers })).status).toBe(502)
   })
 
   it("signs a browser in with the token: an HttpOnly, SameSite=Strict cookie that is not the token", async () => {
@@ -153,7 +170,7 @@ describe("dashboard pages off-box (#1306)", () => {
   // the token for them; off the box it never does.
   it("gives the drawer pages the token on this machine, never off the box", async () => {
     const base = await start()
-    for (const page of ["/mesh", "/monitor", "/workflows", "/admin/projects", "/guests"]) {
+    for (const page of ["/mesh", "/monitor", "/workflows", "/admin/projects"]) {
       const local = await (await fetch(base + page, { redirect: "manual" })).text()
       expect(local, page).toContain('id="ax-as-dock"')
       expect(local, page).toContain(`window.AX_LOCAL_TOKEN = "${TOKEN}"`)
