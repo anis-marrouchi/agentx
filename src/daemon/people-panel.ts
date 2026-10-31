@@ -3,6 +3,7 @@ import type Database from "better-sqlite3"
 import { TokenStore } from "./token-store"
 import { HUB_PATH } from "./ui/hub-name"
 import { MemberStore, type MemberDevice } from "@/members/store"
+import { PersonSessionStore } from "@/members/person-sessions"
 import { pendingAnswer, removeDevice } from "@/members/pairing"
 import { requestsOf, runsOf, type PersonRequest, type PersonRun } from "@/people/activity"
 import { IMPLICIT_OWNER, type Person } from "@/people/people"
@@ -20,6 +21,7 @@ import { IMPLICIT_OWNER, type Person } from "@/people/people"
 //   GET  /api/admin/people                                everyone, with machine counts
 //   GET  /api/admin/people/<id>                           one person: machines, requests, runs
 //   POST /api/admin/people/<id>/devices/<tokenId>/end     end one machine at once
+//   POST /api/admin/people/<id>/sessions/<sessionId>/end  end one browser sign-in at once (#1478)
 //
 // A teammate's `tailscale serve` paths forward /member and /api/member
 // only, and those belong to member-routes.ts, so none of this is under
@@ -34,6 +36,8 @@ export interface PeoplePanelDeps {
   /** The people list as agentx.json holds it now. */
   people: () => Person[]
   members: MemberStore
+  /** Browsers signed in as the person (ax_person, #1478). */
+  sessions: PersonSessionStore
   tokens?: TokenStore
   /** The install folder: pairing cards live under it. */
   root: string
@@ -131,7 +135,7 @@ export async function handlePeoplePanel(
     // A table that is not there yet reads as nothing asked, like `agentx people show`.
     try { if (db) requests = requestsOf(db, person.id) } catch { /* requests never turned on */ }
     try { if (db) runs = runsOf(db, person.id, 20) } catch { /* no runs recorded yet */ }
-    sendJson(res, 200, { person, devices: devicesOf(person.id).sort(byNewest), requests, runs, database: !!db })
+    sendJson(res, 200, { person, devices: devicesOf(person.id).sort(byNewest), sessions: deps.sessions.sessions(person.id).map(({ hash: _, ...s }) => s), requests, runs, database: !!db })
     return true
   }
 
@@ -143,6 +147,15 @@ export async function handlePeoplePanel(
     if (device.state === "removed") { sendJson(res, 409, { error: "this machine's access has already ended" }); return true }
     const removed = removeDevice({ tokens: deps.tokens ?? new TokenStore(), members: deps.members, now: deps.now }, tokenId, "removed by the owner (dashboard)")
     sendJson(res, 200, { ok: true, device: removed })
+    return true
+  }
+
+  const endSession = path.match(/^\/api\/admin\/people\/([a-z0-9][a-z0-9_-]{0,39})\/sessions\/([a-f0-9]{16})\/end$/)
+  if (method === "POST" && endSession) {
+    const ended = deps.sessions.end(endSession[1], endSession[2], "ended by the owner (dashboard)")
+    if (!ended) { sendJson(res, 404, { error: "no signed-in browser with this id for this person" }); return true }
+    const { hash: _, ...session } = ended
+    sendJson(res, 200, { ok: true, session })
     return true
   }
 
