@@ -69,7 +69,7 @@ This setting is for agents on the `claude-code` tier (see [`billing`](../referen
 
 ## Host: keep it in hand
 
-In the dashboard, open **Guest meshes** (`/guests`): every grant with its state, what it opens, how many turns the guest took, and the trail of what happened. **Pause** stops the guest at once and cancels its running turns; **Resume** lets it work again; **End** ends the grant for good.
+On the Hub, open **Settings** › **Guests** (the old `/guests` address opens it too): every grant with its state, what it opens, how many turns the guest took, and the trail of what happened. **Pause** stops the guest at once and cancels its running turns; **Resume** lets it work again; **End** asks once, then ends the grant for good. Only the owner can do these.
 
 ![The Guest meshes page with one active grant, its scope and the Pause and End buttons](/screenshots/guests/guests.png)
 

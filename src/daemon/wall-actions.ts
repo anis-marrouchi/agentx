@@ -125,6 +125,7 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 //   POST   /api/admin/wall/settings/config/raw                agentx.json itself
 //   POST   /api/admin/wall/settings/approvals/settings        approvals (approvals-panel.ts)
 //   POST   /api/admin/wall/settings/approvals/requests/settings  requests (requests-panel.ts)
+//   POST   /api/admin/wall/settings/guests/<id>/<pause|resume|end>  a guest grant (wallGuestsTarget)
 export const WALL_SETTINGS_PREFIX = `${WALL_ACTIONS_PREFIX}/settings`
 const WALL_SETTINGS_WRITES = new Set([
   "POST /org/hold", "POST /agents", "PATCH /agents", "DELETE /agents", "POST /agents/access",
@@ -154,6 +155,14 @@ const WALL_SETTINGS_WRITES = new Set([
 ])
 /** An agent's handovers, written from its Handovers tab (agent-panel.ts's id shape). */
 const WALL_SETTINGS_HANDOVERS = /^\/agent\/[a-z0-9][a-z0-9_-]*\/handovers$/
+
+/** Settings › Guests (#1449): POST …/settings/guests/<id>/<pause|resume|end>
+ *  stands for the classic /guests page's POST /api/guests/<id>/<op>, which the
+ *  dashboard forwards to the daemon's /mesh/guests. Returns that path, or null. */
+export function wallGuestsTarget(method: string, path: string): string | null {
+  const m = method === "POST" && path.match(/^\/api\/admin\/wall\/settings\/guests\/([^/]+)\/(pause|resume|end)$/)
+  return m ? `/api/guests/${m[1]}/${m[2]}` : null
+}
 
 /** The classic /api/admin path a Settings write stands for, or null when it
  *  is not one of them. */

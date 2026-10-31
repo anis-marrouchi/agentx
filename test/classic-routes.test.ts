@@ -193,6 +193,14 @@ describe("classic Task page redirect", () => {
       expect((await fetch(base + "/admin/health", { redirect: "manual" })).status).toBe(301)
     })
 
+    it("redirects /guests for good to Settings › Guests (#1449)", async () => {
+      const base = await start()
+      for (const path of ["/guests", "/guests?x=1"]) {
+        const r = await fetch(base + path, { redirect: "manual" })
+        expect([path, r.status, r.headers.get("location")]).toEqual([path, 301, "/hub#page=settings&section=guests"])
+      }
+    })
+
     it("still answers 400 without an agent", async () => {
       const base = await start()
       const r = await fetch(`${base}/tasks/t1`, { redirect: "manual" })
