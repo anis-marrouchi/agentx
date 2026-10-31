@@ -249,7 +249,8 @@ final class HistoryWindow: NSObject {
     let store = HistoryStore()
     private var window: NSWindow?
 
-    func show() {
+    /// `agent`: open on that agent's conversations; nil keeps the filter.
+    func show(agent: String? = nil) {
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -261,7 +262,7 @@ final class HistoryWindow: NSObject {
             window = w
         }
         store.agents = []
-        store.reload()
+        if let agent, store.agent != agent { store.agent = agent } else { store.reload() }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

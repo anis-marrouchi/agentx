@@ -174,6 +174,62 @@ found.sync([remote("rwait0001", "ops", "waiting")])
 let next = found.startNext(for: "ops", at: at(9))
 check(next != nil && found.request(next!)?.local == true, "a joined row waiting its turn is run by this app")
 
+// A follow-up spoken with a row picked continues that row: no new row.
+var follow = OpenRequests()
+let f1 = follow.add(agentID: "writer", question: "draft the summary", at: at(0))
+follow.answered(f1, at: at(30))
+follow.heard(f1)
+check(follow.follow(f1, with: "make it shorter", at: at(60)) == .ask, "a done row asks again at once")
+check(follow.requests.count == 1, "the follow-up adds no row")
+check(follow.request(f1)?.question == "make it shorter" && follow.request(f1)?.phase == .thinking
+      && follow.request(f1)?.heard == false && follow.request(f1)?.since == at(60),
+      "it thinks again with the new words, its new answer not heard")
+check(follow.follow(f1, with: "and add a title", at: at(70)) == .after, "a thinking row keeps the words for after")
+check(follow.follow(f1, with: "in French", at: at(71)) == .after && follow.request(f1)?.pending == "and add a title in French",
+      "a second follow-up while thinking joins the first")
+check(follow.takePending(f1, at: at(90)) && follow.request(f1)?.question == "and add a title in French"
+      && follow.request(f1)?.phase == .thinking && follow.request(f1)?.pending == nil,
+      "once the answer is back the kept words are asked")
+check(!follow.takePending(f1, at: at(91)), "nothing kept: the answer is the row's")
+follow.failed(f1, reason: "busy", at: at(100))
+let f2 = follow.add(agentID: "writer", question: "another thing", at: at(110))
+check(follow.follow(f1, with: "try again", at: at(120)) == .waits && follow.request(f1)?.phase == .waiting,
+      "a done row waits when its agent has another request out")
+check(follow.follow(f1, with: "please", at: at(121)) == .waits && follow.request(f1)?.question == "try again please",
+      "a waiting row takes the words into its question")
+check(follow.follow(999, with: "x", at: at(122)) == nil, "a row gone continues nothing")
+check(follow.request(f2)?.phase == .thinking, "the other request is untouched")
+
+// A row continued on another client: its new words, thinking, not heard.
+var elsewhere = OpenRequests()
+elsewhere.sync([remote("rcont0001", "ops", "answered", heard: true)])
+let theirs = OpenRequests.Remote(key: "rcont0001", agentID: "ops", question: "and the night before?", sentAt: at(0),
+                                 since: at(50), state: "thinking", heard: false, error: nil)
+elsewhere.sync([theirs])
+let cont = elsewhere.request(key: "rcont0001")
+check(cont?.question == "and the night before?" && cont?.phase == .thinking && cont?.heard == false,
+      "a row continued elsewhere shows its follow-up, thinking, not heard")
+
+// More than five rows: one row per agent.
+var grouping = OpenRequests()
+for i in 0..<OpenRequests.flatUpTo { grouping.add(agentID: i < 3 ? "writer" : "ops", question: "q\(i)", at: at(Double(i))) }
+check(!grouping.grouped, "five rows or fewer stay flat")
+let g6 = grouping.add(agentID: "writer", question: "q5", at: at(5))
+check(grouping.grouped, "a sixth row groups the list")
+let groups = grouping.groups(newestLast: true)
+check(groups.map(\.agentID) == ["ops", "writer"], "one group per agent, the newest activity last")
+check(groups[1].requests.count == 4 && groups[0].requests.count == 2, "each group holds its agent's rows")
+check(groups.allSatisfy { $0.id < 0 } && Set(groups.map(\.id)).count == 2, "group ids never clash with request ids")
+check(grouping.groups(newestLast: false).map(\.agentID) == ["writer", "ops"], "newest first when the list is below")
+check(grouping.rows(newestLast: true, agentID: "ops").map(\.agentID) == ["ops", "ops"], "opening an agent shows its rows")
+check(OpenRequests.groupState(groups[1]) == "Thinking", "a group says what it is doing")
+grouping.answered(g6, at: at(9))
+check(OpenRequests.groupState(grouping.groups(newestLast: true)[1]) == "1 new", "new answers come first")
+grouping.heard(g6)
+for r in grouping.requests where r.isOpen { grouping.answered(r.id, at: at(10)); grouping.heard(r.id) }
+check(OpenRequests.groupState(grouping.groups(newestLast: true)[0]) == "2 requests", "all heard: how many")
+check(OpenRequests.requestsCount(1) == "1 request", "one request, singular")
+
 if failures > 0 {
     print("\(failures) failed")
     exit(1)

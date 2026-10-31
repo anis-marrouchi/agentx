@@ -33,8 +33,8 @@ struct OpenRequests {
     struct Request: Equatable, Identifiable {
         let id: Int
         let agentID: String
-        /// The words as heard.
-        let question: String
+        /// The words as heard: the last ones asked, after a follow-up.
+        var question: String
         let sentAt: Date
         var phase: Phase
         /// When it started thinking, or when its answer came back.
@@ -47,6 +47,9 @@ struct OpenRequests {
         /// Run by this app: its /ask is ours, so the daemon's word on its
         /// state waits for that answer. A row found on the daemon is not.
         var local = true
+        /// A follow-up spoken while it was thinking: asked as soon as the
+        /// answer is back.
+        var pending: String? = nil
 
         /// An answer or a failure the owner has not seen yet.
         var isNew: Bool {
@@ -80,6 +83,57 @@ struct OpenRequests {
         requests.append(Request(id: id, agentID: agentID, question: question, sentAt: now,
                                 phase: busy ? .waiting : .thinking, since: now))
         return id
+    }
+
+    // MARK: Following up
+
+    /// What a follow-up does to its row.
+    enum Follow: Equatable {
+        /// Ask again now, with the new words.
+        case ask
+        /// Wait behind another request for the same agent.
+        case waits
+        /// Go once the answer it is thinking about is back.
+        case after
+    }
+
+    /// A follow-up spoken with this row picked: it continues the row; no
+    /// new row is added. A row done (answered or failed) asks again with
+    /// these words, not heard, or waits when its agent has another request
+    /// out. A row waiting its turn takes the words into the question not
+    /// asked yet. A row thinking keeps them for when its answer is back,
+    /// and that answer is not played (as when the owner talks over a turn).
+    /// Nil when the row is gone.
+    mutating func follow(_ id: Int, with words: String, at now: Date) -> Follow? {
+        guard let i = requests.firstIndex(where: { $0.id == id }) else { return nil }
+        switch requests[i].phase {
+        case .waiting:
+            requests[i].question += " " + words
+            return .waits
+        case .thinking:
+            requests[i].pending = requests[i].pending.map { $0 + " " + words } ?? words
+            return .after
+        case .answered, .failed:
+            let agent = requests[i].agentID
+            let busy = requests.contains { $0.id != id && $0.agentID == agent && $0.isOpen }
+            requests[i].question = words
+            requests[i].phase = busy ? .waiting : .thinking
+            requests[i].since = now
+            requests[i].heard = false
+            requests[i].local = true
+            return busy ? .waits : .ask
+        }
+    }
+
+    /// The answer is back on a row with a follow-up kept: the follow-up is
+    /// its question now and it thinks again. False when none was kept.
+    mutating func takePending(_ id: Int, at now: Date) -> Bool {
+        guard let i = requests.firstIndex(where: { $0.id == id }), let words = requests[i].pending else { return false }
+        requests[i].question = words
+        requests[i].pending = nil
+        requests[i].phase = .thinking
+        requests[i].since = now
+        return true
     }
 
     /// The answer came back.
@@ -182,7 +236,8 @@ struct OpenRequests {
         }
     }
 
-    /// Merge the daemon's open rows. A row heard elsewhere is heard here; a
+    /// Merge the daemon's open rows. A row heard elsewhere is heard here,
+    /// and one continued elsewhere has its new words and is not heard; a
     /// row the daemon no longer lists was closed elsewhere and leaves; a
     /// row only the daemon has (after the app restarted) joins. The state
     /// of a row this app is running is the app's until its /ask answers.
@@ -195,10 +250,14 @@ struct OpenRequests {
         for i in requests.indices {
             guard let key = requests[i].key, let theirs = byKey[key] else { continue }
             if theirs.heard { requests[i].heard = true }
-            if !requests[i].local && requests[i].phase != theirs.phase {
+            guard !requests[i].local else { continue }
+            if requests[i].phase != theirs.phase {
                 requests[i].phase = theirs.phase
                 requests[i].since = theirs.since
             }
+            // Continued on another client: its new words, not heard.
+            requests[i].question = theirs.question
+            requests[i].heard = theirs.heard
         }
         var joined: [Int] = []
         for theirs in remote where request(key: theirs.key) == nil {
@@ -249,9 +308,62 @@ struct OpenRequests {
     }
 
     /// The rows in the order drawn: by when each was sent, the newest next
-    /// to the pill. Rows never move when a state changes.
-    func rows(newestLast: Bool) -> [Request] {
-        newestLast ? requests : requests.reversed()
+    /// to the pill. Rows never move when a state changes. With `agentID`,
+    /// that agent's rows only.
+    func rows(newestLast: Bool, agentID: String? = nil) -> [Request] {
+        let mine = agentID.map { a in requests.filter { $0.agentID == a } } ?? requests
+        return newestLast ? mine : mine.reversed()
+    }
+
+    // MARK: Grouped by agent
+
+    /// Up to this many rows the list is flat; past it, one row per agent.
+    static let flatUpTo = 5
+
+    var grouped: Bool { requests.count > Self.flatUpTo }
+
+    /// One agent's rows, as one row of the grouped list.
+    struct Group: Equatable {
+        let agentID: String
+        /// Oldest first.
+        let requests: [Request]
+
+        /// Stable while any of its rows stays, and never a request's id:
+        /// the negative of its oldest row's.
+        var id: Int { -(requests.map(\.id).min() ?? 0) }
+        var newCount: Int { requests.filter(\.isNew).count }
+        var latest: Request { requests.max { $0.sentAt < $1.sentAt }! }
+    }
+
+    /// One group per agent, ordered by its newest row, the newest next to
+    /// the pill.
+    func groups(newestLast: Bool) -> [Group] {
+        var order: [String] = []
+        var byAgent: [String: [Request]] = [:]
+        for r in requests {
+            if byAgent[r.agentID] == nil { order.append(r.agentID) }
+            byAgent[r.agentID, default: []].append(r)
+        }
+        let groups = order.map { Group(agentID: $0, requests: byAgent[$0]!) }
+            .sorted { $0.latest.sentAt < $1.latest.sentAt }
+        return newestLast ? groups : groups.reversed()
+    }
+
+    /// A group's state, after the agent's name: what most needs the owner
+    /// first. "2 new", "Thinking", "Waiting its turn", else how many.
+    static func groupState(_ g: Group) -> String {
+        if g.newCount > 0 { return newBadge(g.newCount) }
+        if g.requests.contains(where: { $0.phase == .thinking }) { return "Thinking" }
+        if g.requests.contains(where: { $0.phase == .waiting }) { return "Waiting its turn" }
+        return requestsCount(g.requests.count)
+    }
+
+    /// "1 request", "4 requests".
+    static func requestsCount(_ n: Int) -> String { "\(n) request\(n == 1 ? "" : "s")" }
+
+    /// What VoiceOver reads for a group row.
+    static func groupVoiceOver(name: String, _ g: Group) -> String {
+        "\(name). \(requestsCount(g.requests.count)). \(groupState(g)). Last asked: \(flatLower(g.latest.question))."
     }
 
     // MARK: Words
@@ -330,6 +442,9 @@ struct OpenRequests {
 
     /// How long those lines stay before the pill goes back to its own.
     static let noteSeconds: TimeInterval = 4
+
+    /// The pill's line after a follow-up: it went into the picked row.
+    static let followNote = "Added to the same request"
 
     /// The pill's line once a row is picked: the next words go to its agent
     /// and continue that conversation.

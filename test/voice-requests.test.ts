@@ -188,6 +188,26 @@ describe("/voice/requests", () => {
     expect(d.store!.list().find((r) => r.id === keep.id)).toMatchObject({ state: "answered", heard: false })
   })
 
+  it("a follow-up continues its row: new words, thinking, not heard, no new row", () => {
+    const d = deps()
+    const r = d.store!.create("writer", "draft the summary", false, T0)
+    d.store!.settle(r.id, 200, answer, T0 + 1000)
+    d.store!.heard(r.id, T0 + 2000)
+    const reply = handleVoiceRequests(d, "POST", `/voice/requests/${r.id}/continue`, { question: " make it shorter " })
+    expect(reply.status).toBe(200)
+    expect((reply.body as any).request).toMatchObject({ id: r.id, question: "make it shorter", state: "thinking", heard: false })
+    expect(d.store!.reply(r.id)).toBeNull()
+    expect(d.store!.list().map((x) => x.id)).toEqual([r.id])
+    // Behind another request for the same agent, it waits.
+    handleVoiceRequests(d, "POST", `/voice/requests/${r.id}/continue`, { question: "later", waiting: true })
+    expect(d.store!.get(r.id)?.state).toBe("waiting")
+    // A closed row comes back with its follow-up.
+    d.store!.close(r.id)
+    handleVoiceRequests(d, "POST", `/voice/requests/${r.id}/continue`, { question: "again" })
+    expect(d.store!.get(r.id)).toMatchObject({ closed: false, state: "thinking" })
+    expect(handleVoiceRequests(d, "POST", `/voice/requests/${r.id}/continue`, {}).status).toBe(400)
+  })
+
   it("closes every heard row with one call, and refuses wrong methods", () => {
     const d = deps()
     expect(handleVoiceRequests(d, "POST", "/voice/requests/close-heard", {}).body).toEqual({ closed: 0 })
