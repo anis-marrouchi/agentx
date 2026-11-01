@@ -35,6 +35,7 @@ export type ReadResult =
   | { ok: false; status: number; error: string }
 
 const ID_PARAM = /^[A-Za-z0-9_.:@-]{1,200}$/
+const DOT_SEGMENT = /^\.+$/
 
 /** The reads an integration allows: the spec's, narrowed by metadata.reads. */
 export function allowedReads(i: Integration, spec: ProviderSpec): string[] {
@@ -79,13 +80,21 @@ export function buildReadUrl(
   const path = read.path.replace(/\{([A-Za-z0-9_]+)\}/g, (_m, name: string) => {
     const v = values[name]
     if (!v) { pathError ||= `parameter "${name}" is required for the path`; return "" }
-    if (!ID_PARAM.test(v)) { pathError ||= `"${name}" must be a plain id`; return "" }
+    // "." and ".." are dot segments: the URL parser would drop or climb them
+    // and the GET would go to a path the spec does not list.
+    if (!ID_PARAM.test(v) || DOT_SEGMENT.test(v)) { pathError ||= `"${name}" must be a plain id`; return "" }
     used.add(name)
     return encodeURIComponent(v)
   })
   if (pathError) return { ok: false, error: pathError }
+  const base = new URL(spec.baseUrl)
   const url = new URL(spec.baseUrl + path)
-  if (url.origin !== new URL(spec.baseUrl).origin) return { ok: false, error: "the read left the provider's address" }
+  if (url.origin !== base.origin) return { ok: false, error: "the read left the provider's address" }
+  // Belt and braces: no dot segment in the built path, and the parsed path
+  // still sits under the base path. Nothing climbed out.
+  if (path.split("/").some((s) => s === "." || s === "..") || !url.pathname.startsWith(base.pathname)) {
+    return { ok: false, error: "the read left the provider's address" }
+  }
   for (const [k, v] of Object.entries(values)) if (!used.has(k)) url.searchParams.set(k, v)
   for (const [k, v] of Object.entries(read.fixedQuery ?? {})) url.searchParams.set(k, v)
   return { ok: true, url }

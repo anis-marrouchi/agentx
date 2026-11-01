@@ -159,6 +159,14 @@ export function waitForLoopbackCallback(
   const handler = (req: any, res: any) => {
     const url = new URL(req.url || "/", `http://localhost:${port}`)
     if (url.pathname !== "/callback") { res.writeHead(404).end(); return }
+    // Only an answer carrying this request's state ends the wait. Anything
+    // else (another local process, a stale tab) gets a 400 and is ignored,
+    // so it cannot cancel the sign-in.
+    if (url.searchParams.get("state") !== expectedState) {
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
+      res.end(PAGE("Not this sign-in", "This answer does not match the sign-in AgentX is waiting for. Finish the sign-in in the tab AgentX opened."))
+      return
+    }
     const r = parseCallback(url.toString(), expectedState)
     res.writeHead("code" in r ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" })
     res.end("code" in r

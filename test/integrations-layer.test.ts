@@ -107,6 +107,32 @@ describe("oauth", () => {
     expect(await wait.result).toEqual({ code: "xyz" })
   })
 
+  it("ignores a callback with another state and keeps waiting for the real one", async () => {
+    const port = 20000 + Math.floor(Math.random() * 20000)
+    const wait = waitForLoopbackCallback(port, "s1", 5000)
+    await wait.ready
+    let settled = false
+    wait.result.then(() => { settled = true })
+    const stray = await fetch(`http://127.0.0.1:${port}/callback?error=access_denied&state=wrong`)
+    expect(stray.status).toBe(400)
+    const noState = await fetch(`http://127.0.0.1:${port}/callback?code=evil`)
+    expect(noState.status).toBe(400)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(settled).toBe(false)
+    const res = await fetch(`http://127.0.0.1:${port}/callback?code=xyz&state=s1`)
+    expect(res.status).toBe(200)
+    expect(await wait.result).toEqual({ code: "xyz" })
+  })
+
+  it("still ends on a provider error that carries this request's state", async () => {
+    const port = 20000 + Math.floor(Math.random() * 20000)
+    const wait = waitForLoopbackCallback(port, "s1", 5000)
+    await wait.ready
+    const res = await fetch(`http://127.0.0.1:${port}/callback?error=access_denied&state=s1`)
+    expect(res.status).toBe(400)
+    expect(await wait.result).toEqual({ error: "the provider said access_denied" })
+  })
+
   it("cuts token-shaped text out of provider errors", () => {
     expect(safeProviderText("bad refresh_token=abc.def")).toBe("bad refresh_token=[redacted]")
     expect(safeProviderText("x " + "A".repeat(50))).toBe("x [redacted]")
@@ -206,6 +232,25 @@ describe("token resolution", () => {
     expect(r).toMatchObject({ status: "ok", token: "FROM_ENV" })
   })
 
+  it("writes a rotated refresh token from the environment back to .env", async () => {
+    const { f } = fakeFetch(() => ({ body: { access_token: "AT2", refresh_token: "RT2", expires_in: 3600 } }))
+    const i = integ({ credentials: { clientIdEnv: "FAKE_CLIENT_ID", clientSecretEnv: "FAKE_CLIENT_SECRET", refreshTokenEnv: "FAKE_RT" } })
+    const env: Record<string, string> = { ...ENV, FAKE_RT: "RT1" }
+    const written: Record<string, string> = {}
+    const r = await resolveAccessToken("helper", i, FAKE, { env, fetch: f, now: () => NOW, writeEnv: (k, v) => { written[k] = v } })
+    expect(r).toMatchObject({ status: "ok", token: "AT2" })
+    expect(written).toEqual({ FAKE_RT: "RT2" })
+    expect(env.FAKE_RT).toBe("RT2")
+
+    // No rotation: nothing is written.
+    clearTokenCache()
+    const same = fakeFetch(() => ({ body: { access_token: "AT3", expires_in: 3600 } }))
+    const written2: Record<string, string> = {}
+    await resolveAccessToken("helper", i, FAKE, { env, fetch: same.f, now: () => NOW, writeEnv: (k, v) => { written2[k] = v } })
+    expect(new URLSearchParams(String(same.calls[0].init?.body)).get("refresh_token")).toBe("RT2")
+    expect(written2).toEqual({})
+  })
+
   it("explains what is wrong without a token in the reason", async () => {
     const keyring = memoryKeyring()
     const notConnected = await resolveAccessToken("helper", integ(), FAKE, { keyring, env: ENV, now: () => NOW })
@@ -247,6 +292,24 @@ describe("named reads", () => {
     expect(buildReadUrl(FAKE, read, { metric: "views", accountId: "../admin" }, {})).toMatchObject({ ok: false })
     expect(buildReadUrl(FAKE, read, { metric: "views", since: "yesterday" }, { accountId: "42" })).toMatchObject({ ok: false })
     expect(buildReadUrl(FAKE, read, {}, { accountId: "42" })).toMatchObject({ ok: false, error: expect.stringContaining('"metric" is required') })
+  })
+
+  it("refuses dot segments in a path id, so a read cannot climb out of its path", () => {
+    // A path param with no pattern: only the plain-id rule guards it.
+    const spec: ProviderSpec = {
+      ...FAKE,
+      baseUrl: "https://graph.fake.test",
+      reads: { insights: { description: "Page insights.", path: "/v19.0/{page}/insights", params: { page: { description: "Page id", required: true } } } },
+    }
+    const read = spec.reads.insights
+    for (const page of ["..", ".", "..."]) {
+      expect(buildReadUrl(spec, read, { page }, {})).toMatchObject({ ok: false, error: expect.stringContaining('"page" must be a plain id') })
+    }
+    const ok = buildReadUrl(spec, read, { page: "1.2_x" }, {})
+    expect(ok.ok && ok.url.toString()).toBe("https://graph.fake.test/v19.0/1.2_x/insights")
+    // Base URL with a path: ids stay under it.
+    const nested = buildReadUrl({ ...spec, baseUrl: "https://graph.fake.test/api/" }, read, { page: "7" }, {})
+    expect(nested.ok && nested.url.pathname).toBe("/api//v19.0/7/insights")
   })
 
   it("runs a GET with the bearer token and returns the body", async () => {
