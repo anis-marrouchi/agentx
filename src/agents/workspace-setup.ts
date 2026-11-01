@@ -5,6 +5,7 @@ import type { AgentDef } from "@/daemon/config"
 import { generateAgentsMd } from "./bootstrap"
 import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, canReadOriginals } from "./observation-pack"
+import { allowListHookMatcher, type McpPolicyFields } from "@/agent/mcp-policy"
 
 // Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
 // files apart from user-edited ones. On daemon start, files with the marker
@@ -229,13 +230,22 @@ function guardHookCommand(agentId: string, daemonPort: string): string {
   return `curl -s --max-time 3 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null || true`
 }
 
-/** PreToolUse hook entries wiring the guard onto Bash + Write/Edit. */
-function guardPreToolUseHooks(agentId: string, daemonPort: string): unknown[] {
+/** PreToolUse hook entries wiring the guard onto Bash + Write/Edit, and
+ *  onto the tools of every MCP server with an `allowTools` list (#1698):
+ *  the daemon refuses a call to a tool left off that list. */
+function guardPreToolUseHooks(
+  agentId: string,
+  daemonPort: string,
+  mcp?: Record<string, McpPolicyFields>,
+): unknown[] {
   const command = guardHookCommand(agentId, daemonPort)
-  return [
+  const entries: unknown[] = [
     { matcher: "Bash", hooks: [{ type: "command", command, timeout: 10 }] },
     { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: 10 }] },
   ]
+  const mcpMatcher = allowListHookMatcher(mcp)
+  if (mcpMatcher) entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command, timeout: 10 }] })
+  return entries
 }
 
 /** Is this hook entry one of ours? Matches both the current curl form and
@@ -297,7 +307,7 @@ function generateSettings(agentId: string, def: AgentDef, daemonPort: string = "
   // PreToolUse — destructive-action guardrails. Runs the guard on every Bash
   // and Write/Edit call; in warn mode it audits without blocking. This is the
   // primary enforcement chokepoint (works even under bypassPermissions).
-  hooks["PreToolUse"] = guardPreToolUseHooks(agentId, daemonPort)
+  hooks["PreToolUse"] = guardPreToolUseHooks(agentId, daemonPort, (def as any).mcp)
 
   // Notification hook — log when agent needs input
   hooks["Notification"] = [{
@@ -589,7 +599,12 @@ function patchSettings(workspace: string, patches: Record<string, unknown>): boo
  * existing files, so live workspaces need this explicit patch. Idempotent —
  * re-running is a no-op once both are present. Returns true if it changed.
  */
-export function patchGuardrails(workspace: string, agentId: string, daemonPort: string = "19900"): boolean {
+export function patchGuardrails(
+  workspace: string,
+  agentId: string,
+  daemonPort: string = "19900",
+  mcp?: Record<string, McpPolicyFields>,
+): boolean {
   const settingsPath = resolve(workspace, ".claude/settings.json")
   if (!existsSync(settingsPath)) return false
 
@@ -612,7 +627,7 @@ export function patchGuardrails(workspace: string, agentId: string, daemonPort: 
     //    port or invocation style self-heals instead of duplicating.
     const hooks = (existing.hooks ??= {})
     const others = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse.filter((e: any) => !isGuardEntry(e)) : []
-    const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort)]
+    const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort, mcp)]
     if (JSON.stringify(hooks.PreToolUse ?? null) !== JSON.stringify(desired)) {
       hooks.PreToolUse = desired
       changed = true
@@ -717,7 +732,7 @@ export function setupAllWorkspaces(
 
     // Backfill destructive-action guardrails (deny list + PreToolUse hook)
     // onto existing workspaces.
-    if (def.tier === "claude-code" && patchGuardrails(def.workspace, id, daemonPort)) {
+    if (def.tier === "claude-code" && patchGuardrails(def.workspace, id, daemonPort, (def as any).mcp)) {
       totalGuarded++
     }
 

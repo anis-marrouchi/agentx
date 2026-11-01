@@ -125,7 +125,39 @@ Each entry under `agents.<id>.mcp.<name>` is either a local command or an HTTP s
 | `args` | list of string | `[]` | Arguments for `command`. |
 | `env` | map of string | — | Environment variables for `command`. |
 | `url` | string | required for `http` | Address of the HTTP server. |
-| `headers` | map of string | — | HTTP headers sent to the server. |
+| `headers` | map of string | — | HTTP headers sent to the server, written as is. Do not put a key here: a `${VAR}` in `agentx.json` is filled in when AgentX starts, and the value lands in the workspace's `.mcp.json`. Use `headersEnv` for keys. |
+| `headersEnv` | map of string | — | HTTP headers whose value is kept in an environment variable. Each entry is a header name and the variable's name, such as `{ "x-api-key": "CONNECTOR_API_KEY" }`. The variable holds the whole header value. AgentX reads it when it connects, and `.mcp.json` only holds `${CONNECTOR_API_KEY}`, which Claude Code fills in itself. HTTP servers only. |
+| `allowTools` | list of string | — | The only tools of this server the agent may use, by the name the server gives them. `*` is a wildcard, so `GET_*` allows every tool whose name starts with `GET_`. Left out, every tool is allowed; an empty list allows none. See [Limit a tool server](#limit-a-tool-server). |
+
+#### Limit a tool server
+
+A tool server, such as one from a service that connects many outside apps, can offer tools that read and tools that change things (post, upload, delete). Use `allowTools` and `headersEnv` to give an agent only the tools it needs, without writing the server's key in a file.
+
+1. **Terminal:** add the server's key to the `.env` file in your AgentX folder, as one line such as `CONNECTOR_API_KEY=<your key>`.
+2. **Terminal:** open `agentx.json` and add the server under the agent:
+
+   ```json
+   "mcp": {
+     "connector": {
+       "type": "http",
+       "url": "https://connector.example.com/mcp",
+       "headersEnv": { "x-api-key": "CONNECTOR_API_KEY" },
+       "allowTools": ["GET_PAGE_INSIGHTS", "QUERY_*"]
+     }
+   }
+   ```
+
+3. **Terminal:** run `agentx daemon restart`.
+
+How the list is applied depends on the agent's engine:
+
+| Engine | Tools not on the list |
+|---|---|
+| `orchestrator` | Never shown to the agent. |
+| `claude-code` | Shown, but every call to one is refused by the AgentX guard, with the reason. |
+| `codex-cli`, `opencode` | Not checked. Set the same list on the tool server itself, when it offers one. |
+
+When the service lets you choose which tools a server offers, set the same list there too, so the limit holds on both sides.
 
 ### Integrations
 
@@ -498,9 +530,12 @@ A process is not stopped for being quiet while it still has work of its own: a b
 6. **Terminal:** with `session.triage.models` set, after a label event on an issue nobody has worked on for an hour, run `agentx daemon logs`. A line `triage event (labeled) → <model>` shows the cheaper model was used.
 7. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
 8. **Terminal:** with `session.resumeGate.mode` set to `"shadow"`, after an agent picks a conversation up, run `agentx daemon logs`. A line `resume gate (shadow) for <channel>:<chat>: would resume: …` or `would start fresh: …` shows both prices. In `"active"` mode, a line `cost rotation for …` marks a conversation that started fresh.
+9. **Terminal:** with `headersEnv` or `allowTools` on a tool server, run `agentx doctor`. A line `N MCP server(s) with header variables, all set` shows the keys were found. Open the agent's `.mcp.json`: the header reads `${CONNECTOR_API_KEY}`, not the key itself.
 
 ## If something is wrong
 
+- **`agentx doctor` says `MCP server "<name>" of <agent>: header variable(s) not set`:** add the named variable to `.env` and restart the daemon. Without it the server gets no key and refuses every call.
+- **A `claude-code` agent says a tool call was refused with `is not on the allowTools list`:** the tool is left off that server's `allowTools`. Add its name (as the message prints it) if the agent should use it, then restart the daemon.
 - **`config check` names a field:** the value has the wrong type or is out of range. Compare it with the table above.
 - **On a slow internet link, every message, notification or poll fails with `fetch failed` or `ETIMEDOUT`, while `curl` from the same machine works:** the daemon gave up connecting too early. The start of the daemon log shows `Connect attempt timeout: N ms`. Raise `node.connectAttemptTimeoutMs`, for example to `10000`, and restart the daemon.
 - **An `sdk` agent fails with `No API key for provider`:** set `providers.<name>.apiKey`, or check that the environment variable it points to is in `.env`.

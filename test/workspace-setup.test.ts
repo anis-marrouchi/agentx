@@ -303,6 +303,20 @@ describe("destructive-action guardrails wiring", () => {
     expect(cmds.filter((c) => c.includes("/guard/check")).length).toBe(2) // Bash + Write|Edit, no dupes
     expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(false) // idempotent
   })
+
+  it("patchGuardrails routes MCP servers with allowTools through the guard hook (#1698)", () => {
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(resolve(workspace, ".claude/settings.json"), JSON.stringify({ permissions: { deny: [] }, hooks: {} }))
+    const mcp = { social: { allowTools: ["GET_*"] }, files: {} }
+    expect(patchGuardrails(workspace, "coder-agent", "18800", mcp)).toBe(true)
+    const pre = readSettings().hooks.PreToolUse
+    const entry = pre.find((e: any) => e.matcher === "mcp__(social)__.*")
+    expect(entry.hooks[0].command).toContain("/guard/check?agent=coder-agent")
+    expect(patchGuardrails(workspace, "coder-agent", "18800", mcp)).toBe(false) // idempotent
+    // List removed: the MCP entry goes away on the next start.
+    expect(patchGuardrails(workspace, "coder-agent", "18800", { social: {} })).toBe(true)
+    expect(readSettings().hooks.PreToolUse.some((e: any) => String(e.matcher).startsWith("mcp__"))).toBe(false)
+  })
 })
 
 // #455: "Keep files under 300 lines" made a coding agent open a task by

@@ -66,17 +66,30 @@ const providerConfigSchema = z.object({
   thinking: z.boolean().optional(),
 })
 
+/** The only tools of an MCP server an agent may use (#1698). Exact names
+ *  as the server lists them, `*` as a wildcard. Left out, every tool is
+ *  allowed; an empty list allows none. */
+const mcpAllowToolsSchema = z.array(z.string().min(1)).optional()
+
 const mcpStdioServerSchema = z.object({
   type: z.literal("stdio").optional(),
   command: z.string(),
   args: z.array(z.string()).default([]),
   env: z.record(z.string(), z.string()).optional(),
+  allowTools: mcpAllowToolsSchema,
 })
 
 const mcpHttpServerSchema = z.object({
   type: z.literal("http"),
   url: z.string().url(),
   headers: z.record(z.string(), z.string()).optional(),
+  /** Header name -> NAME of an environment variable holding its value
+   *  (#1698). Read at connect time; written to .mcp.json only as a
+   *  `${NAME}` placeholder, never as the secret. */
+  headersEnv: z
+    .record(z.string(), z.string().regex(/^[A-Z_][A-Z0-9_]*$/, "use an uppercase environment variable name, such as CONNECTOR_API_KEY"))
+    .optional(),
+  allowTools: mcpAllowToolsSchema,
 })
 
 // HTTP variant first so a record with `type: "http"` matches the HTTP

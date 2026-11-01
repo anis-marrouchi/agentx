@@ -73,6 +73,33 @@ describe("syncMcpToWorkspace", () => {
     expect(readFileSync(resolve(ws, ".mcp.json"), "utf-8")).toBe("{ not valid json")
   })
 
+  it("writes headersEnv as ${NAME} placeholders and strips agentx-only keys (#1698)", () => {
+    process.env.AGENTX_TEST_CONNECTOR_KEY = "secret-never-synced"
+    try {
+      syncMcpToWorkspace(ws, {
+        social: {
+          type: "http",
+          url: "https://connector.example.com/mcp",
+          headers: { "x-team": "demo" },
+          headersEnv: { "x-api-key": "AGENTX_TEST_CONNECTOR_KEY" },
+          allowTools: ["GET_*"],
+        },
+        local: { command: "npx", args: ["x"], allowTools: ["read"] },
+      })
+      const raw = readFileSync(resolve(ws, ".mcp.json"), "utf-8")
+      expect(raw).not.toContain("secret-never-synced")
+      const written = JSON.parse(raw)
+      expect(written.mcpServers.social).toEqual({
+        type: "http",
+        url: "https://connector.example.com/mcp",
+        headers: { "x-team": "demo", "x-api-key": "${AGENTX_TEST_CONNECTOR_KEY}" },
+      })
+      expect(written.mcpServers.local).toEqual({ command: "npx", args: ["x"] })
+    } finally {
+      delete process.env.AGENTX_TEST_CONNECTOR_KEY
+    }
+  })
+
   it("emitted JSON has trailing newline (Unix-friendly)", () => {
     syncMcpToWorkspace(ws, cfg)
     const raw = readFileSync(resolve(ws, ".mcp.json"), "utf-8")

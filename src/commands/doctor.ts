@@ -6,6 +6,7 @@ import { join, resolve } from "path"
 import { homedir } from "os"
 import { createRequire } from "module"
 import { loadDaemonConfig } from "@/daemon/config"
+import { headerEnvNames } from "@/agent/mcp-policy"
 import { findOnPath, plistPathEnv } from "@/desktop/install"
 import { localSettings } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
@@ -52,6 +53,7 @@ export async function runDoctorChecks(
   if (cfg) runWorkspaceSettingsChecks(checks, cfg)
   if (cfg) runRoutingChecks(checks, cfg)
   if (cfg) runMeshTokenChecks(checks, cfg)
+  if (cfg) checks.push(...mcpHeaderEnvChecks(cfg))
   if (cfg) runCodegraphChecks(checks, cfg)
   if (cfg) await runNotificationChecks(checks, cfg)
   if (cfg) runReminderChecks(checks, cfg)
@@ -463,6 +465,38 @@ export function meshTokenChecksFromConfig(
     .filter((p) => typeof p?.name === "string")
     .map((p) => ({ name: p.name as string, token: expand(p.token) }))
   return meshPeerTokenChecks(peers, value("MESH_TOKEN") || undefined)
+}
+
+/** Each MCP server's `headersEnv` variables (#1698): set, or the server
+ *  gets no key and answers 401. Names only; a value is never printed. */
+export function mcpHeaderEnvChecks(
+  cfg: any,
+  procEnv: Record<string, string | undefined> = process.env,
+  fileEnv: Record<string, string> = readEnvFile(),
+): Check[] {
+  const out: Check[] = []
+  let servers = 0
+  for (const [agentId, a] of Object.entries(cfg.agents || {}) as [string, any][]) {
+    for (const [name, server] of Object.entries(a?.mcp || {}) as [string, any][]) {
+      const names = headerEnvNames(server ?? {})
+      if (names.length === 0) continue
+      servers++
+      const missing = names.filter((n) => !(procEnv[n] || fileEnv[n] || "").trim())
+      if (missing.length > 0) {
+        out.push({
+          severity: "fail",
+          group: "Secrets",
+          title: `MCP server "${name}" of ${agentId}: header variable(s) not set`,
+          detail: missing.join(", "),
+          fix: `Add to .env — e.g. ${missing[0]}=<value>, then restart the daemon`,
+        })
+      }
+    }
+  }
+  if (servers > 0 && out.length === 0) {
+    out.push({ severity: "ok", group: "Secrets", title: `${servers} MCP server(s) with header variables, all set` })
+  }
+  return out
 }
 
 function collectEnvRefs(node: unknown, into: Set<string>): void {
