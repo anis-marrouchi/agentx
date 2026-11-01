@@ -81,6 +81,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     var fold = reports ? '<button type="button" class="wog__fold" data-org-fold="' + esc(b.key) + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
       (folded ? 'Show ' + orgUnder(d, b.key) + ' under ' : 'Hide ' + reports + (reports === 1 ? ' report' : ' reports')) + '</button>' : '';
     return '<article class="wog__card' + (person ? ' is-person' : ' is-' + esc(b.status || 'unknown')) + (at.level ? '' : ' is-top') + '" data-org-key="' + esc(b.key) + '"' +
+      (at.band != null ? ' data-org-band="' + at.band + '"' : '') +
       ' style="grid-column: ' + at.col + ' / span 2; grid-row: ' + (at.level + 1) + '; --lvl: ' + at.level + '">' +
       orgKindHtml(b.kind) + head + (chips ? '<div class="wog__chips">' + chips + '</div>' : '') + fold + '</article>';
   }
@@ -149,7 +150,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     if (phone) return;
     var box = {};
     chart.querySelectorAll('[data-org-key]').forEach(function (el) {
-      box[el.getAttribute('data-org-key')] = { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+      box[el.getAttribute('data-org-key')] = { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight, band: el.getAttribute('data-org-band') };
     });
     var gap = parseFloat(getComputedStyle(chart).rowGap) || 48;
     var bands = orgBands(d, box);
@@ -178,22 +179,32 @@ export const WALL_ORG_SCRIPT = String.raw`
     });
     svg.innerHTML = out + bands.titles;
   }
-  // A department's band (#1681): one box round its members' cards, under the
+  // A department's band (#1681): a box round its members' cards, under the
   // lines, and its title (name and head) over them. Folded-away members leave it.
+  // Only cards that sit together share a box (layoutOrg's band number): a
+  // department split over the chart gets one box per run, never one stretched
+  // over cards outside it. Each member's chip names the department anyway.
   function orgBands(d, box) {
     var PAD = 10, TOP = 30, out = { boxes: '', titles: '' };
     ((S.org && S.org.departments) || []).forEach(function (dep) {
-      var at = dep.members.map(function (m) { return box[m]; }).filter(Boolean);
-      if (!at.length) return;
-      var l = Math.min.apply(null, at.map(function (a) { return a.l; })) - PAD;
-      var t = Math.min.apply(null, at.map(function (a) { return a.t; })) - TOP;
-      var r = Math.max.apply(null, at.map(function (a) { return a.l + a.w; })) + PAD;
-      var btm = Math.max.apply(null, at.map(function (a) { return a.t + a.h; })) + PAD;
-      var title = dep.name + (dep.head ? ' · head ' + orgName(dep.head) : '');
-      out.boxes += '<rect class="wog__band" x="' + l + '" y="' + t + '" width="' + (r - l) + '" height="' + (btm - t) + '" rx="14"/>';
-      out.titles += '<text class="wog__band-t" x="' + (l + 12) + '" y="' + (t + 19) + '">' + esc(title) + '</text>';
+      var runs = {};
+      dep.members.forEach(function (m) {
+        var a = box[m];
+        if (a && a.band != null) (runs[a.band] = runs[a.band] || []).push(a);
+      });
+      Object.keys(runs).forEach(function (n) { orgBand(out, dep, runs[n], PAD, TOP); });
     });
     return out;
+  }
+  /** One run's box and title. No head: the title is the name alone. */
+  function orgBand(out, dep, at, PAD, TOP) {
+    var l = Math.min.apply(null, at.map(function (a) { return a.l; })) - PAD;
+    var t = Math.min.apply(null, at.map(function (a) { return a.t; })) - TOP;
+    var r = Math.max.apply(null, at.map(function (a) { return a.l + a.w; })) + PAD;
+    var btm = Math.max.apply(null, at.map(function (a) { return a.t + a.h; })) + PAD;
+    var title = dep.name + (dep.head ? ' · head ' + orgName(dep.head) : '');
+    out.boxes += '<rect class="wog__band" x="' + l + '" y="' + t + '" width="' + (r - l) + '" height="' + (btm - t) + '" rx="14"/>';
+    out.titles += '<text class="wog__band-t" x="' + (l + 12) + '" y="' + (t + 19) + '">' + esc(title) + '</text>';
   }
   var orgFrame = 0;
   function orgRedraw() {

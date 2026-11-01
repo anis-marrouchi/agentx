@@ -25,6 +25,9 @@ export interface OrgPlacement {
   parent?: string
   /** First half-column, from 1; a box spans two. */
   col: number
+  /** Cards of one group side by side in a row, with no other card between,
+   *  share a band number. A group split over the chart gets several. */
+  band?: number
 }
 
 export interface OrgLayout {
@@ -86,6 +89,18 @@ export function layoutOrg(members: Array<{ key: string; name: string; group?: st
     return [first, last]
   }
   for (const r of roots) place(r, 0)
+
+  // Bands: walk each row left to right; a run of one group's cards is one
+  // band, and any other card ends it, so a band never covers a card that is
+  // not in its group (#1681).
+  const rows = [...boxes].sort((a, b) => a.level - b.level || a.col - b.col)
+  let bands = 0
+  rows.forEach((at, i) => {
+    const group = groups.get(at.key)
+    if (!group) return
+    const prev = rows[i - 1]
+    at.band = prev && prev.level === at.level && groups.get(prev.key) === group ? prev.band : bands++
+  })
 
   const edges: OrgRelation[] = [...kept].map(([from, to]) => ({ from, to, type: "reports-to" as const }))
   const seen = new Set(edges.map((e) => `${e.type} ${e.from} ${e.to}`))

@@ -68,6 +68,64 @@ describe("the org view with departments", () => {
   })
 })
 
+describe("department rules (COO, #1681)", () => {
+  const agents = new Set(["pm", "ops", "mk"]), people = new Set(["anis", "nadia"])
+
+  it("a: the head need not be a member, and one person may head several departments", () => {
+    const depts = orgDepartments({ departments: {
+      dev: { name: "Dev", head: "person:anis", members: ["pm", "ops"] },
+      mk: { name: "Marketing", head: "person:anis", members: ["mk", "person:nadia"] },
+    } })
+    expect(departmentsProblem(depts, agents, people)).toBeUndefined()
+    // Heading one department and sitting in another is not "in two departments" either.
+    const both = orgDepartments({ departments: { dev: { name: "Dev", head: "person:nadia", members: ["pm"] }, mk: { name: "Marketing", members: ["person:nadia"] } } })
+    expect(departmentsProblem(both, agents, people)).toBeUndefined()
+  })
+
+  it("b: members outside any department, or no departments at all, are not a problem", () => {
+    const none = { ...config, business: { ...config.business, departments: undefined } }
+    const view = buildOrgView(none, {}, null)
+    expect(view.problem).toBeUndefined()
+    expect(view.departments).toEqual([])
+    expect(view.diagram.boxes.every((b) => b.department === undefined)).toBe(true)
+    // In the config above Sales has no department: no problem, no chip.
+    const withDev = buildOrgView(config, {}, null)
+    expect(withDev.problem).toBeUndefined()
+    expect(withDev.diagram.boxes.find((b) => b.key === "agent:sales")?.department).toBeUndefined()
+  })
+
+  it("c: a department split over the chart gets one band per run of cards that sit together", () => {
+    // P and Q at the top; P has a (dev) and c, Q has d (dev). Row 2 reads a, c, d.
+    const members = [{ key: "p", name: "P" }, { key: "q", name: "Q" }, { key: "a", name: "A", group: "dev" }, { key: "c", name: "C" }, { key: "d", name: "D", group: "dev" }]
+    const lay = layoutOrg(members, [{ from: "a", to: "p", type: "reports-to" }, { from: "c", to: "p", type: "reports-to" }, { from: "d", to: "q", type: "reports-to" }])
+    const band = Object.fromEntries(lay.boxes.map((b) => [b.key, b.band]))
+    expect(band.p).toBeUndefined()
+    expect(band.c).toBeUndefined()
+    expect(band.a).not.toBe(band.d)
+    // Side by side with nothing between: one band.
+    const one = layoutOrg([{ key: "p", name: "P" }, { key: "a", name: "A", group: "dev" }, { key: "b", name: "B", group: "dev" }, { key: "c", name: "C" }],
+      ["a", "b", "c"].map((from) => ({ from, to: "p", type: "reports-to" as const })))
+    const b1 = Object.fromEntries(one.boxes.map((b) => [b.key, b.band]))
+    expect(b1.a).toBeDefined()
+    expect(b1.a).toBe(b1.b)
+    expect(b1.c).toBeUndefined()
+    // Rows apart (a member and its member boss) are two runs, not one box over both rows.
+    const rows = layoutOrg([{ key: "a", name: "A", group: "dev" }, { key: "b", name: "B", group: "dev" }], [{ from: "b", to: "a", type: "reports-to" }])
+    const br = Object.fromEntries(rows.boxes.map((b) => [b.key, b.band]))
+    expect(br.a).not.toBe(br.b)
+  })
+
+  it("d: a department with no head is valid and titled with its name only", () => {
+    const depts = orgDepartments({ departments: { dev: { name: "Dev", members: ["pm"] } } })
+    expect(depts[0].head).toBeUndefined()
+    expect(departmentsProblem(depts, agents, people)).toBeUndefined()
+    const title = new Function(`${ORG_PEOPLE_JS}; return deptTitleHtml`)() as (dep: any, nameOf: (k: string) => string, esc: (s: string) => string) => string
+    const id = (s: string) => s
+    expect(title(depts[0], id, id)).toBe('<span class="org-dept-name">Dev</span>')
+    expect(title({ ...depts[0], head: "person:anis" }, () => "Anis", id)).toBe('<span class="org-dept-name">Dev</span><span class="org-dept-head">Head: Anis</span>')
+  })
+})
+
 describe("the /org page (#1681)", () => {
   const helpers = new Function(`${ORG_PEOPLE_JS}; return { withPeople: withPeople, byDept: byDept }`)() as {
     withPeople: (d: any) => { roots: any[]; names: Record<string, string> }
