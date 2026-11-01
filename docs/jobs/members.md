@@ -90,6 +90,24 @@ The teammate follows [Join My work](./join-my-work.md), which walks them through
 2. Answer **Yes** if the teammate told you they just paired. **No** ends that key at once; a card nobody answers is treated as no after three days.
 3. **Their browser:** the waiting page turns into **My work** by itself.
 
+## Or let them sign in with their email
+
+Instead of a pairing code, a teammate or a client can ask for a link by mail. The link signs their browser in as them. It opens the same page as a paired machine, and you see the browser on their People page with **End access**.
+
+1. **Set it up once.** Set the [mail sender](../reference/config-operations.md#mail-sender) and [`wall.signIn.origin`](../reference/config-operations.md#wall-sign-in) in `agentx.json`. The page lives under `/member`, so [serving the member page](#serve-only-the-member-page) is all the network needs.
+2. **Give the person their address.** Run `agentx people link sara email:sara@example.com`. Only a `member` or a `client` can sign in this way. You, the owner, keep the dashboard token for now, and a guest gets no link.
+3. **Their browser:** they open `https://your-mac.tailnet-name.ts.net/member`, select **sign in with your email**, type their address and select **Send me a link**. The page gives the same answer for any address, so nobody can use it to find out who is on your list.
+
+   ![The sign-in page: an email address, a Send me a link button, and the same answer for any address](/screenshots/members/signin-ask.png)
+4. **Their mail:** they open the link, give the browser a name and select **Sign in**. Opening the link spends nothing, so a mail filter that checks links does not use it up.
+
+   ![The page the link opens: a name for this browser and a Sign in button](/screenshots/members/signin-link.png)
+5. **The first time only:** a decision card **Sara B signed in for the first time** arrives in your [Approvals inbox](../dashboard/approvals.md), with the address it came from and the browser's name. Their page says **Waiting for the owner** until you answer. **Yes** lets them in; **No** signs that browser out. After one yes, their later sign-ins, from any browser, go straight in. With `wall.signIn.firstSignIn` set to `"auto"`, a member goes straight in the first time too; a client always gets the card.
+
+   ![The page a first sign-in shows until you answer: Waiting for the owner](/screenshots/members/signin-waiting.png)
+
+A link works once, for 15 minutes, and a new one replaces the one before. An address gets at most 5 links an hour, and one network address can ask 20 times an hour. Only the link's hash is kept, in `.agentx/signin-links.json`. If you change or remove the person's `email:` address, a link already sent stops working. A signed-in browser stays signed in for 30 days. **End access** on their People page, or removing the person, signs it out at once. After End access, the person's next sign-in raises a new card, as the first one did, unless `wall.signIn.firstSignIn` is `auto` and they are a member. If the person has a `tailscale:` login on their entry, the network must report that login when they sign in, as for pairing.
+
 ## My work
 
 The page shows, for that person only:
