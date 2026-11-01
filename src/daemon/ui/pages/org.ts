@@ -63,6 +63,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     <ul class="org-legend" aria-label="Legend">
       <li><span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>plain card, with its status</li>
       <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, warm fill</li>
+      <li id="org-legend-remote" hidden><span class="org-tag is-agent org-legend-remote">${ORG_AGENT_ICON}Agent</span>dashed: on another node, shown not routed; grey when that node is down</li>
       <li id="org-legend-dept" hidden><span class="org-legend-dept">Department</span>a dashed box round its members</li>
     </ul>
     <div id="org-depts" class="org-depts" hidden></div>
@@ -71,6 +72,11 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     <section id="org-outside" hidden aria-labelledby="org-outside-title">
       <h2 id="org-outside-title" class="org-h2">Not in the org chart</h2>
       <ul id="org-outside-list" class="org-row"></ul>
+    </section>
+    <section id="org-mesh" hidden aria-labelledby="org-mesh-title">
+      <h2 id="org-mesh-title" class="org-h2">On other nodes, not placed yet</h2>
+      <p class="org-quiet">Name one in a relation or a department as <code>agent:&lt;node&gt;/&lt;id&gt;</code> to place it. It is shown, never routed to.</p>
+      <ul id="org-mesh-list" class="org-nodes"></ul>
     </section>
   </div>`
   return renderShell({
@@ -132,6 +138,9 @@ const ORG_CSS = `
 .org-card { position: relative; }
 .org { --org-person-bg: color-mix(in oklch, #f08c3c 16%, var(--ax-bg)); --org-person-ink: color-mix(in oklch, #d4691f 80%, var(--ax-text)); }
 .org-card.is-person { background: var(--org-person-bg); border-color: var(--org-person-ink); border-left-width: 4px; border-radius: 22px; }
+.org-card.is-remote, .org-legend-remote { border-style: dashed; }
+.org-card.is-gone { opacity: .6; filter: grayscale(1); }
+.org-nodes { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .org-kind { font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; line-height: 17px; border-radius: 999px; border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text-2); white-space: nowrap; }
 .org-tag svg { fill: currentColor; }
@@ -211,6 +220,12 @@ export const ORG_PEOPLE_JS = `
       if (p.outsider) { outsiders[key] = p.name + ' (' + p.outsider + ')'; return; }
       if (named[key] || p.placed) nodes[key] = { kind: 'person', id: p.id, name: p.name, title: p.title, reports: [] };
     });
+    // Agents on other nodes: the cards the view made for them, routed to never.
+    ((d.diagram && d.diagram.boxes) || []).forEach(function (b) {
+      if (!b.remote) return;
+      names[b.key] = b.name;
+      nodes[b.key] = { kind: 'agent', id: b.id, name: b.name, remote: b.remote, reports: [] };
+    });
     // Departments (#1681): their members and head get a card, and a member its department.
     (d.departments || []).forEach(function (dep) {
       (dep.head ? [dep.head] : []).concat(dep.members).forEach(function (key) {
@@ -243,10 +258,30 @@ export const ORG_PEOPLE_JS = `
       roots.splice(i, 1);
       boss.reports.push(n);
     }
-    Object.keys(nodes).forEach(function (key) { if (key.indexOf('person:') === 0) roots.push(nodes[key]); });
-    d.roots.forEach(function (n) { if (String(n.reportsTo || '').indexOf('person:') === 0) moveUnder(n, n.reportsTo); });
-    rels.forEach(function (r) { if (r.type === 'reports-to' && r.from.indexOf('person:') === 0 && nodes[r.from]) moveUnder(nodes[r.from], r.to); });
+    Object.keys(nodes).forEach(function (key) { if (key.indexOf('person:') === 0 || nodes[key].remote) roots.push(nodes[key]); });
+    d.roots.forEach(function (n) { if (/^(person:|agent:)/.test(String(n.reportsTo || ''))) moveUnder(n, n.reportsTo); });
+    rels.forEach(function (r) { if (r.type === 'reports-to' && nodes[r.from] && (r.from.indexOf('person:') === 0 || nodes[r.from].remote)) moveUnder(nodes[r.from], r.to); });
     return { roots: roots, names: names, nodes: nodes };
+  }
+  /** The card of an agent on another node: where it is and how its node last
+   *  answered, grey when it is down or unseen. No Pause or Activity: this
+   *  node does not run it. tag and links are the card's Agent tag and rows. */
+  function remoteCardHtml(n, tag, links, esc) {
+    var r = n.remote, up = r.seen === 'up';
+    var state = up ? 'On ' + r.node : r.seen === 'down' ? r.node + ' does not answer; last seen there' : 'Not seen on ' + r.node;
+    return '<div class="org-card is-remote' + (up ? '' : ' is-gone') + '" data-remote="' + esc(n.id) + '">' + tag
+      + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(r.agent) + ' @ ' + esc(r.node) + '</span></div>'
+      + links + '<span class="org-state is-remote">' + esc(state) + '</span></div>';
+  }
+  /** The agents mesh peers host that the chart does not place, by node. */
+  function meshOthersHtml(others, esc) {
+    var byNode = {};
+    (others || []).forEach(function (a) { (byNode[a.node] = byNode[a.node] || []).push(a); });
+    return Object.keys(byNode).map(function (node) {
+      var list = byNode[node];
+      return '<li class="org-node"><b>' + esc(node) + '</b>' + (list[0].healthy ? '' : ' <span class="org-quiet">(does not answer)</span>')
+        + '<ul class="org-row">' + list.map(function (a) { return '<li><span class="org-name">' + esc(a.name) + '</span> <code>agent:' + esc(node) + '/' + esc(a.id) + '</code></li>'; }).join('') + '</ul></li>';
+    }).join('');
   }
   /** The Departments view (#1681): per box of d.byDepartment its name, the
    *  head's card on top, the members' cards in a grid; then "Not in a
@@ -316,6 +351,7 @@ const ORG_SCRIPT = `
   function say(t, bad) { msg.textContent = t || ''; msg.className = 'org-msg' + (bad ? ' is-bad' : ''); }
   function card(n) {
     if (n.kind === 'person') return personCard(n);
+    if (n.remote) return remoteCardHtml(n, kind(false), links(n), esc);
     var id = encodeURIComponent(n.id);
     var state = n.status === 'working' && n.active > 1 ? 'Working on ' + n.active : STATE[n.status] || n.status;
     if (n.status === 'paused' && n.heldBy) state += ' by ' + n.heldBy;
@@ -357,6 +393,7 @@ const ORG_SCRIPT = `
       depts = {};
       (d.departments || []).forEach(function (dep) { depts[dep.id] = dep; });
       document.getElementById('org-legend-dept').hidden = !(d.departments || []).length;
+      document.getElementById('org-legend-remote').hidden = !((d.diagram && d.diagram.boxes) || []).some(function (b) { return b.remote; });
       E.org = d;
       paintEdit();
       var org = withPeople(d);
@@ -383,6 +420,9 @@ const ORG_SCRIPT = `
       var out = document.getElementById('org-outside');
       out.hidden = d.outside.length === 0;
       document.getElementById('org-outside-list').innerHTML = d.outside.map(function (n) { return '<li>' + card(n) + '</li>'; }).join('');
+      var others = (d.mesh && d.mesh.others) || [];
+      document.getElementById('org-mesh').hidden = others.length === 0;
+      document.getElementById('org-mesh-list').innerHTML = meshOthersHtml(others, esc);
       // Only clear the daemon warning, not the answer to a click.
       if (!d.live) { say('The daemon did not answer, so working or idle is unknown. Start it with: agentx daemon start', true); warned = true; }
       else if (warned) { say(''); warned = false; }

@@ -302,7 +302,7 @@ describe("clients and guests on the org chart", () => {
   it("keeps a person with no role, or a member, as personnel", () => {
     const people = new Set(["saber"])
     const dept = { id: "eng", name: "Engineering", head: "person:saber", members: [] }
-    expect(departmentsProblem([dept], new Set(), people, new Map())).toBeUndefined()
+    expect(departmentsProblem([dept], new Set(), people, new Set(), new Map())).toBeUndefined()
     const view = buildOrgView({ ...config, people: [{ id: "anis", name: "Anis", role: "owner" }, { id: "saber", name: "Saber", role: "member" }] }, {}, null)
     expect(view.diagram.boxes.some((b) => b.key === "person:saber")).toBe(true)
   })

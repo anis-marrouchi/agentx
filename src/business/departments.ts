@@ -1,11 +1,12 @@
-import { memberKey, parseMember } from "./relations"
+import { memberKey, memberProblem, parseMember } from "./relations"
 
 // --- Departments of the org chart (#1681) ---
 //
 // business.departments groups org members under a name, headed by one
 // member: `{ dev: { name: "Dev", head: "person:anis", members: [...] } }`.
 // Members and the head are written like relations (relations.ts):
-// `agent:<id>`, `person:<id>`, or a bare agent id. A department only groups
+// `agent:<id>`, `person:<id>`, `agent:<node>/<id>` for an agent on a mesh
+// peer, or a bare agent id. A department only groups
 // cards on the chart; it changes no reporting line and no escalation.
 
 export interface OrgDepartment {
@@ -40,16 +41,9 @@ export function departmentsProblem(
   departments: OrgDepartment[],
   agents: ReadonlySet<string>,
   people: ReadonlySet<string>,
+  peers: ReadonlySet<string> = new Set(),
   outsiders: ReadonlyMap<string, Outsider> = new Map(),
 ): string | undefined {
-  const unknown = (key: string) => {
-    const m = parseMember(key)
-    return m.kind === "agent" ? !agents.has(m.id) : !people.has(m.id)
-  }
-  const what = (key: string) => {
-    const m = parseMember(key)
-    return m.kind === "agent" ? `"${m.id}", which is not an agent in business.orgChart` : `"${m.id}", which is not a person in people`
-  }
   const outsider = (key: string) => {
     const m = parseMember(key)
     return m.kind === "person" ? outsiders.get(m.id) : undefined
@@ -57,11 +51,13 @@ export function departmentsProblem(
   const notStaff = (o: Outsider) => `${o.name} is a ${o.role}, and only owners and members of the organisation can be in a department`
   const inDept = new Map<string, string>()
   for (const d of departments) {
-    if (d.head && unknown(d.head)) return `Department ${d.name} is headed by ${what(d.head)}`
+    const problem = d.head && memberProblem(d.head, `Department ${d.name} is headed by`, agents, people, peers)
+    if (problem) return problem
     const head = d.head ? outsider(d.head) : undefined
     if (head) return `Department ${d.name} cannot be headed by ${head.name}: ${notStaff(head)}`
     for (const m of d.members) {
-      if (unknown(m)) return `Department ${d.name} lists ${what(m)}`
+      const problem = memberProblem(m, `Department ${d.name} lists`, agents, people, peers)
+      if (problem) return problem
       const o = outsider(m)
       if (o) return `Department ${d.name} cannot list ${o.name}: ${notStaff(o)}`
       const had = inDept.get(m)
