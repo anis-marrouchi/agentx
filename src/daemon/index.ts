@@ -203,6 +203,7 @@ import { resolveAutoRunInputs } from "@/workflows/inputs"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
+import { mcpAllowListDenial } from "@/agent/mcp-policy"
 import { agentxToolServer, syncMcpToWorkspace, withAgentXToolServer, type McpServerMap } from "@/agents/agent-mcp"
 import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegraph-bootstrap"
 import { REMEMBER_SKILL_FILENAME, rememberSkillBody, upgradeRememberSkill } from "@/agents/skills/remember-skill"
@@ -5582,6 +5583,19 @@ export class AgentXDaemon {
           if (blocked) this.registry.logToolRefusal(blocked.personId, agentId, blocked.skill ? `skill:${blocked.skill}` : blocked.tool)
           res.writeHead(200, { "Content-Type": "application/json" })
           res.end(stdout)
+          return
+        }
+        // MCP allow list (#1698): a tool left off a server's allowTools is
+        // refused here; the workspace hook only matches those servers.
+        const mcpDenial = agentId
+          ? mcpAllowListDenial(String((payload as any)?.tool_name ?? ""), (this.config.agents[agentId] as any)?.mcp)
+          : null
+        if (mcpDenial) {
+          this.log(`  guard: ${agentId} ${mcpDenial}`)
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({
+            hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: mcpDenial },
+          }))
           return
         }
         const { stdout } = await checkPayloadWithConfirmation(payload as PreToolUsePayload, {

@@ -66,17 +66,30 @@ const providerConfigSchema = z.object({
   thinking: z.boolean().optional(),
 })
 
+/** The only tools of an MCP server an agent may use (#1698). Exact names
+ *  as the server lists them, `*` as a wildcard. Left out, every tool is
+ *  allowed; an empty list allows none. */
+const mcpAllowToolsSchema = z.array(z.string().min(1)).optional()
+
 const mcpStdioServerSchema = z.object({
   type: z.literal("stdio").optional(),
   command: z.string(),
   args: z.array(z.string()).default([]),
   env: z.record(z.string(), z.string()).optional(),
+  allowTools: mcpAllowToolsSchema,
 })
 
 const mcpHttpServerSchema = z.object({
   type: z.literal("http"),
   url: z.string().url(),
   headers: z.record(z.string(), z.string()).optional(),
+  /** Header name -> NAME of an environment variable holding its value
+   *  (#1698). Read at connect time; written to .mcp.json only as a
+   *  `${NAME}` placeholder, never as the secret. */
+  headersEnv: z
+    .record(z.string(), z.string().regex(/^[A-Z_][A-Z0-9_]*$/, "use an uppercase environment variable name, such as CONNECTOR_API_KEY"))
+    .optional(),
+  allowTools: mcpAllowToolsSchema,
 })
 
 // HTTP variant first so a record with `type: "http"` matches the HTTP
@@ -277,7 +290,18 @@ const agentConfigSchema = z.object({
   /** MCP servers this agent's Claude Code session should load. Synced
    *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
    *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
-  mcp: z.record(z.string(), mcpServerSchema).optional(),
+  mcp: z
+    .record(z.string(), mcpServerSchema)
+    .optional()
+    .superRefine((servers, ctx) => {
+      // The guard hook matches `mcp__<name>__…`; a name Claude Code would
+      // write differently never matches, and its tools would run unchecked.
+      for (const [name, server] of Object.entries(servers ?? {})) {
+        if (server.allowTools && !/^[A-Za-z0-9_-]+$/.test(name)) {
+          ctx.addIssue({ code: "custom", path: [name], message: "an MCP server with allowTools needs a name of letters, digits, _ or - only" })
+        }
+      }
+    }),
   /** Enable CodeGraph (https://github.com/colbymchenry/codegraph) for this
    *  agent's claude-code or codex-cli workspace. When true, agentx (a) adds
    *  a codegraph MCP server to <workspace>/.mcp.json, (b) extends

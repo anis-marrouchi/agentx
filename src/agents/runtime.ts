@@ -32,6 +32,7 @@ import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
 import { TurnDeadlineExceeded, TurnInterrupted } from "./claude-process-factory"
 import { effectiveMcpConfig } from "./codegraph-bootstrap"
+import { resolveHttpHeaders } from "@/agent/mcp-policy"
 import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonomy"
 import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
 import { clearPersonLimits, personLimitsUnsupported, registerPersonLimits, withPersonLimitHook } from "@/guard/person-limits"
@@ -600,7 +601,9 @@ function buildOpenCodeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
   const mcp: Record<string, any> = { ...(config.mcp || {}) }
   for (const [name, server] of Object.entries(agent.mcp || {}) as Array<[string, any]>) {
     mcp[name] = server.type === "http"
-      ? { type: "remote", url: server.url, headers: server.headers }
+      // headersEnv is resolved here: this config travels in the child's
+      // environment only, never in a file (#1698).
+      ? { type: "remote", url: server.url, headers: resolveHttpHeaders(server) }
       : { type: "local", command: [server.command, ...(server.args || [])], environment: server.env }
   }
 

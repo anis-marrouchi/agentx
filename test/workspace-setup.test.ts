@@ -1,9 +1,11 @@
+import { execFileSync } from "node:child_process"
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { resolve } from "path"
 import {
   generateClaudeMd,
+  mcpGuardHookCommand,
   patchGuardrails,
   readManagedHash,
   setupWorkspace,
@@ -302,6 +304,29 @@ describe("destructive-action guardrails wiring", () => {
     expect(cmds.some((c) => c.includes("dist/cli.js"))).toBe(false) // stale form gone
     expect(cmds.filter((c) => c.includes("/guard/check")).length).toBe(2) // Bash + Write|Edit, no dupes
     expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(false) // idempotent
+  })
+
+  it("patchGuardrails routes MCP servers with allowTools through the guard hook (#1698)", () => {
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(resolve(workspace, ".claude/settings.json"), JSON.stringify({ permissions: { deny: [] }, hooks: {} }))
+    const mcp = { social: { allowTools: ["GET_*"] }, files: {} }
+    expect(patchGuardrails(workspace, "coder-agent", "18800", mcp)).toBe(true)
+    const pre = readSettings().hooks.PreToolUse
+    const entry = pre.find((e: any) => e.matcher === "mcp__(social)__.*")
+    expect(entry.hooks[0].command).toContain("/guard/check?agent=coder-agent")
+    // Fails closed: no `|| true`, and a deny is printed when curl fails.
+    expect(entry.hooks[0].command).not.toContain("|| true")
+    expect(entry.hooks[0].command).toContain('"permissionDecision":"deny"')
+    expect(patchGuardrails(workspace, "coder-agent", "18800", mcp)).toBe(false) // idempotent
+    // List removed: the MCP entry goes away on the next start.
+    expect(patchGuardrails(workspace, "coder-agent", "18800", { social: {} })).toBe(true)
+    expect(readSettings().hooks.PreToolUse.some((e: any) => String(e.matcher).startsWith("mcp__"))).toBe(false)
+  })
+
+  it("the MCP allow-list hook denies when the daemon does not answer (#1698)", () => {
+    // Port 9 (discard) has nothing listening: curl fails at once.
+    const out = execFileSync("sh", ["-c", mcpGuardHookCommand("coder-agent", "9")], { input: "{}" }).toString()
+    expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe("deny")
   })
 })
 
