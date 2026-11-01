@@ -191,28 +191,43 @@ describe("the /org page (#1681)", () => {
     expect(page.indexOf('<ul class="org-legend"')).toBeGreaterThan(page.indexOf('id="org-views"'))
   })
 
-  it("centres the head card on the Hub chart's first paint, once, as /org does", () => {
-    // Called from orgDraw() after the size is set, desktop only.
-    expect(WALL_ORG_SCRIPT).toMatch(/if \(phone\) return;\s*orgShowHead\(chart\);/)
-    const fn = WALL_ORG_SCRIPT.slice(WALL_ORG_SCRIPT.indexOf("function orgShowHead("), WALL_ORG_SCRIPT.indexOf("function orgBands("))
-    expect(fn).toContain("if (ORG.headShown || !scroll || scroll.scrollWidth <= scroll.clientWidth) return;")
-    expect(fn).toContain("c.classList.contains('is-person')")
-    expect(fn).toContain("ORG.headShown = true;")
+  it("fits the Hub chart to the pane on first paint, floor 60%, and keeps a reader's zoom", () => {
+    // Called from orgDraw() after the size is set, desktop only; a changed zoom paints again.
+    expect(WALL_ORG_SCRIPT).toMatch(/if \(phone\) return;\s*if \(orgFit\(chart\)\) return;/)
+    expect(WALL_ORG_SCRIPT).toContain("var ORG_FIT_FLOOR = 0.6;")
+    const fn = WALL_ORG_SCRIPT.slice(WALL_ORG_SCRIPT.indexOf("function orgFit("), WALL_ORG_SCRIPT.indexOf("function orgShowStart("))
+    expect(fn).toContain("if (ORG.fitted || !scroll) return false;")
+    expect(fn).toContain("Math.max(ORG_FIT_FLOOR, Math.min(1, Math.floor(room / w * 100) / 100))")
+    // A reader's zoom is never refitted.
+    const zoom = WALL_ORG_SCRIPT.slice(WALL_ORG_SCRIPT.indexOf("function orgZoom("), WALL_ORG_SCRIPT.indexOf("document.addEventListener('click'", WALL_ORG_SCRIPT.indexOf("function orgZoom(")))
+    expect(zoom).toContain("ORG.fitted = true;")
+    // Still too wide: start at the widest band's left edge, never centred on the head, with an edge fade.
+    const start = WALL_ORG_SCRIPT.slice(WALL_ORG_SCRIPT.indexOf("function orgShowStart("), WALL_ORG_SCRIPT.indexOf("function orgEdges("))
+    expect(start).toContain("scroll.scrollLeft = widest ? Math.max(0, widest.l * ORG.zoom) : 0;")
+    expect(WALL_ORG_SCRIPT).not.toContain("orgShowHead")
+    expect(WALL_ORG_CSS).toContain(".wog__scroll.is-more-left { --wog-fade-l: 40px; }")
+    expect(WALL_ORG_CSS).toContain(".wog__scroll.is-more-right { --wog-fade-r: 40px; }")
   })
 
-  it("starts a wide /org chart at its left edge and names who is off screen", () => {
+  it("fits a wide /org chart to the page, floor 60%, with a 100% control, and names who is off screen", () => {
     const page = renderOrgPage()
     // The chart takes the window width, and a department band has the same 14px inner padding as the Departments view.
     expect(page).toContain(".org-tree { overflow-x: auto; padding: 12px 0 8px; width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px);")
     expect(page).toContain(".org-tree li.org-dept > .org-dept-box { padding: 10px 14px 4px;")
-    // First paint: scroll right only as far as the head needs, never centre it.
-    const head = page.slice(page.indexOf("function showHead("), page.indexOf("function moreSide("))
-    expect(head).toContain("tree.scrollLeft = Math.max(0, right - tree.clientWidth);")
-    expect(head).not.toContain("box.width / 2")
+    // Zoom control in the toolbar, with a way back to 100%.
+    expect(page).toMatch(/<div id="org-zoom" class="org-views org-zoom" role="group" aria-label="Zoom" hidden>.*data-org-zoom="-1".*id="org-zoom-at" data-org-zoom="0" title="Back to 100%">100%<.*data-org-zoom="1"/)
+    const fit = page.slice(page.indexOf("function fit("), page.indexOf("function setZoom("))
+    expect(fit).toContain("Math.max(FIT_FLOOR, Math.min(1, Math.floor(room / w * 100) / 100))")
+    expect(page).toContain("var zoom = 1, fitted = false, FIT_FLOOR = 0.6;")
+    // First paint: fit, then the widest department box's left edge, never the head centred.
+    expect(page).toMatch(/if \(!deptView\) \{ fit\(\); showStart\(\); \}\s*zoomLabel\(\);\s*moreCue\(\);/)
+    const start = page.slice(page.indexOf("function showStart("), page.indexOf("function moreSide("))
+    expect(start).toContain("tree.querySelectorAll('.org-dept-box')")
+    expect(start).not.toContain("box.width / 2")
+    expect(page).not.toContain("showHead")
     // The cue: one button per side naming the reports cut off there, kept current on scroll.
     expect(page).toMatch(/<div id="org-more" class="org-more" hidden><button type="button" data-org-scroll="-1"[^>]*><\/button><span>The chart is wider than the page\. Scroll sideways to see everyone\.<\/span><button type="button" data-org-scroll="1"/)
     expect(page).toContain("tree.addEventListener('scroll', moreCue, { passive: true });")
-    expect(page).toMatch(/if \(!deptView\) showHead\(\);\s*moreCue\(\);/)
   })
 
   it("gives a person's card a warm fill and keeps an agent's plain, on /org and the Hub", () => {

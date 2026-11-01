@@ -58,6 +58,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     <p id="org-problem" class="org-problem" role="alert" hidden></p>
     <div class="org-toolbar" role="toolbar" aria-label="Org tools">
       <div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button><button type="button" data-org-view="chart" aria-pressed="false">Chart</button></div>
+      <div id="org-zoom" class="org-views org-zoom" role="group" aria-label="Zoom" hidden><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button><button type="button" id="org-zoom-at" data-org-zoom="0" title="Back to 100%">100%</button><button type="button" data-org-zoom="1" aria-label="Zoom in">+</button></div>
     </div>
     <ul class="org-legend" aria-label="Legend">
       <li><span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>plain card, with its status</li>
@@ -362,13 +363,16 @@ const ORG_SCRIPT = `
       names = org.names;
       document.getElementById('org-none').hidden = org.roots.length > 0;
       tree.innerHTML = org.roots.length ? branch(org.roots) : '';
+      if (tree.firstElementChild) tree.firstElementChild.style.zoom = zoom;
       var hasDepts = (d.departments || []).length > 0, deptView = hasDepts && view === 'dept';
       document.getElementById('org-views').hidden = !hasDepts;
       document.querySelectorAll('[data-org-view]').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-org-view') === (deptView ? 'dept' : 'chart') ? 'true' : 'false'); });
       var deptsEl = document.getElementById('org-depts');
       deptsEl.hidden = !deptView;
       tree.hidden = deptView;
-      if (!deptView) showHead();
+      document.getElementById('org-zoom').hidden = deptView || !org.roots.length;
+      if (!deptView) { fit(); showStart(); }
+      zoomLabel();
       moreCue();
       if (deptView) {
         var byKey = org.nodes;
@@ -384,21 +388,46 @@ const ORG_SCRIPT = `
       else if (warned) { say(''); warned = false; }
     } catch (e) { say('Could not load the org chart: ' + e.message, true); }
   }
-  // A chart wider than the page centres its root across the full width, so
-  // centring the head pushes the first reports off the left. On the first
-  // paint of the Chart view, start at the left edge and move right only as far
-  // as it takes to show the head (a person root, else the first root) whole;
-  // later repaints keep the reader's scroll.
-  var headShown = false;
-  function showHead() {
-    if (headShown || tree.scrollWidth <= tree.clientWidth) return;
-    var top = tree.querySelectorAll(':scope > ul > li > .org-card');
-    if (!top.length) return;
-    var head = Array.prototype.filter.call(top, function (c) { return c.classList.contains('is-person'); })[0] || top[0];
-    var box = tree.getBoundingClientRect(), at = head.getBoundingClientRect();
-    var right = at.right - box.left + tree.scrollLeft + 24;
-    tree.scrollLeft = Math.max(0, right - tree.clientWidth);
-    headShown = true;
+  // Fit to width (#1681), as the Hub's Chart view: on the first paint of the
+  // Chart view the chart shrinks to the page width, never under 60% and never
+  // over 100%. Once fitted, or once the reader zooms, it is never refitted.
+  var zoom = 1, fitted = false, FIT_FLOOR = 0.6;
+  function fit() {
+    var ul = tree.firstElementChild;
+    if (fitted || !ul) return;
+    var w = ul.getBoundingClientRect().width / zoom, room = tree.clientWidth;
+    if (!(w > 0 && room > 0)) return;
+    fitted = true;
+    setZoom(Math.max(FIT_FLOOR, Math.min(1, Math.floor(room / w * 100) / 100)));
+  }
+  function setZoom(z) {
+    zoom = z;
+    if (tree.firstElementChild) tree.firstElementChild.style.zoom = z;
+    zoomLabel();
+  }
+  function zoomLabel() {
+    document.getElementById('org-zoom-at').textContent = Math.round(zoom * 100) + '%';
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('button[data-org-zoom]') : null;
+    if (!b) return;
+    var step = Number(b.getAttribute('data-org-zoom'));
+    fitted = true;
+    setZoom(step === 0 ? 1 : Math.min(1.5, Math.max(0.4, Math.round((zoom + step * 0.1) * 10) / 10)));
+    moreCue();
+  });
+  // Still wider than the page at 60%: start with the left edge of the widest
+  // department box in view (else the chart's left edge), never centred on the
+  // head. Once; later repaints keep the reader's scroll.
+  var startShown = false;
+  function showStart() {
+    if (startShown || !(tree.scrollWidth > tree.clientWidth)) return;
+    var box = tree.getBoundingClientRect(), widest = null;
+    tree.querySelectorAll('.org-dept-box').forEach(function (d) {
+      if (!widest || d.getBoundingClientRect().width > widest.getBoundingClientRect().width) widest = d;
+    });
+    tree.scrollLeft = widest ? Math.max(0, widest.getBoundingClientRect().left - box.left + tree.scrollLeft - 8) : 0;
+    startShown = true;
   }
   // The cue above a chart wider than the page: who is off screen on each
   // side, as buttons that scroll that way, and a fade on the cut edge.
