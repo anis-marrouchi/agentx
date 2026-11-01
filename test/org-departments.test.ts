@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { businessConfigSchema } from "../src/business/config"
 import { departmentBoxes, departmentsProblem, orgDepartments } from "../src/business/departments"
 import { layoutOrg } from "../src/business/org-layout"
+import { applyOrgEdit, readOrgSetup } from "../src/business/org-edit"
 import { buildOrgView } from "../src/business/org-view"
 import { ORG_PEOPLE_JS, renderOrgPage } from "../src/daemon/ui/pages/org"
 import { WALL_ORG_CSS, WALL_ORG_SCRIPT } from "../src/daemon/ui/pages/wall-org.client"
@@ -274,5 +275,31 @@ describe("clients and guests on the org chart", () => {
     expect(departmentsProblem([dept], new Set(), people, new Map())).toBeUndefined()
     const view = buildOrgView({ ...config, people: [{ id: "anis", name: "Anis", role: "owner" }, { id: "saber", name: "Saber", role: "member" }] }, {}, null)
     expect(view.diagram.boxes.some((b) => b.key === "person:saber")).toBe(true)
+  })
+})
+
+describe("Edit org keeps departments whole (#1681)", () => {
+  const fresh = () => structuredClone(config) as any
+
+  it("lists a person named only in a department as a chart member", () => {
+    const cfg = fresh()
+    cfg.business.relations = []
+    expect(readOrgSetup(cfg).members.map((m) => m.ref)).toContain("person:saber")
+  })
+
+  it("takes a removed member out of every department, as head too, and the view stays clean", () => {
+    const cfg = fresh()
+    expect(applyOrgEdit(cfg, { op: "remove-member", member: "agent:pm" })).toBe("PM removed from the org chart, with 1 line and out of Dev")
+    expect(cfg.business.departments.dev.members).toEqual(["agent:ops", "person:saber"])
+    expect(buildOrgView(cfg, {}, null).problem).toBeUndefined()
+    expect(applyOrgEdit(cfg, { op: "remove-member", member: "person:anis" })).toContain("and out of Dev")
+    expect(cfg.business.departments.dev.head).toBeUndefined()
+  })
+
+  it("still saves an unrelated edit when a department already has a problem", () => {
+    const cfg = fresh()
+    cfg.people.push({ id: "zahra", name: "Zahra", role: "guest" })
+    cfg.business.departments.dev.members.push("person:zahra")
+    expect(() => applyOrgEdit(cfg, { op: "set-role", member: "agent:sales", role: "Seller" })).not.toThrow()
   })
 })
