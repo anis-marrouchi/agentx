@@ -12,6 +12,8 @@ import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import type { MemberStore } from "./store"
 import { PersonSessionStore, type PersonSession } from "./person-sessions"
 import { SignInAccountStore, type SignInAccount } from "./signin-accounts"
+import { HUB_PATH } from "@/daemon/ui/hub-name"
+import { OWNER_BROWSER_COOKIE, OwnerBrowserStore } from "./owner-browsers"
 import {
   NETWORK_MISMATCH, PAIRING_CARD_BY, TOO_MANY_WAITING,
   cardAnswer, clientAddress, machineName, networkIdentities, networkLogin, pageFor,
@@ -23,10 +25,14 @@ import {
 // ax_person cookie), never a member key and never the owner's ax_session.
 // That session opens the person's /member page, as a paired machine does.
 //
-//   who      a member or a client whose people entry has `email:<address>`.
-//            The owner, a guest or an unknown address gets no link, and the
-//            answer is the same either way. The owner's sign-in waits for
-//            its home-machine confirmation (design note, answer 4).
+//   who      a member or a client whose people entry has `email:<address>`,
+//            and the owner when dashboard.token is set. A guest or an
+//            unknown address gets no link, and the answer is the same
+//            either way.
+//   owner    gets full owner rights: the dashboard's ax_session cookie, as
+//            /login gives for the token. Each new browser is confirmed on
+//            the home machine first (owner-browsers.ts; design note,
+//            Decision 8). The firstSignIn setting does not skip that.
 //   the link 32 random bytes, once, for 15 minutes; only its hash is kept.
 //            It sits after the # in the mailed address, so it never reaches
 //            a server log, and opening it only shows a Sign in button: a
@@ -140,6 +146,18 @@ export interface SignInDeps {
   log?: (line: string) => void
   /** The account each person first signed in with (#1675); the file in `root` when unset. */
   accounts?: SignInAccountStore
+  /** dashboard.token: the owner signs in by link only while it is set (Decision 8). */
+  ownerToken?: () => string | undefined
+  /** The owner's browsers (owner-browsers.ts); the file in `root` when unset. */
+  ownerBrowsers?: OwnerBrowserStore
+}
+
+const ownerBrowsersOf = (deps: Pick<SignInDeps, "ownerBrowsers" | "root" | "now">) => deps.ownerBrowsers ?? new OwnerBrowserStore(deps.root, deps.now)
+
+/** Whether this person may get a sign-in link: a member, a client, or the
+ *  owner while dashboard.token is set (owner rights are that token's session). */
+export function mayGetLink(person: Person, deps: Pick<SignInDeps, "ownerToken">): boolean {
+  return SIGN_IN_ROLES.includes(person.role) || (person.role === "owner" && !!deps.ownerToken?.())
 }
 
 const accountsOf = (deps: Pick<SignInDeps, "accounts" | "root">) => deps.accounts ?? new SignInAccountStore(deps.root)
@@ -152,7 +170,7 @@ export function signInMail(p: { person: Pick<Person, "name" | "role">; email: st
     text: [
       `Hi ${p.person.name},`,
       ``,
-      `Open this link to sign in to "${pageFor(p.person.role)}":`,
+      `Open this link to sign in to ${p.person.role === "owner" ? "the dashboard" : `"${pageFor(p.person.role)}"`}:`,
       ``,
       `${p.origin.replace(/\/+$/, "")}/member/signin#${p.code}`,
       ``,
@@ -182,7 +200,7 @@ export async function askSignInLink(req: IncomingMessage, deps: SignInDeps): Pro
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: "Type your email address." } }
 
   const person = personByEmail(deps.people(), email)
-  if (!person || !SIGN_IN_ROLES.includes(person.role)) {
+  if (!person || !mayGetLink(person, deps)) {
     // The typed address is not logged: it may belong to nobody here.
     log(`[member] sign-in link asked from ${client}: no link (${person ? `role ${person.role}` : "unknown address"})`)
   } else if (!deps.perAddress.take(email)) {
@@ -212,9 +230,21 @@ export type SignInResult =
   | { status: 401 | 403 | 404 | 503; body: { error: string } }
   | { status: 429; body: { error: string; retryAfter: number }; retryAfter: number }
 
+/** The owner's sign-in (Decision 8): `ownerSession` asks the route to set ax_session
+ *  (the browser is confirmed); `browserValue` is a new browser's
+ *  ax_owner_browser cookie. */
+export type OwnerSignInResult =
+  { status: 200; owner: true; body: { person: string; name: string; state: "confirm" | "active"; check?: string; next?: string }; browserValue?: string; ownerSession?: true }
+
+/** Where an owner lands once signed in: the Wall. */
+export const OWNER_HOME = HUB_PATH
+export const OWNER_NEEDS_TOKEN = "The owner signs in by link only while the dashboard has its token set. Use the token at /login."
+export const OWNER_WAIT_GONE = "This sign-in was not confirmed on the home machine in time, or was refused there. Ask for a new link."
+export const TOO_MANY_OWNER_WAITING = "Too many sign-ins wait for a confirm on the home machine. Answer those first, or wait 15 minutes."
+
 /** POST /api/member/signin: spend the link and give this browser a session
  *  of the person's, waiting for the owner on their first sign-in. */
-export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Promise<SignInResult> {
+export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Promise<SignInResult | OwnerSignInResult> {
   const started = Date.now()
   const log = deps.log ?? ((line: string) => console.log(line))
   const setup = deps.setup()
@@ -228,7 +258,7 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
   const link = deps.links.spend(code)
   // Checked again now: the address must still be this person's, in a role that signs in.
   const found = link ? personByEmail(deps.people(), link.email) : null
-  const person = found && found.id === link!.personId && SIGN_IN_ROLES.includes(found.role) ? found : null
+  const person = found && found.id === link!.personId && mayGetLink(found, deps) ? found : null
   await padTo(started, deps.minMs ?? MIN_MS)
   if (!person) {
     deps.limiter.fail(client)
@@ -237,7 +267,83 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
     return { status: 401, body: { error: LINK_FAILED } }
   }
   deps.limiter.succeed(client)
+  if (person.role === "owner") return ownerSignIn(req, person, label, deps)
   return openSession(req, person, label, { via: "email link", proof: `the link mailed to ${person.name.slice(0, 60)}` }, setup, deps)
+}
+
+/** The network check of pairing: a person with a `tailscale:` login must
+ *  arrive with it. The refusal, or null when it passes. */
+function networkRefusal(req: IncomingMessage, person: Person, via: string, deps: Pick<SignInDeps, "members" | "log">): { status: 403; body: { error: string } } | null {
+  const log = deps.log ?? ((line: string) => console.log(line))
+  const client = clientAddress(req)
+  const login = networkLogin(req)
+  const expected = networkIdentities(person)
+  if (!expected.length || (login && expected.includes(login))) return null
+  deps.members.log({ person: person.id, event: "refused", address: client, detail: `sign-in ${via}: network login ${login ?? "missing"}; expected ${expected.join(" or ")}` })
+  log(`[member] ${person.id}: sign-in from ${client} refused: the network says "${login ?? "nobody"}", expected ${expected.join(" or ")}`)
+  return { status: 403, body: { error: NETWORK_MISMATCH } }
+}
+
+function cookieOf(req: IncomingMessage, name: string): string | null {
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const i = part.indexOf("=")
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim() || null
+  }
+  return null
+}
+
+/** The owner spent a link (Decision 8). A browser confirmed on the home
+ *  machine before goes straight in; any other waits for that confirm. */
+export function ownerSignIn(req: IncomingMessage, person: Person, label: string, deps: SignInDeps): OwnerSignInResult | { status: 403 | 503; body: { error: string } } {
+  const log = deps.log ?? ((line: string) => console.log(line))
+  const client = clientAddress(req)
+  const token = deps.ownerToken?.()
+  if (!token) return { status: 503, body: { error: OWNER_NEEDS_TOKEN } }
+  const refused = networkRefusal(req, person, "by email link", deps)
+  if (refused) return refused
+  const browsers = ownerBrowsersOf(deps)
+  const name = label || "Unnamed browser"
+  const known = browsers.find(cookieOf(req, OWNER_BROWSER_COOKIE))
+  if (known && known.state === "confirmed" && known.personId === person.id) {
+    browsers.signedIn(known.id)
+    deps.members.log({ person: person.id, event: "signed-in", address: client, detail: `${known.label} (owner, email link)` })
+    log(`[member] owner ${person.id} signed in by email link on confirmed browser "${known.label}" from ${client}`)
+    return { status: 200, owner: true, body: { person: person.id, name: known.label, state: "active", next: OWNER_HOME }, ownerSession: true }
+  }
+  const login = networkLogin(req)
+  const begun = browsers.begin({ personId: person.id, label: name, address: client, login })
+  if (!begun) {
+    deps.members.log({ person: person.id, event: "refused", address: client, detail: "owner sign-in: too many waiting for a confirm" })
+    log(`[member] owner ${person.id}: sign-in from ${client} refused: too many waiting for a confirm`)
+    return { status: 503, body: { error: TOO_MANY_OWNER_WAITING } }
+  }
+  deps.members.log({ person: person.id, event: "paired", address: client, detail: `${name} (owner, email link): waiting for the confirm on the home machine` })
+  log(`[member] owner ${person.id} signed in by email link on a new browser "${name}" from ${client}; waiting for the confirm on the home machine (browser ${begun.browser.id}, check ${begun.browser.check})`)
+  return { status: 200, owner: true, body: { person: person.id, name, state: "confirm", check: begun.browser.check }, browserValue: begun.value }
+}
+
+export type OwnerCollectResult =
+  | { status: 200; body: { state: "active"; next: string }; ownerSession: true }
+  | { status: 202; body: { state: "confirm"; check: string; name: string } }
+  | { status: 401; body: { error: string } }
+
+/** GET /api/member/owner-signin: the waiting browser asks again. Once the
+ *  owner confirmed it on the home machine, it gets ax_session, once. */
+export function collectOwnerSignIn(req: IncomingMessage, deps: Pick<SignInDeps, "ownerToken" | "ownerBrowsers" | "root" | "now" | "people" | "members" | "log">): OwnerCollectResult {
+  const log = deps.log ?? ((line: string) => console.log(line))
+  const token = deps.ownerToken?.()
+  const browsers = ownerBrowsersOf(deps)
+  const value = cookieOf(req, OWNER_BROWSER_COOKIE)
+  const peek = browsers.find(value)
+  // Still the owner, with the token still set: checked again when collected.
+  const person = peek ? deps.people().find((p) => p.id === peek.personId) : null
+  if (!token || !peek || person?.role !== "owner") return { status: 401, body: { error: OWNER_WAIT_GONE } }
+  const { state, browser } = browsers.collect(value)
+  if (state === "waiting") return { status: 202, body: { state: "confirm", check: browser!.check, name: browser!.label } }
+  if (state === "gone") return { status: 401, body: { error: OWNER_WAIT_GONE } }
+  deps.members.log({ person: person.id, event: "signed-in", address: clientAddress(req), detail: `${browser!.label} (owner, email link, confirmed on the home machine)` })
+  log(`[member] owner ${person.id} signed in on "${browser!.label}" from ${clientAddress(req)}, confirmed on the home machine`)
+  return { status: 200, body: { state: "active", next: OWNER_HOME }, ownerSession: true }
 }
 
 /** How a person proved who they are, for the logs and the owner's card. */
@@ -258,12 +364,8 @@ export function openSession(
   const log = deps.log ?? ((line: string) => console.log(line))
   const client = clientAddress(req)
   const login = networkLogin(req)
-  const expected = networkIdentities(person)
-  if (expected.length && (!login || !expected.includes(login))) {
-    deps.members.log({ person: person.id, event: "refused", address: client, detail: `sign-in ${how.via}: network login ${login ?? "missing"}; expected ${expected.join(" or ")}` })
-    log(`[member] ${person.id}: sign-in from ${client} refused: the network says "${login ?? "nobody"}", expected ${expected.join(" or ")}`)
-    return { status: 403, body: { error: NETWORK_MISMATCH } }
-  }
+  const refused = networkRefusal(req, person, how.via, deps)
+  if (refused) return refused
   const name = label || "Unnamed browser"
   const at = new Date(now()).toISOString()
 

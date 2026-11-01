@@ -26,6 +26,8 @@ import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
 import { handlePeoplePanel } from "./people-panel"
+import { handleOwnerSignInPanel } from "./owner-signin-panel"
+import { OwnerBrowserStore } from "@/members/owner-browsers"
 import { handlePicturesPanel, servePicture } from "./pictures-panel"
 import { IMPLICIT_OWNER } from "@/people/people"
 import { handleObservabilityApi } from "./observability-panel"
@@ -290,6 +292,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       const signIn = ctx.config.wall.signIn
       return signIn?.oidc ? { ...signIn.oidc, origin: signIn.origin, firstSignIn: signIn.firstSignIn } : null
     },
+    // The owner signs in by link only while the dashboard token is set (#1478, Decision 8).
+    dashboardToken: () => ctx.token,
   })) return
   // The Wall's portfolio summary (#1194): a `wall:portfolio` key or the
   // dashboard key, nothing else; counts and titles only (wall-portfolio.ts).
@@ -1015,6 +1019,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     personIds: () => [IMPLICIT_OWNER, ...currentPeople(ctx.config.people).map((p) => p.id)],
   })) return
   if (method === "GET" && path === "/people" && !pageAllowed(req, res, ctx, path)) return
+  // The owner's new browsers, confirmed on this machine only (#1478, Decision 8).
+  if (await handleOwnerSignInPanel(req, res, path, {
+    browsers: new OwnerBrowserStore(process.cwd()), members: membersStore(ctx.config.members.logRetentionDays), token: ctx.token,
+  })) return
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
     sessions: new PersonSessionStore(process.cwd()), root: process.cwd(), db: () => dashboardDb(),

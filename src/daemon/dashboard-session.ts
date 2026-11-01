@@ -45,6 +45,12 @@ function cookie(req: IncomingMessage, name: string): string {
   return ""
 }
 
+/** The Set-Cookie header of a session for this token: /login's, and the
+ *  owner's sign-in by email link once its browser is confirmed (#1478). */
+export function sessionCookieHeader(token: string, secure: boolean): string {
+  return `${SESSION_COOKIE}=${sessionValue(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_MAX_AGE_S}${secure ? "; Secure" : ""}`
+}
+
 /** True when the request carries a session cookie for this token. */
 export function hasSession(req: IncomingMessage, token: string | undefined): boolean {
   if (!token) return false
@@ -148,10 +154,10 @@ export async function handleLogin(
     res.end(loginPage(next, true))
     return true
   }
-  const secure = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https" ? "; Secure" : ""
+  const secure = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https"
   res.writeHead(303, {
     Location: next,
-    "Set-Cookie": `${SESSION_COOKIE}=${sessionValue(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_MAX_AGE_S}${secure}`,
+    "Set-Cookie": sessionCookieHeader(token, secure),
     "Cache-Control": "no-store",
   })
   res.end()

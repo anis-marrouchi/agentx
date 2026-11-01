@@ -8,7 +8,9 @@ import { appIconPng } from "./app-icon"
 import { MemberStore } from "@/members/store"
 import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
 import { PERSON_COOKIE, PERSON_SESSION_MAX_AGE_S, PersonSessionStore } from "@/members/person-sessions"
-import { SendLimiter, SignInLinkStore, askSignInLink, personAccess, signInWithLink, type SignInDeps, type SignInSetup } from "@/members/signin"
+import { SendLimiter, SignInLinkStore, askSignInLink, collectOwnerSignIn, personAccess, signInWithLink, type SignInDeps, type SignInSetup } from "@/members/signin"
+import { OWNER_BROWSER_COOKIE, OWNER_BROWSER_MAX_AGE_S, OwnerBrowserStore } from "@/members/owner-browsers"
+import { sessionCookieHeader } from "./dashboard-session"
 import { OidcStateStore, SignInAccountStore, STATE_COOKIE, STATE_TTL_MS, finishOidc, startOidc, type OidcDeps, type OidcSetup } from "@/members/oidc"
 import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor, type PersonWork, type SentItem, type WorkItem } from "@/members/work"
@@ -22,6 +24,7 @@ import {
   renderMemberPage,
   renderMemberSignInPage,
   renderMemberWaitingPage,
+  renderOwnerConfirmPage,
 } from "./ui/pages/member"
 import { CLIENT_MANIFEST_PATH, renderClientManifest, renderClientPage } from "./ui/pages/client"
 
@@ -42,6 +45,10 @@ import { CLIENT_MANIFEST_PATH, renderClientManifest, renderClientPage } from "./
 // A browser signed in by an email link (#1478, members/signin.ts) holds an
 // ax_person session instead of a key; it opens the same page for the same
 // person, once the owner has let that person in.
+//
+// The owner may sign in by link too (Decision 8): once the home machine has
+// confirmed that browser, it gets the dashboard's own ax_session, and goes
+// to the Hub. Until then /member/signin/owner waits and shows the check code.
 
 export const MEMBER_COOKIE = "agentx_member"
 const COOKIE_MAX_AGE = 90 * 86400
@@ -73,6 +80,9 @@ export interface MemberRouteCtx {
   oidcStates?: OidcStateStore
   signInAccounts?: SignInAccountStore
   fetch?: OidcDeps["fetch"]
+  /** dashboard.token: the owner signs in by link only while it is set. */
+  dashboardToken?: () => string | undefined
+  ownerBrowsers?: OwnerBrowserStore
 }
 
 const defaultPairLimiter = new PairAttemptLimiter()
@@ -145,6 +155,7 @@ export async function handleMemberRequest(
     members, people: ctx.people, root: ctx.root, limiter: deps.limiter, setup: ctx.signInSetup ?? (() => null),
     perAddress: ctx.signInPerAddress ?? defaultPerAddress, perClient: ctx.signInPerClient ?? defaultPerClient,
     send: ctx.sendMail, minMs: ctx.pairMinMs, log: ctx.log, now: ctx.now, accounts,
+    ownerToken: ctx.dashboardToken, ownerBrowsers: ctx.ownerBrowsers,
   }
   const oidc: OidcDeps = {
     ...signIn, oidc: ctx.oidcSetup ?? (() => null), fetch: ctx.fetch,
@@ -180,8 +191,21 @@ export async function handleMemberRequest(
   }
   if (method === "POST" && path === "/api/member/signin") {
     const result = await signInWithLink(req, signIn)
-    if (result.status === 200) res.setHeader("Set-Cookie", personCookie(result.value))
+    if (result.status === 200 && "owner" in result) {
+      const cookies = []
+      if (result.browserValue) cookies.push(ownerBrowserCookie(result.browserValue))
+      if (result.ownerSession) cookies.push(sessionCookieHeader(ctx.dashboardToken!()!, true))
+      if (cookies.length) res.setHeader("Set-Cookie", cookies)
+    } else if (result.status === 200) res.setHeader("Set-Cookie", personCookie(result.value))
     if (result.status === 429) res.setHeader("Retry-After", String(result.retryAfter))
+    return sendJson(res, result.status, result.body)
+  }
+
+  // The owner's browser waits for the confirm on the home machine (Decision 8).
+  if (method === "GET" && path === "/member/signin/owner") return send(res, 200, "text/html; charset=utf-8", renderOwnerConfirmPage())
+  if (method === "GET" && path === "/api/member/owner-signin") {
+    const result = collectOwnerSignIn(req, signIn)
+    if (result.status === 200) res.setHeader("Set-Cookie", sessionCookieHeader(ctx.dashboardToken!()!, true))
     return sendJson(res, result.status, result.body)
   }
 
@@ -266,6 +290,11 @@ export function withoutAgents(work: PersonWork): Omit<PersonWork, "open" | "rece
 
 export function sessionCookie(token: string): string {
   return `${MEMBER_COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`
+}
+
+/** The cookie naming an owner's browser (owner-browsers.ts): no rights by itself. */
+export function ownerBrowserCookie(value: string): string {
+  return `${OWNER_BROWSER_COOKIE}=${value}; Path=/api/member; Max-Age=${OWNER_BROWSER_MAX_AGE_S}; HttpOnly; Secure; SameSite=Strict`
 }
 
 /** The ax_person cookie a sign-in by email sets (#1478). */

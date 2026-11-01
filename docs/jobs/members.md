@@ -95,7 +95,7 @@ The teammate follows [Join My work](./join-my-work.md), which walks them through
 Instead of a pairing code, a teammate or a client can ask for a link by mail. The link signs their browser in as them. It opens the same page as a paired machine, and you see the browser on their People page with **End access**.
 
 1. **Set it up once.** Set the [mail sender](../reference/config-operations.md#mail-sender) and [`wall.signIn.origin`](../reference/config-operations.md#wall-sign-in) in `agentx.json`. The page lives under `/member`, so [serving the member page](#serve-only-the-member-page) is all the network needs.
-2. **Give the person their address.** Run `agentx people link sara email:sara@example.com`. Only a `member` or a `client` can sign in this way. You, the owner, keep the dashboard token for now, and a guest gets no link.
+2. **Give the person their address.** Run `agentx people link sara email:sara@example.com`. Only a `member` or a `client` can sign in this way, and you, the owner, once a dashboard token is set ([Sign in as the owner from another browser](../dashboard/people.md#sign-in-as-the-owner-from-another-browser)). A guest gets no link.
 3. **Their browser:** they open `https://your-mac.tailnet-name.ts.net/member`, select **sign in with your email**, type their address and select **Send me a link**. The page gives the same answer for any address, so nobody can use it to find out who is on your list.
 
    ![The sign-in page: an email address, a Send me a link button, and the same answer for any address](/screenshots/members/signin-ask.png)

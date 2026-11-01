@@ -246,6 +246,57 @@ ${bar(signedIn ? "You are signed in" : "This machine is paired")}
 </html>`
 }
 
+/** /member/signin/owner (#1478, Decision 8): the owner's new browser waits
+ *  until the sign-in is confirmed on the home machine. The check code comes
+ *  from /api/member/owner-signin, so the page holds nothing itself. */
+export function renderOwnerConfirmPage(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>${head("Confirm on the home machine · AgentX")}<style>${WAITING_CSS}
+.check{font:600 28px/1.2 ui-monospace,monospace;letter-spacing:.08em;margin:8px 0}
+.todo{list-style:decimal;padding-left:1.4em;margin:8px 0 12px;display:grid;gap:4px}</style></head>
+<body>
+${bar("Confirm this sign-in", "", "AgentX")}
+<main class="narrow">
+  <div class="card">
+    <h2><span class="pulse" aria-hidden="true"></span>Confirm on the home machine</h2>
+    <p>This browser is new for the owner's account. Before it gets owner rights:</p>
+    <ol class="todo">
+      <li>On the home machine (the computer that runs AgentX), open the dashboard.</li>
+      <li>Open <b>Sign-in requests</b>. The Hub shows a link to it while a sign-in waits.</li>
+      <li>Check that the code there matches this one, then press <b>Confirm</b>.</li>
+    </ol>
+    <p>Code for this browser:</p>
+    <p class="check" id="check" aria-live="polite">…</p>
+    <p id="msg" class="help" role="status">This page opens the Hub by itself once you confirm. It waits 15 minutes.</p>
+  </div>
+</main>
+<script>${OWNER_CONFIRM_SCRIPT}</script>
+</body>
+</html>`
+}
+
+const OWNER_CONFIRM_SCRIPT = `
+(function () {
+  var check = document.getElementById('check'), msg = document.getElementById('msg'), timer = null;
+  function poll() {
+    fetch('/api/member/owner-signin', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
+    }).then(function (r) {
+      if (r.status === 200 && r.body.next) { clearInterval(timer); msg.textContent = 'Confirmed. Opening the Hub…'; location.replace(r.body.next); return; }
+      if (r.status === 202) { check.textContent = r.body.check || '…'; return; }
+      clearInterval(timer);
+      check.textContent = '—';
+      msg.innerHTML = '';
+      msg.appendChild(document.createTextNode((r.body.error || 'This sign-in is no longer waiting.') + ' '));
+      var a = document.createElement('a'); a.href = '/member/signin'; a.textContent = 'Ask for a new link'; msg.appendChild(a);
+    }).catch(function () { msg.textContent = 'No connection. Still waiting…'; });
+  }
+  poll();
+  timer = setInterval(poll, 3000);
+})();
+`
+
 // ── Pure helpers, sent to the browser with injectFns ─────────────────────
 
 /** How a request's state reads on the page. */
@@ -347,7 +398,13 @@ const SIGNIN_SCRIPT = `
       btn.disabled = true; say('One moment…', false);
       p.then(function (r) {
         btn.disabled = false;
-        if (r.status === 200) { say(r.body.message || 'Done.', false); if (r.body.state) location.replace('/member'); return; }
+        if (r.status === 200) {
+          say(r.body.message || 'Done.', false);
+          if (r.body.state === 'confirm') location.replace('/member/signin/owner');
+          else if (r.body.next) location.replace(r.body.next);
+          else if (r.body.state) location.replace('/member');
+          return;
+        }
         say(r.body.error || 'That did not work. Try again.', true);
       }).catch(function () { btn.disabled = false; say('No connection. Check the network and try again.', true); });
     });

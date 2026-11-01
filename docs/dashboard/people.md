@@ -71,7 +71,30 @@ Once sign-in by email link is set up (it is being built, see #1478), a person wh
 
 ![A person opened on People: under Machines, Signed-in browsers lists one ended browser and one signed in, with End access](/screenshots/wall/people-sessions.png)
 
-A sign-in also ends by itself after 30 days, and at the next request once you take the person off the people list. For now, a sign-in never counts as yours: it opens none of the owner's pages, settings or writes, even with your own address. Signing in as the owner comes in a later step, and the first time from each new browser it must be confirmed on this computer.
+A sign-in also ends by itself after 30 days, and at the next request once you take the person off the people list. A teammate's or a client's sign-in never counts as yours: it opens none of the owner's pages, settings or writes.
+
+## Sign in as the owner from another browser
+
+You can sign in to the whole dashboard from another computer with an email link, instead of typing the dashboard token at `/login`. You get the same rights as with the token. Before that, each new browser must be confirmed on **this computer**, the one that runs AgentX (the "home machine"). A phone card does not do it.
+
+It needs three things: the [mail sender](../reference/config-operations.md#mail-sender), [`wall.signIn.origin`](../reference/config-operations.md#wall-sign-in), and a dashboard token (`dashboard.token`). Without a token, no link is sent to you. Your entry on the people list must have your address, for example `agentx people link <your id> email:you@example.com`.
+
+1. **Other browser:** open `https://<your computer>/member/signin`, type your address and select **Send me a link**.
+2. **Your mail:** open the link, give this browser a name and select **Sign in**.
+3. **Other browser:** a new browser shows **Confirm on the home machine** with a six-digit code. Leave it open.
+
+   ![The other browser waits: Confirm on the home machine, with a six-digit code](/screenshots/members/owner-confirm.png)
+
+4. **Home machine, browser:** open the dashboard there. While a sign-in waits, the Hub shows **A new browser is signing in as you** at the top. Select **Confirm or refuse it**, or open `http://127.0.0.1:4202/signin-requests`.
+5. **Home machine, browser:** check that the code under **Waiting** is the one on the other browser, then select **Confirm**. If you did not start this sign-in, select **Refuse**.
+
+   ![Sign-in requests on the home machine: one browser waiting with its code, Confirm and Refuse, and one confirmed browser with End](/screenshots/wall/owner-signin-requests.png)
+
+6. **Other browser:** within a few seconds it opens the Hub, signed in as you.
+
+A sign-in waits 15 minutes for the confirm, then stops; ask for a new link. Once a browser is confirmed, its next link goes straight in. Under **Confirmed browsers**, **End** forgets one, so its next sign-in asks here again. End does not sign that browser out at once: its session lasts 30 days, as one from `/login` does. To sign out every browser now, change `dashboard.token`.
+
+The page `/signin-requests` answers only on this computer. Opened from anywhere else, even from a browser signed in as you, it says **Open this on the home machine**.
 
 Adding people, changing their role or identities, and inviting them stay with the `agentx people` commands in the terminal: the People page only reads, apart from **End access**.
 
@@ -101,8 +124,13 @@ Never publish `/hub` or the whole dashboard with `tailscale serve`. `agentx peop
 2. **Terminal:** run `agentx people list` and `agentx people devices` from the folder that holds `agentx.json`. The page shows the same people and the same machines.
 3. **Browser:** select **open requests on the Hub** on a person who asked for something. The feed shows only their posts.
 4. **Teammate's browser:** opening `https://<your computer>/hub` shows nothing of yours.
+5. **Home machine, browser:** open `http://127.0.0.1:4202/signin-requests`. It lists the browsers you confirmed for yourself, and any sign-in waiting.
 
 ## If something is wrong
+
+- **No link comes when you sign in as the owner:** check that `dashboard.token` is set and that your entry has your `email:` address (`agentx people show <your id>`). The page answers the same either way, on purpose.
+- **"Confirm on the home machine" never moves on:** open `http://127.0.0.1:4202/signin-requests` on the computer that runs AgentX, not on a phone or another computer. After 15 minutes the sign-in stops; ask for a new link.
+- **A sign-in waits that you did not start, or its code is not the one on your screen:** select **Refuse**. Someone opened a link sent to your address; check who can read that mailbox.
 
 - **The page lists only "Owner of this machine":** nobody is in your people list yet. Add someone with `agentx people add`.
 - **A person has no requests and no turns:** the identity they write from is not on their entry, so their messages were not recorded under them. Add it with `agentx people link <id> <channel:id>`. Work from before that stays unlisted.

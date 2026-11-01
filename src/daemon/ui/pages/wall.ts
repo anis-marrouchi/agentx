@@ -208,6 +208,7 @@ ${navItems}
   </nav>
   ${moreSheetHtml(groups, owner)}
   <div class="ax-wall__main">
+    <p class="ax-wall__osr" id="wall-osr" role="status" hidden></p>
     <header class="ax-wall__head">
       <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">${HUB_NAME}</h1>
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
@@ -306,13 +307,36 @@ ${navItems}
     title: `AgentX · ${HUB_NAME}`,
     body,
     css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
-    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
+    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`
+      // On the home machine only (its page carries the token): say when an
+      // owner sign-in waits for a confirm here (#1478, Decision 8).
+      + (opts.localToken ? `<script>${OWNER_SIGNIN_NOTICE_SCRIPT}</script>` : ""),
   })
 }
+
+/** Polls the owner's sign-ins waiting for a confirm on this machine. */
+const OWNER_SIGNIN_NOTICE_SCRIPT = `
+(function () {
+  var box = document.getElementById('wall-osr');
+  if (!box || !window.AX_LOCAL_TOKEN) return;
+  function check() {
+    fetch('/api/admin/owner-signins', { headers: { Authorization: 'Bearer ' + window.AX_LOCAL_TOKEN }, cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var n = j && j.waiting || 0;
+        box.hidden = !n;
+        if (n) box.innerHTML = (n === 1 ? 'A new browser is signing in as you.' : n + ' new browsers are signing in as you.') + ' <a href="/signin-requests">Confirm or refuse it</a>';
+      }).catch(function () {});
+  }
+  check();
+  setInterval(check, 10000);
+})();
+`
 
 const WALL_PAGE_CSS = `
 /* A display rule beats the user agent's [hidden] rule: keep hidden hidden. */
 .ax-wall [hidden] { display: none !important; }
+.ax-wall__osr { margin: 0; padding: 10px 16px; background: var(--ax-amber-t, #fff4d6); color: var(--ax-amber-ink, inherit); border-bottom: 1px solid var(--ax-border); font-weight: 600; }
 /* The three-column layout lives in wall-space.ts (#1242). */
 .ax-wall__empty, .ax-wall__count { color: var(--ax-muted); font-size: var(--ax-fs-sm); margin: 0; }
 .ax-wall__feed .ax-wall__empty, .ax-wall__list > .ax-wall__empty { padding: 32px 16px; text-align: center; }

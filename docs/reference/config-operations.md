@@ -513,7 +513,9 @@ Lets a teammate or a client sign in to their page with a link sent by email, ins
 | Key | Default | What it does |
 |---|---|---|
 | `wall.signIn.origin` | required | The fixed `https://` address people open, without a path, for example `https://your-mac.tailnet-name.ts.net`. Every mailed link starts with it, whatever address a request came in on. |
-| `wall.signIn.firstSignIn` | `"card"` | `"card"`: a person's first sign-in waits for your yes on a decision card. `"auto"`: a member goes straight in. A client always gets the card. |
+| `wall.signIn.firstSignIn` | `"card"` | `"card"`: a person's first sign-in waits for your yes on a decision card. `"auto"`: a member goes straight in. A client always gets the card. It never applies to you, the owner: each new browser of yours is confirmed on this computer. |
+
+You, the owner, can sign in by link too, once `dashboard.token` is set: see [Sign in as the owner from another browser](../dashboard/people.md#sign-in-as-the-owner-from-another-browser).
 
 ```json
 "wall": {
