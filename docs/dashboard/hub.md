@@ -338,7 +338,7 @@ The other tabs:
 3. Fill in the form as above, and type a role, for example `Engineer`. Select **Add agent**.
 4. **Terminal:** run `agentx daemon restart --when-idle`, as for any new agent.
 
-The agent, its role and its reports-to line are saved together. **Check it worked:** the line under the form says **Added @<id>, reporting to <name>**, and `/org` shows the new card under that member. **If something is wrong:** if the line is refused (for example, the member left the org chart), the form says why, and nothing is saved, not even the agent. To add the agent outside the org chart, select **Add it outside the org chart instead**.
+The agent, its role and its reports-to line are saved together. **Check it worked:** the line under the form says **Added**, then **reporting to** and the member's name, for example "Added @tester, reporting to Helper.", and `/org` shows the new card under that member. **If something is wrong:** if the line is refused (for example, the member left the org chart), the form says why, and nothing is saved, not even the agent. To add the agent outside the org chart, select **Add it outside the org chart instead**.
 
 ![Settings › Agents with Add an agent under Planner: Reports to Planner, and a Role field, in the isolated demo](/screenshots/settings/add-agent-here.png)
 
