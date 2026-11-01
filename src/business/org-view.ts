@@ -1,6 +1,7 @@
 import type { AgentHold } from "@/agents/holds"
 import { orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
 import { layoutOrg, type OrgPlacement } from "./org-layout"
+import { departmentBoxes, departmentsProblem, orgDepartments, type DepartmentBox, type OrgDepartment, type Outsider } from "./departments"
 
 // --- The Org view's data (#1169), from agentx.json, the holds and the daemon ---
 //
@@ -33,6 +34,10 @@ export interface OrgBox extends OrgPlacement {
   status?: OrgStatus
   active?: number
   heldBy?: string
+  /** The department it is in (#1681), by id. */
+  department?: string
+  /** Clients and guests a relation joins it to: a line on the card, never a card. */
+  worksWith?: Array<{ key: string; name: string; role: Outsider["role"] }>
 }
 
 /** The chart laid out: cards by level and half-column, and every relation
@@ -51,13 +56,21 @@ export interface OrgView {
   /** False when the daemon did not answer: working and idle are unknown. */
   live: boolean
   /** People from the top-level people list (#1418). `placed` when they are in
-   *  business.orgPeople, with their role's title when it has one. */
-  people: Array<{ id: string; name: string; placed?: true; title?: string }>
+   *  business.orgPeople, with their role's title when it has one. `outsider`
+   *  for a client or guest: not personnel, so never a card (Anis 11-01). */
+  people: Array<{ id: string; name: string; placed?: true; title?: string; outsider?: Outsider["role"] }>
   /** Typed relations, reportsTo included, members as `agent:<id>` / `person:<id>`. */
   relations: OrgRelation[]
+  /** Departments (#1681), members and head as `agent:<id>` / `person:<id>`. */
+  departments: OrgDepartment[]
+  /** The Departments view (#1681): a box per department, head on top, and
+   *  `rest`, every card and agent outside the chart no department holds. */
+  byDepartment: { boxes: DepartmentBox[]; rest: string[] }
   /** The chart for the Wall's Org page (#1419). */
   diagram: OrgDiagram
-  /** What is wrong with the relations, when something is; the daemon refuses to start the business layer on it. */
+  /** What is wrong with the relations, when something is; the daemon refuses
+   *  to start the business layer on it. Else what is wrong with the
+   *  departments, which only the chart shows. */
   problem?: string
 }
 
@@ -75,7 +88,7 @@ export function buildOrgView(
   config: {
     agents?: Record<string, any>
     people?: Array<{ id: string; name?: string; role?: string }>
-    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; orgPeople?: Record<string, any>; relations?: any[] }
+    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; orgPeople?: Record<string, any>; relations?: any[]; departments?: Record<string, any> }
   },
   holds: Record<string, AgentHold>,
   live: Array<{ id: string; active?: number }> | null,
@@ -136,25 +149,50 @@ export function buildOrgView(
   const people = (config.people ?? []).filter((p) => p?.id).map((p) => {
     const role = placed[p.id]?.role
     const title = role ? roles[role]?.title || role : undefined
-    return { id: p.id, name: p.name || p.id, ...(placed[p.id] ? { placed: true as const } : {}), ...(title ? { title } : {}) }
+    const outsider = outsiderRole(p.role)
+    return {
+      id: p.id, name: p.name || p.id,
+      ...(placed[p.id] ? { placed: true as const } : {}), ...(title ? { title } : {}), ...(outsider ? { outsider } : {}),
+    }
   })
-  const problem = relationsProblem(relations, new Set(Object.keys(chart)), new Set(people.map((p) => p.id)))
-  const diagram = orgDiagram(nodes, config.people ?? [], people, relations)
-  return { roots, outside, live: live !== null, people, relations, diagram, ...(problem ? { problem } : {}) }
+  const departments = orgDepartments(config.business)
+  const known = [new Set(Object.keys(chart)), new Set(people.map((p) => p.id))] as const
+  const outsiders = new Map(people.flatMap((p) => (p.outsider ? [[p.id, { name: p.name, role: p.outsider }] as const] : [])))
+  const problem = relationsProblem(relations, ...known) ?? departmentsProblem(departments, ...known, outsiders)
+  const diagram = orgDiagram(nodes, config.people ?? [], people, relations, departments)
+  // People first, then agents, each by name; agents outside the chart last.
+  const everyone = [...diagram.boxes].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "person" ? -1 : 1))
+    .map((b) => b.key).concat(outside.map((n) => `agent:${n.id}`))
+  const byDepartment = departmentBoxes(departments, everyone)
+  return { roots, outside, live: live !== null, people, relations, departments, byDepartment, diagram, ...(problem ? { problem } : {}) }
 }
 
-const PERSON_TITLE: Record<string, string> = { owner: "Owner", client: "Client", guest: "Guest" }
+const PERSON_TITLE: Record<string, string> = { owner: "Owner" }
+
+/** `client` or `guest`: a person outside the organisation. Owners and members
+ *  are personnel; a person written with no role is a member. */
+function outsiderRole(role: string | undefined): Outsider["role"] | undefined {
+  return role === "client" || role === "guest" ? role : undefined
+}
 
 /** The chart's cards: every agent in business.orgChart, every person in
- *  business.orgPeople, and every person a reports-to or dotted-line names.
- *  A person only acted for shows as a chip on the agent's card, not as a card. */
+ *  business.orgPeople, and every person a reports-to, a dotted-line or a
+ *  department (#1681) names, when they are personnel (owner or member).
+ *  A person only acted for shows as a chip on the agent's card, not as a card;
+ *  a client or guest as a "works with" line (worksWith). */
 function orgDiagram(
   nodes: Map<string, OrgNode>,
   people: Array<{ id: string; name?: string; role?: string }>,
   listed: OrgView["people"],
   relations: OrgRelation[],
+  departments: OrgDepartment[],
 ): OrgDiagram {
   const named = new Set(relations.filter((r) => r.type !== "acts-for").flatMap((r) => [r.from, r.to]))
+  const deptOf = new Map<string, string>()
+  for (const d of departments) {
+    if (d.head) named.add(d.head)
+    for (const m of d.members) { named.add(m); if (!deptOf.has(m)) deptOf.set(m, d.id) }
+  }
   const cards = new Map<string, Omit<OrgBox, keyof OrgPlacement>>()
   for (const n of nodes.values()) {
     cards.set(`agent:${n.id}`, {
@@ -168,11 +206,24 @@ function orgDiagram(
   const byId = new Map(listed.map((p) => [p.id, p]))
   for (const p of people) {
     const shown = p?.id ? byId.get(p.id) : undefined
-    if (!shown || !(shown.placed || named.has(`person:${p.id}`))) continue
+    // Only personnel get a card: a client or guest never does (Anis 11-01).
+    if (!shown || shown.outsider || !(shown.placed || named.has(`person:${p.id}`))) continue
     const title = shown.title ?? PERSON_TITLE[p.role ?? ""]
     cards.set(`person:${p.id}`, { kind: "person", id: p.id, name: p.name || p.id, ...(title ? { title } : {}) })
   }
-  const layout = layoutOrg([...cards].map(([key, c]) => ({ key, name: c.name })), relations)
+  for (const [key, c] of cards) if (deptOf.has(key)) c.department = deptOf.get(key)
+  // A reports-to or dotted-line to a client or guest is a line on the other
+  // end's card, "works with Zahra (guest)", and no node or arrow.
+  for (const r of relations) {
+    if (r.type === "acts-for") continue
+    for (const [mine, theirs] of [[r.from, r.to], [r.to, r.from]]) {
+      const card = cards.get(mine), them = parseMember(theirs)
+      const o = card && them.kind === "person" ? byId.get(them.id) : undefined
+      if (!card || !o?.outsider || card.worksWith?.some((w) => w.key === theirs)) continue
+      ;(card.worksWith ??= []).push({ key: theirs, name: o.name, role: o.outsider })
+    }
+  }
+  const layout = layoutOrg([...cards].map(([key, c]) => ({ key, name: c.name, ...(c.department ? { group: c.department } : {}) })), relations)
   // acts-for edges keep a person who has no card, so the agent's chip can name them.
   const edges = [...layout.edges, ...relations.filter((r) => r.type === "acts-for" && cards.has(r.from) && !cards.has(r.to))]
   return { ...layout, edges, boxes: layout.boxes.map((b) => ({ ...cards.get(b.key)!, ...b })) }
