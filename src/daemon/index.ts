@@ -2215,6 +2215,8 @@ export class AgentXDaemon {
       try {
         this.business.org.replaceWith(next.business, next.people ?? [], [...meshPeerNames(next)])
         applied.push("business.org")
+        const notPeers = this.business.org.notPeers()
+        if (notPeers.length) this.log(`[reload] org names agents on ${notPeers.join(", ")}, not in mesh.peers: shown as not a peer`)
       } catch (e: any) {
         this.log(`[reload] org chart kept: ${e.message}`)
       }

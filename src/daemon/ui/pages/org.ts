@@ -264,11 +264,12 @@ export const ORG_PEOPLE_JS = `
     return { roots: roots, names: names, nodes: nodes };
   }
   /** The card of an agent on another node: where it is and how its node last
-   *  answered, grey when it is down or unseen. No Pause or Activity: this
+   *  answered, grey when it is down, unseen or not a peer. No Pause or Activity: this
    *  node does not run it. tag and links are the card's Agent tag and rows. */
   function remoteCardHtml(n, tag, links, esc) {
     var r = n.remote, up = r.seen === 'up';
-    var state = up ? 'On ' + r.node : r.seen === 'down' ? r.node + ' does not answer; last seen there' : 'Not seen on ' + r.node;
+    var state = up ? 'On ' + r.node : r.seen === 'down' ? r.node + ' does not answer; last seen there'
+      : r.seen === 'not-peer' ? 'On ' + r.node + ', not a peer' : 'Not seen on ' + r.node;
     return '<div class="org-card is-remote' + (up ? '' : ' is-gone') + '" data-remote="' + esc(n.id) + '">' + tag
       + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(r.agent) + ' @ ' + esc(r.node) + '</span></div>'
       + links + '<span class="org-state is-remote">' + esc(state) + '</span></div>';

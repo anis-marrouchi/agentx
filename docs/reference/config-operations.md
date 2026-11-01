@@ -191,7 +191,7 @@ Each entry in `business.orgChart.<agent>`:
 | `schedule.lunch` | object | — | Lunch break, with `start` and `end` as `HH:MM`. |
 | `utilizationTarget` | number (0–1) | `0.8` | Share of working time the agent should be busy. |
 
-Each entry in `business.relations` links two members. A member is `agent:<id>` (an agent in `business.orgChart`), `person:<id>` (a person in `people`), or `agent:<node>/<id>` (an agent on the mesh peer named `<node>` in `mesh.peers`: shown on the chart, never sent work); a bare id is an agent. An unknown member, or a node not in `mesh.peers`, stops the business layer from starting, with an error that names it. Whether the node hosts that agent is not checked at start; the [Org page](../dashboard/org.md#show-agents-on-other-nodes) shows it.
+Each entry in `business.relations` links two members. A member is `agent:<id>` (an agent in `business.orgChart`), `person:<id>` (a person in `people`), or `agent:<node>/<id>` (an agent on the mesh peer named `<node>` in `mesh.peers`: shown on the chart, never sent work); a bare id is an agent. An unknown member stops the business layer from starting, with an error that names it. A node not in `mesh.peers` does not: the org loads, the daemon log names the node, and its agents show as **not a peer** on the [Org page](../dashboard/org.md#when-a-node-leaves-your-mesh). Only a new ref to such a node is refused when you save it from the dashboard or the CLI. Whether a node hosts that agent is not checked at start; the [Org page](../dashboard/org.md#show-agents-on-other-nodes) shows it.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|

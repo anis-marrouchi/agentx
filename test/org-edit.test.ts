@@ -31,6 +31,27 @@ function base(): any {
 
 const org = (cfg: any) => new Organization(businessConfigSchema.parse(cfg.business), cfg.people)
 
+describe("editing a chart that names a node no longer in mesh.peers (#1702)", () => {
+  function retired(): any {
+    const cfg = base()
+    cfg.mesh = { peers: [] }
+    cfg.business.relations = [{ from: "agent:old/seif", to: "agent:lead", type: "dotted-line" }]
+    return cfg
+  }
+
+  it("lets an unrelated edit through", () => {
+    const cfg = retired()
+    expect(() => applyOrgEdit(cfg, { op: "add-member", member: "agent:dev", role: "Engineer" })).not.toThrow()
+    expect(cfg.business.orgChart.dev).toBeDefined()
+  })
+
+  it("removes the ref to the retired node", () => {
+    const cfg = retired()
+    applyOrgEdit(cfg, { op: "remove-relation", from: "agent:old/seif", type: "dotted-line", to: "agent:lead" })
+    expect(cfg.business.relations ?? []).toEqual([])
+  })
+})
+
 describe("editing the org chart", () => {
   it("adds an agent with a new role, keeping each agent's schedule", () => {
     const cfg = base()

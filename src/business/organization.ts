@@ -1,5 +1,5 @@
 import type { BusinessConfig, BusinessOrgEntry, BusinessProject, BusinessRole } from "./config"
-import { memberKey, memberLabel, orgRelations, parseMember, relationsProblem, remoteAgent, type OrgRelation } from "./relations"
+import { memberKey, memberLabel, namedNodes, orgRelations, parseMember, relationsProblem, remoteAgent, type OrgRelation } from "./relations"
 
 // --- Organization: org-chart queries and validation ---
 //
@@ -28,9 +28,12 @@ export class Organization {
   /** Member → its reports-to boss, both written in full (`agent:x`, `person:y`). */
   private bosses: Map<string, string> = new Map()
   private people: ReadonlyArray<{ id: string; name?: string }>
+  /** Nodes an `agent:<node>/<id>` names that are not in mesh.peers (#1702). */
+  private notPeerList: string[] = []
 
   /** `people`: the top-level people list, so a person can sit in the org.
-   *  `peers`: the names in mesh.peers, so `agent:<node>/<id>` may be named. */
+   *  `peers`: the names in mesh.peers. An `agent:<node>/<id>` whose node is
+   *  not among them still loads (#1702), and notPeers() names that node. */
   constructor(config: BusinessConfig, people: ReadonlyArray<{ id: string; name?: string }> = [], peers: ReadonlyArray<string> = []) {
     this.people = people
     for (const [agentId, entry] of Object.entries(config.orgChart)) {
@@ -50,7 +53,11 @@ export class Organization {
     // Members and typed relations (#1418): reportsTo may name a person,
     // and business.relations adds reports-to, dotted-line and acts-for.
     this.relationList = orgRelations(config)
-    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)), new Set(peers))
+    const known = new Set(peers)
+    this.notPeerList = [...namedNodes(config)].filter((n) => !known.has(n)).sort()
+    // A node missing from mesh.peers (say a retired one) does not refuse the
+    // org: the ref is shown as "not a peer" and, like any remote ref, never routed to.
+    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)), new Set([...peers, ...this.notPeerList]))
     if (problem) throw new Error(problem)
     for (const r of this.relationList) {
       if (r.type === "reports-to") this.bosses.set(r.from, r.to)
@@ -75,6 +82,12 @@ export class Organization {
    *  the old chart, when `config` is invalid. */
   replaceWith(config: BusinessConfig, people: ReadonlyArray<{ id: string }> = [], peers: ReadonlyArray<string> = []): void {
     Object.assign(this, new Organization(config, people, peers))
+  }
+
+  /** Nodes the relations name in `agent:<node>/<id>` that are not in
+   *  mesh.peers, sorted. Empty when every ref names a known peer. */
+  notPeers(): string[] {
+    return [...this.notPeerList]
   }
 
   get(agentId: string): EmployeeProfile | undefined {

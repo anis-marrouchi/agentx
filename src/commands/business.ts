@@ -2,7 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import { loadDaemonConfig } from "@/daemon/config"
-import { RELATION_TYPES, configRelationsProblem, memberKey, memberLabel, orgRelations, parseMember, type RelationType } from "@/business/relations"
+import { RELATION_TYPES, configRelationsProblem, memberKey, memberLabel, meshPeerNames, namedNodes, orgRelations, parseMember, type RelationType } from "@/business/relations"
 
 // --- agentx business — manage the business layer config ---
 //
@@ -143,6 +143,7 @@ orgchart
   .action((agentId: string, opts) => {
     const days = String(opts.days).split(",").map((s) => s.trim()).filter(Boolean) as Array<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun">
     mutate((cfg) => {
+      const had = namedNodes(cfg.business)
       cfg.business = cfg.business || {}
       cfg.business.orgChart = cfg.business.orgChart || {}
       cfg.business.orgChart[agentId] = {
@@ -151,7 +152,7 @@ orgchart
         schedule: { days, start: opts.start, end: opts.end },
         utilizationTarget: parseFloat(opts.utilization) || 0.8,
       }
-      const problem = configRelationsProblem(cfg)
+      const problem = configRelationsProblem(cfg, had)
       if (problem) throw new Error(problem)
       return `orgChart entry "${agentId}" upserted (role=${opts.role}${opts.reportsTo ? `, reports to ${opts.reportsTo}` : ""})`
     })
@@ -189,10 +190,15 @@ relation
       return
     }
     const relations = orgRelations(cfg.business)
-    const problem = configRelationsProblem(cfg)
-    if (opts.json) { console.log(JSON.stringify({ relations, ...(problem ? { problem } : {}) }, null, 2)); return }
+    // A node not in mesh.peers is not a problem (#1702): the daemon loads the
+    // org and shows that agent as not a peer. It is listed apart.
+    const peers = meshPeerNames(cfg)
+    const notPeers = [...namedNodes(cfg.business)].filter((n) => !peers.has(n)).sort()
+    const problem = configRelationsProblem(cfg, notPeers)
+    if (opts.json) { console.log(JSON.stringify({ relations, ...(notPeers.length ? { notPeers } : {}), ...(problem ? { problem } : {}) }, null, 2)); return }
     if (relations.length === 0) console.log(chalk.dim("  no relations"))
     for (const r of relations) console.log(`  ${chalk.cyan(r.from)}  ${r.type}  ${chalk.cyan(r.to)}`)
+    if (notPeers.length) console.log(chalk.dim(`  not a peer in mesh.peers (shown, never sent work): ${notPeers.join(", ")}`))
     if (problem) console.log(chalk.yellow(`  ! ${problem}`))
   })
 
@@ -209,7 +215,7 @@ relation
       cfg.business = cfg.business || {}
       const r = { from: memberKey(from), to: memberKey(to), type: type as RelationType }
       const relations = [...(cfg.business.relations || []), r]
-      const problem = configRelationsProblem({ ...cfg, business: { ...cfg.business, relations } })
+      const problem = configRelationsProblem({ ...cfg, business: { ...cfg.business, relations } }, namedNodes(cfg.business))
       if (problem) throw new Error(problem)
       cfg.business.relations = relations
       return `relation added: ${r.from} ${r.type} ${r.to}`

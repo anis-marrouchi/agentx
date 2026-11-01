@@ -35,6 +35,8 @@ export class BusinessLayer {
     log: (...args: unknown[]) => void,
   ) {
     this.org = new Organization(business, daemon.people ?? [], [...meshPeerNames(daemon)])
+    const notPeers = this.org.notPeers()
+    if (notPeers.length) log(`[business] org names agents on ${notPeers.join(", ")}, not in mesh.peers: shown as not a peer, never sent work`)
     this.schedule = new Schedule(this.org, business)
     this.workSource = createWorkSource(business, daemon, log)
     this.reporter = new Reporter(router, this.org, business, log)

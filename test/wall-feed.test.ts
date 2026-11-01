@@ -2212,6 +2212,22 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(html).toContain("@kai on far")
     expect(html).toContain("On another node: shown, not routed to")
   })
+
+  it("greys an agent whose node is not in mesh.peers, as not a peer (#1702)", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      mesh: { peers: [] },
+      business: { orgChart: { ann: { reportsTo: "person:sam" } }, relations: [{ from: "agent:old/seif", to: "person:sam", type: "reports-to" }] },
+    }, {}, null, []) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    const card = new RegExp(`<article class="wog__card[^"]*" data-org-key="agent:old/seif"[\\s\\S]*?</article>`).exec(html)?.[0] ?? ""
+    expect(card).toContain("is-remote is-gone")
+    expect(card).toContain(">not a peer: old</span>")
+    expect(html).toContain('data-org-key="agent:ann"')
+  })
 })
 
 describe("The workflow editor on the Wall (#1524)", () => {

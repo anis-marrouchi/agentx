@@ -4,7 +4,10 @@
 // legacy `orgChart.<agent>.reportsTo: "<agent>"` keeps its meaning. People come
 // from the top-level `people` list. `agent:<node>/<id>` is an agent on the mesh
 // peer `<node>` (a name in mesh.peers): it is shown on the chart, never routed
-// to, and checked against mesh.peers only, so a start needs no network. Relation types, confirmed by the owner:
+// to, and checked against mesh.peers only, so a start needs no network. A ref
+// to a node that is not (or no longer) in mesh.peers does not stop the org
+// from loading (#1702): it is shown as "not a peer". Only a writer refuses a
+// new one, so a typo is caught before it is saved. Relation types, confirmed by the owner:
 //   reports-to   line manager; at most one per member, no cycles; drives escalation
 //   dotted-line  a second manager for one topic or project; many allowed
 //   acts-for     an agent works on behalf of a person; agent → person only
@@ -113,18 +116,36 @@ export function memberLabel(ref: string, people: ReadonlyArray<{ id: string; nam
 
 /** The first thing wrong with the org relations of a whole agentx.json, or
  *  undefined. For writers (admin POST, CLI) to refuse a bad ref before it is
- *  saved, instead of the daemon refusing it at the next start. */
+ *  saved. `had`: nodes the config already named before this change (see
+ *  namedNodes); a ref to one of them is let through even when it is not in
+ *  mesh.peers, so a retired node does not block an unrelated edit (#1702). */
 export function configRelationsProblem(cfg: {
   people?: Array<{ id: string }>
   mesh?: { peers?: Array<{ name: string }> }
   business?: { orgChart?: Record<string, { reportsTo?: string }>; relations?: OrgRelation[] }
-} | undefined): string | undefined {
+} | undefined, had: Iterable<string> = []): string | undefined {
   return relationsProblem(
     orgRelations(cfg?.business),
     new Set(Object.keys(cfg?.business?.orgChart ?? {})),
     new Set((cfg?.people ?? []).map((p) => p?.id).filter(Boolean)),
-    meshPeerNames(cfg),
+    new Set([...meshPeerNames(cfg), ...had]),
   )
+}
+
+/** Every node an `agent:<node>/<id>` in `refs` names. */
+export function refNodes(refs: Iterable<string>): Set<string> {
+  const out = new Set<string>()
+  for (const ref of refs) {
+    const r = remoteAgent(ref)
+    if (r) out.add(r.node)
+  }
+  return out
+}
+
+/** Every node the org relations of `business` name (orgChart reportsTo and
+ *  business.relations). Departments: orgNodes in departments.ts. */
+export function namedNodes(business: Parameters<typeof orgRelations>[0]): Set<string> {
+  return refNodes(orgRelations(business).flatMap((r) => [r.from, r.to]))
 }
 
 /** The names in mesh.peers: the nodes an `agent:<node>/<id>` may name. */

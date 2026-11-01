@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest"
 import { businessConfigSchema } from "../src/business/config"
-import { departmentsProblem, orgDepartments } from "../src/business/departments"
+import { departmentsProblem, orgDepartments, orgNodes } from "../src/business/departments"
 import { buildOrgView } from "../src/business/org-view"
 import { Organization } from "../src/business/organization"
-import { configRelationsProblem, memberKey, orgRelations, relationsProblem, remoteAgent } from "../src/business/relations"
+import { configRelationsProblem, memberKey, namedNodes, orgRelations, relationsProblem, remoteAgent } from "../src/business/relations"
 import { ORG_PEOPLE_JS } from "../src/daemon/ui/pages/org"
 
 // Agents on other mesh nodes in the org chart: `agent:<node>/<id>`, checked
@@ -65,6 +65,15 @@ describe("agent:<node>/<id> refs", () => {
     expect(configRelationsProblem(config)).toBeUndefined()
     expect(configRelationsProblem({ ...config, mesh: { peers: [] } })).toMatch(/"clawd" is not a peer/)
   })
+
+  it("lets a writer keep a node the config already named, and refuses a new unknown one (#1702)", () => {
+    const retired = { ...config, mesh: { peers: [] } }
+    expect(namedNodes(config.business)).toEqual(new Set(["clawd"]))
+    expect(orgNodes(config.business)).toEqual(new Set(["clawd"]))
+    expect(configRelationsProblem(retired, namedNodes(retired.business))).toBeUndefined()
+    const typo = { ...retired, business: { ...retired.business, relations: [...retired.business.relations, { from: "agent:pm", to: "agent:clwad/x", type: "dotted-line" as const }] } }
+    expect(configRelationsProblem(typo, namedNodes(retired.business))).toMatch(/"clwad" is not a peer/)
+  })
 })
 
 describe("Organization with agents on other nodes", () => {
@@ -76,9 +85,26 @@ describe("Organization with agents on other nodes", () => {
   })
   const people = [{ id: "anis", name: "Anis" }]
 
-  it("starts with a known peer and no network call, and refuses an unknown one", () => {
+  it("starts with a known peer and no network call", () => {
     expect(() => new Organization(business, people, ["clawd"])).not.toThrow()
-    expect(() => new Organization(business, people, [])).toThrow(/"clawd" is not a peer in mesh.peers/)
+    expect(new Organization(business, people, ["clawd"]).notPeers()).toEqual([])
+  })
+
+  it("starts with a node that is not in mesh.peers: the org loads, and the node is named (#1702)", () => {
+    const org = new Organization(business, people, [])
+    expect(org.notPeers()).toEqual(["clawd"])
+    // The rest of the org loads as usual.
+    expect(org.all().map((e) => e.agentId).sort()).toEqual(["ops", "pm"])
+    expect(org.reportsTo("pm")).toBe("person:anis")
+    // The ref is kept, still never routed to.
+    expect(org.reportsTo("ops")).toBe("agent:clawd/lead")
+    expect(org.escalationChain("ops")).toEqual([])
+    expect(org.canHandle("clawd/lead", null, null)).toBe(false)
+  })
+
+  it("still refuses a malformed remote ref at start", () => {
+    const bad = businessConfigSchema.parse({ ...business, relations: [{ from: "agent:a/b/c", to: "person:anis", type: "reports-to" }] })
+    expect(() => new Organization(bad, people, [])).toThrow(/agent:<node>\/<id>/)
   })
 
   it("stops escalation at a remote boss: shown, not routed", () => {
@@ -92,10 +118,11 @@ describe("Organization with agents on other nodes", () => {
     expect(org.directReports("agent:clawd/lead")).toEqual(["ops"])
   })
 
-  it("keeps the old chart on a reload that drops the peer", () => {
+  it("takes a reload that drops the peer, as a start would, and names the node", () => {
     const org = new Organization(business, people, ["clawd"])
-    expect(() => org.replaceWith(business, people, [])).toThrow()
+    expect(() => org.replaceWith(business, people, [])).not.toThrow()
     expect(org.reportsTo("ops")).toBe("agent:clawd/lead")
+    expect(org.notPeers()).toEqual(["clawd"])
   })
 })
 
@@ -130,9 +157,20 @@ describe("The org view with agents on other nodes", () => {
     expect(view.mesh).toEqual({ live: true, others: [{ node: "clawd", id: "omar", name: "Omar", healthy: true }] })
   })
 
-  it("names a ref to a node that is not in mesh.peers as the problem", () => {
+  it("marks a ref to a node that is not in mesh.peers as not a peer, with no problem (#1702)", () => {
     const view = buildOrgView({ ...config, mesh: { peers: [] } }, {}, null, MESH)
-    expect(view.problem).toBe('Org relation reports-to names "clawd/lead", but "clawd" is not a peer in mesh.peers')
+    expect(view.problem).toBeUndefined()
+    const remote = view.diagram.boxes.filter((b) => b.remote)
+    expect(remote.map((b) => b.key).sort()).toEqual(["agent:clawd/lead", "agent:clawd/seif"])
+    // Not a peer wins over what /mesh says: this node does not count it as one.
+    expect(remote.every((b) => b.remote!.seen === "not-peer")).toBe(true)
+    expect(view.diagram.boxes.find((b) => b.key === "agent:pm")).toBeDefined()
+    expect(view.diagram.boxes.find((b) => b.key === "agent:ops")?.parent).toBe("agent:clawd/lead")
+  })
+
+  it("still names a malformed remote ref as the problem", () => {
+    const bad = { ...config, business: { ...config.business, relations: [{ from: "agent:a/b/c", to: "person:anis", type: "reports-to" as const }] } }
+    expect(buildOrgView(bad, {}, null, MESH).problem).toMatch(/agent:<node>\/<id>/)
   })
 
   it("keeps the relations of a remote ref in full", () => {
@@ -166,6 +204,9 @@ describe("The /org page with agents on other nodes", () => {
     const down = h.remoteCardHtml({ id: "clawd/seif", name: "Seif", remote: { node: "clawd", agent: "seif", seen: "down" } }, "", "", esc)
     expect(down).toContain("is-remote is-gone")
     expect(down).toContain("clawd does not answer; last seen there")
+    const gone = h.remoteCardHtml({ id: "clawd/seif", name: "Seif", remote: { node: "clawd", agent: "seif", seen: "not-peer" } }, "", "", esc)
+    expect(gone).toContain("is-remote is-gone")
+    expect(gone).toContain("On clawd, not a peer")
   })
 
   it("lists unplaced agents by node with the ref to place them", () => {

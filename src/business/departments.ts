@@ -1,4 +1,4 @@
-import { memberKey, memberProblem, parseMember } from "./relations"
+import { memberKey, memberProblem, namedNodes, parseMember, refNodes } from "./relations"
 
 // --- Departments of the org chart (#1681) ---
 //
@@ -30,6 +30,13 @@ export function orgDepartments(business: {
       members: [...new Set((d?.members ?? []).filter(Boolean).map(memberKey))],
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+}
+
+/** Every node an `agent:<node>/<id>` names anywhere in the org of
+ *  `business`: relations, orgChart reportsTo and departments. */
+export function orgNodes(business: Parameters<typeof namedNodes>[0] & Parameters<typeof orgDepartments>[0]): Set<string> {
+  const inDepts = orgDepartments(business).flatMap((d) => [...(d.head ? [d.head] : []), ...d.members])
+  return new Set([...namedNodes(business), ...refNodes(inDepts)])
 }
 
 /** A person who is not personnel: role `client` or `guest` (Anis 11-01). */

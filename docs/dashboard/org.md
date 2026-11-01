@@ -123,15 +123,25 @@ An agent that runs on another AgentX node of your mesh can sit in your chart too
    }
    ```
 
-   A node that is not in `mesh.peers` is refused, and nothing is saved. Whether that node hosts the agent is not checked here: that check needs the network, and the chart shows it instead (step 4).
+   A new ref to a node that is not in `mesh.peers` is refused, and nothing is saved, so a typo in the name is caught. Whether that node hosts the agent is not checked here: that check needs the network, and the chart shows it instead (step 4).
 3. **Terminal:** run `agentx daemon restart` if the business layer is on.
 4. **Browser:** on the Hub, select **Org**, then **Refresh**. The agent has a dashed card with a chip naming its node:
    - **on clawd-server**: the node answers and lists the agent.
    - **down: clawd-server**: the node does not answer now. The card is grey, with the name the node gave last.
    - **not seen: clawd-server**: the node has not listed this agent since the daemon started. The card is grey. Check the agent's ID on that node.
+   - **not a peer: clawd-server**: the node is not in `mesh.peers` (any more). The card is grey. See [When a node leaves your mesh](#when-a-node-leaves-your-mesh).
 
    The card has no status dot and no Pause button, and selecting it opens nothing: that node runs the agent. The counts beside the chart give **Other nodes** apart from **Agents**.
 5. **Browser:** under the chart, **On other nodes, not placed yet** lists every agent your peers host that the chart does not place yet, by node. On `/org` the same list gives each one's `agent:<node>/<id>` to copy.
+
+### When a node leaves your mesh
+
+When you retire a node and take it out of `mesh.peers`, the chart may still name agents on it. The org still loads, at start and on a reload: only those agents are marked, and the rest of the chart works as before.
+
+1. **Terminal:** remove the node from `mesh.peers` in `agentx.json`, then run `agentx daemon restart`. The daemon log has one line naming the node, for example `[business] org names agents on old-server, not in mesh.peers: shown as not a peer, never sent work`.
+2. **Browser:** on the Hub, select **Org**. Each agent on that node has a grey card with the chip **not a peer: old-server**. On `/org` the card says **On old-server, not a peer**.
+3. **Terminal:** run `agentx business relation list`. A dim line under the relations says **not a peer in mesh.peers (shown, never sent work): old-server**. It is not a problem, so other edits to the chart are still saved.
+4. **Terminal:** when you are ready, take the agent out of the chart. Remove each relation that names it, for example `agentx business relation remove agent:old-server/helper reports-to person:sam`, and take it out of its department in `agentx.json`. On `/org`, **Edit org** can remove its lines too.
 
 ## What each card shows on the `/org` page
 
@@ -172,6 +182,7 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
 3. Click **Resume**. The card says **Idle** again.
 4. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
+5. If the chart names an agent on a node that is not in `mesh.peers`: the rest of the chart loads, and that agent's card is grey with **not a peer:** and the node's name.
 
 ## If something is wrong
 
@@ -180,7 +191,8 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 - **An agent sits at the top although it has a boss:** its boss is not an agent or person here, or the two report to each other. Check with `agentx business relation list`.
 - **A yellow box above the chart says "Problem in the org relations":** a relation names someone who is not in `people` or `business.orgChart`, or breaks a rule. `agentx business relation list` shows the same problem; fix it with `remove`. With the business layer on, the daemon starts without it until it is fixed, and its log says `[business] initialization failed:` with the same problem.
 - **A person's agents do not escalate to them:** that is by design. A problem goes up `reports-to` only between agents, and stops before a person.
-- **`… but "<node>" is not a peer in mesh.peers`:** an `agent:<node>/<id>` names a node this machine does not know. Use the peer's `name` exactly as `mesh.peers` writes it, or add the peer first.
+- **`… but "<node>" is not a peer in mesh.peers` when you save:** the new `agent:<node>/<id>` names a node this machine does not know. Use the peer's `name` exactly as `mesh.peers` writes it, or add the peer first. A ref to such a node that is already in the chart does not stop the daemon or other edits: it shows as **not a peer**.
+- **A card says "not a peer":** its node is not in `mesh.peers`. Add the peer back if the node is still in use, or remove the agent from the chart ([When a node leaves your mesh](#when-a-node-leaves-your-mesh)).
 - **An agent on another node stays grey:** its node does not answer, or does not list that ID. Check the node with `agentx mesh list`, and the agent's ID on that node.
 - **An agent reports to an agent on another node, and its problems go nowhere:** that is by design for now. Escalation stops before an agent on another node.
 - **Every card says "Status unknown":** the daemon is not running, or the dashboard cannot reach it. Run `agentx daemon status`.

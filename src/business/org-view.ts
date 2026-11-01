@@ -1,7 +1,7 @@
 import type { AgentHold } from "@/agents/holds"
 import { meshPeerNames, orgRelations, parseMember, relationsProblem, remoteAgent, type OrgRelation } from "./relations"
 import { layoutOrg, type OrgPlacement } from "./org-layout"
-import { departmentBoxes, departmentsProblem, orgDepartments, type DepartmentBox, type OrgDepartment, type Outsider } from "./departments"
+import { departmentBoxes, departmentsProblem, orgDepartments, orgNodes, type DepartmentBox, type OrgDepartment, type Outsider } from "./departments"
 
 // --- The Org view's data (#1169), from agentx.json, the holds and the daemon ---
 //
@@ -49,8 +49,9 @@ export interface MeshPeerSeen { peer: string; healthy: boolean; skills?: Array<{
 
 /** An agent on another node as last seen: `up` its node answers and lists it,
  *  `down` its node listed it before but does not answer now, `unseen` neither
- *  (or the daemon did not answer). The last two draw a grey card. */
-export interface RemoteSeen { node: string; agent: string; seen: "up" | "down" | "unseen" }
+ *  (or the daemon did not answer), `not-peer` its node is not in mesh.peers
+ *  (#1702), say a retired node. All but `up` draw a grey card. */
+export interface RemoteSeen { node: string; agent: string; seen: "up" | "down" | "unseen" | "not-peer" }
 
 /** An agent a mesh peer hosts that the chart does not place. */
 export interface MeshAgent { node: string; id: string; name: string; healthy: boolean }
@@ -176,10 +177,12 @@ export function buildOrgView(
     }
   })
   const departments = orgDepartments(config.business)
-  const known = [new Set(Object.keys(chart)), new Set(people.map((p) => p.id)), meshPeerNames(config)] as const
+  // A node not in mesh.peers is no problem here (#1702): its cards say "not a peer".
+  const peers = meshPeerNames(config)
+  const known = [new Set(Object.keys(chart)), new Set(people.map((p) => p.id)), new Set([...peers, ...orgNodes(config.business)])] as const
   const outsiders = new Map(people.flatMap((p) => (p.outsider ? [[p.id, { name: p.name, role: p.outsider }] as const] : [])))
   const problem = relationsProblem(relations, ...known) ?? departmentsProblem(departments, ...known, outsiders)
-  const diagram = orgDiagram(nodes, config.people ?? [], people, relations, departments, mesh)
+  const diagram = orgDiagram(nodes, config.people ?? [], people, relations, departments, mesh, peers)
   // People first, then agents, each by name; agents outside the chart last.
   const everyone = [...diagram.boxes].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "person" ? -1 : 1))
     .map((b) => b.key).concat(outside.map((n) => `agent:${n.id}`))
@@ -191,13 +194,14 @@ export function buildOrgView(
   return { roots, outside, live: live !== null, people, relations, departments, byDepartment, diagram, mesh: { live: mesh !== null, others }, ...(problem ? { problem } : {}) }
 }
 
-/** The card of `agent:<node>/<id>` from the mesh peers' last answers. */
-function remoteCard(key: string, mesh: MeshPeerSeen[] | null): Omit<OrgBox, keyof OrgPlacement> | undefined {
+/** The card of `agent:<node>/<id>` from the mesh peers' last answers, or
+ *  `not-peer` when `<node>` is not in mesh.peers (`peers`). */
+function remoteCard(key: string, mesh: MeshPeerSeen[] | null, peers: ReadonlySet<string>): Omit<OrgBox, keyof OrgPlacement> | undefined {
   const r = remoteAgent(key)
   if (!r) return undefined
-  const peer = mesh?.find((p) => p.peer === r.node)
+  const peer = peers.has(r.node) ? mesh?.find((p) => p.peer === r.node) : undefined
   const skill = peer?.skills?.find((s) => s?.id === r.id)
-  const seen: RemoteSeen["seen"] = !skill ? "unseen" : peer!.healthy ? "up" : "down"
+  const seen: RemoteSeen["seen"] = !peers.has(r.node) ? "not-peer" : !skill ? "unseen" : peer!.healthy ? "up" : "down"
   return { kind: "agent", id: `${r.node}/${r.id}`, name: skill?.name || r.id, remote: { node: r.node, agent: r.id, seen } }
 }
 
@@ -221,6 +225,7 @@ function orgDiagram(
   relations: OrgRelation[],
   departments: OrgDepartment[],
   mesh: MeshPeerSeen[] | null,
+  peers: ReadonlySet<string>,
 ): OrgDiagram {
   const named = new Set(relations.filter((r) => r.type !== "acts-for").flatMap((r) => [r.from, r.to]))
   const deptOf = new Map<string, string>()
@@ -248,7 +253,7 @@ function orgDiagram(
   }
   // Agents on other nodes: a card for each one a relation or department names.
   for (const key of named) {
-    const card = !cards.has(key) && remoteCard(key, mesh)
+    const card = !cards.has(key) && remoteCard(key, mesh, peers)
     if (card) cards.set(key, card)
   }
   for (const [key, c] of cards) if (deptOf.has(key)) c.department = deptOf.get(key)
