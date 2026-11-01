@@ -81,9 +81,25 @@ The `--reports-to` of `agentx business orgchart add` is a `reports-to` relation,
 4. **Terminal:** list every relation with `agentx business relation list`, and remove one with `agentx business relation remove <from> <type> <to>`.
 5. **Terminal:** run `agentx daemon restart` if the business layer is on, so it reads the new chart.
 6. **Browser:** on the Hub, select **Org**, then **Refresh**. A person sits in the chart with the agents that report to them under them. A **dotted-line** shows as **dotted line to** *name* on the card, and as a dashed arrow with **Show dotted lines**. An **acts-for** shows as **acts for** *name* on the agent's card.
-7. **Browser:** on the `/org` page, a person's card says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
+7. **Browser:** on the `/org` page, a person's card has a **Person** tag, a round shape with a coloured left edge, and no Pause button. An agent's card has an **Agent** tag. A legend above the chart shows both; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
 
 The relations are saved under `business.relations` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
+
+## Group members into a department
+
+A **department** puts members of the chart in one named group with a head, for example a Dev team. It changes no reporting line and passes no problem up. Each member is in one department at most.
+
+1. **Terminal:** open `agentx.json` and add the department under `business.departments`. Members and the head are written like relations. `dev`, `pm-agent` and `saber` are examples; use your own IDs:
+
+   ```json
+   "departments": {
+     "dev": { "name": "Dev", "head": "person:anis", "members": ["agent:pm-agent", "agent:devops-agent", "person:saber"] }
+   }
+   ```
+
+2. **Browser:** on the Hub, select **Org**, then **Refresh**. The department's members sit side by side in one dashed band, titled **Dev · head** *name*, and each card has a **Dev** chip. On a phone the chip shows on each card. On the `/org` page the members sit in one dashed box under their boss, titled with the department and its head.
+
+A department that names someone unknown, or a member in two departments, shows above the chart as **Problem in the org chart**. The daemon still starts.
 
 ## What each card shows on the `/org` page
 

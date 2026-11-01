@@ -7,6 +7,8 @@ import type { OrgRelation, RelationType } from "./relations"
 // relations are typed (#1418). `reports-to` builds the levels: the top row
 // is whoever reports to no one, each report sits one row under its boss,
 // siblings side by side by name. The other types never move a card.
+// Siblings with a `group` (their department, #1681) sit together, groups
+// first by name, so one band can hold a department's cards.
 //
 // Columns are half-slots: every leaf of the reporting tree gets one slot
 // (two half-columns) and a boss is centred over its reports, so two boxes
@@ -34,10 +36,16 @@ export interface OrgLayout {
   levels: number
 }
 
-export function layoutOrg(members: Array<{ key: string; name: string }>, relations: OrgRelation[]): OrgLayout {
+export function layoutOrg(members: Array<{ key: string; name: string; group?: string }>, relations: OrgRelation[]): OrgLayout {
   const types: RelationType[] = ["reports-to", "dotted-line", "acts-for"]
   const names = new Map(members.map((m) => [m.key, m.name]))
-  const byName = (a: string, b: string) => names.get(a)!.localeCompare(names.get(b)!) || a.localeCompare(b)
+  const groups = new Map(members.map((m) => [m.key, m.group ?? ""]))
+  // Grouped siblings first, then the rest; inside each, by name.
+  const byGroup = (a: string, b: string) => {
+    const ga = groups.get(a)!, gb = groups.get(b)!
+    return ga === gb ? 0 : !ga ? 1 : !gb ? -1 : ga.localeCompare(gb)
+  }
+  const byName = (a: string, b: string) => byGroup(a, b) || names.get(a)!.localeCompare(names.get(b)!) || a.localeCompare(b)
 
   // One boss each: the first reports-to wins.
   const boss = new Map<string, string>()
