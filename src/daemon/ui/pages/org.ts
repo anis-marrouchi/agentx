@@ -114,7 +114,7 @@ const ORG_CSS = `
 .org-name { font-size: 15px; font-weight: 600; }
 .org-id { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-title { margin: 2px 0 0; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
-.org-job { margin: 8px 0 0; font-size: var(--ax-fs-sm); }
+.org-job { margin: 8px 0 0; font-size: var(--ax-fs-sm); overflow-wrap: anywhere; }
 .org-state { display: inline-block; margin-top: 8px; padding: 1px 8px; border-radius: 999px; font-size: var(--ax-fs-xs); border: var(--ax-border-w) solid var(--ax-border-2); color: var(--ax-text-2); }
 .org-state.is-working { color: var(--ax-green-ink, var(--ax-text)); border-color: var(--ax-green-ink, var(--ax-text)); }
 .org-state.is-paused, .org-state.is-waiting { color: var(--ax-amber-ink); border-color: var(--ax-amber-ink); }
