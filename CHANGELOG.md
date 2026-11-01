@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.200.0](https://github.com/anis-marrouchi/agentx/compare/v0.199.0...v0.200.0) (2026-11-01)
+
+
+### Features
+
+* **members:** sign in with a link sent by email ([#1478](https://github.com/anis-marrouchi/agentx/issues/1478)) ([#1667](https://github.com/anis-marrouchi/agentx/issues/1667)) ([a0cb626](https://github.com/anis-marrouchi/agentx/commit/a0cb626fd5c69068f2dd1fba4772c57d6242afcf))
+
+
+### Bug Fixes
+
+* **members:** keep the pairing card question under 300 characters ([#1672](https://github.com/anis-marrouchi/agentx/issues/1672)) ([#1673](https://github.com/anis-marrouchi/agentx/issues/1673)) ([2e53f50](https://github.com/anis-marrouchi/agentx/commit/2e53f5051e2509c6c7f6b829f7af08ed3983ff1f))
+
 ## [0.199.0](https://github.com/anis-marrouchi/agentx/compare/v0.198.0...v0.199.0) (2026-11-01)
 
 
