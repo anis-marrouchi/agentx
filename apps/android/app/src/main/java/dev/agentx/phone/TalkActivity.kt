@@ -120,7 +120,9 @@ class TalkActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // Each start says what it is: a launcher start after a watch call is not one.
         if (intent?.action == WatchStart.ACTION_WATCH) showOverLockScreen()
+        else if (TalkConnection.current == null && !TalkState.active) leaveLockScreen()
         if (intent?.action != Intent.ACTION_VIEW && prefs.talkTarget != null && TalkConnection.current == null) begin(fromWatch = watchCall)
     }
 
@@ -135,6 +137,19 @@ class TalkActivity : Activity() {
         } else {
             @Suppress("DEPRECATION")
             window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        }
+    }
+
+    /** The watch call is over: this screen no longer shows over the lock screen. */
+    private fun leaveLockScreen() {
+        watchCall = false
+        sawCall = false
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(false)
+            setTurnScreenOn(false)
+        } else {
+            @Suppress("DEPRECATION")
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         }
     }
 
@@ -162,8 +177,11 @@ class TalkActivity : Activity() {
         renderWatch()
         // A watch call over the lock screen: once it ends, give the lock screen back.
         if (call != null) sawCall = true
-        if (watchCall && sawCall && call == null && !TalkState.active &&
-            getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true) finish()
+        if (watchCall && sawCall && call == null && !TalkState.active) {
+            val locked = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+            leaveLockScreen()
+            if (locked) finish()
+        }
     }
 
     private fun renderWatch() {

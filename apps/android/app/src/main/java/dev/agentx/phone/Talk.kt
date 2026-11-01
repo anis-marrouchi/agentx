@@ -227,7 +227,11 @@ class TalkService : Service() {
             val first = TalkState.text.takeIf { TalkState.active } ?: getString(if (fromWatch) R.string.talk_ringing_back else R.string.talk_ringing)
             // Refused (Android 14 from the background): stop without ending a
             // call that may still have the microphone through the Talk screen.
-            if (!foreground(build(this, first))) { stopSelf(); return START_NOT_STICKY }
+            if (!foreground(build(this, first))) {
+                Log.w("AgentXTalk", "no foreground type allowed; the microphone service stops")
+                stopSelf()
+                return START_NOT_STICKY
+            }
             holding = true
             running = true
         }
