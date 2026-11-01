@@ -57,3 +57,27 @@ export function departmentsProblem(
   }
   return undefined
 }
+
+/** One box of the Departments view: the name, the head on top and the
+ *  members under it (the head is not repeated among them). */
+export interface DepartmentBox {
+  id: string
+  name: string
+  head?: string
+  members: string[]
+}
+
+/** The Departments view (#1681): a box per department, then everyone in
+ *  `everyone` (card keys, in order) that no department holds or heads. */
+export function departmentBoxes(
+  departments: OrgDepartment[],
+  everyone: string[],
+): { boxes: DepartmentBox[]; rest: string[] } {
+  const held = new Set<string>()
+  const boxes = departments.map((d) => {
+    if (d.head) held.add(d.head)
+    for (const m of d.members) held.add(m)
+    return { id: d.id, name: d.name, ...(d.head ? { head: d.head } : {}), members: d.members.filter((m) => m !== d.head) }
+  })
+  return { boxes, rest: [...new Set(everyone)].filter((k) => !held.has(k)) }
+}

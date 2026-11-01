@@ -97,7 +97,8 @@ A **department** puts members of the chart in one named group with a head, for e
    }
    ```
 
-2. **Browser:** on the Hub, select **Org**, then **Refresh**. The department's members sit side by side in one dashed band, titled **Engineering · head** *name*, and each card has an **Engineering** chip. On a phone the chip shows on each card. On the `/org` page the members sit in one dashed box under their boss, titled with the department and its head.
+2. **Browser:** on the Hub, select **Org**, then **Refresh**. The page opens on **Departments**: one dashed box per department with its name, the head's card on top marked **Head**, and the members' cards in a grid under it. Everyone in no department is in a last box, **Not in a department**. On a phone the boxes stack. The `/org` page opens the same way.
+3. **Browser:** select **Chart** for the reporting chart. There the department's members sit side by side in one dashed band, titled **Engineering · head** *name*, and each card has an **Engineering** chip. On the `/org` page the members sit in one dashed box under their boss.
 
 A department that names someone unknown, or a member in two departments, shows above the chart as **Problem in the org chart**. The daemon still starts.
 

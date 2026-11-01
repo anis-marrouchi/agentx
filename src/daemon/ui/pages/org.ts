@@ -11,6 +11,9 @@
 // word on each card, a person's card round-cornered with an accent edge,
 // and a legend above the tree. A department (#1681) is one dashed box in
 // the tree: under its head, titled with its name, holding its members.
+// When there are departments the page opens on the Departments view: a box
+// per department, its name, the head's card on top and the members' cards
+// in a grid, then "Not in a department"; "Chart" shows the tree.
 //
 // Edit org (#1420), owner only: who is in the chart, their roles and the
 // lines between them, with a confirm step for moves and removals. The
@@ -57,6 +60,8 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
       <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, accent edge</li>
       <li id="org-legend-dept" hidden><span class="org-legend-dept">Department</span>a dashed box round its members</li>
     </ul>
+    <div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button><button type="button" data-org-view="chart" aria-pressed="false">Chart</button></div>
+    <div id="org-depts" class="org-depts" hidden></div>
     <div id="org-tree" class="org-tree" aria-label="Org chart"><p class="org-quiet">Loading…</p></div>
     <section id="org-outside" hidden aria-labelledby="org-outside-title">
       <h2 id="org-outside-title" class="org-h2">Not in the org chart</h2>
@@ -130,6 +135,21 @@ const ORG_CSS = `
 .org-dept-head { display: block; margin: -2px 0 2px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); text-align: center; }
 .org-tree .org-dept-box > ul { display: flex; position: relative; padding-top: 0; }
 .org-tree .org-dept-box > ul > li { padding: 10px 6px 6px; }
+.org-views { display: inline-flex; margin: 0 0 14px; border: var(--ax-border-w) solid var(--ax-border-2); border-radius: 999px; overflow: hidden; }
+.org-views[hidden], .org-depts[hidden], .org-tree[hidden] { display: none; }
+.org-views button { font: inherit; font-size: var(--ax-fs-sm); font-weight: 600; background: none; border: 0; color: var(--ax-text); padding: 4px 14px; cursor: pointer; }
+.org-views button[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); }
+.org-depts { display: grid; gap: 16px; }
+.org-dbox { padding: 12px 14px 14px; border: 1.5px dashed var(--ax-accent); border-radius: 16px; background: var(--ax-blue-t, var(--ax-surface)); }
+.org-dbox.is-rest { border-color: var(--ax-border-2); background: var(--ax-surface); }
+.org-dname { margin: 0 0 12px; font-size: 15px; color: var(--ax-accent); }
+.org-dbox.is-rest .org-dname { color: var(--ax-text); }
+.org-dhead { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 0 14px; margin: 0 0 14px; border-bottom: var(--ax-border-w) solid var(--ax-border-2); }
+.org-lead { padding: 0 9px; line-height: 18px; border-radius: 999px; background: var(--ax-text); color: var(--ax-bg); font-size: 11px; font-weight: 700; }
+.org-dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px 12px; padding-top: 8px; }
+.org-dgrid .org-card, .org-dhead .org-card { width: auto; max-width: none; margin: 0; }
+.org-dhead .org-card { min-width: min(260px, 100%); }
+#org-outside.is-in-depts { display: none; }
 .org-links { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-bar { display: flex; justify-content: flex-end; margin: 0 0 8px; }
 .org-edit { margin: 0 0 24px; padding: 12px 16px 16px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
@@ -204,7 +224,21 @@ export const ORG_PEOPLE_JS = `
     Object.keys(nodes).forEach(function (key) { if (key.indexOf('person:') === 0) roots.push(nodes[key]); });
     d.roots.forEach(function (n) { if (String(n.reportsTo || '').indexOf('person:') === 0) moveUnder(n, n.reportsTo); });
     rels.forEach(function (r) { if (r.type === 'reports-to' && r.from.indexOf('person:') === 0 && nodes[r.from]) moveUnder(nodes[r.from], r.to); });
-    return { roots: roots, names: names };
+    return { roots: roots, names: names, nodes: nodes };
+  }
+  /** The Departments view (#1681): per box of d.byDepartment its name, the
+   *  head's card on top, the members' cards in a grid; then "Not in a
+   *  department". cardOf(key) is a card's html, or '' for no card. */
+  function deptViewHtml(by, cardOf, esc) {
+    function grid(keys) { return '<div class="org-dgrid">' + keys.map(cardOf).join('') + '</div>'; }
+    var boxes = (by.boxes || []).map(function (dep) {
+      return '<section class="org-dbox" data-dept="' + esc(dep.id) + '" aria-label="' + esc(dep.name) + '">'
+        + '<h2 class="org-dname">' + esc(dep.name) + '</h2>'
+        + (dep.head ? '<div class="org-dhead"><span class="org-lead">Head</span>' + cardOf(dep.head) + '</div>' : '<p class="org-quiet">No head set</p>')
+        + (dep.members.length ? grid(dep.members) : '<p class="org-quiet">No members yet</p>') + '</section>';
+    }).join('');
+    var rest = (by.rest || []).length ? '<section class="org-dbox is-rest" aria-label="Not in a department"><h2 class="org-dname">Not in a department</h2>' + grid(by.rest) + '</section>' : '';
+    return boxes + rest;
   }
   /** One list of siblings as it is drawn (#1681): each department's members
    *  together in one item { dept, items }, where the first of them stood;
@@ -306,6 +340,18 @@ const ORG_SCRIPT = `
       names = org.names;
       document.getElementById('org-none').hidden = org.roots.length > 0;
       tree.innerHTML = org.roots.length ? branch(org.roots) : '';
+      var hasDepts = (d.departments || []).length > 0, deptView = hasDepts && view === 'dept';
+      document.getElementById('org-views').hidden = !hasDepts;
+      document.querySelectorAll('[data-org-view]').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-org-view') === (deptView ? 'dept' : 'chart') ? 'true' : 'false'); });
+      var deptsEl = document.getElementById('org-depts');
+      deptsEl.hidden = !deptView;
+      tree.hidden = deptView;
+      if (deptView) {
+        var byKey = org.nodes;
+        d.outside.forEach(function (n) { byKey['agent:' + n.id] = byKey['agent:' + n.id] || n; });
+        deptsEl.innerHTML = deptViewHtml(d.byDepartment || { boxes: [], rest: [] }, function (k) { return byKey[k] ? card(byKey[k]) : ''; }, esc);
+      }
+      document.getElementById('org-outside').classList.toggle('is-in-depts', deptView);
       var out = document.getElementById('org-outside');
       out.hidden = d.outside.length === 0;
       document.getElementById('org-outside-list').innerHTML = d.outside.map(function (n) { return '<li>' + card(n) + '</li>'; }).join('');
@@ -314,6 +360,13 @@ const ORG_SCRIPT = `
       else if (warned) { say(''); warned = false; }
     } catch (e) { say('Could not load the org chart: ' + e.message, true); }
   }
+  var view = 'dept';   // 'dept' or 'chart' (#1681)
+  document.addEventListener('click', function (ev) {
+    var v = ev.target.closest ? ev.target.closest('button[data-org-view]') : null;
+    if (!v) return;
+    view = v.getAttribute('data-org-view');
+    load();
+  });
   document.addEventListener('click', async function (ev) {
     var b = ev.target.closest ? ev.target.closest('button[data-hold]') : null;
     if (!b) return;
