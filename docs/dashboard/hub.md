@@ -331,6 +331,19 @@ The other tabs:
 3. Select **Add agent**. The line under it says **Added**, or why not.
 4. **Terminal:** run `agentx daemon restart --when-idle`. The new agent starts working after the restart.
 
+#### Add an agent under someone in the org chart
+
+1. **Browser:** in the org chart editor (on `/org`, select **Edit org**), find the member the new agent will report to and select **Add agent here**.
+2. The Hub opens **Settings** › **Agents** with **Add an agent under** that member. The form says **Reports to** with their name, and has a **Role** field.
+3. Fill in the form as above, and type a role, for example `Engineer`. Select **Add agent**.
+4. **Terminal:** run `agentx daemon restart --when-idle`, as for any new agent.
+
+The agent, its role and its reports-to line are saved together. **Check it worked:** the line under the form says **Added**, then **reporting to** and the member's name, for example "Added @tester, reporting to Helper.", and `/org` shows the new card under that member. **If something is wrong:** if the line is refused (for example, the member left the org chart), the form says why, and nothing is saved, not even the agent. To add the agent outside the org chart, select **Add it outside the org chart instead**.
+
+![Settings › Agents with Add an agent under Planner: Reports to Planner, and a Role field, in the isolated demo](/screenshots/settings/add-agent-here.png)
+
+*Scripted demo data; your team's names will differ.*
+
 **Wiki page curator**, under **Add an agent**, picks which agent answers the chat bubble on wiki pages, as in classic Settings.
 
 ### Hand a chat to another agent

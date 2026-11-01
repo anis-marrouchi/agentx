@@ -250,6 +250,41 @@ describe("POST /api/admin/org/chart", () => {
     } finally { fetchMock.mockRestore() }
   })
 
+  // "Add agent here" (#1678): the agent and its reports-to line in one write.
+  const NEW = { id: "ops", name: "Ops", triggerWords: "@ops" }
+  it("adds an agent under a member: agent, role and line together", async () => {
+    const r = await call("POST", "/api/admin/agents", { ...NEW, reportsTo: "agent:pm", role: "Night shift" }, true)
+    expect(r).toMatchObject({ status: 200, json: { summary: 'added agent "ops": Ops reports to PM' } })
+    const cfg = saved()
+    expect(cfg.agents.ops).toMatchObject({ name: "Ops", mentions: ["@ops"] })
+    expect(cfg.business.orgChart.ops).toMatchObject({ role: "night-shift", reportsTo: "pm" })
+    expect(cfg.business.roles["night-shift"]).toEqual({ title: "Night shift" })
+    // Under a person who is in the chart.
+    expect((await call("POST", "/api/admin/org/chart", { op: "add-member", member: "person:sam" }, true)).status).toBe(200)
+    const aide = await call("POST", "/api/admin/agents", { id: "aide", name: "Aide", triggerWords: "@aide", reportsTo: "person:sam", role: "Assistant" }, true)
+    expect(aide).toMatchObject({ status: 200, json: { summary: 'added agent "aide": Aide reports to Sam' } })
+  })
+
+  it("writes nothing when the boss is refused or the role is missing", async () => {
+    const unknown = await call("POST", "/api/admin/agents", { ...NEW, reportsTo: "agent:ghost", role: "Night shift" }, true)
+    expect(unknown).toMatchObject({ status: 400, json: { error: "ghost is not in the org chart. Add them first." } })
+    const outside = await call("POST", "/api/admin/agents", { ...NEW, reportsTo: "person:kim", role: "Night shift" }, true)
+    expect(outside).toMatchObject({ status: 400, json: { error: "Kim is not in the org chart. Add them first." } })
+    const noRole = await call("POST", "/api/admin/agents", { ...NEW, reportsTo: "agent:pm" }, true)
+    expect(noRole).toMatchObject({ status: 400, json: { error: "Give Ops a role." } })
+    expect(saved()).toEqual(base())
+    expect(backups()).toEqual([])
+  })
+
+  it("leaves the org part to the owner; a plain new agent is unchanged", async () => {
+    const vetoed = await call("POST", "/api/admin/agents", { ...NEW, reportsTo: "agent:pm", role: "Night shift" }, false)
+    expect(vetoed).toMatchObject({ status: 403, json: { error: "Only the owner can change the org chart." } })
+    expect(saved()).toEqual(base())
+    const plain = await call("POST", "/api/admin/agents", NEW)
+    expect(plain).toMatchObject({ status: 200, json: { summary: 'added agent "ops"' } })
+    expect(saved().business).toEqual(base().business)
+  })
+
   it("is the owner's only: anyone else sees the chart and cannot change it", async () => {
     const vetoed = await call("POST", "/api/admin/org/chart", { op: "add-member", member: "person:kim" }, false)
     expect(vetoed).toMatchObject({ status: 403, json: { error: "Only the owner can change the org chart." } })

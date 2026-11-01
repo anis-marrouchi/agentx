@@ -64,7 +64,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
     const body = req.method === "GET" ? undefined : await readJsonBody(req)
     const dispatch: Record<string, () => unknown> = {
       "GET /api/admin/state": () => getAdminState(),
-      "POST /api/admin/agents": () => addAgent(body),
+      "POST /api/admin/agents": () => addAgent(body, opts.owner === true),
       "PATCH /api/admin/agents": () => editAgent(body),
       "DELETE /api/admin/agents": () => deleteAgent(body),
       "POST /api/admin/agents/access": () => setAgentAccess(body),
@@ -570,16 +570,22 @@ async function testDriveAgent(body: any) {
   return { chatId, response: parsed }
 }
 
-function addAgent(body: any) {
+/** A new agent. With `reportsTo` (an `agent:` or `person:` ref) and `role`,
+ *  "Add agent here" (#1678): the agent, its place in the org chart and its
+ *  reports-to line are one write, so a refused line leaves nothing behind.
+ *  The org part is the owner's, as on POST /api/admin/org/chart. */
+function addAgent(body: any, owner: boolean) {
   const id = String(body?.id || "").trim()
   const name = String(body?.name || "").trim()
   const tier = ["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"].includes(body?.tier) ? body.tier : "claude-code"
   const mentions = normaliseMentions(body?.triggerWords)
   const model = body?.model ? String(body.model).trim() : undefined
   const personality = body?.personality ? String(body.personality).trim() : undefined
+  const reportsTo = body?.reportsTo ? String(body.reportsTo).trim() : ""
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) throw new Error("Agent id must be lowercase (letters, digits, -, _).")
   if (!name) throw new Error("Agent name is required.")
   if (mentions.length === 0) throw new Error("At least one trigger word is required.")
+  if (reportsTo && !owner) throw Object.assign(new Error("Only the owner can change the org chart."), { status: 403 })
 
   const workspace = resolve(process.cwd(), "agents", id)
   const { summary } = mutateAgentxConfig((cfg) => {
@@ -591,7 +597,9 @@ function addAgent(body: any) {
     if (model) block.model = model
     if (personality) block.systemPrompt = personality.slice(0, 400)
     cfg.agents[id] = block
-    return `added agent "${id}"`
+    if (!reportsTo) return `added agent "${id}"`
+    applyOrgEdit(cfg, { op: "add-member", member: `agent:${id}`, role: body?.role })
+    return `added agent "${id}": ${applyOrgEdit(cfg, { op: "add-relation", from: `agent:${id}`, type: "reports-to", to: reportsTo })}`
   })
   // Scaffold the workspace if it doesn't exist.
   const claudeMd = resolve(workspace, "CLAUDE.md")
