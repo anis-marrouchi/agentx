@@ -89,16 +89,20 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   var ST_RESTART = 'agentx daemon restart --when-idle';
   // Listed for everyone, so a viewer who is not the owner is told so.
   PAGES.push('settings');
-  S.st = { section: '', agent: '', tab: '', data: null, org: null, tokens: null, error: '', loading: false, v: 0, painted: '', key: '', healthSig: '', notes: {}, flash: '', confirm: '', files: null, td: null, ho: null, draft: null };
+  S.st = { section: '', agent: '', tab: '', under: '', data: null, org: null, tokens: null, error: '', loading: false, v: 0, painted: '', key: '', healthSig: '', notes: {}, flash: '', confirm: '', files: null, td: null, ho: null, draft: null };
 
   function settingsReadHash(q) {
     S.st.section = S.page === 'settings' && q.get('section') || '';
     S.st.agent = S.page === 'settings' && S.st.section === 'agents' && q.get('agent') || '';
     S.st.tab = S.st.agent && q.get('atab') || '';
+    // "Add agent here" on the org chart editor (#1678): the new agent's boss.
+    S.st.under = S.st.section === 'agents' && !S.st.agent && q.get('under') || '';
+    if (S.st.under) S.st.addOpen = true;
   }
   function settingsHashInto(q) {
     if (S.st.section) q.set('section', S.st.section);
     if (S.st.agent) q.set('agent', S.st.agent);
+    if (S.st.under) q.set('under', S.st.under);
     if (S.st.tab) q.set('atab', S.st.tab);
   }
   function stHref(section, agent, tab) {
@@ -200,7 +204,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (!S.st.data && !S.st.error && !S.st.loading) { settingsLoad(); }
     // A new picture (#1425) repaints the agent's page; new counts repaint the
     // list, but not an agent's form being typed in.
-    var painted = key + '|' + S.st.v + '|' + (S.st.agent ? JSON.stringify(pictureOf(S.st.agent) || '') : stAttention().join(','));
+    var painted = key + '|' + S.st.under + '|' + S.st.v + '|' + (S.st.agent ? JSON.stringify(pictureOf(S.st.agent) || '') : stAttention().join(','));
     var health = stHealthSig();
     if (S.st.painted === painted) {
       // The machines changed: repaint Health alone, so nothing typed is lost.
@@ -362,9 +366,16 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       '<div class="wsa-list">' + (list.length ? list.map(stCardHtml).join('') : '<p class="ax-wall__empty">No agents yet. Add the first one below.</p>') + '</div>' +
       stAddHtml() + stCuratorHtml();
   }
+  /** A member's name from the org chart editor's list, else its id. */
+  function stMemberName(ref) {
+    var m = ((S.st.org && S.st.org.setup && S.st.org.setup.members) || []).find(function (x) { return x.ref === ref; });
+    return m ? m.name : String(ref).replace(/^(agent|person):/, '');
+  }
   function stAddHtml() {
-    return '<details class="wsx"' + (S.st.addOpen ? ' open' : '') + ' data-st-details="add"><summary>Add an agent</summary>' +
-      '<form class="wsf" data-st-form="add">' +
+    var boss = S.st.under ? '<p class="wsf__hint">Reports to <b>' + esc(stMemberName(S.st.under)) + '</b>. <a href="' + esc(stHref('agents')) + '">Add it outside the org chart instead</a></p>' +
+      '<label><span>Role <small>shown on the org chart</small></span><input id="st-a-role" maxlength="80" placeholder="Engineer"></label>' : '';
+    return '<details class="wsx"' + (S.st.addOpen ? ' open' : '') + ' data-st-details="add"><summary>' + (S.st.under ? 'Add an agent under ' + esc(stMemberName(S.st.under)) : 'Add an agent') + '</summary>' +
+      '<form class="wsf" data-st-form="add">' + boss +
         '<div class="wsf__row"><label><span>Agent id <small>lowercase letters, digits, - and _</small></span><input id="st-a-id" maxlength="40" placeholder="sales" autocomplete="off"></label>' +
         '<label>Name<input id="st-a-name" maxlength="80" placeholder="Sales Desk"></label></div>' +
         '<label><span>Trigger words <small>comma or space separated</small></span><input id="st-a-triggers" placeholder="@sales, sales"></label>' +
@@ -494,10 +505,14 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       id: stVal('st-a-id').trim(), name: stVal('st-a-name').trim(), triggerWords: stVal('st-a-triggers').trim(), tier: stVal('st-a-tier') || 'claude-code',
       model: stVal('st-a-model').trim() || undefined, personality: stVal('st-a-personality').trim() || undefined, access: stChecked('st-a-public') ? 'public' : 'private',
     };
+    var under = S.st.under;
+    if (under) { body.reportsTo = under; body.role = stVal('st-a-role').trim(); }
     stNote('add', '', 'Adding…');
     var r = await act('POST', '/api/admin/wall/settings/agents', body);
     if (!r.ok) { stNote('add', 'err', 'Not added: ' + r.error); return; }
-    var note = 'Added @' + body.id + '. It starts working after a daemon restart: ' + ST_RESTART + '.';
+    var note = 'Added @' + body.id + (under ? ', reporting to ' + stMemberName(under) : '') + '. It starts working after a daemon restart: ' + ST_RESTART + '.';
+    S.st.under = '';
+    writeHash();
     if (body.access === 'public') {
       var p = await act('POST', '/api/admin/wall/settings/agents/access', { id: body.id, access: 'public' });
       if (!p.ok) note += ' It stays private: ' + p.error;

@@ -405,6 +405,22 @@ describe("Wall Settings: Agents (#1428)", () => {
     expect(settingsHtml(w)).toContain("Added @sales. It starts working after a daemon restart")
   })
 
+  it("adds an agent under an org chart member, from Add agent here (#1678)", async () => {
+    const org = { exists: true, canEdit: true, setup: { members: [{ ref: "agent:cx", kind: "agent", id: "cx", name: "Customer Desk" }], relations: [] } }
+    const w = openWall({ hash: "#page=settings&section=agents&under=agent%3Acx", route: (u) => (u === "/api/admin/org" ? { status: 200, body: org } : undefined) })
+    await w.settle()
+    expect(settingsHtml(w)).toContain("Reports to <b>Customer Desk</b>.")
+    w.el("st-a-id").value = "night"; w.el("st-a-name").value = "Night Desk"; w.el("st-a-triggers").value = "@night"
+    w.el("st-a-tier").value = "claude-code"; w.el("st-a-role").value = "Night shift"
+    await w.submit({ "data-st-form": "add" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/agents", method: "POST",
+      body: { id: "night", name: "Night Desk", triggerWords: "@night", tier: "claude-code", access: "private", reportsTo: "agent:cx", role: "Night shift" } }])
+    const html = settingsHtml(w)
+    expect(html).toContain("Added @night, reporting to Customer Desk.")
+    // Done: the next agent is added outside the org chart again.
+    expect(html).not.toContain("Reports to <b>")
+  })
+
   it("shows why an agent was not added", async () => {
     const w = openWall({ hash: "#page=settings&section=agents", route: (u, i) => (u === "/api/admin/wall/settings/agents" && i.method === "POST" ? { status: 400, body: { error: "At least one trigger word is required." } } : undefined) })
     await w.settle()

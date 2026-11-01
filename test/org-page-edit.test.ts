@@ -137,6 +137,12 @@ describe("Edit org on /org (#1420)", () => {
     expect(o.posts[1]).toEqual({ op: "set-role", member: "agent:lead", role: "Head" })
   })
 
+  it("offers Add agent here on each member, opening the Hub's new-agent form under them (#1678)", async () => {
+    const o = openOrg({ hash: "#edit" })
+    await o.settle()
+    expect(o.edit()).toContain('<a class="ax-btn" href="/hub#page=settings&amp;section=agents&amp;under=agent%3Apm" aria-label="Add an agent who reports to PM">Add agent here</a>')
+  })
+
   it("adds a first boss only after Save the move", async () => {
     const o = openOrg({ hash: "#edit" })
     await o.settle()

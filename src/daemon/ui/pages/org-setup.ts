@@ -106,7 +106,9 @@ export function orgEditHtml(org: OrgSetupReply | null, msg: { text: string; bad:
     '<li class="oe-row"><span class="oe-who"><b>' + esc(m.name) + '</b><span class="org-kind">' + (m.kind === "person" ? "Person" : "Agent") + "</span></span>" +
       '<label class="oe-role" for="oe-role-' + i + '"><span class="org-kind">Role</span><input id="oe-role-' + i + '" list="oe-roles" maxlength="80" value="' + esc(m.title || "") + '" aria-label="Role of ' + esc(m.name) + '"></label>' +
       '<span class="oe-acts"><button type="button" class="ax-btn" data-oe="set-role" data-oe-i="' + i + '" data-oe-member="' + esc(m.ref) + '">Save role</button>' +
-      '<button type="button" class="ax-btn" data-oe="remove-member" data-oe-member="' + esc(m.ref) + '" aria-label="Remove ' + esc(m.name) + '">Remove</button></span></li>',
+      '<button type="button" class="ax-btn" data-oe="remove-member" data-oe-member="' + esc(m.ref) + '" aria-label="Remove ' + esc(m.name) + '">Remove</button>' +
+      // The Hub's new-agent form, with this member as the boss (#1678). "/hub" is HUB_PATH, written out: this function ships alone.
+      '<a class="ax-btn" href="/hub#page=settings&amp;section=agents&amp;under=' + encodeURIComponent(m.ref) + '" aria-label="Add an agent who reports to ' + esc(m.name) + '">Add agent here</a></span></li>',
   ).join("") + "</ul>" : '<p class="org-quiet">No one in the org chart yet. Add a member above.</p>'
 
   const rels = org.setup.relations

@@ -18,6 +18,7 @@ On `/org`, you, the owner, decide who is in the chart, the role each one holds, 
 6. To link two members, under **Relations**, pick the member, the kind of relation, and the target.
 7. Select **Add relation**. A box at the top of the panel says, in one line, what will change. Nothing is saved yet.
 8. Read the line, then select **Save the move** to save it, or **Cancel** to leave the chart as it is. The **Escape** key also cancels.
+   To make a new agent who reports to a member, select **Add agent here** next to that member; see [Add an agent under someone](./hub.md#add-an-agent-under-someone-in-the-org-chart).
 9. To change a role, type the new one next to the member and select **Save role**. A role is saved at once, without the confirm box.
 10. To take out a member or a line, select **Remove** next to it, then **Save the move** in the box. Removing a member removes their lines too, and the box names anyone who then reports to no one.
 11. Select **Done editing** to close the panel. A change still waiting for **Save the move** is dropped.
