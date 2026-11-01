@@ -31,7 +31,8 @@ import { HUB_NAME } from "../hub-name"
 import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
 
 export const WALL_ORG_SCRIPT = String.raw`
-  var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null, headShown: false };
+  var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null, fitted: false, startShown: false };
+  var ORG_FIT_FLOOR = 0.6;
   var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
   var ORG_CHART_HREF = '/org';
   var ORG_ICON = { person: '${ORG_PERSON_ICON}', agent: '${ORG_AGENT_ICON}' };
@@ -193,7 +194,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     size.style.width = phone ? '' : chart.offsetWidth * ORG.zoom + 'px';
     size.style.height = phone ? '' : chart.offsetHeight * ORG.zoom + 'px';
     if (phone) return;
-    orgShowHead(chart);
+    if (orgFit(chart)) return;
     var box = {};
     chart.querySelectorAll('[data-org-key]').forEach(function (el) {
       box[el.getAttribute('data-org-key')] = { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight, band: el.getAttribute('data-org-band') };
@@ -224,20 +225,40 @@ export const WALL_ORG_SCRIPT = String.raw`
       }
     });
     svg.innerHTML = out + bands.titles;
+    orgShowStart(bands.widest);
+    orgEdges();
   }
-  // As showHead() on /org: a chart wider than the pane centres its root across
-  // the full width, so the head lands off screen. On the first paint of the
-  // Chart view, scroll the head (a person root, else the first root) into the
-  // middle; later repaints keep the reader's scroll.
-  function orgShowHead(chart) {
+  // Fit to width (#1681): on the Chart view's first paint the zoom starts at
+  // the value that fits the chart in the pane, never under 60% and never over
+  // 100%. Once fitted, or once the reader zooms, it is never refitted.
+  // Returns true when it changed the zoom, as render() then paints again.
+  function orgFit(chart) {
     var scroll = orgEl('wog-scroll');
-    if (ORG.headShown || !scroll || scroll.scrollWidth <= scroll.clientWidth) return;
-    var top = chart.querySelectorAll('.wog__card.is-top');
-    if (!top.length) return;
-    var head = Array.prototype.filter.call(top, function (c) { return c.classList.contains('is-person'); })[0] || top[0];
-    var box = scroll.getBoundingClientRect(), at = head.getBoundingClientRect();
-    scroll.scrollLeft += at.left + at.width / 2 - (box.left + box.width / 2);
-    ORG.headShown = true;
+    if (ORG.fitted || !scroll) return false;
+    var w = chart.offsetWidth, room = scroll.clientWidth - 32;
+    if (!(w > 0 && room > 0)) return false;
+    ORG.fitted = true;
+    var z = Math.max(ORG_FIT_FLOOR, Math.min(1, Math.floor(room / w * 100) / 100));
+    if (z === ORG.zoom) return false;
+    ORG.zoom = z;
+    render();
+    return true;
+  }
+  // Still wider than the pane at 60%: start with the left edge of the widest
+  // department band in view, never centred on the head. Once per page.
+  function orgShowStart(widest) {
+    var scroll = orgEl('wog-scroll');
+    if (ORG.startShown || !scroll || scroll.scrollWidth <= scroll.clientWidth) return;
+    scroll.scrollLeft = widest ? Math.max(0, widest.l * ORG.zoom) : 0;
+    ORG.startShown = true;
+  }
+  /** A fade on each edge where the chart goes on past the pane. */
+  function orgEdges() {
+    var s = orgEl('wog-scroll');
+    if (!s) return;
+    var wide = s.scrollWidth > s.clientWidth + 1;
+    s.classList.toggle('is-more-left', wide && s.scrollLeft > 1);
+    s.classList.toggle('is-more-right', wide && s.scrollLeft + s.clientWidth < s.scrollWidth - 1);
   }
   // A department's band (#1681): a box round its members' cards, under the
   // lines, and its title (name and head) over them. Folded-away members leave it.
@@ -245,7 +266,7 @@ export const WALL_ORG_SCRIPT = String.raw`
   // department split over the chart gets one box per run, never one stretched
   // over cards outside it. Each member's chip names the department anyway.
   function orgBands(d, box) {
-    var PAD = 10, TOP = 30, out = { boxes: '', titles: '' };
+    var PAD = 10, TOP = 30, out = { boxes: '', titles: '', widest: null };
     ((S.org && S.org.departments) || []).forEach(function (dep) {
       var runs = {};
       dep.members.forEach(function (m) {
@@ -262,6 +283,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     var t = Math.min.apply(null, at.map(function (a) { return a.t; })) - TOP;
     var r = Math.max.apply(null, at.map(function (a) { return a.l + a.w; })) + PAD;
     var btm = Math.max.apply(null, at.map(function (a) { return a.t + a.h; })) + PAD;
+    if (!out.widest || r - l > out.widest.r - out.widest.l) out.widest = { l: l, r: r };
     var title = dep.name + (dep.head ? ' · head ' + orgName(dep.head) : '');
     out.boxes += '<rect class="wog__band" x="' + l + '" y="' + t + '" width="' + (r - l) + '" height="' + (btm - t) + '" rx="14"/>';
     out.titles += '<text class="wog__band-t" x="' + (l + 12) + '" y="' + (t + 19) + '">' + esc(title) + '</text>';
@@ -296,6 +318,7 @@ export const WALL_ORG_SCRIPT = String.raw`
   }
   function orgZoom(step) {
     ORG.zoom = step === 0 ? 1 : Math.min(1.5, Math.max(0.4, Math.round((ORG.zoom + step * 0.1) * 10) / 10));
+    ORG.fitted = true;
     render();
   }
   document.addEventListener('click', function (ev) {
@@ -315,6 +338,8 @@ export const WALL_ORG_SCRIPT = String.raw`
     orgZoom(ev.deltaY < 0 ? 1 : -1);
   }, { passive: false });
   window.addEventListener('resize', orgRedraw);
+  // Scroll does not bubble: catch the chart pane's on the way down.
+  document.addEventListener('scroll', function (ev) { if (ev.target && ev.target.id === 'wog-scroll') orgEdges(); }, true);
 `
 
 export const WALL_ORG_CSS = `
@@ -357,7 +382,9 @@ export const WALL_ORG_CSS = `
 .wog__problem { margin: 10px 16px 0; padding: 8px 12px; border-radius: var(--ax-radius); background: var(--ax-amber-t); color: var(--ax-amber-ink); font-size: var(--ax-fs-sm); }
 .wog__note { padding: 8px 16px 0; }
 .wog__owner { display: none; }
-.wog__scroll { overflow: auto; padding: 16px; }
+.wog__scroll { overflow: auto; padding: 16px; --wog-fade-l: 0px; --wog-fade-r: 0px; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--wog-fade-l), #000 calc(100% - var(--wog-fade-r)), transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 var(--wog-fade-l), #000 calc(100% - var(--wog-fade-r)), transparent 100%); }
+.wog__scroll.is-more-left { --wog-fade-l: 40px; }
+.wog__scroll.is-more-right { --wog-fade-r: 40px; }
 .wog__size { position: relative; margin: 0 auto; }
 .wog__chart { --wog-half: 118px; position: relative; display: grid; grid-template-columns: repeat(var(--wog-cols, 2), var(--wog-half)); row-gap: 48px; width: max-content; transform-origin: 0 0; }
 .wog__lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
