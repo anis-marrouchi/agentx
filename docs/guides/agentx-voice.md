@@ -406,7 +406,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.hotkeys.stop` | `"cmd+opt+period"` | Stop every voice |
 | `voice.hotkeys.paste` | `"cmd+opt+v"` | Smart paste |
 | `voice.look` | `"orb"` | What shows the assistant's state: the `"orb"` in the pill, or the `"character"`, a small creature above the bottom edge of the screen. See [The character](../dashboard/voice.md#the-character) |
-| `voice.startReduced` | `false` | `true` starts the app with the pill [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb): a small circle you can drag anywhere. With the character, as the [character alone](../dashboard/voice.md#reduce-the-character), without its speech bubble |
+| `voice.startReduced` | `true` | Starts the app with the pill [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb): a small circle you can drag anywhere. With the character, as the [character alone](../dashboard/voice.md#reduce-the-character), without its speech bubble. `false` starts with the full pill |
 | `voice.stroll` | `false` | `true` lets the [character](../dashboard/voice.md#the-character) take a [slow stroll](../dashboard/voice.md#let-the-character-stroll) when the assistant has nothing to do |
 | `voice.answers` | `"wait"` | When an answer is ready: `"wait"` keeps it in the [open-requests list](#ask-several-agents-at-once) with a soft sound and a blue dot until you pick it; `"play"` plays it at once, as before. Same as **Play answers at once** in the menu |
 | `voice.readySound` | `"Pop"` | The Mac alert sound played once when an answer waits: `"Pop"`, `"Tink"`, `"Glass"`, `"Ping"`, `"Purr"`, `"Bottle"`, `"Blow"`, `"Frog"`, `"Funk"`, `"Hero"`, `"Morse"`, `"Submarine"`, `"Basso"` or `"Sosumi"` |
