@@ -332,4 +332,84 @@ describe("Edit org keeps departments whole (#1681)", () => {
     cfg.business.departments.dev.members.push("person:zahra")
     expect(() => applyOrgEdit(cfg, { op: "set-role", member: "agent:sales", role: "Seller" })).not.toThrow()
   })
+
+  it("takes a removed member out of alsoMembers too, so no also-member is left without a home", () => {
+    const cfg = fresh()
+    cfg.business.departments.sales = { name: "Sales", members: ["agent:sales"], alsoMembers: ["agent:pm"] }
+    expect(applyOrgEdit(cfg, { op: "remove-member", member: "agent:pm" })).toContain("out of Dev")
+    expect(cfg.business.departments.sales.alsoMembers).toEqual([])
+    expect(buildOrgView(cfg, {}, null).problem).toBeUndefined()
+  })
+})
+
+describe("alsoMembers: one member in several departments (Anis 11-01)", () => {
+  const two = {
+    ...config,
+    business: {
+      ...config.business,
+      departments: {
+        dev: { name: "Dev", head: "person:anis", members: ["pm", "ops"] },
+        sales: { name: "Sales", members: ["sales"], alsoMembers: ["pm", "agent:pm", "person:anis"] },
+      },
+    },
+  }
+
+  it("is optional in the schema and written in full without repeats", () => {
+    expect(businessConfigSchema.parse({ departments: { dev: { name: "Dev" } } }).departments.dev).toEqual({ name: "Dev", members: [] })
+    expect(orgDepartments(two.business).find((d) => d.id === "sales")?.alsoMembers).toEqual(["agent:pm", "person:anis"])
+    expect(orgDepartments(two.business).find((d) => d.id === "dev")).not.toHaveProperty("alsoMembers")
+  })
+
+  it("holds when each also-member has its home in another department, a head counting as home", () => {
+    expect(buildOrgView(two, {}, null).problem).toBeUndefined()
+  })
+
+  it("names an also-member with no home, at home in the same department, unknown, or not personnel", () => {
+    const agents = new Set(["pm", "ops"]), people = new Set(["anis", "zahra"])
+    const dev = { id: "dev", name: "Dev", members: ["agent:pm"] }
+    const sales = (alsoMembers: string[]) => ({ id: "sales", name: "Sales", members: [], alsoMembers })
+    expect(departmentsProblem([dev, sales(["agent:ops"])], agents, people))
+      .toBe('"agent:ops" is in alsoMembers of department Sales but has no home; list them in the members of one department first')
+    expect(departmentsProblem([{ ...dev, alsoMembers: ["agent:pm"] }], agents, people))
+      .toBe('"agent:pm" is a member of department Dev already; alsoMembers is for members whose home is another department')
+    expect(departmentsProblem([dev, sales(["agent:qa"])], agents, people))
+      .toBe('Department Sales also lists "qa", which is not an agent in business.orgChart')
+    expect(departmentsProblem([dev, sales(["person:zahra"])], agents, people, new Set(), new Map([["zahra", { name: "Zahra", role: "guest" as const }]])))
+      .toBe("Department Sales cannot also list Zahra: Zahra is a guest, and only owners and members of the organisation can be in a department")
+    // Two homes is still refused, alsoMembers or not.
+    expect(departmentsProblem([dev, { ...sales([]), members: ["agent:pm"] }], agents, people))
+      .toBe('"agent:pm" is in both department Dev and Sales; a member is in one department')
+  })
+
+  it("puts also-members last in the box with their home's name; the chart groups by home only", () => {
+    const view = buildOrgView(two, {}, null)
+    expect(view.byDepartment.boxes.find((b) => b.id === "sales")).toEqual({
+      id: "sales", name: "Sales", members: ["agent:sales"],
+      also: [{ key: "agent:pm", home: "Dev" }, { key: "person:anis", home: "Dev" }],
+    })
+    expect(view.byDepartment.boxes.find((b) => b.id === "dev")).not.toHaveProperty("also")
+    const dept = Object.fromEntries(view.diagram.boxes.map((b) => [b.key, b.department]))
+    expect(dept["agent:pm"]).toBe("dev")
+    expect(dept["agent:sales"]).toBe("sales")
+    // On /org too, the chart's department box uses the home only.
+    const nodes = (new Function(`${ORG_PEOPLE_JS}; return withPeople`)() as (d: any) => { nodes: Record<string, any> })(view).nodes
+    expect(nodes["agent:pm"].department).toBe("dev")
+  })
+
+  it("leaves out an also-member with no home rather than draw a wrong chip", () => {
+    const depts = orgDepartments({ departments: { sales: { name: "Sales", members: [], alsoMembers: ["pm"] } } })
+    expect(departmentBoxes(depts, ["agent:pm"])).toEqual({ boxes: [{ id: "sales", name: "Sales", members: [] }], rest: ["agent:pm"] })
+  })
+
+  it("draws them on /org as outlined cards under a Home chip, with a legend line", () => {
+    const deptViewHtml = new Function(`${ORG_PEOPLE_JS}; return deptViewHtml`)() as (by: any, cardOf: (k: string) => string, esc: (s: string) => string) => string
+    const html = deptViewHtml(buildOrgView(two, {}, null).byDepartment, (k) => `[${k}]`, (s) => s)
+    expect(html).toContain('<div class="org-dgrid">[agent:sales]</div><h3 class="org-also-name">Also works here</h3><div class="org-dgrid">'
+      + '<div class="org-also"><span class="org-home">Home: Dev</span>[agent:pm]</div>'
+      + '<div class="org-also"><span class="org-home">Home: Dev</span>[person:anis]</div></div></section>')
+    const page = renderOrgPage()
+    expect(page).toContain('<li id="org-legend-also" hidden><span class="org-home">Home: …</span>')
+    expect(page).toContain(".org-also .org-card { width: 100%; background: transparent; border-style: dashed; }")
+    expect(WALL_ORG_CSS).toContain(".wog__card.is-also { background: transparent; border-style: dashed; }")
+  })
 })

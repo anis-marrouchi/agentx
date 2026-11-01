@@ -65,6 +65,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
       <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, warm fill</li>
       <li id="org-legend-remote" hidden><span class="org-tag is-agent org-legend-remote">${ORG_AGENT_ICON}Agent</span>dashed: on another node, shown not routed; grey when that node is down</li>
       <li id="org-legend-dept" hidden><span class="org-legend-dept">Department</span>a dashed box round its members</li>
+      <li id="org-legend-also" hidden><span class="org-home">Home: …</span>outlined: also works here, home is another department</li>
     </ul>
     <div id="org-depts" class="org-depts" hidden></div>
     <div id="org-more" class="org-more" hidden><button type="button" data-org-scroll="-1" aria-controls="org-tree" hidden></button><span>The chart is wider than the page. Scroll sideways to see everyone.</span><button type="button" data-org-scroll="1" aria-controls="org-tree" hidden></button></div>
@@ -171,6 +172,11 @@ const ORG_CSS = `
 .org-dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px 12px; padding-top: 8px; }
 .org-dgrid .org-card, .org-dhead .org-card { width: auto; max-width: none; margin: 0; }
 .org-dhead .org-card { min-width: min(260px, 100%); }
+/* Someone whose home is another department: an outlined card (Anis 11-01). */
+.org-also { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.org-also .org-card { width: 100%; background: transparent; border-style: dashed; }
+.org-also-name { margin: 14px 0 0; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-text-2); }
+.org-home { padding: 0 9px; line-height: 18px; border-radius: 999px; border: var(--ax-border-w) solid var(--ax-border-2); font-size: 11px; font-weight: 600; }
 #org-outside.is-in-depts { display: none; }
 .org-links { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-bar { display: flex; justify-content: flex-end; margin: 0 0 8px; }
@@ -285,14 +291,19 @@ export const ORG_PEOPLE_JS = `
   }
   /** The Departments view (#1681): per box of d.byDepartment its name, the
    *  head's card on top, the members' cards in a grid; then "Not in a
-   *  department". cardOf(key) is a card's html, or '' for no card. */
+   *  department". cardOf(key) is a card's html, or '' for no card. Who also
+   *  works in a box (alsoMembers) comes last in it, outlined, under a
+   *  "Home: <department>" chip. */
   function deptViewHtml(by, cardOf, esc) {
     function grid(keys) { return '<div class="org-dgrid">' + keys.map(cardOf).join('') + '</div>'; }
     var boxes = (by.boxes || []).map(function (dep) {
       return '<section class="org-dbox" data-dept="' + esc(dep.id) + '" aria-label="' + esc(dep.name) + '">'
         + '<h2 class="org-dname">' + esc(dep.name) + '</h2>'
         + (dep.head ? '<div class="org-dhead"><span class="org-lead">Head</span>' + cardOf(dep.head) + '</div>' : '<p class="org-quiet">No head set</p>')
-        + (dep.members.length ? grid(dep.members) : '<p class="org-quiet">No members yet</p>') + '</section>';
+        + (dep.members.length ? grid(dep.members) : '<p class="org-quiet">No members yet</p>')
+        + (dep.also ? '<h3 class="org-also-name">Also works here</h3><div class="org-dgrid">' + dep.also.map(function (a) {
+          return '<div class="org-also"><span class="org-home">Home: ' + esc(a.home) + '</span>' + cardOf(a.key) + '</div>';
+        }).join('') + '</div>' : '') + '</section>';
     }).join('');
     var rest = (by.rest || []).length ? '<section class="org-dbox is-rest" aria-label="Not in a department"><h2 class="org-dname">Not in a department</h2>' + grid(by.rest) + '</section>' : '';
     return boxes + rest;
@@ -394,6 +405,7 @@ const ORG_SCRIPT = `
       (d.departments || []).forEach(function (dep) { depts[dep.id] = dep; });
       document.getElementById('org-legend-dept').hidden = !(d.departments || []).length;
       document.getElementById('org-legend-remote').hidden = !((d.diagram && d.diagram.boxes) || []).some(function (b) { return b.remote; });
+      document.getElementById('org-legend-also').hidden = !(d.departments || []).some(function (x) { return x.alsoMembers; });
       E.org = d;
       paintEdit();
       var org = withPeople(d);

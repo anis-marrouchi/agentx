@@ -122,9 +122,9 @@ function chartProblem(cfg: any): string | undefined {
   return relationsProblem(orgRelations(b), agents, people, peers) ?? departmentsProblem(orgDepartments(b), agents, people, peers, outsiders)
 }
 
-/** Take `ref` out of every department in the config, as head and as member.
- *  The department stays, without a head when it was the head. Returns the
- *  names of the departments it left. */
+/** Take `ref` out of every department in the config, as head, member and
+ *  also-member. The department stays, without a head when it was the head.
+ *  Returns the names of the departments it left. */
 function dropFromDepartments(b: any, ref: string): string[] {
   const left: string[] = []
   for (const [id, d] of Object.entries(b.departments ?? {}) as Array<[string, any]>) {
@@ -133,6 +133,10 @@ function dropFromDepartments(b: any, ref: string): string[] {
     if (Array.isArray(d?.members)) {
       const kept = d.members.filter((m: string) => memberKey(m) !== ref)
       if (kept.length !== d.members.length) { d.members = kept; hit = true }
+    }
+    if (Array.isArray(d?.alsoMembers)) {
+      const kept = d.alsoMembers.filter((m: string) => memberKey(m) !== ref)
+      if (kept.length !== d.alsoMembers.length) { d.alsoMembers = kept; hit = true }
     }
     if (hit) left.push(String(d?.name || id))
   }

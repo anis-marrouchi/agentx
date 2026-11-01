@@ -2083,6 +2083,34 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(html.replace(/<[^>]*>/g, " ")).not.toMatch(/(agent|person):/)
   })
 
+  it("shows an also-member last in the box, outlined, with a Home chip (Anis 11-01)", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" }, bob: { name: "Bob" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" }, bob: { reportsTo: "person:sam" } },
+        departments: {
+          dev: { name: "Dev", head: "person:sam", members: ["ann"] },
+          ops: { name: "Ops", members: ["bob"], alsoMembers: ["ann"] },
+        },
+      },
+    }, {}, null) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    const ops = /<section class="wod__box" data-org-dept="ops"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ""
+    expect(ops).toContain('<h3 class="wod__name">Ops <small>1 + 1 also</small></h3>')
+    const also = ops.slice(ops.indexOf('<h4 class="wod__also">Also works here</h4>'))
+    expect(also).toContain(" is-also")
+    expect(also).toContain('<span class="wog__chip is-home">Home: Dev</span>')
+    expect(also).toContain("<b>Ann<")
+    expect(ops.indexOf("<b>Bob</b>")).toBeLessThan(ops.indexOf("wod__also"))
+    // In Dev, her home, Ann is a plain card.
+    const dev = /<section class="wod__box" data-org-dept="dev"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ""
+    expect(dev).not.toContain("is-also")
+    expect(html).toContain("Outlined: also works here, home is another department")
+  })
+
   it("keeps the chart and no view switch when there are no departments (#1681)", async () => {
     const w = openWall({ org: ORG, hash: "#page=org" })
     await w.settle()
