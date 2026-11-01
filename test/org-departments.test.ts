@@ -4,7 +4,7 @@ import { departmentBoxes, departmentsProblem, orgDepartments } from "../src/busi
 import { layoutOrg } from "../src/business/org-layout"
 import { buildOrgView } from "../src/business/org-view"
 import { ORG_PEOPLE_JS, renderOrgPage } from "../src/daemon/ui/pages/org"
-import { WALL_ORG_CSS } from "../src/daemon/ui/pages/wall-org.client"
+import { WALL_ORG_CSS, WALL_ORG_SCRIPT } from "../src/daemon/ui/pages/wall-org.client"
 
 // Departments on the org chart, and people vs agents on sight (#1681).
 
@@ -188,6 +188,15 @@ describe("the /org page (#1681)", () => {
     expect(bar).toBeGreaterThan(-1)
     expect(page.indexOf('id="org-views"')).toBeGreaterThan(bar)
     expect(page.indexOf('<ul class="org-legend"')).toBeGreaterThan(page.indexOf('id="org-views"'))
+  })
+
+  it("centres the head card on the Hub chart's first paint, once, as /org does", () => {
+    // Called from orgDraw() after the size is set, desktop only.
+    expect(WALL_ORG_SCRIPT).toMatch(/if \(phone\) return;\s*orgShowHead\(chart\);/)
+    const fn = WALL_ORG_SCRIPT.slice(WALL_ORG_SCRIPT.indexOf("function orgShowHead("), WALL_ORG_SCRIPT.indexOf("function orgBands("))
+    expect(fn).toContain("if (ORG.headShown || !scroll || scroll.scrollWidth <= scroll.clientWidth) return;")
+    expect(fn).toContain("c.classList.contains('is-person')")
+    expect(fn).toContain("ORG.headShown = true;")
   })
 
   it("gives a person's card a warm fill and keeps an agent's plain, on /org and the Hub", () => {
