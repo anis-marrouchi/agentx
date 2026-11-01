@@ -128,6 +128,9 @@ Starting from the watch:
 - **The watch's call to AgentX fails and nothing rings back.** AgentX is no longer the call redirect app, or **Start from your watch** is off. Open **Talk to AgentX**: if the section says **no longer the call redirect app**, tap **Set up** again. Another app that redirects calls, such as some call-blocking apps, can take the role away.
 - **The section says "This phone can't start a call from the watch"** — the phone runs an Android older than 10, or its maker removed call redirection. Start calls on the phone with **Start** instead.
 - **The watch rings back, but you hear "I didn't hear anything" each time.** The phone did not let AgentX use the microphone in the background. Open **Talk to AgentX** once with the phone unlocked and check that **Microphone** is allowed. If it keeps happening, send `adb logcat -s AgentXTalk` from a call to whoever set up AgentX: the line **the microphone gave only silence** confirms it.
-- **The sound keeps moving between the watch and the phone** — turn **Answer the ring-back by itself** back on.
+- **The sound moves from the watch to the phone during the call** — AgentX asks for the watch back by itself, a few times per call, so it usually returns within a second or two. If the sound keeps moving, or stays on the phone:
+  1. **Phone:** open **Talk to AgentX** and turn **Answer the ring-back by itself** back on.
+  2. **Phone:** check in **Bluetooth** settings that the watch is still connected.
+  3. If it still happens, send `adb logcat -s AgentXTalk` from a call to whoever set up AgentX. The lines **watch audio dropped** and **recorded on the phone's microphone** show when it happened.
 - **"Choose the agent to talk to first"** — no agent is chosen yet. Open **Talk to AgentX**, choose one, then call from the watch again.
 - **AgentX is not in the watch's contacts** — add it in the watch's phone app (such as Mi Fitness or Zepp), or check that the contact was saved on the phone. Tap **Add the AgentX contact** to add it again.
