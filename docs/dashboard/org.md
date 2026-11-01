@@ -102,6 +102,19 @@ A **department** puts members of the chart in one named group with a head, for e
 2. **Browser:** on the Hub, select **Org**, then **Refresh**. The page opens on **Departments**: one dashed box per department with its name, the head's card on top marked **Head**, and the members' cards in a grid under it. Everyone in no department is in a last box, **Not in a department**. On a phone the boxes stack. The `/org` page opens the same way.
 3. **Browser:** select **Chart** for the reporting chart. There the department's members sit side by side in one dashed band, titled **Engineering · head** *name*, and each card has an **Engineering** chip. On the `/org` page the members sit in one dashed box under their boss.
 
+### A member who works in several departments
+
+Each member has one home department: the one that lists them in `members`, or the one they head. To show that they also work in another department, add them to that department's `alsoMembers`. `devops-agent` is an example:
+
+```json
+"departments": {
+  "engineering": { "name": "Engineering", "head": "person:anis", "members": ["agent:pm-agent", "agent:devops-agent"] },
+  "sales": { "name": "Sales", "members": ["agent:sales-agent"], "alsoMembers": ["agent:devops-agent"] }
+}
+```
+
+In the **Departments** view the Sales box ends with **Also works here**: an outlined card for each also-member, with a **Home: Engineering** chip. The **Chart** view and its bands only use the home department, so nobody is drawn twice. An also-member who has no home, or whose home is that same department, shows as **Problem in the org chart**.
+
 A department that names someone unknown, a member in two departments, or a client or guest as head or member, shows above the chart as **Problem in the org chart**, for example "Department Engineering cannot list Zahra: Zahra is a guest, and only owners and members of the organisation can be in a department". The daemon still starts.
 
 When you remove a member in **Edit org**, they also leave every department. If they were its head, the department stays without one. An edit that would leave a department naming someone unknown is refused with the same sentence.

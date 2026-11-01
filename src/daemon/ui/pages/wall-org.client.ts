@@ -75,8 +75,9 @@ export const WALL_ORG_SCRIPT = String.raw`
     return n;
   }
   /** A card. at: its place in the chart, or null in the Departments view,
-   *  where it has no fold and no department chip; head marks the head. */
-  function orgCardHtml(b, at, d, head) {
+   *  where it has no fold and no department chip; head marks the head;
+   *  home, the home department's name of someone who also works here. */
+  function orgCardHtml(b, at, d, head, home) {
     var person = b.kind === 'person';
     var reports = d.boxes.filter(function (x) { return x.parent === b.key; }).length;
     var folded = !!ORG.folded[b.key];
@@ -91,7 +92,7 @@ export const WALL_ORG_SCRIPT = String.raw`
       : '<button type="button" class="wog__head" data-agent="' + esc(b.id) + '" title="' + esc(b.name) + ': profile and posts">' + face + who +
         '<span class="wog__sr">' + esc(ORG_STATE[b.status] || '') + '</span></button>';
     var dept = at && b.department ? orgDept(b.department) : null;
-    var chips = (head ? '<span class="wog__chip is-lead">Head</span>' : '') +
+    var chips = (head ? '<span class="wog__chip is-lead">Head</span>' : '') + (home ? '<span class="wog__chip is-home">Home: ' + esc(home) + '</span>' : '') +
       (remote ? '<span class="wog__chip is-node" title="' + esc(ORG_REMOTE[remote.seen] + ' ' + remote.node) + '">' + esc((remote.seen === 'up' ? 'on ' : remote.seen === 'down' ? 'down: ' : 'not seen: ') + remote.node) + '</span>' : '') +
       (dept ? '<span class="wog__chip is-dept">' + esc(dept.name) + '</span>' : '') +
       actsFor.map(function (e) { return '<span class="wog__chip is-acts">acts for ' + esc(orgName(e.to)) + '</span>'; }).join('') +
@@ -102,7 +103,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     var place = !at ? '' : (at.band != null ? ' data-org-band="' + at.band + '"' : '') +
       ' style="grid-column: ' + at.col + ' / span 2; grid-row: ' + (at.level + 1) + '; --lvl: ' + at.level + '"';
     var look = person ? ' is-person' : remote ? ' is-remote' + (remote.seen === 'up' ? '' : ' is-gone') : ' is-' + esc(b.status || 'unknown');
-    return '<article class="wog__card' + look + (at && at.level ? '' : ' is-top') + (head ? ' is-lead' : '') + '"' +
+    return '<article class="wog__card' + look + (at && at.level ? '' : ' is-top') + (head ? ' is-lead' : '') + (home ? ' is-also' : '') + '"' +
       (at ? ' data-org-key="' + esc(b.key) + '"' : '') + place + '>' +
       orgKindHtml(b.kind) + top + (chips ? '<div class="wog__chips">' + chips + '</div>' : '') + fold + '</article>';
   }
@@ -126,7 +127,8 @@ export const WALL_ORG_SCRIPT = String.raw`
         '<li><span class="wog__key is-card"></span>' + orgKindHtml('agent') + '</li>' +
         '<li><span class="wog__key is-person"></span>' + orgKindHtml('person') + '</li>' +
         (d.boxes.some(function (b) { return b.remote; }) ? '<li><span class="wog__key is-remote"></span>On another node: shown, not routed to; grey when it does not answer</li>' : '') +
-        (!chart ? '<li><span class="wog__chip is-lead">Head</span>Heads the department</li>' :
+        (!chart ? '<li><span class="wog__chip is-lead">Head</span>Heads the department</li>' +
+          (((S.org && S.org.byDepartment && S.org.byDepartment.boxes) || []).some(function (x) { return x.also; }) ? '<li><span class="wog__chip is-home">Home: …</span>Outlined: also works here, home is another department</li>' : '') :
           (orgDepts().length ? '<li><span class="wog__key is-dept"></span>Department</li>' : '') +
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln" d="M2 5H26"/></svg>Reports to</li>' +
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln is-dotted" d="M2 5H26"/></svg>Dotted line: a second boss for one topic</li>' +
@@ -184,13 +186,16 @@ export const WALL_ORG_SCRIPT = String.raw`
     ((S.org && S.org.outside) || []).forEach(function (n) {
       cards['agent:' + n.id] = cards['agent:' + n.id] || { key: 'agent:' + n.id, kind: 'agent', id: n.id, name: n.name, status: n.status };
     });
-    function card(key, head) { return cards[key] ? orgCardHtml(cards[key], null, d, head) : ''; }
+    function card(key, head, home) { return cards[key] ? orgCardHtml(cards[key], null, d, head, home) : ''; }
     function grid(keys) { return keys.length ? '<div class="wod__grid">' + keys.map(function (k) { return card(k); }).join('') + '</div>' : ''; }
     var boxes = by.boxes.map(function (dep) {
       return '<section class="wod__box" data-org-dept="' + esc(dep.id) + '" aria-label="' + esc(dep.name) + '">' +
-        '<h3 class="wod__name">' + esc(dep.name) + ' <small>' + (dep.members.length + (dep.head ? 1 : 0)) + '</small></h3>' +
+        '<h3 class="wod__name">' + esc(dep.name) + ' <small>' + (dep.members.length + (dep.head ? 1 : 0)) + (dep.also ? ' + ' + dep.also.length + ' also' : '') + '</small></h3>' +
         (dep.head ? '<div class="wod__head">' + card(dep.head, true) + '</div>' : '<p class="wod__nohead">No head set</p>') +
         (dep.members.length ? grid(dep.members) : '<p class="wod__nohead">No members yet</p>') +
+        // Who also works here, outlined, with their home department.
+        (dep.also ? '<h4 class="wod__also">Also works here</h4><div class="wod__grid">' +
+          dep.also.map(function (a) { return card(a.key, false, a.home); }).join('') + '</div>' : '') +
       '</section>';
     }).join('');
     var rest = by.rest.length ? '<section class="wod__box is-rest" aria-label="Not in a department">' +
@@ -393,6 +398,9 @@ export const WALL_ORG_CSS = `
 .wod__grid .wog__card { width: auto; min-width: 0; justify-self: stretch; }
 .wod__nohead { margin: 0 0 8px; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
 .wog__card.is-lead { box-shadow: 0 0 0 2px var(--ax-accent); }
+/* Someone whose home is another department: an outlined card (Anis 11-01). */
+.wog__card.is-also { background: transparent; border-style: dashed; }
+.wod__also { margin: 14px 0 0; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-muted); }
 .wog__edit { font-size: var(--ax-fs-xs); padding: 3px 12px; }
 .wog__problem { margin: 10px 16px 0; padding: 8px 12px; border-radius: var(--ax-radius); background: var(--ax-amber-t); color: var(--ax-amber-ink); font-size: var(--ax-fs-sm); }
 .wog__note { padding: 8px 16px 0; }
@@ -439,6 +447,7 @@ button.wog__head:hover b { text-decoration: underline; }
 .wog__card.is-remote, .wog__key.is-remote { border-style: dashed; }
 .wog__card.is-gone, .wa.is-gone { opacity: .6; filter: grayscale(1); }
 .wog__chip.is-lead { background: var(--ax-text); color: var(--ax-bg); font-weight: 700; }
+.wog__chip.is-home { border: 1px solid var(--ax-border-2); background: none; font-weight: 600; }
 .wog__chip.is-acts { background: var(--ax-blue-t); color: var(--ax-accent); }
 .wog__chip.is-dotted { border: 1px dashed var(--ax-border-2); background: none; }
 .wog__chip.is-quiet { display: none; }

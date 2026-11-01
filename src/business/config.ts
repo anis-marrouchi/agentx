@@ -151,6 +151,9 @@ export const businessConfigSchema = z.object({
     name: z.string().min(1).optional(),
     head: z.string().min(1).optional(),
     members: z.array(z.string().min(1)).default([]),
+    /** Members whose home is another department and who also work in this
+     *  one (Anis 11-01). Shown in this box only; chart and band use the home. */
+    alsoMembers: z.array(z.string().min(1)).optional(),
   })).default({}),
   /** Per-project metadata. Phase 3 — defaults to empty array, so
    *  existing agentx.json files validate without modification. */
