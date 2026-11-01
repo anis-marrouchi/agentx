@@ -27,6 +27,16 @@ The sections are listed on the left in three groups:
 
 A **Business** section (org chart, projects, and which chat belongs to which client) appears only when the business features are switched on (`business.enabled` in `agentx.json`).
 
+The **Org chart** part of Business is the same editor as [Edit org](./org.md#edit-the-org-chart) on `/org`: pick a member, a relation and a target from lists, then select **Save the move**. There are no agent ids to type. An org chart change applies at once. Projects, clients and the contact map apply when the daemon next starts.
+
+![Settings → Business: the org chart editor asks before a new dotted line is saved, in the isolated demo](/screenshots/settings/business-org.png)
+
+![The same editor on a phone, in the isolated demo](/screenshots/settings/business-org-phone.png)
+
+*Scripted demo data; your team's names will differ.*
+
+To check it worked, open `/org`: it shows the same chart, with the change. If a change is refused, the editor's status line says why, and nothing is saved. Work hours for an org chart entry are no longer set here; use `agentx business orgchart add` with `--start`, `--end` and `--days` in the terminal.
+
 `/admin`, the old Settings address, opens this page. `/hub#page=settings&section=` followed by a section's name, such as `/hub#page=settings&section=channels`, opens that section directly.
 
 ## Try an agent

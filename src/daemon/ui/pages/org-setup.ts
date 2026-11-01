@@ -133,3 +133,108 @@ export function orgEditHtml(org: OrgSetupReply | null, msg: { text: string; bad:
       "<dt>Dotted line to</dt><dd>A second manager for one topic or project.</dd>" +
       "<dt>Acts for</dt><dd>An agent works on behalf of a person.</dd></dl>"
 }
+
+/** What a page gives the editor: the org it shows, how a change is sent,
+ *  how the org is read again, and how the page repaints. */
+export interface OrgEditorHost {
+  org(): OrgSetupReply | null
+  post(change: OrgChange): Promise<{ summary?: string }>
+  reload(): Promise<unknown>
+  paint(): void
+}
+
+/** The editor's behaviour, one for /org and Settings → Business (#1678):
+ *  html() is the panel, click() and key() handle its buttons, focus() puts
+ *  the focus on Save the move once the page has painted. A move or removal
+ *  waits in `pending`; nothing is sent before Save the move. */
+export function orgEditor(host: OrgEditorHost) {
+  const E = { msg: "", bad: false, pending: null as OrgConfirm | null, focus: false }
+  const field = (id: string) => { const el = document.getElementById(id) as HTMLInputElement | null; return el ? el.value : "" }
+  // Sends the steps in order. If a later one is refused, the undo steps put
+  // back what the earlier ones changed.
+  async function save(steps: OrgChange[], undo: OrgChange[], button?: HTMLButtonElement) {
+    if (button) button.disabled = true
+    let done = 0, d: { summary?: string } = {}
+    try {
+      for (; done < steps.length; done++) d = await host.post(steps[done])
+      E.msg = (d.summary || "Saved") + ". Saved."; E.bad = false
+    } catch (e: any) {
+      E.msg = e.message; E.bad = true
+      if (done > 0) {
+        try { for (const u of undo) await host.post(u); E.msg += " Nothing was changed." }
+        catch (e2: any) { E.msg += " Putting the old line back failed too: " + e2.message + ". Check the chart below." }
+      }
+    }
+    await host.reload()
+    host.paint()
+    if (button) button.disabled = false
+  }
+  function ask(change: OrgChange, button: HTMLButtonElement) {
+    const org = host.org()
+    const c = org && org.setup ? orgConfirmFor(org.setup, change) : null
+    if (!c) { save([change], [], button); return }
+    E.pending = c; E.msg = ""; E.bad = false; E.focus = true
+    host.paint()
+  }
+  function cancel() {
+    E.pending = null; E.msg = "Cancelled. Nothing changed."; E.bad = false
+    host.paint()
+  }
+  return {
+    E,
+    html: () => orgEditHtml(host.org(), { text: E.msg, bad: E.bad }, E.pending ? E.pending.text : ""),
+    focus() {
+      if (E.focus) { const sv = document.getElementById("oe-confirm-save"); if (sv) sv.focus() }
+      E.focus = false
+    },
+    /** Handles a click on one of the editor's buttons; false for any other click. */
+    click(target: EventTarget | null): boolean {
+      const b = target && (target as Element).closest ? (target as Element).closest("[data-oe]") as HTMLButtonElement | null : null
+      if (!b) return false
+      const op = b.getAttribute("data-oe") || ""
+      const at = (k: string) => b.getAttribute("data-oe-" + k) || ""
+      if (op === "confirm") {
+        const p = E.pending
+        if (!p) return true
+        E.pending = null
+        save(p.steps, p.undo, b)
+      } else if (op === "cancel") cancel()
+      else if (op === "add-member") { if (field("oe-add-member")) save([{ op, member: field("oe-add-member"), role: field("oe-add-role") }], [], b) }
+      else if (op === "set-role") save([{ op, member: at("member"), role: field("oe-role-" + at("i")) }], [], b)
+      else if (op === "add-relation") ask({ op, from: field("oe-rel-from"), type: field("oe-rel-type"), to: field("oe-rel-to") }, b)
+      else if (op === "remove-member") ask({ op, member: at("member") }, b)
+      else if (op === "remove-relation") ask({ op, from: at("from"), type: at("type"), to: at("to") }, b)
+      return true
+    },
+    /** Escape cancels a change waiting for Save the move. */
+    key(ev: KeyboardEvent) {
+      if (ev.key === "Escape" && E.pending) { ev.preventDefault(); cancel() }
+    },
+  }
+}
+
+/** The editor's styles, under an .org-edit box, for both pages. */
+export const ORG_EDIT_CSS = `
+.org-edit { margin: 0 0 24px; padding: 12px 16px 16px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
+.oe-lead { margin: 0 0 6px; color: var(--ax-text-2); }
+.oe-msg { min-height: 1.4em; margin: 0 0 6px; }
+.oe-msg.is-bad { color: var(--ax-red-ink); }
+.oe-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 8px; padding: 10px 12px; border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius); background: var(--ax-surface-2); }
+.oe-confirm-text { flex: 1 1 240px; margin: 0; }
+.oe-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 6px 0 10px; }
+.oe-form label, .oe-role { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-edit select, .org-edit input { font: inherit; font-size: var(--ax-fs-sm); min-width: 0; max-width: 100%; padding: 5px 8px; border-radius: var(--ax-radius-sm); border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); }
+.oe-rows { list-style: none; margin: 0; padding: 0; }
+.oe-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; border-bottom: var(--ax-border-w) solid var(--ax-border); }
+.oe-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; flex: 1 1 160px; min-width: 0; }
+.oe-role { flex: 0 1 200px; }
+.oe-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.oe-legend { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 16px 0 0; padding: 10px 12px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); }
+.oe-legend dt { font-weight: 600; }
+.oe-legend dd { margin: 0; color: var(--ax-text-2); }
+@media (max-width: 640px) {
+  .org-edit { padding: 10px 12px 14px; }
+  .oe-form > *, .oe-role { flex: 1 1 100%; }
+  .oe-legend { grid-template-columns: 1fr; }
+}
+`

@@ -91,6 +91,7 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 // name with /wall/settings taken out, served by the same handler
 // (admin-panel.ts), so no settings logic changes:
 //   POST   /api/admin/wall/settings/org/hold               {agent, paused}
+//   POST   /api/admin/wall/settings/org/chart              one org chart change (#1678)
 //   POST   /api/admin/wall/settings/agents                 a new agent
 //   PATCH  /api/admin/wall/settings/agents                 {id, patch}
 //   DELETE /api/admin/wall/settings/agents                 {id}
@@ -128,7 +129,7 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 //   POST   /api/admin/wall/settings/guests/<id>/<pause|resume|end>  a guest grant (wallGuestsTarget)
 export const WALL_SETTINGS_PREFIX = `${WALL_ACTIONS_PREFIX}/settings`
 const WALL_SETTINGS_WRITES = new Set([
-  "POST /org/hold", "POST /agents", "PATCH /agents", "DELETE /agents", "POST /agents/access",
+  "POST /org/hold", "POST /org/chart", "POST /agents", "PATCH /agents", "DELETE /agents", "POST /agents/access",
   "POST /agents/integrations", "DELETE /agents/integrations", "POST /agents/test",
   "PUT /files", "POST /files/skill", "DELETE /files/skill", "POST /wiki/curator",
   // Phase 2: Schedules and Webhooks.

@@ -30,7 +30,7 @@
 import { pageHead, renderShell, type TopbarPeer } from ".."
 import { injectFns } from "../inject"
 import { HUB_NEEDS_YOU, HUB_PATH } from "../hub-name"
-import { orgConfirmFor, orgEditHtml } from "./org-setup"
+import { ORG_EDIT_CSS, orgConfirmFor, orgEditHtml, orgEditor } from "./org-setup"
 import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
 import { ORG_PROJECTS_CSS, ORG_PROJECTS_JS } from "./org-projects"
 
@@ -91,7 +91,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     subtitle: "Org",
     peers: opts.peers,
     body,
-    css: ORG_CSS + ORG_PROJECTS_CSS,
+    css: ORG_CSS + ORG_EDIT_CSS + ORG_PROJECTS_CSS,
     scripts: `${tokenScript}<script>${ORG_SCRIPT}</script>`,
   })
 }
@@ -185,28 +185,8 @@ const ORG_CSS = `
 #org-outside.is-in-depts { display: none; }
 .org-links { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin: 0 0 12px; }
-.org-edit { margin: 0 0 24px; padding: 12px 16px 16px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
-.oe-lead { margin: 0 0 6px; color: var(--ax-text-2); }
-.oe-msg { min-height: 1.4em; margin: 0 0 6px; }
-.oe-msg.is-bad { color: var(--ax-red-ink); }
-.oe-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 8px; padding: 10px 12px; border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius); background: var(--ax-surface-2); }
-.oe-confirm-text { flex: 1 1 240px; margin: 0; }
-.oe-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 6px 0 10px; }
-.oe-form label, .oe-role { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
-.org-edit select, .org-edit input { font: inherit; font-size: var(--ax-fs-sm); min-width: 0; max-width: 100%; padding: 5px 8px; border-radius: var(--ax-radius-sm); border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); }
-.oe-rows { list-style: none; margin: 0; padding: 0; }
-.oe-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; border-bottom: var(--ax-border-w) solid var(--ax-border); }
-.oe-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; flex: 1 1 160px; min-width: 0; }
-.oe-role { flex: 0 1 200px; }
-.oe-acts { display: flex; flex-wrap: wrap; gap: 6px; }
-.oe-legend { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 16px 0 0; padding: 10px 12px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); }
-.oe-legend dt { font-weight: 600; }
-.oe-legend dd { margin: 0; color: var(--ax-text-2); }
 @media (max-width: 640px) {
   .org { padding: 0 16px 48px; }
-  .org-edit { padding: 10px 12px 14px; }
-  .oe-form > *, .oe-role { flex: 1 1 100%; }
-  .oe-legend { grid-template-columns: 1fr; }
   .org-card > .org-tag { position: static; display: inline-flex; margin: 0 0 6px; }
 }
 .org-problem { margin: 0 0 12px; padding: 10px 14px; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius); font-size: var(--ax-fs-sm); color: var(--ax-amber-ink); }
@@ -335,7 +315,7 @@ export const ORG_PEOPLE_JS = `
 
 const ORG_SCRIPT = `
 (function () {${ORG_PEOPLE_JS}${ORG_PROJECTS_JS}
-  ${injectFns({ orgConfirmFor, orgEditHtml })}
+  ${injectFns({ orgConfirmFor, orgEditHtml, orgEditor })}
   var tree = document.getElementById('org-tree');
   var msg = document.getElementById('org-msg');
   var warned = false;
@@ -554,13 +534,23 @@ const ORG_SCRIPT = `
       await load();
     } catch (e) { say(e.message, true); b.disabled = false; }
   });
-  // --- Edit org, owner only (#1420): the panel is orgEditHtml ---
-  // E.pending: a move or removal waiting for Save the move or Cancel;
-  // nothing is sent before Save the move. The panel repaints only when what
-  // it shows changed, so the 15-second refresh never resets a field in use.
+  // --- Edit org, owner only (#1420): the shared editor (org-setup.ts) ---
+  // The panel repaints only when what it shows changed, so the 15-second
+  // refresh never resets a field in use.
   var editBtn = document.getElementById('org-edit-btn');
   var editBox = document.getElementById('org-edit');
-  var E = { open: /^#edit$/.test(location.hash || ''), org: null, msg: '', bad: false, pending: null, painted: '', focus: false };
+  var E = { open: /^#edit$/.test(location.hash || ''), org: null, painted: '' };
+  var ED = orgEditor({
+    org: function () { return E.org; },
+    post: async function (change) {
+      var r = await fetch('/api/admin/org/chart', { method: 'POST', headers: headers(true), body: JSON.stringify(change) });
+      var d = await r.json().catch(function () { return {}; });
+      if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+      return d;
+    },
+    reload: function () { return load(); },
+    paint: function () { paintEdit(); },
+  });
   function paintEdit() {
     var can = !!(E.org && E.org.canEdit && E.org.setup && E.org.choices);
     if (!can) E.open = false;
@@ -568,80 +558,19 @@ const ORG_SCRIPT = `
     editBtn.textContent = E.open ? 'Done editing' : 'Edit org';
     editBtn.setAttribute('aria-expanded', E.open ? 'true' : 'false');
     editBox.hidden = !E.open;
-    if (!E.open) { E.pending = null; E.painted = ''; editBox.innerHTML = ''; return; }
-    var key = JSON.stringify([E.org.setup, E.org.choices, E.msg, E.bad, E.pending && E.pending.text]);
+    if (!E.open) { ED.E.pending = null; E.painted = ''; editBox.innerHTML = ''; return; }
+    var key = JSON.stringify([E.org.setup, E.org.choices, ED.E.msg, ED.E.bad, ED.E.pending && ED.E.pending.text]);
     if (key === E.painted) return;
     E.painted = key;
-    editBox.innerHTML = orgEditHtml(E.org, { text: E.msg, bad: E.bad }, E.pending ? E.pending.text : '');
-    if (E.focus) { var sv = document.getElementById('oe-confirm-save'); if (sv && sv.focus) sv.focus(); }
-    E.focus = false;
-  }
-  function field(id) { var el = document.getElementById(id); return el ? el.value : ''; }
-  async function postChart(change) {
-    var r = await fetch('/api/admin/org/chart', { method: 'POST', headers: headers(true), body: JSON.stringify(change) });
-    var d = await r.json().catch(function () { return {}; });
-    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
-    return d;
-  }
-  // Sends the steps in order. If a later one is refused, the undo steps put
-  // back what the earlier ones changed.
-  async function saveChart(steps, undo, button) {
-    if (button) button.disabled = true;
-    var done = 0, d = {};
-    try {
-      for (; done < steps.length; done++) d = await postChart(steps[done]);
-      E.msg = (d.summary || 'Saved') + '. Saved.'; E.bad = false;
-    } catch (e) {
-      E.msg = e.message; E.bad = true;
-      if (done > 0) {
-        try { for (var i = 0; i < undo.length; i++) await postChart(undo[i]); E.msg += ' Nothing was changed.'; }
-        catch (e2) { E.msg += ' Putting the old line back failed too: ' + e2.message + '. Check the chart below.'; }
-      }
-    }
-    await load();
-    paintEdit();
-    if (button) button.disabled = false;
-  }
-  function ask(change, button) {
-    var c = E.org && E.org.setup ? orgConfirmFor(E.org.setup, change) : null;
-    if (!c) { saveChart([change], [], button); return; }
-    E.pending = c; E.msg = ''; E.bad = false; E.focus = true;
-    paintEdit();
-  }
-  function cancel() {
-    E.pending = null; E.msg = 'Cancelled. Nothing changed.'; E.bad = false;
-    paintEdit();
+    editBox.innerHTML = ED.html();
+    ED.focus();
   }
   document.addEventListener('click', function (ev) {
     var t = ev.target;
-    if (t && t.closest && t.closest('[data-org-edit]')) { E.open = !E.open; E.msg = ''; E.bad = false; paintEdit(); return; }
-    var b = t && t.closest ? t.closest('[data-oe]') : null;
-    if (!b) return;
-    var op = b.getAttribute('data-oe');
-    if (op === 'confirm') {
-      var p = E.pending;
-      if (!p) return;
-      E.pending = null;
-      saveChart(p.steps, p.undo, b);
-    } else if (op === 'cancel') {
-      cancel();
-    } else if (op === 'add-member') {
-      if (!field('oe-add-member')) return;
-      saveChart([{ op: op, member: field('oe-add-member'), role: field('oe-add-role') }], [], b);
-    } else if (op === 'set-role') {
-      saveChart([{ op: op, member: b.getAttribute('data-oe-member'), role: field('oe-role-' + b.getAttribute('data-oe-i')) }], [], b);
-    } else if (op === 'add-relation') {
-      ask({ op: op, from: field('oe-rel-from'), type: field('oe-rel-type'), to: field('oe-rel-to') }, b);
-    } else if (op === 'remove-member') {
-      ask({ op: op, member: b.getAttribute('data-oe-member') }, b);
-    } else if (op === 'remove-relation') {
-      ask({ op: op, from: b.getAttribute('data-oe-from'), type: b.getAttribute('data-oe-type'), to: b.getAttribute('data-oe-to') }, b);
-    }
+    if (t && t.closest && t.closest('[data-org-edit]')) { E.open = !E.open; ED.E.msg = ''; ED.E.bad = false; paintEdit(); return; }
+    ED.click(t);
   });
-  // Escape cancels a change waiting for Save the move.
-  document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && E.pending) { ev.preventDefault(); cancel(); }
-  });
+  document.addEventListener('keydown', function (ev) { ED.key(ev); });
   load();
   setInterval(load, 15000);
 })();
