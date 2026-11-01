@@ -1,5 +1,5 @@
 import type { AgentHold } from "@/agents/holds"
-import { orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
+import { departmentsProblem, orgDepartments, orgRelations, parseMember, relationsProblem, type OrgDepartment, type OrgRelation } from "./relations"
 import { layoutOrg, type OrgPlacement } from "./org-layout"
 
 // --- The Org view's data (#1169), from agentx.json, the holds and the daemon ---
@@ -33,6 +33,8 @@ export interface OrgBox extends OrgPlacement {
   status?: OrgStatus
   active?: number
   heldBy?: string
+  /** Ids of the departments this member heads or sits in (#1681). */
+  departments?: string[]
 }
 
 /** The chart laid out: cards by level and half-column, and every relation
@@ -55,9 +57,12 @@ export interface OrgView {
   people: Array<{ id: string; name: string; placed?: true; title?: string }>
   /** Typed relations, reportsTo included, members as `agent:<id>` / `person:<id>`. */
   relations: OrgRelation[]
+  /** Departments (#1681), in the order written: each is one band on the
+   *  chart, its head first. Members are written in full. */
+  departments: OrgDepartment[]
   /** The chart for the Wall's Org page (#1419). */
   diagram: OrgDiagram
-  /** What is wrong with the relations, when something is; the daemon refuses to start the business layer on it. */
+  /** What is wrong with the relations or departments, when something is; the daemon refuses to start the business layer on it. */
   problem?: string
 }
 
@@ -75,7 +80,7 @@ export function buildOrgView(
   config: {
     agents?: Record<string, any>
     people?: Array<{ id: string; name?: string; role?: string }>
-    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; orgPeople?: Record<string, any>; relations?: any[] }
+    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; orgPeople?: Record<string, any>; relations?: any[]; departments?: Record<string, any> }
   },
   holds: Record<string, AgentHold>,
   live: Array<{ id: string; active?: number }> | null,
@@ -138,23 +143,32 @@ export function buildOrgView(
     const title = role ? roles[role]?.title || role : undefined
     return { id: p.id, name: p.name || p.id, ...(placed[p.id] ? { placed: true as const } : {}), ...(title ? { title } : {}) }
   })
-  const problem = relationsProblem(relations, new Set(Object.keys(chart)), new Set(people.map((p) => p.id)))
-  const diagram = orgDiagram(nodes, config.people ?? [], people, relations)
-  return { roots, outside, live: live !== null, people, relations, diagram, ...(problem ? { problem } : {}) }
+  const departments = orgDepartments(config.business)
+  const known = { agents: new Set(Object.keys(chart)), people: new Set(people.map((p) => p.id)) }
+  const problem = relationsProblem(relations, known.agents, known.people)
+    ?? departmentsProblem(departments, known.agents, known.people)
+  const diagram = orgDiagram(nodes, config.people ?? [], people, relations, departments)
+  return { roots, outside, live: live !== null, people, relations, departments, diagram, ...(problem ? { problem } : {}) }
 }
 
 const PERSON_TITLE: Record<string, string> = { owner: "Owner", client: "Client", guest: "Guest" }
 
 /** The chart's cards: every agent in business.orgChart, every person in
- *  business.orgPeople, and every person a reports-to or dotted-line names.
+ *  business.orgPeople, and every person a reports-to, a dotted-line or a
+ *  department (#1681) names. Each card lists the departments it is in.
  *  A person only acted for shows as a chip on the agent's card, not as a card. */
 function orgDiagram(
   nodes: Map<string, OrgNode>,
   people: Array<{ id: string; name?: string; role?: string }>,
   listed: OrgView["people"],
   relations: OrgRelation[],
+  departments: OrgDepartment[] = [],
 ): OrgDiagram {
-  const named = new Set(relations.filter((r) => r.type !== "acts-for").flatMap((r) => [r.from, r.to]))
+  const deptsOf = new Map<string, string[]>()
+  for (const d of departments) {
+    for (const key of [...(d.head ? [d.head] : []), ...d.members]) deptsOf.set(key, [...(deptsOf.get(key) ?? []), d.id])
+  }
+  const named = new Set([...relations.filter((r) => r.type !== "acts-for").flatMap((r) => [r.from, r.to]), ...deptsOf.keys()])
   const cards = new Map<string, Omit<OrgBox, keyof OrgPlacement>>()
   for (const n of nodes.values()) {
     cards.set(`agent:${n.id}`, {
@@ -175,7 +189,10 @@ function orgDiagram(
   const layout = layoutOrg([...cards].map(([key, c]) => ({ key, name: c.name })), relations)
   // acts-for edges keep a person who has no card, so the agent's chip can name them.
   const edges = [...layout.edges, ...relations.filter((r) => r.type === "acts-for" && cards.has(r.from) && !cards.has(r.to))]
-  return { ...layout, edges, boxes: layout.boxes.map((b) => ({ ...cards.get(b.key)!, ...b })) }
+  return {
+    ...layout, edges,
+    boxes: layout.boxes.map((b) => ({ ...cards.get(b.key)!, ...b, ...(deptsOf.has(b.key) ? { departments: deptsOf.get(b.key)! } : {}) })),
+  }
 }
 
 /** Does `from` reach `target` by following reportsTo? */

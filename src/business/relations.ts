@@ -85,6 +85,44 @@ export function relationsProblem(
   return undefined
 }
 
+// --- Departments (#1681) ---
+//
+// business.departments: { <id>: { name, head?, members[] } }. Head and
+// members are written like the ends of a relation, and must name an agent
+// in business.orgChart or a person in `people`. The head is a person or an
+// agent; a department without one is allowed (the band says so).
+
+/** A department with every member written in full; the head is not repeated in members. */
+export interface OrgDepartment { id: string; name: string; head?: string; members: string[] }
+
+/** Every department in `business`, in the order written. */
+export function orgDepartments(business: {
+  departments?: Record<string, { name?: string; head?: string; members?: string[] }>
+} | undefined): OrgDepartment[] {
+  return Object.entries(business?.departments ?? {}).map(([id, d]) => {
+    const head = d?.head ? memberKey(d.head) : undefined
+    const members = [...new Set((d?.members ?? []).map(memberKey))].filter((m) => m !== head)
+    return { id, name: String(d?.name || id), ...(head ? { head } : {}), members }
+  })
+}
+
+/** The first thing wrong with `departments`, or undefined when they hold. */
+export function departmentsProblem(
+  departments: OrgDepartment[],
+  agents: ReadonlySet<string>,
+  people: ReadonlySet<string>,
+): string | undefined {
+  for (const d of departments) {
+    for (const ref of [...(d.head ? [d.head] : []), ...d.members]) {
+      const m = parseMember(ref)
+      const as = ref === d.head ? "head" : "member"
+      if (m.kind === "agent" && !agents.has(m.id)) return `Department "${d.name}" has ${as} "${m.id}", which is not an agent in business.orgChart`
+      if (m.kind === "person" && !people.has(m.id)) return `Department "${d.name}" has ${as} "${m.id}", which is not a person in people`
+    }
+  }
+  return undefined
+}
+
 /** A member for people to read: an agent's id, or a person's name from `people`. */
 export function memberLabel(ref: string, people: ReadonlyArray<{ id: string; name?: string }> = []): string {
   const m = parseMember(ref)
@@ -92,16 +130,19 @@ export function memberLabel(ref: string, people: ReadonlyArray<{ id: string; nam
   return people.find((p) => p.id === m.id)?.name || m.id
 }
 
-/** The first thing wrong with the org relations of a whole agentx.json, or
+/** The first thing wrong with the org relations or departments of a whole agentx.json, or
  *  undefined. For writers (admin POST, CLI) to refuse a bad ref before it is
  *  saved, instead of the daemon refusing it at the next start. */
 export function configRelationsProblem(cfg: {
   people?: Array<{ id: string }>
-  business?: { orgChart?: Record<string, { reportsTo?: string }>; relations?: OrgRelation[] }
+  business?: {
+    orgChart?: Record<string, { reportsTo?: string }>
+    relations?: OrgRelation[]
+    departments?: Record<string, { name?: string; head?: string; members?: string[] }>
+  }
 } | undefined): string | undefined {
-  return relationsProblem(
-    orgRelations(cfg?.business),
-    new Set(Object.keys(cfg?.business?.orgChart ?? {})),
-    new Set((cfg?.people ?? []).map((p) => p?.id).filter(Boolean)),
-  )
+  const agents = new Set(Object.keys(cfg?.business?.orgChart ?? {}))
+  const people = new Set((cfg?.people ?? []).map((p) => p?.id).filter(Boolean))
+  return relationsProblem(orgRelations(cfg?.business), agents, people)
+    ?? departmentsProblem(orgDepartments(cfg?.business), agents, people)
 }

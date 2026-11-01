@@ -1990,7 +1990,10 @@ describe("The Org page on the Wall (#1419)", () => {
     // The phone shows this line (CSS); the chart itself stays read-only.
     expect(html).toContain('<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>')
     expect(card("person:sam")).toContain("is-person is-top")
-    expect(card("person:sam")).toContain('<span class="wog__chip is-person">person</span>')
+    // A person and an agent differ in words and icon, not colour alone (#1681).
+    expect(card("person:sam")).toMatch(/<span class="wog__kind is-person"><svg class="org-ico"[^>]*>[\s\S]*?<\/svg>Person<\/span>/)
+    expect(card("agent:cx")).toMatch(/<span class="wog__kind is-agent"><svg class="org-ico"[^>]*>[\s\S]*?<\/svg>Agent<\/span>/)
+    expect(card("agent:cx")).not.toContain("is-person")
     expect(card("person:sam")).toContain("<small class=\"wog__title\">Owner</small>")
     expect(card("person:sam")).not.toContain("wog__dot")
     expect(card("person:sam")).not.toContain("data-agent")
@@ -2006,6 +2009,34 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(html).toContain("Reports to</li>")
     expect(html).toContain('<a class="ax-btn ax-btn--ghost wog__edit" href="/org">Open the org chart</a>')
     // No raw member keys in what a reader sees.
+    expect(html.replace(/<[^>]*>/g, " ")).not.toMatch(/(agent|person):/)
+  })
+
+  it("tells people from agents in the legend, and draws one band per department, its head first (#1681)", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { cx: { name: "Customer Desk" }, reviewer: { name: "Reviewer" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }, { id: "kim", name: "Kim Demo" }],
+      business: {
+        orgChart: { reviewer: { role: "Head of Quality", reportsTo: "person:sam" }, cx: { role: "Support Lead", reportsTo: "reviewer" } },
+        departments: {
+          engineering: { name: "Engineering", head: "person:sam", members: ["reviewer", "person:kim"] },
+          support: { name: "Support", head: "agent:reviewer", members: ["cx"] },
+        },
+      },
+    }, {}, [{ id: "cx", active: 0 }, { id: "reviewer", active: 0 }]) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    expect(html).toMatch(/<span class="wog__key is-agent"><svg[\s\S]*?<\/svg><\/span>Agent: square corners<\/li>/)
+    expect(html).toMatch(/<span class="wog__key is-person"><svg[\s\S]*?<\/svg><\/span>Person: round corners<\/li>/)
+    const band = (id: string) => new RegExp(`<section class="wog__band" data-dept="${id}"[\\s\\S]*?</section>`).exec(html)?.[0] ?? ""
+    expect(band("engineering")).toContain("<h3>Engineering</h3><small>Headed by Sam Demo · 2 members</small>")
+    expect(band("engineering")).toMatch(/<div class="wog__bandlead"><span class="wog__mini is-person">[\s\S]*?<b>Sam Demo<\/b><small>Person<\/small><span class="wog__headtag">Head<\/span>/)
+    expect(band("engineering")).toContain('<button type="button" class="wog__mini is-agent" data-agent="reviewer">')
+    expect(band("support")).toContain("Headed by Reviewer · 1 member")
+    expect(band("support")).toMatch(/wog__bandlead"><button type="button" class="wog__mini is-agent" data-agent="reviewer">/)
+    // Kim is in the chart through the department alone; her card names it.
+    expect(html).toMatch(/data-org-key="person:kim"[\s\S]*?<span class="wog__chip is-dept">Engineering<\/span>/)
     expect(html.replace(/<[^>]*>/g, " ")).not.toMatch(/(agent|person):/)
   })
 

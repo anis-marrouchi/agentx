@@ -160,6 +160,7 @@ An experimental layer that runs agents like a team, with roles, working hours an
 | `business.orgChart` | map of objects | `{}` | Which agent holds which role and when it works, keyed by agent id. |
 | `business.relations` | list of objects | `[]` | Typed links between org members, people included. See below. |
 | `business.orgPeople` | map of objects | `{}` | People placed in the org chart, keyed by an id from `people`, each with an optional `role` (a role id from `business.roles`). A person named in `business.relations` is in the chart without an entry here. Set from [Edit the org chart](../dashboard/org.md#edit-the-org-chart) on `/org`. |
+| `business.departments` | map of objects | `{}` | Departments, keyed by a short id such as `engineering`. Each one is a band on the org chart, headed by a person or an agent. See below. |
 | `business.projects` | list of objects | `[]` | Projects, with an optional project manager and client. |
 | `business.contactMap` | list of objects | `[]` | Maps a chat or sender to a client and project, so the activity view credits the right client. |
 | `business.clients` | map of objects | `{}` | Per-client overrides, keyed by client id. Clients are otherwise worked out from `projects` and `contactMap`. |
@@ -212,9 +213,33 @@ For example, an agent that reports to an agent, with a dotted line to the owner,
 }
 ```
 
-`GET /api/admin/org` returns `people` (id and name), and `relations` with every member written in full, `orgChart` `reportsTo` included.
+Each entry in `business.departments.<id>` is one department. Its head and members are written like the ends of a relation: `agent:<id>` for an agent in `business.orgChart`, `person:<id>` for a person in `people`, a bare id being an agent. You can have as many departments as you like, and a member can sit in more than one. An unknown head or member stops the business layer from starting, with an error that names the department and the member.
 
-When you add an org chart entry from the dashboard or with `agentx business orgchart add`, its `reportsTo` is checked against the rules above. A wrong value is refused with the same message the daemon would show at start, and `agentx.json` is not changed. Lists and agent prompts show a person boss by their name from `people`.
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `name` | string | required | The department's name, shown on its band and on its members' cards. |
+| `head` | string | — | The person or agent who leads it. Their card comes first in the band, marked **Head**. Without one, the band says **No head yet**. |
+| `members` | list of strings | `[]` | Everyone else in the department. Naming the head here too is harmless; it shows once. |
+
+For example, one department led by a person, with three agents and a second person in it:
+
+```json
+"people": [{ "id": "sam", "name": "Sam", "role": "owner" }, { "id": "kim", "name": "Kim" }],
+"business": {
+  "orgChart": { "pm": { "role": "pm" }, "dev": { "role": "dev" }, "ops": { "role": "ops" } },
+  "departments": {
+    "engineering": {
+      "name": "Engineering",
+      "head": "person:sam",
+      "members": ["agent:pm", "agent:dev", "agent:ops", "person:kim"]
+    }
+  }
+}
+```
+
+`GET /api/admin/org` returns `people` (id and name), `relations` with every member written in full, `orgChart` `reportsTo` included, and `departments` as a list of `{ id, name, head, members }` with every member written in full.
+
+When you add an org chart entry from the dashboard or with `agentx business orgchart add`, its `reportsTo` and the departments are checked against the rules above. A wrong value is refused with the same message the daemon would show at start, and `agentx.json` is not changed. Lists and agent prompts show a person boss by their name from `people`.
 
 Each entry in `business.projects`:
 

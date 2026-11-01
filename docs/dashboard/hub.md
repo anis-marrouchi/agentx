@@ -834,7 +834,10 @@ The page reads the machines listed under `dashboard.daemons` in `agentx.json`; t
 The **Org** page draws your org chart from the top down: whoever reports to no one sits at the top, usually you, and each member sits one row under their boss. Members are people and agents. To set the chart up, see [Org](./org.md#draw-your-org-chart).
 
 1. Select **Org** in the nav. The number next to it counts the people and agents in the chart.
-2. Read the cards. An agent's card shows its picture, name, @handle and role, with a dot for what it is doing: green when it works on something, grey when it is idle, amber when it is paused or waits for your approval, and an empty ring when the dashboard cannot tell. A person's card has a dashed blue border and a **person** chip, with no dot.
+2. Read the cards. People and agents look different at a glance, on a phone too:
+   - An agent's card has square corners and an **Agent** chip with a small robot icon. It shows the agent's picture, name, @handle and role, with a dot for what it is doing: green when it works on something, grey when it is idle, amber when it is paused or waits for your approval, and an empty ring when the dashboard cannot tell.
+   - A person's card has round corners, a thick blue border and a **Person** chip with a person icon. It has no dot.
+   - The legend at the top shows both shapes.
 3. Read the lines. A solid line joins each member to their boss (**reports to**).
 4. Two other links show as words on the card:
    - **acts for** *name*: the agent works on behalf of that person.
@@ -843,10 +846,11 @@ The **Org** page draws your org chart from the top down: whoever reports to no o
 6. Select **Hide … reports** on a card to fold that branch. **Show … under** opens it again.
 7. Select **−** and **+** to zoom out and in, or the percentage to go back to 100%. On a laptop trackpad, pinch over the chart.
 8. Select an agent's card to open its [profile](#see-one-agent-s-profile).
-9. The box on the right, **In the org**, counts the people, agents and levels, and lists the agents that are not in the chart. Select one to open its profile.
-10. **Phone:** the chart becomes a list. Each card is indented under its boss, on a line like a thread's, and shows its dotted lines as words. The page says **Only the owner can change the org** and has no **Open the org chart** link.
+9. Under the chart, **Departments** shows one band per department, when you have set some up (see [Group the chart into departments](./org.md#group-the-chart-into-departments)). Each band gives the department's name and who heads it. The head's card comes first, marked **Head**, then the members. Select an agent in a band to open its profile. On the chart, each card names its department in a chip.
+10. The box on the right, **In the org**, counts the people, agents and levels, and lists the agents that are not in the chart. Select one to open its profile.
+11. **Phone:** the chart becomes a list. Each card is indented under its boss, on a line like a thread's, and shows its dotted lines as words. The legend lists **Agent** and **Person** one under the other, and the department bands sit under the list. The page says **Only the owner can change the org** and has no **Open the org chart** link.
 
-A person has a grey card with a **person** chip. The page only reads: the Hub has no forms for the org. **Open the org chart** opens the org chart page at `/org`, where you, the owner, change the chart (see [Edit the org chart](./org.md#edit-the-org-chart)).
+A person has a round-cornered card with a **Person** chip. The page only reads: the Hub has no forms for the org. **Open the org chart** opens the org chart page at `/org`, where you, the owner, change the chart (see [Edit the org chart](./org.md#edit-the-org-chart)).
 
 ![The Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager; dotted lines are shown](/screenshots/wall/org.png)
 

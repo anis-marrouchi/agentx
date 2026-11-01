@@ -1,5 +1,5 @@
 import type { BusinessConfig, BusinessOrgEntry, BusinessProject, BusinessRole } from "./config"
-import { memberKey, memberLabel, orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
+import { departmentsProblem, memberKey, memberLabel, orgDepartments, orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
 
 // --- Organization: org-chart queries and validation ---
 //
@@ -49,7 +49,9 @@ export class Organization {
     // Members and typed relations (#1418): reportsTo may name a person,
     // and business.relations adds reports-to, dotted-line and acts-for.
     this.relationList = orgRelations(config)
-    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)))
+    const known = { agents: new Set(this.employees.keys()), people: new Set(people.map((p) => p.id)) }
+    const problem = relationsProblem(this.relationList, known.agents, known.people)
+      ?? departmentsProblem(orgDepartments(config), known.agents, known.people)
     if (problem) throw new Error(problem)
     for (const r of this.relationList) {
       if (r.type === "reports-to") this.bosses.set(r.from, r.to)

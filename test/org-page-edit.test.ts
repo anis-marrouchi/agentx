@@ -24,7 +24,7 @@ function base(): any {
   }
 }
 
-function openOrg(opts: { owner?: boolean; hash?: string; cfg?: any; refuse?: (body: any) => string | null } = {}) {
+function openOrg(opts: { owner?: boolean; hash?: string; cfg?: any; refuse?: (body: any) => string | null; view?: any } = {}) {
   const owner = opts.owner !== false
   const cfg = opts.cfg ?? base()
   const page = renderOrgPage()
@@ -61,7 +61,7 @@ function openOrg(opts: { owner?: boolean; hash?: string; cfg?: any; refuse?: (bo
   const fetchStub = (url: string, init: any) => {
     if (url === "/api/admin/pictures") return reply(200, {})
     if (url === "/api/admin/org") {
-      return reply(200, { exists: true, live: true, roots: [], outside: [], relations: [], people: [], setup: readOrgSetup(cfg), canEdit: owner, ...(owner ? { choices: orgChoices(cfg) } : {}) })
+      return reply(200, { exists: true, live: true, roots: [], outside: [], relations: [], people: [], setup: readOrgSetup(cfg), canEdit: owner, ...(owner ? { choices: orgChoices(cfg) } : {}), ...(opts.view ?? {}) })
     }
     if (url === "/api/admin/org/chart" && init?.method === "POST") {
       const body = JSON.parse(init.body)
@@ -269,5 +269,43 @@ describe("orgConfirmFor", () => {
   it("sends a same-boss or self line as one step, for the server to refuse", () => {
     expect(orgConfirmFor(setup, { op: "add-relation", from: "agent:a", type: "reports-to", to: "agent:b" })!.steps).toHaveLength(1)
     expect(orgConfirmFor(setup, { op: "add-relation", from: "agent:a", type: "reports-to", to: "agent:a" })!.steps).toHaveLength(1)
+  })
+})
+
+describe("People, agents and departments on /org (#1681)", () => {
+  it("has a legend telling a person from an agent, in words and icons", () => {
+    const page = renderOrgPage()
+    expect(page).toMatch(/<span class="org-key is-agent"><svg[\s\S]*?<\/svg><\/span>Agent: square corners, status and Pause<\/li>/)
+    expect(page).toMatch(/<span class="org-key is-person"><svg[\s\S]*?<\/svg><\/span>Person: round corners, no status<\/li>/)
+  })
+
+  it("marks each card Person or Agent and draws one band per department, its head first", async () => {
+    const view = {
+      roots: [{ id: "pm", name: "PM", status: "idle", reports: [] }],
+      people: [{ id: "sam", name: "Sam Doe" }, { id: "kim", name: "Kim Roe" }],
+      relations: [{ from: "agent:pm", to: "person:sam", type: "reports-to" }],
+      departments: [
+        { id: "engineering", name: "Engineering", head: "person:sam", members: ["agent:pm", "person:kim"] },
+        { id: "support", name: "Support", head: "agent:pm", members: [] },
+      ],
+    }
+    const o = openOrg({ view })
+    await o.settle()
+    const tree = o.el("org-tree").innerHTML as string
+    expect(tree).toMatch(/data-person="sam"[\s\S]*?<span class="org-badge is-person"><svg[\s\S]*?<\/svg>Person<\/span>/)
+    expect(tree).toMatch(/data-agent="pm"[\s\S]*?<span class="org-badge is-agent"><svg[\s\S]*?<\/svg>Agent<\/span>/)
+    expect(tree).toContain('<span class="org-dept-tag">Engineering</span><span class="org-dept-tag">Support</span>')
+    expect(o.el("org-depts").hidden).toBe(false)
+    const bands = o.el("org-depts-list").innerHTML as string
+    expect(bands).toContain('<h3 id="org-band-engineering">Engineering</h3><span>Headed by Sam Doe · 2 members</span>')
+    expect(bands).toMatch(/<div class="org-band-lead"><span class="org-mini is-person">[\s\S]*?<b>Sam Doe<\/b><small>Person<\/small><span class="org-head-tag">Head<\/span>/)
+    expect(bands).toContain('<a class="org-mini is-agent" href="/admin/agents/pm">')
+    expect(bands).toContain("Headed by PM · 0 members")
+  })
+
+  it("hides the departments section when there are none", async () => {
+    const o = openOrg()
+    await o.settle()
+    expect(o.el("org-depts").hidden).toBe(true)
   })
 })

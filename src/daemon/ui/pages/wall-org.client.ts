@@ -13,16 +13,29 @@
 //   - A card opens the agent's Wall profile; a branch folds and unfolds;
 //     the chart zooms with its buttons or ctrl + wheel (a trackpad pinch).
 //   - On a phone the chart is an indented list with thread lines.
+//   - People and agents look different at a glance (#1681): a person's card
+//     is round-cornered with a thick accent border and a person icon, an
+//     agent's square-cornered with a robot icon, and each says which in
+//     words. The legend shows both, on a phone too.
+//   - Departments (#1681) are bands under the chart, one each, the head
+//     first; a card names its department in a chip.
 //
 // Read-only (#1180 rule 4): the Wall has no org forms and no org writes.
 // "Open the org chart" goes to /org, where the owner edits the chart (#1420).
 
 import { HUB_NAME } from "../hub-name"
+import { AGENT_ICON, PERSON_ICON } from "./org-icons"
 
 export const WALL_ORG_SCRIPT = String.raw`
   var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '' };
   var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
   var ORG_CHART_HREF = '/org';
+  var ORG_ICON = { person: '${PERSON_ICON}', agent: '${AGENT_ICON}' };
+  function orgDepts() { return (S.org && S.org.departments) || []; }
+  function orgDeptName(id) { var dep = orgDepts().find(function (x) { return x.id === id; }); return dep ? dep.name : id; }
+  function orgKind(person) {
+    return '<span class="wog__kind ' + (person ? 'is-person' : 'is-agent') + '">' + ORG_ICON[person ? 'person' : 'agent'] + (person ? 'Person' : 'Agent') + '</span>';
+  }
   function orgDiagram() { return S.org && S.org.diagram && S.org.diagram.boxes ? S.org.diagram : null; }
   /** Cards in the chart, for the nav; null until the org is read. */
   function orgCount() { var d = orgDiagram(); return d ? d.boxes.length : null; }
@@ -63,7 +76,8 @@ export const WALL_ORG_SCRIPT = String.raw`
     var head = person ? '<div class="wog__head">' + face + who + '</div>'
       : '<button type="button" class="wog__head" data-agent="' + esc(b.id) + '" title="' + esc(b.name) + ': profile and posts">' + face + who +
         '<span class="wog__sr">' + esc(ORG_STATE[b.status] || '') + '</span></button>';
-    var chips = (person ? '<span class="wog__chip is-person">person</span>' : '') +
+    var chips = orgKind(person) +
+      (b.departments || []).map(function (id) { return '<span class="wog__chip is-dept">' + esc(orgDeptName(id)) + '</span>'; }).join('') +
       actsFor.map(function (e) { return '<span class="wog__chip is-acts">acts for ' + esc(orgName(e.to)) + '</span>'; }).join('') +
       dotted.map(function (e) { return '<span class="wog__chip is-dotted' + (ORG.dotted ? '' : ' is-quiet') + '">dotted line to ' + esc(orgName(e.to)) + '</span>'; }).join('');
     var fold = reports ? '<button type="button" class="wog__fold" data-org-fold="' + esc(b.key) + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
@@ -76,8 +90,8 @@ export const WALL_ORG_SCRIPT = String.raw`
     var dotted = d.edges.some(function (e) { return e.type === 'dotted-line'; });
     return '<div class="wog__bar">' +
       '<ul class="wog__legend" aria-label="Legend">' +
-        '<li><span class="wog__key is-card"></span>Agent</li>' +
-        '<li><span class="wog__key is-person"></span>Person</li>' +
+        '<li><span class="wog__key is-agent">' + ORG_ICON.agent + '</span>Agent: square corners</li>' +
+        '<li><span class="wog__key is-person">' + ORG_ICON.person + '</span>Person: round corners</li>' +
         '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln" d="M2 5H26"/></svg>Reports to</li>' +
         '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln is-dotted" d="M2 5H26"/></svg>Dotted line: a second boss for one topic</li>' +
         '<li><span class="wog__chip is-acts">acts for …</span>Works on behalf of a person</li>' +
@@ -120,7 +134,29 @@ export const WALL_ORG_SCRIPT = String.raw`
       (S.org.live === false ? '<p class="ax-wall__count wog__note">The daemon did not answer, so working or idle is not known.</p>' : '') +
       '<div class="wog__scroll" id="wog-scroll"><div class="wog__size" id="wog-size"><div class="wog__chart" id="wog-chart" style="--wog-cols: ' + lay.columns + '; transform: scale(' + ORG.zoom + ')">' +
         '<svg class="wog__lines" id="wog-lines" aria-hidden="true"></svg>' + cards + '</div></div></div>' +
+      orgDeptsHtml() +
       '<div class="wog__inrail">' + orgRailHtml(d) + '</div>';
+  }
+  /** One band per department (#1681): its name, the head first, then the members. */
+  function orgMini(key, head) {
+    var person = key.indexOf('person:') === 0, id = key.replace(/^[a-z]+:/, '');
+    var inner = ORG_ICON[person ? 'person' : 'agent'] + '<b>' + esc(orgName(key)) + '</b><small>' + (person ? 'Person' : 'Agent') + '</small>' +
+      (head ? '<span class="wog__headtag">Head</span>' : '');
+    var cls = 'wog__mini ' + (person ? 'is-person' : 'is-agent');
+    return person ? '<span class="' + cls + '">' + inner + '</span>'
+      : '<button type="button" class="' + cls + '" data-agent="' + esc(id) + '">' + inner + '</button>';
+  }
+  function orgDeptsHtml() {
+    var list = orgDepts();
+    if (!list.length) return '';
+    return '<section class="wog__depts" aria-labelledby="wog-depts-h"><h2 class="wog__h3" id="wog-depts-h">Departments</h2>' + list.map(function (dep) {
+      var n = dep.members.length;
+      return '<section class="wog__band" data-dept="' + esc(dep.id) + '" aria-label="' + esc(dep.name) + '">' +
+        '<div class="wog__bandhead"><h3>' + esc(dep.name) + '</h3><small>' + (dep.head ? 'Headed by ' + esc(orgName(dep.head)) : 'No head yet') + ' · ' + n + (n === 1 ? ' member' : ' members') + '</small></div>' +
+        (dep.head ? '<div class="wog__bandlead">' + orgMini(dep.head, true) + '</div>' : '') +
+        (n ? '<ul class="wog__bandrow">' + dep.members.map(function (k) { return '<li>' + orgMini(k, false) + '</li>'; }).join('') + '</ul>' : '') +
+        '</section>';
+    }).join('') + '</section>';
   }
 
   // Lines go over the grid once the cards are in place, from their offsets
@@ -220,8 +256,9 @@ export const WALL_ORG_CSS = `
 .wog__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--ax-border); }
 .wog__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wog__legend li { display: inline-flex; align-items: center; gap: 6px; }
-.wog__key { display: inline-block; width: 18px; height: 12px; border: 1px solid var(--ax-border-2); border-radius: 4px; background: var(--ax-bg); }
-.wog__key.is-person { background: var(--ax-surface-3); }
+.wog__key { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 18px; color: var(--ax-muted); border: 1px solid var(--ax-border-2); border-radius: 3px; background: var(--ax-bg); }
+.wog__key.is-person { background: var(--ax-surface-3); border: 2px solid var(--ax-accent); border-radius: 9px; color: var(--ax-accent); }
+.org-ico { display: block; flex: none; }
 .wog__tools { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--ax-fs-xs); }
 .wog__toggle { font: inherit; font-weight: 600; background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 3px 12px; cursor: pointer; }
 .wog__toggle[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); border-color: var(--ax-text); }
@@ -241,7 +278,28 @@ export const WALL_ORG_CSS = `
 .wog__arrow { fill: var(--ax-muted); }
 .wog__card { position: relative; z-index: 1; width: 220px; justify-self: center; align-self: start; display: flex; flex-direction: column; gap: 6px;
   padding: 10px 12px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-lg); }
-.wog__card.is-person { background: var(--ax-surface-3); }
+/* Person vs agent (#1681): shape, border and icon, never colour alone. */
+.wog__card { border-radius: 6px; }
+.wog__card.is-person { background: var(--ax-surface-3); border: 2px solid var(--ax-accent); border-radius: 24px; }
+.wog__kind { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1.5; border-radius: var(--ax-radius-pill); padding: 0 8px 0 6px; background: var(--ax-surface-2); color: var(--ax-text-2); }
+.wog__kind.is-person { background: var(--ax-bg); color: var(--ax-accent); border: 1px solid var(--ax-accent); font-weight: 600; }
+.wog__chip.is-dept { background: none; border: 1px solid var(--ax-border-2); border-radius: 4px; }
+.wog__depts { margin: 8px 16px 0; display: flex; flex-direction: column; gap: 10px; }
+.wog__band { padding: 10px 14px; background: var(--ax-surface); border: 1px solid var(--ax-border); border-left: 4px solid var(--ax-accent); border-radius: var(--ax-radius-lg); }
+.wog__bandhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 0 0 8px; }
+.wog__bandhead h3 { margin: 0; font-size: var(--ax-fs); }
+.wog__bandhead small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.wog__bandlead { margin: 0 0 8px; }
+.wog__bandrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.wog__mini { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); padding: 3px 10px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: 6px; }
+button.wog__mini { cursor: pointer; }
+button.wog__mini:hover b { text-decoration: underline; }
+.wog__mini.is-person { background: var(--ax-surface-3); border: 2px solid var(--ax-accent); border-radius: 999px; }
+.wog__mini .org-ico { color: var(--ax-muted); }
+.wog__mini.is-person .org-ico { color: var(--ax-accent); }
+.wog__mini b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wog__mini small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.wog__headtag { padding: 0 6px; border-radius: var(--ax-radius-pill); font-size: var(--ax-fs-xs); font-weight: 600; background: var(--ax-accent); color: var(--ax-bg); }
 .wog__card.is-paused, .wog__card.is-waiting { box-shadow: inset 3px 0 0 var(--ax-amber); }
 .wog__head { display: flex; gap: 10px; align-items: center; min-width: 0; text-align: left; font: inherit; color: var(--ax-text); background: none; border: 0; padding: 0; }
 button.wog__head { cursor: pointer; border-radius: var(--ax-radius); }
@@ -292,5 +350,7 @@ button.wog__head:hover b { text-decoration: underline; }
     border-left: 2px solid var(--ax-border-2); border-bottom: 2px solid var(--ax-border-2); border-bottom-left-radius: 8px; }
   .wog__chip.is-quiet { display: inline; }
   .wog__inrail { margin: 12px; }
+  .wog__depts { margin: 12px 12px 0; }
+  .wog__legend { flex-direction: column; align-items: flex-start; }
 }
 `

@@ -39,6 +39,15 @@ const relationSchema = z.object({
   type: z.enum(RELATION_TYPES),
 })
 
+/** A department (#1681): a name, an optional head and its members, each an
+ *  org member written like a relation end (`agent:<id>`, `person:<id>`, a
+ *  bare id being an agent). A member may sit in more than one department. */
+const departmentSchema = z.object({
+  name: z.string().min(1),
+  head: z.string().min(1).optional(),
+  members: z.array(z.string().min(1)).default([]),
+})
+
 const channelRefSchema = z.object({
   channel: z.string(),
   chatId: z.string(),
@@ -143,6 +152,10 @@ export const businessConfigSchema = z.object({
    *  top-level `people` list, with the role they hold (a key of `roles`).
    *  A person named in a relation is in the chart without an entry here. */
   orgPeople: z.record(z.string(), z.object({ role: z.string().optional() })).default({}),
+  /** Departments (#1681), keyed by a short id such as `engineering`. Each
+   *  is one band on the org chart, headed by its head, a person or an
+   *  agent. Refs are checked like relations; see departmentsProblem. */
+  departments: z.record(z.string(), departmentSchema).default({}),
   /** Per-project metadata. Phase 3 — defaults to empty array, so
    *  existing agentx.json files validate without modification. */
   projects: z.array(projectSchema).default([]),
@@ -192,3 +205,4 @@ export type BusinessSchedule = z.infer<typeof scheduleSchema>
 export type BusinessWorkSource = z.infer<typeof workSourceSchema>
 export type BusinessChannelRef = z.infer<typeof channelRefSchema>
 export type BusinessProject = z.infer<typeof projectSchema>
+export type BusinessDepartment = z.infer<typeof departmentSchema>

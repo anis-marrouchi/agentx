@@ -7,6 +7,13 @@
 // names get a card too (#1418), and a card lists its dotted-line and
 // acts-for links. A problem with the relations shows above the tree.
 //
+// People and agents look different at a glance (#1681): a person's card is
+// round-cornered with a thick accent border and a person icon; an agent's is
+// square-cornered with a robot icon. Both say "Person" or "Agent" in words,
+// and a legend above the chart says so too. Departments (#1681,
+// business.departments) show under the tree as one band each: the head's
+// card first, then the members; each card in the tree names its department.
+//
 // Edit org (#1420), owner only: who is in the chart, their roles and the
 // lines between them, with a confirm step for moves and removals. The
 // panel is org-setup.ts; anyone else sees no Edit button. /org#edit opens
@@ -22,6 +29,9 @@ import { pageHead, renderShell, type TopbarPeer } from ".."
 import { injectFns } from "../inject"
 import { HUB_NEEDS_YOU, HUB_PATH } from "../hub-name"
 import { orgConfirmFor, orgEditHtml } from "./org-setup"
+import { AGENT_ICON, PERSON_ICON } from "./org-icons"
+
+export { AGENT_ICON, PERSON_ICON }
 
 export interface OrgPageOpts {
   peers?: TopbarPeer[]
@@ -39,7 +49,12 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
   }) + `
   <div class="org">
     <div id="org-msg" class="org-msg" role="status" aria-live="polite"></div>
-    <div class="org-bar"><button type="button" id="org-edit-btn" class="ax-btn" data-org-edit aria-controls="org-edit" aria-expanded="false" hidden>Edit org</button></div>
+    <div class="org-bar">
+      <ul class="org-legend" aria-label="Legend">
+        <li><span class="org-key is-agent">${AGENT_ICON}</span>Agent: square corners, status and Pause</li>
+        <li><span class="org-key is-person">${PERSON_ICON}</span>Person: round corners, no status</li>
+      </ul>
+      <button type="button" id="org-edit-btn" class="ax-btn" data-org-edit aria-controls="org-edit" aria-expanded="false" hidden>Edit org</button></div>
     <section id="org-edit" class="org-edit" aria-label="Edit the org chart" hidden></section>
     <section id="org-none" class="org-none" hidden aria-labelledby="org-none-title">
       <h2 id="org-none-title">No org chart yet</h2>
@@ -47,6 +62,10 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     </section>
     <p id="org-problem" class="org-problem" role="alert" hidden></p>
     <div id="org-tree" class="org-tree" aria-label="Org chart"><p class="org-quiet">Loading…</p></div>
+    <section id="org-depts" hidden aria-labelledby="org-depts-title">
+      <h2 id="org-depts-title" class="org-h2">Departments</h2>
+      <div id="org-depts-list" class="org-depts"></div>
+    </section>
     <section id="org-outside" hidden aria-labelledby="org-outside-title">
       <h2 id="org-outside-title" class="org-h2">Not in the org chart</h2>
       <ul id="org-outside-list" class="org-row"></ul>
@@ -102,10 +121,34 @@ const ORG_CSS = `
 .org-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .org-acts a, .org-acts button { font: inherit; font-size: var(--ax-fs-xs); padding: 3px 9px; border-radius: var(--ax-radius-sm); border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-surface-2); color: var(--ax-text); text-decoration: none; cursor: pointer; }
 .org-acts button:disabled { opacity: 0.6; cursor: default; }
-.org-card.is-person { background: var(--ax-surface-2); }
+/* Person vs agent (#1681): shape, border and icon, never colour alone. */
+.org-card { border-radius: var(--ax-radius-sm); }
+.org-card.is-person { background: var(--ax-surface-2); border: 2px solid var(--ax-accent); border-radius: 22px; }
 .org-kind { font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-badge.is-person { color: var(--ax-accent); font-weight: 600; }
+.org-ico { flex: none; display: block; }
+.org-dept-tag { display: inline-block; margin: 6px 6px 0 0; padding: 0 8px; border-radius: var(--ax-radius-sm); font-size: var(--ax-fs-xs); background: var(--ax-surface-2); color: var(--ax-text-2); border: var(--ax-border-w) solid var(--ax-border); }
+.org-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 auto 0 0; padding: 0; list-style: none; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.org-key { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 18px; border: var(--ax-border-w) solid var(--ax-border-2); border-radius: 3px; background: var(--ax-surface); color: var(--ax-text-2); }
+.org-key.is-person { border: 2px solid var(--ax-accent); border-radius: 9px; background: var(--ax-surface-2); color: var(--ax-accent); }
+.org-depts { display: flex; flex-direction: column; gap: 12px; }
+.org-band { padding: 12px 14px; border: var(--ax-border-w) solid var(--ax-border); border-left: 4px solid var(--ax-accent); border-radius: var(--ax-radius); background: var(--ax-surface); }
+.org-band-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 10px; }
+.org-band-head h3 { margin: 0; font-size: 15px; }
+.org-band-head span { font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-band-lead { margin: 0 0 8px; }
+.org-band-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.org-mini { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; font-size: var(--ax-fs-sm); color: var(--ax-text); text-decoration: none; border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-sm); background: var(--ax-bg); }
+.org-mini.is-person { border: 2px solid var(--ax-accent); border-radius: 999px; background: var(--ax-surface-2); }
+.org-mini .org-ico { color: var(--ax-text-2); }
+.org-mini.is-person .org-ico { color: var(--ax-accent); }
+.org-mini small { font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-mini b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-head-tag { padding: 0 6px; border-radius: 999px; font-size: var(--ax-fs-xs); font-weight: 600; background: var(--ax-accent); color: var(--ax-bg); }
 .org-links { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
-.org-bar { display: flex; justify-content: flex-end; margin: 0 0 8px; }
+.org-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; margin: 0 0 8px; }
 .org-edit { margin: 0 0 24px; padding: 12px 16px 16px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
 .oe-lead { margin: 0 0 6px; color: var(--ax-text-2); }
 .oe-msg { min-height: 1.4em; margin: 0 0 6px; }
@@ -128,6 +171,8 @@ const ORG_CSS = `
   .org-edit { padding: 10px 12px 14px; }
   .oe-form > *, .oe-role { flex: 1 1 100%; }
   .oe-legend { grid-template-columns: 1fr; }
+  .org-legend { flex-direction: column; }
+  .org-band { padding: 10px 12px; }
 }
 .org-problem { margin: 0 0 12px; padding: 10px 14px; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius); font-size: var(--ax-fs-sm); color: var(--ax-amber-ink); }
 `
@@ -144,6 +189,7 @@ export const ORG_PEOPLE_JS = `
     (d.outside || []).forEach(function (n) { names['agent:' + n.id] = n.name; });
     var named = {};
     rels.forEach(function (r) { named[r.from] = true; named[r.to] = true; });
+    (d.departments || []).forEach(function (dep) { (dep.head ? [dep.head] : []).concat(dep.members || []).forEach(function (k) { named[k] = true; }); });
     (d.people || []).forEach(function (p) {
       var key = 'person:' + p.id;
       names[key] = p.name;
@@ -187,7 +233,14 @@ const ORG_SCRIPT = `
     if (window.AX_LOCAL_TOKEN) h['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
     return h;
   }
-  var names = {};
+  var PERSON_ICON = '${PERSON_ICON}', AGENT_ICON = '${AGENT_ICON}';
+  var names = {}, deptsOf = {};
+  function badge(person) {
+    return person ? '<span class="org-badge is-person">' + PERSON_ICON + 'Person</span>' : '<span class="org-badge is-agent">' + AGENT_ICON + 'Agent</span>';
+  }
+  function deptTags(key) {
+    return (deptsOf[key] || []).map(function (n) { return '<span class="org-dept-tag">' + esc(n) + '</span>'; }).join('');
+  }
   function nameOf(ref) { return names[ref] || String(ref).replace(/^[a-z]+:/, ''); }
   function links(n) {
     var rows = (n.dottedLine || []).map(function (r) { return 'Dotted line to ' + nameOf(r); })
@@ -196,8 +249,9 @@ const ORG_SCRIPT = `
   }
   function personCard(n) {
     return '<div class="org-card is-person" data-person="' + esc(n.id) + '">'
-      + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-kind">Person</span></div>'
+      + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span>' + badge(true) + '</div>'
       + (n.title ? '<p class="org-title">' + esc(n.title) + '</p>' : '')
+      + deptTags('person:' + n.id)
       + links(n) + '</div>';
   }
   function say(t, bad) { msg.textContent = t || ''; msg.className = 'org-msg' + (bad ? ' is-bad' : ''); }
@@ -212,12 +266,31 @@ const ORG_SCRIPT = `
     else if (n.status === 'paused') acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="0">Resume</button>';
     else acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="1">Pause</button>';
     return '<div class="org-card is-' + esc(n.status) + '" data-agent="' + esc(n.id) + '">'
-      + '<div class="org-top' + (pics[n.id] ? ' org-top--pic' : '') + '">' + (pics[n.id] ? '<span class="org-av"><img src="' + esc(pics[n.id]) + '" alt=""></span>' : '') + '<span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(n.id) + '</span></div>'
+      + '<div class="org-top' + (pics[n.id] ? ' org-top--pic' : '') + '">' + (pics[n.id] ? '<span class="org-av"><img src="' + esc(pics[n.id]) + '" alt=""></span>' : '') + '<span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(n.id) + '</span>' + badge(false) + '</div>'
       + (n.title ? '<p class="org-title">' + esc(n.title) + '</p>' : '')
+      + deptTags('agent:' + n.id)
       + (n.job ? '<p class="org-job">' + esc(n.job) + '</p>' : '')
       + links(n)
       + '<span class="org-state is-' + esc(n.status) + '">' + esc(state) + '</span>'
       + '<div class="org-acts">' + acts + '</div></div>';
+  }
+  // One band per department (#1681): the head first, then the members.
+  function mini(key, head) {
+    var person = key.indexOf('person:') === 0, id = key.replace(/^[a-z]+:/, '');
+    var inner = (person ? PERSON_ICON : AGENT_ICON) + '<b>' + esc(nameOf(key)) + '</b><small>' + (person ? 'Person' : 'Agent') + '</small>'
+      + (head ? '<span class="org-head-tag">Head</span>' : '');
+    var cls = 'org-mini ' + (person ? 'is-person' : 'is-agent');
+    return person ? '<span class="' + cls + '">' + inner + '</span>'
+      : '<a class="' + cls + '" href="/admin/agents/' + encodeURIComponent(id) + '">' + inner + '</a>';
+  }
+  function band(dep) {
+    var n = dep.members.length;
+    return '<section class="org-band" data-dept="' + esc(dep.id) + '" aria-labelledby="org-band-' + esc(dep.id) + '">'
+      + '<div class="org-band-head"><h3 id="org-band-' + esc(dep.id) + '">' + esc(dep.name) + '</h3>'
+      + '<span>' + (dep.head ? 'Headed by ' + esc(nameOf(dep.head)) : 'No head yet') + ' · ' + n + (n === 1 ? ' member' : ' members') + '</span></div>'
+      + (dep.head ? '<div class="org-band-lead">' + mini(dep.head, true) + '</div>' : '')
+      + (n ? '<ul class="org-band-row">' + dep.members.map(function (k) { return '<li>' + mini(k, false) + '</li>'; }).join('') + '</ul>' : '')
+      + '</section>';
   }
   function branch(list) {
     return '<ul>' + list.map(function (n) {
@@ -240,8 +313,13 @@ const ORG_SCRIPT = `
       paintEdit();
       var org = withPeople(d);
       names = org.names;
+      var depts = d.departments || [];
+      deptsOf = {};
+      depts.forEach(function (dep) { (dep.head ? [dep.head] : []).concat(dep.members).forEach(function (k) { (deptsOf[k] = deptsOf[k] || []).push(dep.name); }); });
       document.getElementById('org-none').hidden = org.roots.length > 0;
       tree.innerHTML = org.roots.length ? branch(org.roots) : '';
+      document.getElementById('org-depts').hidden = depts.length === 0;
+      document.getElementById('org-depts-list').innerHTML = depts.map(band).join('');
       var out = document.getElementById('org-outside');
       out.hidden = d.outside.length === 0;
       document.getElementById('org-outside-list').innerHTML = d.outside.map(function (n) { return '<li>' + card(n) + '</li>'; }).join('');

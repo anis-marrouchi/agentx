@@ -1,8 +1,8 @@
 # Org: who reports to whom, and what each agent is doing
 
-Your org chart lists who reports to whom: you and other people, and your agents. The [Hub](./hub.md)'s **Org** page draws it from the top down, with what each agent is doing now. Select **Org** in the Hub's nav to open it; [See the org chart](./hub.md#see-the-org-chart) explains each part.
+Your org chart lists who reports to whom: you and other people, and your agents, grouped into departments if you like. The [Hub](./hub.md)'s **Org** page draws it from the top down, with what each agent is doing now. Select **Org** in the Hub's nav to open it; [See the org chart](./hub.md#see-the-org-chart) explains each part.
 
-![The Hub's Org page: the owner at the top, the assistant under them, then a writer and a project manager, with a support lead and an engineer under the project manager](/screenshots/wall/org.png)
+![The Hub's Org page: a person at the top in a round-cornered card, agents under them in square-cornered cards, and two department bands under the chart](/screenshots/wall/org.png)
 
 The Hub only shows the chart. Changing the chart and pausing an agent are done on the org chart page at `/org`, kept as a tool page for these forms. Open it from the Hub's **Open the org chart** link. When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
 
@@ -81,11 +81,58 @@ The `--reports-to` of `agentx business orgchart add` is a `reports-to` relation,
 4. **Terminal:** list every relation with `agentx business relation list`, and remove one with `agentx business relation remove <from> <type> <to>`.
 5. **Terminal:** run `agentx daemon restart` if the business layer is on, so it reads the new chart.
 6. **Browser:** on the Hub, select **Org**, then **Refresh**. A person sits in the chart with the agents that report to them under them. A **dotted-line** shows as **dotted line to** *name* on the card, and as a dashed arrow with **Show dotted lines**. An **acts-for** shows as **acts for** *name* on the agent's card.
-7. **Browser:** on the `/org` page, a person's card says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
+7. **Browser:** on the `/org` page, a person's card is round-cornered, says **Person** and has no Pause button; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
 
 The relations are saved under `business.relations` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
 
+## Group the chart into departments
+
+A **department** is a group of people and agents who work together, such as Engineering, led by one **head**. The head can be a person or an agent. You can set up as many departments as you need. On both org pages, each department is one band under the chart: its name, its head first, then its members.
+
+Departments are written in `agentx.json` for now. The Edit org panel on `/org` cannot change them yet.
+
+1. **Terminal:** check that each person is in `people` with `agentx people list`, and that each agent is in the org chart with `agentx business orgchart list`.
+2. **Terminal:** open `agentx.json` in a text editor.
+3. Under `business`, add a `departments` block. `engineering` is the department's id; `sam`, `kim`, `pm`, `dev` and `ops` are examples, so use your own IDs:
+
+   ```json
+   "departments": {
+     "engineering": {
+       "name": "Engineering",
+       "head": "person:sam",
+       "members": ["agent:pm", "agent:dev", "agent:ops", "person:kim"]
+     }
+   }
+   ```
+
+   Write a person as `person:<id>` and an agent as `agent:<id>`, as in a relation. To have an agent lead a department, write `"head": "agent:pm"`.
+4. To add a second department, add another entry next to `engineering`, with its own id, name, head and members. A member can sit in more than one department.
+5. Save the file.
+6. **Terminal:** run `agentx daemon restart` if the business layer is on, so it reads the departments.
+7. **Browser:** open `/org`, or select **Org** on the Hub. Under the chart, **Departments** shows a band for each one, with **Headed by** *name* and how many members it has. The head's card is first, marked **Head**. Each member's card on the chart names its department.
+
+![Two department bands on /org: Engineering, headed by a person, with three agents and a second person; Support, headed by an agent, in the isolated demo](/screenshots/org/departments.png)
+
+*Scripted demo data; your team's names will differ.*
+
+On a phone, the bands sit under the chart and their cards wrap onto as many lines as they need.
+
+![Department bands on a phone, in the isolated demo](/screenshots/org/departments-phone.png)
+
+A head or member who is not in `people` or `business.orgChart` is refused. The org pages show the problem above the chart, for example: "Department "Engineering" has member "kim", which is not a person in people". The keys are listed in the [configuration reference](../reference/config-operations.md#business).
+
+Removing someone from the chart with **Edit org** also takes them out of every department. If they were the head, the department stays, and its band says **No head yet**.
+
 ## What each card shows on the `/org` page
+
+People and agents look different at a glance, on a phone too. The legend above the chart shows both:
+
+- An **agent** has a square-cornered card with an **Agent** label and a small robot icon, its status and a **Pause** or **Resume** button.
+- A **person** has a round-cornered card with a thick blue border, a **Person** label and a person icon. A person has no status and no buttons.
+
+Under the role, a card names the departments its member is in.
+
+
 
 | Status | What it means |
 |---|---|
@@ -121,13 +168,17 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 ## Check it worked
 
 1. **Browser:** on the Hub, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On `/org`, each agent is a card under its boss.
-2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
-3. Click **Resume**. The card says **Idle** again.
-4. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
+2. On either page, a person's card has round corners and says **Person**, and an agent's card has square corners and says **Agent**. With departments set up, a **Departments** band shows under the chart for each one, its head first.
+3. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
+4. Click **Resume**. The card says **Idle** again.
+5. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
 
 ## If something is wrong
 
 - **The Hub's Org page says "Something in the org chart does not hold":** a link names someone who is not in `people` or `business.orgChart`, a member has two bosses, or the bosses loop. The message names the member. Fix it in `agentx.json`.
+- **The problem box says a department "has head" or "has member" someone who is not an agent or a person:** that member is missing from `business.orgChart` or from `people`, or the ID is misspelt. Add them, or fix the ID in `business.departments`. A bare ID means an agent: write `person:<id>` for a person.
+- **No Departments band under the chart:** `business.departments` is empty or missing, or `agentx.json` did not save. Check the block is under `business`, then reload the page.
+- **A band says "No head yet":** the department has no `head`, or its head was removed from the chart. Set `head` again in `agentx.json`.
 - **Every agent is under "Not in the org chart":** `business.orgChart` is empty. Run `agentx business orgchart add` for each agent (see above).
 - **An agent sits at the top although it has a boss:** its boss is not an agent or person here, or the two report to each other. Check with `agentx business relation list`.
 - **A yellow box above the chart says "Problem in the org relations":** a relation names someone who is not in `people` or `business.orgChart`, or breaks a rule. `agentx business relation list` shows the same problem; fix it with `remove`. With the business layer on, the daemon starts without it until it is fixed, and its log says `[business] initialization failed:` with the same problem.
