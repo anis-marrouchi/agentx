@@ -140,7 +140,10 @@ export async function metaAfterConnect(grant: OAuthGrant, ctx: ProviderContext):
     if (Array.isArray(perms?.data)) {
       scopes = perms.data.filter((p: any) => p?.status === "granted" && typeof p.permission === "string").map((p: any) => p.permission)
     }
-  } catch { /* keep the scopes asked for; doctor then cannot flag a declined one */ }
+  } catch (e: any) {
+    // Keep the scopes asked for; doctor then cannot flag a declined one, so say so.
+    ctx.warn?.(`Could not read the granted permissions from Meta (${safeProviderText(String(e?.message ?? e))}). Recorded the permissions asked for instead, so a declined one will not show in doctor.`)
+  }
   return {
     accessToken,
     expiresAt: Number.isFinite(expiresIn) && expiresIn > 0 ? ctx.now + expiresIn * 1000 : undefined,
@@ -155,7 +158,9 @@ const PAGE_TOKEN_TTL_MS = 60 * 60_000
 const PAGE_TOKEN_MAX = 200
 const pageTokens = new Map<string, { token: string; until: number }>()
 
-/** Forget derived Page tokens (tests, disconnect). */
+/** Forget derived Page tokens (tests). Disconnect runs in the CLI, not the
+ *  daemon that holds this cache; entries left there are keyed on the old
+ *  token's hash, so they are never used again and expire within an hour. */
 export function clearMetaPageTokens(): void { pageTokens.clear() }
 
 /** The Page a read is about: page_id, or the first part of a post id. */
