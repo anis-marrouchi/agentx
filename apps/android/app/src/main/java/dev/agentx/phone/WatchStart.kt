@@ -23,8 +23,9 @@ import android.util.Log
 // Proven on a POCO X3 (Android 12) with a Redmi Watch 6 Lite in the #1664
 // spike: the phone call is cancelled before it reaches the network, the
 // ring-back comes 2–4 s later, and the watch's microphone works when the
-// app answers with its screen in front. That is why the redirect opens the
-// Talk screen (over the lock screen) instead of ringing from the background.
+// app answers with its screen in front, or holds the microphone in a
+// foreground service. The redirect starts that service while Telecom still
+// has it bound; Xiaomi silently drops a Talk screen opened from there.
 
 object WatchStart {
     /** The Talk screen opened by a watch call: ring the watch back. */
@@ -62,19 +63,31 @@ object WatchStart {
         false
     }
 
-    /** The watch called AgentX: open the Talk screen, which rings it back.
-     *  A CallRedirectionService bound by Telecom may start an activity from
-     *  the background; if the phone refuses anyway, ring without it. */
+    /** The watch called AgentX: ring it back from the background. Called
+     *  while Telecom still has the redirect service bound, which lets the
+     *  app start its microphone service. A screen start is no use here:
+     *  Xiaomi drops it without an error when the phone is locked or the
+     *  app is in the background (#1677 device test). The Talk screen is
+     *  only tried when the phone refuses the service, and the watch is rung
+     *  either way. */
     fun ringBack(ctx: Context) {
+        try {
+            TalkService.start(ctx, fromWatch = true)
+            Log.i(TAG, "ring-back 1/4: microphone service asked to start")
+            return
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "ring-back 1/4: microphone service refused from the background", e)
+        }
         val open = Intent(ctx, TalkActivity::class.java)
             .setAction(ACTION_WATCH)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         try {
             ctx.startActivity(open)
+            Log.i(TAG, "ring-back 1/4: Talk screen asked to open (the phone may drop it)")
         } catch (e: RuntimeException) {
-            Log.w(TAG, "could not open the Talk screen; ringing from the background", e)
-            TalkService.startFromWatch(ctx)
+            Log.w(TAG, "ring-back 1/4: Talk screen refused", e)
         }
+        TalkService.startFromWatch(ctx)
     }
 }
 
@@ -93,12 +106,15 @@ class WatchRedirectionService : CallRedirectionService() {
             placeCallUnmodified()
             return
         }
-        Log.i("AgentXTalk", "watch call to AgentX (${AgentNumber.masked(number)}): phone call cancelled, ringing back")
-        cancelCall()
+        Log.i("AgentXTalk", "watch call to AgentX (${AgentNumber.masked(number)}): ringing back, then cancelling the phone call")
+        // Ring back first: once the call is cancelled Telecom unbinds this
+        // service, and with it the app's leave to start from the background.
         if (!prefs.paired || prefs.talkTarget == null) {
             TalkState.set(getString(R.string.watch_pick_first), active = false)
-            return
+        } else {
+            WatchStart.ringBack(applicationContext)
         }
-        WatchStart.ringBack(applicationContext)
+        cancelCall()
+        Log.i("AgentXTalk", "watch call to AgentX: phone call cancelled")
     }
 }

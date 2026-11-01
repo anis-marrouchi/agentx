@@ -83,7 +83,7 @@ The **Start from your watch** section now says **On**.
 
 Good to know:
 
-- **The phone opens Talk to AgentX over the lock screen** while the call is on. Android only lets an app hear the microphone while its screen is in front. The phone stays locked, and the screen closes when the call ends.
+- **The phone stays locked.** AgentX holds the microphone with its call notification while the call is on, so it needs no screen and no "open windows in the background" permission.
 - **"Answer the ring-back by itself"** is on by default. Turn it off if you would rather answer the ring-back on the watch. The setting is saved as soon as you tap it. In tests, a ring-back answered on the watch could keep moving its sound to the phone, so leave it on unless you have a reason.
 - **Your phone may flash its call screen** for about two seconds when the watch calls. It closes by itself.
 - **To stop it**, tap **Turn off** under **Start from your watch**. A call to the AgentX contact then goes to the phone network, which refuses it without connecting. To hand back the call redirect role as well, open Android settings, then **Apps**, then **Default apps**, then **Call redirect app**, and choose **None**.
