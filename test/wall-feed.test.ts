@@ -1990,6 +1990,10 @@ describe("The Org page on the Wall (#1419)", () => {
     // The phone shows this line (CSS); the chart itself stays read-only.
     expect(html).toContain('<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>')
     expect(card("person:sam")).toContain("is-person is-top")
+    // The tools sit in a toolbar row above the legend (#1681), room for more.
+    const bar = html.indexOf('<div class="wog__toolbar wog__tools" role="toolbar" aria-label="Org tools">')
+    expect(bar).toBeGreaterThan(-1)
+    expect(html.indexOf('<ul class="wog__legend"')).toBeGreaterThan(bar)
     // Person and agent differ on sight (#1681): a tag with an icon and the word.
     expect(card("person:sam")).toMatch(/<span class="wog__kind is-person"><svg[^]*?<\/svg>Person<\/span>/)
     expect(card("agent:cx")).toMatch(/<span class="wog__kind is-agent"><svg[^]*?<\/svg>Agent<\/span>/)

@@ -8,8 +8,9 @@
 // acts-for links. A problem with the relations shows above the tree.
 //
 // People and agents differ on sight (#1681): a tag with an icon and the
-// word on each card, a person's card round-cornered with an accent edge,
-// and a legend above the tree. A department (#1681) is one dashed box in
+// word on each card, a person's card round-cornered with a warm fill and
+// edge (an agent's stays plain), and a legend above the tree. The view
+// switch sits in a toolbar row over the legend, with room for more tools. A department (#1681) is one dashed box in
 // the tree: under its head, titled with its name, holding its members.
 // When there are departments the page opens on the Departments view: a box
 // per department, its name, the head's card on top and the members' cards
@@ -55,12 +56,14 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
       <p>Give each agent a role and a boss under <code>business.orgChart</code> in <code>agentx.json</code>, with the roles under <code>business.roles</code>. Until then every agent is listed below, side by side.</p>
     </section>
     <p id="org-problem" class="org-problem" role="alert" hidden></p>
+    <div class="org-toolbar" role="toolbar" aria-label="Org tools">
+      <div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button><button type="button" data-org-view="chart" aria-pressed="false">Chart</button></div>
+    </div>
     <ul class="org-legend" aria-label="Legend">
       <li><span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>plain card, with its status</li>
-      <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, accent edge</li>
+      <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, warm fill</li>
       <li id="org-legend-dept" hidden><span class="org-legend-dept">Department</span>a dashed box round its members</li>
     </ul>
-    <div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button><button type="button" data-org-view="chart" aria-pressed="false">Chart</button></div>
     <div id="org-depts" class="org-depts" hidden></div>
     <div id="org-tree" class="org-tree" aria-label="Org chart"><p class="org-quiet">Loading…</p></div>
     <section id="org-outside" hidden aria-labelledby="org-outside-title">
@@ -119,12 +122,13 @@ const ORG_CSS = `
 .org-acts a, .org-acts button { font: inherit; font-size: var(--ax-fs-xs); padding: 3px 9px; border-radius: var(--ax-radius-sm); border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-surface-2); color: var(--ax-text); text-decoration: none; cursor: pointer; }
 .org-acts button:disabled { opacity: 0.6; cursor: default; }
 .org-card { position: relative; }
-.org-card.is-person { background: var(--ax-surface-2); border-color: var(--ax-accent); border-left-width: 4px; border-radius: 22px; }
+.org { --org-person-bg: color-mix(in oklch, #f08c3c 16%, var(--ax-bg)); --org-person-ink: color-mix(in oklch, #d4691f 80%, var(--ax-text)); }
+.org-card.is-person { background: var(--org-person-bg); border-color: var(--org-person-ink); border-left-width: 4px; border-radius: 22px; }
 .org-kind { font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; line-height: 17px; border-radius: 999px; border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text-2); white-space: nowrap; }
 .org-tag svg { fill: currentColor; }
 .org-tag .org-eye { fill: var(--ax-bg); }
-.org-tag.is-person { border-color: var(--ax-accent); color: var(--ax-accent); }
+.org-tag.is-person { border-color: var(--org-person-ink); color: var(--org-person-ink); }
 .org-card > .org-tag { position: absolute; top: -9px; right: 12px; }
 .org-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 0 0 14px; padding: 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-legend li { display: inline-flex; align-items: center; gap: 6px; }
@@ -135,7 +139,8 @@ const ORG_CSS = `
 .org-dept-head { display: block; margin: -2px 0 2px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); text-align: center; }
 .org-tree .org-dept-box > ul { display: flex; position: relative; padding-top: 0; }
 .org-tree .org-dept-box > ul > li { padding: 10px 6px 6px; }
-.org-views { display: inline-flex; margin: 0 0 14px; border: var(--ax-border-w) solid var(--ax-border-2); border-radius: 999px; overflow: hidden; }
+.org-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 30px; margin: 0 0 10px; }
+.org-views { display: inline-flex;border: var(--ax-border-w) solid var(--ax-border-2); border-radius: 999px; overflow: hidden; }
 .org-views[hidden], .org-depts[hidden], .org-tree[hidden] { display: none; }
 .org-views button { font: inherit; font-size: var(--ax-fs-sm); font-weight: 600; background: none; border: 0; color: var(--ax-text); padding: 4px 14px; cursor: pointer; }
 .org-views button[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); }
