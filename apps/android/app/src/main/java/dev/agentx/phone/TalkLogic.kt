@@ -69,6 +69,35 @@ object WatchRoute {
         !onWatch && bluetoothOffered && msSinceLastAsk >= GAP_MS && asks < MAX_ASKS
 }
 
+/**
+ * The microphone's level each second, for the call log (#1664 device try 5):
+ * tells a watch microphone that hears the owner from one that gives only
+ * line noise.
+ */
+class MicLevel(private val samplesPerSecond: Int) {
+    data class Second(val index: Int, val rms: Int, val peak: Int)
+
+    private var sumSq = 0.0
+    private var count = 0
+    private var peak = 0
+    private var done = 0
+
+    /** Adds [len] samples from [from]; returns each second they complete. */
+    fun add(pcm: ShortArray, from: Int, len: Int): List<Second> {
+        val out = ArrayList<Second>(1)
+        for (i in from until from + len) {
+            val v = pcm[i].toInt()
+            sumSq += v.toDouble() * v
+            peak = maxOf(peak, kotlin.math.abs(v))
+            if (++count == samplesPerSecond) {
+                out += Second(++done, kotlin.math.sqrt(sumSq / count).toInt(), peak)
+                sumSq = 0.0; count = 0; peak = 0
+            }
+        }
+        return out
+    }
+}
+
 /** 16-bit mono PCM as a WAV file, which /api/app/voice/transcribe takes. */
 object Wav {
     fun encode(pcm: ShortArray, rate: Int): ByteArray {
