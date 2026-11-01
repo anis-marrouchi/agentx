@@ -2528,8 +2528,9 @@ export const daemonConfigSchema = z.object({
      *  creature that hovers above the bottom edge of the screen. */
     look: z.enum(VOICE_LOOKS).default("orb"),
     /** AgentX Voice starts with its pill reduced to the orb alone: a
-     *  small circle the person can drag. Off: the full pill. */
-    startReduced: z.boolean().default(false),
+     *  small circle the person can drag, so it does not sit over the
+     *  page being worked on. Off: the full pill. */
+    startReduced: z.boolean().default(true),
     /** AgentX Voice, when an answer is ready (#1455): "wait" keeps it as
      *  "not heard" in the open-requests list, with one soft sound, until
      *  the person picks it; "play" plays it at once, as before. */

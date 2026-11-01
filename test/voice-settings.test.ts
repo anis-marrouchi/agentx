@@ -134,8 +134,9 @@ describe("applyVoiceSettings", () => {
     expect(raw.voice).toEqual({ localStt: "parakeet", endOfTurn: "volume" })
   })
 
-  it("starts with the full pill unless told to start reduced to the orb", () => {
-    expect(voiceSettingsView(config(), []).general.startReduced).toBe(false)
+  it("starts reduced to the orb unless told to start with the full pill", () => {
+    expect(voiceSettingsView(config(), []).general.startReduced).toBe(true)
+    expect(checkVoiceSettings({ general: { startReduced: false } }, config())).toEqual([])
     expect(checkVoiceSettings({ general: { startReduced: true } }, config())).toEqual([])
     expect(checkVoiceSettings({ general: { startReduced: "yes" } } as never, config()))
       .toEqual([{ path: "general.startReduced", message: "Start reduced must be on or off" }])
@@ -273,7 +274,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false, animations: "sometimes", answers: "wait", readySound: "Pop", readySounds: [...VOICE_READY_SOUNDS], listOnHover: true, pronunciations: [] })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: true, stroll: false, animations: "sometimes", answers: "wait", readySound: "Pop", readySounds: [...VOICE_READY_SOUNDS], listOnHover: true, pronunciations: [] })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })

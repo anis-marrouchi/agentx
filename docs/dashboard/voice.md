@@ -719,10 +719,10 @@ Good to know:
 - **A click still talks:** a click on the idle character starts the microphone, as it does with the bubble; there is no bubble to open.
 - **Hide character** still hides both, until the next **Option–Space**.
 
-To start reduced every time the app opens:
+The app starts reduced by default, so the pill does not sit over the page you are working on. To start with the full pill instead:
 
 1. **Mac:** open **Settings…** from the AgentX menu and go to the **General** tab.
-2. **Mac:** under **Assistant**, tick **Start reduced**, then choose **Save**.
+2. **Mac:** under **Assistant**, untick **Start reduced**, then choose **Save**.
 
 Or in the Terminal, from the folder with your `agentx.json`:
 
@@ -732,7 +732,7 @@ agentx voice start full      # start as the full pill
 agentx voice start           # which one is on now
 ```
 
-In `agentx.json` it is `voice.startReduced`: `false` (the default) or `true`. The app reads it when it starts, so a change made in the Terminal or in the file shows the next time the app starts. With the orb look it starts as the orb alone; with the [character](#the-character), as the character without its speech bubble.
+In `agentx.json` it is `voice.startReduced`: `true` (the default) or `false`. The app reads it when it starts, so a change made in the Terminal or in the file shows the next time the app starts. With the orb look it starts as the orb alone; with the [character](#the-character), as the character without its speech bubble.
 
 ### Hide the pill
 
@@ -809,7 +809,7 @@ To hear a voice before you keep it:
 | **Soft sound** | The Mac sound played once when an answer is ready and waits for you: **Pop** (the default), **Tink**, **Glass** and the rest of the Mac's alert sounds. Picking one plays it. Only with **Wait until I pick it** | `voice.readySound` |
 | **Open the list on hover** | Half a second's pointing at the pill opens the [open-requests list](#open-requests). Off: only a click or **Command–Option–O** opens it. Default on | `voice.listOnHover` |
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
-| **Start reduced** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb), or the character [without its speech bubble](#reduce-the-character). Default off | `voice.startReduced` |
+| **Start reduced** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb), or the character [without its speech bubble](#reduce-the-character). Default on | `voice.startReduced` |
 | **Character strolls when idle** | The [character](#the-character) takes a [slow stroll](#let-the-character-stroll) when the assistant has nothing to do. Default off | `voice.stroll` |
 | **Character plays when idle** | How often the [character](#the-character) plays a [small animation by itself](#let-the-character-play-by-itself): **Never**, **Rarely**, **Sometimes** or **Often**. Default **Sometimes** | `voice.animations` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
