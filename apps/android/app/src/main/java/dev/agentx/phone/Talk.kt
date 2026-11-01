@@ -333,7 +333,7 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
 
     // The watch's audio link (#1677), set on the main thread only.
     private var onWatch = false
-    @Volatile private var everOnWatch = false
+    @Volatile var everOnWatch = false; private set
     private var drops = 0
     private var asks = 0
     private var lastAsk = 0L
@@ -405,11 +405,7 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
             asks++
             lastAsk = now
             setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
-            if (Build.VERSION.SDK_INT >= 31) {
-                val audio = ctx.getSystemService(AudioManager::class.java)
-                val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
-                if (sco != null) audio.setCommunicationDevice(sco)
-            }
+            pickWatchDevice(ctx.getSystemService(AudioManager::class.java))
         }
         main.postDelayed({ holdWatch() }, 1000)
     }
@@ -440,31 +436,60 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
         TalkService.clear(ctx)
     }
 
+    /** Before each turn's recording: the route back on the watch, so the
+     *  watch's microphone (not the phone's) records. Waits up to 1.5 s. */
+    fun waitForWatch(audio: AudioManager) {
+        if (!everOnWatch || ended) return
+        val state = callAudioState ?: return
+        if (state.route != CallAudioState.ROUTE_BLUETOOTH && state.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH != 0) {
+            Log.w("AgentXTalk", "not on the watch before listening; asking for it back")
+            setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+            for (i in 0 until 15) {
+                if (ended || callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) break
+                Thread.sleep(100)
+            }
+        }
+        if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) pickWatchDevice(audio)
+    }
+
+    /** Android 12+: the watch as the call's audio device, only when it is not
+     *  already. Setting it again over Telecom's route closed the watch's
+     *  audio on a Xiaomi phone (device try 3); step 1 found the recording can
+     *  stay on the phone's own microphone without it. */
+    private fun pickWatchDevice(audio: AudioManager): Boolean {
+        if (Build.VERSION.SDK_INT < 31) return false
+        if (audio.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return true
+        val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO } ?: return false
+        return audio.setCommunicationDevice(sco)
+    }
+
     /** Telecom's own route first (meant for a self-managed call), then
      *  AudioManager. Returns false when no Bluetooth headset took it. */
     @Suppress("DEPRECATION")
     fun routeToWatch(audio: AudioManager): Boolean {
         val state = callAudioState
         if (state != null && state.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH != 0) {
-            setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+            if (state.route != CallAudioState.ROUTE_BLUETOOTH) setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
             for (i in 0 until 30) {
                 if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) break
                 Thread.sleep(100)
             }
         }
-        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) {
+            // Telecom has the watch. Its self-managed VoIP call already set the
+            // audio mode; setting it again from the app takes over the mode
+            // and restarts the watch's audio.
+            pickWatchDevice(audio)
+            return true
+        }
+        if (audio.mode != AudioManager.MODE_IN_COMMUNICATION) audio.mode = AudioManager.MODE_IN_COMMUNICATION
         if (Build.VERSION.SDK_INT >= 31) {
-            // Also set on the Telecom route: step 1 found the recording can
-            // stay on the phone's own microphone otherwise.
-            val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
-            if (sco != null && audio.setCommunicationDevice(sco)) return true
-            if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) return true
+            if (pickWatchDevice(audio)) return true
             // A drop in progress: [holdWatch] brings the watch back.
             if (everOnWatch) return true
             setAudioRoute(CallAudioState.ROUTE_SPEAKER)
             return false
         }
-        if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) return true
         audio.startBluetoothSco()
         audio.isBluetoothScoOn = true
         for (i in 0 until 40) {
@@ -624,6 +649,7 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
     /** Records until the owner stops speaking. Null when nothing was said. */
     @Suppress("MissingPermission")
     private fun listen(): ShortArray? {
+        call.waitForWatch(audio)
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, RATE))
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
@@ -651,6 +677,9 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
             }
             val from = rec.routedDevice
             Log.i("AgentXTalk", "microphone: ${from?.productName} (type ${from?.type}), ${ep.state}, peak $loudest")
+            if (call.everOnWatch && from != null && from.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                Log.w("AgentXTalk", "the call is on the watch but this turn recorded on the phone's microphone")
+            }
             // Exact zeros are not a quiet room: Android hands an app in the
             // background a muted microphone (#1664, round 3).
             if (loudest == 0 && n > 0) Log.w("AgentXTalk", "the microphone gave only silence: the app was probably in the background")
