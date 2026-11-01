@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.203.0](https://github.com/anis-marrouchi/agentx/compare/v0.202.0...v0.203.0) (2026-11-01)
+
+
+### Features
+
+* **org:** Add agent here on each org chart member ([#1678](https://github.com/anis-marrouchi/agentx/issues/1678)) ([#1714](https://github.com/anis-marrouchi/agentx/issues/1714)) ([222fa70](https://github.com/anis-marrouchi/agentx/commit/222fa707f8f51e7c9c2bdbd30030875523752a74))
+* **org:** set each agent's working hours in the org editor ([#1715](https://github.com/anis-marrouchi/agentx/issues/1715)) ([#1717](https://github.com/anis-marrouchi/agentx/issues/1717)) ([374064d](https://github.com/anis-marrouchi/agentx/commit/374064d3d8e107973bda335f50e2dbf2662683ec))
+* **org:** Settings → Business uses the /org editor ([#1678](https://github.com/anis-marrouchi/agentx/issues/1678)) ([#1712](https://github.com/anis-marrouchi/agentx/issues/1712)) ([0b6aa36](https://github.com/anis-marrouchi/agentx/commit/0b6aa363cb6d1cfb7465a209ca0c5806af374274))
+
 ## [0.202.0](https://github.com/anis-marrouchi/agentx/compare/v0.201.0...v0.202.0) (2026-11-01)
 
 
