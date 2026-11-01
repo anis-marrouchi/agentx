@@ -575,10 +575,10 @@ integrations
     let redirectUri = `http://localhost:${port}/callback`
     if (opts.redirectUri !== undefined) {
       if (!opts.paste) { console.log(chalk.red("  --redirect-uri works with --paste only: AgentX can wait for the answer on localhost only")); process.exit(1) }
-      let u: URL | null = null
-      try { u = new URL(String(opts.redirectUri)) } catch {}
-      if (!u || (u.protocol !== "https:" && u.hostname !== "localhost") || u.hash) { console.log(chalk.red("  --redirect-uri must be an https address (or http://localhost) without #")); process.exit(1) }
-      redirectUri = u.toString()
+      const { checkRedirectUri } = await import("@/integrations/connect")
+      const checked = checkRedirectUri(String(opts.redirectUri))
+      if (!checked) { console.log(chalk.red("  --redirect-uri must be an https address (or http://localhost) without #")); process.exit(1) }
+      redirectUri = checked
     }
     console.log()
     console.log(chalk.bold(`  Connect ${spec.title} for ${agentId} ("${integration.label}")`))
@@ -587,6 +587,7 @@ integrations
     try {
       const grant = await signIn({
         agentId, spec, integration, clientId: client.clientId, clientSecret: client.clientSecret, redirectUri, extras,
+        warn: (message) => console.log(chalk.yellow(`  ${message}`)),
         getCallback: async (authorizeUrl, state) => {
           const wait = opts.paste ? null : waitForLoopbackCallback(port, state)
           if (wait) await wait.ready

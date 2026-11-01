@@ -27,6 +27,8 @@ export interface ProviderContext {
   clientId: string
   clientSecret: string
   now: number
+  /** Shows a non-fatal problem to the owner during connect (the CLI prints it). */
+  warn?: (message: string) => void
 }
 
 export interface OAuthSpec {
