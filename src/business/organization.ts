@@ -28,6 +28,10 @@ export class Organization {
   /** Member → its reports-to boss, both written in full (`agent:x`, `person:y`). */
   private bosses: Map<string, string> = new Map()
   private people: ReadonlyArray<{ id: string; name?: string }>
+  /** Relations left out because they name a node no longer in mesh.peers,
+   *  one plain sentence each. The daemon logs them; the Org page shows the
+   *  same problem. */
+  dropped: string[] = []
 
   /** `people`: the top-level people list, so a person can sit in the org.
    *  `peers`: the names in mesh.peers, so `agent:<node>/<id>` may be named. */
@@ -49,8 +53,16 @@ export class Organization {
 
     // Members and typed relations (#1418): reportsTo may name a person,
     // and business.relations adds reports-to, dotted-line and acts-for.
-    this.relationList = orgRelations(config)
-    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)), new Set(peers))
+    // A peer can be removed or renamed without this check (mesh remove, the
+    // admin peer delete), so a line to an agent on a node that is gone is
+    // left out with a warning instead of stopping the business layer.
+    const known = new Set(peers)
+    this.relationList = orgRelations(config).filter((r) => {
+      const gone = [r.from, r.to].map(remoteAgent).find((a) => a && !known.has(a.node))
+      if (gone) this.dropped.push(`Org relation ${r.type} from "${r.from}" to "${r.to}" left out: "${gone.node}" is not a peer in mesh.peers`)
+      return !gone
+    })
+    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)), known)
     if (problem) throw new Error(problem)
     for (const r of this.relationList) {
       if (r.type === "reports-to") this.bosses.set(r.from, r.to)
