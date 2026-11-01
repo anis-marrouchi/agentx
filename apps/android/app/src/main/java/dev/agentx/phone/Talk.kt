@@ -331,6 +331,14 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
     private var session: TalkSession? = null
     private val main = Handler(Looper.getMainLooper())
 
+    // The watch's audio link (#1677), set on the main thread only.
+    private var onWatch = false
+    @Volatile private var everOnWatch = false
+    private var drops = 0
+    private var asks = 0
+    private var lastAsk = 0L
+    private var gaveUp = false
+
     init {
         current = this
         connectionProperties = PROPERTY_SELF_MANAGED
@@ -359,6 +367,53 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
     override fun onDisconnect() = end(DisconnectCause.LOCAL)
     override fun onAbort() = end(DisconnectCause.CANCELED)
 
+    /** Once on the watch, the call stays there: when Telecom moves it to
+     *  the earpiece (the Xiaomi drop about 1 s in), ask for the watch again. */
+    @Deprecated("Deprecated in API 34; still called")
+    override fun onCallAudioStateChanged(state: CallAudioState?) {
+        state ?: return
+        Log.i("AgentXTalk", "audio route: ${CallAudioState.audioRouteToString(state.route)}")
+        if (state.route == CallAudioState.ROUTE_BLUETOOTH) {
+            if (everOnWatch && !onWatch) Log.i("AgentXTalk", "back on the watch after drop $drops ($asks asks)")
+            onWatch = true
+            everOnWatch = true
+            asks = 0
+            gaveUp = false
+            return
+        }
+        if (!everOnWatch || ended) return
+        if (onWatch) {
+            onWatch = false
+            drops++
+            Log.w("AgentXTalk", "watch audio dropped (drop $drops), now ${CallAudioState.audioRouteToString(state.route)}; asking for the watch again")
+        }
+        holdWatch()
+    }
+
+    /** Asks Telecom (and, on Android 12+, the audio system) for the watch,
+     *  once a second until it is back, within [WatchRoute]'s limits. */
+    private fun holdWatch() {
+        if (ended || onWatch) return
+        val offered = (callAudioState?.supportedRouteMask ?: 0) and CallAudioState.ROUTE_BLUETOOTH != 0
+        if (asks >= WatchRoute.MAX_ASKS || !offered) {
+            if (!gaveUp) Log.w("AgentXTalk", "watch not back after $asks asks (Bluetooth offered: $offered); the call stays on the phone")
+            gaveUp = true
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (WatchRoute.askAgain(onWatch, offered, now - lastAsk, asks)) {
+            asks++
+            lastAsk = now
+            setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+            if (Build.VERSION.SDK_INT >= 31) {
+                val audio = ctx.getSystemService(AudioManager::class.java)
+                val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+                if (sco != null) audio.setCommunicationDevice(sco)
+            }
+        }
+        main.postDelayed({ holdWatch() }, 1000)
+    }
+
     @Synchronized private fun begin() {
         if (ended || session != null) return
         ringing = false
@@ -375,6 +430,7 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
         ended = true
         ringing = false
         main.removeCallbacksAndMessages(null)
+        if (drops > 0) Log.i("AgentXTalk", "watch audio dropped $drops time(s) during this call")
         session?.stop()
         setDisconnected(DisconnectCause(cause))
         destroy()
@@ -403,6 +459,8 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
             val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
             if (sco != null && audio.setCommunicationDevice(sco)) return true
             if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) return true
+            // A drop in progress: [holdWatch] brings the watch back.
+            if (everOnWatch) return true
             setAudioRoute(CallAudioState.ROUTE_SPEAKER)
             return false
         }

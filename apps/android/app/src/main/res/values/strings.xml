@@ -109,4 +109,6 @@
     <string name="watch_add_contact">Add the AgentX contact</string>
     <string name="watch_auto_answer">Answer the ring-back by itself (recommended)</string>
     <string name="watch_turn_off">Turn off</string>
+    <string name="watch_xiaomi_allow">Allow on Xiaomi</string>
+    <string name="watch_xiaomi_hint">On this Xiaomi phone, tap Allow on Xiaomi and turn on \"Open new windows while running in the background\". Without it the watch is still rung back, from the background.</string>
 </resources>

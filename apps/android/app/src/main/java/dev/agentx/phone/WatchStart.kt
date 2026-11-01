@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.ContactsContract
+import android.provider.Settings
 import android.telecom.CallRedirectionService
 import android.telecom.PhoneAccountHandle
 import android.telephony.TelephonyManager
@@ -54,6 +55,18 @@ object WatchStart {
             .putExtra(ContactsContract.Intents.Insert.NAME, ctx.getString(R.string.watch_contact_name))
             .putExtra(ContactsContract.Intents.Insert.PHONE, Prefs(ctx).watchNumber)
             .putExtra(ContactsContract.Intents.Insert.PHONE_TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_OTHER)
+
+    /** Xiaomi (MIUI, HyperOS) has its own switch, off by default, for
+     *  "open new windows while running in the background". The ring-back
+     *  works without it from the microphone service; with it on, the Talk
+     *  screen can open too (#1677 device test). */
+    val isXiaomi: Boolean get() = Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true)
+
+    /** Xiaomi's permission page for this app, then the app's info page. */
+    fun xiaomiPermissionIntents(ctx: Context): List<Intent> = listOf(
+        Intent("miui.intent.action.APP_PERM_EDITOR").putExtra("extra_pkgname", ctx.packageName),
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null)),
+    )
 
     /** Never touch a number the phone lists as an emergency number. */
     fun isEmergency(ctx: Context, number: String): Boolean = try {

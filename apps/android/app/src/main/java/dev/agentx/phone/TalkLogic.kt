@@ -53,6 +53,22 @@ object AgentNumber {
     }
 }
 
+/**
+ * Keeping a call on the watch (#1677). On Xiaomi the Bluetooth link to the
+ * watch closes about 1 s into the call and Telecom leaves it on the phone's
+ * earpiece. The #1664 spike held it by asking for Bluetooth again; this says
+ * when to ask, so a watch that is really gone is not asked for forever.
+ */
+object WatchRoute {
+    /** Between two asks: give the last one time to land. */
+    const val GAP_MS = 500L
+    /** Asks per drop; a drop ends when the call is back on the watch. */
+    const val MAX_ASKS = 10
+
+    fun askAgain(onWatch: Boolean, bluetoothOffered: Boolean, msSinceLastAsk: Long, asks: Int): Boolean =
+        !onWatch && bluetoothOffered && msSinceLastAsk >= GAP_MS && asks < MAX_ASKS
+}
+
 /** 16-bit mono PCM as a WAV file, which /api/app/voice/transcribe takes. */
 object Wav {
     fun encode(pcm: ShortArray, rate: Int): ByteArray {

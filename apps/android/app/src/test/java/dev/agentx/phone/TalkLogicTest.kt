@@ -121,4 +121,15 @@ class TalkLogicTest {
         assertEquals("…", AgentNumber.masked("112"))
         assertEquals("?", AgentNumber.masked(null))
     }
+
+    @Test
+    fun aDroppedWatchIsAskedForAgainWithinLimits() {
+        assertTrue(WatchRoute.askAgain(onWatch = false, bluetoothOffered = true, msSinceLastAsk = 600, asks = 0))
+        // On the watch already, or no watch connected: nothing to ask.
+        assertFalse(WatchRoute.askAgain(onWatch = true, bluetoothOffered = true, msSinceLastAsk = 600, asks = 0))
+        assertFalse(WatchRoute.askAgain(onWatch = false, bluetoothOffered = false, msSinceLastAsk = 600, asks = 0))
+        // Too soon after the last ask, or asked enough for this drop.
+        assertFalse(WatchRoute.askAgain(onWatch = false, bluetoothOffered = true, msSinceLastAsk = 100, asks = 1))
+        assertFalse(WatchRoute.askAgain(onWatch = false, bluetoothOffered = true, msSinceLastAsk = 600, asks = WatchRoute.MAX_ASKS))
+    }
 }

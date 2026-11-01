@@ -54,6 +54,7 @@ class TalkActivity : Activity() {
     private lateinit var watchLine: TextView
     private lateinit var watchSetUp: Button
     private lateinit var watchContact: Button
+    private lateinit var watchXiaomi: Button
     private lateinit var watchAuto: CheckBox
     private lateinit var watchOff: Button
     private var startWhenAllowed = false
@@ -102,6 +103,7 @@ class TalkActivity : Activity() {
         watchLine = text("", android.R.style.TextAppearance_Material_Body1)
         watchSetUp = button(R.string.watch_set_up) { setUpWatch() }
         watchContact = button(R.string.watch_add_contact) { addContact() }
+        watchXiaomi = button(R.string.watch_xiaomi_allow) { openXiaomiPermissions() }
         watchAuto = CheckBox(this).apply {
             setText(R.string.watch_auto_answer)
             minHeight = (48 * resources.displayMetrics.density).toInt()
@@ -189,6 +191,7 @@ class TalkActivity : Activity() {
         val held = WatchStart.holdsRole(this)
         watchLine.text = when {
             !WatchStart.supported -> getString(R.string.watch_unsupported)
+            on && held && WatchStart.isXiaomi -> getString(R.string.watch_on, getString(R.string.watch_contact_name)) + " " + getString(R.string.watch_xiaomi_hint)
             on && held -> getString(R.string.watch_on, getString(R.string.watch_contact_name))
             on -> getString(R.string.watch_role_lost)
             else -> getString(R.string.watch_off)
@@ -196,6 +199,7 @@ class TalkActivity : Activity() {
         watchSetUp.visibility = if (WatchStart.supported && !(on && held)) View.VISIBLE else View.GONE
         val ready = WatchStart.supported && on && held
         watchContact.visibility = if (ready) View.VISIBLE else View.GONE
+        watchXiaomi.visibility = if (ready && WatchStart.isXiaomi) View.VISIBLE else View.GONE
         watchAuto.visibility = if (ready) View.VISIBLE else View.GONE
         watchOff.visibility = if (on) View.VISIBLE else View.GONE
     }
@@ -288,6 +292,14 @@ class TalkActivity : Activity() {
         try { startActivity(WatchStart.contactIntent(this)) } catch (_: Exception) {
             watchLine.text = getString(R.string.watch_no_contacts_app, getString(R.string.watch_contact_name), prefs.watchNumber)
         }
+    }
+
+    /** Xiaomi's own page first; some versions have no such screen. */
+    private fun openXiaomiPermissions() {
+        for (i in WatchStart.xiaomiPermissionIntents(this)) {
+            try { startActivity(i); return } catch (_: Exception) {}
+        }
+        watchLine.text = getString(R.string.watch_xiaomi_hint)
     }
 
     /** The agents online now, one button each. */

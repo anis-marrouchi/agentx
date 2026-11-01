@@ -71,7 +71,12 @@ How to build, install, pair and use it, step by step:
   the app after 1 s (`watchAutoAnswer`, on by default), and the first turn
   sends `call: "watch"`, so the computer tells the agent it is on a live
   call. `adb logcat -s AgentXTalk` shows each step, `ring-back 1/4` to
-  `4/4`, then `call answered` and `greeting said`.
+  `4/4`, then `call answered` and `greeting said`. Once the call has been on
+  the watch, `TalkConnection.onCallAudioStateChanged` asks for Bluetooth
+  again whenever Telecom moves it off (Xiaomi drops SCO about 1 s in), once
+  a second, at most `WatchRoute.MAX_ASKS` times per drop (`watch audio
+  dropped`, `back on the watch` in the log). On Xiaomi the setup screen
+  also links to MIUI's background-windows switch (optional).
 
 ## Build
 

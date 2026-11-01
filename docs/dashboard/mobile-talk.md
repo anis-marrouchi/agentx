@@ -71,6 +71,7 @@ You do this once.
 4. **Phone:** Android asks whether to make **AgentX** your **call redirect app**. Tap **AgentX**, then **Set as default**. This lets AgentX see the number of each call the phone places. It changes only the call to the AgentX contact, and every other call goes out as before.
 5. **Phone:** the Contacts app opens with a new contact, **AgentX** with the number `+21400000000`, filled in. Tap **Save**. To add it again later, tap **Add the AgentX contact**.
 6. **Phone:** in the watch's phone app (such as Mi Fitness or Zepp), add **AgentX** to the watch's contacts or favourites, if your watch needs that.
+7. **Phone, Xiaomi only:** tap **Allow on Xiaomi** and turn on **Open new windows while running in the background**. Without it the watch is still rung back from the background. With it on, the Talk screen can open too.
 
 The **Start from your watch** section now says **On**.
 
@@ -85,6 +86,7 @@ Good to know:
 
 - **The phone stays locked.** AgentX holds the microphone with its call notification while the call is on, so it needs no screen and no "open windows in the background" permission.
 - **"Answer the ring-back by itself"** is on by default. Turn it off if you would rather answer the ring-back on the watch. The setting is saved as soon as you tap it. In tests, a ring-back answered on the watch could keep moving its sound to the phone, so leave it on unless you have a reason.
+- **The sound stays on the watch.** Some phones (Xiaomi) move a call from the watch to the phone's earpiece a second after it starts. AgentX asks for the watch again, once a second, up to ten times. If the watch is still gone after that, the call goes on from the phone.
 - **Your phone may flash its call screen** for about two seconds when the watch calls. It closes by itself.
 - **To stop it**, tap **Turn off** under **Start from your watch**. A call to the AgentX contact then goes to the phone network, which refuses it without connecting. To hand back the call redirect role as well, open Android settings, then **Apps**, then **Default apps**, then **Call redirect app**, and choose **None**.
 
