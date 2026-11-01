@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.199.0](https://github.com/anis-marrouchi/agentx/compare/v0.198.0...v0.199.0) (2026-11-01)
+
+
+### Features
+
+* **android:** Talk to AgentX, a voice call with an agent on a Bluetooth watch ([#1664](https://github.com/anis-marrouchi/agentx/issues/1664)) ([#1663](https://github.com/anis-marrouchi/agentx/issues/1663)) ([d382130](https://github.com/anis-marrouchi/agentx/commit/d382130b52dfa828310170212cd3d78fa3824d12))
+* **mail:** system mail sender for sign-in links ([#1478](https://github.com/anis-marrouchi/agentx/issues/1478)) ([#1644](https://github.com/anis-marrouchi/agentx/issues/1644)) ([bd3622a](https://github.com/anis-marrouchi/agentx/commit/bd3622ad58aa52166a70fece66ad4f9833a42aa9))
+* **people:** personal sign-in sessions (ax_person) with End access ([#1478](https://github.com/anis-marrouchi/agentx/issues/1478)) ([#1666](https://github.com/anis-marrouchi/agentx/issues/1666)) ([850bcc6](https://github.com/anis-marrouchi/agentx/commit/850bcc61a65d9bebccd1c9e84a06de90dcfc876d))
+* **voice:** show files and web pictures in the Mac widget's answer ([#1670](https://github.com/anis-marrouchi/agentx/issues/1670)) ([#1671](https://github.com/anis-marrouchi/agentx/issues/1671)) ([a5a2dd6](https://github.com/anis-marrouchi/agentx/commit/a5a2dd681ee15915d2d133b036ac287565a18113))
+
+
+### Bug Fixes
+
+* **notify:** deliver a push held by a hold the watcher never saw ([#1669](https://github.com/anis-marrouchi/agentx/issues/1669)) ([5fc2526](https://github.com/anis-marrouchi/agentx/commit/5fc2526b75dc590cd5199bf732325032d969b623))
+
 ## [0.198.0](https://github.com/anis-marrouchi/agentx/compare/v0.197.0...v0.198.0) (2026-10-31)
 
 
