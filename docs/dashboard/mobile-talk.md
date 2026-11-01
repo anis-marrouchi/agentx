@@ -132,5 +132,6 @@ Starting from the watch:
   1. **Phone:** open **Talk to AgentX** and turn **Answer the ring-back by itself** back on.
   2. **Phone:** check in **Bluetooth** settings that the watch is still connected.
   3. If it still happens, send `adb logcat -s AgentXTalk` from a call to whoever set up AgentX. The lines **watch audio dropped** and **recorded on the phone's microphone** show when it happened.
+- **The call is on the watch but you hear nothing, and AgentX does not hear you** — send `adb logcat -s AgentXTalk` from that call to whoever set up AgentX. It shows whether the watch's audio link (**watch audio link**, **SCO link**) was connected, the call's audio mode, whether the phone was locked, and the microphone's level each second (**mic second**).
 - **"Choose the agent to talk to first"** — no agent is chosen yet. Open **Talk to AgentX**, choose one, then call from the watch again.
 - **AgentX is not in the watch's contacts** — add it in the watch's phone app (such as Mi Fitness or Zepp), or check that the contact was saved on the phone. Tap **Add the AgentX contact** to add it again.
