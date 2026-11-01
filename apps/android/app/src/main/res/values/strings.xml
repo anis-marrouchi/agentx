@@ -82,6 +82,15 @@
     <string name="talk_writing">Writing down what you said…</string>
     <string name="talk_thinking">You said: %1$s. Waiting for the answer…</string>
     <string name="talk_speaking">%1$s is answering.</string>
+    <string name="talk_connecting">You called AgentX from the watch. Connecting…</string>
+    <!-- Start from the watch (#1664) -->
+    <string name="watch_title">Start from the watch</string>
+    <string name="watch_off">Call AgentX from the watch\'s contacts instead of tapping Start here. Tap Set up: Android asks to let AgentX redirect calls, then the phone\'s Contacts app opens with an AgentX contact to save. Then sync your contacts to the watch in its phone app.</string>
+    <string name="watch_on">On. Call the AgentX contact (%1$s) from the watch: the call is not placed, the watch rings back with %2$s and answers by itself. Other numbers are not changed. To turn it off, remove AgentX as the call redirecting app in Android settings.</string>
+    <string name="watch_set_up">Set up</string>
+    <string name="watch_add_contact">Add the AgentX contact</string>
+    <string name="watch_role_refused">AgentX may not redirect calls, so a call from the watch goes out as a normal call to a number that does not exist. Tap Set up to ask again.</string>
+    <string name="watch_no_contacts">This phone has no Contacts app to save the contact. Add a contact named AgentX with the number %1$s by hand.</string>
     <!-- Said on the call -->
     <string name="talk_say_hello">You are talking to %1$s. Speak after the beep.</string>
     <string name="talk_say_nothing">I didn\'t hear anything. Speak after the beep, or hang up.</string>

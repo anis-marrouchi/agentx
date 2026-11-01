@@ -6,9 +6,7 @@ It works with watches that can't run apps but can take calls for the phone they 
 
 ![How you talk to an agent on your watch: you start it on the phone, then the watch rings, you speak after the beep, the computer writes it down and asks the agent, and the answer is spoken on the watch until you hang up](/diagrams/talk-watch.svg)
 
-::: info Starting from the watch itself is not possible yet
-Today you start the call on the phone: the watch rings, and the rest happens on the watch. Starting it from a button on the watch is being looked at in [#1664](https://github.com/anis-marrouchi/agentx/issues/1664).
-:::
+You can start the call on the phone, or from the watch itself by calling an **AgentX** contact: see [Start from the watch](#start-from-the-watch).
 
 ## What you need
 
@@ -52,6 +50,30 @@ Good to know:
 - **Keep it short.** One turn can be up to 45 seconds long.
 - **Without a watch** the call still works, on the phone's speaker.
 
+## Start from the watch
+
+Instead of tapping **Start** on the phone, you can call AgentX from the watch's contacts. The phone does not place that call: AgentX stops it before it leaves the phone and rings the watch back, and the call answers by itself. Then you talk as above. It needs Android 10 or newer.
+
+Set it up once:
+
+1. **Phone:** open **Talk to AgentX** and choose the agent, as in [Choose the agent](#choose-the-agent).
+2. **Phone:** under **Start from the watch**, tap **Set up**.
+3. **Phone:** Android asks whether AgentX may redirect calls. Allow it. AgentX only changes calls to its own number, `+21400000000`. Every other call goes out as before.
+4. **Phone:** the Contacts app opens with a contact named **AgentX** and that number. Save it.
+5. **Phone:** in the watch's own phone app, sync the contacts to the watch, the way its maker describes.
+
+Then, to talk:
+
+1. **Watch:** open the contacts and call **AgentX**.
+2. **Watch:** the call ends at once and the watch rings back with your agent's name. Don't tap anything. After a second the call answers by itself.
+3. **Watch:** you hear "You are talking to …" and a beep. Go on as in [Talk](#talk).
+
+Good to know:
+
+- **The number is not a real line.** `+214` is a country code no country uses, so if AgentX can't redirect the call, the network refuses it and nothing is charged.
+- **To turn it off**, open Android settings, then **Apps**, then **Default apps**, and remove AgentX as the call redirecting app. You can delete the contact too.
+- **Only one app can redirect calls.** If another app already does, Android asks whether to replace it.
+
 ## Check it worked
 
 1. **Phone:** open **Talk to AgentX**. The screen shows **Talk to** and your agent's name.
@@ -76,3 +98,5 @@ Good to know:
 - **You hear an error about voice input, such as "Install ffmpeg"** — the computer can't turn speech into text. Set it up as in [What the computer needs for voice](./mobile-chat.md#what-the-computer-needs-for-voice).
 - **You hear "This phone is no longer paired"** — the app's key was removed with `agentx app revoke`. Pair the app again as in [Place reminders › Pair the Android app](./mobile-places.md#pair-the-android-app).
 - **"No agent is online"** — AgentX is not running on the computer, or it is offline. Start it, then tap **Choose another agent** again.
+- **Calling AgentX from the watch shows "number not in service", or the watch never rings back** — AgentX is not the call redirecting app. Open **Talk to AgentX** on the phone: under **Start from the watch** it says whether it is on. Tap **Set up** to ask again.
+- **The watch rings back but the phone opens the Talk to AgentX screen** — the phone did not let AgentX start the call in the background, so the screen started it. The call goes on as usual.

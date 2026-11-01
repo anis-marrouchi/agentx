@@ -1,6 +1,7 @@
 package dev.agentx.phone
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,5 +91,18 @@ class TalkLogicTest {
         assertNull(TalkTarget.fromJson("{\"node\":\"local\"}"))
         assertNull(TalkTarget.fromJson("not json"))
         assertNull(TalkTarget.fromJson(null))
+    }
+
+    @Test
+    fun watchNumberMatchesHoweverTheWatchWritesIt() {
+        assertTrue(WatchNumber.matches("+21400000000"))
+        assertTrue(WatchNumber.matches("+214 00 000 000"))
+        assertTrue(WatchNumber.matches("0021400000000"))
+        assertTrue(WatchNumber.matches("+214-0000-0000"))
+        assertFalse(WatchNumber.matches("21400000000"))
+        assertFalse(WatchNumber.matches("+21612345678"))
+        assertFalse(WatchNumber.matches("+2140000000"))
+        assertFalse(WatchNumber.matches(""))
+        assertFalse(WatchNumber.matches(null))
     }
 }

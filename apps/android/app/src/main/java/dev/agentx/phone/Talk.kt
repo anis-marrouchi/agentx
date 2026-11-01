@@ -23,6 +23,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.telecom.CallAudioState
@@ -56,6 +57,7 @@ import kotlin.math.abs
 // there too), then the answer in the agent's voice (POST
 // /api/app/voice/speak) or the phone's own voice. Hanging up on the watch
 // ends the call. TalkService holds the microphone while the call lasts.
+// Calling the AgentX contact from the watch starts it too (WatchStart.kt).
 
 /** What the call is doing, for the Talk screen and the notification. */
 object TalkState {
@@ -100,12 +102,17 @@ class TalkService : Service() {
         const val ACTION_START = "dev.agentx.phone.talk.START"
         const val ACTION_ANSWER = "dev.agentx.phone.talk.ANSWER"
         const val ACTION_HANG_UP = "dev.agentx.phone.talk.HANG_UP"
+        /** The call was started by dialling AgentX on the watch (#1664). */
+        const val EXTRA_FROM_WATCH = "dev.agentx.phone.talk.FROM_WATCH"
         private const val CHANNEL = "talk"
         private const val ID = 1636
         private const val RING_MS = 45_000L
+        /** After a watch dial: time for Telecom to drop the cancelled SIM call. */
+        private const val WATCH_WAIT_MS = 1500L
+        private const val RING_TRIES = 5
 
-        fun start(ctx: Context) {
-            val i = Intent(ctx, TalkService::class.java).setAction(ACTION_START)
+        fun start(ctx: Context, fromWatch: Boolean = false) {
+            val i = Intent(ctx, TalkService::class.java).setAction(ACTION_START).putExtra(EXTRA_FROM_WATCH, fromWatch)
             if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
         }
 
@@ -149,27 +156,48 @@ class TalkService : Service() {
             ACTION_ANSWER -> { TalkConnection.current?.answerHere(); return START_NOT_STICKY }
             ACTION_HANG_UP -> { hangUp(this); stopSelf(); return START_NOT_STICKY }
         }
-        val n = build(this, getString(R.string.talk_ringing))
-        if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) else startForeground(ID, n)
+        val fromWatch = intent?.getBooleanExtra(EXTRA_FROM_WATCH, false) == true
+        val n = build(this, getString(if (fromWatch) R.string.talk_connecting else R.string.talk_ringing))
+        try {
+            if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) else startForeground(ID, n)
+        } catch (e: SecurityException) {
+            // Android 14+ refuses the microphone to a service started in the background.
+            Log.w("AgentXTalk", "no microphone service", e)
+            TalkState.set(getString(R.string.talk_mic_denied), active = false)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (TalkConnection.current != null) return START_NOT_STICKY
         val target = Prefs(this).talkTarget
         if (target == null) { TalkState.set(getString(R.string.talk_pick_first), active = false); stopSelf(); return START_NOT_STICKY }
-        ring(target)
+        if (fromWatch) {
+            TalkState.set(getString(R.string.talk_connecting), this, active = true)
+            main.postDelayed({ ring(target, true) }, WATCH_WAIT_MS)
+        } else {
+            ring(target, false)
+        }
         return START_NOT_STICKY
     }
 
-    private fun ring(target: TalkTarget) {
+    private fun ring(target: TalkTarget, fromWatch: Boolean, attempt: Int = 1) {
         val telecom = getSystemService(TelecomManager::class.java)
         try {
             TalkAccount.register(this)
             val handle = TalkAccount.handle(this)
             if (Build.VERSION.SDK_INT >= 28 && !telecom.isIncomingCallPermitted(handle)) {
+                // After a watch dial the cancelled SIM call can take a moment to go.
+                if (fromWatch && attempt < RING_TRIES) { main.postDelayed({ ring(target, true, attempt + 1) }, 1000); return }
                 TalkState.set(getString(R.string.talk_busy), active = false)
                 stopSelf()
                 return
             }
-            TalkState.set(getString(R.string.talk_ringing), this, active = true)
-            telecom.addNewIncomingCall(handle, Bundle().apply { putString(TalkConnectionService.EXTRA_TARGET, target.toJson()) })
+            TalkState.set(getString(if (fromWatch) R.string.talk_connecting else R.string.talk_ringing), this, active = true)
+            // Telecom hands the ConnectionService only what is inside EXTRA_INCOMING_CALL_EXTRAS.
+            val extras = Bundle().apply {
+                putString(TalkConnectionService.EXTRA_TARGET, target.toJson())
+                putBoolean(EXTRA_FROM_WATCH, fromWatch)
+            }
+            telecom.addNewIncomingCall(handle, Bundle().apply { putBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS, extras) })
         } catch (e: SecurityException) {
             TalkState.set(getString(R.string.talk_no_calls), active = false)
             stopSelf()
@@ -196,9 +224,13 @@ class TalkConnectionService : ConnectionService() {
     companion object { const val EXTRA_TARGET = "dev.agentx.phone.talk.TARGET" }
 
     override fun onCreateIncomingConnection(account: PhoneAccountHandle?, request: ConnectionRequest?): Connection {
-        val target = TalkTarget.fromJson(request?.extras?.getString(EXTRA_TARGET)) ?: Prefs(this).talkTarget
+        // Ours arrive as the request's extras; read the nested bundle too, in case a phone passes it whole.
+        val outer = request?.extras
+        val extras = outer?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS) ?: outer
+        val target = TalkTarget.fromJson(extras?.getString(EXTRA_TARGET)) ?: Prefs(this).talkTarget
         if (target == null) return Connection.createFailedConnection(DisconnectCause(DisconnectCause.ERROR))
-        return TalkConnection(applicationContext, target).apply { setRinging() }
+        val fromWatch = extras?.getBoolean(TalkService.EXTRA_FROM_WATCH) == true
+        return TalkConnection(applicationContext, target, fromWatch).apply { setRinging() }
     }
 
     override fun onCreateIncomingConnectionFailed(account: PhoneAccountHandle?, request: ConnectionRequest?) {
@@ -208,15 +240,23 @@ class TalkConnectionService : ConnectionService() {
 }
 
 /** One call with the agent. */
-class TalkConnection(private val ctx: Context, private val target: TalkTarget) : Connection() {
+class TalkConnection(private val ctx: Context, private val target: TalkTarget, private val fromWatch: Boolean = false) : Connection() {
     companion object {
         /** The call in progress, for the screen and the notification. */
         @Volatile var current: TalkConnection? = null
+        /** A watch-started call rings this long, then answers by itself. */
+        private const val AUTO_ANSWER_MS = 1000L
+        /** At most one request for the watch route in this time. */
+        private const val REROUTE_MS = 500L
     }
 
     @Volatile private var ended = false
     @Volatile var ringing = true; private set
     private var session: TalkSession? = null
+    /** Null until the call first reaches the watch, then whether it is on it. */
+    @Volatile private var onWatch: Boolean? = null
+    @Volatile private var drops = 0
+    @Volatile private var lastReroute = 0L
 
     init {
         current = this
@@ -224,10 +264,29 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget) :
         audioModeIsVoip = true
         setAddress(TalkAccount.address, TelecomManager.PRESENTATION_ALLOWED)
         setCallerDisplayName(target.name, TelecomManager.PRESENTATION_ALLOWED)
+        // The owner just dialled from the watch: no second tap. Answering from
+        // the app also kept the watch's microphone on the call in the #1664 runs.
+        if (fromWatch) Handler(Looper.getMainLooper()).postDelayed({ if (ringing) answerHere() }, AUTO_ANSWER_MS)
     }
 
     override fun onShowIncomingCallUi() {
-        TalkState.set(ctx.getString(R.string.talk_ringing), ctx, active = true)
+        if (!fromWatch) TalkState.set(ctx.getString(R.string.talk_ringing), ctx, active = true)
+    }
+
+    /** The watch's audio link drops a few times in the first seconds; ask for it back. */
+    @Deprecated("Deprecated in API 34; still called")
+    @Suppress("DEPRECATION")
+    override fun onCallAudioStateChanged(state: CallAudioState?) {
+        state ?: return
+        if (state.route == CallAudioState.ROUTE_BLUETOOTH) { onWatch = true; return }
+        if (onWatch != true || ended) return
+        onWatch = false
+        drops++
+        val now = SystemClock.elapsedRealtime()
+        if (state.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH != 0 && now - lastReroute > REROUTE_MS) {
+            lastReroute = now
+            setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+        }
     }
 
     // The watch's answer button, or the phone's own call screen.
@@ -256,6 +315,7 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget) :
         setDisconnected(DisconnectCause(cause))
         destroy()
         if (current === this) current = null
+        if (drops > 0) Log.i("AgentXTalk", "the watch's audio dropped $drops time(s) during the call")
         TalkState.set(ctx.getString(R.string.talk_ended), active = false)
         ctx.stopService(Intent(ctx, TalkService::class.java))
     }

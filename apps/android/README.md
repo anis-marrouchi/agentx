@@ -57,6 +57,15 @@ How to build, install, pair and use it, step by step:
   watch ends it; a running answer still lands in Chat. `adb logcat -s
   AgentXTalk` names the microphone used per turn. Guide:
   [docs/dashboard/mobile-talk.md](../../docs/dashboard/mobile-talk.md).
+- `WatchRedirectionService` starts the same call from the watch (#1664).
+  The owner saves an AgentX contact with `WatchNumber.NUMBER` (a spare
+  country code, never a real line) and calls it from the watch. With the
+  call-redirect role, the app sees that number before the SIM does,
+  cancels the call and starts `TalkService` while Telecom still has it
+  bound; the ring-back answers by itself after 1 s. When Android refuses
+  the service from the background, the Talk screen opens and starts it.
+  `TalkConnection` asks for the Bluetooth route again when the watch's
+  audio drops (it does a few times in the first seconds).
 
 ## Build
 

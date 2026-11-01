@@ -2,6 +2,7 @@ package dev.agentx.phone
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ShortcutInfo
@@ -26,6 +27,7 @@ class TalkActivity : Activity() {
         /** The launcher icon and the shortcut: start at once when an agent is chosen. */
         const val ACTION_TALK = "dev.agentx.phone.action.TALK"
         private const val REQ_PERMISSIONS = 1
+        private const val REQ_ROLE = 2
 
         /** Long-press the app icon: Talk to <agent>. Kept next to Place reminders. */
         fun shortcut(activity: Activity, target: TalkTarget?): ShortcutInfo? {
@@ -46,7 +48,12 @@ class TalkActivity : Activity() {
     private lateinit var answer: Button
     private lateinit var hangUp: Button
     private lateinit var list: LinearLayout
+    private lateinit var watchTitle: TextView
+    private lateinit var watchText: TextView
+    private lateinit var watchButton: Button
     private var startWhenAllowed = false
+    /** Opened by a watch dial that could not start the call service itself. */
+    private var fromWatch = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,9 +88,13 @@ class TalkActivity : Activity() {
         button(R.string.talk_change) { loadAgents() }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(list)
+        watchTitle = text(getString(R.string.watch_title), android.R.style.TextAppearance_Material_Subhead).apply { setPadding(0, pad, 0, 0) }
+        watchText = text("", android.R.style.TextAppearance_Material_Body1)
+        watchButton = button(R.string.watch_set_up) { setUpWatch() }
         setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(column) })
 
         if (savedInstanceState == null && intent?.action != Intent.ACTION_VIEW) {
+            fromWatch = intent?.getBooleanExtra(TalkService.EXTRA_FROM_WATCH, false) == true
             if (prefs.talkTarget == null) loadAgents() else if (TalkConnection.current == null) begin()
         }
     }
@@ -91,6 +102,7 @@ class TalkActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
+        fromWatch = intent?.getBooleanExtra(TalkService.EXTRA_FROM_WATCH, false) == true
         if (intent?.action != Intent.ACTION_VIEW && prefs.talkTarget != null && TalkConnection.current == null) begin()
     }
 
@@ -115,6 +127,44 @@ class TalkActivity : Activity() {
         start.isEnabled = target != null
         answer.visibility = if (call?.ringing == true) View.VISIBLE else View.GONE
         hangUp.visibility = if (call != null || TalkState.active) View.VISIBLE else View.GONE
+        renderWatch()
+    }
+
+    private fun renderWatch(refused: Boolean = false) {
+        val available = WatchStart.available(this)
+        for (v in listOf(watchTitle, watchText, watchButton)) v.visibility = if (available) View.VISIBLE else View.GONE
+        if (!available) return
+        val on = WatchStart.on(this)
+        val name = prefs.talkTarget?.name ?: getString(R.string.app_name)
+        watchText.text = when {
+            on -> getString(R.string.watch_on, WatchNumber.NUMBER, name)
+            refused -> getString(R.string.watch_role_refused)
+            else -> getString(R.string.watch_off)
+        }
+        watchButton.setText(if (on) R.string.watch_add_contact else R.string.watch_set_up)
+    }
+
+    /** The call-redirect role first, then the contact. */
+    private fun setUpWatch() {
+        if (WatchStart.on(this)) { addContact(); return }
+        val ask = WatchStart.askRole(this) ?: return
+        @Suppress("DEPRECATION")
+        startActivityForResult(ask, REQ_ROLE)
+    }
+
+    private fun addContact() {
+        try {
+            startActivity(WatchStart.contactForm(this))
+        } catch (_: ActivityNotFoundException) {
+            watchText.text = getString(R.string.watch_no_contacts, WatchNumber.NUMBER)
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_ROLE) return
+        if (WatchStart.on(this)) { renderWatch(); addContact() } else renderWatch(refused = true)
     }
 
     /** Microphone, nearby devices (Android 12+) and notifications (13+) first. */
@@ -129,8 +179,9 @@ class TalkActivity : Activity() {
             requestPermissions(missing.toTypedArray(), REQ_PERMISSIONS)
             return
         }
-        TalkState.set(getString(R.string.talk_ringing), active = true)
-        TalkService.start(this)
+        TalkState.set(getString(if (fromWatch) R.string.talk_connecting else R.string.talk_ringing), active = true)
+        TalkService.start(this, fromWatch)
+        fromWatch = false
         render()
     }
 
