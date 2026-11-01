@@ -77,6 +77,38 @@ Each step is one `POST /api/admin/org/chart`; the refusal sentence from
 - A new agent still needs a restart to spawn (`detectAgentRestartFields`
   reports `add/remove`); the success line says so plainly.
 
+### 3b. Projects and departments: one editor each, not a second form
+
+Two other changes add people to `business`, and their editors must live
+in the same Business tab without adding a second form for the same
+record:
+
+- **Projects (#1687).** `business.projects[]` gains three optional fields:
+  `name`, `team: [member]` (`agent:` / `person:` refs) and
+  `lead: person:<id>`. `pm` stays a plain **agent id**: it drives the PM
+  gate and client attribution, so it is not turned into a member ref.
+  The existing project form (`biz-proj`, `POST business/project`, today
+  `id` / `pm` / `client`) becomes the one project editor: it gets a Name
+  field, a **Lead ▾** picker (people only), and a **Team** list with
+  Add / Remove (agents and people). No separate "project team" form.
+- **Departments (#1681 / PR #1684).** `business.departments` carries
+  name, head and members. Same rule: one department editor with Name, a
+  **Head ▾** picker and a **Members** list, in the Business tab next to
+  the org chart editor.
+- **Shared pickers.** Lead, Head, Team and Members use the same member
+  choices as the org chart editor (`choices` from `GET /api/admin/org`,
+  owner only), so nobody types an id. A ref that is not an org member is
+  refused in a plain sentence, the same way `applyOrgEdit` refuses an
+  unknown member.
+- **Removing a member.** `remove-member` already refuses removing a
+  project's PM. Extend the same check to a project's `lead` and a
+  department's `head`; drop the member from `team` / `members` lists in
+  the same write, so no list points at someone who left.
+- **Order of work.** #1687 and #1684 can land first; there is no code
+  overlap with this plan today (#1679 is docs only). Whichever lands
+  second wires its fields into the shared pickers rather than adding its
+  own.
+
 ### 4. No restart
 
 Covered above: copy change plus a test that a `POST /api/admin/org/chart`
@@ -161,6 +193,7 @@ chart by chat" section on `docs/dashboard/org.md`.
 | Pick a new manager, no restart, /org shows the same | (a) §1, §2, §4 |
 | Dotted-line / acts-for add and remove in the same editor | (a) §2 |
 | Add agent here → agent exists and reports to that member | (a) §3 |
+| Project team/lead and department head/members edited in the existing project and department editors, with pickers | (a) §3b |
 | Chat request → one Desk card, nothing written before yes | (b) |
 | Invalid changes refused in a plain sentence, UI and chat | (a) + (b), both via `applyOrgEdit` |
 | Non-owners cannot edit (UI hidden, 403, tool refuses) | (a) + (b) |
