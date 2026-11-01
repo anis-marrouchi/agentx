@@ -180,7 +180,7 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 - **An agent sits at the top although it has a boss:** its boss is not an agent or person here, or the two report to each other. Check with `agentx business relation list`.
 - **A yellow box above the chart says "Problem in the org relations":** a relation names someone who is not in `people` or `business.orgChart`, or breaks a rule. `agentx business relation list` shows the same problem; fix it with `remove`. With the business layer on, the daemon starts without it until it is fixed, and its log says `[business] initialization failed:` with the same problem.
 - **A person's agents do not escalate to them:** that is by design. A problem goes up `reports-to` only between agents, and stops before a person.
-- **"… but "<node>" is not a peer in mesh.peers":** an `agent:<node>/<id>` names a node this machine does not know. Use the peer's `name` exactly as `mesh.peers` writes it, or add the peer first.
+- **`… but "<node>" is not a peer in mesh.peers`:** an `agent:<node>/<id>` names a node this machine does not know. Use the peer's `name` exactly as `mesh.peers` writes it, or add the peer first.
 - **An agent on another node stays grey:** its node does not answer, or does not list that ID. Check the node with `agentx mesh list`, and the agent's ID on that node.
 - **An agent reports to an agent on another node, and its problems go nowhere:** that is by design for now. Escalation stops before an agent on another node.
 - **Every card says "Status unknown":** the daemon is not running, or the dashboard cannot reach it. Run `agentx daemon status`.
