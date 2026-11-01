@@ -2,6 +2,7 @@ package dev.agentx.phone
 
 import android.Manifest
 import android.app.Activity
+import android.app.KeyguardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ShortcutInfo
@@ -10,7 +11,9 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -26,6 +29,8 @@ class TalkActivity : Activity() {
         /** The launcher icon and the shortcut: start at once when an agent is chosen. */
         const val ACTION_TALK = "dev.agentx.phone.action.TALK"
         private const val REQ_PERMISSIONS = 1
+        private const val REQ_WATCH = 2
+        private const val REQ_ROLE = 3
 
         /** Long-press the app icon: Talk to <agent>. Kept next to Place reminders. */
         fun shortcut(activity: Activity, target: TalkTarget?): ShortcutInfo? {
@@ -46,7 +51,16 @@ class TalkActivity : Activity() {
     private lateinit var answer: Button
     private lateinit var hangUp: Button
     private lateinit var list: LinearLayout
+    private lateinit var watchLine: TextView
+    private lateinit var watchSetUp: Button
+    private lateinit var watchContact: Button
+    private lateinit var watchAuto: CheckBox
+    private lateinit var watchOff: Button
     private var startWhenAllowed = false
+    private var setUpWhenAllowed = false
+    /** Opened by a call from the watch, over the lock screen. */
+    private var watchCall = false
+    private var sawCall = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +70,7 @@ class TalkActivity : Activity() {
             finish()
             return
         }
+        if (intent?.action == WatchStart.ACTION_WATCH) showOverLockScreen()
         title = getString(R.string.talk_title)
         val pad = (24 * resources.displayMetrics.density).toInt()
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, pad) }
@@ -81,17 +96,46 @@ class TalkActivity : Activity() {
         button(R.string.talk_change) { loadAgents() }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(list)
+
+        // Start from the watch (#1664): off until the owner sets it up.
+        text(getString(R.string.watch_heading), android.R.style.TextAppearance_Material_Subhead).setPadding(0, pad, 0, pad / 3)
+        watchLine = text("", android.R.style.TextAppearance_Material_Body1)
+        watchSetUp = button(R.string.watch_set_up) { setUpWatch() }
+        watchContact = button(R.string.watch_add_contact) { addContact() }
+        watchAuto = CheckBox(this).apply {
+            setText(R.string.watch_auto_answer)
+            minHeight = (48 * resources.displayMetrics.density).toInt()
+            isChecked = prefs.watchAutoAnswer
+            // Saved at once: a separate Save step was missed in the spike.
+            setOnCheckedChangeListener { _, on -> prefs.watchAutoAnswer = on }
+        }.also { column.addView(it) }
+        watchOff = button(R.string.watch_turn_off) { prefs.watchStartOn = false; renderWatch() }
         setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(column) })
 
         if (savedInstanceState == null && intent?.action != Intent.ACTION_VIEW) {
-            if (prefs.talkTarget == null) loadAgents() else if (TalkConnection.current == null) begin()
+            if (prefs.talkTarget == null) loadAgents() else if (TalkConnection.current == null) begin(fromWatch = watchCall)
         }
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent?.action != Intent.ACTION_VIEW && prefs.talkTarget != null && TalkConnection.current == null) begin()
+        if (intent?.action == WatchStart.ACTION_WATCH) showOverLockScreen()
+        if (intent?.action != Intent.ACTION_VIEW && prefs.talkTarget != null && TalkConnection.current == null) begin(fromWatch = watchCall)
+    }
+
+    /** A watch call opens this screen with the phone in a pocket: show it
+     *  over the lock screen, so the app is in front and keeps the microphone. */
+    private fun showOverLockScreen() {
+        watchCall = true
+        sawCall = false
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        }
     }
 
     override fun onResume() {
@@ -115,27 +159,66 @@ class TalkActivity : Activity() {
         start.isEnabled = target != null
         answer.visibility = if (call?.ringing == true) View.VISIBLE else View.GONE
         hangUp.visibility = if (call != null || TalkState.active) View.VISIBLE else View.GONE
+        renderWatch()
+        // A watch call over the lock screen: once it ends, give the lock screen back.
+        if (call != null) sawCall = true
+        if (watchCall && sawCall && call == null && !TalkState.active &&
+            getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true) finish()
     }
 
-    /** Microphone, nearby devices (Android 12+) and notifications (13+) first. */
-    private fun begin() {
-        if (prefs.talkTarget == null) { loadAgents(); return }
+    private fun renderWatch() {
+        val on = prefs.watchStartOn
+        val held = WatchStart.holdsRole(this)
+        watchLine.text = when {
+            !WatchStart.supported -> getString(R.string.watch_unsupported)
+            on && held -> getString(R.string.watch_on, getString(R.string.watch_contact_name))
+            on -> getString(R.string.watch_role_lost)
+            else -> getString(R.string.watch_off)
+        }
+        watchSetUp.visibility = if (WatchStart.supported && !(on && held)) View.VISIBLE else View.GONE
+        val ready = WatchStart.supported && on && held
+        watchContact.visibility = if (ready) View.VISIBLE else View.GONE
+        watchAuto.visibility = if (ready) View.VISIBLE else View.GONE
+        watchOff.visibility = if (on) View.VISIBLE else View.GONE
+    }
+
+    /** Microphone, nearby devices (Android 12+) and notifications (13+). */
+    private fun missingPermissions(): List<String> {
         val needed = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= 31) needed.add(Manifest.permission.BLUETOOTH_CONNECT)
         if (Build.VERSION.SDK_INT >= 33) needed.add(Manifest.permission.POST_NOTIFICATIONS)
-        val missing = needed.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        return needed.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+    }
+
+    private fun begin(fromWatch: Boolean = false) {
+        if (prefs.talkTarget == null) { loadAgents(); return }
+        val missing = missingPermissions()
         if (missing.isNotEmpty()) {
             startWhenAllowed = true
             requestPermissions(missing.toTypedArray(), REQ_PERMISSIONS)
             return
         }
-        TalkState.set(getString(R.string.talk_ringing), active = true)
-        TalkService.start(this)
+        TalkState.set(getString(if (fromWatch) R.string.talk_ringing_back else R.string.talk_ringing), active = true)
+        try {
+            TalkService.start(this, fromWatch)
+        } catch (e: RuntimeException) {
+            // Shown over the lock screen but not yet in front: ring anyway.
+            if (fromWatch) TalkService.startFromWatch(this) else throw e
+        }
         render()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_WATCH && setUpWhenAllowed) {
+            setUpWhenAllowed = false
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                watchLine.text = getString(R.string.talk_mic_denied)
+                return
+            }
+            setUpWatch()
+            return
+        }
         if (requestCode != REQ_PERMISSIONS || !startWhenAllowed) return
         startWhenAllowed = false
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -144,7 +227,49 @@ class TalkActivity : Activity() {
         }
         // Without nearby devices the call stays on the phone; without
         // notifications there is no Hang up in the shade. Both still work.
-        begin()
+        begin(fromWatch = watchCall)
+    }
+
+    /** Permissions first (a watch call can't ask with the phone in a
+     *  pocket), then Android's call-redirect question, then the contact. */
+    private fun setUpWatch() {
+        if (prefs.talkTarget == null) { watchLine.text = getString(R.string.watch_pick_first); loadAgents(); return }
+        val missing = missingPermissions()
+        if (missing.isNotEmpty()) {
+            setUpWhenAllowed = true
+            requestPermissions(missing.toTypedArray(), REQ_WATCH)
+            return
+        }
+        if (WatchStart.holdsRole(this)) { turnWatchOn(); return }
+        val ask = WatchStart.roleRequest(this)
+        if (ask == null) { watchLine.text = getString(R.string.watch_unsupported); return }
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(ask, REQ_ROLE)
+        } catch (_: Exception) {
+            watchLine.text = getString(R.string.watch_unsupported)
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_ROLE) return
+        if (WatchStart.holdsRole(this)) turnWatchOn() else { renderWatch(); watchLine.text = getString(R.string.watch_role_refused) }
+    }
+
+    private fun turnWatchOn() {
+        val first = !prefs.watchStartOn
+        prefs.watchStartOn = true
+        renderWatch()
+        if (first) addContact()
+    }
+
+    private fun addContact() {
+        try { startActivity(WatchStart.contactIntent(this)) } catch (_: Exception) {
+            watchLine.text = getString(R.string.watch_no_contacts_app, getString(R.string.watch_contact_name), prefs.watchNumber)
+        }
     }
 
     /** The agents online now, one button each. */

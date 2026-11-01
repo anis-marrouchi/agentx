@@ -1,6 +1,7 @@
 package dev.agentx.phone
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,5 +91,34 @@ class TalkLogicTest {
         assertNull(TalkTarget.fromJson("{\"node\":\"local\"}"))
         assertNull(TalkTarget.fromJson("not json"))
         assertNull(TalkTarget.fromJson(null))
+    }
+
+    @Test
+    fun agentNumberMatchesHowEverItIsWritten() {
+        val ours = AgentNumber.DEFAULT
+        assertTrue(AgentNumber.matches("+21400000000", ours))
+        assertTrue(AgentNumber.matches("0021400000000", ours))
+        assertTrue(AgentNumber.matches("+214 00-000 000", ours))
+        assertEquals("+21400000000", AgentNumber.normalise(" 00 214 0000 0000 "))
+    }
+
+    @Test
+    fun otherNumbersAreLeftAlone() {
+        val ours = AgentNumber.DEFAULT
+        // Without the country code it is another number, so it goes out unchanged.
+        assertFalse(AgentNumber.matches("21400000000", ours))
+        assertFalse(AgentNumber.matches("+21400000001", ours))
+        assertFalse(AgentNumber.matches("112", ours))
+        assertFalse(AgentNumber.matches("", ours))
+        assertFalse(AgentNumber.matches(null, ours))
+        // Short numbers never match, even an equally short "ours".
+        assertFalse(AgentNumber.matches("+123", "+123"))
+    }
+
+    @Test
+    fun maskedNumbersKeepOnlyTheLastDigits() {
+        assertEquals("…567", AgentNumber.masked("+44 1234 567"))
+        assertEquals("…", AgentNumber.masked("112"))
+        assertEquals("?", AgentNumber.masked(null))
     }
 }

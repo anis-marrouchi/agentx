@@ -230,7 +230,9 @@ async function startTurn(res: ServerResponse, body: Record<string, unknown>, dev
   turn.attach(res)
   try {
     const spoken = body.spoken === true
-    const out = await relayTurn(deps.daemon, { node, agent, message, chatId: `app:${id}`, spoken }, turn.ac.signal, (e, d) => turn.broadcast(e, d))
+    // Only a spoken turn can be a call; Chat stores `message` unchanged.
+    const call = spoken && body.call === "watch" ? "watch" as const : undefined
+    const out = await relayTurn(deps.daemon, { node, agent, message, chatId: `app:${id}`, spoken, ...(call ? { call } : {}) },turn.ac.signal, (e, d) => turn.broadcast(e, d))
     if (turn.orphaned) {
       out.error = `Stopped: the phone was away for more than ${Math.round((deps.orphanLimitMs ?? ORPHAN_LIMIT_MS) / 60_000)} minutes.`
       void cancelRuns(conv, deps, device.name)

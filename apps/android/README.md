@@ -57,6 +57,19 @@ How to build, install, pair and use it, step by step:
   watch ends it; a running answer still lands in Chat. `adb logcat -s
   AgentXTalk` names the microphone used per turn. Guide:
   [docs/dashboard/mobile-talk.md](../../docs/dashboard/mobile-talk.md).
+- **Start from your watch** (#1664), Android 10+, off until set up on the
+  Talk screen: the owner makes the app the call redirect app and saves an
+  `AgentX` contact (`AgentNumber.DEFAULT`, `+21400000000`, a spare country
+  code). `WatchRedirectionService` sees each call the phone places, the
+  watch's too: it cancels the one to that number and opens `TalkActivity`
+  over the lock screen (an app whose CallRedirectionService is bound may
+  start an activity from the background), which rings the watch back. Every
+  other number goes out unchanged at once. With the screen in front the
+  microphone is not muted, which the spike showed is required. The ring-back
+  is answered by the app after 1 s (`watchAutoAnswer`, on by default), and
+  the first turn sends `call: "watch"`, so the computer tells the agent it
+  is on a live call. If the screen can't open, it rings from the background
+  and holds the microphone service once answered.
 
 ## Build
 

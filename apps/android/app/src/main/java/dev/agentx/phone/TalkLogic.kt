@@ -19,6 +19,40 @@ data class TalkTarget(val node: String, val agent: String, val name: String) {
     }
 }
 
+/**
+ * The number the watch dials to start a call (#1664). It never reaches a
+ * real line: the app cancels the call before the SIM places it, and +214 is
+ * a spare ITU country code, so even a call that slipped through would be
+ * refused by the network without connecting.
+ */
+object AgentNumber {
+    const val DEFAULT = "+21400000000"
+
+    /** "+", then digits; a leading 00 counts as +. Spaces, dashes and the rest go. */
+    fun normalise(raw: String): String {
+        val t = raw.trim()
+        val digits = t.filter { it.isDigit() }
+        return when {
+            t.startsWith("+") -> "+$digits"
+            digits.startsWith("00") -> "+" + digits.substring(2)
+            else -> digits
+        }
+    }
+
+    /** Whether [dialed] (the number Telecom passes) is ours. Short numbers never are. */
+    fun matches(dialed: String?, ours: String): Boolean {
+        if (dialed.isNullOrBlank()) return false
+        val a = normalise(dialed)
+        return a.length >= 6 && a == normalise(ours)
+    }
+
+    /** For the log: the last 3 digits only, so other people's numbers stay out of it. */
+    fun masked(number: String?): String {
+        val d = number?.filter { it.isDigit() } ?: return "?"
+        return if (d.length <= 3) "…" else "…" + d.takeLast(3)
+    }
+}
+
 /** 16-bit mono PCM as a WAV file, which /api/app/voice/transcribe takes. */
 object Wav {
     fun encode(pcm: ShortArray, rate: Int): ByteArray {

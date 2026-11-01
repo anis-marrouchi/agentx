@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 880" width="920" height="880" role="img" aria-labelledby="t d" style="--cycle:4.9s">
 <title id="t">How you talk to an agent on your watch</title>
-<desc id="d">Seven steps in two parts. You start it on the phone: pair the watch with the phone as a headset, choose the agent once, then tap Talk to AgentX. Then the watch, the phone and the computer take turns: the watch rings and you answer on it, you speak after the beep, the phone sends the recording to your computer, which writes it down and asks the agent, and the answer is spoken on the watch. It goes on until you hang up on the watch. Hanging up while the agent works does not stop it: the answer is kept in the phone app's Chat.</desc>
+<desc id="d">Seven steps in two parts. You start it: pair the watch with the phone as a headset, choose the agent once, then tap Talk to AgentX on the phone, or call the AgentX contact from the watch. Then the watch, the phone and the computer take turns: the watch rings and you answer on it, you speak after the beep, the phone sends the recording to your computer, which writes it down and asks the agent, and the answer is spoken on the watch. It goes on until you hang up on the watch. Hanging up while the agent works does not stop it: the answer is kept in the phone app's Chat.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
@@ -35,11 +35,11 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 </style>
 <rect width="920" height="880" rx="24" fill="#FFFFFF"/>
 <text x="44" y="56" class="h1" text-anchor="start">How you talk to an agent on your watch</text>
-<text x="44" y="82" class="sub" text-anchor="start">The phone rings the watch, like a call. No phone number, no call cost.</text>
+<text x="44" y="82" class="sub" text-anchor="start">The phone rings the watch, like a call. No phone call is made, no call cost.</text>
 <circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You</text>
 <circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">Your phone and computer</text>
 <rect x="20" y="104" width="880" height="200" rx="20" fill="#F3F7FF"/>
-<text x="44" y="132" class="band" text-anchor="start">YOU START IT ON THE PHONE</text>
+<text x="44" y="132" class="band" text-anchor="start">YOU START IT</text>
 <g class="rise" style="animation-delay:0.32s">
 <rect x="44" y="148" width="264" height="136" rx="14" class="card accent"/>
 <circle cx="70" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:4.94s"/>
@@ -65,10 +65,10 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="638" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:6.34s"/>
 <circle cx="638" cy="176" r="15" fill="#1A66FF"/>
 <text x="638" y="181" class="num" text-anchor="middle">3</text>
-<text x="628" y="220" class="title" text-anchor="start">Tap Talk to</text>
-<text x="628" y="241" class="title" text-anchor="start">AgentX</text>
-<text x="628" y="263" class="note" text-anchor="start">its icon, or long-press</text>
-<text x="628" y="280" class="note" text-anchor="start">the AgentX icon</text>
+<text x="628" y="220" class="title" text-anchor="start">Tap Talk to AgentX,</text>
+<text x="628" y="241" class="title" text-anchor="start">or call it on the watch</text>
+<text x="628" y="263" class="note" text-anchor="start">the AgentX contact;</text>
+<text x="628" y="280" class="note" text-anchor="start">no phone call is made</text>
 </g>
 <g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
 <rect x="20" y="320" width="880" height="372" rx="20" fill="#F6F7F9"/>

@@ -11,24 +11,24 @@ const d = createDiagram({
   height: 880,
   title: "How you talk to an agent on your watch",
   desc:
-    "Seven steps in two parts. You start it on the phone: pair the watch with the phone as a headset, choose the agent once, then tap Talk to AgentX. " +
+    "Seven steps in two parts. You start it: pair the watch with the phone as a headset, choose the agent once, then tap Talk to AgentX on the phone, or call the AgentX contact from the watch. " +
     "Then the watch, the phone and the computer take turns: the watch rings and you answer on it, you speak after the beep, the phone sends the recording to your computer, which writes it down and asks the agent, " +
     "and the answer is spoken on the watch. It goes on until you hang up on the watch. Hanging up while the agent works does not stop it: the answer is kept in the phone app's Chat.",
 })
 
-d.header("How you talk to an agent on your watch", "The phone rings the watch, like a call. No phone number, no call cost.", [
+d.header("How you talk to an agent on your watch", "The phone rings the watch, like a call. No phone call is made, no call cost.", [
   [C.accent, "You"],
   [C.ink, "Your phone and computer"],
 ])
 
 // Part 1: the owner starts it.
 let y = 148
-d.band(104, ROW + 64, "YOU START IT ON THE PHONE")
+d.band(104, ROW + 64, "YOU START IT")
 const start = d.row(
   [
     { title: ["Pair the watch", "with the phone"], note: ["as a headset, as for", "phone calls"] },
     { title: ["Choose the agent"], note: ["once; the phone", "remembers it"] },
-    { title: ["Tap Talk to", "AgentX"], note: ["its icon, or long-press", "the AgentX icon"] },
+    { title: ["Tap Talk to AgentX,", "or call it on the watch"], note: ["the AgentX contact;", "no phone call is made"] },
   ],
   y,
   { who: "accent" },
