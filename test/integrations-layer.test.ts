@@ -273,6 +273,9 @@ describe("named reads", () => {
     }
     const ok = buildReadUrl(FAKE, insights, { page: "a.b" }, {})
     expect(ok.ok && ok.url.toString()).toBe("https://api.fake.test/v1/a.b/insights")
+    // A read whose own path climbs out of the base path is refused too.
+    const climbs = { description: "Climbs.", path: "/../admin", params: {} }
+    expect(buildReadUrl(FAKE, climbs, {}, {})).toMatchObject({ ok: false, error: expect.stringContaining("left the provider") })
     expect(buildReadUrl(FAKE, read, { metric: "views", since: "yesterday" }, { accountId: "42" })).toMatchObject({ ok: false })
     expect(buildReadUrl(FAKE, read, {}, { accountId: "42" })).toMatchObject({ ok: false, error: expect.stringContaining('"metric" is required') })
   })
