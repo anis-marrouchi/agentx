@@ -2132,8 +2132,38 @@ describe("The Org page on the Wall (#1419)", () => {
     await w.settle()
     const html = w.el("wall-org").innerHTML
     expect(html).toContain('id="wog-chart"')
-    expect(html).not.toContain("data-org-view")
+    expect(html).not.toContain('data-org-view="dept"')
+    expect(html).toContain('data-org-view="chart" aria-pressed="true"')
     expect(html).not.toContain("wod__box")
+  })
+
+  it("switches to Projects: each project with its lead, PM and team, and who is in none (#1687)", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" }, bob: { name: "Bob" }, cid: { name: "Cid" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" }, bob: { reportsTo: "person:sam" }, cid: { reportsTo: "ann" } },
+        projects: [{ id: "demo/site", name: "Demo site", pm: "ann", lead: "person:sam", team: ["cid"] }, { id: "demo/app", pm: "ann" }],
+      },
+    }, {}, null) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    expect(w.el("wall-org").innerHTML).toContain('data-org-view="projects" aria-pressed="false"')
+    w.click({ "data-org-view": "projects" })
+    const html = w.el("wall-org").innerHTML
+    expect(html).toContain('data-org-view="projects" aria-pressed="true"')
+    expect(html).not.toContain("wog-chart")
+    const box = /<section class="opj" data-project="demo\/site"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ""
+    expect(box).toContain(">Demo site</h3>")
+    expect(box).toMatch(/<span class="opj-role">Lead<\/span><b class="opj-name">Sam Demo<\/b>/)
+    expect(box).toMatch(/<span class="opj-role">PM<\/span><b class="opj-name">Ann<\/b>/)
+    expect(box).toContain('data-member="agent:cid"')
+    // Only a PM: the project shows with an empty team.
+    expect(/<section class="opj" data-project="demo\/app"[\s\S]*?<\/section>/.exec(html)?.[0]).toContain("No team yet.")
+    expect(html).toMatch(/Not in a project · 1<\/h3>[\s\S]*data-member="agent:bob"/)
+    expect(html).toContain('href="/org?view=projects">Open the org chart</a>')
+    w.click({ "data-org-view": "chart" })
+    expect(w.el("wall-org").innerHTML).toContain("wog-chart")
   })
 
   it("shows dotted lines on request, and folds a branch", async () => {

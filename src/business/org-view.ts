@@ -2,6 +2,7 @@ import type { AgentHold } from "@/agents/holds"
 import { meshPeerNames, orgRelations, parseMember, relationsProblem, remoteAgent, type OrgRelation } from "./relations"
 import { layoutOrg, type OrgPlacement } from "./org-layout"
 import { departmentBoxes, departmentsProblem, orgDepartments, type DepartmentBox, type OrgDepartment, type Outsider } from "./departments"
+import { orgProjects, projectsProblem } from "./org-projects"
 
 // --- The Org view's data (#1169), from agentx.json, the holds and the daemon ---
 //
@@ -86,10 +87,35 @@ export interface OrgView {
   /** Agents on mesh peers: `live` false when the daemon gave no peer list,
    *  `others` the agents peers host that no relation or department places. */
   mesh: { live: boolean; others: MeshAgent[] }
+  /** The Projects view (#1687): each project with its lead, PM and team. */
+  projects: OrgProjectView[]
+  /** Chart members on no project as PM, lead or team (#1687). */
+  notInProject: OrgProjectCard[]
   /** What is wrong with the relations, when something is; the daemon refuses
    *  to start the business layer on it. Else what is wrong with the
-   *  departments, which only the chart shows. */
+   *  departments or the projects' lead and team, which only the page shows. */
   problem?: string
+}
+
+/** One member's card on the Projects view (#1687). */
+export interface OrgProjectCard {
+  key: string
+  kind: "agent" | "person"
+  id: string
+  name: string
+  title?: string
+  status?: OrgStatus
+}
+
+/** One project on the Projects view (#1687). An unknown id leaves no card;
+ *  `problem` names it. The team leaves out the lead and the PM, shown above it. */
+export interface OrgProjectView {
+  id: string
+  name: string
+  client: string
+  lead?: OrgProjectCard
+  pm?: OrgProjectCard
+  team: OrgProjectCard[]
 }
 
 const JOB_MAX = 140
@@ -107,7 +133,7 @@ export function buildOrgView(
     agents?: Record<string, any>
     people?: Array<{ id: string; name?: string; role?: string }>
     mesh?: { peers?: Array<{ name: string }> }
-    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; orgPeople?: Record<string, any>; relations?: any[]; departments?: Record<string, any> }
+    business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; orgPeople?: Record<string, any>; relations?: any[]; departments?: Record<string, any>; projects?: any[] }
   },
   holds: Record<string, AgentHold>,
   live: Array<{ id: string; active?: number }> | null,
@@ -178,7 +204,8 @@ export function buildOrgView(
   const departments = orgDepartments(config.business)
   const known = [new Set(Object.keys(chart)), new Set(people.map((p) => p.id)), meshPeerNames(config)] as const
   const outsiders = new Map(people.flatMap((p) => (p.outsider ? [[p.id, { name: p.name, role: p.outsider }] as const] : [])))
-  const problem = relationsProblem(relations, ...known) ?? departmentsProblem(departments, ...known, outsiders)
+  const list = orgProjects(config.business)
+  const problem = relationsProblem(relations, ...known) ?? departmentsProblem(departments, ...known, outsiders) ?? projectsProblem(list, known[0], known[1])
   const diagram = orgDiagram(nodes, config.people ?? [], people, relations, departments, mesh)
   // People first, then agents, each by name; agents outside the chart last.
   const everyone = [...diagram.boxes].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "person" ? -1 : 1))
@@ -188,7 +215,8 @@ export function buildOrgView(
   const others = (mesh ?? []).flatMap((p) => (p.skills ?? []).filter((s) => s?.id && !placedRemote.has(`${p.peer}/${s.id}`))
     .map((s) => ({ node: p.peer, id: s.id, name: s.name || s.id, healthy: p.healthy })))
     .sort((a, b) => a.node.localeCompare(b.node) || a.name.localeCompare(b.name))
-  return { roots, outside, live: live !== null, people, relations, departments, byDepartment, diagram, mesh: { live: mesh !== null, others }, ...(problem ? { problem } : {}) }
+  const { projects, notInProject } = projectsView(list, diagram, [...nodes.values(), ...outside], config.people ?? [], people)
+  return { roots, outside, live: live !== null, people, relations, departments, byDepartment, diagram, mesh: { live: mesh !== null, others }, projects, notInProject, ...(problem ? { problem } : {}) }
 }
 
 /** The card of `agent:<node>/<id>` from the mesh peers' last answers. */
@@ -199,6 +227,44 @@ function remoteCard(key: string, mesh: MeshPeerSeen[] | null): Omit<OrgBox, keyo
   const skill = peer?.skills?.find((s) => s?.id === r.id)
   const seen: RemoteSeen["seen"] = !skill ? "unseen" : peer!.healthy ? "up" : "down"
   return { kind: "agent", id: `${r.node}/${r.id}`, name: skill?.name || r.id, remote: { node: r.node, agent: r.id, seen } }
+}
+
+/** The Projects view (#1687): cards from the chart when the member has one,
+ *  else from the agents and people lists. Members in no project are the
+ *  chart's cards that no project names. */
+function projectsView(
+  list: ReturnType<typeof orgProjects>,
+  diagram: OrgDiagram,
+  agents: OrgNode[],
+  people: Array<{ id: string; name?: string; role?: string }>,
+  listed: OrgView["people"],
+): Pick<OrgView, "projects" | "notInProject"> {
+  const boxes = new Map(diagram.boxes.map((b) => [b.key, b]))
+  const agentOf = new Map(agents.map((n) => [n.id, n]))
+  const cardOf = (key: string): OrgProjectCard | undefined => {
+    const b = boxes.get(key)
+    if (b) return { key, kind: b.kind, id: b.id, name: b.name, ...(b.title ? { title: b.title } : {}), ...(b.status ? { status: b.status } : {}) }
+    const m = parseMember(key)
+    if (m.kind === "agent") {
+      const n = agentOf.get(m.id)
+      return n ? { key, kind: "agent", id: n.id, name: n.name, ...(n.title ? { title: n.title } : {}), status: n.status } : undefined
+    }
+    const p = people.find((x) => x.id === m.id)
+    if (!p) return undefined
+    const title = listed.find((x) => x.id === m.id)?.title ?? PERSON_TITLE[p.role ?? ""]
+    return { key, kind: "person", id: p.id, name: p.name || p.id, ...(title ? { title } : {}) }
+  }
+  const named = new Set<string>()
+  const projects = list.map((p) => {
+    const lead = p.lead ? cardOf(p.lead) : undefined
+    const pm = p.pm ? cardOf(p.pm) : undefined
+    for (const k of [p.lead, p.pm, ...p.team]) if (k) named.add(k)
+    const team = p.team.filter((k) => k !== p.lead && k !== p.pm).map(cardOf).filter((c): c is OrgProjectCard => !!c)
+    return { id: p.id, name: p.name, client: p.client, ...(lead ? { lead } : {}), ...(pm ? { pm } : {}), team }
+  })
+  const notInProject = diagram.boxes.filter((b) => !named.has(b.key)).map((b) => cardOf(b.key)!)
+    .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "person" ? -1 : 1) || a.name.localeCompare(b.name))
+  return { projects, notInProject }
 }
 
 const PERSON_TITLE: Record<string, string> = { owner: "Owner" }

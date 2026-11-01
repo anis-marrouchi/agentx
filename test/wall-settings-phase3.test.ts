@@ -148,6 +148,21 @@ describe("Hub Settings: Business (#1428 phase 3)", () => {
   })
 })
 
+describe("Hub Settings: a project's name, lead and team (#1687)", () => {
+  it("sends them only when filled, so a blank keeps what is saved", async () => {
+    const w = open("business", undefined, true)
+    await w.settle()
+    expect(settingsHtml(w)).toContain('id="st-bp-team"')
+    fill(w, { "st-bp-id": "example/app", "st-bp-pm": "cx", "st-bp-client": "", "st-bp-name": "Example app", "st-bp-lead": "person:sam", "st-bp-team": "ops, person:kim" })
+    await w.submit({ "data-st-form": "biz-proj" })
+    expect(w.writes()[0]).toEqual({ url: "/api/admin/wall/settings/business/project", method: "POST",
+      body: { id: "example/app", pm: "cx", client: "", name: "Example app", lead: "person:sam", team: ["ops", "person:kim"] } })
+    fill(w, { "st-bp-id": "example/app", "st-bp-pm": "cx", "st-bp-client": "", "st-bp-name": "", "st-bp-lead": "", "st-bp-team": "" })
+    await w.submit({ "data-st-form": "biz-proj" })
+    expect(w.writes()[1].body).toEqual({ id: "example/app", pm: "cx", client: "" })
+  })
+})
+
 describe("Hub Settings: Boards (#1428 phase 3)", () => {
   it("lists boards, fills the form to edit one, adds and removes a column, and shows an error", async () => {
     const w = open("boards", refuse("boards", "at least one project path required"))

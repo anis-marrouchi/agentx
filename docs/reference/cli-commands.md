@@ -2960,7 +2960,7 @@ No flags.
 
 ### `agentx business project`
 
-Manage business.projects — id, pm, client.
+Manage business.projects — id, pm, client, name, lead, team. See [Org › See who runs each project](../dashboard/org.md#see-who-runs-each-project).
 
 ### `agentx business project list`
 
@@ -2976,12 +2976,29 @@ Add or update a project entry.
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--pm <agentId>` | — | PM responsible for this project (drives PM gate). |
+| `--pm <agentId>` | — | PM agent responsible for this project (drives PM gate). |
 | `--client <name>` | — | Client this project belongs to (drives activity-graph attribution). |
+| `--name <name>` | the id | Display name on the Org page. |
+| `--lead <personId>` | — | The person who leads it, `person:<id>`. A bare id is read as a person. |
+| `--team <members>` | — | Who works on it, comma separated: `agent:<id>`, `person:<id>` or a bare agent id. Replaces the team; `--team ""` clears it. |
+
+Refused, and nothing saved, when the lead or a team member is unknown.
 
 ### `agentx business project remove <id>`
 
 Remove a project entry.
+
+No flags.
+
+### `agentx business project team add <id> <member>`
+
+Put one member on the project's team: `agent:<id>`, `person:<id>` or a bare agent id. Refused when the member is unknown.
+
+No flags.
+
+### `agentx business project team remove <id> <member>`
+
+Take one member off the project's team. Alias: `rm`.
 
 No flags.
 

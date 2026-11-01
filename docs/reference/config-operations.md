@@ -161,7 +161,7 @@ An experimental layer that runs agents like a team, with roles, working hours an
 | `business.relations` | list of objects | `[]` | Typed links between org members, people included. See below. |
 | `business.orgPeople` | map of objects | `{}` | People placed in the org chart, keyed by an id from `people`, each with an optional `role` (a role id from `business.roles`). A person named in `business.relations` is in the chart without an entry here. Set from [Edit the org chart](../dashboard/org.md#edit-the-org-chart) on `/org`. |
 | `business.departments` | map of objects | `{}` | Named groups of org members, keyed by department id: an optional `name` (the id when unset), an optional `head` and `members`, written like relations (`agent:<id>`, `person:<id>`). A member is in one department at most. They group cards on the chart and change no reporting line. See [Group members into a department](../dashboard/org.md#group-members-into-a-department). |
-| `business.projects` | list of objects | `[]` | Projects, with an optional project manager and client. |
+| `business.projects` | list of objects | `[]` | Projects, with an optional project manager, client, name, lead and team. See [See who runs each project](../dashboard/org.md#see-who-runs-each-project). |
 | `business.contactMap` | list of objects | `[]` | Maps a chat or sender to a client and project, so the activity view credits the right client. |
 | `business.clients` | map of objects | `{}` | Per-client overrides, keyed by client id. Clients are otherwise worked out from `projects` and `contactMap`. |
 | `business.workTickMinutes` | number (1–60) | `15` | How often, in minutes during working hours, agents are asked to pick up work. |
@@ -224,6 +224,9 @@ Each entry in `business.projects`:
 | `id` | string | required | Project id, for example `group/project`. |
 | `pm` | string | — | Agent id of the project manager. |
 | `client` | string | — | Client the project belongs to. Defaults to the part of `id` before the first `/`. |
+| `name` | string | the `id` | Name shown on the Org page's Projects view. |
+| `lead` | string | — | The person who leads the project, `person:<id>`. A bare id is read as a person. Shown on the Org page only; `pm` stays the agent. |
+| `team` | list of strings | — | Who works on the project: `agent:<id>`, `person:<id>`, or a bare agent id. Shown on the Org page only; one member can be on several projects. |
 
 Each entry in `business.contactMap` (the first match wins: `chatId`, then `username`, then `channel`):
 

@@ -741,6 +741,7 @@ const ADMIN_PAGE_BODY = `
       <div id="business-project-list"></div>
       <details class="add-form" style="margin-top:10px">
         <summary class="primary">+ Add or update project</summary>
+        <p class="hint" style="margin:8px 0 0">To change a project, press its <b>Edit</b> button: the form fills with what is saved. A blank name, lead or team clears it.</p>
         <div style="margin-top:10px">
           <label>Project id<span class="hint">(<code>owner/repo</code> for GitLab/GitHub; stable string for internal projects)</span></label>
           <input id="bp-id" placeholder="globex/system" />
@@ -748,6 +749,12 @@ const ADMIN_PAGE_BODY = `
           <input id="bp-pm" placeholder="pm-globex" />
           <label>Client <span class="hint">(used by the activity graph to attribute traffic)</span></label>
           <input id="bp-client" placeholder="globex" />
+          <label>Name <span class="hint">(shown on the Org page; leave blank to use the id)</span></label>
+          <input id="bp-name" placeholder="Globex website" />
+          <label>Lead <span class="hint">(the person who leads it: <code>person:&lt;id&gt;</code>; the PM stays the agent)</span></label>
+          <input id="bp-lead" placeholder="person:sam" />
+          <label>Team <span class="hint">(who works on it, comma separated: <code>agent:&lt;id&gt;</code>, <code>person:&lt;id&gt;</code> or a bare agent id; blank clears it)</span></label>
+          <input id="bp-team" placeholder="agent:dev-globex, person:kim" />
           <div class="actions"><button class="primary" onclick="upsertProject()">Save project</button><div id="bp-msg" class="msg"></div></div>
         </div>
       </details>
@@ -1601,8 +1608,12 @@ function renderBusiness() {
       pl.innerHTML = projects.map(function(p){
         const pm = p.pm ? '<span style="font-size:11px;color:var(--ax-muted)">pm=' + escapeHtml(p.pm) + '</span>' : '';
         const client = p.client ? '<span style="font-size:11px;color:var(--ax-muted)">client=' + escapeHtml(p.client) + '</span>' : '';
+        const name = p.name && p.name !== p.id ? '<b style="font-size:12px">' + escapeHtml(p.name) + '</b>' : '';
+        const lead = p.lead ? '<span style="font-size:11px;color:var(--ax-muted)">lead=' + escapeHtml(p.lead) + '</span>' : '';
+        const team = p.team && p.team.length ? '<span style="font-size:11px;color:var(--ax-muted)">team=' + escapeHtml(p.team.join(', ')) + '</span>' : '';
         return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:5px">' +
-          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><code style="font-size:12px">' + escapeHtml(p.id) + '</code>' + pm + client + '</div>' +
+          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' + name + '<code style="font-size:12px">' + escapeHtml(p.id) + '</code>' + pm + lead + client + team + '</div>' +
+          '<button class="ghost" data-act="biz-proj-edit" data-id="' + escapeHtml(p.id) + '">Edit</button>' +
           '<button class="ghost danger" data-act="biz-proj-rm" data-id="' + escapeHtml(p.id) + '">Remove</button>' +
         '</div>';
       }).join('');
@@ -1673,6 +1684,15 @@ function wireBusinessHandlers() {
       if (!confirm('Remove org-chart entry for ' + agentId + '?')) return;
       try { await req('DELETE', '/api/admin/business/orgchart', { agentId }); await load(); }
       catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'biz-proj-edit') {
+      // Fill the form with the saved project, so Save keeps what is not changed (#1687).
+      const id = t.getAttribute('data-id');
+      const p = ((state.business && state.business.projects) || []).find(function(x){ return x.id === id; });
+      if (!p) return;
+      $('bp-id').value = p.id; $('bp-pm').value = p.pm || ''; $('bp-client').value = p.client || '';
+      $('bp-name').value = p.name || ''; $('bp-lead').value = p.lead || ''; $('bp-team').value = (p.team || []).join(', ');
+      const box = $('bp-id').closest('details'); if (box) box.open = true;
+      $('bp-id').focus();
     } else if (act === 'biz-proj-rm') {
       const id = t.getAttribute('data-id');
       if (!confirm('Remove project ' + id + '?')) return;
@@ -1735,9 +1755,12 @@ window.upsertProject = async function() {
   const id = $('bp-id').value.trim();
   const pm = $('bp-pm').value.trim();
   const client = $('bp-client').value.trim();
+  const name = $('bp-name').value.trim();
+  const lead = $('bp-lead').value.trim();
+  const team = $('bp-team').value.split(',').map(function(x){ return x.trim(); }).filter(Boolean);
   try {
-    await req('POST', '/api/admin/business/project', { id, pm, client });
-    $('bp-id').value = ''; $('bp-pm').value = ''; $('bp-client').value = '';
+    await req('POST', '/api/admin/business/project', { id, pm, client, name, lead, team });
+    ['bp-id', 'bp-pm', 'bp-client', 'bp-name', 'bp-lead', 'bp-team'].forEach(function(k){ $(k).value = ''; });
     showMsg($('bp-msg'), 'ok', 'Project saved');
     await load();
   } catch (e) { showMsg($('bp-msg'), 'err', e.message); }

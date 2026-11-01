@@ -146,6 +146,42 @@ An agent that runs on another AgentX node of your mesh can sit in your chart too
    The card has no status dot and no Pause button, and selecting it opens nothing: that node runs the agent. The counts beside the chart give **Other nodes** apart from **Agents**.
 5. **Browser:** under the chart, **On other nodes, not placed yet** lists every agent your peers host that the chart does not place yet, by node. On `/org` the same list gives each one's `agent:<node>/<id>` to copy.
 
+## See who runs each project
+
+The **Projects** view shows each project with the people and agents on it: who manages it at the top, and the team under them. It sits next to the chart: pick **Chart** or **Projects** at the top of the Org page.
+
+Each project can have three kinds of member:
+
+- **PM**: the agent that manages the project. This is the `pm` you already set; it still decides which agent gets the project's work.
+- **Lead**: optional, the person who leads the project, written `person:<id>`.
+- **Team**: optional, everyone else who works on it, people or agents. One member can be on several projects.
+
+![The Projects view on the Org page](/screenshots/org/projects-desktop.png)
+
+1. **Terminal:** give a project a name, a lead and a team. `globex/site`, `pm-globex`, `dev-globex`, `sam` and `kim` are examples; use your own IDs:
+
+   ```sh
+   agentx business project add globex/site --pm pm-globex --name "Globex website" --lead person:sam --team dev-globex,person:kim
+   ```
+
+2. **Terminal:** to add or remove one team member later, run `agentx business project team add globex/site person:lee` or `agentx business project team remove globex/site person:lee`.
+3. **Browser:** or, in **Settings**, open **Business**, then **Projects**. Click **Edit** on the project, fill in **Name**, **Lead** and **Team**, then click **Save project**.
+4. **Browser:** on the Hub, select **Org**, then **Projects**. Each project is a dashed box with its client and name on top, the **Lead** and **PM** cards under them, then the team. On the `/org` page, click **Projects** next to **Chart**. The address ends with `?view=projects`, so you can bookmark it.
+
+Members who are on no project are listed at the end under **Not in a project**. A project with only a PM still shows, with **No team yet.** On a phone the boxes sit one under the other.
+
+![The Projects view on a phone](/screenshots/org/projects-phone.png)
+
+The same fields in `agentx.json`, under `business.projects`:
+
+```json
+"projects": [
+  { "id": "globex/site", "pm": "pm-globex", "name": "Globex website", "lead": "person:sam", "team": ["agent:dev-globex", "person:kim"] }
+]
+```
+
+A team member or lead that is not in `business.orgChart` or `people` shows above the page as **Problem in the org chart** and gets no card. The daemon still starts. The command and the Settings form refuse it before saving.
+
 ## What each card shows on the `/org` page
 
 | Status | What it means |
@@ -184,7 +220,8 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 1. **Browser:** on the Hub, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each owner or member a relation names, is a card one row under its boss, joined to it by a solid line. On `/org`, each agent is a card under its boss.
 2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
 3. Click **Resume**. The card says **Idle** again.
-4. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
+4. Select **Projects**. Each project in `business.projects` is a box with its PM card, and its lead and team when you set them.
+5. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
 
 ## If something is wrong
 
@@ -196,6 +233,8 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 - **`… but "<node>" is not a peer in mesh.peers`:** an `agent:<node>/<id>` names a node this machine does not know. Use the peer's `name` exactly as `mesh.peers` writes it, or add the peer first.
 - **An agent on another node stays grey:** its node does not answer, or does not list that ID. Check the node with `agentx mesh list`, and the agent's ID on that node.
 - **An agent reports to an agent on another node, and its problems go nowhere:** that is by design for now. Escalation stops before an agent on another node.
+- **A project's team is empty although you set one:** the members are not in `business.orgChart` or `people`. The line **Problem in the org chart** names the first one. Fix the ID, or add the member first.
+- **The lead shows as a problem "a lead is a person":** `lead` takes a person, `person:<id>`. The agent that manages the project goes in `pm`.
 - **Every card says "Status unknown":** the daemon is not running, or the dashboard cannot reach it. Run `agentx daemon status`.
 - **`agentx business orgchart add` ran, but saving any setting now fails with `business.mainChannel: Required`:** you turned `business.enabled` on. The business layer needs a chat to post to; set `business.mainChannel`, or turn it off again.
 - **A new agent still does nothing after your yes:** it was added while the daemon was running. Run `agentx daemon restart`.

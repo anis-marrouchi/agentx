@@ -160,9 +160,10 @@ describe("the /org page (#1681)", () => {
     deptViewHtml: (by: any, cardOf: (k: string) => string, esc: (s: string) => string) => string
   }
 
-  it("has a Departments / Chart switch, hidden until there are departments", () => {
+  it("has a Departments / Chart / Projects switch; Departments hidden until there are departments", () => {
     const page = renderOrgPage()
-    expect(page).toContain('<div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button>')
+    expect(page).toContain('<div id="org-views" class="org-views" role="group" aria-label="View"><button type="button" data-org-view="dept" aria-pressed="true" hidden>Departments</button>')
+    expect(page).toContain("function shownView() { return view === 'dept' && !(lastOrg && (lastOrg.departments || []).length) ? 'chart' : view; }")
     expect(page).toContain('<div id="org-depts" class="org-depts" hidden></div>')
   })
 

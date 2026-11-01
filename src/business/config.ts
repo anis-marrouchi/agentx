@@ -78,6 +78,13 @@ const projectSchema = z.object({
    *  text WhatsApp, cron jobs) to the right client. Falls back to
    *  the leading segment of `id` (split on "/") when unset. */
   client: z.string().optional(),
+  /** Display name on the Org page's Projects view (#1687); the id when unset. */
+  name: z.string().min(1).optional(),
+  /** Who works on it (#1687): `agent:<id>`, `person:<id>` or a bare agent id.
+   *  Shown on the Org page only; the PM gate still reads `pm` alone. */
+  team: z.array(z.string().min(1)).optional(),
+  /** The person who leads it (#1687), `person:<id>`. `pm` stays the agent. */
+  lead: z.string().min(1).optional(),
 })
 
 /** Maps a chat or sender to a client/project so free-text channels
