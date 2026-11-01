@@ -200,6 +200,21 @@ describe("the /org page (#1681)", () => {
     expect(fn).toContain("ORG.headShown = true;")
   })
 
+  it("starts a wide /org chart at its left edge and names who is off screen", () => {
+    const page = renderOrgPage()
+    // The chart takes the window width, and a department band has the same 14px inner padding as the Departments view.
+    expect(page).toContain(".org-tree { overflow-x: auto; padding: 12px 0 8px; width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px);")
+    expect(page).toContain(".org-tree li.org-dept > .org-dept-box { padding: 10px 14px 4px;")
+    // First paint: scroll right only as far as the head needs, never centre it.
+    const head = page.slice(page.indexOf("function showHead("), page.indexOf("function moreSide("))
+    expect(head).toContain("tree.scrollLeft = Math.max(0, right - tree.clientWidth);")
+    expect(head).not.toContain("box.width / 2")
+    // The cue: one button per side naming the reports cut off there, kept current on scroll.
+    expect(page).toMatch(/<div id="org-more" class="org-more" hidden><button type="button" data-org-scroll="-1"[^>]*><\/button><span>The chart is wider than the page\. Scroll sideways to see everyone\.<\/span><button type="button" data-org-scroll="1"/)
+    expect(page).toContain("tree.addEventListener('scroll', moreCue, { passive: true });")
+    expect(page).toMatch(/if \(!deptView\) showHead\(\);\s*moreCue\(\);/)
+  })
+
   it("gives a person's card a warm fill and keeps an agent's plain, on /org and the Hub", () => {
     const page = renderOrgPage()
     expect(page).toContain(".org-card.is-person { background: var(--org-person-bg); border-color: var(--org-person-ink);")

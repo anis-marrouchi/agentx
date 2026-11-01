@@ -65,6 +65,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
       <li id="org-legend-dept" hidden><span class="org-legend-dept">Department</span>a dashed box round its members</li>
     </ul>
     <div id="org-depts" class="org-depts" hidden></div>
+    <div id="org-more" class="org-more" hidden><button type="button" data-org-scroll="-1" aria-controls="org-tree" hidden></button><span>The chart is wider than the page. Scroll sideways to see everyone.</span><button type="button" data-org-scroll="1" aria-controls="org-tree" hidden></button></div>
     <div id="org-tree" class="org-tree" aria-label="Org chart"><p class="org-quiet">Loading…</p></div>
     <section id="org-outside" hidden aria-labelledby="org-outside-title">
       <h2 id="org-outside-title" class="org-h2">Not in the org chart</h2>
@@ -92,7 +93,13 @@ const ORG_CSS = `
 .org-none p { margin: 0; color: var(--ax-text-2); }
 .org code { font-family: var(--ax-mono); font-size: 11.5px; background: var(--ax-surface-2); padding: 1px 6px; border-radius: var(--ax-radius-sm); }
 .org-h2 { margin: 28px 0 10px; font-size: 14px; }
-.org-tree { overflow-x: auto; padding: 12px 0 8px; }
+/* The chart takes the whole window width, not the text column (#1681). */
+.org-tree { overflow-x: auto; padding: 12px 0 8px; width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px); --org-fade-l: 0px; --org-fade-r: 0px; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--org-fade-l), #000 calc(100% - var(--org-fade-r)), transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 var(--org-fade-l), #000 calc(100% - var(--org-fade-r)), transparent 100%); }
+.org-tree.is-more-left { --org-fade-l: 40px; }
+.org-tree.is-more-right { --org-fade-r: 40px; }
+.org-more { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 6px; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
+.org-more[hidden], .org-more button[hidden] { display: none; }
+.org-more button { font: inherit; font-size: var(--ax-fs-sm); font-weight: 600; padding: 3px 12px; border-radius: 999px; border: var(--ax-border-w) solid var(--ax-accent); background: var(--ax-bg); color: var(--ax-accent); cursor: pointer; }
 .org-tree ul, .org-row { list-style: none; margin: 0; padding: 0; }
 .org-tree > ul { display: flex; gap: 24px; width: max-content; margin: 0 auto; }
 .org-tree li { position: relative; display: flex; flex-direction: column; align-items: center; }
@@ -134,7 +141,7 @@ const ORG_CSS = `
 .org-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .org-legend li[hidden] { display: none; }
 .org-legend-dept { padding: 0 8px; line-height: 17px; border: 1.5px dashed var(--ax-accent); border-radius: var(--ax-radius-sm); color: var(--ax-accent); font-weight: 600; }
-.org-tree li.org-dept > .org-dept-box { padding: 10px 10px 4px; border: 1.5px dashed var(--ax-accent); border-radius: 16px; background: var(--ax-blue-t, var(--ax-surface)); }
+.org-tree li.org-dept > .org-dept-box { padding: 10px 14px 4px; border: 1.5px dashed var(--ax-accent); border-radius: 16px; background: var(--ax-blue-t, var(--ax-surface)); }
 .org-dept-name { display: block; margin: 0 0 4px; font-size: var(--ax-fs-sm); font-weight: 700; color: var(--ax-accent); text-align: center; }
 .org-dept-head { display: block; margin: -2px 0 2px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); text-align: center; }
 .org-tree .org-dept-box > ul { display: flex; position: relative; padding-top: 0; }
@@ -362,6 +369,7 @@ const ORG_SCRIPT = `
       deptsEl.hidden = !deptView;
       tree.hidden = deptView;
       if (!deptView) showHead();
+      moreCue();
       if (deptView) {
         var byKey = org.nodes;
         d.outside.forEach(function (n) { byKey['agent:' + n.id] = byKey['agent:' + n.id] || n; });
@@ -377,9 +385,10 @@ const ORG_SCRIPT = `
     } catch (e) { say('Could not load the org chart: ' + e.message, true); }
   }
   // A chart wider than the page centres its root across the full width, so
-  // the head lands off screen. On the first paint of the Chart view, scroll the
-  // head (a person root, else the first root) into the middle; later repaints
-  // keep the reader's scroll.
+  // centring the head pushes the first reports off the left. On the first
+  // paint of the Chart view, start at the left edge and move right only as far
+  // as it takes to show the head (a person root, else the first root) whole;
+  // later repaints keep the reader's scroll.
   var headShown = false;
   function showHead() {
     if (headShown || tree.scrollWidth <= tree.clientWidth) return;
@@ -387,9 +396,39 @@ const ORG_SCRIPT = `
     if (!top.length) return;
     var head = Array.prototype.filter.call(top, function (c) { return c.classList.contains('is-person'); })[0] || top[0];
     var box = tree.getBoundingClientRect(), at = head.getBoundingClientRect();
-    tree.scrollLeft += at.left + at.width / 2 - (box.left + box.width / 2);
+    var right = at.right - box.left + tree.scrollLeft + 24;
+    tree.scrollLeft = Math.max(0, right - tree.clientWidth);
     headShown = true;
   }
+  // The cue above a chart wider than the page: who is off screen on each
+  // side, as buttons that scroll that way, and a fade on the cut edge.
+  var more = document.getElementById('org-more');
+  function moreSide(btn, who, before, after) {
+    btn.hidden = !who.length;
+    var list = who.length > 3 ? who.slice(0, 3).join(', ') + ', …' : who.join(', ');
+    btn.textContent = before + who.length + ' more: ' + list + after;
+  }
+  function moreCue() {
+    var wide = !tree.hidden && tree.scrollWidth > tree.clientWidth + 1;
+    more.hidden = !wide;
+    tree.classList.toggle('is-more-left', wide && tree.scrollLeft > 1);
+    tree.classList.toggle('is-more-right', wide && tree.scrollLeft + tree.clientWidth < tree.scrollWidth - 1);
+    if (!wide) return;
+    var box = tree.getBoundingClientRect(), left = [], right = [];
+    tree.querySelectorAll(':scope > ul > li > ul > li').forEach(function (li) {
+      var r = li.getBoundingClientRect(), n = li.querySelector('.org-dept-name, .org-name');
+      if (r.left < box.left - 1) left.push(n ? n.textContent : '?');
+      if (r.right > box.right + 1) right.push(n ? n.textContent : '?');
+    });
+    moreSide(more.querySelector('[data-org-scroll="-1"]'), left, '← ', '');
+    moreSide(more.querySelector('[data-org-scroll="1"]'), right, '', ' →');
+  }
+  tree.addEventListener('scroll', moreCue, { passive: true });
+  window.addEventListener('resize', moreCue);
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('button[data-org-scroll]') : null;
+    if (b) tree.scrollBy({ left: Number(b.getAttribute('data-org-scroll')) * tree.clientWidth * 0.8, behavior: 'smooth' });
+  });
   var view = 'dept';   // 'dept' or 'chart' (#1681)
   document.addEventListener('click', function (ev) {
     var v = ev.target.closest ? ev.target.closest('button[data-org-view]') : null;
