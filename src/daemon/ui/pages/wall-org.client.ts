@@ -319,7 +319,8 @@ export const WALL_ORG_CSS = `
 .wog__views button { font: inherit; font-weight: 600; background: none; border: 0; color: var(--ax-text); padding: 3px 12px; cursor: pointer; }
 .wog__views button[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); }
 /* Departments view (#1681): boxes that stack, the head on top of a card grid. */
-.wod { display: grid; gap: 16px; padding: 16px; }
+.wod { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; }
+.wod__box { min-width: 0; }
 .wod__box { border: 1.5px dashed var(--ax-accent); border-radius: 16px; background: var(--ax-blue-t); padding: 12px 14px 14px; }
 .wod__box.is-rest { border-color: var(--ax-border-2); background: var(--ax-surface); }
 .wod__name { margin: 0 0 12px; font-size: 16px; color: var(--ax-accent); }
@@ -328,7 +329,7 @@ export const WALL_ORG_CSS = `
 .wod__head { display: flex; justify-content: center; padding: 0 0 14px; margin: 0 0 14px; border-bottom: 1px solid var(--ax-border-2); }
 .wod__head .wog__card { width: 260px; }
 .wod__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px 12px; padding-top: 8px; }
-.wod__grid .wog__card { width: auto; }
+.wod__grid .wog__card { width: auto; min-width: 0; justify-self: stretch; }
 .wod__nohead { margin: 0 0 8px; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
 .wog__card.is-lead { box-shadow: 0 0 0 2px var(--ax-accent); }
 .wog__edit { font-size: var(--ax-fs-xs); padding: 3px 12px; }
@@ -405,8 +406,9 @@ button.wog__head:hover b { text-decoration: underline; }
   .wog__card > .wog__kind { position: static; align-self: flex-start; order: -1; }
   .wog__inrail { margin: 12px; }
   .wod { padding: 12px; gap: 12px; }
-  .wod__head .wog__card { width: auto; flex: 1; }
-  .wod__grid { grid-template-columns: 1fr; }
+  .wod__head .wog__card { width: auto; flex: 1 1 0; min-width: 0; }
+  .wod__grid { grid-template-columns: minmax(0, 1fr); }
+  .wog__legend li { flex-wrap: wrap; min-width: 0; }
   .wod .wog__card { margin-left: 0; }
   .wod .wog__card::before { display: none; }
 }
