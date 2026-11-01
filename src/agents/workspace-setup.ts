@@ -230,6 +230,22 @@ function guardHookCommand(agentId: string, daemonPort: string): string {
   return `curl -s --max-time 3 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null || true`
 }
 
+/** The guard command for MCP tools with an `allowTools` list (#1698). Unlike
+ *  [guardHookCommand] it fails CLOSED: when the daemon cannot answer (down,
+ *  restarting, slower than 3 s, HTTP error) it prints a deny, so a listed
+ *  server's tools never run unchecked. */
+export function mcpGuardHookCommand(agentId: string, daemonPort: string): string {
+  const url = `http://127.0.0.1:${daemonPort}/guard/check?agent=${encodeURIComponent(agentId)}`
+  const deny = JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: "AgentX guard did not answer; tools of an MCP server with an allow list are refused until it does.",
+    },
+  })
+  return `out=$(curl -sf --max-time 3 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null) && printf '%s' "$out" || printf '%s' '${deny}'`
+}
+
 /** PreToolUse hook entries wiring the guard onto Bash + Write/Edit, and
  *  onto the tools of every MCP server with an `allowTools` list (#1698):
  *  the daemon refuses a call to a tool left off that list. */
@@ -244,7 +260,9 @@ function guardPreToolUseHooks(
     { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: 10 }] },
   ]
   const mcpMatcher = allowListHookMatcher(mcp)
-  if (mcpMatcher) entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command, timeout: 10 }] })
+  if (mcpMatcher) {
+    entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command: mcpGuardHookCommand(agentId, daemonPort), timeout: 10 }] })
+  }
   return entries
 }
 

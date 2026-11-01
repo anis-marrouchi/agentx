@@ -290,7 +290,18 @@ const agentConfigSchema = z.object({
   /** MCP servers this agent's Claude Code session should load. Synced
    *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
    *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
-  mcp: z.record(z.string(), mcpServerSchema).optional(),
+  mcp: z
+    .record(z.string(), mcpServerSchema)
+    .optional()
+    .superRefine((servers, ctx) => {
+      // The guard hook matches `mcp__<name>__…`; a name Claude Code would
+      // write differently never matches, and its tools would run unchecked.
+      for (const [name, server] of Object.entries(servers ?? {})) {
+        if (server.allowTools && !/^[A-Za-z0-9_-]+$/.test(name)) {
+          ctx.addIssue({ code: "custom", path: [name], message: "an MCP server with allowTools needs a name of letters, digits, _ or - only" })
+        }
+      }
+    }),
   /** Enable CodeGraph (https://github.com/colbymchenry/codegraph) for this
    *  agent's claude-code or codex-cli workspace. When true, agentx (a) adds
    *  a codegraph MCP server to <workspace>/.mcp.json, (b) extends

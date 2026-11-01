@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { loadDaemonConfig } from "../src/daemon/config"
 import {
   allowListHookMatcher,
   headerEnvNames,
@@ -88,5 +92,27 @@ describe("allowListHookMatcher", () => {
     expect(allowListHookMatcher({ a: {}, "b.c": { allowTools: ["x"] }, d: { allowTools: [] } })).toBe("mcp__(b\\.c|d)__.*")
     expect(allowListHookMatcher({ a: {} })).toBeNull()
     expect(allowListHookMatcher(undefined)).toBeNull()
+  })
+})
+
+describe("allowTools server names (#1698)", () => {
+  let dir: string
+  const cwd = process.cwd()
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "ax-mcp-")) })
+  afterEach(() => { process.chdir(cwd); rmSync(dir, { recursive: true, force: true }) })
+
+  const load = (name: string) => {
+    const mcp = { [name]: { type: "http", url: "https://mcp.example.com", allowTools: ["GET_*"] } }
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({ node: { id: "n", name: "n" }, agents: { a: { name: "a", workspace: dir, mcp } } }))
+    process.chdir(dir)
+    return () => loadDaemonConfig(join(dir, "agentx.json"))
+  }
+
+  it("refuses a name the hook matcher could miss", () => {
+    expect(load("my.social")).toThrow(/letters, digits, _ or -/)
+  })
+
+  it("accepts a plain name", () => {
+    expect(load("my_social-1")).not.toThrow()
   })
 })
