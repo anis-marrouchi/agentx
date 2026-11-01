@@ -25,6 +25,9 @@ describe("business.departments", () => {
     const parsed = businessConfigSchema.parse({ departments: { dev: { name: "Dev", head: "person:anis" } } })
     expect(parsed.departments.dev).toEqual({ name: "Dev", head: "person:anis", members: [] })
     expect(() => businessConfigSchema.parse({ departments: { dev: { name: "" } } })).toThrow()
+    // Written without a name, the department loads and is named by its key.
+    const bare = businessConfigSchema.parse({ departments: { dev: { members: ["pm"] } } })
+    expect(orgDepartments(bare)).toEqual([{ id: "dev", name: "dev", members: ["agent:pm"] }])
   })
 
   it("writes members and head in full, without repeats, sorted by name", () => {
