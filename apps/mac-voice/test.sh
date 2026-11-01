@@ -68,3 +68,11 @@ swiftc -O -o "$out/artifacts-tests" Sources/AgentXVoice/Artifacts.swift Sources/
 swiftc -O -o "$out/floor-tests" Sources/AgentXVoice/Floor.swift Tests/Floor/main.swift \
   -target arm64-apple-macosx14.0
 "$out/floor-tests"
+swiftc -O -o "$out/artifacts-web-tests" Sources/AgentXVoice/Artifacts.swift Sources/AgentXVoice/Markdown.swift \
+  Tests/ArtifactsWeb/main.swift -framework AppKit -framework WebKit -target arm64-apple-macosx14.0
+port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+python3 Tests/ArtifactsWeb/serve.py "$port" Resources &
+server=$!
+trap 'kill $server 2>/dev/null' EXIT
+for _ in $(seq 50); do curl -sf -o /dev/null "http://127.0.0.1:$port/AppIcon.png" && break; sleep 0.1; done
+"$out/artifacts-web-tests" "$port"

@@ -35,6 +35,13 @@ enum Artifacts {
         return "<div class=\"ax-files\">" + items.joined() + "</div>"
     }
 
+    /// The card page's base URL: the daemon, so the page's own file loads
+    /// are same-origin. With no base the page is about:blank, its loads go
+    /// out as cross-site, and the daemon refuses them like any foreign
+    /// page's (#1670): the picture shows "?" and the video a crossed-out
+    /// play button.
+    static func pageBase(_ daemonURL: String) -> URL? { URL(string: daemonURL + "/") }
+
     /// Added to the card's styles.
     static let css = """
       .ax-files { margin-top: 8px; }
