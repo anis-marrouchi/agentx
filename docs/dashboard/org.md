@@ -87,17 +87,17 @@ The relations are saved under `business.relations` in `agentx.json`; see the [co
 
 ## Group members into a department
 
-A **department** puts members of the chart in one named group with a head, for example a Dev team. It changes no reporting line and passes no problem up. Each member is in one department at most.
+A **department** puts members of the chart in one named group with a head, for example an Engineering team. You can have several, each headed by a person or an agent. It changes no reporting line and passes no problem up. Each member is in one department at most.
 
-1. **Terminal:** open `agentx.json` and add the department under `business.departments`. Members and the head are written like relations. `dev`, `pm-agent` and `saber` are examples; use your own IDs:
+1. **Terminal:** open `agentx.json` and add the department under `business.departments`. Members and the head are written like relations. `engineering`, `pm-agent` and `saber` are examples; use your own IDs:
 
    ```json
    "departments": {
-     "dev": { "name": "Dev", "head": "person:anis", "members": ["agent:pm-agent", "agent:devops-agent", "person:saber"] }
+     "engineering": { "name": "Engineering", "head": "person:anis", "members": ["agent:pm-agent", "agent:devops-agent", "person:saber"] }
    }
    ```
 
-2. **Browser:** on the Hub, select **Org**, then **Refresh**. The department's members sit side by side in one dashed band, titled **Dev · head** *name*, and each card has a **Dev** chip. On a phone the chip shows on each card. On the `/org` page the members sit in one dashed box under their boss, titled with the department and its head.
+2. **Browser:** on the Hub, select **Org**, then **Refresh**. The department's members sit side by side in one dashed band, titled **Engineering · head** *name*, and each card has an **Engineering** chip. On a phone the chip shows on each card. On the `/org` page the members sit in one dashed box under their boss, titled with the department and its head.
 
 A department that names someone unknown, or a member in two departments, shows above the chart as **Problem in the org chart**. The daemon still starts.
 
