@@ -283,11 +283,15 @@ describe("what the owner is told about a new machine", () => {
     expect(machineName(7)).toBe("")
   })
 
-  it("fits the card however long the names are", async () => {
+  it("fits the card question in 300 characters with the longest address, login and names", async () => {
     PEOPLE.push({ id: "long", name: "N".repeat(200), role: "member", identities: [] })
-    const { r } = await pair("long", "M".repeat(200), { "Tailscale-User-Login": `${"l".repeat(200)}@example.com`, "X-Forwarded-For": "fd7a:115c:a1e0:ab12:4843:cd96:6258:b240" })
+    const { r } = await pair("long", "M".repeat(200), { "Tailscale-User-Login": `${"l".repeat(200)}@example.com`, "X-Forwarded-For": "ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255" })
     expect(r.status).toBe(200)
-    expect(listCards(dir, "pending")[0].ask.length).toBeLessThanOrEqual(300)
+    const [card] = listCards(dir, "pending")
+    expect(card.title).toContain("N".repeat(40))
+    expect(card.ask).toContain("l".repeat(80))
+    expect(card.ask).toContain("M".repeat(60))
+    expect(card.ask.length).toBeLessThanOrEqual(300)
   })
 })
 

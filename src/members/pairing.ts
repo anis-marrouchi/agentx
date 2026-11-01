@@ -220,11 +220,12 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
     return { status: 403, body: { error: NETWORK_MISMATCH } }
   }
   const name = machine || "Unnamed machine"
-  // Cut so the card's 300-character question always fits.
+  // The name is in the title only, so the 300-character question always
+  // fits: 45 (address) + 80 (login) + 60 (machine) + fixed text (#1672).
   const who = person.name.slice(0, 40)
   const card = createCard(deps.root, {
     title: `New machine for ${who}`,
-    ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Machine name, as typed there: "${name}". Let it see ${who}'s own work?`,
+    ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Machine name, as typed there: "${name}". Let it see their own work?`,
     recommend: `Yes if ${who} told you they just paired this machine. No if you did not expect it.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,
