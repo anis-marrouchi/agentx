@@ -78,6 +78,13 @@ const projectSchema = z.object({
    *  text WhatsApp, cron jobs) to the right client. Falls back to
    *  the leading segment of `id` (split on "/") when unset. */
   client: z.string().optional(),
+  /** Display name on the Org page's Projects view (#1687); the id when unset. */
+  name: z.string().min(1).optional(),
+  /** Who works on it (#1687): `agent:<id>`, `person:<id>` or a bare agent id.
+   *  Shown on the Org page only; the PM gate still reads `pm` alone. */
+  team: z.array(z.string().min(1)).optional(),
+  /** The person who leads it (#1687), `person:<id>`. `pm` stays the agent. */
+  lead: z.string().min(1).optional(),
 })
 
 /** Maps a chat or sender to a client/project so free-text channels
@@ -143,6 +150,18 @@ export const businessConfigSchema = z.object({
    *  top-level `people` list, with the role they hold (a key of `roles`).
    *  A person named in a relation is in the chart without an entry here. */
   orgPeople: z.record(z.string(), z.object({ role: z.string().optional() })).default({}),
+  /** Departments (#1681): org members grouped under a name and a head, refs
+   *  written like relations. They group cards on the chart and change no
+   *  reporting line. See departments.ts. */
+  departments: z.record(z.string(), z.object({
+    /** Shown on the Org page; the department's key when unset. */
+    name: z.string().min(1).optional(),
+    head: z.string().min(1).optional(),
+    members: z.array(z.string().min(1)).default([]),
+    /** Members whose home is another department and who also work in this
+     *  one (Anis 11-01). Shown in this box only; chart and band use the home. */
+    alsoMembers: z.array(z.string().min(1)).optional(),
+  })).default({}),
   /** Per-project metadata. Phase 3 — defaults to empty array, so
    *  existing agentx.json files validate without modification. */
   projects: z.array(projectSchema).default([]),

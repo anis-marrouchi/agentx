@@ -36,7 +36,9 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
         'Remove', 'bo:' + id, 'Remove <b>' + esc(id) + '</b> from the org chart?', 'Remove');
     });
     var projRows = projects.map(function (p) {
-      return stBizRow('<code>' + esc(p.id) + '</code>' + (p.pm ? ' <small>PM ' + esc(p.pm) + '</small>' : '') + (p.client ? ' <small>client ' + esc(p.client) + '</small>' : ''),
+      return stBizRow((p.name && p.name !== p.id ? '<b>' + esc(p.name) + '</b> ' : '') + '<code>' + esc(p.id) + '</code>' + (p.pm ? ' <small>PM ' + esc(p.pm) + '</small>' : '') +
+        (p.lead ? ' <small>lead ' + esc(p.lead) + '</small>' : '') + (p.client ? ' <small>client ' + esc(p.client) + '</small>' : '') +
+        (p.team && p.team.length ? '<p class="wsj__sub">Team: ' + esc(p.team.join(', ')) + '</p>' : ''),
         'Remove', 'bp:' + p.id, 'Remove the project <b>' + esc(p.id) + '</b>?', 'Remove');
     });
     var clientRows = stBizClients(b).map(function (id) {
@@ -64,6 +66,10 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
       '<details class="wsc"><summary><h3>Add or update a project</h3></summary><form class="wsf" data-st-form="biz-proj">' +
         stChField('st-bp-id', 'Project id', '', 'example/app', '(owner/repo for GitLab or GitHub)') +
         '<div class="wsf__row">' + stChField('st-bp-pm', 'PM', '', 'pm-agent', '(agent id: drives the PM gate)') + stChField('st-bp-client', 'Client', '', 'example') + '</div>' +
+        '<div class="wsf__row">' + stChField('st-bp-name', 'Name', '', 'Example app', '(shown on the Org page)') + stChField('st-bp-lead', 'Lead', '', 'person:sam', '(the person who leads it)') + '</div>' +
+        stChField('st-bp-team', 'Team', '', 'agent:dev-agent, person:kim', '(comma separated; replaces the team)') +
+        '<p class="wsf__hint">Leave a field blank to keep what is saved. Tick Clear to remove a name, lead or team.</p>' +
+        '<div class="wsf__row">' + ['name', 'lead', 'team'].map(function (k) { return '<label class="wsf__check"><input type="checkbox" id="st-bp-clear-' + k + '"> Clear ' + k + '</label>'; }).join('') + '</div>' +
         '<div class="wsf__foot"><button type="submit" class="ax-btn">Save project</button>' + stNoteHtml('biz-proj') + '</div></form></details></section>' +
       '<section class="wsc"><h3>Clients <small>' + clientRows.length + '</small></h3><p class="wsj__sub">A client exists as soon as a project or a contact names it. Set one up only to treat it differently.</p>' + stBizList(clientRows, 'No client yet: add a project or a contact mapping.') +
       '<details class="wsc"><summary><h3>Set up a client</h3></summary><form class="wsf" data-st-form="biz-client">' +
@@ -89,7 +95,15 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
         days: (stVal('st-bo-days').trim() || 'mon,tue,wed,thu,fri').split(',').map(function (s) { return s.trim(); }).filter(Boolean),
       }, 'Entry saved.', 'biz');
     } else if (kind === 'biz-proj') {
-      stSetSave('biz-proj', 'POST', 'business/project', { id: stVal('st-bp-id').trim(), pm: stVal('st-bp-pm').trim(), client: stVal('st-bp-client').trim() }, 'Project saved.', 'biz');
+      // Name, lead and team (#1687) go only when filled, so a blank keeps what is saved.
+      var proj = { id: stVal('st-bp-id').trim(), pm: stVal('st-bp-pm').trim(), client: stVal('st-bp-client').trim() };
+      var team = stVal('st-bp-team').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      if (stVal('st-bp-name').trim()) proj.name = stVal('st-bp-name').trim();
+      if (stVal('st-bp-lead').trim()) proj.lead = stVal('st-bp-lead').trim();
+      if (team.length) proj.team = team;
+      var clear = ['name', 'lead', 'team'].filter(function (k) { var c = $('st-bp-clear-' + k); return c && c.checked; });
+      if (clear.length) proj.clear = clear;
+      stSetSave('biz-proj', 'POST', 'business/project', proj, 'Project saved.', 'biz');
     } else if (kind === 'biz-client') {
       stSetSave('biz-client', 'POST', 'business/client', {
         id: stVal('st-bc-id').trim(), name: stVal('st-bc-name').trim(), kind: stVal('st-bc-kind'), respondWithin: stVal('st-bc-respond').trim(),

@@ -108,6 +108,16 @@ Instead of a pairing code, a teammate or a client can ask for a link by mail. Th
 
 A link works once, for 15 minutes, and a new one replaces the one before. An address gets at most 5 links an hour, and one network address can ask 20 times an hour. Only the link's hash is kept, in `.agentx/signin-links.json`. If you change or remove the person's `email:` address, a link already sent stops working. A signed-in browser stays signed in for 30 days. **End access** on their People page, or removing the person, signs it out at once. After End access, the person's next sign-in raises a new card, as the first one did, unless `wall.signIn.firstSignIn` is `auto` and they are a member. If the person has a `tailscale:` login on their entry, the network must report that login when they sign in, as for pairing.
 
+### Or with Google
+
+With [`wall.signIn.oidc`](../reference/config-operations.md#sign-in-with-an-account-google-or-another-openid-connect-provider) set, the sign-in page also has a **Sign in with Google** button (the name is yours to set). The person names their browser, selects the button and picks their account.
+
+![The sign-in page with a Sign in with Google button under the email form](/screenshots/members/signin-google.png)
+
+The account counts only if its address is verified and is the person's `email:` address on your list, so step 2 above is all you do for them. What follows is the same as with a link: the card on their first sign-in, then straight in, and **End access** on their People page.
+
+The first account a person is let in with is kept, in `.agentx/signin-accounts.json`: on your **Yes** on their first-sign-in card, or straight away once you have let them in before. A sign-in you refuse, or one the network check turns away, keeps nothing. Another account showing the same address later is refused, so an address that is closed and given to someone else gets nobody in. To let a person use a new account, remove their line from that file.
+
 ## My work
 
 The page shows, for that person only:

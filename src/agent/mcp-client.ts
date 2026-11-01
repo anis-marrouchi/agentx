@@ -15,6 +15,7 @@
 
 import { spawn, type ChildProcess } from "child_process"
 import { debug } from "@/observability"
+import { resolveHttpHeaders, toolAllowed } from "./mcp-policy"
 
 /** stdio MCP server — spawned as a child process, JSON-RPC over NDJSON
  *  on stdin/stdout. The `type` field is optional for backward compat
@@ -24,6 +25,8 @@ export interface McpStdioSpec {
   command: string
   args?: string[]
   env?: Record<string, string>
+  /** Only these tools are listed and callable (see mcp-policy.ts). */
+  allowTools?: string[]
 }
 
 /** HTTP MCP server (Streamable HTTP transport) — POST JSON-RPC bodies to
@@ -34,6 +37,11 @@ export interface McpHttpSpec {
   type: "http"
   url: string
   headers?: Record<string, string>
+  /** Header name -> environment variable NAME; read when the client is
+   *  created, so the secret never sits in config (see mcp-policy.ts). */
+  headersEnv?: Record<string, string>
+  /** Only these tools are listed and callable (see mcp-policy.ts). */
+  allowTools?: string[]
 }
 
 export type McpServerSpec = McpStdioSpec | McpHttpSpec
@@ -176,8 +184,12 @@ class HttpTransport implements Transport {
   private nextId = 1
   private sessionId: string | null = null
   private closed = false
+  /** Literal headers plus `headersEnv`, resolved once per client. */
+  private readonly authHeaders: Record<string, string>
 
-  constructor(private readonly name: string, private readonly spec: McpHttpSpec) {}
+  constructor(private readonly name: string, private readonly spec: McpHttpSpec) {
+    this.authHeaders = resolveHttpHeaders(spec)
+  }
 
   async request(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
     if (this.closed) throw new Error(`mcp server "${this.name}" is closed`)
@@ -189,7 +201,7 @@ class HttpTransport implements Transport {
       // JSON or via SSE; advertising both keeps us compatible with both
       // flavours (JORT-wiki uses SSE; some hosted MCPs return raw JSON).
       Accept: "application/json, text/event-stream",
-      ...(this.spec.headers ?? {}),
+      ...this.authHeaders,
     }
     // The MCP session-id handshake: server may return `mcp-session-id`
     // on the initialize response; we echo it back on every subsequent
@@ -261,7 +273,7 @@ class HttpTransport implements Transport {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
-      ...(this.spec.headers ?? {}),
+      ...this.authHeaders,
     }
     if (this.sessionId) headers["Mcp-Session-Id"] = this.sessionId
     fetch(this.spec.url, {
@@ -282,7 +294,7 @@ class HttpTransport implements Transport {
     if (this.sessionId) {
       const headers: Record<string, string> = {
         "Mcp-Session-Id": this.sessionId,
-        ...(this.spec.headers ?? {}),
+        ...this.authHeaders,
       }
       fetch(this.spec.url, { method: "DELETE", headers }).catch(() => { /* */ })
     }
@@ -406,7 +418,13 @@ export async function startMcpPool(servers: McpServerMap): Promise<McpPool> {
     try {
       await client.initialize()
       const remoteTools = await client.listTools()
-      for (const t of remoteTools) {
+      // A tool left off the server's allowTools list is never shown to the
+      // model and has no route, so dispatch refuses it as unknown.
+      const allowed = remoteTools.filter((t) => toolAllowed(spec.allowTools, t.name))
+      if (allowed.length < remoteTools.length) {
+        debug.context("mcp", `${serverName}: ${remoteTools.length - allowed.length} tool(s) hidden by allowTools`)
+      }
+      for (const t of allowed) {
         const namespaced = `${TOOL_PREFIX}${serverName}__${t.name}`
         tools.push({
           name: namespaced,

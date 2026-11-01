@@ -50,6 +50,7 @@ function openOrg(opts: { owner?: boolean; hash?: string; cfg?: any; refuse?: (bo
         setAttribute: (k: string, v: string) => { attrs[k] = v },
         getAttribute: (k: string) => attrs[k],
         focus() { this.focused = true },
+        addEventListener() {},
       })
     }
     return els.get(id)
@@ -73,7 +74,7 @@ function openOrg(opts: { owner?: boolean; hash?: string; cfg?: any; refuse?: (bo
     }
     return reply(404, { error: "not found" })
   }
-  new Function("document", "window", "fetch", "location", "setInterval", script)(doc, {}, fetchStub, { hash: opts.hash ?? "" }, () => 0)
+  new Function("document", "window", "fetch", "location", "setInterval", script)(doc, { addEventListener() {} }, fetchStub, { hash: opts.hash ?? "" }, () => 0)
   const click = (attrs: Record<string, string>) => {
     const t = { getAttribute: (k: string) => attrs[k], disabled: false }
     const ev = { target: { closest: (sel: string) => Object.keys(attrs).some((k) => sel.includes(`[${k}]`)) ? t : null } }

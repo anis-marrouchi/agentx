@@ -3,6 +3,7 @@ import type { MessageRouter } from "@/channels/router"
 import type { DaemonConfig } from "@/daemon/config"
 import type { BusinessConfig } from "./config"
 import { Organization } from "./organization"
+import { meshPeerNames } from "./relations"
 import { Schedule } from "./schedule"
 import { createWorkSource, type WorkSource } from "./work-pool"
 import { Reporter } from "./reporter"
@@ -33,7 +34,8 @@ export class BusinessLayer {
     router: MessageRouter,
     log: (...args: unknown[]) => void,
   ) {
-    this.org = new Organization(business, daemon.people ?? [])
+    this.org = new Organization(business, daemon.people ?? [], [...meshPeerNames(daemon)])
+    for (const line of this.org.dropped) log(`[business] ${line}`)
     this.schedule = new Schedule(this.org, business)
     this.workSource = createWorkSource(business, daemon, log)
     this.reporter = new Reporter(router, this.org, business, log)

@@ -160,7 +160,8 @@ An experimental layer that runs agents like a team, with roles, working hours an
 | `business.orgChart` | map of objects | `{}` | Which agent holds which role and when it works, keyed by agent id. |
 | `business.relations` | list of objects | `[]` | Typed links between org members, people included. See below. |
 | `business.orgPeople` | map of objects | `{}` | People placed in the org chart, keyed by an id from `people`, each with an optional `role` (a role id from `business.roles`). A person named in `business.relations` is in the chart without an entry here. Set from [Edit the org chart](../dashboard/org.md#edit-the-org-chart) on `/org`. |
-| `business.projects` | list of objects | `[]` | Projects, with an optional project manager and client. |
+| `business.departments` | map of objects | `{}` | Named groups of org members, keyed by department id: an optional `name` (the id when unset), an optional `head` and `members`, written like relations (`agent:<id>`, `person:<id>`). A member is in one department at most. They group cards on the chart and change no reporting line. See [Group members into a department](../dashboard/org.md#group-members-into-a-department). |
+| `business.projects` | list of objects | `[]` | Projects, with an optional project manager, client, name, lead and team. See [See who runs each project](../dashboard/org.md#see-who-runs-each-project). |
 | `business.contactMap` | list of objects | `[]` | Maps a chat or sender to a client and project, so the activity view credits the right client. |
 | `business.clients` | map of objects | `{}` | Per-client overrides, keyed by client id. Clients are otherwise worked out from `projects` and `contactMap`. |
 | `business.workTickMinutes` | number (1–60) | `15` | How often, in minutes during working hours, agents are asked to pick up work. |
@@ -190,7 +191,7 @@ Each entry in `business.orgChart.<agent>`:
 | `schedule.lunch` | object | — | Lunch break, with `start` and `end` as `HH:MM`. |
 | `utilizationTarget` | number (0–1) | `0.8` | Share of working time the agent should be busy. |
 
-Each entry in `business.relations` links two members. A member is `agent:<id>` (an agent in `business.orgChart`) or `person:<id>` (a person in `people`); a bare id is an agent. An unknown member stops the business layer from starting, with an error that names it.
+Each entry in `business.relations` links two members. A member is `agent:<id>` (an agent in `business.orgChart`), `person:<id>` (a person in `people`), or `agent:<node>/<id>` (an agent on the mesh peer named `<node>` in `mesh.peers`: shown on the chart, never sent work); a bare id is an agent. An unknown member stops the business layer from starting, with an error that names it. A line to a node not in `mesh.peers` (a peer removed or renamed) is left out instead: the daemon still starts, logs the line, and the [Org page](../dashboard/org.md) names the problem. Saving such a ref from the Hub or the CLI is refused. Whether the node hosts that agent is not checked at start; the [Org page](../dashboard/org.md#show-agents-on-other-nodes) shows it.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -223,6 +224,9 @@ Each entry in `business.projects`:
 | `id` | string | required | Project id, for example `group/project`. |
 | `pm` | string | — | Agent id of the project manager. |
 | `client` | string | — | Client the project belongs to. Defaults to the part of `id` before the first `/`. |
+| `name` | string | the `id` | Name shown on the Org page's Projects view. |
+| `lead` | string | — | The person who leads the project, `person:<id>`. A bare id is read as a person. Shown on the Org page only; `pm` stays the agent. |
+| `team` | list of strings | — | Who works on the project: `agent:<id>` of an agent in `business.orgChart`, `person:<id>`, or a bare agent id. Shown on the Org page only; one member can be on several projects. |
 
 Each entry in `business.contactMap` (the first match wins: `chatId`, then `username`, then `channel`):
 
@@ -516,6 +520,29 @@ Lets a teammate or a client sign in to their page with a link sent by email, ins
   "signIn": { "origin": "https://your-mac.tailnet-name.ts.net", "firstSignIn": "card" }
 }
 ```
+
+### Sign in with an account (Google or another OpenID Connect provider)
+
+`wall.signIn.oidc` adds a **Sign in with …** button to the same page ([#1675](https://github.com/anis-marrouchi/agentx/issues/1675)). It needs `wall.signIn.origin`, but not the mail sender. Nothing in AgentX is written for one provider: any OpenID Connect provider works with its own values.
+
+| Key | Default | What it does |
+|---|---|---|
+| `wall.signIn.oidc.name` | required | The name on the button, for example `"Google"`. |
+| `wall.signIn.oidc.issuer` | required | The provider's address, without a trailing slash, for example `https://accounts.google.com`. |
+| `wall.signIn.oidc.clientId` | required | The OAuth client id. |
+| `wall.signIn.oidc.clientSecret` | required | The client secret, only as a `${VAR}` reference. The value goes in `.env`. |
+| `wall.signIn.oidc.hd` | none | Only accounts of this Google Workspace domain. |
+
+```json
+"oidc": {
+  "name": "Google",
+  "issuer": "https://accounts.google.com",
+  "clientId": "${AGENTX_OIDC_CLIENT_ID}",
+  "clientSecret": "${AGENTX_OIDC_CLIENT_SECRET}"
+}
+```
+
+Put this inside `wall.signIn`. In the provider's console, make an OAuth client of type **Web application** with the return address `<origin>/member/signin/oidc/done`, for example `https://your-mac.tailnet-name.ts.net/member/signin/oidc/done`. A client secret written straight into `agentx.json` is refused when the config loads.
 
 ## Check it worked
 

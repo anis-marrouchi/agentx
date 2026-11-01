@@ -159,7 +159,7 @@ class TalkService : Service() {
         }
 
         fun hangUp(ctx: Context) {
-            TalkConnection.current?.end(DisconnectCause.LOCAL) ?: ctx.stopService(Intent(ctx, TalkService::class.java))
+            TalkConnection.current?.end(DisconnectCause.LOCAL, endedBy = "the phone (Hang up)") ?: ctx.stopService(Intent(ctx, TalkService::class.java))
         }
 
         fun notify(ctx: Context, text: String) {
@@ -288,7 +288,7 @@ class TalkService : Service() {
             main.removeCallbacksAndMessages(null)
             ringAskedAt = 0L
             running = false
-            TalkConnection.current?.end(DisconnectCause.LOCAL)
+            TalkConnection.current?.end(DisconnectCause.LOCAL, endedBy = "the call service stopping")
             if (TalkState.active) TalkState.set(getString(R.string.talk_ended), active = false)
         }
         super.onDestroy()
@@ -333,7 +333,7 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
 
     // The watch's audio link (#1677), set on the main thread only.
     private var onWatch = false
-    @Volatile private var everOnWatch = false
+    @Volatile var everOnWatch = false; private set
     private var drops = 0
     private var asks = 0
     private var lastAsk = 0L
@@ -345,7 +345,7 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
         audioModeIsVoip = true
         setAddress(TalkAccount.address, TelecomManager.PRESENTATION_ALLOWED)
         setCallerDisplayName(target.name, TelecomManager.PRESENTATION_ALLOWED)
-        main.postDelayed({ if (ringing) end(DisconnectCause.MISSED, R.string.talk_missed) }, RING_MS)
+        main.postDelayed({ if (ringing) end(DisconnectCause.MISSED, R.string.talk_missed, endedBy = "no answer") }, RING_MS)
         if (fromWatch && Prefs(ctx).watchAutoAnswer) {
             main.postDelayed({ Log.i("AgentXTalk", "watch call: answering by itself"); answerHere() }, AUTO_ANSWER_MS)
         } else if (fromWatch) {
@@ -363,16 +363,17 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
     /** Answer on the Talk screen, from the notification, or by itself. */
     fun answerHere() = begin()
 
-    override fun onReject() = end(DisconnectCause.REJECTED)
-    override fun onDisconnect() = end(DisconnectCause.LOCAL)
-    override fun onAbort() = end(DisconnectCause.CANCELED)
+    override fun onReject() = end(DisconnectCause.REJECTED, endedBy = "Telecom (rejected)")
+    // A hang-up on the watch arrives here.
+    override fun onDisconnect() = end(DisconnectCause.LOCAL, endedBy = "Telecom (watch or call screen hung up)")
+    override fun onAbort() = end(DisconnectCause.CANCELED, endedBy = "Telecom (aborted)")
 
     /** Once on the watch, the call stays there: when Telecom moves it to
      *  the earpiece (the Xiaomi drop about 1 s in), ask for the watch again. */
     @Deprecated("Deprecated in API 34; still called")
     override fun onCallAudioStateChanged(state: CallAudioState?) {
         state ?: return
-        Log.i("AgentXTalk", "audio route: ${CallAudioState.audioRouteToString(state.route)}")
+        Log.i("AgentXTalk", "audio route: ${CallAudioState.audioRouteToString(state.route)} (${TalkAudioLog.state(ctx)})")
         if (state.route == CallAudioState.ROUTE_BLUETOOTH) {
             if (everOnWatch && !onWatch) Log.i("AgentXTalk", "back on the watch after drop $drops ($asks asks)")
             onWatch = true
@@ -390,8 +391,9 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
         holdWatch()
     }
 
-    /** Asks Telecom (and, on Android 12+, the audio system) for the watch,
-     *  once a second until it is back, within [WatchRoute]'s limits. */
+    /** Asks Telecom for the watch, once a second until it is back, within
+     *  [WatchRoute]'s limits. Telecom alone: the app also setting the
+     *  communication device made each drop (device try 4). */
     private fun holdWatch() {
         if (ended || onWatch) return
         val offered = (callAudioState?.supportedRouteMask ?: 0) and CallAudioState.ROUTE_BLUETOOTH != 0
@@ -405,11 +407,6 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
             asks++
             lastAsk = now
             setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
-            if (Build.VERSION.SDK_INT >= 31) {
-                val audio = ctx.getSystemService(AudioManager::class.java)
-                val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
-                if (sco != null) audio.setCommunicationDevice(sco)
-            }
         }
         main.postDelayed({ holdWatch() }, 1000)
     }
@@ -424,10 +421,12 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
         session = TalkSession(ctx, target, this).also { it.start() }
     }
 
-    /** Ends the call from any thread; runs once. */
-    @Synchronized fun end(cause: Int, say: Int = R.string.talk_ended) {
+    /** Ends the call from any thread; runs once. [endedBy] names who ended it,
+     *  for the log: a hang-up on the watch reads "Telecom (…hung up)". */
+    @Synchronized fun end(cause: Int, say: Int = R.string.talk_ended, endedBy: String) {
         if (ended) return
         ended = true
+        Log.i("AgentXTalk", "call ended by $endedBy (${TalkAudioLog.state(ctx)})")
         ringing = false
         main.removeCallbacksAndMessages(null)
         if (drops > 0) Log.i("AgentXTalk", "watch audio dropped $drops time(s) during this call")
@@ -440,31 +439,64 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
         TalkService.clear(ctx)
     }
 
+    /** Before each turn's recording: the route back on the watch, so the
+     *  watch's microphone (not the phone's) records. Waits up to 1.5 s. */
+    fun waitForWatch() {
+        if (!everOnWatch || ended) return
+        val state = callAudioState ?: return
+        if (state.route != CallAudioState.ROUTE_BLUETOOTH && state.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH != 0) {
+            Log.w("AgentXTalk", "not on the watch before listening; asking for it back")
+            setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+            for (i in 0 until 15) {
+                if (ended || callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) break
+                Thread.sleep(100)
+            }
+        }
+    }
+
+    /** The call is on the watch by Telecom's route: the recording then asks
+     *  for the watch's microphone itself (TalkSession.listen). */
+    val telecomOnWatch: Boolean get() = callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH
+
+    /** Android 12+: the watch as the call's audio device, only when Telecom
+     *  did not route it there. Over Telecom's route it fights Telecom for
+     *  the watch's audio: on a Xiaomi phone each call dropped the route and
+     *  the last left it reported on the watch with no sound either way
+     *  (device tries 3 and 4). */
+    private fun pickWatchDevice(audio: AudioManager): Boolean {
+        if (Build.VERSION.SDK_INT < 31) return false
+        if (audio.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return true
+        val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO } ?: return false
+        return audio.setCommunicationDevice(sco)
+    }
+
     /** Telecom's own route first (meant for a self-managed call), then
      *  AudioManager. Returns false when no Bluetooth headset took it. */
     @Suppress("DEPRECATION")
     fun routeToWatch(audio: AudioManager): Boolean {
         val state = callAudioState
         if (state != null && state.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH != 0) {
-            setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+            if (state.route != CallAudioState.ROUTE_BLUETOOTH) setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
             for (i in 0 until 30) {
                 if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) break
                 Thread.sleep(100)
             }
         }
-        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) {
+            // Telecom has the watch and owns its audio: the app touches
+            // neither the communication device nor the mode (both restarted
+            // the watch's audio). The log says whether Telecom set the mode.
+            Log.i("AgentXTalk", "on the watch by Telecom; ${TalkAudioLog.state(ctx)}")
+            return true
+        }
+        if (audio.mode != AudioManager.MODE_IN_COMMUNICATION) audio.mode = AudioManager.MODE_IN_COMMUNICATION
         if (Build.VERSION.SDK_INT >= 31) {
-            // Also set on the Telecom route: step 1 found the recording can
-            // stay on the phone's own microphone otherwise.
-            val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
-            if (sco != null && audio.setCommunicationDevice(sco)) return true
-            if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) return true
+            if (pickWatchDevice(audio)) return true
             // A drop in progress: [holdWatch] brings the watch back.
             if (everOnWatch) return true
             setAudioRoute(CallAudioState.ROUTE_SPEAKER)
             return false
         }
-        if (callAudioState?.route == CallAudioState.ROUTE_BLUETOOTH) return true
         audio.startBluetoothSco()
         audio.isBluetoothScoOn = true
         for (i in 0 until 40) {
@@ -495,6 +527,7 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
     private val prefs = Prefs(ctx)
     private var conversationId: String? = null
     private var tones: ToneGenerator? = null
+    private val audioLog = TalkAudioLog(ctx)
 
     private val voiceAttrs: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -512,7 +545,7 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
                 if (!stopped) sayQuietly((e as? IllegalStateException)?.message ?: ctx.getString(R.string.talk_say_failed))
             } finally {
                 cleanUp()
-                call.end(DisconnectCause.LOCAL)
+                call.end(DisconnectCause.LOCAL, endedBy = "the conversation ending")
             }
         }
     }
@@ -529,6 +562,7 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
     private fun check() { if (stopped) throw Stopped() }
 
     private fun run() {
+        audioLog.start()
         Thread.sleep(600)
         check()
         val onWatch = call.routeToWatch(audio)
@@ -624,14 +658,24 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
     /** Records until the owner stops speaking. Null when nothing was said. */
     @Suppress("MissingPermission")
     private fun listen(): ShortArray? {
+        call.waitForWatch()
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, RATE))
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
             throw IllegalStateException(ctx.getString(R.string.talk_say_no_mic))
         }
+        // On Telecom's watch route, this recording alone asks for the watch's
+        // microphone; the call's communication device stays Telecom's.
+        if (call.telecomOnWatch) {
+            val watchMic = audio.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            val asked = watchMic != null && rec.setPreferredDevice(watchMic)
+            Log.i("AgentXTalk", "microphone: watch's asked for: $asked (${watchMic?.productName ?: "no Bluetooth microphone"})")
+        }
+        Log.i("AgentXTalk", "before listening: ${TalkAudioLog.state(ctx)}")
         val pcm = ShortArray(RATE * MAX_SECONDS)
         val ep = Endpointer(frameMs = 1000 * FRAME / RATE, maxMs = MAX_SECONDS * 1000)
+        val level = MicLevel(RATE)
         var n = 0
         var loudest = 0
         try {
@@ -639,18 +683,24 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
             // Skip the beep's own echo.
             val skip = ShortArray(RATE / 4)
             rec.read(skip, 0, skip.size)
+            val on = rec.routedDevice
+            Log.i("AgentXTalk", "recording on ${on?.productName} (type ${on?.type})")
             while (n < pcm.size && !stopped) {
                 val got = rec.read(pcm, n, minOf(FRAME, pcm.size - n))
                 if (got <= 0) break
                 var peak = 0
                 for (i in n until n + got) peak = maxOf(peak, abs(pcm[i].toInt()))
                 loudest = maxOf(loudest, peak)
+                for (s in level.add(pcm, n, got)) Log.i("AgentXTalk", "mic second ${s.index}: rms ${s.rms}, peak ${s.peak}")
                 n += got
                 val s = ep.frame(peak)
                 if (s == Endpointer.State.DONE || s == Endpointer.State.SILENT || s == Endpointer.State.FULL) break
             }
             val from = rec.routedDevice
             Log.i("AgentXTalk", "microphone: ${from?.productName} (type ${from?.type}), ${ep.state}, peak $loudest")
+            if (call.everOnWatch && from != null && from.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                Log.w("AgentXTalk", "the call is on the watch but this turn recorded on the phone's microphone")
+            }
             // Exact zeros are not a quiet room: Android hands an app in the
             // background a muted microphone (#1664, round 3).
             if (loudest == 0 && n > 0) Log.w("AgentXTalk", "the microphone gave only silence: the app was probably in the background")
@@ -687,6 +737,7 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
                 prepare()
                 start()
             }
+            Log.i("AgentXTalk", "playing the agent's voice ($type) as voice call: ${TalkAudioLog.state(ctx)}")
             while (!done.await(200, TimeUnit.MILLISECONDS)) check()
             true
         } catch (e: Stopped) {
@@ -707,8 +758,9 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
         Handler(Looper.getMainLooper()).post {
             made.set(TextToSpeech(ctx) { status -> ok.set(status == TextToSpeech.SUCCESS); ready.countDown() })
         }
-        if (!ready.await(10, TimeUnit.SECONDS) || !ok.get()) { made.get()?.shutdown(); return }
+        if (!ready.await(10, TimeUnit.SECONDS) || !ok.get()) { made.get()?.shutdown(); Log.w("AgentXTalk", "phone voice not ready"); return }
         tts = made.get()?.apply { setAudioAttributes(voiceAttrs) }
+        Log.i("AgentXTalk", "phone voice: ${tts?.defaultEngine}, plays as voice call (usage VOICE_COMMUNICATION)")
     }
 
     /** Says [text] in the phone's own voice and waits until it is said. */
@@ -718,10 +770,11 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
         val pieces = Speech.chunks(text, minOf(TextToSpeech.getMaxSpeechInputLength() - 1, 3000))
         val left = CountDownLatch(pieces.size)
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(id: String?) {}
+            override fun onStart(id: String?) { if (id == "talk-0") Log.i("AgentXTalk", "saying: ${TalkAudioLog.state(ctx)}") }
             override fun onDone(id: String?) { left.countDown() }
             @Deprecated("Deprecated in Java")
-            override fun onError(id: String?) { left.countDown() }
+            override fun onError(id: String?) { Log.w("AgentXTalk", "phone voice failed on $id"); left.countDown() }
+            override fun onError(id: String?, errorCode: Int) { Log.w("AgentXTalk", "phone voice failed on $id: error $errorCode"); left.countDown() }
             override fun onStop(id: String?, interrupted: Boolean) { while (left.count > 0) left.countDown() }
         })
         pieces.forEachIndexed { i, p -> t.speak(p, TextToSpeech.QUEUE_ADD, null, "talk-$i") }
@@ -737,6 +790,7 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
 
     @Suppress("DEPRECATION")
     private fun cleanUp() {
+        audioLog.stop()
         try { tts?.shutdown() } catch (_: Exception) {}
         tts = null
         try { tones?.release() } catch (_: Exception) {}

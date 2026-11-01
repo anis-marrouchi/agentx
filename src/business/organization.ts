@@ -1,5 +1,5 @@
 import type { BusinessConfig, BusinessOrgEntry, BusinessProject, BusinessRole } from "./config"
-import { memberKey, memberLabel, orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
+import { memberKey, memberLabel, orgRelations, parseMember, relationsProblem, remoteAgent, type OrgRelation } from "./relations"
 
 // --- Organization: org-chart queries and validation ---
 //
@@ -28,9 +28,14 @@ export class Organization {
   /** Member → its reports-to boss, both written in full (`agent:x`, `person:y`). */
   private bosses: Map<string, string> = new Map()
   private people: ReadonlyArray<{ id: string; name?: string }>
+  /** Relations left out because they name a node no longer in mesh.peers,
+   *  one plain sentence each. The daemon logs them; the Org page shows the
+   *  same problem. */
+  dropped: string[] = []
 
-  /** `people`: the top-level people list, so a person can sit in the org. */
-  constructor(config: BusinessConfig, people: ReadonlyArray<{ id: string; name?: string }> = []) {
+  /** `people`: the top-level people list, so a person can sit in the org.
+   *  `peers`: the names in mesh.peers, so `agent:<node>/<id>` may be named. */
+  constructor(config: BusinessConfig, people: ReadonlyArray<{ id: string; name?: string }> = [], peers: ReadonlyArray<string> = []) {
     this.people = people
     for (const [agentId, entry] of Object.entries(config.orgChart)) {
       const role = config.roles[entry.role]
@@ -48,8 +53,16 @@ export class Organization {
 
     // Members and typed relations (#1418): reportsTo may name a person,
     // and business.relations adds reports-to, dotted-line and acts-for.
-    this.relationList = orgRelations(config)
-    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)))
+    // A peer can be removed or renamed without this check (mesh remove, the
+    // admin peer delete), so a line to an agent on a node that is gone is
+    // left out with a warning instead of stopping the business layer.
+    const known = new Set(peers)
+    this.relationList = orgRelations(config).filter((r) => {
+      const gone = [r.from, r.to].map(remoteAgent).find((a) => a && !known.has(a.node))
+      if (gone) this.dropped.push(`Org relation ${r.type} from "${r.from}" to "${r.to}" left out: "${gone.node}" is not a peer in mesh.peers`)
+      return !gone
+    })
+    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)), known)
     if (problem) throw new Error(problem)
     for (const r of this.relationList) {
       if (r.type === "reports-to") this.bosses.set(r.from, r.to)
@@ -72,8 +85,8 @@ export class Organization {
   /** Take the chart from `config` in place, so every part of the business
    *  layer that holds this object sees it at once (#1420). Throws, keeping
    *  the old chart, when `config` is invalid. */
-  replaceWith(config: BusinessConfig, people: ReadonlyArray<{ id: string }> = []): void {
-    Object.assign(this, new Organization(config, people))
+  replaceWith(config: BusinessConfig, people: ReadonlyArray<{ id: string }> = [], peers: ReadonlyArray<string> = []): void {
+    Object.assign(this, new Organization(config, people, peers))
   }
 
   get(agentId: string): EmployeeProfile | undefined {
@@ -89,12 +102,13 @@ export class Organization {
     return [...this.relationList]
   }
 
-  /** The member's reports-to boss: a bare id for an agent, `person:<id>` for a person. */
+  /** The member's reports-to boss: a bare id for an agent here, `person:<id>`
+   *  for a person, `agent:<node>/<id>` for an agent on another node. */
   reportsTo(member: string): string | undefined {
     const boss = this.bosses.get(memberKey(member))
     if (!boss) return undefined
     const m = parseMember(boss)
-    return m.kind === "agent" ? m.id : boss
+    return m.kind === "agent" && !remoteAgent(boss) ? m.id : boss
   }
 
   /** A member for people to read: an agent's id, or a person's name. */
@@ -109,14 +123,16 @@ export class Organization {
   }
 
   /** Walk up reports-to to the root. First element is `agentId` itself.
-   *  Agents only: the walk stops before a person, who is never dispatched to. */
+   *  Agents here only: the walk stops before a person, who is never
+   *  dispatched to, and before an agent on another node, who is shown on
+   *  the chart but not routed to. */
   chainOfCommand(agentId: string): string[] {
     const chain: string[] = []
     let cur: string | undefined = agentId
     while (cur && !chain.includes(cur)) {
       chain.push(cur)
       const boss = this.bosses.get(`agent:${cur}`)
-      cur = boss?.startsWith("agent:") ? parseMember(boss).id : undefined
+      cur = boss?.startsWith("agent:") && !remoteAgent(boss) ? parseMember(boss).id : undefined
     }
     return chain
   }

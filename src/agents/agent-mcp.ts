@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { placeholderHeaders } from "@/agent/mcp-policy"
 
 // --- Agent MCP config: per-agent .mcp.json sync ---
 //
@@ -29,6 +30,8 @@ export interface McpStdioServerConfig {
   command: string
   args?: string[]
   env?: Record<string, string>
+  /** agentx-only: enforced by the guard hook, stripped from .mcp.json. */
+  allowTools?: string[]
 }
 
 /** HTTP MCP server (Streamable HTTP transport). Claude Code reads this
@@ -38,6 +41,11 @@ export interface McpHttpServerConfig {
   type: "http"
   url: string
   headers?: Record<string, string>
+  /** agentx-only: header name -> env var NAME. Written to .mcp.json as a
+   *  `${NAME}` placeholder Claude Code expands; never as the value. */
+  headersEnv?: Record<string, string>
+  /** agentx-only: enforced by the guard hook, stripped from .mcp.json. */
+  allowTools?: string[]
 }
 
 export type McpServerConfig = McpStdioServerConfig | McpHttpServerConfig
@@ -91,9 +99,27 @@ export function syncMcpToWorkspace(workspacePath: string, mcp: McpServerMap): Sy
     return "removed"
   }
 
-  const next = { [MARKER]: true, mcpServers: mcp }
+  const next = { [MARKER]: true, mcpServers: toWorkspaceMcp(mcp) }
   writeFileSync(mcpPath, JSON.stringify(next, null, 2) + "\n")
   return fileExists ? "updated" : "installed"
+}
+
+/** The server map as Claude Code reads it: agentx-only keys removed, and
+ *  each `headersEnv` entry turned into a `${NAME}` header placeholder, so
+ *  a secret header never lands in the synced file (#1698). */
+export function toWorkspaceMcp(mcp: McpServerMap): McpServerMap {
+  const out: McpServerMap = {}
+  for (const [name, server] of Object.entries(mcp)) {
+    const { allowTools: _allow, ...rest } = server as McpServerConfig & { allowTools?: string[] }
+    if ((rest as McpHttpServerConfig).type === "http") {
+      const { headersEnv: _env, headers: _headers, ...http } = rest as McpHttpServerConfig
+      const headers = placeholderHeaders(server as McpHttpServerConfig)
+      out[name] = headers ? { ...http, headers } : http
+    } else {
+      out[name] = rest
+    }
+  }
+  return out
 }
 
 function tryParseJson(path: string): any | null {

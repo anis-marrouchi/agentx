@@ -86,7 +86,7 @@ Good to know:
 
 - **The phone stays locked.** AgentX holds the microphone with its call notification while the call is on, so it needs no screen and no "open windows in the background" permission.
 - **"Answer the ring-back by itself"** is on by default. Turn it off if you would rather answer the ring-back on the watch. The setting is saved as soon as you tap it. In tests, a ring-back answered on the watch could keep moving its sound to the phone, so leave it on unless you have a reason.
-- **The sound stays on the watch.** Some phones (Xiaomi) move a call from the watch to the phone's earpiece a second after it starts. AgentX asks for the watch again, once a second, up to ten times. If the watch is still gone after that, the call goes on from the phone.
+- **The sound stays on the watch.** Some phones (Xiaomi) move a call from the watch to the phone's earpiece a second after it starts. AgentX asks for the watch again, once a second, up to ten times. If the watch is still gone after that, the call goes on from the phone. On a Xiaomi phone the sound can jump away and back up to three times in the first three seconds, before the greeting. That is expected, and the greeting and the rest of the call stay on the watch.
 - **Your phone may flash its call screen** for about two seconds when the watch calls. It closes by itself.
 - **To stop it**, tap **Turn off** under **Start from your watch**. A call to the AgentX contact then goes to the phone network, which refuses it without connecting. To hand back the call redirect role as well, open Android settings, then **Apps**, then **Default apps**, then **Call redirect app**, and choose **None**.
 
@@ -106,7 +106,8 @@ To check the start from the watch:
 2. **Watch:** call the **AgentX** contact.
 3. **Watch:** within about five seconds the watch rings, the call connects by itself and you hear "You are talking to …".
 4. **Watch:** ask something short, hear the answer, then hang up on the watch.
-5. **Phone:** open the phone's call history. It shows no call to AgentX that went out, or only a cancelled one.
+5. **Phone:** unlock the phone and open **Talk to AgentX**. It says **Call ended**. If you are collecting `adb logcat -s AgentXTalk` (a log from the phone over USB), the line for the end of the call reads **call ended by Telecom (watch or call screen hung up)**.
+6. **Phone:** open the phone's call history. It shows no call to AgentX that went out, or only a cancelled one.
 
 ## If something is wrong
 
@@ -128,6 +129,11 @@ Starting from the watch:
 - **The watch's call to AgentX fails and nothing rings back.** AgentX is no longer the call redirect app, or **Start from your watch** is off. Open **Talk to AgentX**: if the section says **no longer the call redirect app**, tap **Set up** again. Another app that redirects calls, such as some call-blocking apps, can take the role away.
 - **The section says "This phone can't start a call from the watch"** — the phone runs an Android older than 10, or its maker removed call redirection. Start calls on the phone with **Start** instead.
 - **The watch rings back, but you hear "I didn't hear anything" each time.** The phone did not let AgentX use the microphone in the background. Open **Talk to AgentX** once with the phone unlocked and check that **Microphone** is allowed. If it keeps happening, send `adb logcat -s AgentXTalk` from a call to whoever set up AgentX: the line **the microphone gave only silence** confirms it.
-- **The sound keeps moving between the watch and the phone** — turn **Answer the ring-back by itself** back on.
+- **The sound moves from the watch to the phone during the call** — AgentX asks for the watch back by itself, a few times per call, so it usually returns within a second or two. If the sound keeps moving, or stays on the phone:
+  1. **Phone:** open **Talk to AgentX** and turn **Answer the ring-back by itself** back on.
+  2. **Phone:** check in **Bluetooth** settings that the watch is still connected.
+  3. If it still happens, send `adb logcat -s AgentXTalk` from a call to whoever set up AgentX. The lines **watch audio dropped** and **recorded on the phone's microphone** show when it happened.
+- **Hanging up on the watch does not end the call** — tap **Hang up** on the **Talk to AgentX** screen or in the call notification. Then send `adb logcat -s AgentXTalk` from that call to whoever set up AgentX: the line **call ended by** says what ended it.
+- **The call is on the watch but you hear nothing, and AgentX does not hear you** — send `adb logcat -s AgentXTalk` from that call to whoever set up AgentX. It shows whether the watch's audio link (**watch audio link**, **SCO link**) was connected, the call's audio mode, whether the phone was locked, and the microphone's level each second (**mic second**).
 - **"Choose the agent to talk to first"** — no agent is chosen yet. Open **Talk to AgentX**, choose one, then call from the watch again.
 - **AgentX is not in the watch's contacts** — add it in the watch's phone app (such as Mi Fitness or Zepp), or check that the contact was saved on the phone. Tap **Add the AgentX contact** to add it again.

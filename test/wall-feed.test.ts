@@ -1990,7 +1990,13 @@ describe("The Org page on the Wall (#1419)", () => {
     // The phone shows this line (CSS); the chart itself stays read-only.
     expect(html).toContain('<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>')
     expect(card("person:sam")).toContain("is-person is-top")
-    expect(card("person:sam")).toContain('<span class="wog__chip is-person">person</span>')
+    // The tools sit in a toolbar row above the legend (#1681), room for more.
+    const bar = html.indexOf('<div class="wog__toolbar wog__tools" role="toolbar" aria-label="Org tools">')
+    expect(bar).toBeGreaterThan(-1)
+    expect(html.indexOf('<ul class="wog__legend"')).toBeGreaterThan(bar)
+    // Person and agent differ on sight (#1681): a tag with an icon and the word.
+    expect(card("person:sam")).toMatch(/<span class="wog__kind is-person"><svg[^]*?<\/svg>Person<\/span>/)
+    expect(card("agent:cx")).toMatch(/<span class="wog__kind is-agent"><svg[^]*?<\/svg>Agent<\/span>/)
     expect(card("person:sam")).toContain("<small class=\"wog__title\">Owner</small>")
     expect(card("person:sam")).not.toContain("wog__dot")
     expect(card("person:sam")).not.toContain("data-agent")
@@ -2007,6 +2013,157 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(html).toContain('<a class="ax-btn ax-btn--ghost wog__edit" href="/org">Open the org chart</a>')
     // No raw member keys in what a reader sees.
     expect(html.replace(/<[^>]*>/g, " ")).not.toMatch(/(agent|person):/)
+  })
+
+  it("shows a department as a chip on its members, grouped side by side, with a legend key (#1681)", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" }, bob: { name: "Bob" }, cid: { name: "Cid" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }, { id: "zed", name: "Zed" }],
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" }, bob: { reportsTo: "person:sam" }, cid: { reportsTo: "person:sam" } },
+        relations: [{ from: "person:zed", to: "person:sam", type: "reports-to" }],
+        departments: { dev: { name: "Dev", head: "person:sam", members: ["ann", "cid", "person:zed"] } },
+      },
+    }, {}, null) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    // Departments open first (#1681); the chart is one tap away.
+    w.click({ "data-org-view": "chart" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    const card = (key: string) => new RegExp(`<article class="wog__card[^"]*" data-org-key="${key}"[\\s\\S]*?</article>`).exec(html)?.[0] ?? ""
+    expect(html).toContain('data-org-view="chart" aria-pressed="true"')
+    expect(card("agent:ann")).toContain('<span class="wog__chip is-dept">Dev</span>')
+    // Zed is in the department, as a person card.
+    expect(card("person:zed")).toContain('<span class="wog__chip is-dept">Dev</span>')
+    expect(card("agent:bob")).not.toContain("is-dept")
+    expect(html).toContain('<span class="wog__key is-dept"></span>Department</li>')
+    // Members first, side by side; Bob, outside the department, after them.
+    const order = [...html.matchAll(/data-org-key="([^"]+)"/g)].map((m) => m[1])
+    expect(order).toEqual(["person:sam", "agent:ann", "agent:cid", "person:zed", "agent:bob"])
+    // One run of cards side by side, so one band number on all three; Bob has none.
+    expect(card("agent:ann")).toContain('data-org-band="0"')
+    expect(card("person:zed")).toContain('data-org-band="0"')
+    expect(card("agent:bob")).not.toContain("data-org-band")
+  })
+
+  it("opens on the Departments view: name, head card on top, member grid, then the rest (#1681)", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" }, bob: { name: "Bob" }, cid: { name: "Cid" }, loose: { name: "Loose" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }, { id: "zed", name: "Zed" }],
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" }, bob: { reportsTo: "person:sam" }, cid: { reportsTo: "person:sam" } },
+        relations: [{ from: "person:zed", to: "person:sam", type: "reports-to" }],
+        departments: { dev: { name: "Dev", head: "person:sam", members: ["ann", "cid", "person:zed"] } },
+      },
+    }, {}, null) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    expect(html).toContain('data-org-view="dept" aria-pressed="true"')
+    // No chart, no zoom: boxes only.
+    expect(html).not.toContain('id="wog-chart"')
+    expect(html).not.toContain("data-org-zoom")
+    const box = /<section class="wod__box" data-org-dept="dev"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ""
+    expect(box).toContain('<h3 class="wod__name">Dev <small>4</small></h3>')
+    // The head is a full card on top, marked Head, before the member grid.
+    const head = /<div class="wod__head">([\s\S]*?)<\/div><div class="wod__grid">/.exec(box)?.[1] ?? ""
+    expect(head).toContain("is-person is-top is-lead")
+    expect(head).toContain('<span class="wog__chip is-lead">Head</span>')
+    expect(head).toContain("<b>Sam Demo</b>")
+    const names = (part: string) => [...part.matchAll(/<b>([^<]+)/g)].map((m) => m[1])
+    expect(names(box.slice(box.indexOf("wod__grid")))).toEqual(["Ann", "Cid", "Zed"])
+    // Everyone else, outside-the-chart agents too, in "Not in a department".
+    const rest = /<section class="wod__box is-rest"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ""
+    expect(rest).toContain("Not in a department <small>2</small>")
+    expect(names(rest)).toEqual(["Bob", "Loose"])
+    // A card in the view has no grid place and no fold.
+    expect(box).not.toContain("grid-row")
+    expect(box).not.toContain("data-org-fold")
+    expect(html.replace(/<[^>]*>/g, " ")).not.toMatch(/(agent|person):/)
+  })
+
+  it("shows an also-member last in the box, outlined, with a Home chip (Anis 11-01)", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" }, bob: { name: "Bob" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" }, bob: { reportsTo: "person:sam" } },
+        departments: {
+          dev: { name: "Dev", head: "person:sam", members: ["ann"] },
+          ops: { name: "Ops", members: ["bob"], alsoMembers: ["ann"] },
+        },
+      },
+    }, {}, null) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    const ops = /<section class="wod__box" data-org-dept="ops"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ""
+    expect(ops).toContain('<h3 class="wod__name">Ops <small>1 + 1 also</small></h3>')
+    const also = ops.slice(ops.indexOf('<h4 class="wod__also">Also works here</h4>'))
+    expect(also).toContain(" is-also")
+    expect(also).toContain('<span class="wog__chip is-home">Home: Dev</span>')
+    expect(also).toContain("<b>Ann<")
+    expect(ops.indexOf("<b>Bob</b>")).toBeLessThan(ops.indexOf("wod__also"))
+    // In Dev, her home, Ann is a plain card.
+    const dev = /<section class="wod__box" data-org-dept="dev"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ""
+    expect(dev).not.toContain("is-also")
+    expect(html).toContain("Outlined: also works here, home is another department")
+  })
+
+  it("has no also-works legend line when every also-member was left out", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" } },
+        departments: { ops: { name: "Ops", members: [], alsoMembers: ["ann"] } },
+      },
+    }, {}, null) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    expect(html).not.toContain("wod__also")
+    expect(html).not.toContain("Outlined: also works here")
+  })
+
+  it("keeps the chart and no view switch when there are no departments (#1681)", async () => {
+    const w = openWall({ org: ORG, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    expect(html).toContain('id="wog-chart"')
+    expect(html).not.toContain('data-org-view="dept"')
+    expect(html).toContain('data-org-view="chart" aria-pressed="true"')
+    expect(html).not.toContain("wod__box")
+  })
+
+  it("switches to Projects: each project with its lead, PM and team, and who is in none (#1687)", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" }, bob: { name: "Bob" }, cid: { name: "Cid" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" }, bob: { reportsTo: "person:sam" }, cid: { reportsTo: "ann" } },
+        projects: [{ id: "demo/site", name: "Demo site", pm: "ann", lead: "person:sam", team: ["cid"] }, { id: "demo/app", pm: "ann" }],
+      },
+    }, {}, null) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    expect(w.el("wall-org").innerHTML).toContain('data-org-view="projects" aria-pressed="false"')
+    w.click({ "data-org-view": "projects" })
+    const html = w.el("wall-org").innerHTML
+    expect(html).toContain('data-org-view="projects" aria-pressed="true"')
+    expect(html).not.toContain("wog-chart")
+    const box = /<section class="opj" data-project="demo\/site"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ""
+    expect(box).toContain(">Demo site</h3>")
+    expect(box).toMatch(/<span class="opj-role">Lead<\/span><b class="opj-name">Sam Demo<\/b>/)
+    expect(box).toMatch(/<span class="opj-role">PM<\/span><b class="opj-name">Ann<\/b>/)
+    expect(box).toContain('data-member="agent:cid"')
+    // Only a PM: the project shows with an empty team.
+    expect(/<section class="opj" data-project="demo\/app"[\s\S]*?<\/section>/.exec(html)?.[0]).toContain("No team yet.")
+    expect(html).toMatch(/Not in a project · 1<\/h3>[\s\S]*data-member="agent:bob"/)
+    expect(html).toContain('href="/org?view=projects">Open the org chart</a>')
+    w.click({ "data-org-view": "chart" })
+    expect(w.el("wall-org").innerHTML).toContain("wog-chart")
   })
 
   it("shows dotted lines on request, and folds a branch", async () => {
@@ -2100,6 +2257,34 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(pages[0]).toContain('<a href="/org">Open the org chart</a>')
     expect(pages[1]).toContain('href="/org">Open the org chart</a>')
     expect(renderWallPage()).not.toContain("wall-orgsetup")
+  })
+
+  it("shows an agent on another node as a dashed card with its node, grey when down, not counted and not opened", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      mesh: { peers: [{ name: "far" }] },
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" } },
+        relations: [{ from: "agent:far/seif", to: "person:sam", type: "reports-to" }, { from: "agent:far/omar", to: "person:sam", type: "reports-to" }],
+      },
+    }, {}, null, [{ peer: "far", healthy: false, skills: [{ id: "seif", name: "Seif" }, { id: "kai", name: "Kai" }] }]) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    const card = (key: string) => new RegExp(`<article class="wog__card[^"]*" data-org-key="${key}"[\\s\\S]*?</article>`).exec(html)?.[0] ?? ""
+    expect(card("agent:far/seif")).toContain("is-remote is-gone")
+    expect(card("agent:far/seif")).toContain(">down: far</span>")
+    expect(card("agent:far/omar")).toContain(">not seen: far</span>")
+    // Shown, not routed to: no profile button and no status dot.
+    expect(card("agent:far/seif")).not.toContain("data-agent")
+    expect(card("agent:far/seif")).not.toContain("wog__dot")
+    // Counted apart from this node's staff; the unplaced one is listed by node.
+    expect(html).toContain("<dt>Agents</dt><dd>1</dd>")
+    expect(html).toContain("<dt>Other nodes</dt><dd>2</dd>")
+    expect(html).toContain("On other nodes, not placed yet")
+    expect(html).toContain("@kai on far")
+    expect(html).toContain("On another node: shown, not routed to")
   })
 })
 

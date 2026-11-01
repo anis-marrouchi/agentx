@@ -66,17 +66,30 @@ const providerConfigSchema = z.object({
   thinking: z.boolean().optional(),
 })
 
+/** The only tools of an MCP server an agent may use (#1698). Exact names
+ *  as the server lists them, `*` as a wildcard. Left out, every tool is
+ *  allowed; an empty list allows none. */
+const mcpAllowToolsSchema = z.array(z.string().min(1)).optional()
+
 const mcpStdioServerSchema = z.object({
   type: z.literal("stdio").optional(),
   command: z.string(),
   args: z.array(z.string()).default([]),
   env: z.record(z.string(), z.string()).optional(),
+  allowTools: mcpAllowToolsSchema,
 })
 
 const mcpHttpServerSchema = z.object({
   type: z.literal("http"),
   url: z.string().url(),
   headers: z.record(z.string(), z.string()).optional(),
+  /** Header name -> NAME of an environment variable holding its value
+   *  (#1698). Read at connect time; written to .mcp.json only as a
+   *  `${NAME}` placeholder, never as the secret. */
+  headersEnv: z
+    .record(z.string(), z.string().regex(/^[A-Z_][A-Z0-9_]*$/, "use an uppercase environment variable name, such as CONNECTOR_API_KEY"))
+    .optional(),
+  allowTools: mcpAllowToolsSchema,
 })
 
 // HTTP variant first so a record with `type: "http"` matches the HTTP
@@ -277,7 +290,18 @@ const agentConfigSchema = z.object({
   /** MCP servers this agent's Claude Code session should load. Synced
    *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
    *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
-  mcp: z.record(z.string(), mcpServerSchema).optional(),
+  mcp: z
+    .record(z.string(), mcpServerSchema)
+    .optional()
+    .superRefine((servers, ctx) => {
+      // The guard hook matches `mcp__<name>__…`; a name Claude Code would
+      // write differently never matches, and its tools would run unchecked.
+      for (const [name, server] of Object.entries(servers ?? {})) {
+        if (server.allowTools && !/^[A-Za-z0-9_-]+$/.test(name)) {
+          ctx.addIssue({ code: "custom", path: [name], message: "an MCP server with allowTools needs a name of letters, digits, _ or - only" })
+        }
+      }
+    }),
   /** Enable CodeGraph (https://github.com/colbymchenry/codegraph) for this
    *  agent's claude-code or codex-cli workspace. When true, agentx (a) adds
    *  a codegraph MCP server to <workspace>/.mcp.json, (b) extends
@@ -1973,6 +1997,19 @@ export const wallConfigSchema = z.object({
     /** A person's first sign-in raises a card for the owner. `auto` lets a
      *  member in without it; a client always gets the card. */
     firstSignIn: z.enum(["card", "auto"]).default("card"),
+    /** Signing in with an OpenID Connect provider, such as Google (#1675).
+     *  Its return address is `<origin>/member/signin/oidc/done`. */
+    oidc: z.object({
+      /** The button reads "Sign in with <name>". */
+      name: z.string().min(1).max(40),
+      /** e.g. https://accounts.google.com; its discovery document is read from there. */
+      issuer: z.string().regex(/^https:\/\/[^\s]+[^/\s]$/, "an https address, without a trailing slash"),
+      clientId: z.string().min(1),
+      /** Only as "${VAR}", the value in .env (literalSecretProblems). */
+      clientSecret: z.string().min(1),
+      /** Only accounts of this hosted domain (Google Workspace). */
+      hd: z.string().min(1).optional(),
+    }).optional(),
   }).optional(),
 }).default({})
 
@@ -3023,11 +3060,19 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
 /** Secrets that must stay in .env, checked on agentx.json before `${VAR}`
  *  expansion (#1478): a literal value would sit in a file that gets copied. */
 export function literalSecretProblems(raw: any): string[] {
+  const isRef = (v: unknown) => /^\$\{\w+\}$/.test(String(v))
+  const problems: string[] = []
   const sender = raw?.mail?.sender
-  if (!sender || typeof sender !== "object") return []
-  return (["user", "password"] as const)
-    .filter((k) => sender[k] !== undefined && !/^\$\{\w+\}$/.test(String(sender[k])))
-    .map((k) => `mail.sender.${k}: put the value in .env and write "\${AGENTX_MAIL_${k.toUpperCase()}}" here`)
+  if (sender && typeof sender === "object") {
+    problems.push(...(["user", "password"] as const)
+      .filter((k) => sender[k] !== undefined && !isRef(sender[k]))
+      .map((k) => `mail.sender.${k}: put the value in .env and write "\${AGENTX_MAIL_${k.toUpperCase()}}" here`))
+  }
+  const oidc = raw?.wall?.signIn?.oidc
+  if (oidc && typeof oidc === "object" && oidc.clientSecret !== undefined && !isRef(oidc.clientSecret)) {
+    problems.push(`wall.signIn.oidc.clientSecret: put the value in .env and write "\${AGENTX_OIDC_CLIENT_SECRET}" here`)
+  }
+  return problems
 }
 
 /** Rules that span two sections, checked after the schema. */

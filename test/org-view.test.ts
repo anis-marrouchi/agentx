@@ -258,4 +258,8 @@ describe("the Org page and its API", () => {
     expect(html).toContain('id="org-tree"')
     for (const s of scripts) expect(() => new Function(s)).not.toThrow()
   })
+
+  it("breaks a long unbroken job line inside the card", () => {
+    expect(renderOrgPage({})).toMatch(/\.org-job \{[^}]*overflow-wrap: anywhere/)
+  })
 })

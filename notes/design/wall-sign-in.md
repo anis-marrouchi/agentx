@@ -127,7 +127,7 @@ Google is a configured **sign-in provider**, as Mailgun is a configured mail sen
 
 1. In a browser, open the Google Cloud console and pick a project the owner already has.
 2. Go to APIs & Services, then Credentials, and create an OAuth client of type "Web application".
-3. Add the return address `https://<the Wall's address>/signin/oidc/done`.
+3. Add the return address `https://<the Wall's address>/member/signin/oidc/done` (under `/member`, so the published member paths already reach it; #1675).
 4. Put the client id in `agentx.json` and the secret in `.env`, as in the settings below.
 
 A Web OAuth client for sign-in costs nothing. If any step asks to turn on billing or a paid API, stop and ask first (#1478: nothing billable without asking).
@@ -136,7 +136,7 @@ A Web OAuth client for sign-in costs nothing. If any step asks to turn on billin
 
 - Standard OpenID Connect ("Sign in with Google" is one case of it): code flow with PKCE, `state` and `nonce`, scopes `openid email` only. The provider's address comes from its discovery document (`issuer`), so another OpenID Connect provider is the same settings with other values.
 - The answer counts only if the address is marked **verified**. An optional `hd` limits it to one Workspace domain.
-- It matches the **same people entry** as the email link: the `email:` identity. After the first sign-in, the Wall adds `oidc:<issuer>#<subject>` to the person, and later sign-ins match that id, so a new account that takes over an old address does not get in.
+- It matches the **same people entry** as the email link: the `email:` identity. After the first sign-in, the Wall keeps that account's subject for the person (built in #1675 as `.agentx/signin-accounts.json`, not an edit of `agentx.json`), and later sign-ins must show the same one, so a new account that takes over an old address does not get in.
 - The code exchange goes from the Wall to the provider directly; the browser never holds the provider's tokens, and the Wall keeps none of them.
 - A public address is not needed: the provider sends the person's browser back to the return address, and never calls the Wall itself.
 
@@ -196,7 +196,7 @@ None of these exist yet. Each one gets a docs page or section in the same change
 | `agentx mail test <address>` | CLI, new | Sends one test mail through `mail.sender`. |
 | `wall.signIn.oidc.issuer` | `agentx.json` | On standby ([Decision 5](#5-sign-in-with-google-on-standby)). The sign-in provider, for example `https://accounts.google.com`. Unset: no provider button. |
 | `wall.signIn.oidc.clientId` | `agentx.json` | On standby. The OAuth client id. |
-| `wall.signIn.oidc.clientSecretEnv` | `agentx.json` | On standby. The name of the `.env` variable holding the client secret (default `AGENTX_OIDC_CLIENT_SECRET`). |
+| `wall.signIn.oidc.clientSecret` | `agentx.json` | Built in #1675: only as a `${VAR}` reference, e.g. `${AGENTX_OIDC_CLIENT_SECRET}`, the value in `.env`. `wall.signIn.oidc.name` is the button's label. |
 | `wall.signIn.oidc.hd` | `agentx.json` | On standby. Optional: only accounts of this Workspace domain. |
 | `agentx people link <id> email:<address>` | CLI, exists | How the owner lets a person sign in. No new command. |
 

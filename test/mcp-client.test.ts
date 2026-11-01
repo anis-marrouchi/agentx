@@ -159,10 +159,13 @@ describe("startMcpPool", () => {
 // as the stdio cases but over fetch, and verifies the
 // `Mcp-Session-Id` handshake survives across calls.
 
-function startHttpMockServer(opts: { contentType?: "sse" | "json" } = {}): Promise<{ url: string; server: Server; sessions: Set<string> }> {
+function startHttpMockServer(opts: { contentType?: "sse" | "json" } = {}): Promise<{ url: string; server: Server; sessions: Set<string>; apiKeys: Set<string> }> {
   return new Promise((resolve) => {
     const sessions = new Set<string>()
+    const apiKeys = new Set<string>()
     const server = createServer((req, res) => {
+      const key = req.headers["x-api-key"]
+      if (typeof key === "string") apiKeys.add(key)
       if (req.method !== "POST") { res.statusCode = 405; res.end(); return }
       let body = ""
       req.on("data", (c) => { body += c.toString() })
@@ -207,7 +210,7 @@ function startHttpMockServer(opts: { contentType?: "sse" | "json" } = {}): Promi
     })
     server.listen(0, "127.0.0.1", () => {
       const port = (server.address() as AddressInfo).port
-      resolve({ url: `http://127.0.0.1:${port}/`, server, sessions })
+      resolve({ url: `http://127.0.0.1:${port}/`, server, sessions, apiKeys })
     })
   })
 }
@@ -259,6 +262,48 @@ describe("McpClient (HTTP transport)", () => {
       expect(r.content).toContain('"via-pool"')
     } finally {
       pool.close()
+      server.close()
+    }
+  })
+})
+
+describe("MCP server policy (#1698)", () => {
+  it("allowTools hides every other tool and dispatch refuses it", async () => {
+    const script = mockServerScript()
+    const pool = await startMcpPool({
+      alpha: { command: process.execPath, args: [script], allowTools: ["echo"] },
+    })
+    try {
+      expect(pool.tools.map((t) => t.name)).toEqual(["mcp__alpha__echo"])
+      const r = await pool.dispatch("mcp__alpha__boom", {})
+      expect(r.isError).toBe(true)
+      expect(r.content).toMatch(/Unknown MCP tool/)
+    } finally {
+      pool.close()
+    }
+  })
+
+  it("an empty allowTools list exposes no tools", async () => {
+    const script = mockServerScript()
+    const pool = await startMcpPool({ alpha: { command: process.execPath, args: [script], allowTools: [] } })
+    try {
+      expect(pool.tools).toEqual([])
+    } finally {
+      pool.close()
+    }
+  })
+
+  it("headersEnv sends the variable's value as the header", async () => {
+    const { url, server, apiKeys } = await startHttpMockServer({ contentType: "json" })
+    process.env.AGENTX_TEST_MCP_KEY = "k-test-123"
+    const client = new McpClient("http-mock", { type: "http", url, headersEnv: { "x-api-key": "AGENTX_TEST_MCP_KEY" } })
+    try {
+      await client.initialize()
+      await client.listTools()
+      expect([...apiKeys]).toEqual(["k-test-123"])
+    } finally {
+      delete process.env.AGENTX_TEST_MCP_KEY
+      client.close()
       server.close()
     }
   })

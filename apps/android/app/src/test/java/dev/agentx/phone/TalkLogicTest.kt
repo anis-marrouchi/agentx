@@ -132,4 +132,16 @@ class TalkLogicTest {
         assertFalse(WatchRoute.askAgain(onWatch = false, bluetoothOffered = true, msSinceLastAsk = 100, asks = 1))
         assertFalse(WatchRoute.askAgain(onWatch = false, bluetoothOffered = true, msSinceLastAsk = 600, asks = WatchRoute.MAX_ASKS))
     }
+
+    @Test
+    fun micLevelGivesOneLinePerFullSecond() {
+        val level = MicLevel(samplesPerSecond = 4)
+        val pcm = shortArrayOf(100, -100, 100, -100, 3, -4)
+        // Not a full second yet.
+        assertEquals(emptyList<MicLevel.Second>(), level.add(pcm, 0, 3))
+        // The fourth sample completes second 1: rms 100, peak 100.
+        assertEquals(listOf(MicLevel.Second(1, 100, 100)), level.add(pcm, 3, 3))
+        // Second 2 starts fresh from the samples after it.
+        assertEquals(listOf(MicLevel.Second(2, 3, 4)), level.add(shortArrayOf(3, 3), 0, 2))
+    }
 }

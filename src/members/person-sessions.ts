@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { dirname, resolve } from "path"
 import { createHash, randomBytes } from "crypto"
+import type { SignInAccount } from "./signin-accounts"
 import type { Person } from "@/people/people"
 
 // --- Personal sessions on the Wall: the ax_person cookie (#1478, slice 1) ---
@@ -44,6 +45,9 @@ export interface PersonSession {
   /** When the owner let the person in, on this session's card or by the
    *  `auto` setting. A person with one approved session goes straight in. */
   approvedAt?: string
+  /** The provider account a waiting first sign-in came with (#1675): kept
+   *  for the person only on the owner's yes. */
+  account?: SignInAccount
 }
 
 interface SessionsFile { sessions: PersonSession[] }
@@ -58,7 +62,7 @@ export class PersonSessionStore {
   }
 
   /** A new session for `personId`. The value goes in the cookie, once; only its hash is kept. */
-  create(personId: string, label: string, extra: Pick<PersonSession, "state" | "cardId" | "approvedAt"> = {}): { session: PersonSession; value: string } {
+  create(personId: string, label: string, extra: Pick<PersonSession, "state" | "cardId" | "approvedAt" | "account"> = {}): { session: PersonSession; value: string } {
     const value = randomBytes(32).toString("base64url")
     const at = new Date(this.now()).toISOString()
     const session: PersonSession = { id: randomBytes(8).toString("hex"), hash: sha256(value), personId, label, startedAt: at, lastUsedAt: at, ...extra }
