@@ -89,7 +89,7 @@ func go(_ i: Int) {
         print("all passed")
         exit(0)
     }
-    steps[i] { go(i + 1) }
+    steps[i]({ go(i + 1) })
 }
 go(0)
 DispatchQueue.main.asyncAfter(deadline: .now() + 30) { print("FAIL timed out"); exit(1) }
