@@ -76,9 +76,15 @@ describe("Organization with agents on other nodes", () => {
   })
   const people = [{ id: "anis", name: "Anis" }]
 
-  it("starts with a known peer and no network call, and refuses an unknown one", () => {
-    expect(() => new Organization(business, people, ["clawd"])).not.toThrow()
-    expect(() => new Organization(business, people, [])).toThrow(/"clawd" is not a peer in mesh.peers/)
+  it("starts with a known peer and no network call; a line to a node that is gone is left out, not fatal", () => {
+    expect(new Organization(business, people, ["clawd"]).dropped).toEqual([])
+    // The peer was removed (mesh remove, admin delete) with relations still naming it.
+    const org = new Organization(business, people, [])
+    expect(org.dropped).toContain('Org relation reports-to from "agent:ops" to "agent:clawd/lead" left out: "clawd" is not a peer in mesh.peers')
+    expect(org.reportsTo("ops")).toBeUndefined()
+    expect(org.reportsTo("pm")).toBe("person:anis")
+    // The Org page still names the problem for the owner.
+    expect(buildOrgView({ ...config, mesh: { peers: [] } }, {}, null, null).problem).toMatch(/"clawd" is not a peer in mesh.peers/)
   })
 
   it("stops escalation at a remote boss: shown, not routed", () => {
@@ -92,14 +98,21 @@ describe("Organization with agents on other nodes", () => {
     expect(org.directReports("agent:clawd/lead")).toEqual(["ops"])
   })
 
-  it("keeps the old chart on a reload that drops the peer", () => {
+  it("takes a reload that drops the peer, leaving out only its lines", () => {
     const org = new Organization(business, people, ["clawd"])
-    expect(() => org.replaceWith(business, people, [])).toThrow()
-    expect(org.reportsTo("ops")).toBe("agent:clawd/lead")
+    org.replaceWith(business, people, [])
+    expect(org.reportsTo("ops")).toBeUndefined()
+    expect(org.dropped.length).toBeGreaterThan(0)
+    expect(org.reportsTo("pm")).toBe("person:anis")
   })
 })
 
 describe("The org view with agents on other nodes", () => {
+  it("does not throw on a peer that answers with a name that is not text", () => {
+    const odd = [{ peer: "clawd", healthy: true, skills: [{ id: "x", name: 42 }, { id: "y" }] }] as any
+    expect(() => buildOrgView(config, {}, null, odd)).not.toThrow()
+  })
+
   it("draws a card for each remote agent a relation or department names, with how its node answered", () => {
     const view = buildOrgView(config, {}, null, MESH)
     expect(view.problem).toBeUndefined()

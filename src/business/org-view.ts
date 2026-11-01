@@ -186,7 +186,7 @@ export function buildOrgView(
   const byDepartment = departmentBoxes(departments, everyone)
   const placedRemote = new Set(diagram.boxes.filter((b) => b.remote).map((b) => b.id))
   const others = (mesh ?? []).flatMap((p) => (p.skills ?? []).filter((s) => s?.id && !placedRemote.has(`${p.peer}/${s.id}`))
-    .map((s) => ({ node: p.peer, id: s.id, name: s.name || s.id, healthy: p.healthy })))
+    .map((s) => ({ node: String(p.peer), id: String(s.id), name: String(s.name || s.id), healthy: p.healthy })))
     .sort((a, b) => a.node.localeCompare(b.node) || a.name.localeCompare(b.name))
   return { roots, outside, live: live !== null, people, relations, departments, byDepartment, diagram, mesh: { live: mesh !== null, others }, ...(problem ? { problem } : {}) }
 }
