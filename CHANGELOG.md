@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.200.1](https://github.com/anis-marrouchi/agentx/compare/v0.200.0...v0.200.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **voice:** widget answer card loads pictures and video from the daemon ([#1670](https://github.com/anis-marrouchi/agentx/issues/1670)) ([#1680](https://github.com/anis-marrouchi/agentx/issues/1680)) ([9c51728](https://github.com/anis-marrouchi/agentx/commit/9c517282c4064f81a73383f4e669278a86b07795))
+
 ## [0.200.0](https://github.com/anis-marrouchi/agentx/compare/v0.199.0...v0.200.0) (2026-11-01)
 
 
