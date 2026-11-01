@@ -1,3 +1,4 @@
+import { departmentsProblem, orgDepartments, type Outsider } from "./departments"
 import { memberKey, orgRelations, parseMember, relationsProblem, RELATION_TYPES, type OrgRelation, type RelationType } from "./relations"
 
 // --- Setting up the org chart from the Wall (#1420) ---
@@ -99,19 +100,42 @@ export function readOrgSetup(cfg: any): OrgSetup {
     ...Object.entries(b.orgPeople ?? {}).map(([id, p]: [string, any]) => member("person", id, p?.role)),
   ]
   const seen = new Set(members.map((m) => m.ref))
-  for (const r of relations) {
-    for (const end of [r.from, r.to]) {
-      const m = parseMember(end)
-      if (m.kind === "person" && !seen.has(end)) { seen.add(end); members.push(member("person", m.id, undefined)) }
-    }
+  // A person named in a relation or a department (#1681) is in the chart too.
+  const named = [...relations.flatMap((r) => [r.from, r.to]), ...orgDepartments(b).flatMap((d) => [...(d.head ? [d.head] : []), ...d.members])]
+  for (const end of named) {
+    const m = parseMember(end)
+    if (m.kind === "person" && !seen.has(end)) { seen.add(end); members.push(member("person", m.id, undefined)) }
   }
   return { members, relations }
 }
 
-/** The relations problem of the whole config, as relations.ts sees it. */
+/** The relations and departments problem of the whole config, as the org
+ *  view sees it. */
 function chartProblem(cfg: any): string | undefined {
   const b = cfg?.business ?? {}
-  return relationsProblem(orgRelations(b), new Set(Object.keys(b.orgChart ?? {})), new Set(knownPeople(cfg).keys()))
+  const agents = new Set(Object.keys(b.orgChart ?? {}))
+  const people = new Set(knownPeople(cfg).keys())
+  const list: any[] = Array.isArray(cfg?.people) ? cfg.people : []
+  const outsiders = new Map<string, Outsider>(list.flatMap((p) =>
+    p?.id && (p.role === "client" || p.role === "guest") ? [[String(p.id), { name: String(p.name || p.id), role: p.role }] as const] : []))
+  return relationsProblem(orgRelations(b), agents, people) ?? departmentsProblem(orgDepartments(b), agents, people, outsiders)
+}
+
+/** Take `ref` out of every department in the config, as head and as member.
+ *  The department stays, without a head when it was the head. Returns the
+ *  names of the departments it left. */
+function dropFromDepartments(b: any, ref: string): string[] {
+  const left: string[] = []
+  for (const [id, d] of Object.entries(b.departments ?? {}) as Array<[string, any]>) {
+    let hit = false
+    if (d?.head && memberKey(d.head) === ref) { delete d.head; hit = true }
+    if (Array.isArray(d?.members)) {
+      const kept = d.members.filter((m: string) => memberKey(m) !== ref)
+      if (kept.length !== d.members.length) { d.members = kept; hit = true }
+    }
+    if (hit) left.push(String(d?.name || id))
+  }
+  return left
 }
 
 /** The key in business.roles for `text`: an existing key or title, or a new
@@ -216,12 +240,14 @@ export function applyOrgEdit(cfg: any, edit: OrgEdit): string {
       const pmOf = m.kind === "agent" ? (b.projects ?? []).find((p: any) => p?.pm === m.id) : undefined
       if (pmOf) throw new Error(`${m.name} is the project manager of "${pmOf.id}". Give that project another manager first.`)
       const dropped = dropRelations(b, (r) => r.from === m.ref || r.to === m.ref)
+      const depts = dropFromDepartments(b, m.ref)
       if (m.kind === "agent") delete b.orgChart[m.id]
       else if (b.orgPeople) {
         delete b.orgPeople[m.id]
         if (Object.keys(b.orgPeople).length === 0) delete b.orgPeople
       }
       summary = `${m.name} removed from the org chart` + (dropped ? `, with ${dropped} ${dropped === 1 ? "line" : "lines"}` : "")
+        + (depts.length ? ` and out of ${depts.join(", ")}` : "")
       break
     }
     case "add-relation": {

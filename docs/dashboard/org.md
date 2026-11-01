@@ -104,6 +104,8 @@ A **department** puts members of the chart in one named group with a head, for e
 
 A department that names someone unknown, a member in two departments, or a client or guest as head or member, shows above the chart as **Problem in the org chart**, for example "Department Engineering cannot list Zahra: Zahra is a guest, and only owners and members of the organisation can be in a department". The daemon still starts.
 
+When you remove a member in **Edit org**, they also leave every department. If they were its head, the department stays without one. An edit that would leave a department naming someone unknown is refused with the same sentence.
+
 ## What each card shows on the `/org` page
 
 | Status | What it means |
