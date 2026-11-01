@@ -148,7 +148,7 @@ An agent that runs on another AgentX node of your mesh can sit in your chart too
 
 ## See who runs each project
 
-The **Projects** view shows each project with the people and agents on it: who manages it at the top, and the team under them. It sits next to the chart: pick **Chart** or **Projects** at the top of the Org page.
+The **Projects** view shows each project with the people and agents on it: who manages it at the top, and the team under them. It sits next to the other views: pick **Departments** (shown when you have departments), **Chart** or **Projects** at the top of the Org page.
 
 Each project can have three kinds of member:
 

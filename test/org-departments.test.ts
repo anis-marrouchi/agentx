@@ -224,7 +224,7 @@ describe("the /org page (#1681)", () => {
     expect(fit).toContain("Math.max(FIT_FLOOR, Math.min(1, Math.floor(room / w * 100) / 100))")
     expect(page).toContain("var zoom = 1, fitted = false, FIT_FLOOR = 0.6;")
     // First paint: fit, then the widest department box's left edge, never the head centred.
-    expect(page).toMatch(/if \(!deptView\) \{ fit\(\); showStart\(\); \}\s*zoomLabel\(\);\s*moreCue\(\);/)
+    expect(page).toMatch(/if \(!deptView && view !== 'projects'\) \{ fit\(\); showStart\(\); \}\s*zoomLabel\(\);\s*moreCue\(\);/)
     const start = page.slice(page.indexOf("function showStart("), page.indexOf("function moreSide("))
     expect(start).toContain("tree.querySelectorAll('.org-dept-box')")
     expect(start).not.toContain("box.width / 2")
