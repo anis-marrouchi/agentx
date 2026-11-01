@@ -163,6 +163,7 @@ export type AskResult = { status: 200 | 400 | 404 | 429; body: { ok?: true; mess
 /** POST /api/member/signin-link: mail a link if the address may sign in.
  *  The answer does not say whether it may; the mail goes out after it. */
 export async function askSignInLink(req: IncomingMessage, deps: SignInDeps): Promise<AskResult> {
+  const started = Date.now()
   const log = deps.log ?? ((line: string) => console.log(line))
   const setup = deps.setup()
   if (!setup) return { status: 404, body: { error: NOT_SET_UP } }
@@ -196,6 +197,8 @@ export async function askSignInLink(req: IncomingMessage, deps: SignInDeps): Pro
       },
     )
   }
+  // A known address writes the links file; the same wait hides that.
+  await padTo(started, deps.minMs ?? MIN_MS)
   return { status: 200, body: { ok: true, message: LINK_ASKED } }
 }
 
@@ -251,11 +254,12 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
     return { status: 200, body: { person: person.id, name, state: "active" }, value }
   }
 
-  // The first sign-in: the owner's card. Cut so its 300-character question always fits.
+  // The first sign-in: the owner's card. The name is in the title, so the
+  // question stays under its 300 characters: at most 45 + 80 + 60 + 85.
   const who = person.name.slice(0, 60)
   const card = createCard(deps.root, {
     title: `${who} signed in for the first time`,
-    ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Browser name, as typed there: "${name}". Let ${who} see their own work?`,
+    ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Browser name, as typed there: "${name}". Let them see their own work?`,
     recommend: `Signed in with the link mailed to ${who}. Yes if you expected it. No if you did not.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,

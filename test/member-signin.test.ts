@@ -7,7 +7,7 @@ import { TokenStore } from "../src/daemon/token-store"
 import { PairCodeStore } from "../src/daemon/pair-codes"
 import { PairAttemptLimiter } from "../src/daemon/app-pair-code"
 import { MemberStore } from "../src/members/store"
-import { PersonSessionStore } from "../src/members/person-sessions"
+import { ENDED_BY_OWNER, PersonSessionStore } from "../src/members/person-sessions"
 import { handleMemberRequest } from "../src/daemon/member-routes"
 import { decideCard, listCards } from "../src/approvals/cards"
 import { LINK_ASKED, LINK_FAILED, LINK_TTL_MS, SendLimiter, SignInLinkStore, personByEmail, type SignInSetup } from "../src/members/signin"
@@ -171,6 +171,37 @@ describe("spending a link", () => {
     expect(await r.json()).toMatchObject({ state: "active" })
     expect((await fetch(`${base}/api/member/me`, { headers: { cookie: cookieOf(r) } })).status).toBe(200)
     expect(listCards(dir, "pending")).toHaveLength(0)
+  })
+
+  it("asks the owner again after End access, even with another browser still let in", async () => {
+    const one = await spend(await linkFor())
+    decideCard(dir, listCards(dir, "pending")[0].id, "yes", { by: "owner" })
+    const two = await spend(await linkFor(), "Phone")
+    expect(await two.json()).toMatchObject({ state: "active" })
+    const laptop = sessions.sessions("dana").find((s) => s.label === "Dana's laptop")!
+    expect((await fetch(`${base}/api/member/me`, { headers: { cookie: cookieOf(one) } })).status).toBe(200)
+    sessions.end("dana", laptop.id, ENDED_BY_OWNER)
+    clock += 1000
+    expect(sessions.approved("dana")).toBe(false)
+    const again = await spend(await linkFor(), "Someone's laptop")
+    expect(await again.json()).toMatchObject({ state: "pending" })
+    expect(listCards(dir, "pending")).toHaveLength(1)
+    expect((await fetch(`${base}/api/member/me`, { headers: { cookie: cookieOf(again) } })).status).toBe(403)
+    // A yes on the new card lets the person in again.
+    decideCard(dir, listCards(dir, "pending")[0].id, "yes", { by: "owner" })
+    expect((await fetch(`${base}/api/member/me`, { headers: { cookie: cookieOf(again) } })).status).toBe(200)
+    expect(await (await spend(await linkFor(), "Tablet")).json()).toMatchObject({ state: "active" })
+  })
+
+  it("fits the card question in 300 characters with the longest address, login and names", async () => {
+    const login = `${"a".repeat(68)}@example.com`
+    PEOPLE[0] = { ...PEOPLE[0], name: "N".repeat(80), identities: ["email:dana@example.com", `tailscale:${login}`] }
+    const r = await post("/api/member/signin", { code: await linkFor(), machine: "M".repeat(80) },
+      { "Tailscale-User-Login": login, "X-Forwarded-For": "ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255" })
+    expect(await r.json()).toMatchObject({ state: "pending" })
+    const [card] = listCards(dir, "pending")
+    expect(card.ask).toContain(login)
+    expect(card.ask.length).toBeLessThanOrEqual(300)
   })
 
   it("ends the session when the owner says no, and the next sign-in asks again", async () => {

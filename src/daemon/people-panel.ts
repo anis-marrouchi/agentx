@@ -3,7 +3,7 @@ import type Database from "better-sqlite3"
 import { TokenStore } from "./token-store"
 import { HUB_PATH } from "./ui/hub-name"
 import { MemberStore, type MemberDevice } from "@/members/store"
-import { PersonSessionStore } from "@/members/person-sessions"
+import { ENDED_BY_OWNER, PersonSessionStore } from "@/members/person-sessions"
 import { pendingAnswer, removeDevice } from "@/members/pairing"
 import { requestsOf, runsOf, type PersonRequest, type PersonRun } from "@/people/activity"
 import { IMPLICIT_OWNER, type Person } from "@/people/people"
@@ -152,7 +152,7 @@ export async function handlePeoplePanel(
 
   const endSession = path.match(/^\/api\/admin\/people\/([a-z0-9][a-z0-9_-]{0,39})\/sessions\/([a-f0-9]{16})\/end$/)
   if (method === "POST" && endSession) {
-    const ended = deps.sessions.end(endSession[1], endSession[2], "ended by the owner (dashboard)")
+    const ended = deps.sessions.end(endSession[1], endSession[2], ENDED_BY_OWNER)
     if (!ended) { sendJson(res, 404, { error: "no signed-in browser with this id for this person" }); return true }
     const { hash: _, ...session } = ended
     sendJson(res, 200, { ok: true, session })

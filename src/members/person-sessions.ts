@@ -23,6 +23,8 @@ export const PERSON_COOKIE = "ax_person"
 export const PERSON_SESSION_MAX_AGE_S = 30 * 24 * 3600
 /** lastUsedAt is written at most this often, not on every request. */
 const TOUCH_EVERY_MS = 60_000
+/** endedReason of End access on the People page. */
+export const ENDED_BY_OWNER = "ended by the owner (dashboard)"
 
 export interface PersonSession {
   id: string
@@ -72,9 +74,13 @@ export class PersonSessionStore {
     return (personId ? all.filter((s) => s.personId === personId) : all).sort((a, b) => b.startedAt.localeCompare(a.startedAt))
   }
 
-  /** Whether the owner has let this person in before, by any session. */
+  /** Whether the owner has let this person in before, by any session. End
+   *  access by the owner withdraws every yes given before it, so the next
+   *  sign-in waits for a new card. */
   approved(personId: string): boolean {
-    return this.load().sessions.some((s) => s.personId === personId && !!s.approvedAt)
+    const mine = this.load().sessions.filter((s) => s.personId === personId)
+    const lastEnd = mine.reduce((at, s) => s.endedReason === ENDED_BY_OWNER && s.endedAt! > at ? s.endedAt! : at, "")
+    return mine.some((s) => !!s.approvedAt && s.approvedAt > lastEnd)
   }
 
   /** The owner said yes on a waiting session's card. */
