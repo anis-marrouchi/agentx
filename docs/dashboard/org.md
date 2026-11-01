@@ -129,6 +129,7 @@ An agent that runs on another AgentX node of your mesh can sit in your chart too
    - **on clawd-server**: the node answers and lists the agent.
    - **down: clawd-server**: the node does not answer now. The card is grey, with the name the node gave last.
    - **not seen: clawd-server**: the node has not listed this agent since the daemon started. The card is grey. Check the agent's ID on that node.
+   - **unknown node: clawd-server**: the chart still names this node, but it is no longer in `mesh.peers` (it was removed or renamed). The card is grey, and a note above the chart says which card it is. Nothing stops: the daemon still starts and the rest of the chart works.
 
    The card has no status dot and no Pause button, and selecting it opens nothing: that node runs the agent. The counts beside the chart give **Other nodes** apart from **Agents**.
 5. **Browser:** under the chart, **On other nodes, not placed yet** lists every agent your peers host that the chart does not place yet, by node. On `/org` the same list gives each one's `agent:<node>/<id>` to copy.
@@ -181,6 +182,10 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 - **A yellow box above the chart says "Problem in the org relations":** a relation names someone who is not in `people` or `business.orgChart`, or breaks a rule. `agentx business relation list` shows the same problem; fix it with `remove`. With the business layer on, the daemon starts without it until it is fixed, and its log says `[business] initialization failed:` with the same problem.
 - **A person's agents do not escalate to them:** that is by design. A problem goes up `reports-to` only between agents, and stops before a person.
 - **`… but "<node>" is not a peer in mesh.peers`:** an `agent:<node>/<id>` names a node this machine does not know. Use the peer's `name` exactly as `mesh.peers` writes it, or add the peer first.
+- **A card says "unknown node", or the daemon log says `… is no longer a peer in mesh.peers`:** a peer was removed from `mesh.peers` or renamed while the chart still names it. The daemon keeps running and shows the card grey. To fix it:
+  1. **Terminal:** run `agentx business relation list` to see the relations that name the old node.
+  2. **Terminal:** if the peer was renamed, add the relation again with the new name, for example `agentx business relation add agent:<new-name>/<id> reports-to person:<id>`.
+  3. **Terminal:** remove the old relation with `agentx business relation remove <from> <type> <to>`, written as the list shows it. For a department, edit its `members` or `head` in `agentx.json`.
 - **An agent on another node stays grey:** its node does not answer, or does not list that ID. Check the node with `agentx mesh list`, and the agent's ID on that node.
 - **An agent reports to an agent on another node, and its problems go nowhere:** that is by design for now. Escalation stops before an agent on another node.
 - **Every card says "Status unknown":** the daemon is not running, or the dashboard cannot reach it. Run `agentx daemon status`.

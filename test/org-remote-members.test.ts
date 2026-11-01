@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest"
 import { businessConfigSchema } from "../src/business/config"
-import { departmentsProblem, orgDepartments } from "../src/business/departments"
+import { chartStaleRefs, departmentsProblem, orgDepartments } from "../src/business/departments"
+import { applyOrgEdit } from "../src/business/org-edit"
 import { buildOrgView } from "../src/business/org-view"
 import { Organization } from "../src/business/organization"
-import { configRelationsProblem, memberKey, orgRelations, relationsProblem, remoteAgent } from "../src/business/relations"
+import { configRelationsProblem, configStaleRefs, memberKey, orgRelations, relationsProblem, remoteAgent } from "../src/business/relations"
 import { ORG_PEOPLE_JS } from "../src/daemon/ui/pages/org"
 
 // Agents on other mesh nodes in the org chart: `agent:<node>/<id>`, checked
@@ -65,6 +66,17 @@ describe("agent:<node>/<id> refs", () => {
     expect(configRelationsProblem(config)).toBeUndefined()
     expect(configRelationsProblem({ ...config, mesh: { peers: [] } })).toMatch(/"clawd" is not a peer/)
   })
+
+  it("lets a write keep refs to a peer that has left, and still refuses a new one", () => {
+    const gone = { ...config, mesh: { peers: [] } }
+    const stale = configStaleRefs(gone)
+    expect([...stale].sort()).toEqual(["agent:clawd/lead", "agent:clawd/seif"])
+    expect(configRelationsProblem(gone, stale)).toBeUndefined()
+    const added = { ...gone, business: { ...gone.business, relations: [...gone.business.relations, { from: "agent:pm", to: "agent:far/x", type: "dotted-line" as const }] } }
+    expect(configRelationsProblem(added, stale)).toBe('Org relation dotted-line names "far/x", but "far" is not a peer in mesh.peers')
+    // Departments count too, for the chart's own check.
+    expect(chartStaleRefs(gone).has("agent:clawd/seif")).toBe(true)
+  })
 })
 
 describe("Organization with agents on other nodes", () => {
@@ -76,9 +88,23 @@ describe("Organization with agents on other nodes", () => {
   })
   const people = [{ id: "anis", name: "Anis" }]
 
-  it("starts with a known peer and no network call, and refuses an unknown one", () => {
-    expect(() => new Organization(business, people, ["clawd"])).not.toThrow()
-    expect(() => new Organization(business, people, [])).toThrow(/"clawd" is not a peer in mesh.peers/)
+  it("starts with a known peer and no network call, with no warning", () => {
+    expect(new Organization(business, people, ["clawd"]).warnings).toEqual([])
+  })
+
+  it("still starts when a peer the chart names was removed or renamed, with a warning per ref", () => {
+    let org: Organization | undefined
+    expect(() => { org = new Organization(business, people, ["clawd-renamed"]) }).not.toThrow()
+    expect(org!.warnings).toEqual([
+      'Org chart names "clawd/lead", but "clawd" is no longer a peer in mesh.peers; its card shows as unknown until the peer is back or the ref is removed',
+      'Org chart names "clawd/seif", but "clawd" is no longer a peer in mesh.peers; its card shows as unknown until the peer is back or the ref is removed',
+    ])
+    // The ref is kept, and escalation still stops before it.
+    expect(org!.reportsTo("ops")).toBe("agent:clawd/lead")
+    expect(org!.chainOfCommand("ops")).toEqual(["ops"])
+    // Other problems still refuse the start.
+    const bad = businessConfigSchema.parse({ ...business, relations: [...config.business.relations, { from: "agent:pm", to: "person:nobody", type: "dotted-line" }] })
+    expect(() => new Organization(bad, people, [])).toThrow(/"nobody", which is not a person in people/)
   })
 
   it("stops escalation at a remote boss: shown, not routed", () => {
@@ -92,10 +118,15 @@ describe("Organization with agents on other nodes", () => {
     expect(org.directReports("agent:clawd/lead")).toEqual(["ops"])
   })
 
-  it("keeps the old chart on a reload that drops the peer", () => {
+  it("takes a reload that drops the peer, with the warnings, and keeps the old chart on a real problem", () => {
     const org = new Organization(business, people, ["clawd"])
-    expect(() => org.replaceWith(business, people, [])).toThrow()
+    expect(() => org.replaceWith(business, people, [])).not.toThrow()
+    expect(org.warnings).toHaveLength(2)
     expect(org.reportsTo("ops")).toBe("agent:clawd/lead")
+    org.replaceWith(business, people, ["clawd"])
+    expect(org.warnings).toEqual([])
+    expect(() => org.replaceWith(business, [], ["clawd"])).toThrow(/not a person in people/)
+    expect(org.reportsTo("pm")).toBe("person:anis")
   })
 })
 
@@ -130,9 +161,25 @@ describe("The org view with agents on other nodes", () => {
     expect(view.mesh).toEqual({ live: true, others: [{ node: "clawd", id: "omar", name: "Omar", healthy: true }] })
   })
 
-  it("names a ref to a node that is not in mesh.peers as the problem", () => {
+  it("keeps the card of a ref to a node no longer in mesh.peers, shown as unknown with a warning, not a problem", () => {
     const view = buildOrgView({ ...config, mesh: { peers: [] } }, {}, null, MESH)
-    expect(view.problem).toBe('Org relation reports-to names "clawd/lead", but "clawd" is not a peer in mesh.peers')
+    expect(view.problem).toBeUndefined()
+    expect(view.warnings).toHaveLength(2)
+    expect(view.warnings![0]).toMatch(/"clawd" is no longer a peer in mesh.peers/)
+    // Even though /mesh still lists the agent, the node is not a peer here.
+    expect(view.diagram.boxes.find((b) => b.key === "agent:clawd/lead")).toMatchObject({ remote: { node: "clawd", seen: "unknown" } })
+    expect(view.diagram.boxes.find((b) => b.key === "agent:ops")?.parent).toBe("agent:clawd/lead")
+    expect(buildOrgView(config, {}, null, MESH).warnings).toBeUndefined()
+  })
+
+  it("lets the owner edit the chart while a departed peer is named, and refuses a new ref to it", () => {
+    const cfg = structuredClone({ ...config, mesh: { peers: [] }, business: { ...config.business, roles: { r: { title: "R" } } } })
+    ;(cfg.business.orgChart as any).pm.role = "r"
+    ;(cfg.business.orgChart as any).ops.role = "r"
+    expect(applyOrgEdit(cfg, { op: "set-role", member: "agent:pm", role: "Lead PM" })).toMatch(/pm is now Lead PM/i)
+    // A new ref to the departed node is still refused (the writers' check is above).
+    expect(() => applyOrgEdit(cfg, { op: "add-relation", from: "agent:pm", type: "dotted-line", to: "agent:clawd/omar" })).toThrow()
+    expect((cfg.business.relations as any[]).some((r) => r.to === "agent:clawd/omar")).toBe(false)
   })
 
   it("keeps the relations of a remote ref in full", () => {
@@ -166,6 +213,9 @@ describe("The /org page with agents on other nodes", () => {
     const down = h.remoteCardHtml({ id: "clawd/seif", name: "Seif", remote: { node: "clawd", agent: "seif", seen: "down" } }, "", "", esc)
     expect(down).toContain("is-remote is-gone")
     expect(down).toContain("clawd does not answer; last seen there")
+    const unknown = h.remoteCardHtml({ id: "clawd/seif", name: "Seif", remote: { node: "clawd", agent: "seif", seen: "unknown" } }, "", "", esc)
+    expect(unknown).toContain("is-remote is-gone")
+    expect(unknown).toContain("clawd is no longer a peer of this node")
   })
 
   it("lists unplaced agents by node with the ref to place them", () => {

@@ -1,4 +1,4 @@
-import { memberKey, memberProblem, parseMember } from "./relations"
+import { memberKey, memberProblem, meshPeerNames, orgRelations, parseMember, staleRemoteRefs, type RelationType } from "./relations"
 
 // --- Departments of the org chart (#1681) ---
 //
@@ -43,6 +43,7 @@ export function departmentsProblem(
   people: ReadonlySet<string>,
   peers: ReadonlySet<string> = new Set(),
   outsiders: ReadonlyMap<string, Outsider> = new Map(),
+  stale: ReadonlySet<string> = new Set(),
 ): string | undefined {
   const outsider = (key: string) => {
     const m = parseMember(key)
@@ -51,12 +52,12 @@ export function departmentsProblem(
   const notStaff = (o: Outsider) => `${o.name} is a ${o.role}, and only owners and members of the organisation can be in a department`
   const inDept = new Map<string, string>()
   for (const d of departments) {
-    const problem = d.head && memberProblem(d.head, `Department ${d.name} is headed by`, agents, people, peers)
+    const problem = d.head && memberProblem(d.head, `Department ${d.name} is headed by`, agents, people, peers, stale)
     if (problem) return problem
     const head = d.head ? outsider(d.head) : undefined
     if (head) return `Department ${d.name} cannot be headed by ${head.name}: ${notStaff(head)}`
     for (const m of d.members) {
-      const problem = memberProblem(m, `Department ${d.name} lists`, agents, people, peers)
+      const problem = memberProblem(m, `Department ${d.name} lists`, agents, people, peers, stale)
       if (problem) return problem
       const o = outsider(m)
       if (o) return `Department ${d.name} cannot list ${o.name}: ${notStaff(o)}`
@@ -90,4 +91,22 @@ export function departmentBoxes(
     return { id: d.id, name: d.name, ...(d.head ? { head: d.head } : {}), members: d.members.filter((m) => m !== d.head) }
   })
   return { boxes, rest: [...new Set(everyone)].filter((k) => !held.has(k)) }
+}
+
+/** The refs to agents on peers that have left mesh.peers, in a whole config:
+ *  relation ends, department heads and members. They are warnings, never a
+ *  reason to refuse a start, a reload or an unrelated edit. */
+export function chartStaleRefs(cfg: {
+  mesh?: { peers?: Array<{ name?: string }> }
+  business?: {
+    orgChart?: Record<string, { reportsTo?: string }>
+    relations?: Array<{ from: string; to: string; type: RelationType }>
+    departments?: Record<string, { name?: string; head?: string; members?: string[] }>
+  }
+} | undefined): Set<string> {
+  const keys = [
+    ...orgRelations(cfg?.business).flatMap((r) => [r.from, r.to]),
+    ...orgDepartments(cfg?.business).flatMap((d) => [...(d.head ? [d.head] : []), ...d.members]),
+  ]
+  return staleRemoteRefs(keys, meshPeerNames(cfg))
 }

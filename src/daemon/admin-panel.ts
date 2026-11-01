@@ -3,7 +3,7 @@ import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
 import { HIDDEN_SECRET, hideConfigSecrets, restoreConfigSecrets } from "./config-hidden"
-import { configRelationsProblem } from "@/business/relations"
+import { configRelationsProblem, configStaleRefs } from "@/business/relations"
 import { cronValueOf } from "@/crons/value-line"
 import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
@@ -1294,6 +1294,7 @@ async function upsertOrgEntry(body: any) {
   const reportsTo = body?.reportsTo ? String(body.reportsTo).trim() : ""
   const utilization = typeof body?.utilizationTarget === "number" ? body.utilizationTarget : 0.8
   const { summary } = mutateAgentxConfig((cfg) => {
+    const stale = configStaleRefs(cfg)
     cfg.business = cfg.business || {}
     cfg.business.orgChart = cfg.business.orgChart || {}
     cfg.business.orgChart[agentId] = {
@@ -1303,7 +1304,8 @@ async function upsertOrgEntry(body: any) {
       utilizationTarget: utilization,
     }
     // Refuse a bad reportsTo now, not at the next daemon start (#1427).
-    const problem = configRelationsProblem(cfg)
+    // Refs to a departed peer the config already held are kept (#1692).
+    const problem = configRelationsProblem(cfg, stale)
     if (problem) throw new Error(problem)
     return `orgChart "${agentId}" upserted`
   })

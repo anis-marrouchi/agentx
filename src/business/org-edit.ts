@@ -1,4 +1,4 @@
-import { departmentsProblem, orgDepartments, type Outsider } from "./departments"
+import { chartStaleRefs, departmentsProblem, orgDepartments, type Outsider } from "./departments"
 import { memberKey, meshPeerNames, orgRelations, parseMember, relationsProblem, RELATION_TYPES, type OrgRelation, type RelationType } from "./relations"
 
 // --- Setting up the org chart from the Wall (#1420) ---
@@ -110,8 +110,8 @@ export function readOrgSetup(cfg: any): OrgSetup {
 }
 
 /** The relations and departments problem of the whole config, as the org
- *  view sees it. */
-function chartProblem(cfg: any): string | undefined {
+ *  view sees it. `stale`: refs to departed peers to let pass (chartStaleRefs). */
+function chartProblem(cfg: any, stale: ReadonlySet<string> = new Set()): string | undefined {
   const b = cfg?.business ?? {}
   const agents = new Set(Object.keys(b.orgChart ?? {}))
   const people = new Set(knownPeople(cfg).keys())
@@ -119,7 +119,7 @@ function chartProblem(cfg: any): string | undefined {
   const list: any[] = Array.isArray(cfg?.people) ? cfg.people : []
   const outsiders = new Map<string, Outsider>(list.flatMap((p) =>
     p?.id && (p.role === "client" || p.role === "guest") ? [[String(p.id), { name: String(p.name || p.id), role: p.role }] as const] : []))
-  return relationsProblem(orgRelations(b), agents, people, peers) ?? departmentsProblem(orgDepartments(b), agents, people, peers, outsiders)
+  return relationsProblem(orgRelations(b), agents, people, peers, stale) ?? departmentsProblem(orgDepartments(b), agents, people, peers, outsiders, stale)
 }
 
 /** Take `ref` out of every department in the config, as head and as member.
@@ -192,7 +192,10 @@ function dropRelations(b: any, drop: (r: OrgRelation) => boolean): number {
 export function applyOrgEdit(cfg: any, edit: OrgEdit): string {
   const next = structuredClone(cfg ?? {})
   const b = (next.business = next.business || {})
-  const before = chartProblem(next)
+  // Refs to a peer that has left mesh.peers, already in the chart, do not
+  // block an edit; a new ref to a node that is not a peer is still refused.
+  const stale = chartStaleRefs(next)
+  const before = chartProblem(next, stale)
   const setup = readOrgSetup(next)
   const byRef = new Map(setup.members.map((m) => [m.ref, m]))
   const choices = orgChoices(next)
@@ -292,7 +295,7 @@ export function applyOrgEdit(cfg: any, edit: OrgEdit): string {
 
   // The same check the daemon runs at start. A problem the chart already
   // had does not block an edit, so the owner can fix things one at a time.
-  const after = chartProblem(next)
+  const after = chartProblem(next, stale)
   if (after && after !== before) throw new Error(after)
   for (const k of Object.keys(cfg)) delete cfg[k]
   Object.assign(cfg, next)

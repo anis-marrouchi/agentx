@@ -35,6 +35,7 @@ export class BusinessLayer {
     log: (...args: unknown[]) => void,
   ) {
     this.org = new Organization(business, daemon.people ?? [], [...meshPeerNames(daemon)])
+    for (const w of this.org.warnings) log(`[business] ${w}`)
     this.schedule = new Schedule(this.org, business)
     this.workSource = createWorkSource(business, daemon, log)
     this.reporter = new Reporter(router, this.org, business, log)

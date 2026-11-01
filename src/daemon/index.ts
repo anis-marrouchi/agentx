@@ -2214,6 +2214,7 @@ export class AgentXDaemon {
     if (this.business && next.business && orgShape(this.config) !== orgShape(next)) {
       try {
         this.business.org.replaceWith(next.business, next.people ?? [], [...meshPeerNames(next)])
+        for (const w of this.business.org.warnings) this.log(`[reload] ${w}`)
         applied.push("business.org")
       } catch (e: any) {
         this.log(`[reload] org chart kept: ${e.message}`)

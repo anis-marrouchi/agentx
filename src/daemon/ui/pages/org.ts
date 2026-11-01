@@ -56,6 +56,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
       <p>Give each agent a role and a boss under <code>business.orgChart</code> in <code>agentx.json</code>, with the roles under <code>business.roles</code>. Until then every agent is listed below, side by side.</p>
     </section>
     <p id="org-problem" class="org-problem" role="alert" hidden></p>
+    <p id="org-warnings" class="org-problem" role="status" hidden></p>
     <div class="org-toolbar" role="toolbar" aria-label="Org tools">
       <div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button><button type="button" data-org-view="chart" aria-pressed="false">Chart</button></div>
       <div id="org-zoom" class="org-views org-zoom" role="group" aria-label="Zoom" hidden><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button><button type="button" id="org-zoom-at" data-org-zoom="0" title="Back to 100%">100%</button><button type="button" data-org-zoom="1" aria-label="Zoom in">+</button></div>
@@ -264,11 +265,12 @@ export const ORG_PEOPLE_JS = `
     return { roots: roots, names: names, nodes: nodes };
   }
   /** The card of an agent on another node: where it is and how its node last
-   *  answered, grey when it is down or unseen. No Pause or Activity: this
+   *  answered, grey when it is down, unseen or its node left mesh.peers. No Pause or Activity: this
    *  node does not run it. tag and links are the card's Agent tag and rows. */
   function remoteCardHtml(n, tag, links, esc) {
     var r = n.remote, up = r.seen === 'up';
-    var state = up ? 'On ' + r.node : r.seen === 'down' ? r.node + ' does not answer; last seen there' : 'Not seen on ' + r.node;
+    var state = up ? 'On ' + r.node : r.seen === 'down' ? r.node + ' does not answer; last seen there'
+      : r.seen === 'unknown' ? r.node + ' is no longer a peer of this node' : 'Not seen on ' + r.node;
     return '<div class="org-card is-remote' + (up ? '' : ' is-gone') + '" data-remote="' + esc(n.id) + '">' + tag
       + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(r.agent) + ' @ ' + esc(r.node) + '</span></div>'
       + links + '<span class="org-state is-remote">' + esc(state) + '</span></div>';
@@ -390,6 +392,9 @@ const ORG_SCRIPT = `
       var probEl = document.getElementById('org-problem');
       probEl.hidden = !d.problem;
       probEl.textContent = d.problem ? 'Problem in the org chart: ' + d.problem : '';
+      var warnEl = document.getElementById('org-warnings');
+      warnEl.hidden = !(d.warnings && d.warnings.length);
+      warnEl.textContent = (d.warnings || []).join(' ');
       depts = {};
       (d.departments || []).forEach(function (dep) { depts[dep.id] = dep; });
       document.getElementById('org-legend-dept').hidden = !(d.departments || []).length;

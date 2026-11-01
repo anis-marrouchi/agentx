@@ -1,5 +1,5 @@
 import type { BusinessConfig, BusinessOrgEntry, BusinessProject, BusinessRole } from "./config"
-import { memberKey, memberLabel, orgRelations, parseMember, relationsProblem, remoteAgent, type OrgRelation } from "./relations"
+import { memberKey, memberLabel, orgRelations, parseMember, relationsProblem, remoteAgent, staleRemoteRefs, staleRemoteWarning, type OrgRelation } from "./relations"
 
 // --- Organization: org-chart queries and validation ---
 //
@@ -28,6 +28,10 @@ export class Organization {
   /** Member → its reports-to boss, both written in full (`agent:x`, `person:y`). */
   private bosses: Map<string, string> = new Map()
   private people: ReadonlyArray<{ id: string; name?: string }>
+  /** What the chart names that it cannot place but that does not stop it:
+   *  an `agent:<node>/<id>` whose node has left mesh.peers. The caller logs
+   *  them; the card shows as unknown on the chart. */
+  warnings: string[] = []
 
   /** `people`: the top-level people list, so a person can sit in the org.
    *  `peers`: the names in mesh.peers, so `agent:<node>/<id>` may be named. */
@@ -50,7 +54,12 @@ export class Organization {
     // Members and typed relations (#1418): reportsTo may name a person,
     // and business.relations adds reports-to, dotted-line and acts-for.
     this.relationList = orgRelations(config)
-    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)), new Set(peers))
+    // A removed or renamed peer the chart still names is a warning, not a
+    // problem: the business layer must keep starting (#1692 review).
+    const peerSet = new Set(peers)
+    const stale = staleRemoteRefs(this.relationList.flatMap((r) => [r.from, r.to]), peerSet)
+    this.warnings = [...stale].map(staleRemoteWarning)
+    const problem = relationsProblem(this.relationList, new Set(this.employees.keys()), new Set(people.map((p) => p.id)), peerSet, stale)
     if (problem) throw new Error(problem)
     for (const r of this.relationList) {
       if (r.type === "reports-to") this.bosses.set(r.from, r.to)

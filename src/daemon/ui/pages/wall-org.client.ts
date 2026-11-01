@@ -35,7 +35,7 @@ export const WALL_ORG_SCRIPT = String.raw`
   var ORG_FIT_FLOOR = 0.6;
   var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
   // An agent on another node (agent:<node>/<id>): how its node last answered.
-  var ORG_REMOTE = { up: 'Shown, not routed to: runs on', down: 'Its node does not answer; last seen on', unseen: 'Not seen yet on' };
+  var ORG_REMOTE = { up: 'Shown, not routed to: runs on', down: 'Its node does not answer; last seen on', unseen: 'Not seen yet on', unknown: 'No longer a peer of this node:' };
   var ORG_CHART_HREF = '/org';
   var ORG_ICON = { person: '${ORG_PERSON_ICON}', agent: '${ORG_AGENT_ICON}' };
   function orgKindHtml(kind) {
@@ -92,7 +92,7 @@ export const WALL_ORG_SCRIPT = String.raw`
         '<span class="wog__sr">' + esc(ORG_STATE[b.status] || '') + '</span></button>';
     var dept = at && b.department ? orgDept(b.department) : null;
     var chips = (head ? '<span class="wog__chip is-lead">Head</span>' : '') +
-      (remote ? '<span class="wog__chip is-node" title="' + esc(ORG_REMOTE[remote.seen] + ' ' + remote.node) + '">' + esc((remote.seen === 'up' ? 'on ' : remote.seen === 'down' ? 'down: ' : 'not seen: ') + remote.node) + '</span>' : '') +
+      (remote ? '<span class="wog__chip is-node" title="' + esc(ORG_REMOTE[remote.seen] + ' ' + remote.node) + '">' + esc((remote.seen === 'up' ? 'on ' : remote.seen === 'down' ? 'down: ' : remote.seen === 'unknown' ? 'unknown node: ' : 'not seen: ') + remote.node) + '</span>' : '') +
       (dept ? '<span class="wog__chip is-dept">' + esc(dept.name) + '</span>' : '') +
       actsFor.map(function (e) { return '<span class="wog__chip is-acts">acts for ' + esc(orgName(e.to)) + '</span>'; }).join('') +
       dotted.map(function (e) { return '<span class="wog__chip is-dotted' + (ORG.dotted ? '' : ' is-quiet') + '">dotted line to ' + esc(orgName(e.to)) + '</span>'; }).join('') +
@@ -161,6 +161,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     var top = orgLegendHtml(d) +
       '<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>' +
       (S.org.problem ? '<p class="wog__problem" role="alert">Something in the org chart does not hold: ' + esc(S.org.problem) + '</p>' : '') +
+      (S.org.warnings && S.org.warnings.length ? '<p class="wog__problem" role="status">' + esc(S.org.warnings.join(' ')) + '</p>' : '') +
       (S.org.live === false ? '<p class="ax-wall__count wog__note">The daemon did not answer, so working or idle is not known.</p>' : '');
     if (orgView() === 'dept') return top + orgDeptsHtml(d) + '<div class="wog__inrail">' + orgRailHtml(d) + '</div>';
     var hidden = orgHidden(d);
