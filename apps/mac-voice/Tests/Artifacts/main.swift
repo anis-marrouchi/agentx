@@ -32,5 +32,18 @@ check(md.contains("<img class=\"md-img\" alt=\"Trend\" src=\"https://example.com
 check(md.contains("<a href=\"https://example.com/d\">docs</a>"), "a link stays a link")
 check(!md.contains("!<a") && !md.contains("href=\"https://example.com/t.png\""), "the picture is not also a link")
 
+// Agent text can repeat untrusted content: a quote must not end an href
+// and start an attribute, and only web and mail links become links.
+let bare = Markdown.toHTML(#"See https://a.b/"onmouseover="alert(1) now"#)
+check(!bare.contains("\"onmouseover"), "a quote in a bare URL does not break out of href")
+let quoted = Markdown.toHTML(#"[x](https://a.b/"onclick="alert(1))"#)
+check(!quoted.contains("\"onclick"), "a quote in a link target does not break out of href")
+let single = Markdown.toHTML("[x](https://a.b/'onclick='alert(1))")
+check(!single.contains("'onclick"), "a single quote is escaped too")
+let js = Markdown.toHTML("[x](javascript:alert(1))")
+check(!js.contains("href=\"javascript"), "a javascript: link stays text")
+check(Markdown.toHTML("[mail](mailto:a@b.c)").contains("<a href=\"mailto:a@b.c\">mail</a>"), "a mailto link stays a link")
+check(Markdown.page("").contains("Content-Security-Policy\" content=\"default-src 'none';"), "the card page allows no script")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

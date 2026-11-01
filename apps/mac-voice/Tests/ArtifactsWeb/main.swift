@@ -7,7 +7,10 @@ import WebKit
 
 let daemon = "http://127.0.0.1:\(CommandLine.arguments[1])"
 let picture = Artifact(name: "icon.png", mime: "image/png", kind: "image", url: "/AppIcon.png")
-let page = Markdown.page("Here it is." + Artifacts.html([picture], base: daemon))
+// A script and a handler in the body, as if they got past the escaping:
+// the page's policy must stop both while the picture still loads.
+let page = Markdown.page("Here it is." + Artifacts.html([picture], base: daemon)
+    + "<script>document.title = 'ran'</script><img src=\"/missing\" onerror=\"document.title = 'ran'\">")
 
 final class Probe: NSObject, WKNavigationDelegate {
     func webView(_ web: WKWebView, didFinish navigation: WKNavigation!) {
@@ -16,7 +19,9 @@ final class Probe: NSObject, WKNavigationDelegate {
         web.callAsyncJavaScript(js, arguments: [:], in: nil, in: .page) { result in
             let width = (try? result.get() as? NSNumber)?.intValue ?? 0
             print("\(width > 0 ? "ok  " : "FAIL") a picture from the daemon loads in the card (width \(width))")
-            exit(width > 0 ? 0 : 1)
+            let ran = web.title == "ran"
+            print("\(ran ? "FAIL" : "ok  ") a script in the card page does not run")
+            exit(width > 0 && !ran ? 0 : 1)
         }
     }
 }

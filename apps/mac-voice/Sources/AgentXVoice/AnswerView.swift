@@ -20,7 +20,15 @@ final class AnswerView: NSView {
     // hashes, which defeats the answer's only purpose: being MORE readable
     // than the spoken answer, not less. Text in it is selectable, and it
     // scrolls once the answer is taller than the pill lets it grow.
-    private let web = WKWebView()
+    //
+    // No page script (#1670): the card shares the daemon's origin, so a
+    // script in it would be trusted like the daemon's own pages. measure()
+    // still runs, since the app's own evaluateJavaScript is not page script.
+    private let web: WKWebView = {
+        let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences.allowsContentJavaScript = false
+        return WKWebView(frame: .zero, configuration: config)
+    }()
     private let links = NSStackView()
     private let thumb = NSImageView()
     private let actions = NSStackView()
