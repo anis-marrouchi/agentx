@@ -57,6 +57,26 @@ How to build, install, pair and use it, step by step:
   watch ends it; a running answer still lands in Chat. `adb logcat -s
   AgentXTalk` names the microphone used per turn. Guide:
   [docs/dashboard/mobile-talk.md](../../docs/dashboard/mobile-talk.md).
+- **Start from your watch** (#1664), Android 10+, off until set up on the
+  Talk screen: the owner makes the app the call redirect app and saves an
+  `AgentX` contact (`AgentNumber.DEFAULT`, `+21400000000`, a spare country
+  code). `WatchRedirectionService` sees each call the phone places, the
+  watch's too. For that number, while Telecom still has the service bound,
+  it starts `TalkService` (the microphone foreground service), then cancels
+  the call; the service rings the watch back 1.5 s later. Every other number
+  goes out unchanged at once. No screen is opened: Xiaomi drops an activity
+  started from there without an error (#1677 device test). Only if the
+  service is refused does it try `TalkActivity` over the lock screen, and
+  it rings the watch either way, once per dial. The ring-back is answered by
+  the app after 1 s (`watchAutoAnswer`, on by default), and the first turn
+  sends `call: "watch"`, so the computer tells the agent it is on a live
+  call. `adb logcat -s AgentXTalk` shows each step, `ring-back 1/4` to
+  `4/4`, then `call answered` and `greeting said`. Once the call has been on
+  the watch, `TalkConnection.onCallAudioStateChanged` asks for Bluetooth
+  again whenever Telecom moves it off (Xiaomi drops SCO about 1 s in), once
+  a second, at most `WatchRoute.MAX_ASKS` times per drop (`watch audio
+  dropped`, `back on the watch` in the log). On Xiaomi the setup screen
+  also links to MIUI's background-windows switch (optional).
 
 ## Build
 

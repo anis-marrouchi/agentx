@@ -63,6 +63,23 @@ class Prefs(context: Context) {
         get() = TalkTarget.fromJson(p.getString("talkTarget", null))
         set(v) = p.edit().putString("talkTarget", v?.toJson()).apply()
 
+    /** Start from the watch (#1664): the owner's switch. Off by default;
+     *  while off, every call the phone places goes out unchanged. */
+    var watchStartOn: Boolean
+        get() = p.getBoolean("watchStartOn", false)
+        set(v) = p.edit().putBoolean("watchStartOn", v).apply()
+
+    /** The number of the AgentX contact the watch calls. */
+    val watchNumber: String get() = AgentNumber.DEFAULT
+
+    /** Answer the ring-back by itself, so the watch needs no second tap. On
+     *  by default: in the #1664 runs, calls the phone answered kept the
+     *  watch's audio after the first 2 s, and calls answered on the watch
+     *  kept dropping it to the phone's earpiece. */
+    var watchAutoAnswer: Boolean
+        get() = p.getBoolean("watchAutoAnswer", true)
+        set(v) = p.edit().putBoolean("watchAutoAnswer", v).apply()
+
     val paired: Boolean get() = baseUrl != null && token != null
 
     fun forget() {

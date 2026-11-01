@@ -1,6 +1,7 @@
 package dev.agentx.phone
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,5 +91,45 @@ class TalkLogicTest {
         assertNull(TalkTarget.fromJson("{\"node\":\"local\"}"))
         assertNull(TalkTarget.fromJson("not json"))
         assertNull(TalkTarget.fromJson(null))
+    }
+
+    @Test
+    fun agentNumberMatchesHowEverItIsWritten() {
+        val ours = AgentNumber.DEFAULT
+        assertTrue(AgentNumber.matches("+21400000000", ours))
+        assertTrue(AgentNumber.matches("0021400000000", ours))
+        assertTrue(AgentNumber.matches("+214 00-000 000", ours))
+        assertEquals("+21400000000", AgentNumber.normalise(" 00 214 0000 0000 "))
+    }
+
+    @Test
+    fun otherNumbersAreLeftAlone() {
+        val ours = AgentNumber.DEFAULT
+        // Without the country code it is another number, so it goes out unchanged.
+        assertFalse(AgentNumber.matches("21400000000", ours))
+        assertFalse(AgentNumber.matches("+21400000001", ours))
+        assertFalse(AgentNumber.matches("112", ours))
+        assertFalse(AgentNumber.matches("", ours))
+        assertFalse(AgentNumber.matches(null, ours))
+        // Short numbers never match, even an equally short "ours".
+        assertFalse(AgentNumber.matches("+123", "+123"))
+    }
+
+    @Test
+    fun maskedNumbersKeepOnlyTheLastDigits() {
+        assertEquals("…567", AgentNumber.masked("+44 1234 567"))
+        assertEquals("…", AgentNumber.masked("112"))
+        assertEquals("?", AgentNumber.masked(null))
+    }
+
+    @Test
+    fun aDroppedWatchIsAskedForAgainWithinLimits() {
+        assertTrue(WatchRoute.askAgain(onWatch = false, bluetoothOffered = true, msSinceLastAsk = 600, asks = 0))
+        // On the watch already, or no watch connected: nothing to ask.
+        assertFalse(WatchRoute.askAgain(onWatch = true, bluetoothOffered = true, msSinceLastAsk = 600, asks = 0))
+        assertFalse(WatchRoute.askAgain(onWatch = false, bluetoothOffered = false, msSinceLastAsk = 600, asks = 0))
+        // Too soon after the last ask, or asked enough for this drop.
+        assertFalse(WatchRoute.askAgain(onWatch = false, bluetoothOffered = true, msSinceLastAsk = 100, asks = 1))
+        assertFalse(WatchRoute.askAgain(onWatch = false, bluetoothOffered = true, msSinceLastAsk = 600, asks = WatchRoute.MAX_ASKS))
     }
 }

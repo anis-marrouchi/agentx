@@ -93,4 +93,22 @@
     <string name="talk_say_unpaired">This phone is no longer paired with your computer. Pair it again in the AgentX app.</string>
     <string name="talk_say_failed">Something went wrong. Ending the call.</string>
     <string name="talk_say_no_mic">The microphone could not open.</string>
+    <string name="talk_ringing_back">Your watch called AgentX. Ringing it back…</string>
+
+    <!-- Start from the watch (#1664): the watch calls the AgentX contact -->
+    <string name="watch_heading">Start from your watch</string>
+    <string name="watch_contact_name">AgentX</string>
+    <string name="watch_off">Start a call from the watch itself: call the AgentX contact on the watch, and AgentX rings it back. No phone call is made. Tap Set up: Android asks to make AgentX the call redirect app, then you save the AgentX contact.</string>
+    <string name="watch_on">On. On your watch, call the contact %1$s. The phone cancels that call before it is made and rings your watch back with the agent.</string>
+    <string name="watch_role_lost">AgentX is no longer the call redirect app, so a call from the watch can\'t reach the agent. Tap Set up again.</string>
+    <string name="watch_role_refused">Not set up. AgentX has to be the call redirect app to see the watch\'s call. Tap Set up to try again.</string>
+    <string name="watch_unsupported">This phone can\'t start a call from the watch. It needs Android 10 or newer with call redirection.</string>
+    <string name="watch_pick_first">Choose the agent to talk to first, then call AgentX from the watch again.</string>
+    <string name="watch_no_contacts_app">No contacts app opened. Add a contact named %1$s with the number %2$s yourself.</string>
+    <string name="watch_set_up">Set up</string>
+    <string name="watch_add_contact">Add the AgentX contact</string>
+    <string name="watch_auto_answer">Answer the ring-back by itself (recommended)</string>
+    <string name="watch_turn_off">Turn off</string>
+    <string name="watch_xiaomi_allow">Allow on Xiaomi</string>
+    <string name="watch_xiaomi_hint">On this Xiaomi phone, tap Allow on Xiaomi and turn on \"Open new windows while running in the background\". Without it the watch is still rung back, from the background.</string>
 </resources>

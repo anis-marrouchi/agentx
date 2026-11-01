@@ -22,6 +22,8 @@
     <!-- Keeps the microphone while the call lasts, with the screen off. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- The same service marks itself as a call in progress (MANAGE_OWN_CALLS). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
 
     <application
         android:label="@string/app_name"
@@ -120,7 +122,7 @@
         <service
             android:name=".TalkService"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:foregroundServiceType="microphone|phoneCall" />
 
         <service
             android:name=".TalkConnectionService"
@@ -128,6 +130,19 @@
             android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
             <intent-filter>
                 <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Start from the watch (#1664): sees the calls the phone places
+             once the owner makes AgentX the call redirect app (Android 10+),
+             cancels the one to the AgentX contact and rings the watch back.
+             Every other call goes out unchanged. Off until set up. -->
+        <service
+            android:name=".WatchRedirectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_CALL_REDIRECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallRedirectionService" />
             </intent-filter>
         </service>
 

@@ -6,9 +6,7 @@ It works with watches that can't run apps but can take calls for the phone they 
 
 ![How you talk to an agent on your watch: you start it on the phone, then the watch rings, you speak after the beep, the computer writes it down and asks the agent, and the answer is spoken on the watch until you hang up](/diagrams/talk-watch.svg)
 
-::: info Starting from the watch itself is not possible yet
-Today you start the call on the phone: the watch rings, and the rest happens on the watch. Starting it from a button on the watch is being looked at in [#1664](https://github.com/anis-marrouchi/agentx/issues/1664).
-:::
+You can start the call in two ways: tap **Start** on the phone, or, once it is set up, call the **AgentX** contact from the watch itself. See [Start from your watch](#start-from-your-watch).
 
 ## What you need
 
@@ -52,6 +50,46 @@ Good to know:
 - **Keep it short.** One turn can be up to 45 seconds long.
 - **Without a watch** the call still works, on the phone's speaker.
 
+## Start from your watch
+
+With this set up, you start a call without touching the phone, which can stay locked in your pocket. Your watch can't run the AgentX app, but it can call a contact. So you call a contact named **AgentX** from the watch. AgentX catches that call on the phone before it is made, cancels it, and rings your watch straight back with the agent.
+
+No phone call is made and nothing is charged. The AgentX contact's number (`+21400000000`) is not a real line. The phone cancels the call before the SIM dials it, and the number uses a country code that no network connects, in case it ever got through.
+
+What you need, on top of [What you need](#what-you-need):
+
+- Android 10 or newer.
+- A watch that can call the phone's contacts. Some watches only show contacts you choose in the watch's own phone app (such as Mi Fitness or Zepp).
+
+### Set it up
+
+You do this once.
+
+1. **Phone:** open **Talk to AgentX** and check that an agent is chosen. See [Choose the agent](#choose-the-agent).
+2. **Phone:** under **Start from your watch**, tap **Set up**.
+3. **Phone:** allow the **microphone**, **Nearby devices** and **notifications** if Android asks. A call started from the watch can't ask for them later, with the phone in your pocket.
+4. **Phone:** Android asks whether to make **AgentX** your **call redirect app**. Tap **AgentX**, then **Set as default**. This lets AgentX see the number of each call the phone places. It changes only the call to the AgentX contact, and every other call goes out as before.
+5. **Phone:** the Contacts app opens with a new contact, **AgentX** with the number `+21400000000`, filled in. Tap **Save**. To add it again later, tap **Add the AgentX contact**.
+6. **Phone:** in the watch's phone app (such as Mi Fitness or Zepp), add **AgentX** to the watch's contacts or favourites, if your watch needs that.
+7. **Phone, Xiaomi only:** tap **Allow on Xiaomi** and turn on **Open new windows while running in the background**. Without it the watch is still rung back from the background. With it on, the Talk screen can open too.
+
+The **Start from your watch** section now says **On**.
+
+### Call from the watch
+
+1. **Watch:** open the watch's contacts and call **AgentX**.
+2. **Watch:** the call ends at once, and about two to four seconds later the watch rings again: **AgentX** is calling back.
+3. **Watch:** the phone answers the call itself after a second, so you don't need to tap. You hear "You are talking to …", then a beep.
+4. **Watch:** talk as in [Talk](#talk), and hang up on the watch when you are done.
+
+Good to know:
+
+- **The phone stays locked.** AgentX holds the microphone with its call notification while the call is on, so it needs no screen and no "open windows in the background" permission.
+- **"Answer the ring-back by itself"** is on by default. Turn it off if you would rather answer the ring-back on the watch. The setting is saved as soon as you tap it. In tests, a ring-back answered on the watch could keep moving its sound to the phone, so leave it on unless you have a reason.
+- **The sound stays on the watch.** Some phones (Xiaomi) move a call from the watch to the phone's earpiece a second after it starts. AgentX asks for the watch again, once a second, up to ten times. If the watch is still gone after that, the call goes on from the phone.
+- **Your phone may flash its call screen** for about two seconds when the watch calls. It closes by itself.
+- **To stop it**, tap **Turn off** under **Start from your watch**. A call to the AgentX contact then goes to the phone network, which refuses it without connecting. To hand back the call redirect role as well, open Android settings, then **Apps**, then **Default apps**, then **Call redirect app**, and choose **None**.
+
 ## Check it worked
 
 1. **Phone:** open **Talk to AgentX**. The screen shows **Talk to** and your agent's name.
@@ -61,6 +99,14 @@ Good to know:
 5. **Phone:** while the call is on, the **Talk to AgentX** screen shows each step: **Listening…**, then **You said: …**, then the agent answering. If it says **No watch or headset took the call**, see below.
 6. **Watch:** hang up. The screen says **Call ended**.
 7. **Phone:** open **AgentX**, then **Chat**. The conversation is there, with what you said and the answer.
+
+To check the start from the watch:
+
+1. **Phone:** lock the phone and put it away.
+2. **Watch:** call the **AgentX** contact.
+3. **Watch:** within about five seconds the watch rings, the call connects by itself and you hear "You are talking to …".
+4. **Watch:** ask something short, hear the answer, then hang up on the watch.
+5. **Phone:** open the phone's call history. It shows no call to AgentX that went out, or only a cancelled one.
 
 ## If something is wrong
 
@@ -76,3 +122,12 @@ Good to know:
 - **You hear an error about voice input, such as "Install ffmpeg"** — the computer can't turn speech into text. Set it up as in [What the computer needs for voice](./mobile-chat.md#what-the-computer-needs-for-voice).
 - **You hear "This phone is no longer paired"** — the app's key was removed with `agentx app revoke`. Pair the app again as in [Place reminders › Pair the Android app](./mobile-places.md#pair-the-android-app).
 - **"No agent is online"** — AgentX is not running on the computer, or it is offline. Start it, then tap **Choose another agent** again.
+
+Starting from the watch:
+
+- **The watch's call to AgentX fails and nothing rings back.** AgentX is no longer the call redirect app, or **Start from your watch** is off. Open **Talk to AgentX**: if the section says **no longer the call redirect app**, tap **Set up** again. Another app that redirects calls, such as some call-blocking apps, can take the role away.
+- **The section says "This phone can't start a call from the watch"** — the phone runs an Android older than 10, or its maker removed call redirection. Start calls on the phone with **Start** instead.
+- **The watch rings back, but you hear "I didn't hear anything" each time.** The phone did not let AgentX use the microphone in the background. Open **Talk to AgentX** once with the phone unlocked and check that **Microphone** is allowed. If it keeps happening, send `adb logcat -s AgentXTalk` from a call to whoever set up AgentX: the line **the microphone gave only silence** confirms it.
+- **The sound keeps moving between the watch and the phone** — turn **Answer the ring-back by itself** back on.
+- **"Choose the agent to talk to first"** — no agent is chosen yet. Open **Talk to AgentX**, choose one, then call from the watch again.
+- **AgentX is not in the watch's contacts** — add it in the watch's phone app (such as Mi Fitness or Zepp), or check that the contact was saved on the phone. Tap **Add the AgentX contact** to add it again.

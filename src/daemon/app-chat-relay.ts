@@ -26,7 +26,16 @@ export interface TurnRequest {
   chatId: string
   /** The person said it (voice on the phone) rather than typed it. */
   spoken?: boolean
+  /** The first turn of a live call from the Android app (#1664): the agent
+   *  is told it is on a call, so it answers what was just said, briefly. */
+  call?: "watch"
 }
+
+/** What the agent reads before the first words of a live call. Only the
+ *  agent sees it; Chat keeps the words as they were said. */
+export const LIVE_CALL_NOTE =
+  "[Live voice call on the owner's watch or headset. Your answer is read aloud to them and they can't see a screen. " +
+  "Answer what they just said, in a few short spoken sentences.]"
 
 /** Who starts every phone turn: the person holding the paired phone. Sent
  *  as the task's sender, so the daemon that runs the agent (this one or a
@@ -53,9 +62,10 @@ export function upstreamRequest(t: TurnRequest): { path: string; body: Record<st
   // A spoken turn keeps the typed turn's channel and chat id, so both stay
   // in one agent session; `via` only records how it was said.
   const context = { channel: "app", chatId: t.chatId, sender: APP_SENDER, ...(t.spoken ? { via: "voice" } : {}) }
+  const message = t.call === "watch" ? `${LIVE_CALL_NOTE}\n\n${t.message}` : t.message
   return t.node === "local"
-    ? { path: "/task", body: { agent: t.agent, message: t.message, stream: true, context } }
-    : { path: "/mesh/task", body: { peer: t.node, agent: t.agent, message: t.message, stream: true, context } }
+    ? { path: "/task", body: { agent: t.agent, message, stream: true, context } }
+    : { path: "/mesh/task", body: { peer: t.node, agent: t.agent, message, stream: true, context } }
 }
 
 /** Runs one turn and hands every upstream event to `send` as it comes.

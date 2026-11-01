@@ -5,7 +5,7 @@ import { tmpdir } from "os"
 import path from "path"
 import { IntentLedger } from "../src/intent/ledger"
 import { inboundTaskRaw, recordMeshDispatch } from "../src/intent/sources/mesh"
-import { upstreamRequest } from "../src/daemon/app-chat-relay"
+import { LIVE_CALL_NOTE, upstreamRequest } from "../src/daemon/app-chat-relay"
 import { buildFleetSnapshot } from "../src/daemon/activity-graph-panel"
 import { delegatorOf } from "../src/web/activity-graph/transit"
 import { A2AMesh } from "../src/a2a/mesh"
@@ -99,6 +99,16 @@ describe("a phone turn has a person on the phone as its initiator (#276)", () =>
     const typed = upstreamRequest({ node: "local", agent: "alpha", message: "a", chatId: "app:c1" }).body.context as any
     const spoken = upstreamRequest({ node: "local", agent: "alpha", message: "b", chatId: "app:c1", spoken: true }).body.context as any
     expect([typed.channel, typed.chatId]).toEqual([spoken.channel, spoken.chatId])
+  })
+
+  it("tells the agent about a live watch call (#1664), in the same session", () => {
+    for (const node of ["local", "peer-b"]) {
+      const plain = upstreamRequest({ node, agent: "alpha", message: "What time is it?", chatId: "app:c1", spoken: true }).body
+      const call = upstreamRequest({ node, agent: "alpha", message: "What time is it?", chatId: "app:c1", spoken: true, call: "watch" }).body
+      expect(plain.message).toBe("What time is it?")
+      expect(call.message).toBe(`${LIVE_CALL_NOTE}\n\nWhat time is it?`)
+      expect(call.context).toEqual(plain.context)
+    }
   })
 })
 
