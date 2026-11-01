@@ -159,7 +159,7 @@ class TalkService : Service() {
         }
 
         fun hangUp(ctx: Context) {
-            TalkConnection.current?.end(DisconnectCause.LOCAL) ?: ctx.stopService(Intent(ctx, TalkService::class.java))
+            TalkConnection.current?.end(DisconnectCause.LOCAL, endedBy = "the phone (Hang up)") ?: ctx.stopService(Intent(ctx, TalkService::class.java))
         }
 
         fun notify(ctx: Context, text: String) {
@@ -288,7 +288,7 @@ class TalkService : Service() {
             main.removeCallbacksAndMessages(null)
             ringAskedAt = 0L
             running = false
-            TalkConnection.current?.end(DisconnectCause.LOCAL)
+            TalkConnection.current?.end(DisconnectCause.LOCAL, endedBy = "the call service stopping")
             if (TalkState.active) TalkState.set(getString(R.string.talk_ended), active = false)
         }
         super.onDestroy()
@@ -345,7 +345,7 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
         audioModeIsVoip = true
         setAddress(TalkAccount.address, TelecomManager.PRESENTATION_ALLOWED)
         setCallerDisplayName(target.name, TelecomManager.PRESENTATION_ALLOWED)
-        main.postDelayed({ if (ringing) end(DisconnectCause.MISSED, R.string.talk_missed) }, RING_MS)
+        main.postDelayed({ if (ringing) end(DisconnectCause.MISSED, R.string.talk_missed, endedBy = "no answer") }, RING_MS)
         if (fromWatch && Prefs(ctx).watchAutoAnswer) {
             main.postDelayed({ Log.i("AgentXTalk", "watch call: answering by itself"); answerHere() }, AUTO_ANSWER_MS)
         } else if (fromWatch) {
@@ -363,9 +363,10 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
     /** Answer on the Talk screen, from the notification, or by itself. */
     fun answerHere() = begin()
 
-    override fun onReject() = end(DisconnectCause.REJECTED)
-    override fun onDisconnect() = end(DisconnectCause.LOCAL)
-    override fun onAbort() = end(DisconnectCause.CANCELED)
+    override fun onReject() = end(DisconnectCause.REJECTED, endedBy = "Telecom (rejected)")
+    // A hang-up on the watch arrives here.
+    override fun onDisconnect() = end(DisconnectCause.LOCAL, endedBy = "Telecom (watch or call screen hung up)")
+    override fun onAbort() = end(DisconnectCause.CANCELED, endedBy = "Telecom (aborted)")
 
     /** Once on the watch, the call stays there: when Telecom moves it to
      *  the earpiece (the Xiaomi drop about 1 s in), ask for the watch again. */
@@ -420,10 +421,12 @@ class TalkConnection(private val ctx: Context, private val target: TalkTarget, v
         session = TalkSession(ctx, target, this).also { it.start() }
     }
 
-    /** Ends the call from any thread; runs once. */
-    @Synchronized fun end(cause: Int, say: Int = R.string.talk_ended) {
+    /** Ends the call from any thread; runs once. [endedBy] names who ended it,
+     *  for the log: a hang-up on the watch reads "Telecom (…hung up)". */
+    @Synchronized fun end(cause: Int, say: Int = R.string.talk_ended, endedBy: String) {
         if (ended) return
         ended = true
+        Log.i("AgentXTalk", "call ended by $endedBy (${TalkAudioLog.state(ctx)})")
         ringing = false
         main.removeCallbacksAndMessages(null)
         if (drops > 0) Log.i("AgentXTalk", "watch audio dropped $drops time(s) during this call")
@@ -542,7 +545,7 @@ class TalkSession(private val ctx: Context, private val target: TalkTarget, priv
                 if (!stopped) sayQuietly((e as? IllegalStateException)?.message ?: ctx.getString(R.string.talk_say_failed))
             } finally {
                 cleanUp()
-                call.end(DisconnectCause.LOCAL)
+                call.end(DisconnectCause.LOCAL, endedBy = "the conversation ending")
             }
         }
     }
