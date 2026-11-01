@@ -26,7 +26,11 @@ final class Probe: NSObject, WKNavigationDelegate {
     }
 }
 
-let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+// Set up like AnswerView: no page script, while the app's own script
+// (measure(), and the probe here) still runs.
+let config = WKWebViewConfiguration()
+config.defaultWebpagePreferences.allowsContentJavaScript = false
+let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 320, height: 240), configuration: config)
 let probe = Probe()
 web.navigationDelegate = probe
 web.loadHTMLString(page, baseURL: Artifacts.pageBase(daemon))
