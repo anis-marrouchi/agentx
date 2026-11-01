@@ -89,6 +89,16 @@ describe("flushHeld clears only what it sent", () => {
     expect(queue.list().map((e) => e.id)).toEqual(["b"])
   })
 
+  it("does not resend a destination already delivered when a later one fails", async () => {
+    queue.add({ ...entry("a"), channel: "ntfy" })
+    queue.add({ ...entry("b"), channel: "telegram", chatId: "1" })
+    const send = vi.fn(async (m: { channel?: string }) => {
+      if (m.channel === "telegram") throw new Error("telegram down")
+    })
+    await expect(flushHeld(send, { queue, alert: false })).rejects.toThrow("telegram down")
+    expect(queue.list().map((e) => e.id)).toEqual(["b"])
+  })
+
   it("clears an entry a hand edit left without an id", async () => {
     const { id: _id, ...noId } = entry("a")
     queue.add(noId as PendingNotification)
