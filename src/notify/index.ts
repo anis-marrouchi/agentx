@@ -123,15 +123,21 @@ export async function flushHeld(
   // One digest per destination. A held Telegram message and a held push
   // are not interchangeable — the Telegram one carries a reply the
   // workflow depends on — so they are delivered where each was addressed.
+  //
+  // Clear only what was sent, one destination at a time: a message held
+  // while the sends were in flight was not part of this digest and must
+  // still be waiting, and when a later destination fails, the ones already
+  // delivered must not go out again on the retry.
   for (const group of byDestination(waiting)) {
     const folded = digest(group.entries)
-    if (!folded) continue
-    await send({
-      title: folded.title, message: folded.message, priority: 4,
-      channel: group.channel, chatId: group.chatId,
-    })
+    if (folded) {
+      await send({
+        title: folded.title, message: folded.message, priority: 4,
+        channel: group.channel, chatId: group.chatId,
+      })
+    }
+    queue.remove(group.entries)
   }
-  queue.drain()
   // One banner for the whole backlog, whatever channels it went to.
   const all = digest(waiting)
   if (all) await alertFor(opts.alert)?.(all.title, all.message)

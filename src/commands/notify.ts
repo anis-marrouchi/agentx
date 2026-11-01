@@ -130,6 +130,7 @@ export const notify = new Command()
   .option("--proof", "capture the banner as it shows and print the frame's path")
   .option("--status", "show Focus state and anything being held")
   .option("--flush", "deliver everything held, as one message")
+  .option("--drop <id>", "remove one held message without sending it (its id from --status)")
   .option("--json", "emit the result as JSON")
   .action(async (message: string | undefined, opts) => {
     const queue = new NotificationQueue()
@@ -160,8 +161,21 @@ export const notify = new Command()
       console.log(`  ${waiting.length} held`)
       for (const w of waiting.slice(0, 8)) {
         const when = new Date(w.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-        console.log(chalk.dim(`     ${when}  ${w.from}: ${w.message.slice(0, 70)}`))
+        console.log(chalk.dim(`     ${when}  ${w.id}  ${w.from}: ${w.message.slice(0, 70)}`))
       }
+      return
+    }
+
+    if (opts.drop !== undefined) {
+      const dropped = queue.drop(String(opts.drop).trim())
+      if (opts.json) {
+        console.log(JSON.stringify({ dropped }, null, 2))
+      } else if (dropped) {
+        console.log(chalk.green(`  dropped ${dropped.id}: ${dropped.message.slice(0, 70)}`))
+      } else {
+        console.log(chalk.red(`  no held message matches "${opts.drop}" — run agentx notify --status for the ids`))
+      }
+      if (!dropped) process.exit(1)
       return
     }
 
