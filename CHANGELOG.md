@@ -2,6 +2,32 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.202.0](https://github.com/anis-marrouchi/agentx/compare/v0.201.0...v0.202.0) (2026-11-01)
+
+
+### Features
+
+* **android:** start an agent voice call from the watch ([#1664](https://github.com/anis-marrouchi/agentx/issues/1664)) ([#1677](https://github.com/anis-marrouchi/agentx/issues/1677)) ([182da52](https://github.com/anis-marrouchi/agentx/commit/182da52e0702fb1d1c517eecbd3f667e972ae990))
+* **integrations:** OAuth connect, token refresh and read-only agent reads ([#1696](https://github.com/anis-marrouchi/agentx/issues/1696) P1) ([#1703](https://github.com/anis-marrouchi/agentx/issues/1703)) ([01dfa6c](https://github.com/anis-marrouchi/agentx/commit/01dfa6cefab33c478a9887e7fc93fced37b08981))
+* **mcp:** keep MCP header keys out of files and limit a server's tools ([#1698](https://github.com/anis-marrouchi/agentx/issues/1698)) ([#1699](https://github.com/anis-marrouchi/agentx/issues/1699)) ([5a47777](https://github.com/anis-marrouchi/agentx/commit/5a477777c64c8789f34d70d28d5d258ea528a454))
+* **members:** sign in with Google or another OpenID Connect provider ([#1675](https://github.com/anis-marrouchi/agentx/issues/1675)) ([#1700](https://github.com/anis-marrouchi/agentx/issues/1700)) ([a975da1](https://github.com/anis-marrouchi/agentx/commit/a975da16c35867b357a3d631aec124b6f441a077))
+* **org:** a member can also work in other departments ([#1681](https://github.com/anis-marrouchi/agentx/issues/1681)) ([#1694](https://github.com/anis-marrouchi/agentx/issues/1694)) ([1429155](https://github.com/anis-marrouchi/agentx/commit/142915519ca7ac102e5b0779f523220bf15e99a1))
+* **org:** agents on other mesh nodes in the org chart ([#1681](https://github.com/anis-marrouchi/agentx/issues/1681)) ([#1692](https://github.com/anis-marrouchi/agentx/issues/1692)) ([8760eb8](https://github.com/anis-marrouchi/agentx/commit/8760eb8a8fcbfe4c990153dc8577ad140a18de37))
+* **org:** departments and clear person vs agent cards ([#1681](https://github.com/anis-marrouchi/agentx/issues/1681)) ([#1684](https://github.com/anis-marrouchi/agentx/issues/1684)) ([911da8f](https://github.com/anis-marrouchi/agentx/commit/911da8fb94e6e907fe85bc2ec07134add1825edc))
+* **org:** projects lens with manager and team ([#1687](https://github.com/anis-marrouchi/agentx/issues/1687)) ([1b8464b](https://github.com/anis-marrouchi/agentx/commit/1b8464b3305b1c7995b5730056161c6daea25dde))
+* **org:** projects lens with manager and team ([#1687](https://github.com/anis-marrouchi/agentx/issues/1687)) ([87c947a](https://github.com/anis-marrouchi/agentx/commit/87c947a8bd752be91c1504fd28a048b8ade23bd6))
+
+
+### Bug Fixes
+
+* **android:** keep a watch call's audio on the watch ([#1664](https://github.com/anis-marrouchi/agentx/issues/1664)) ([#1695](https://github.com/anis-marrouchi/agentx/issues/1695)) ([011851b](https://github.com/anis-marrouchi/agentx/commit/011851b3719e5eaafd2851d1318853e68e54f819)), closes [#1677](https://github.com/anis-marrouchi/agentx/issues/1677)
+* **android:** leave a watch call's audio to Telecom ([#1664](https://github.com/anis-marrouchi/agentx/issues/1664)) ([#1707](https://github.com/anis-marrouchi/agentx/issues/1707)) ([62cd271](https://github.com/anis-marrouchi/agentx/commit/62cd27177da5df0996f4359f921c543691e09263))
+* **android:** log who ended a watch call; note the early drops ([#1664](https://github.com/anis-marrouchi/agentx/issues/1664)) ([#1709](https://github.com/anis-marrouchi/agentx/issues/1709)) ([bf90df4](https://github.com/anis-marrouchi/agentx/commit/bf90df4562b8cbe499249e62bc4a33e6ebb57885))
+* **org:** a department written without a name loads ([#1681](https://github.com/anis-marrouchi/agentx/issues/1681)) ([#1701](https://github.com/anis-marrouchi/agentx/issues/1701)) ([38a26fd](https://github.com/anis-marrouchi/agentx/commit/38a26fdb35863fd333358c1e38c4899d94d62019))
+* **org:** a line to a removed peer is left out, not fatal ([#1681](https://github.com/anis-marrouchi/agentx/issues/1681)) ([#1704](https://github.com/anis-marrouchi/agentx/issues/1704)) ([c29adc5](https://github.com/anis-marrouchi/agentx/commit/c29adc5d26404e230ff7774454a33a42a5a17ca8))
+* **org:** a project form save keeps name, lead and team unless cleared ([#1687](https://github.com/anis-marrouchi/agentx/issues/1687)) ([451fcc4](https://github.com/anis-marrouchi/agentx/commit/451fcc4fffb018505dbcea26c3fcae5749960238))
+* **org:** one Departments, Chart and Projects switch after the rebase on [#1684](https://github.com/anis-marrouchi/agentx/issues/1684) ([#1687](https://github.com/anis-marrouchi/agentx/issues/1687)) ([125324f](https://github.com/anis-marrouchi/agentx/commit/125324fffbacc459be4a1575af1baf3845d1bcbc))
+
 ## [0.201.0](https://github.com/anis-marrouchi/agentx/compare/v0.200.1...v0.201.0) (2026-11-01)
 
 
