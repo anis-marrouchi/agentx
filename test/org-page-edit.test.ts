@@ -56,7 +56,15 @@ function openOrg(opts: { owner?: boolean; hash?: string; cfg?: any; refuse?: (bo
     return els.get(id)
   }
   const onDoc: Record<string, Array<(ev: any) => void>> = {}
-  const doc = { getElementById: el, addEventListener: (t: string, f: (ev: any) => void) => { (onDoc[t] ??= []).push(f) } }
+  // Day boxes (#1715): drawn from the panel's markup; a test ticks them in `ticked`.
+  const ticked = new Map<string, boolean>()
+  const querySelectorAll = (sel: string) => {
+    const name = /name="([^"]+)"/.exec(sel)?.[1]
+    return [...String(el("org-edit")?.innerHTML ?? "").matchAll(/<input type="checkbox" name="([^"]+)" value="([^"]+)"([^>]*)>/g)]
+      .filter((m) => m[1] === name)
+      .map((m) => ({ value: m[2], checked: ticked.get(m[1] + "/" + m[2]) ?? /\bchecked\b/.test(m[3]) }))
+  }
+  const doc = { getElementById: el, querySelectorAll, addEventListener: (t: string, f: (ev: any) => void) => { (onDoc[t] ??= []).push(f) } }
   const posts: any[] = []
   const reply = (status: number, body: unknown) => Promise.resolve({ ok: status < 400, status, json: async () => body })
   const fetchStub = (url: string, init: any) => {
@@ -84,7 +92,7 @@ function openOrg(opts: { owner?: boolean; hash?: string; cfg?: any; refuse?: (bo
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   const edit = () => el("org-edit")!.innerHTML as string
   const pick = (from: string, type: string, to: string) => { el("oe-rel-from")!.value = from; el("oe-rel-type")!.value = type; el("oe-rel-to")!.value = to }
-  return { el, click, key, settle, edit, pick, posts, cfg }
+  return { el, click, key, settle, edit, pick, posts, cfg, ticked }
 }
 
 describe("Edit org on /org (#1420)", () => {
@@ -141,6 +149,42 @@ describe("Edit org on /org (#1420)", () => {
     const o = openOrg({ hash: "#edit" })
     await o.settle()
     expect(o.edit()).toContain('<a class="ax-btn" href="/hub#page=settings&amp;section=agents&amp;under=agent%3Apm" aria-label="Add an agent who reports to PM">Add agent here</a>')
+  })
+
+  it("shows each agent's working hours and saves new ones with Save hours (#1715)", async () => {
+    const o = openOrg({ hash: "#edit" })
+    await o.settle()
+    expect(o.edit()).toContain('<legend class="org-kind">Working hours of PM</legend>')
+    expect(o.edit()).toContain('<input type="time" id="oe-start-1" value="08:00" aria-label="Start time of PM">')
+    expect(o.edit()).toContain('<input type="time" id="oe-end-1" value="12:00" aria-label="End time of PM">')
+    expect(o.edit()).toContain('<input type="checkbox" name="oe-days-1" value="mon" checked aria-label="Monday">Mon')
+    expect(o.edit()).toContain('<input type="checkbox" name="oe-days-1" value="tue" aria-label="Tuesday">Tue')
+    o.el("oe-start-1").value = "10:00"
+    o.el("oe-end-1").value = "18:00"
+    o.ticked.set("oe-days-1/mon", false)
+    o.ticked.set("oe-days-1/wed", true)
+    o.ticked.set("oe-days-1/thu", true)
+    o.click({ "data-oe": "set-schedule", "data-oe-i": "1", "data-oe-member": "agent:pm" })
+    await o.settle()
+    expect(o.posts).toEqual([{ op: "set-schedule", member: "agent:pm", start: "10:00", end: "18:00", days: ["wed", "thu"] }])
+    expect(o.cfg.business.orgChart.pm.schedule).toEqual({ start: "10:00", end: "18:00", days: ["wed", "thu"] })
+    expect(o.edit()).toContain("PM works Wednesday and Thursday, 10:00 to 18:00. Saved.")
+    expect(o.edit()).toContain('<input type="time" id="oe-start-1" value="10:00"')
+  })
+
+  it("gives a person no working hours, and shows a bad time's refusal", async () => {
+    const o = openOrg({ hash: "#edit" })
+    await o.settle()
+    o.el("oe-add-member").value = "person:kim"
+    o.click({ "data-oe": "add-member" })
+    await o.settle()
+    expect(o.edit()).not.toContain("Working hours of Kim Roe")
+    o.el("oe-start-0").value = "18:00"
+    o.el("oe-end-0").value = "09:00"
+    o.click({ "data-oe": "set-schedule", "data-oe-i": "0", "data-oe-member": "agent:lead" })
+    await o.settle()
+    expect(o.edit()).toContain('<p class="oe-msg is-bad" role="status">The end time (09:00) must be after the start time (18:00).</p>')
+    expect(o.cfg.business.orgChart.lead.schedule).toEqual({ days: ["mon"], start: "08:00", end: "12:00" })
   })
 
   it("adds a first boss only after Save the move", async () => {

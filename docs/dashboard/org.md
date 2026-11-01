@@ -8,7 +8,7 @@ The Hub only shows the chart. Changing the chart and pausing an agent are done o
 
 ## Edit the org chart
 
-On `/org`, you, the owner, decide who is in the chart, the role each one holds, and who reports to whom, people included. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Anyone else sees the chart only: there is no **Edit org** button for them, and the dashboard refuses their changes. The same editor is open in **Settings → Business** on the Hub, so a change made in either place shows in both.
+On `/org`, you, the owner, decide who is in the chart, the role each one holds, each agent's working hours, and who reports to whom, people included. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Anyone else sees the chart only: there is no **Edit org** button for them, and the dashboard refuses their changes. The same editor is open in **Settings → Business** on the Hub, so a change made in either place shows in both.
 
 1. **Browser:** open `/org`, or select **Open the org chart** on the Hub's **Agents** or **Org** page.
 2. Select **Edit org** above the chart. The edit panel opens. To open `/org` with the panel already open, go to `/org#edit`.
@@ -32,6 +32,24 @@ To give a member a new boss, add a **Reports to** line to the new one. You don't
 On a phone, each field takes the full width, and the confirm box sits at the top of the panel with its buttons under the sentence.
 
 ![Edit org on a phone, in the isolated demo](/screenshots/org/edit-phone.png)
+
+### Set an agent's working hours
+
+Working hours say when an agent is on the clock: a start time, an end time, and the days of the week it works. The business features use them for the start and end of an agent's day. People have no working hours here.
+
+1. **Browser:** open `/org` and select **Edit org**, or open **Settings → Business** on the Hub.
+2. Under **Members**, find the agent. **Working hours of** followed by its name shows the hours it has now.
+3. Change **Start** or **End**, for example `08:30` and `16:30`.
+4. Tick the days the agent works, and untick the others.
+5. Select **Save hours**. The line at the top of the panel says what was saved, for example **CX works Monday to Thursday, 08:30 to 16:30. Saved.** The hours are saved at once, without the confirm box.
+
+To go back to the usual hours, empty **Start** or **End**, or untick every day, then select **Save hours**. An empty start becomes 09:00, an empty end 17:00, and no day ticked becomes Monday to Friday. A lunch break set from the terminal (`lunch` in `agentx.json`) is kept.
+
+![Edit org: an agent's working hours with Start, End, the days of the week and Save hours, after a save, in the isolated demo](/screenshots/org/edit-hours.png)
+
+![The same working hours on a phone, in the isolated demo](/screenshots/org/edit-hours-phone.png)
+
+*Scripted demo data; your team's names will differ.*
 
 A change that would break the chart is refused before anything is saved, with a sentence saying why, for example: "Helper cannot report to Planner: Planner already reports up to Helper." The kinds of relation and their rules are in [People and kinds of relation](#people-and-kinds-of-relation). What you set is kept under `business` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
 
@@ -223,6 +241,7 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 3. Click **Resume**. The card says **Idle** again.
 4. Select **Projects**. Each project in `business.projects` is a box with its PM card, and its lead and team when you set them.
 5. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
+6. As the owner, in **Edit org**, change an agent's **End** time and select **Save hours**. The line at the top ends with **Saved.**, and after a reload of the page the new time is still there. In `agentx.json`, `business.orgChart.<agent>.schedule` has the new time, and a backup copy (`agentx.json.bak.…`) sits next to the file.
 
 ## If something is wrong
 
@@ -241,5 +260,8 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 - **A new agent still does nothing after your yes:** it was added while the daemon was running. Run `agentx daemon restart`.
 - **No Edit org button on `/org`:** you opened the dashboard without the owner's key. On the dashboard's own computer, open it at `127.0.0.1`; from another machine, sign in with the dashboard key (`dashboard.token`).
 - **A line or a removal is not saved:** select **Save the move** in the box at the top of the edit panel. **Cancel**, the **Escape** key, or **Done editing** drops the change.
+- **"The end time (…) must be after the start time (…)":** an agent's working day must end after it starts, on the same day. Change **Start** or **End** and select **Save hours** again. Nothing was saved.
+- **"… is not a time":** type the time as hours and minutes, for example `09:00`. Nothing was saved.
+- **No working hours next to a member:** that member is a person. Only agents have working hours.
 - **A person is missing from the Member list in Edit org:** add them on the [People](./people.md) page first, then reload `/org`.
 - **"Only the owner can pause an agent":** the command ran inside an agent's terminal. Run it from your own terminal, or use the Org page.
