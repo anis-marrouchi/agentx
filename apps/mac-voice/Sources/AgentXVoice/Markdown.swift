@@ -34,8 +34,11 @@ enum Markdown {
             while listDepth > 0 { html += "</ul>"; listDepth -= 1 }
         }
 
-        for rawLine in markdown.components(separatedBy: .newlines) {
-            let line = rawLine
+        let lines = markdown.components(separatedBy: .newlines)
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            i += 1
 
             // Fenced code: everything inside is literal, including things
             // that would otherwise look like markdown.
@@ -48,6 +51,31 @@ enum Markdown {
 
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { closeList(); html += "<p></p>"; continue }
+
+            // Pipe table: a row followed by a `|---|:--:|` separator. Rows
+            // run until the first line without a pipe.
+            if i < lines.count, trimmed.contains("|"),
+               let align = separator(lines[i]), align.count == cellsOf(trimmed).count {
+                closeList()
+                let width = align.count
+                func row(_ text: String, _ tag: String) -> String {
+                    var cells = Array(cellsOf(text).prefix(width))
+                    cells += Array(repeating: "", count: width - cells.count)
+                    return "<tr>" + zip(cells, align).map { cell, a in
+                        "<\(tag)\(a.map { " style=\"text-align:\($0)\"" } ?? "")>\(inline(cell))</\(tag)>"
+                    }.joined() + "</tr>"
+                }
+                html += "<div class=\"md-table\"><table><thead>\(row(trimmed, "th"))</thead><tbody>"
+                i += 1
+                while i < lines.count {
+                    let next = lines[i].trimmingCharacters(in: .whitespaces)
+                    guard !next.isEmpty, next.contains("|") else { break }
+                    html += row(next, "td")
+                    i += 1
+                }
+                html += "</tbody></table></div>"
+                continue
+            }
 
             // Headings
             if let h = heading(trimmed) {
@@ -88,6 +116,43 @@ enum Markdown {
         while rest.first == "#" && level < 6 { level += 1; rest = rest.dropFirst() }
         guard level > 0, rest.first == " " else { return nil }
         return (level, String(rest.dropFirst()))
+    }
+
+    /// Cells of a table row: split on pipes, but not on `\|`; the outer
+    /// pipes are optional.
+    private static func cellsOf(_ line: String) -> [String] {
+        var row = line.trimmingCharacters(in: .whitespaces)
+        if row.hasPrefix("|") { row.removeFirst() }
+        if row.hasSuffix("|") && !row.hasSuffix("\\|") { row.removeLast() }
+        var cells = [""]
+        var escaped = false
+        for ch in row {
+            if escaped { cells[cells.count - 1] += ch == "|" ? "|" : "\\\(ch)"; escaped = false }
+            else if ch == "\\" { escaped = true }
+            else if ch == "|" { cells.append("") }
+            else { cells[cells.count - 1].append(ch) }
+        }
+        if escaped { cells[cells.count - 1] += "\\" }
+        return cells.map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// The `|---|:--:|---:|` line under a table header, as one alignment
+    /// per column (nil = default), or nil when the line is not one.
+    private static func separator(_ line: String) -> [String?]? {
+        guard line.contains("-") else { return nil }
+        let cells = cellsOf(line)
+        var align: [String?] = []
+        for cell in cells {
+            let dashes = cell.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+            guard !dashes.isEmpty, dashes.allSatisfy({ $0 == "-" }) else { return nil }
+            switch (cell.hasPrefix(":"), cell.hasSuffix(":")) {
+            case (true, true): align.append("center")
+            case (false, true): align.append("right")
+            case (true, false): align.append("left")
+            default: align.append(nil)
+            }
+        }
+        return align
     }
 
     private static func listItem(_ line: String) -> String? {

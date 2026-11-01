@@ -113,6 +113,7 @@ enum Brand {
         border: none; margin: 1em 0;
         border-top: 1px solid color-mix(in srgb, canvastext 14%, transparent);
       }
+      .md-table { overflow-x: auto; }
       table { border-collapse: collapse; margin: .5em 0; font-size: 12px; }
       th, td { padding: 4px 9px; border: 1px solid color-mix(in srgb, canvastext 14%, transparent); }
       th {
