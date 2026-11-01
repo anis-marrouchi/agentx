@@ -219,6 +219,11 @@ export const ORG_PEOPLE_JS = `
     });
     return out;
   }
+  /** A department box's title: its name, and its head when it has one. */
+  function deptTitleHtml(dep, nameOf, esc) {
+    return '<span class="org-dept-name">' + esc(dep.name) + '</span>'
+      + (dep.head ? '<span class="org-dept-head">Head: ' + esc(nameOf(dep.head)) + '</span>' : '');
+  }
 `
 
 const ORG_SCRIPT = `
@@ -276,8 +281,7 @@ const ORG_SCRIPT = `
   function branch(list) {
     return '<ul>' + byDept(list, depts).map(function (x) {
       if (!x.dept) return item(x);
-      var head = x.dept.head ? '<span class="org-dept-head">Head: ' + esc(nameOf(x.dept.head)) + '</span>' : '';
-      return '<li class="org-dept" data-dept="' + esc(x.dept.id) + '"><div class="org-dept-box"><span class="org-dept-name">' + esc(x.dept.name) + '</span>' + head
+      return '<li class="org-dept" data-dept="' + esc(x.dept.id) + '"><div class="org-dept-box">' + deptTitleHtml(x.dept, nameOf, esc)
         + '<ul>' + x.items.map(item).join('') + '</ul></div></li>';
     }).join('') + '</ul>';
   }

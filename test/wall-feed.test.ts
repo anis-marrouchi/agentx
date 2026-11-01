@@ -2033,6 +2033,10 @@ describe("The Org page on the Wall (#1419)", () => {
     // Members first, side by side; Bob, outside the department, after them.
     const order = [...html.matchAll(/data-org-key="([^"]+)"/g)].map((m) => m[1])
     expect(order).toEqual(["person:sam", "agent:ann", "agent:cid", "person:zed", "agent:bob"])
+    // One run of cards side by side, so one band number on all three; Bob has none.
+    expect(card("agent:ann")).toContain('data-org-band="0"')
+    expect(card("person:zed")).toContain('data-org-band="0"')
+    expect(card("agent:bob")).not.toContain("data-org-band")
   })
 
   it("shows dotted lines on request, and folds a branch", async () => {
