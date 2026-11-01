@@ -20,7 +20,15 @@ final class AnswerView: NSView {
     // hashes, which defeats the answer's only purpose: being MORE readable
     // than the spoken answer, not less. Text in it is selectable, and it
     // scrolls once the answer is taller than the pill lets it grow.
-    private let web = WKWebView()
+    //
+    // No page script (#1670): the card shares the daemon's origin, so a
+    // script in it would be trusted like the daemon's own pages. measure()
+    // still runs, since the app's own evaluateJavaScript is not page script.
+    private let web: WKWebView = {
+        let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences.allowsContentJavaScript = false
+        return WKWebView(frame: .zero, configuration: config)
+    }()
     private let links = NSStackView()
     private let thumb = NSImageView()
     private let actions = NSStackView()
@@ -145,7 +153,8 @@ final class AnswerView: NSView {
         // the daemon over loopback.
         hasFiles = !artifacts.isEmpty
         let files = Artifacts.html(artifacts, base: Config.daemonURL)
-        web.loadHTMLString(Markdown.page(Markdown.toHTML(source) + files, css: Brand.cardCSS + Artifacts.css), baseURL: nil)
+        web.loadHTMLString(Markdown.page(Markdown.toHTML(source) + files, css: Brand.cardCSS + Artifacts.css),
+                           baseURL: Artifacts.pageBase(Config.daemonURL))
 
         links.arrangedSubviews.forEach { links.removeArrangedSubview($0); $0.removeFromSuperview() }
         for (label, url) in buttons.prefix(4) {

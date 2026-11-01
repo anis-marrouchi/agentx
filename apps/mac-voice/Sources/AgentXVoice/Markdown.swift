@@ -112,7 +112,8 @@ enum Markdown {
         // A picture on the web, before links: `![alt](https://...)` is a
         // link with a `!` in front.
         s = replace(s, #"!\[([^\]"]*)\]\((https?://[^)\s"]+)\)"#, "<img class=\"md-img\" alt=\"$1\" src=\"$2\">")
-        s = replace(s, #"\[([^\]]+)\]\(([^)\s]+)\)"#, "<a href=\"$2\">$1</a>")
+        // Only web and mail links: a javascript: target stays text.
+        s = replace(s, #"\[([^\]]+)\]\(((?:https?://|mailto:)[^)\s]+)\)"#, "<a href=\"$2\">$1</a>")
         // Bare URLs, but not ones already inside an href.
         s = replace(s, #"(?<!["=])\b(https?://[^\s<)]+)"#, "<a href=\"$1\">$1</a>")
         return s
@@ -128,14 +129,24 @@ enum Markdown {
         s.replacingOccurrences(of: "&", with: "&amp;")
          .replacingOccurrences(of: "<", with: "&lt;")
          .replacingOccurrences(of: ">", with: "&gt;")
+         // Quotes too: a link target goes into href="...", and a quote in
+         // agent text must not end it and start an attribute.
+         .replacingOccurrences(of: "\"", with: "&quot;")
+         .replacingOccurrences(of: "'", with: "&#39;")
     }
 
     /// Wraps rendered HTML in a page that follows the system appearance.
     /// A card that is white while everything else is dark is worse than
     /// plain text.
+    ///
+    /// The page runs no script of its own: the card is same-origin with the
+    /// daemon (#1670), and its text can repeat untrusted content.
+    static let policy = "default-src 'none'; img-src http: https:; media-src http: https:; style-src 'unsafe-inline'"
+
     static func page(_ body: String, css: String? = nil) -> String {
         """
         <!doctype html><html><head><meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="\(policy)">
         <style>\(css ?? defaultCSS)</style>
         </head><body>\(body)</body></html>
         """
