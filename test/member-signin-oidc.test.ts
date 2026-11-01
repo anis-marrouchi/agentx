@@ -36,6 +36,7 @@ let server: Server
 let base: string
 let claims: Record<string, any>
 let tokenRequests: URLSearchParams[]
+let logLines: string[]
 
 const fakeFetch = async (url: string, init?: RequestInit): Promise<Response> => {
   if (url === `${ISSUER}/.well-known/openid-configuration`) {
@@ -57,17 +58,19 @@ beforeEach(async () => {
   accounts = new SignInAccountStore(dir)
   setup = SETUP
   tokenRequests = []
+  logLines = []
   PEOPLE = [
     { id: "dana", name: "Dana", role: "member", identities: ["email:dana@example.com"] },
     { id: "boss", name: "Boss", role: "owner", identities: ["email:boss@example.com"] },
   ]
   const members = new MemberStore(dir)
   const states = new OidcStateStore(now)
+  const pairLimiter = new PairAttemptLimiter()
   server = createServer(async (req, res) => {
     const path = new URL(req.url || "/", "http://x").pathname
     const handled = await handleMemberRequest(req, res, path, req.method || "GET", {
-      tokens: new TokenStore(dir), members, pairCodes: new PairCodeStore(dir), pairLimiter: new PairAttemptLimiter(),
-      pairMinMs: 0, root: dir, people: () => PEOPLE, log: () => {}, sessions, now,
+      tokens: new TokenStore(dir), members, pairCodes: new PairCodeStore(dir), pairLimiter,
+      pairMinMs: 0, root: dir, people: () => PEOPLE, log: (line) => logLines.push(line), sessions, now,
       oidcSetup: () => setup, oidcStates: states, signInAccounts: accounts, fetch: fakeFetch as any,
     })
     if (!handled) { res.writeHead(418); res.end() }
@@ -85,8 +88,8 @@ const claimsFor = (email: string, sub = "sub-dana", over: Record<string, any> = 
 })
 
 /** Start a sign-in; the provider's address and this browser's state cookie. */
-async function start(machine = "Dana's laptop") {
-  const r = await fetch(`${base}/member/signin/oidc?machine=${encodeURIComponent(machine)}`, { redirect: "manual" })
+async function start(machine = "Dana's laptop", headers: Record<string, string> = {}) {
+  const r = await fetch(`${base}/member/signin/oidc?machine=${encodeURIComponent(machine)}`, { redirect: "manual", headers })
   expect(r.status).toBe(302)
   const to = new URL(r.headers.get("location")!)
   const cookie = /ax_oidc=([^;]+)/.exec(r.headers.get("set-cookie") ?? "")![1]
@@ -94,18 +97,20 @@ async function start(machine = "Dana's laptop") {
 }
 
 /** Come back from the provider with a code, as the browser would. */
-async function back(state: string, cookie: string | null, { nonce }: { nonce?: string } = {}, extra = "") {
+async function back(state: string, cookie: string | null, { nonce }: { nonce?: string } = {}, extra = "", headers: Record<string, string> = {}) {
   if (nonce !== undefined) claims.nonce = nonce
   return fetch(`${base}/member/signin/oidc/done?code=c0de&state=${state}${extra}`, {
-    redirect: "manual", headers: cookie ? { Cookie: `ax_oidc=${cookie}` } : {},
+    redirect: "manual", headers: { ...headers, ...(cookie ? { Cookie: `ax_oidc=${cookie}` } : {}) },
   })
 }
 
-async function signIn(email: string, sub?: string, over: Record<string, any> = {}) {
-  const { to, cookie } = await start()
+async function signIn(email: string, sub?: string, over: Record<string, any> = {}, headers: Record<string, string> = {}) {
+  const { to, cookie } = await start(undefined, headers)
   claims = claimsFor(email, sub, { nonce: to.searchParams.get("nonce"), ...over })
-  return back(to.searchParams.get("state")!, cookie)
+  return back(to.searchParams.get("state")!, cookie, {}, "", headers)
 }
+
+const answerCard = (answer: "yes" | "no") => decideCard(dir, listCards(dir).find((c) => c.status === "pending")!.id, answer, { by: "owner" })
 
 describe("starting", () => {
   it("sends the browser to the provider with PKCE, state, nonce and the fixed return address", async () => {
@@ -200,13 +205,70 @@ describe("coming back", () => {
 
   it("keeps the first account: another account with the same address gets nobody in", async () => {
     expect((await signIn("dana@example.com", "sub-dana")).status).toBe(302)
+    answerCard("yes")
     expect((await signIn("dana@example.com", "sub-new")).status).toBe(401)
     expect(accounts.get("dana", ISSUER)).toBe("sub-dana")
     expect(sessions.sessions("dana")).toHaveLength(1)
   })
 
+  it("keeps no account while the owner's card waits, nor after a no", async () => {
+    expect((await signIn("dana@example.com", "sub-stranger")).status).toBe(302)
+    expect(accounts.get("dana", ISSUER)).toBeNull()
+    answerCard("no")
+    expect((await signIn("dana@example.com", "sub-dana")).status).toBe(302)
+    expect(accounts.get("dana", ISSUER)).toBeNull()
+    answerCard("yes")
+    // The yes is read on the next sign-in or page load; then the account is kept.
+    expect((await signIn("dana@example.com", "sub-dana")).status).toBe(302)
+    expect(accounts.get("dana", ISSUER)).toBe("sub-dana")
+  })
+
+  it("keeps no account when the network check refuses the sign-in", async () => {
+    PEOPLE[0] = { ...PEOPLE[0], identities: ["email:dana@example.com", "tailscale:dana@example.com"] }
+    setup = { ...SETUP, firstSignIn: "auto" }
+    const r = await signIn("dana@example.com", "sub-stranger", {}, { "Tailscale-User-Login": "someone@else.com" })
+    expect(r.status).toBe(403)
+    expect(accounts.get("dana", ISSUER)).toBeNull()
+    expect(accounts.personOf(ISSUER, "sub-stranger")).toBeNull()
+    expect((await signIn("dana@example.com", "sub-dana", {}, { "Tailscale-User-Login": "dana@example.com" })).status).toBe(302)
+    expect(accounts.get("dana", ISSUER)).toBe("sub-dana")
+  })
+
+  it("cleans the provider's error before it reaches the log", async () => {
+    const { to, cookie } = await start()
+    const r = await back(to.searchParams.get("state")!, cookie, {}, "&error=bad%0Aline%1B%5B31m")
+    expect(r.status).toBe(401)
+    const line = logLines.find((l) => l.includes("provider said"))!
+    expect(line).toContain("provider said bad?line?[31m")
+    expect(line).not.toMatch(/[\x00-\x1f]/)
+  })
+
   it("accepts the issuer written without its scheme, as Google sends it", async () => {
     expect((await signIn("dana@example.com", "sub-dana", { iss: "id.example.test" })).status).toBe(302)
+  })
+})
+
+describe("a flood of starts", () => {
+  it("pushes out only the flooding address's own sign-ins", () => {
+    const states = new OidcStateStore(() => clock)
+    const dana = states.create("Dana's laptop", "100.64.0.2")!
+    for (let i = 0; i < 50; i++) expect(states.create("x", "100.64.0.9")).not.toBeNull()
+    expect(states.spend(dana.state)).not.toBeNull()
+  })
+
+  it("refuses new starts, not waiting ones, once too many wait", () => {
+    const states = new OidcStateStore(() => clock)
+    const dana = states.create("Dana's laptop", "100.64.0.2")!
+    for (let i = 0; i < 300; i++) states.create("x", `100.64.1.${i}`)
+    expect(states.create("y", "100.64.2.1")).toBeNull()
+    expect(states.spend(dana.state)).not.toBeNull()
+  })
+
+  it("turns away an address locked out by failed sign-ins", async () => {
+    for (let i = 0; i < 20; i++) await back("x".repeat(43), null)
+    const r = await fetch(`${base}/member/signin/oidc`, { redirect: "manual" })
+    expect(r.status).toBe(429)
+    expect(r.headers.get("retry-after")).toMatch(/^\d+$/)
   })
 })
 

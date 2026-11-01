@@ -152,7 +152,8 @@ export async function handleMemberRequest(
   const provider = oidc.oidc()?.name ?? null
   if (method === "GET" && path === "/member/signin") return send(res, 200, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup(), provider))
   if (method === "GET" && path === "/member/signin/oidc") {
-    const result = await startOidc(new URL(req.url || path, "http://x"), oidc)
+    const result = await startOidc(req, new URL(req.url || path, "http://x"), oidc)
+    if (result.status === 429) res.setHeader("Retry-After", String(result.retryAfter))
     if (result.status !== 302) return send(res, result.status, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup(), provider, result.error))
     res.setHeader("Set-Cookie", `${STATE_COOKIE}=${result.state}; Path=/member/signin/oidc; Max-Age=${STATE_TTL_MS / 1000}; HttpOnly; Secure; SameSite=Lax`)
     res.writeHead(302, { Location: result.location, "Cache-Control": "no-store" })

@@ -11,6 +11,7 @@ import { splitIdentity, type Person } from "@/people/people"
 import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import type { MemberStore } from "./store"
 import { PersonSessionStore, type PersonSession } from "./person-sessions"
+import { SignInAccountStore, type SignInAccount } from "./signin-accounts"
 import {
   NETWORK_MISMATCH, PAIRING_CARD_BY, TOO_MANY_WAITING,
   cardAnswer, clientAddress, machineName, networkIdentities, networkLogin, pageFor,
@@ -236,7 +237,12 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
 }
 
 /** How a person proved who they are, for the logs and the owner's card. */
-export interface SignInProof { via: string; proof: string }
+export interface SignInProof {
+  via: string
+  proof: string
+  /** A provider account (#1675): kept for the person once they are let in. */
+  account?: SignInAccount
+}
 
 /** What follows once the person is known, by a link or a sign-in provider:
  *  the network check, then straight in, or the owner's first-sign-in card. */
@@ -260,9 +266,10 @@ export function openSession(
   // Let in before, or a member under `auto`: straight in. A yes on an
   // earlier card counts even if that browser has not called back yet.
   const auto = person.role === "member" && setup.firstSignIn === "auto"
-  for (const s of deps.sessions.sessions(person.id)) if (s.state === "pending" && !s.endedAt) settle(s, person, deps)
+  settlePending(person, deps)
   if (deps.sessions.approved(person.id) || auto) {
     const { session, value } = deps.sessions.create(person.id, name, { approvedAt: at })
+    if (how.account) new SignInAccountStore(deps.root).keepFirst(person.id, how.account)
     deps.members.log({ person: person.id, event: "signed-in", address: client, detail: `${name} (${how.via}${auto ? ", auto" : ""})` })
     log(`[member] ${person.id} signed in by ${how.via} on "${name}" from ${client} (session ${session.id})`)
     return { status: 200, body: { person: person.id, name, state: "active" }, value }
@@ -283,7 +290,7 @@ export function openSession(
     log(`[member] ${person.id}: sign-in from ${client} refused: ${card.error}`)
     return { status: 503, body: { error: TOO_MANY_WAITING } }
   }
-  const { session, value } = deps.sessions.create(person.id, name, { state: "pending", cardId: card.card.id })
+  const { session, value } = deps.sessions.create(person.id, name, { state: "pending", cardId: card.card.id, account: how.account })
   deps.members.log({ person: person.id, event: "paired", address: client, detail: `${name} (${how.via}, first sign-in)` })
   log(`[member] ${person.id} signed in by ${how.via} for the first time on "${name}" from ${client}; waiting for the owner (card ${card.card.id}, session ${session.id})`)
   return { status: 200, body: { person: person.id, name, state: "pending" }, value }
@@ -305,13 +312,19 @@ export function personAccess(value: string | null, deps: Pick<SignInDeps, "sessi
   return { ok: false, waiting: settled === null }
 }
 
+/** Applies the owner's answers on this person's waiting sessions. Before a
+ *  provider account is matched too, so a yes keeps its account first. */
+export function settlePending(person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log">): void {
+  for (const s of deps.sessions.sessions(person.id)) if (s.state === "pending" && !s.endedAt) settle(s, person, deps)
+}
+
 /** Applies the owner's answer on a waiting session's card, once it is there. */
 function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log">): "yes" | "no" | null {
   const log = deps.log ?? ((line: string) => console.log(line))
   const card = session.cardId ? readCard(deps.root, session.cardId) : null
   const answer = cardAnswer(card)
   if (answer === "yes") {
-    deps.sessions.approve(session.id)
+    if (deps.sessions.approve(session.id) && session.account) new SignInAccountStore(deps.root).keepFirst(person.id, session.account)
     deps.members.log({ person: person.id, event: "approved", detail: `${session.label} (email link)${card?.decided_by ? `, by ${card.decided_by}` : ""}` })
     log(`[member] ${person.id}: first sign-in on "${session.label}" approved`)
   } else if (answer === "no") {

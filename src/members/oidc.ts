@@ -1,10 +1,11 @@
 import type { IncomingMessage } from "http"
 import { createHash, randomBytes } from "crypto"
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
-import { dirname, resolve } from "path"
 import type { Person } from "@/people/people"
 import { clientAddress, machineName } from "./pairing"
-import { SIGN_IN_ROLES, openSession, personByEmail, type SignInDeps, type SignInResult } from "./signin"
+import { SIGN_IN_ROLES, openSession, personByEmail, settlePending, type SignInDeps, type SignInResult } from "./signin"
+import { SignInAccountStore } from "./signin-accounts"
+
+export { SignInAccountStore }
 
 // --- Signing in with an OpenID Connect provider, such as Google (#1675) ---
 //
@@ -23,16 +24,18 @@ import { SIGN_IN_ROLES, openSession, personByEmail, type SignInDeps, type SignIn
 //            no provider token.
 //   counts   only a verified address, of `hd` when that is set, whose
 //            person is a member or a client (SIGN_IN_ROLES).
-//   bound    the first account that signs in for a person is kept
-//            (.agentx/signin-accounts.json); another account later showing
-//            the same address is refused, so a recycled address gets nobody in.
+//   bound    the first account a person is let in with is kept
+//            (.agentx/signin-accounts.json): straight in, or on the owner's
+//            yes on the first-sign-in card; a refused sign-in keeps nothing.
+//            Another account later showing the same address is refused, so
+//            a recycled address gets nobody in.
 
 export const STATE_TTL_MS = 10 * 60 * 1000
 export const STATE_COOKIE = "ax_oidc"
 export const CALLBACK_PATH = "/member/signin/oidc/done"
 export const PROVIDER_FAILED = "That sign-in did not work. Try again, or ask for a link by email."
 const MAX_PENDING = 200
-const ACCOUNTS_FILE = ".agentx/signin-accounts.json"
+const MAX_PENDING_PER_CLIENT = 5
 
 export interface OidcSetup {
   /** The button reads "Sign in with <name>". */
@@ -48,7 +51,7 @@ export interface OidcSetup {
 }
 
 interface Discovery { issuer: string; authorization_endpoint: string; token_endpoint: string }
-interface Pending { verifier: string; nonce: string; label: string; expiresAt: number }
+interface Pending { verifier: string; nonce: string; label: string; client: string; expiresAt: number }
 
 const hashOf = (s: string) => createHash("sha256").update(s).digest("base64url")
 export const redirectUri = (origin: string) => `${origin.replace(/\/+$/, "")}${CALLBACK_PATH}`
@@ -58,15 +61,19 @@ export class OidcStateStore {
   private pending = new Map<string, Pending>()
   constructor(private now: () => number = Date.now) {}
 
-  create(label: string): { state: string; verifier: string; nonce: string } {
+  /** A new pending sign-in, or null while too many wait. One network
+   *  address only ever pushes out its own oldest, so a flood of starts
+   *  cannot drop another person's sign-in on its way back. */
+  create(label: string, client: string): { state: string; verifier: string; nonce: string } | null {
     const t = this.now()
     for (const [k, p] of this.pending) if (p.expiresAt <= t) this.pending.delete(k)
-    // Oldest first out, so a flood of starts cannot grow it without end.
-    while (this.pending.size >= MAX_PENDING) this.pending.delete(this.pending.keys().next().value!)
+    const mine = [...this.pending].filter(([, p]) => p.client === client)
+    for (const [k] of mine.slice(0, Math.max(0, mine.length - MAX_PENDING_PER_CLIENT + 1))) this.pending.delete(k)
+    if (this.pending.size >= MAX_PENDING) return null
     const state = randomBytes(32).toString("base64url")
     const verifier = randomBytes(32).toString("base64url")
     const nonce = randomBytes(16).toString("base64url")
-    this.pending.set(hashOf(state), { verifier, nonce, label, expiresAt: t + STATE_TTL_MS })
+    this.pending.set(hashOf(state), { verifier, nonce, label, client, expiresAt: t + STATE_TTL_MS })
     return { state, verifier, nonce }
   }
 
@@ -77,40 +84,6 @@ export class OidcStateStore {
     const found = this.pending.get(key) ?? null
     this.pending.delete(key)
     return found && found.expiresAt > this.now() ? found : null
-  }
-}
-
-/** The account each person first signed in with, per provider. */
-export class SignInAccountStore {
-  private file: string
-  constructor(baseDir: string = process.cwd()) { this.file = resolve(baseDir, ACCOUNTS_FILE) }
-
-  /** The subject kept for this person at this issuer, if any. */
-  get(personId: string, issuer: string): string | null {
-    return this.read()[`${personId} ${issuer}`] ?? null
-  }
-
-  /** The person this account was bound to, if any. */
-  personOf(issuer: string, subject: string): string | null {
-    for (const [k, v] of Object.entries(this.read())) if (v === subject && k.endsWith(` ${issuer}`)) return k.slice(0, -issuer.length - 1)
-    return null
-  }
-
-  bind(personId: string, issuer: string, subject: string): void {
-    const all = this.read()
-    all[`${personId} ${issuer}`] = subject
-    mkdirSync(dirname(this.file), { recursive: true })
-    const tmp = `${this.file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`
-    writeFileSync(tmp, JSON.stringify({ accounts: all }, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 })
-    renameSync(tmp, this.file)
-  }
-
-  private read(): Record<string, string> {
-    if (!existsSync(this.file)) return {}
-    try {
-      const a = JSON.parse(readFileSync(this.file, "utf-8")).accounts
-      return a && typeof a === "object" ? a : {}
-    } catch { return {} }
   }
 }
 
@@ -145,18 +118,29 @@ export interface OidcDeps extends SignInDeps {
   fetch?: Fetch
 }
 
-export type StartResult = { status: 302; location: string; state: string } | { status: 404 | 502; error: string }
+export type StartResult =
+  | { status: 302; location: string; state: string }
+  | { status: 404 | 502 | 503; error: string }
+  | { status: 429; error: string; retryAfter: number }
 
 /** GET /member/signin/oidc?machine=…: off to the provider. */
-export async function startOidc(url: URL, deps: OidcDeps): Promise<StartResult> {
+export async function startOidc(req: IncomingMessage, url: URL, deps: OidcDeps): Promise<StartResult> {
   const setup = deps.oidc()
   if (!setup) return { status: 404, error: "Signing in with an account is not set up here." }
+  const client = clientAddress(req)
+  const wait = deps.limiter.retryAfter(client)
+  if (wait > 0) return { status: 429, error: "Too many attempts. Try again later.", retryAfter: wait }
   let d: Discovery
   try { d = await discover(setup.issuer, deps.fetch) } catch (err) {
     ;(deps.log ?? console.log)(`[member] sign-in with ${setup.name}: ${err instanceof Error ? err.message : String(err)}`)
     return { status: 502, error: PROVIDER_FAILED }
   }
-  const { state, verifier, nonce } = deps.states.create(machineName(url.searchParams.get("machine")))
+  const started = deps.states.create(machineName(url.searchParams.get("machine")), client)
+  if (!started) {
+    ;(deps.log ?? console.log)(`[member] sign-in with ${setup.name}: too many sign-ins waiting, refused a start from ${client}`)
+    return { status: 503, error: "Too many sign-ins are waiting. Try again in a few minutes." }
+  }
+  const { state, verifier, nonce } = started
   const q = new URLSearchParams({
     response_type: "code", client_id: setup.clientId, redirect_uri: redirectUri(setup.origin),
     scope: "openid email", state, nonce,
@@ -214,7 +198,7 @@ export async function finishOidc(req: IncomingMessage, url: URL, stateCookie: st
   if (!state || state !== stateCookie) return fail("state does not match this browser")
   const pending = deps.states.spend(state)
   if (!pending) return fail("unknown or old state")
-  if (url.searchParams.get("error")) return fail(`provider said ${url.searchParams.get("error")!.slice(0, 60)}`)
+  if (url.searchParams.get("error")) return fail(`provider said ${url.searchParams.get("error")!.replace(/[^\x20-\x7e]/g, "?").slice(0, 60)}`)
   const code = url.searchParams.get("code")
   if (!code) return fail("no code")
 
@@ -243,11 +227,14 @@ export async function finishOidc(req: IncomingMessage, url: URL, stateCookie: st
   const problem = claimsProblem(claims, setup, pending.nonce, now)
   if (problem) return fail(problem)
 
+  const known = personByEmail(deps.people(), claims.email)
+  if (known && SIGN_IN_ROLES.includes(known.role)) settlePending(known, deps)
   const person = matchPerson(deps.people(), claims.email, claims.sub, setup.issuer, deps.accounts)
   if ("refused" in person) return fail(person.refused, person.personId)
   deps.limiter.succeed(client)
-  if (!deps.accounts.get(person.id, setup.issuer)) deps.accounts.bind(person.id, setup.issuer, claims.sub)
-  return openSession(req, person, pending.label, { via: setup.name, proof: `${person.name.slice(0, 60)}'s ${setup.name} account` }, setup, deps)
+  // The account is kept only once the person is let in (openSession).
+  const account = { issuer: setup.issuer, subject: claims.sub }
+  return openSession(req, person, pending.label, { via: setup.name, proof: `${person.name.slice(0, 60)}'s ${setup.name} account`, account }, setup, deps)
 }
 
 /** The person this account signs in as, or why nobody. */
