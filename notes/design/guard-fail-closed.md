@@ -134,8 +134,8 @@ Both paths write an audit row (`recordDecision`). A duplicate now only happens w
 2. Is "rules say ask → deny while the daemon is not answering" right, or should it be allow-with-warning?
 3. Should a daemon-started session deny when both checks fail (step 3), or is the local fallback enough on its own?
 4. Should a person opening Claude Code in an agent's workspace folder be treated like the agent (fail closed), or like any other person (as proposed)?
-5. Is fixing the 3 s curl vs 45 s dialog mismatch (`--connect-timeout 1 --max-time 55`, hook timeout 60) part of this build, as proposed, or its own issue? The cost is up to 55 s per call while a daemon is hung.
-6. Is the fixed allow list in step 3 (daemon start/restart/status through `agentx`, `cli.js`, `launchctl`, `systemctl --user`) the right set?
+5. Is fixing the 3 s curl vs 45 s dialog mismatch (`--connect-timeout 1 --max-time 55`, hook timeout 75) part of this build, as proposed, or its own issue? The cost is up to 55 s per call while a daemon is hung.
+6. Is the fixed allow list in step 3 (daemon start/restart/status through `agentx`, `cli.js`, `npx tsx <path>/cli.ts`, `launchctl` (gui/<uid>, uid as digits, `$(id -u)` or `$UID`), `systemctl --user` and `sudo systemctl start|restart|status`) the right set?
 
 ## Build scope (once accepted)
 
