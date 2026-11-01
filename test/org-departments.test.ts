@@ -211,3 +211,59 @@ describe("the /org page (#1681)", () => {
     expect(drawn.map((x: any) => x.dept ? `dept:${x.items.map((n: any) => n.id).join("+")}` : x.id)).toEqual(["dept:ops+pm+saber", "sales"])
   })
 })
+
+// Only personnel get a card (Anis 11-01): a client or guest is a line on the
+// card a relation joins them to, and may not head or join a department.
+describe("clients and guests on the org chart", () => {
+  const withGuest = {
+    agents: { pm: { name: "PM" }, accountant: { name: "Accountant" } },
+    people: [{ id: "anis", name: "Anis", role: "owner" }, { id: "zahra", name: "Zahra", role: "guest" }, { id: "acme", name: "Acme", role: "client" }],
+    business: {
+      orgChart: { pm: { reportsTo: "person:anis" }, accountant: { reportsTo: "person:anis" } },
+      orgPeople: { acme: {} },
+      relations: [
+        { from: "agent:accountant", to: "person:zahra", type: "dotted-line" as const },
+        { from: "person:acme", to: "agent:pm", type: "reports-to" as const },
+      ],
+    },
+  }
+
+  it("gives a guest or client no card, not even placed, and puts 'works with' on the other card", () => {
+    const view = buildOrgView(withGuest, {}, null)
+    expect(view.problem).toBeUndefined()
+    expect(view.diagram.boxes.map((b) => b.key).sort()).toEqual(["agent:accountant", "agent:pm", "person:anis"])
+    expect(view.diagram.edges.some((e) => e.to === "person:zahra" || e.from === "person:acme")).toBe(false)
+    const box = (key: string) => view.diagram.boxes.find((b) => b.key === key)!
+    expect(box("agent:accountant").worksWith).toEqual([{ key: "person:zahra", name: "Zahra", role: "guest" }])
+    expect(box("agent:pm").worksWith).toEqual([{ key: "person:acme", name: "Acme", role: "client" }])
+    expect(view.people.find((p) => p.id === "zahra")?.outsider).toBe("guest")
+    expect(view.byDepartment.rest).not.toContain("person:zahra")
+  })
+
+  it("does the same on the /org page", () => {
+    const withPeople = new Function(`${ORG_PEOPLE_JS}; return withPeople`)() as (d: any) => { nodes: Record<string, any> }
+    const nodes = withPeople(buildOrgView(withGuest, {}, null)).nodes
+    expect(Object.keys(nodes).filter((k) => k.startsWith("person:"))).toEqual(["person:anis"])
+    expect(nodes["agent:accountant"].worksWith).toEqual(["Zahra (guest)"])
+    expect(nodes["agent:accountant"].dottedLine).toBeUndefined()
+    expect(nodes["agent:pm"].worksWith).toEqual(["Acme (client)"])
+  })
+
+  it("refuses a guest as head or a client as member with a clear sentence, and the daemon view still builds", () => {
+    const headed = { ...withGuest, business: { ...withGuest.business, departments: { eng: { name: "Engineering", head: "person:zahra", members: ["pm"] } } } }
+    expect(buildOrgView(headed, {}, null).problem)
+      .toBe("Department Engineering cannot be headed by Zahra: Zahra is a guest, and only owners and members of the organisation can be in a department")
+    const listed = { ...withGuest, business: { ...withGuest.business, departments: { eng: { name: "Engineering", head: "person:anis", members: ["pm", "person:acme"] } } } }
+    const view = buildOrgView(listed, {}, null)
+    expect(view.problem).toBe("Department Engineering cannot list Acme: Acme is a client, and only owners and members of the organisation can be in a department")
+    expect(view.diagram.boxes.some((b) => b.key === "person:acme")).toBe(false)
+  })
+
+  it("keeps a person with no role, or a member, as personnel", () => {
+    const people = new Set(["saber"])
+    const dept = { id: "eng", name: "Engineering", head: "person:saber", members: [] }
+    expect(departmentsProblem([dept], new Set(), people, new Map())).toBeUndefined()
+    const view = buildOrgView({ ...config, people: [{ id: "anis", name: "Anis", role: "owner" }, { id: "saber", name: "Saber", role: "member" }] }, {}, null)
+    expect(view.diagram.boxes.some((b) => b.key === "person:saber")).toBe(true)
+  })
+})
