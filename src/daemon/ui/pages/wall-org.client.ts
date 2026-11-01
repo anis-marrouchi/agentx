@@ -34,6 +34,8 @@ export const WALL_ORG_SCRIPT = String.raw`
   var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null, fitted: false, startShown: false };
   var ORG_FIT_FLOOR = 0.6;
   var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
+  // An agent on another node (agent:<node>/<id>): how its node last answered.
+  var ORG_REMOTE = { up: 'Shown, not routed to: runs on', down: 'Its node does not answer; last seen on', unseen: 'Not seen yet on' };
   var ORG_CHART_HREF = '/org';
   var ORG_ICON = { person: '${ORG_PERSON_ICON}', agent: '${ORG_AGENT_ICON}' };
   function orgKindHtml(kind) {
@@ -80,14 +82,18 @@ export const WALL_ORG_SCRIPT = String.raw`
     var folded = !!ORG.folded[b.key];
     var actsFor = d.edges.filter(function (e) { return e.type === 'acts-for' && e.from === b.key; });
     var dotted = d.edges.filter(function (e) { return e.type === 'dotted-line' && e.from === b.key; });
-    var face = person ? avatar(b.id, 'sm', true, b.name) : avatar(b.id, 'sm');
-    var dot = person ? '' : '<span class="wog__dot is-' + esc(b.status || 'unknown') + '" title="' + esc(ORG_STATE[b.status] || b.status) + '"></span>';
-    var who = '<span class="wog__who"><b>' + esc(b.name) + dot + '</b><small>@' + esc(b.id) + '</small>' + (b.title ? '<small class="wog__title">' + esc(b.title) + '</small>' : '') + '</span>';
-    var top = person ? '<div class="wog__head">' + face + who + '</div>'
+    var remote = b.remote;
+    var face = person ? avatar(b.id, 'sm', true, b.name) : avatar(remote ? remote.agent : b.id, 'sm');
+    var dot = person || remote ? '' : '<span class="wog__dot is-' + esc(b.status || 'unknown') + '" title="' + esc(ORG_STATE[b.status] || b.status) + '"></span>';
+    var who = '<span class="wog__who"><b>' + esc(b.name) + dot + '</b><small>@' + esc(remote ? remote.agent : b.id) + '</small>' + (b.title ? '<small class="wog__title">' + esc(b.title) + '</small>' : '') + '</span>';
+    // An agent on another node is shown, not opened or routed to: no profile button.
+    var top = person || remote ? '<div class="wog__head">' + face + who + '</div>'
       : '<button type="button" class="wog__head" data-agent="' + esc(b.id) + '" title="' + esc(b.name) + ': profile and posts">' + face + who +
         '<span class="wog__sr">' + esc(ORG_STATE[b.status] || '') + '</span></button>';
     var dept = at && b.department ? orgDept(b.department) : null;
-    var chips = (head ? '<span class="wog__chip is-lead">Head</span>' : '') + (dept ? '<span class="wog__chip is-dept">' + esc(dept.name) + '</span>' : '') +
+    var chips = (head ? '<span class="wog__chip is-lead">Head</span>' : '') +
+      (remote ? '<span class="wog__chip is-node" title="' + esc(ORG_REMOTE[remote.seen] + ' ' + remote.node) + '">' + esc((remote.seen === 'up' ? 'on ' : remote.seen === 'down' ? 'down: ' : 'not seen: ') + remote.node) + '</span>' : '') +
+      (dept ? '<span class="wog__chip is-dept">' + esc(dept.name) + '</span>' : '') +
       actsFor.map(function (e) { return '<span class="wog__chip is-acts">acts for ' + esc(orgName(e.to)) + '</span>'; }).join('') +
       dotted.map(function (e) { return '<span class="wog__chip is-dotted' + (ORG.dotted ? '' : ' is-quiet') + '">dotted line to ' + esc(orgName(e.to)) + '</span>'; }).join('') +
       (b.worksWith || []).map(function (w) { return '<span class="wog__chip is-with">works with ' + esc(w.name) + ' (' + esc(w.role) + ')</span>'; }).join('');
@@ -95,7 +101,8 @@ export const WALL_ORG_SCRIPT = String.raw`
       (folded ? 'Show ' + orgUnder(d, b.key) + ' under ' : 'Hide ' + reports + (reports === 1 ? ' report' : ' reports')) + '</button>' : '';
     var place = !at ? '' : (at.band != null ? ' data-org-band="' + at.band + '"' : '') +
       ' style="grid-column: ' + at.col + ' / span 2; grid-row: ' + (at.level + 1) + '; --lvl: ' + at.level + '"';
-    return '<article class="wog__card' + (person ? ' is-person' : ' is-' + esc(b.status || 'unknown')) + (at && at.level ? '' : ' is-top') + (head ? ' is-lead' : '') + '"' +
+    var look = person ? ' is-person' : remote ? ' is-remote' + (remote.seen === 'up' ? '' : ' is-gone') : ' is-' + esc(b.status || 'unknown');
+    return '<article class="wog__card' + look + (at && at.level ? '' : ' is-top') + (head ? ' is-lead' : '') + '"' +
       (at ? ' data-org-key="' + esc(b.key) + '"' : '') + place + '>' +
       orgKindHtml(b.kind) + top + (chips ? '<div class="wog__chips">' + chips + '</div>' : '') + fold + '</article>';
   }
@@ -118,6 +125,7 @@ export const WALL_ORG_SCRIPT = String.raw`
       '<ul class="wog__legend" aria-label="Legend">' +
         '<li><span class="wog__key is-card"></span>' + orgKindHtml('agent') + '</li>' +
         '<li><span class="wog__key is-person"></span>' + orgKindHtml('person') + '</li>' +
+        (d.boxes.some(function (b) { return b.remote; }) ? '<li><span class="wog__key is-remote"></span>On another node: shown, not routed to; grey when it does not answer</li>' : '') +
         (!chart ? '<li><span class="wog__chip is-lead">Head</span>Heads the department</li>' :
           (orgDepts().length ? '<li><span class="wog__key is-dept"></span>Department</li>' : '') +
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln" d="M2 5H26"/></svg>Reports to</li>' +
@@ -127,14 +135,21 @@ export const WALL_ORG_SCRIPT = String.raw`
   }
   /** Counts and the agents not in the chart: the side rail, or under the chart when narrow. */
   function orgRailHtml(d) {
-    var n = { person: 0, agent: 0 };
-    d.boxes.forEach(function (b) { n[b.kind]++; });
+    // Agents on other nodes are placed, not counted as this node's staff.
+    var n = { person: 0, agent: 0, remote: 0 };
+    d.boxes.forEach(function (b) { n[b.remote ? 'remote' : b.kind]++; });
     var outside = (S.org && S.org.outside) || [];
-    return '<dl class="wog__counts"><div><dt>People</dt><dd>' + n.person + '</dd></div><div><dt>Agents</dt><dd>' + n.agent + '</dd></div><div><dt>Levels</dt><dd>' + d.levels + '</dd></div></dl>' +
+    var others = (S.org && S.org.mesh && S.org.mesh.others) || [];
+    return '<dl class="wog__counts"><div><dt>People</dt><dd>' + n.person + '</dd></div><div><dt>Agents</dt><dd>' + n.agent + '</dd></div>' +
+      (n.remote ? '<div><dt>Other nodes</dt><dd>' + n.remote + '</dd></div>' : '') + '<div><dt>Levels</dt><dd>' + d.levels + '</dd></div></dl>' +
       '<h3 class="wog__h3">Not in the org chart</h3>' +
       (outside.length ? '<div class="wog__outside">' + outside.map(function (a) {
         return '<button type="button" class="wa" data-agent="' + esc(a.id) + '">' + avatar(a.id, 'sm') + '<span class="wa__n"><b>' + esc(a.name) + '</b><small>@' + esc(a.id) + '</small></span></button>';
-      }).join('') + '</div>' : '<p class="ax-wall__empty">Every agent is in the chart.</p>');
+      }).join('') + '</div>' : '<p class="ax-wall__empty">Every agent is in the chart.</p>') +
+      (others.length ? '<h3 class="wog__h3">On other nodes, not placed yet</h3><div class="wog__outside">' + others.map(function (a) {
+        return '<span class="wa' + (a.healthy ? '' : ' is-gone') + '" title="Place it as agent:' + esc(a.node) + '/' + esc(a.id) + '">' + avatar(a.id, 'sm') +
+          '<span class="wa__n"><b>' + esc(a.name) + '</b><small>@' + esc(a.id) + ' on ' + esc(a.node) + '</small></span></span>';
+      }).join('') + '</div>' : '');
   }
   function orgPageHtml() {
     if (!S.org) return '<p class="ax-wall__empty">Loading…</p>';
@@ -420,6 +435,9 @@ button.wog__head:hover b { text-decoration: underline; }
 .wog__chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .wog__chip { font-size: 12px; line-height: 1.5; border-radius: var(--ax-radius-pill); padding: 0 8px; background: var(--ax-surface-2); color: var(--ax-text-2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .wog__chip.is-dept { background: var(--ax-blue-t); color: var(--ax-accent); border: 1px dashed var(--ax-accent); font-weight: 600; }
+.wog__chip.is-node { border: 1px dashed var(--ax-border); }
+.wog__card.is-remote, .wog__key.is-remote { border-style: dashed; }
+.wog__card.is-gone, .wa.is-gone { opacity: .6; filter: grayscale(1); }
 .wog__chip.is-lead { background: var(--ax-text); color: var(--ax-bg); font-weight: 700; }
 .wog__chip.is-acts { background: var(--ax-blue-t); color: var(--ax-accent); }
 .wog__chip.is-dotted { border: 1px dashed var(--ax-border-2); background: none; }

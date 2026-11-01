@@ -2184,6 +2184,34 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(pages[1]).toContain('href="/org">Open the org chart</a>')
     expect(renderWallPage()).not.toContain("wall-orgsetup")
   })
+
+  it("shows an agent on another node as a dashed card with its node, grey when down, not counted and not opened", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      mesh: { peers: [{ name: "far" }] },
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" } },
+        relations: [{ from: "agent:far/seif", to: "person:sam", type: "reports-to" }, { from: "agent:far/omar", to: "person:sam", type: "reports-to" }],
+      },
+    }, {}, null, [{ peer: "far", healthy: false, skills: [{ id: "seif", name: "Seif" }, { id: "kai", name: "Kai" }] }]) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    const card = (key: string) => new RegExp(`<article class="wog__card[^"]*" data-org-key="${key}"[\\s\\S]*?</article>`).exec(html)?.[0] ?? ""
+    expect(card("agent:far/seif")).toContain("is-remote is-gone")
+    expect(card("agent:far/seif")).toContain(">down: far</span>")
+    expect(card("agent:far/omar")).toContain(">not seen: far</span>")
+    // Shown, not routed to: no profile button and no status dot.
+    expect(card("agent:far/seif")).not.toContain("data-agent")
+    expect(card("agent:far/seif")).not.toContain("wog__dot")
+    // Counted apart from this node's staff; the unplaced one is listed by node.
+    expect(html).toContain("<dt>Agents</dt><dd>1</dd>")
+    expect(html).toContain("<dt>Other nodes</dt><dd>2</dd>")
+    expect(html).toContain("On other nodes, not placed yet")
+    expect(html).toContain("@kai on far")
+    expect(html).toContain("On another node: shown, not routed to")
+  })
 })
 
 describe("The workflow editor on the Wall (#1524)", () => {

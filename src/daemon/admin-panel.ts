@@ -225,10 +225,15 @@ function readConfigRaw(): any {
 async function getOrg(owner: boolean) {
   const cfg = readConfigRaw()
   if (!cfg) return { exists: false }
-  const live = await proxyDaemonJson("/agents").catch(() => null)
+  // The daemon's /mesh: each peer's health and the agents it last listed, for
+  // the cards of agents on other nodes (grey when their node is down or unseen).
+  const [live, mesh] = await Promise.all([
+    proxyDaemonJson("/agents").catch(() => null),
+    cfg.mesh?.peers?.length ? proxyDaemonJson("/mesh").catch(() => null) : Promise.resolve([]),
+  ])
   return {
     exists: true,
-    ...buildOrgView(cfg, readHolds(holdsRoot()), Array.isArray(live) ? live : null),
+    ...buildOrgView(cfg, readHolds(holdsRoot()), Array.isArray(live) ? live : null, Array.isArray(mesh) ? mesh : null),
     // The Wall's org setup (#1420): who is in the chart, and for the owner
     // what may be added.
     setup: readOrgSetup(cfg),

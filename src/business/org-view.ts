@@ -1,5 +1,5 @@
 import type { AgentHold } from "@/agents/holds"
-import { orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
+import { meshPeerNames, orgRelations, parseMember, relationsProblem, remoteAgent, type OrgRelation } from "./relations"
 import { layoutOrg, type OrgPlacement } from "./org-layout"
 import { departmentBoxes, departmentsProblem, orgDepartments, type DepartmentBox, type OrgDepartment, type Outsider } from "./departments"
 
@@ -38,7 +38,22 @@ export interface OrgBox extends OrgPlacement {
   department?: string
   /** Clients and guests a relation joins it to: a line on the card, never a card. */
   worksWith?: Array<{ key: string; name: string; role: Outsider["role"] }>
+  /** For an agent on another node (`agent:<node>/<id>`): where it is and how
+   *  that node last answered. Shown, never routed to, not counted as staff. */
+  remote?: RemoteSeen
 }
+
+/** A mesh peer as the daemon's /mesh lists it: whether it answers now, and
+ *  the agents it last said it hosts (kept while it is down). */
+export interface MeshPeerSeen { peer: string; healthy: boolean; skills?: Array<{ id: string; name?: string }> }
+
+/** An agent on another node as last seen: `up` its node answers and lists it,
+ *  `down` its node listed it before but does not answer now, `unseen` neither
+ *  (or the daemon did not answer). The last two draw a grey card. */
+export interface RemoteSeen { node: string; agent: string; seen: "up" | "down" | "unseen" }
+
+/** An agent a mesh peer hosts that the chart does not place. */
+export interface MeshAgent { node: string; id: string; name: string; healthy: boolean }
 
 /** The chart laid out: cards by level and half-column, and every relation
  *  between two cards. See org-layout.ts. */
@@ -68,6 +83,9 @@ export interface OrgView {
   byDepartment: { boxes: DepartmentBox[]; rest: string[] }
   /** The chart for the Wall's Org page (#1419). */
   diagram: OrgDiagram
+  /** Agents on mesh peers: `live` false when the daemon gave no peer list,
+   *  `others` the agents peers host that no relation or department places. */
+  mesh: { live: boolean; others: MeshAgent[] }
   /** What is wrong with the relations, when something is; the daemon refuses
    *  to start the business layer on it. Else what is wrong with the
    *  departments, which only the chart shows. */
@@ -88,10 +106,12 @@ export function buildOrgView(
   config: {
     agents?: Record<string, any>
     people?: Array<{ id: string; name?: string; role?: string }>
+    mesh?: { peers?: Array<{ name: string }> }
     business?: { roles?: Record<string, any>; orgChart?: Record<string, any>; orgPeople?: Record<string, any>; relations?: any[]; departments?: Record<string, any> }
   },
   holds: Record<string, AgentHold>,
   live: Array<{ id: string; active?: number }> | null,
+  mesh: MeshPeerSeen[] | null = null,
 ): OrgView {
   const agents = config.agents ?? {}
   const roles = config.business?.roles ?? {}
@@ -105,7 +125,7 @@ export function buildOrgView(
   for (const r of relations) {
     const from = parseMember(r.from), to = parseMember(r.to)
     if (r.type === "reports-to" && from.kind === "agent" && !bossOf.has(from.id)) {
-      bossOf.set(from.id, to.kind === "agent" ? to.id : r.to)
+      bossOf.set(from.id, to.kind === "agent" && !remoteAgent(r.to) ? to.id : r.to)
     }
   }
 
@@ -156,15 +176,29 @@ export function buildOrgView(
     }
   })
   const departments = orgDepartments(config.business)
-  const known = [new Set(Object.keys(chart)), new Set(people.map((p) => p.id))] as const
+  const known = [new Set(Object.keys(chart)), new Set(people.map((p) => p.id)), meshPeerNames(config)] as const
   const outsiders = new Map(people.flatMap((p) => (p.outsider ? [[p.id, { name: p.name, role: p.outsider }] as const] : [])))
   const problem = relationsProblem(relations, ...known) ?? departmentsProblem(departments, ...known, outsiders)
-  const diagram = orgDiagram(nodes, config.people ?? [], people, relations, departments)
+  const diagram = orgDiagram(nodes, config.people ?? [], people, relations, departments, mesh)
   // People first, then agents, each by name; agents outside the chart last.
   const everyone = [...diagram.boxes].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "person" ? -1 : 1))
     .map((b) => b.key).concat(outside.map((n) => `agent:${n.id}`))
   const byDepartment = departmentBoxes(departments, everyone)
-  return { roots, outside, live: live !== null, people, relations, departments, byDepartment, diagram, ...(problem ? { problem } : {}) }
+  const placedRemote = new Set(diagram.boxes.filter((b) => b.remote).map((b) => b.id))
+  const others = (mesh ?? []).flatMap((p) => (p.skills ?? []).filter((s) => s?.id && !placedRemote.has(`${p.peer}/${s.id}`))
+    .map((s) => ({ node: p.peer, id: s.id, name: s.name || s.id, healthy: p.healthy })))
+    .sort((a, b) => a.node.localeCompare(b.node) || a.name.localeCompare(b.name))
+  return { roots, outside, live: live !== null, people, relations, departments, byDepartment, diagram, mesh: { live: mesh !== null, others }, ...(problem ? { problem } : {}) }
+}
+
+/** The card of `agent:<node>/<id>` from the mesh peers' last answers. */
+function remoteCard(key: string, mesh: MeshPeerSeen[] | null): Omit<OrgBox, keyof OrgPlacement> | undefined {
+  const r = remoteAgent(key)
+  if (!r) return undefined
+  const peer = mesh?.find((p) => p.peer === r.node)
+  const skill = peer?.skills?.find((s) => s?.id === r.id)
+  const seen: RemoteSeen["seen"] = !skill ? "unseen" : peer!.healthy ? "up" : "down"
+  return { kind: "agent", id: `${r.node}/${r.id}`, name: skill?.name || r.id, remote: { node: r.node, agent: r.id, seen } }
 }
 
 const PERSON_TITLE: Record<string, string> = { owner: "Owner" }
@@ -186,6 +220,7 @@ function orgDiagram(
   listed: OrgView["people"],
   relations: OrgRelation[],
   departments: OrgDepartment[],
+  mesh: MeshPeerSeen[] | null,
 ): OrgDiagram {
   const named = new Set(relations.filter((r) => r.type !== "acts-for").flatMap((r) => [r.from, r.to]))
   const deptOf = new Map<string, string>()
@@ -210,6 +245,11 @@ function orgDiagram(
     if (!shown || shown.outsider || !(shown.placed || named.has(`person:${p.id}`))) continue
     const title = shown.title ?? PERSON_TITLE[p.role ?? ""]
     cards.set(`person:${p.id}`, { kind: "person", id: p.id, name: p.name || p.id, ...(title ? { title } : {}) })
+  }
+  // Agents on other nodes: a card for each one a relation or department names.
+  for (const key of named) {
+    const card = !cards.has(key) && remoteCard(key, mesh)
+    if (card) cards.set(key, card)
   }
   for (const [key, c] of cards) if (deptOf.has(key)) c.department = deptOf.get(key)
   // A reports-to or dotted-line to a client or guest is a line on the other

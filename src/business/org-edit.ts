@@ -1,5 +1,5 @@
 import { departmentsProblem, orgDepartments, type Outsider } from "./departments"
-import { memberKey, orgRelations, parseMember, relationsProblem, RELATION_TYPES, type OrgRelation, type RelationType } from "./relations"
+import { memberKey, meshPeerNames, orgRelations, parseMember, relationsProblem, RELATION_TYPES, type OrgRelation, type RelationType } from "./relations"
 
 // --- Setting up the org chart from the Wall (#1420) ---
 //
@@ -115,10 +115,11 @@ function chartProblem(cfg: any): string | undefined {
   const b = cfg?.business ?? {}
   const agents = new Set(Object.keys(b.orgChart ?? {}))
   const people = new Set(knownPeople(cfg).keys())
+  const peers = meshPeerNames(cfg)
   const list: any[] = Array.isArray(cfg?.people) ? cfg.people : []
   const outsiders = new Map<string, Outsider>(list.flatMap((p) =>
     p?.id && (p.role === "client" || p.role === "guest") ? [[String(p.id), { name: String(p.name || p.id), role: p.role }] as const] : []))
-  return relationsProblem(orgRelations(b), agents, people) ?? departmentsProblem(orgDepartments(b), agents, people, outsiders)
+  return relationsProblem(orgRelations(b), agents, people, peers) ?? departmentsProblem(orgDepartments(b), agents, people, peers, outsiders)
 }
 
 /** Take `ref` out of every department in the config, as head and as member.

@@ -132,6 +132,7 @@ import { runDriftSweep } from "@/requests/drift/sweep"
 import { driftForge } from "@/requests/drift/forge"
 import { forgeConnectorsOf, liveReader } from "@/requests/drift/live"
 import { syncSourceIssue } from "@/business/backlog-sync"
+import { meshPeerNames } from "@/business/relations"
 import { loopChecker, parseDue } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
@@ -2212,7 +2213,7 @@ export class AgentXDaemon {
     //     (schedules, day cycle) still reads its config at start.
     if (this.business && next.business && orgShape(this.config) !== orgShape(next)) {
       try {
-        this.business.org.replaceWith(next.business, next.people ?? [])
+        this.business.org.replaceWith(next.business, next.people ?? [], [...meshPeerNames(next)])
         applied.push("business.org")
       } catch (e: any) {
         this.log(`[reload] org chart kept: ${e.message}`)
@@ -9602,5 +9603,5 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 /** What the business layer's Organization is built from. */
 function orgShape(c: DaemonConfig): string {
   const b = c.business
-  return JSON.stringify([b?.roles, b?.orgChart, b?.relations, b?.projects, (c.people ?? []).map((p) => p.id)])
+  return JSON.stringify([b?.roles, b?.orgChart, b?.relations, b?.projects, (c.people ?? []).map((p) => p.id), [...meshPeerNames(c)]])
 }

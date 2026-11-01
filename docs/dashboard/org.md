@@ -106,6 +106,33 @@ A department that names someone unknown, a member in two departments, or a clien
 
 When you remove a member in **Edit org**, they also leave every department. If they were its head, the department stays without one. An edit that would leave a department naming someone unknown is refused with the same sentence.
 
+## Show agents on other nodes
+
+An agent that runs on another AgentX node of your mesh can sit in your chart too. Write it `agent:<node>/<id>`, where `<node>` is the peer's `name` in `mesh.peers` of this machine's `agentx.json`. It is shown on the chart, but this node never sends it work: a problem passed up `reports-to` stops before it, as it stops before a person. It is not counted among this node's agents.
+
+1. **Terminal:** check the peer's name with `agentx mesh list`, or read `mesh.peers` in `agentx.json`. `clawd-server` and `seif` are examples; use your own names.
+2. **Terminal:** place the agent with a relation, or name it in a department:
+
+   ```sh
+   agentx business relation add agent:clawd-server/seif reports-to person:anis
+   ```
+
+   ```json
+   "departments": {
+     "engineering": { "name": "Engineering", "head": "person:anis", "members": ["agent:pm-agent", "agent:clawd-server/seif"] }
+   }
+   ```
+
+   A node that is not in `mesh.peers` is refused, and nothing is saved. Whether that node hosts the agent is not checked here: that check needs the network, and the chart shows it instead (step 4).
+3. **Terminal:** run `agentx daemon restart` if the business layer is on.
+4. **Browser:** on the Hub, select **Org**, then **Refresh**. The agent has a dashed card with a chip naming its node:
+   - **on clawd-server**: the node answers and lists the agent.
+   - **down: clawd-server**: the node does not answer now. The card is grey, with the name the node gave last.
+   - **not seen: clawd-server**: the node has not listed this agent since the daemon started. The card is grey. Check the agent's ID on that node.
+
+   The card has no status dot and no Pause button, and selecting it opens nothing: that node runs the agent. The counts beside the chart give **Other nodes** apart from **Agents**.
+5. **Browser:** under the chart, **On other nodes, not placed yet** lists every agent your peers host that the chart does not place yet, by node. On `/org` the same list gives each one's `agent:<node>/<id>` to copy.
+
 ## What each card shows on the `/org` page
 
 | Status | What it means |
@@ -153,6 +180,9 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 - **An agent sits at the top although it has a boss:** its boss is not an agent or person here, or the two report to each other. Check with `agentx business relation list`.
 - **A yellow box above the chart says "Problem in the org relations":** a relation names someone who is not in `people` or `business.orgChart`, or breaks a rule. `agentx business relation list` shows the same problem; fix it with `remove`. With the business layer on, the daemon starts without it until it is fixed, and its log says `[business] initialization failed:` with the same problem.
 - **A person's agents do not escalate to them:** that is by design. A problem goes up `reports-to` only between agents, and stops before a person.
+- **"… but "<node>" is not a peer in mesh.peers":** an `agent:<node>/<id>` names a node this machine does not know. Use the peer's `name` exactly as `mesh.peers` writes it, or add the peer first.
+- **An agent on another node stays grey:** its node does not answer, or does not list that ID. Check the node with `agentx mesh list`, and the agent's ID on that node.
+- **An agent reports to an agent on another node, and its problems go nowhere:** that is by design for now. Escalation stops before an agent on another node.
 - **Every card says "Status unknown":** the daemon is not running, or the dashboard cannot reach it. Run `agentx daemon status`.
 - **`agentx business orgchart add` ran, but saving any setting now fails with `business.mainChannel: Required`:** you turned `business.enabled` on. The business layer needs a chat to post to; set `business.mainChannel`, or turn it off again.
 - **A new agent still does nothing after your yes:** it was added while the daemon was running. Run `agentx daemon restart`.
