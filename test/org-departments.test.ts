@@ -4,6 +4,7 @@ import { departmentBoxes, departmentsProblem, orgDepartments } from "../src/busi
 import { layoutOrg } from "../src/business/org-layout"
 import { buildOrgView } from "../src/business/org-view"
 import { ORG_PEOPLE_JS, renderOrgPage } from "../src/daemon/ui/pages/org"
+import { WALL_ORG_CSS } from "../src/daemon/ui/pages/wall-org.client"
 
 // Departments on the org chart, and people vs agents on sight (#1681).
 
@@ -179,6 +180,25 @@ describe("the /org page (#1681)", () => {
     expect(page).toMatch(/<span class="org-tag is-agent"><svg[^]*?<\/svg>Agent<\/span>/)
     expect(page).toMatch(/<span class="org-tag is-person"><svg[^]*?<\/svg>Person<\/span>/)
     expect(page).toContain('<li id="org-legend-dept" hidden>')
+  })
+
+  it("puts the view switch in a toolbar row above the legend", () => {
+    const page = renderOrgPage()
+    const bar = page.indexOf('<div class="org-toolbar" role="toolbar" aria-label="Org tools">')
+    expect(bar).toBeGreaterThan(-1)
+    expect(page.indexOf('id="org-views"')).toBeGreaterThan(bar)
+    expect(page.indexOf('<ul class="org-legend"')).toBeGreaterThan(page.indexOf('id="org-views"'))
+  })
+
+  it("gives a person's card a warm fill and keeps an agent's plain, on /org and the Hub", () => {
+    const page = renderOrgPage()
+    expect(page).toContain(".org-card.is-person { background: var(--org-person-bg); border-color: var(--org-person-ink);")
+    expect(page).toMatch(/\.org \{ --org-person-bg: color-mix\(in oklch, #f08c3c 16%, var\(--ax-bg\)\)/)
+    expect(WALL_ORG_CSS).toContain(".wog__card.is-person { background: var(--wog-person-bg); border-color: var(--wog-person-ink);")
+    expect(WALL_ORG_CSS).toMatch(/\.ax-wall__org, \.ax-wall__orgrail \{ --wog-person-bg: color-mix/)
+    expect(WALL_ORG_CSS).toContain(".wog__key.is-person { background: var(--wog-person-bg);")
+    // The agent card's own fill stays the page ground.
+    expect(WALL_ORG_CSS).toMatch(/\.wog__card \{[^}]*background: var\(--ax-bg\)/)
   })
 
   it("gives department members a card and their department, and groups them where the first stood", () => {

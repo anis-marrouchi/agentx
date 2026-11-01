@@ -11,7 +11,8 @@
 //   - dotted-line is a dashed line, hidden until "Show dotted lines".
 //   - acts-for is a chip on the agent's card, not a line.
 //   - People and agents differ on sight (#1681): a tag with an icon and the
-//     word, and a person's card is round-cornered with an accent edge.
+//     word, and a person's card is round-cornered with a warm fill and
+//     edge, an agent's plain. The tools sit in a toolbar row over the legend.
 //   - A department (#1681) is a labelled band behind its members' cards,
 //     and a chip on each of them, so a phone shows it too.
 //   - When there are departments, the page opens on the Departments view
@@ -103,7 +104,15 @@ export const WALL_ORG_SCRIPT = String.raw`
       [['dept', 'Departments'], ['chart', 'Chart']].map(function (v) {
         return '<button type="button" data-org-view="' + v[0] + '" aria-pressed="' + (orgView() === v[0] ? 'true' : 'false') + '">' + v[1] + '</button>';
       }).join('') + '</span>' : '';
-    return '<div class="wog__bar">' +
+    // The toolbar row sits above the legend, so a new switch has room in it.
+    var tools = '<div class="wog__toolbar wog__tools" role="toolbar" aria-label="Org tools">' + views +
+        (chart && dotted ? '<button type="button" class="wog__toggle" data-org-dotted aria-pressed="' + (ORG.dotted ? 'true' : 'false') + '">Show dotted lines</button>' : '') +
+        (chart ? '<span class="wog__zoom" role="group" aria-label="Zoom"><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button>' +
+          '<button type="button" data-org-zoom="0" title="Back to 100%">' + Math.round(ORG.zoom * 100) + '%</button>' +
+          '<button type="button" data-org-zoom="1" aria-label="Zoom in">+</button></span>' : '') +
+        '<a class="ax-btn ax-btn--ghost wog__edit" href="' + ORG_CHART_HREF + '">Open the org chart</a>' +
+      '</div>';
+    return tools + '<div class="wog__bar">' +
       '<ul class="wog__legend" aria-label="Legend">' +
         '<li><span class="wog__key is-card"></span>' + orgKindHtml('agent') + '</li>' +
         '<li><span class="wog__key is-person"></span>' + orgKindHtml('person') + '</li>' +
@@ -112,14 +121,7 @@ export const WALL_ORG_SCRIPT = String.raw`
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln" d="M2 5H26"/></svg>Reports to</li>' +
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln is-dotted" d="M2 5H26"/></svg>Dotted line: a second boss for one topic</li>' +
           '<li><span class="wog__chip is-acts">acts for …</span>Works on behalf of a person</li>') +
-      '</ul>' +
-      '<span class="wog__tools">' + views +
-        (chart && dotted ? '<button type="button" class="wog__toggle" data-org-dotted aria-pressed="' + (ORG.dotted ? 'true' : 'false') + '">Show dotted lines</button>' : '') +
-        (chart ? '<span class="wog__zoom" role="group" aria-label="Zoom"><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button>' +
-          '<button type="button" data-org-zoom="0" title="Back to 100%">' + Math.round(ORG.zoom * 100) + '%</button>' +
-          '<button type="button" data-org-zoom="1" aria-label="Zoom in">+</button></span>' : '') +
-        '<a class="ax-btn ax-btn--ghost wog__edit" href="' + ORG_CHART_HREF + '">Open the org chart</a>' +
-      '</span></div>';
+      '</ul></div>';
   }
   /** Counts and the agents not in the chart: the side rail, or under the chart when narrow. */
   function orgRailHtml(d) {
@@ -302,11 +304,14 @@ export const WALL_ORG_SCRIPT = String.raw`
 export const WALL_ORG_CSS = `
 /* Org (#1419): a top-down chart; an indented list on a phone. */
 .ax-wall__org { padding: 0 0 24px; }
-.wog__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--ax-border); }
+.ax-wall__org, .ax-wall__orgrail { --wog-person-bg: color-mix(in oklch, #f08c3c 16%, var(--ax-bg)); --wog-person-ink: color-mix(in oklch, #d4691f 80%, var(--ax-text)); }
+/* The toolbar row (#1681): the view switch and the chart's tools, with room for more. */
+.wog__toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 30px; padding: 10px 16px 0; }
+.wog__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 16px 10px; border-bottom: 1px solid var(--ax-border); }
 .wog__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wog__legend li { display: inline-flex; align-items: center; gap: 6px; }
 .wog__key { display: inline-block; width: 18px; height: 12px; border: 1px solid var(--ax-border-2); border-radius: 4px; background: var(--ax-bg); }
-.wog__key.is-person { background: var(--ax-surface-3); border: 1px solid var(--ax-accent); border-left-width: 4px; border-radius: 999px; }
+.wog__key.is-person { background: var(--wog-person-bg); border: 1px solid var(--wog-person-ink); border-left-width: 4px; border-radius: 999px; }
 .wog__key.is-dept { border: 1.5px dashed var(--ax-accent); background: var(--ax-blue-t); }
 .wog__legend .wog__kind { position: static; }
 .wog__tools { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--ax-fs-xs); }
@@ -345,12 +350,14 @@ export const WALL_ORG_CSS = `
 .wog__arrow { fill: var(--ax-muted); }
 .wog__card { position: relative; z-index: 1; width: 220px; justify-self: center; align-self: start; display: flex; flex-direction: column; gap: 6px;
   padding: 10px 12px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-lg); }
-.wog__card.is-person { background: var(--ax-surface-3); border-color: var(--ax-accent); border-left-width: 4px; border-radius: 22px; }
+/* A person's card has a warm fill and edge, an agent's stays plain (#1681), so
+   the two differ by colour too, on the blue department boxes as well. */
+.wog__card.is-person { background: var(--wog-person-bg); border-color: var(--wog-person-ink); border-left-width: 4px; border-radius: 22px; }
 .wog__kind { position: absolute; top: -9px; right: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; line-height: 17px;
   border-radius: var(--ax-radius-pill); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text-2); }
 .wog__kind svg { fill: currentColor; }
 .wog__kind .org-eye { fill: var(--ax-bg); }
-.wog__kind.is-person { border-color: var(--ax-accent); color: var(--ax-accent); }
+.wog__kind.is-person { border-color: var(--wog-person-ink); color: var(--wog-person-ink); }
 .wog__band { fill: var(--ax-blue-t); stroke: var(--ax-accent); stroke-width: 1.5; stroke-dasharray: 6 4; opacity: 0.7; }
 .wog__band-t { fill: var(--ax-accent); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--ax-bg); stroke-width: 4px; stroke-linejoin: round; }
 .wog__card.is-paused, .wog__card.is-waiting { box-shadow: inset 3px 0 0 var(--ax-amber); }
