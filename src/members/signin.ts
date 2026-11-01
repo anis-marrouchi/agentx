@@ -11,6 +11,7 @@ import { splitIdentity, type Person } from "@/people/people"
 import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import type { MemberStore } from "./store"
 import { PersonSessionStore, type PersonSession } from "./person-sessions"
+import { SignInAccountStore, type SignInAccount } from "./signin-accounts"
 import {
   NETWORK_MISMATCH, PAIRING_CARD_BY, TOO_MANY_WAITING,
   cardAnswer, clientAddress, machineName, networkIdentities, networkLogin, pageFor,
@@ -137,7 +138,11 @@ export interface SignInDeps {
   now?: () => number
   minMs?: number
   log?: (line: string) => void
+  /** The account each person first signed in with (#1675); the file in `root` when unset. */
+  accounts?: SignInAccountStore
 }
+
+const accountsOf = (deps: Pick<SignInDeps, "accounts" | "root">) => deps.accounts ?? new SignInAccountStore(deps.root)
 
 /** The mail with the link. Plain text: no tracking, nothing to load. */
 export function signInMail(p: { person: Pick<Person, "name" | "role">; email: string; origin: string; code: string; senderName: string }): OutgoingMail {
@@ -211,7 +216,6 @@ export type SignInResult =
  *  of the person's, waiting for the owner on their first sign-in. */
 export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Promise<SignInResult> {
   const started = Date.now()
-  const now = deps.now ?? Date.now
   const log = deps.log ?? ((line: string) => console.log(line))
   const setup = deps.setup()
   if (!setup) return { status: 404, body: { error: NOT_SET_UP } }
@@ -233,10 +237,30 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
     return { status: 401, body: { error: LINK_FAILED } }
   }
   deps.limiter.succeed(client)
+  return openSession(req, person, label, { via: "email link", proof: `the link mailed to ${person.name.slice(0, 60)}` }, setup, deps)
+}
+
+/** How a person proved who they are, for the logs and the owner's card. */
+export interface SignInProof {
+  via: string
+  proof: string
+  /** A provider account (#1675): kept for the person once they are let in. */
+  account?: SignInAccount
+}
+
+/** What follows once the person is known, by a link or a sign-in provider:
+ *  the network check, then straight in, or the owner's first-sign-in card. */
+export function openSession(
+  req: IncomingMessage, person: Person, label: string, how: SignInProof,
+  setup: Pick<SignInSetup, "firstSignIn">, deps: SignInDeps,
+): Exclude<SignInResult, { status: 429 }> {
+  const now = deps.now ?? Date.now
+  const log = deps.log ?? ((line: string) => console.log(line))
+  const client = clientAddress(req)
   const login = networkLogin(req)
   const expected = networkIdentities(person)
   if (expected.length && (!login || !expected.includes(login))) {
-    deps.members.log({ person: person.id, event: "refused", address: client, detail: `sign-in link: network login ${login ?? "missing"}; expected ${expected.join(" or ")}` })
+    deps.members.log({ person: person.id, event: "refused", address: client, detail: `sign-in ${how.via}: network login ${login ?? "missing"}; expected ${expected.join(" or ")}` })
     log(`[member] ${person.id}: sign-in from ${client} refused: the network says "${login ?? "nobody"}", expected ${expected.join(" or ")}`)
     return { status: 403, body: { error: NETWORK_MISMATCH } }
   }
@@ -246,11 +270,12 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
   // Let in before, or a member under `auto`: straight in. A yes on an
   // earlier card counts even if that browser has not called back yet.
   const auto = person.role === "member" && setup.firstSignIn === "auto"
-  for (const s of deps.sessions.sessions(person.id)) if (s.state === "pending" && !s.endedAt) settle(s, person, deps)
+  settlePending(person, deps)
   if (deps.sessions.approved(person.id) || auto) {
     const { session, value } = deps.sessions.create(person.id, name, { approvedAt: at })
-    deps.members.log({ person: person.id, event: "signed-in", address: client, detail: `${name} (email link${auto ? ", auto" : ""})` })
-    log(`[member] ${person.id} signed in by email link on "${name}" from ${client} (session ${session.id})`)
+    if (how.account) accountsOf(deps).keepFirst(person.id, how.account)
+    deps.members.log({ person: person.id, event: "signed-in", address: client, detail: `${name} (${how.via}${auto ? ", auto" : ""})` })
+    log(`[member] ${person.id} signed in by ${how.via} on "${name}" from ${client} (session ${session.id})`)
     return { status: 200, body: { person: person.id, name, state: "active" }, value }
   }
 
@@ -260,7 +285,7 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
   const card = createCard(deps.root, {
     title: `${who} signed in for the first time`,
     ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Browser name, as typed there: "${name}". Let them see their own work?`,
-    recommend: `Signed in with the link mailed to ${who}. Yes if you expected it. No if you did not.`,
+    recommend: `Signed in with ${how.proof}. Yes if you expected it. No if you did not.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,
   }, { now: now() })
@@ -269,9 +294,9 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
     log(`[member] ${person.id}: sign-in from ${client} refused: ${card.error}`)
     return { status: 503, body: { error: TOO_MANY_WAITING } }
   }
-  const { session, value } = deps.sessions.create(person.id, name, { state: "pending", cardId: card.card.id })
-  deps.members.log({ person: person.id, event: "paired", address: client, detail: `${name} (email link, first sign-in)` })
-  log(`[member] ${person.id} signed in by email link for the first time on "${name}" from ${client}; waiting for the owner (card ${card.card.id}, session ${session.id})`)
+  const { session, value } = deps.sessions.create(person.id, name, { state: "pending", cardId: card.card.id, account: how.account })
+  deps.members.log({ person: person.id, event: "paired", address: client, detail: `${name} (${how.via}, first sign-in)` })
+  log(`[member] ${person.id} signed in by ${how.via} for the first time on "${name}" from ${client}; waiting for the owner (card ${card.card.id}, session ${session.id})`)
   return { status: 200, body: { person: person.id, name, state: "pending" }, value }
 }
 
@@ -281,7 +306,7 @@ export type PersonAccess =
 
 /** Whether an ax_person cookie value opens the member page right now. Reads
  *  the owner's answer on a first sign-in's card the first time it is there. */
-export function personAccess(value: string | null, deps: Pick<SignInDeps, "sessions" | "members" | "people" | "root" | "log">): PersonAccess {
+export function personAccess(value: string | null, deps: Pick<SignInDeps, "sessions" | "members" | "people" | "root" | "log" | "accounts">): PersonAccess {
   const found = value ? deps.sessions.verify(value, deps.people()) : null
   if (!found || !SIGN_IN_ROLES.includes(found.person.role)) return { ok: false, waiting: false }
   const { session, person } = found
@@ -291,13 +316,29 @@ export function personAccess(value: string | null, deps: Pick<SignInDeps, "sessi
   return { ok: false, waiting: settled === null }
 }
 
+/** Applies the owner's answers on this person's waiting sessions. Before a
+ *  provider account is matched too, so a yes keeps its account first. */
+export function settlePending(person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log" | "accounts">): void {
+  for (const s of deps.sessions.sessions(person.id)) if (s.state === "pending" && !s.endedAt) settle(s, person, deps)
+}
+
 /** Applies the owner's answer on a waiting session's card, once it is there. */
-function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log">): "yes" | "no" | null {
+function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log" | "accounts">): "yes" | "no" | null {
   const log = deps.log ?? ((line: string) => console.log(line))
   const card = session.cardId ? readCard(deps.root, session.cardId) : null
   const answer = cardAnswer(card)
+  // A yes for a second provider account, after another was kept for this
+  // person (two cards waiting, both answered yes), lets nobody in.
+  const kept = answer === "yes" && session.account ? accountsOf(deps).get(person.id, session.account.issuer) : null
+  if (kept && kept !== session.account!.subject) {
+    const reason = "another account was kept for this person first"
+    deps.sessions.end(person.id, session.id, reason)
+    deps.members.log({ person: person.id, event: "refused", detail: `${session.label}: ${reason}` })
+    log(`[member] ${person.id}: first sign-in on "${session.label}" refused: ${reason}`)
+    return "no"
+  }
   if (answer === "yes") {
-    deps.sessions.approve(session.id)
+    if (deps.sessions.approve(session.id) && session.account) accountsOf(deps).keepFirst(person.id, session.account)
     deps.members.log({ person: person.id, event: "approved", detail: `${session.label} (email link)${card?.decided_by ? `, by ${card.decided_by}` : ""}` })
     log(`[member] ${person.id}: first sign-in on "${session.label}" approved`)
   } else if (answer === "no") {

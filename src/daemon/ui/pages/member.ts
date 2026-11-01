@@ -13,6 +13,7 @@
 
 import { AX_TOKENS_CSS } from "../tokens"
 import { injectFns } from "../inject"
+import { esc } from "../util"
 import { formatPairInput } from "./app-pair-logic"
 import { agentLine, connectionNote, freedAgents, plainPreview, requestState, sentState, summaryLine } from "./member-logic"
 import { WORK_SCRIPT } from "./member-work.client"
@@ -154,7 +155,7 @@ ${bar("This machine is not paired yet")}
       <p id="pair-msg" class="pair-msg" role="status" aria-live="polite"></p>
     </form>
     <p class="help">No code? Ask the person who invited you for one. A code works once, for 10 minutes.</p>
-    ${signIn ? `<p class="help">Or <a href="/member/signin">sign in with your email</a>.</p>` : ""}
+    ${signIn ? `<p class="help">Or <a href="/member/signin">sign in</a> without a code.</p>` : ""}
   </div>
 </main>
 <script>${injectFns({ formatPairInput })}${LOCKED_SCRIPT}</script>
@@ -164,13 +165,27 @@ ${bar("This machine is not paired yet")}
 
 /** /member/signin (#1478): ask for a link by email, or, opened from the
  *  link (the code after #), name this browser and press Sign in. Opening
- *  the link spends nothing; only the button does. */
-export function renderMemberSignInPage(enabled: boolean): string {
-  const body = !enabled
+ *  the link spends nothing; only the button does. With a sign-in provider
+ *  set (#1675, `provider` is its name), its button is offered too. */
+export function renderMemberSignInPage(enabled: boolean, provider: string | null = null, error = ""): string {
+  const failed = error ? `<p class="pair-msg bad" role="alert">${esc(error)}</p>` : ""
+  const viaProvider = provider ? `<form id="oidc-form" class="pair-form" method="get" action="/member/signin/oidc">
+        <label for="oidc-machine">This browser's name</label>
+        <input id="oidc-machine" name="machine" type="text" maxlength="60" placeholder="Work laptop" autocomplete="off" required>
+        <button type="submit" id="oidc-btn">Sign in with ${esc(provider)}</button>
+      </form>` : ""
+  const body = !enabled && !provider
     ? `<h2>Sign in with your email</h2>
     <p>Signing in by email is not set up here. Ask the person who invited you for a pairing code, and <a href="/member">pair this machine</a>.</p>`
+    : !enabled
+    ? `<h2>Sign in</h2>
+      ${failed}
+      <p>Name this browser, so you know it later. The first time you sign in, the owner lets you in once.</p>
+      ${viaProvider}
+    <p class="help">Have a pairing code instead? <a href="/member">Pair this machine</a>.</p>`
     : `<div id="ask">
       <h2>Sign in with your email</h2>
+      ${failed}
       <p>Type the address the owner has for you. If it may sign in here, a link comes by mail.</p>
       <form id="ask-form" class="pair-form" novalidate>
         <label for="email">Your email address</label>
@@ -178,6 +193,7 @@ export function renderMemberSignInPage(enabled: boolean): string {
         <button type="submit" id="ask-btn">Send me a link</button>
         <p id="ask-msg" class="pair-msg" role="status" aria-live="polite"></p>
       </form>
+      ${provider ? `<h2>Or with ${esc(provider)}</h2>${viaProvider}` : ""}
     </div>
     <div id="spend" hidden>
       <h2>Sign in</h2>

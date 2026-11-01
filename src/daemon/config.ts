@@ -1973,6 +1973,19 @@ export const wallConfigSchema = z.object({
     /** A person's first sign-in raises a card for the owner. `auto` lets a
      *  member in without it; a client always gets the card. */
     firstSignIn: z.enum(["card", "auto"]).default("card"),
+    /** Signing in with an OpenID Connect provider, such as Google (#1675).
+     *  Its return address is `<origin>/member/signin/oidc/done`. */
+    oidc: z.object({
+      /** The button reads "Sign in with <name>". */
+      name: z.string().min(1).max(40),
+      /** e.g. https://accounts.google.com; its discovery document is read from there. */
+      issuer: z.string().regex(/^https:\/\/[^\s]+[^/\s]$/, "an https address, without a trailing slash"),
+      clientId: z.string().min(1),
+      /** Only as "${VAR}", the value in .env (literalSecretProblems). */
+      clientSecret: z.string().min(1),
+      /** Only accounts of this hosted domain (Google Workspace). */
+      hd: z.string().min(1).optional(),
+    }).optional(),
   }).optional(),
 }).default({})
 
@@ -3023,11 +3036,19 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
 /** Secrets that must stay in .env, checked on agentx.json before `${VAR}`
  *  expansion (#1478): a literal value would sit in a file that gets copied. */
 export function literalSecretProblems(raw: any): string[] {
+  const isRef = (v: unknown) => /^\$\{\w+\}$/.test(String(v))
+  const problems: string[] = []
   const sender = raw?.mail?.sender
-  if (!sender || typeof sender !== "object") return []
-  return (["user", "password"] as const)
-    .filter((k) => sender[k] !== undefined && !/^\$\{\w+\}$/.test(String(sender[k])))
-    .map((k) => `mail.sender.${k}: put the value in .env and write "\${AGENTX_MAIL_${k.toUpperCase()}}" here`)
+  if (sender && typeof sender === "object") {
+    problems.push(...(["user", "password"] as const)
+      .filter((k) => sender[k] !== undefined && !isRef(sender[k]))
+      .map((k) => `mail.sender.${k}: put the value in .env and write "\${AGENTX_MAIL_${k.toUpperCase()}}" here`))
+  }
+  const oidc = raw?.wall?.signIn?.oidc
+  if (oidc && typeof oidc === "object" && oidc.clientSecret !== undefined && !isRef(oidc.clientSecret)) {
+    problems.push(`wall.signIn.oidc.clientSecret: put the value in .env and write "\${AGENTX_OIDC_CLIENT_SECRET}" here`)
+  }
+  return problems
 }
 
 /** Rules that span two sections, checked after the schema. */

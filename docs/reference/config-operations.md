@@ -518,6 +518,29 @@ Lets a teammate or a client sign in to their page with a link sent by email, ins
 }
 ```
 
+### Sign in with an account (Google or another OpenID Connect provider)
+
+`wall.signIn.oidc` adds a **Sign in with …** button to the same page ([#1675](https://github.com/anis-marrouchi/agentx/issues/1675)). It needs `wall.signIn.origin`, but not the mail sender. Nothing in AgentX is written for one provider: any OpenID Connect provider works with its own values.
+
+| Key | Default | What it does |
+|---|---|---|
+| `wall.signIn.oidc.name` | required | The name on the button, for example `"Google"`. |
+| `wall.signIn.oidc.issuer` | required | The provider's address, without a trailing slash, for example `https://accounts.google.com`. |
+| `wall.signIn.oidc.clientId` | required | The OAuth client id. |
+| `wall.signIn.oidc.clientSecret` | required | The client secret, only as a `${VAR}` reference. The value goes in `.env`. |
+| `wall.signIn.oidc.hd` | none | Only accounts of this Google Workspace domain. |
+
+```json
+"oidc": {
+  "name": "Google",
+  "issuer": "https://accounts.google.com",
+  "clientId": "${AGENTX_OIDC_CLIENT_ID}",
+  "clientSecret": "${AGENTX_OIDC_CLIENT_SECRET}"
+}
+```
+
+Put this inside `wall.signIn`. In the provider's console, make an OAuth client of type **Web application** with the return address `<origin>/member/signin/oidc/done`, for example `https://your-mac.tailnet-name.ts.net/member/signin/oidc/done`. A client secret written straight into `agentx.json` is refused when the config loads.
+
 ## Check it worked
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
