@@ -23,7 +23,7 @@ Words used on this page:
 - **Read**: one named question the agent may ask the service, such as "page totals for a period". The agent picks a read by name; it cannot write its own request.
 
 ::: info Which services
-This release adds the parts every service shares: sign-in, token renewal, the agent's read tool and the status checks. Facebook and Instagram analytics, then YouTube Analytics, are added next. Until then, `connect` answers `No provider is built in yet`.
+Built in: **Facebook Pages and Instagram** (kind `meta`), see [Facebook and Instagram](#facebook-and-instagram). YouTube Analytics is added next.
 :::
 
 You need:
@@ -92,6 +92,7 @@ Options of `connect`:
 | `--store keyring` or `--store env` | Where to keep the token. |
 | `--port <n>` | Use another return port. Change the address in the app's settings to match. |
 | `--paste` | Paste the return address instead of waiting for the browser. |
+| `--redirect-uri <url>` | With `--paste`: use this return address instead of `http://localhost:19876/callback`, when the service does not accept localhost. Add the same address in the app's settings. |
 | `--no-browser` | Print the sign-in address without opening it. |
 
 ## 3. Ask the agent
@@ -113,6 +114,82 @@ To allow only some reads for one integration, list them when you connect (an emp
 ```bash
 agentx agent integrations connect helper example --reads account_report
 ```
+
+## Facebook and Instagram
+
+Kind: `meta`. The agent can read the numbers of the Facebook Pages you manage and of the Instagram professional accounts linked to them: views, reach, followers, engagement, audience, video, and earnings for a Page that earns money. It cannot post, reply or change anything.
+
+You need:
+
+- A Facebook account that manages the Pages.
+- Each Instagram account switched to a **professional account** (Business or Creator) and linked to one of those Pages. Instagram calls this "Connect a Facebook Page" in the account's settings.
+
+### Create the Meta app
+
+1. **Browser:** open the Meta for Developers site (developers.facebook.com) and sign in with the Facebook account that manages the Pages.
+2. **Browser:** select **My Apps**, then **Create App**.
+3. **Browser:** choose the use case **Facebook Login for Business**, and the app type **Business** if asked.
+4. **Browser:** in the app, add these permissions (Meta lists them under the use case or under **App Review › Permissions and Features**): `pages_show_list`, `pages_read_engagement`, `read_insights`, `instagram_basic`, `instagram_manage_insights`.
+5. **Browser:** in **Facebook Login for Business › Settings**, add `http://localhost:19876/callback` to **Valid OAuth Redirect URIs**.
+6. **Browser:** in **App settings › Basic**, copy the **App ID** and the **App secret**.
+7. **Terminal:** put them in `.env` next to `agentx.json`:
+
+   ```bash
+   echo 'META_CLIENT_ID=paste-the-app-id-here' >> .env
+   echo 'META_CLIENT_SECRET=paste-the-app-secret-here' >> .env
+   ```
+
+8. **Terminal:** run `agentx daemon restart`.
+
+You do **not** need Meta's App Review or Business Verification while the app reads only Pages and accounts of people who have a role on the app (you, and anyone you add under **App roles**). Leave the app in **Development** mode. Meta asks for App Review only before the app reads accounts of other people.
+
+::: tip Return address in Live mode
+In Development mode Meta accepts the `localhost` return address. If you switch the app to **Live**, Meta wants an `https` address. Add any `https` page you own to the app, then connect with `--paste --redirect-uri https://your-page.example/callback`. The page does not need to do anything: you copy the address the browser lands on.
+:::
+
+### Connect
+
+1. **Terminal:** run, with your agent in place of `helper`:
+
+   ```bash
+   agentx agent integrations connect helper meta
+   ```
+
+2. **Browser:** Facebook asks which Pages and Instagram accounts to share. Select every one the agent should read, and keep every permission ticked.
+3. **Terminal:** the command prints `✓ helper: Meta (Facebook and Instagram) connected` and a line such as `This token cannot refresh itself; it expires on ...`.
+
+Meta's tokens last about 60 days and Meta gives no way to renew them without you. `agentx doctor`, `status` and the dashboard warn a week before the date. Run `connect` again then.
+
+### Choose the default Page and Instagram account
+
+The agent can find the ids itself with the `pages` read. To save it that step:
+
+1. **Telegram, or the dashboard chat:** ask the agent `List my Facebook Pages with their ids`. Note the Page id and the Instagram id under it.
+2. **Terminal:** open `agentx.json`, find the agent's `meta` integration and add both under `metadata`:
+
+   ```json
+   "metadata": { "page_id": "1234567890", "ig_user_id": "17840000000000000" }
+   ```
+
+3. **Terminal:** run `agentx daemon restart`.
+
+### What the agent can read
+
+| Read | What it returns |
+|---|---|
+| `pages` | The Pages the account manages, with the linked Instagram account of each. |
+| `page_insights` | Page totals: `page_media_view` (views), `page_total_media_view_unique` (people who viewed), `page_follows`, `page_daily_follows`, `page_daily_follows_unique`, `page_daily_unfollows_unique`, `page_post_engagements`, `page_video_views`, `page_video_view_time`, and the earnings metrics `monetization_approximate_earnings` and `page_daily_video_ad_break_earnings`. |
+| `page_posts` | Recent posts of a Page: id, time, link. |
+| `post_insights` | One post: `post_media_view`, `post_total_media_view_unique`, `post_reactions_by_type_total`, `post_clicks`, `post_video_views`. |
+| `ig_account_insights` | Instagram account totals: `views`, `reach`, `total_interactions`, `accounts_engaged`, `likes`, `comments`, `shares`, `saves`, `replies`, `follows_and_unfollows`, `profile_links_taps`, `follower_count`, and audience by age, city, country or gender (`follower_demographics`, `engaged_audience_demographics`). |
+| `ig_media` | Recent posts, reels and stories: id, type, time, link, likes, comments. |
+| `ig_media_insights` | One post or reel: `views`, `reach`, `total_interactions`, `likes`, `comments`, `shares`, `saved`, `profile_visits`, `follows`, and reel watch time. |
+
+Good to know:
+
+- Earnings come back only for a Page that earns money on Facebook. Instagram has no earnings figures in Meta's API.
+- Meta retired the old "impressions" and "fans" figures. Views (`page_media_view`, `views`) replace them; AgentX does not offer the retired names.
+- For Page reads AgentX asks Meta for a token for that one Page, keeps it in memory for an hour, and never shows it.
 
 ## Disconnect
 
@@ -147,4 +224,8 @@ agentx agent integrations connect helper example --reads account_report
 | `status` says **not connected**, or the agent says to connect again | The sign-in was removed or ran out. Run `connect` again. |
 | `not granted: ...` | You unticked a permission at sign-in. Run `connect` again and approve every one. |
 | `the token expires on ...` | That service does not renew its tokens by itself. Run `connect` again before that date. |
+| Meta: `does not manage Page ...` | The account you connected is not an admin of that Page, or you did not select the Page when you signed in. Run `connect` again and select it. |
+| Meta: the browser says the return address is not allowed, after you switched the app to Live | Use an `https` return address with `--paste --redirect-uri`. See [Return address in Live mode](#create-the-meta-app). |
+| Meta: an Instagram read says the account does not exist or has no insights | The Instagram account must be a professional account linked to a Page you selected at sign-in. Run the `pages` read: the account should show under its Page. |
+| Meta: `(#100) ... metric` | Meta does not offer that figure for this Page or period, for example earnings on a Page that does not earn money. Ask for another metric or period. |
 | The agent gets `... said 403` | The account or app lacks a permission for that read, or the account is not the right type. Check the service's own setup steps. |

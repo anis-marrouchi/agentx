@@ -504,6 +504,7 @@ integrations
   .option("--store <where>", "keyring or env (default: keyring when this machine has one)")
   .option("--port <n>", "loopback port for the sign-in answer", "19876")
   .option("--paste", "no loopback: paste the address the browser lands on (for a machine without a browser)")
+  .option("--redirect-uri <url>", "with --paste: the return address registered in the app, when it cannot be localhost (e.g. an https page for a Meta app in Live mode)")
   .option("--no-browser", "print the sign-in address instead of opening it")
   .action(async (agentId: string, kind: string, opts) => {
     const { providerFor, BUILTIN_PROVIDERS } = await import("@/integrations/providers")
@@ -571,7 +572,14 @@ integrations
       process.exit(1)
     }
 
-    const redirectUri = `http://localhost:${port}/callback`
+    let redirectUri = `http://localhost:${port}/callback`
+    if (opts.redirectUri !== undefined) {
+      if (!opts.paste) { console.log(chalk.red("  --redirect-uri works with --paste only: AgentX can wait for the answer on localhost only")); process.exit(1) }
+      let u: URL | null = null
+      try { u = new URL(String(opts.redirectUri)) } catch {}
+      if (!u || (u.protocol !== "https:" && u.hostname !== "localhost") || u.hash) { console.log(chalk.red("  --redirect-uri must be an https address (or http://localhost) without #")); process.exit(1) }
+      redirectUri = u.toString()
+    }
     console.log()
     console.log(chalk.bold(`  Connect ${spec.title} for ${agentId} ("${integration.label}")`))
     console.log(chalk.dim(`  Redirect address (add it to your app's allowed redirects): ${redirectUri}`))
