@@ -1317,9 +1317,9 @@ final class App: NSObject, NSApplicationDelegate {
             _ = recorder.stop()
         }
         if AnswerView.isWorthShowing(spoken: answer.text, written: answer.written,
-                                     buttons: answer.buttons, imageURL: answer.imageURL) {
+                                     buttons: answer.buttons, imageURL: answer.imageURL, artifacts: answer.artifacts) {
             panel.showAnswer(spoken: answer.text, written: answer.written,
-                             buttons: answer.buttons, imageURL: answer.imageURL)
+                             buttons: answer.buttons, imageURL: answer.imageURL, artifacts: answer.artifacts)
         }
         shownAnswer = (answer.text, agent, answer.voice)
         noteReset?.cancel()
@@ -1343,7 +1343,7 @@ final class App: NSObject, NSApplicationDelegate {
     private func showAgain(_ id: Int) {
         guard let r = requests.request(id), let answer = answers[id] else { return }
         panel.showAnswer(spoken: answer.text, written: answer.written,
-                         buttons: answer.buttons, imageURL: answer.imageURL)
+                         buttons: answer.buttons, imageURL: answer.imageURL, artifacts: answer.artifacts)
         shownAnswer = (answer.text, answer.agentID ?? r.agentID, answer.voice)
         note(OpenRequests.continueNote(name: statusMenu.name(of: r.agentID)))
     }
@@ -1517,9 +1517,9 @@ final class App: NSObject, NSApplicationDelegate {
             case .success(let answer):
                 Log.info("aside answer (\(answer.agentID ?? agent)): \(answer.text)")
                 if AnswerView.isWorthShowing(spoken: answer.text, written: answer.written,
-                                             buttons: answer.buttons, imageURL: answer.imageURL) {
+                                             buttons: answer.buttons, imageURL: answer.imageURL, artifacts: answer.artifacts) {
                     panel.showAnswer(spoken: answer.text, written: answer.written,
-                                     buttons: answer.buttons, imageURL: answer.imageURL)
+                                     buttons: answer.buttons, imageURL: answer.imageURL, artifacts: answer.artifacts)
                     shownAnswer = (answer.text, answer.agentID ?? agent, answer.voice)
                 }
                 // Nothing else on screen: the pill shows this answer, its
@@ -1589,9 +1589,9 @@ final class App: NSObject, NSApplicationDelegate {
             // text than was read aloud. A card that opens on every
             // "Ok." teaches you to ignore it.
             if AnswerView.isWorthShowing(spoken: answer.text, written: answer.written,
-                                         buttons: answer.buttons, imageURL: answer.imageURL) {
+                                         buttons: answer.buttons, imageURL: answer.imageURL, artifacts: answer.artifacts) {
                 panel.showAnswer(spoken: answer.text, written: answer.written,
-                                 buttons: answer.buttons, imageURL: answer.imageURL)
+                                 buttons: answer.buttons, imageURL: answer.imageURL, artifacts: answer.artifacts)
                 shownAnswer = (answer.text, answer.agentID, voice)
             } else {
                 panel.collapse()

@@ -25,6 +25,10 @@ final class AnswerView: NSView {
     private let thumb = NSImageView()
     private let actions = NSStackView()
     private var source = ""
+    /// The answer has files under its text, so it is not empty even
+    /// without words.
+    private var hasFiles = false
+    private var isEmpty: Bool { source.isEmpty && !hasFiles }
 
     /// The answer's natural height, measured after it renders. The pill
     /// grows to it, up to its maximum.
@@ -116,8 +120,9 @@ final class AnswerView: NSView {
     /// Worth showing when there is rich content, a URL you could click, or
     /// materially more written than was spoken. Otherwise the speech was
     /// the whole answer.
-    static func isWorthShowing(spoken: String, written: String?, buttons: [(String, String)], imageURL: String?) -> Bool {
-        if !buttons.isEmpty || imageURL != nil { return true }
+    static func isWorthShowing(spoken: String, written: String?, buttons: [(String, String)], imageURL: String?,
+                               artifacts: [Artifact] = []) -> Bool {
+        if !buttons.isEmpty || imageURL != nil || !artifacts.isEmpty { return true }
         let text = (written?.isEmpty == false ? written! : spoken)
         if text.range(of: #"https?://"#, options: .regularExpression) != nil { return true }
         // Speech drops formatting, so written is often a little longer for
@@ -133,9 +138,14 @@ final class AnswerView: NSView {
     /// URLs and formatting the spoken form had to drop. `onHeight` follows
     /// once it has rendered.
     @MainActor
-    func show(spoken: String, written: String?, buttons: [(String, String)], imageURL: String?) {
+    func show(spoken: String, written: String?, buttons: [(String, String)], imageURL: String?,
+              artifacts: [Artifact] = []) {
         source = (written?.isEmpty == false ? written! : spoken)
-        web.loadHTMLString(Markdown.page(Markdown.toHTML(source), css: Brand.cardCSS), baseURL: nil)
+        // The files the agent declared, under the text (#1670), served by
+        // the daemon over loopback.
+        hasFiles = !artifacts.isEmpty
+        let files = Artifacts.html(artifacts, base: Config.daemonURL)
+        web.loadHTMLString(Markdown.page(Markdown.toHTML(source) + files, css: Brand.cardCSS + Artifacts.css), baseURL: nil)
 
         links.arrangedSubviews.forEach { links.removeArrangedSubview($0); $0.removeFromSuperview() }
         for (label, url) in buttons.prefix(4) {
@@ -155,7 +165,7 @@ final class AnswerView: NSView {
             URLSession.shared.dataTask(with: u) { [weak self] data, _, _ in
                 guard let data, let img = NSImage(data: data) else { return }
                 Task { @MainActor in
-                    guard let self, self.source.isEmpty == false else { return }
+                    guard let self, !self.isEmpty else { return }
                     self.thumb.image = img
                     self.thumb.isHidden = false
                     self.measure()
@@ -169,6 +179,7 @@ final class AnswerView: NSView {
     @MainActor
     func clear() {
         source = ""
+        hasFiles = false
         web.loadHTMLString("", baseURL: nil)
         thumb.isHidden = true
         links.arrangedSubviews.forEach { links.removeArrangedSubview($0); $0.removeFromSuperview() }
@@ -181,7 +192,7 @@ final class AnswerView: NSView {
             + " return b.scrollHeight + parseFloat(s.marginTop) + parseFloat(s.marginBottom) })()"
         web.evaluateJavaScript(js) { [weak self] value, _ in
             MainActor.assumeIsolated {
-                guard let self, !self.source.isEmpty else { return }
+                guard let self, !self.isEmpty else { return }
                 let text = CGFloat((value as? NSNumber)?.doubleValue ?? 120)
                 let extra = (self.links.arrangedSubviews.isEmpty ? 0 : Self.linkRow)
                     + (self.thumb.isHidden ? 0 : Self.imageHeight + 16)
@@ -197,7 +208,7 @@ final class AnswerView: NSView {
             actions.layer?.borderColor = NSColor.separatorColor.cgColor
             actions.layer?.borderWidth = 1 / (window?.backingScaleFactor ?? 2)
         }
-        actions.isHidden = source.isEmpty
+        actions.isHidden = isEmpty
     }
     override func mouseExited(with event: NSEvent) { actions.isHidden = true }
 
@@ -231,7 +242,7 @@ final class AnswerView: NSView {
 
 extension AnswerView: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        MainActor.assumeIsolated { if !source.isEmpty { measure() } }
+        MainActor.assumeIsolated { if !isEmpty { measure() } }
     }
 
     /// Links open in the real browser. A pill is not a place to read a web

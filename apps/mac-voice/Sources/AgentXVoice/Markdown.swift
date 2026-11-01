@@ -109,6 +109,9 @@ enum Markdown {
         s = replace(s, #"`([^`]+)`"#, "<code>$1</code>")
         s = replace(s, #"\*\*([^*]+)\*\*"#, "<strong>$1</strong>")
         s = replace(s, #"(?<![\*\w])\*([^*]+)\*(?![\*\w])"#, "<em>$1</em>")
+        // A picture on the web, before links: `![alt](https://...)` is a
+        // link with a `!` in front.
+        s = replace(s, #"!\[([^\]"]*)\]\((https?://[^)\s"]+)\)"#, "<img class=\"md-img\" alt=\"$1\" src=\"$2\">")
         s = replace(s, #"\[([^\]]+)\]\(([^)\s]+)\)"#, "<a href=\"$2\">$1</a>")
         // Bare URLs, but not ones already inside an href.
         s = replace(s, #"(?<!["=])\b(https?://[^\s<)]+)"#, "<a href=\"$1\">$1</a>")

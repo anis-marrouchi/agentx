@@ -14,9 +14,10 @@ extension Panel {
     /// Show an answer. The pill grows once it has been measured. A pill
     /// the person dismissed stays dismissed.
     @MainActor
-    func showAnswer(spoken: String, written: String?, buttons: [(String, String)], imageURL: String?) {
+    func showAnswer(spoken: String, written: String?, buttons: [(String, String)], imageURL: String?,
+                    artifacts: [Artifact] = []) {
         guard !dismissed else { return }
-        answer.show(spoken: spoken, written: written, buttons: buttons, imageURL: imageURL)
+        answer.show(spoken: spoken, written: written, buttons: buttons, imageURL: imageURL, artifacts: artifacts)
     }
 
     /// Grow, or resize while grown, to fit an answer `answerHeight` tall.

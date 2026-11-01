@@ -318,6 +318,19 @@ It follows the look of your Mac: light or dark, and a clearer outline and a more
 
 ![A pill near the top of the screen grows down instead, its orb row staying at the top](/screenshots/voice/answer-open-below.png)
 
+#### Files and pictures in the answer
+
+When an agent attaches a file the way it does for the [phone app](./mobile-chat.md) (an `agentx-artifact` line), the pill shows the file under the answer, not the line itself:
+
+- **Pictures** (png, jpg, gif, webp) show inline.
+- **Video** (mp4, webm) and **sound** (mp3, m4a, wav) get a player.
+- **Other files** (svg, pdf, txt, md, csv, json) show as an **Open** link that opens in your browser.
+- A file that is missing, outside the agent's workspace, larger than 20 MB, of another type, or made by an agent on another computer shows **File not available** with its name.
+
+![An answer with its files: a picture inline, a video player, a sound player with the file's name, an Open report.pdf link, and File not available for a missing picture](/screenshots/voice/answer-files.png)
+
+A picture already on the web, written as `![what it shows](https://...)`, shows inline too. The files come from the daemon on this Mac (`/app-files`), so they show only while the daemon is running.
+
 To change how long the answer stays open or how tall it grows, use **Answer in the pill** on the [General tab](#general-tab), or the Terminal:
 
 ```sh
@@ -1525,7 +1538,8 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 29. **Terminal:** run `agentx voice palette <agent-id> forest`, then open the AgentX menu and hold **Option–Space**. The orb is moss to fern green. Run `agentx voice palette <agent-id> default` to undo it.
 30. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again and pick its answer: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
 31. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
-32. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
+32. **Mac:** ask an agent "Make a small PNG chart, save it in your outbox and show it to me." The pill shows the picture under the answer, with no `agentx-artifact` text. Ask for a file that doesn't exist: the pill says **File not available**.
+33. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
 
 To check the phone side, with the [phone app](./mobile-chat.md) paired and a past conversation with one agent:
 
@@ -1540,6 +1554,7 @@ To check the phone side, with the [phone app](./mobile-chat.md) paired and a pas
 
 ## If something is wrong
 
+- **The pill shows File not available for a file the agent made:** the file must be in the agent's workspace (for example `.agentx/outbox/`), of a type listed in [Files and pictures in the answer](#files-and-pictures-in-the-answer), and 20 MB or less. Check the path the agent declared with `ls` in its workspace. A file from an agent on another computer is not shown on this Mac.
 - **No recording:** check the microphone permission in System Settings › Privacy & Security › Microphone, and hold the shortcut while speaking.
 - **A permission is switched on in System Settings but the app still asks, after an update:** the switch belongs to an older build. **Terminal:** run `tccutil reset ScreenCapture tn.acme.agentx.voice` (or `Microphone` instead of `ScreenCapture`), switch the permission on again, then quit AgentX Voice from its menu and open it again. For the helper that `agentx desktop install` sets up, run `tccutil reset Accessibility tn.acme.agentx.helper` and `tccutil reset ScreenCapture tn.acme.agentx.helper`, then switch both on again. To stop this after every update, see [Keep permissions after an update](#keep-permissions-after-an-update).
 - **"Sorry, I didn't hear that":** transcription failed and nothing was sent. Check your ElevenLabs key, or the local Whisper program and model.
