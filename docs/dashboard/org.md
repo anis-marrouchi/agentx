@@ -8,7 +8,7 @@ The Hub only shows the chart. Changing the chart and pausing an agent are done o
 
 ## Edit the org chart
 
-On `/org`, you, the owner, decide who is in the chart, the role each one holds, and who reports to whom, people included. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Anyone else sees the chart only: there is no **Edit org** button for them, and the dashboard refuses their changes.
+On `/org`, you, the owner, decide who is in the chart, the role each one holds, and who reports to whom, people included. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Anyone else sees the chart only: there is no **Edit org** button for them, and the dashboard refuses their changes. The same editor is open in **Settings → Business** on the Hub, so a change made in either place shows in both.
 
 1. **Browser:** open `/org`, or select **Open the org chart** on the Hub's **Agents** or **Org** page.
 2. Select **Edit org** above the chart. The edit panel opens. To open `/org` with the panel already open, go to `/org#edit`.

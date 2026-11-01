@@ -5,9 +5,10 @@
 // stChField(), stSetSave(), stPaint() and the Hub's esc().
 //
 // What the classic /admin Business and Boards tabs do, with the same calls:
-//   Business  the org chart, projects, clients and the contact map, each
-//             listed with add-or-update and remove
-//             (POST/DELETE business/{orgchart,project,client,contact});
+//   Business  the org chart in the /org editor (orgEditor, org-setup.ts;
+//             POST org/chart, #1678), then projects, clients and the
+//             contact map, each listed with add-or-update and remove
+//             (POST/DELETE business/{project,client,contact});
 //             shown only when the business layer is on, as there.
 //   Boards    the task boards with their columns: add or update a board
 //             (Edit fills the form), remove one, add and remove a column
@@ -28,13 +29,7 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
     return Object.keys(ids).sort();
   }
   function stBusinessHtml() {
-    var b = (S.st.data && S.st.data.business) || {}, org = b.orgChart || {}, projects = b.projects || [], contacts = b.contactMap || [], cfg = b.clients || {};
-    var orgRows = Object.keys(org).map(function (id) {
-      var e = org[id] || {}, s = e.schedule;
-      return stBizRow('<b>' + esc(e.role || id) + '</b> <code>' + esc(id) + '</code>' + (e.reportsTo ? ' <small>reports to ' + esc(e.reportsTo) + '</small>' : '') +
-        (s ? '<p class="wsj__sub">' + esc((s.days || []).join(', ')) + ' ' + esc(s.start || '') + '–' + esc(s.end || '') + '</p>' : ''),
-        'Remove', 'bo:' + id, 'Remove <b>' + esc(id) + '</b> from the org chart?', 'Remove');
-    });
+    var b = (S.st.data && S.st.data.business) || {}, projects = b.projects || [], contacts = b.contactMap || [], cfg = b.clients || {};
     var projRows = projects.map(function (p) {
       return stBizRow((p.name && p.name !== p.id ? '<b>' + esc(p.name) + '</b> ' : '') + '<code>' + esc(p.id) + '</code>' + (p.pm ? ' <small>PM ' + esc(p.pm) + '</small>' : '') +
         (p.lead ? ' <small>lead ' + esc(p.lead) + '</small>' : '') + (p.client ? ' <small>client ' + esc(p.client) + '</small>' : '') +
@@ -54,14 +49,10 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
         (c.displayName ? ' <small>(' + esc(c.displayName) + ')</small>' : ''), 'Remove', 'bm:' + i, 'Remove the mapping for <b>' + esc(key) + '</b>?', 'Remove');
     });
     var kinds = [['', '(default)'], ['client', 'client'], ['own', 'own'], ['internal', 'internal']];
-    return '<header class="wst__h"><h2>Business</h2><p>The org chart, projects, clients and which chat belongs to which client: the data behind the PM gate and the activity graph. The same as <code>agentx business</code>. Restart the daemon after a change here.</p></header>' +
+    return '<header class="wst__h"><h2>Business</h2><p>The org chart, projects, clients and which chat belongs to which client: the data behind the PM gate and the activity graph. The same as <code>agentx business</code>. The org chart applies at once; projects, clients and the contact map at the next start.</p></header>' +
       stNoteHtml('biz') +
-      '<section class="wsc"><h3>Org chart <small>' + orgRows.length + '</small></h3><p class="wsj__sub">Who reports to whom. The Org page changes it too.</p>' + stBizList(orgRows, 'No org chart entry.') +
-      '<details class="wsc"><summary><h3>Add or update an entry</h3></summary><form class="wsf" data-st-form="biz-org">' +
-        '<div class="wsf__row">' + stChField('st-bo-agent', 'Agent id', '', 'devops') + stChField('st-bo-role', 'Role', '', 'DevOps') + '</div>' +
-        stChField('st-bo-reports', 'Reports to', '', 'coo', '(another agent id; empty for the top)') +
-        '<div class="wsf__row">' + stChField('st-bo-start', 'Starts', '', '09:00') + stChField('st-bo-end', 'Ends', '', '17:00') + stChField('st-bo-days', 'Days', '', 'mon,tue,wed,thu,fri') + '</div>' +
-        '<div class="wsf__foot"><button type="submit" class="ax-btn">Save entry</button>' + stNoteHtml('biz-org') + '</div></form></details></section>' +
+      '<section class="wsc"><h3>Org chart</h3><p class="wsj__sub">Who reports to whom, the same editor as the Org page.</p>' +
+        '<div class="org-edit" id="st-org-edit">' + (!S.st.org ? '<p class="ax-wall__empty">Could not read the org chart.</p>' : ST_OE.html() || '<p class="ax-wall__empty">Only the owner changes the org chart.</p>') + '</div></section>' +
       '<section class="wsc"><h3>Projects <small>' + projRows.length + '</small></h3>' + stBizList(projRows, 'No project.') +
       '<details class="wsc"><summary><h3>Add or update a project</h3></summary><form class="wsf" data-st-form="biz-proj">' +
         stChField('st-bp-id', 'Project id', '', 'example/app', '(owner/repo for GitLab or GitHub)') +
@@ -88,13 +79,7 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
         '<div class="wsf__foot"><button type="submit" class="ax-btn">Save mapping</button>' + stNoteHtml('biz-contact') + '</div></form></details></section>';
   }
   function stBizSave(kind) {
-    if (kind === 'biz-org') {
-      stSetSave('biz-org', 'POST', 'business/orgchart', {
-        agentId: stVal('st-bo-agent').trim(), role: stVal('st-bo-role').trim(), reportsTo: stVal('st-bo-reports').trim(),
-        start: stVal('st-bo-start').trim() || '09:00', end: stVal('st-bo-end').trim() || '17:00',
-        days: (stVal('st-bo-days').trim() || 'mon,tue,wed,thu,fri').split(',').map(function (s) { return s.trim(); }).filter(Boolean),
-      }, 'Entry saved.', 'biz');
-    } else if (kind === 'biz-proj') {
+    if (kind === 'biz-proj') {
       // Name, lead and team (#1687) go only when filled, so a blank keeps what is saved.
       var proj = { id: stVal('st-bp-id').trim(), pm: stVal('st-bp-pm').trim(), client: stVal('st-bp-client').trim() };
       var team = stVal('st-bp-team').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
@@ -170,10 +155,9 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
 
   async function stBizConfirmed(key) {
     var d = S.st.data || {}, b = d.business || {}, at = key.indexOf(':'), kind = key.slice(0, at), id = key.slice(at + 1);
-    if (['bo', 'bp', 'bc', 'bm', 'bd', 'bdc'].indexOf(kind) < 0) return false;
+    if (['bp', 'bc', 'bm', 'bd', 'bdc'].indexOf(kind) < 0) return false;
     stPaint();
-    if (kind === 'bo') await stSetSave('biz', 'DELETE', 'business/orgchart', { agentId: id }, 'Removed ' + id + ' from the org chart.');
-    else if (kind === 'bp') await stSetSave('biz', 'DELETE', 'business/project', { id: id }, 'Removed the project ' + id + '.');
+    if (kind === 'bp') await stSetSave('biz', 'DELETE', 'business/project', { id: id }, 'Removed the project ' + id + '.');
     else if (kind === 'bc') await stSetSave('biz', 'DELETE', 'business/client', { id: id }, id + ' is back to the defaults.');
     else if (kind === 'bm') {
       var c = (b.contactMap || [])[+id];
@@ -191,8 +175,23 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
     return true;
   }
 
+  // The org chart editor (#1678): the /org one (org-setup.ts), each change
+  // through POST org/chart under the Settings prefix, so the owner guard holds it.
+  var ST_OE = orgEditor({
+    org: function () { return S.st.org; },
+    post: async function (change) {
+      var r = await act('POST', '/api/admin/wall/settings/org/chart', change);
+      if (!r.ok) throw new Error(r.error);
+      return r.body || {};
+    },
+    reload: function () { return settingsLoad(); },
+    paint: function () { stPaint(); ST_OE.focus(); },
+  });
+  document.addEventListener('keydown', function (ev) { if (S.page === 'settings') ST_OE.key(ev); });
+
   document.addEventListener('click', function (ev) {
     if (S.page !== 'settings') return;
+    if (ST_OE.click(ev.target)) return;
     var t = ev.target.closest('[data-st-act]');
     if (t && t.getAttribute('data-st-act') === 'bd-edit') { S.st.bdEdit = t.getAttribute('data-id') || ''; stPaint(); }
   });

@@ -129,22 +129,69 @@ describe("Hub Settings: Business (#1428 phase 3)", () => {
     await w.settle()
     const html = settingsHtml(w)
     expect(html).toContain("<h2>Business</h2>")
-    expect(html).toContain("<b>Support lead</b> <code>cx</code>")
     expect(html).toContain("<code>example/app</code> <small>PM cx</small>")
     expect(html).toContain("kind client · within 4h")
     expect(html).toContain("<code>chat 1001</code>")
-    fill(w, { "st-bo-agent": "ops", "st-bo-role": "Night shift", "st-bo-reports": "cx", "st-bo-start": "", "st-bo-end": "", "st-bo-days": "" })
-    await w.submit({ "data-st-form": "biz-org" })
-    expect(w.writes()[0]).toEqual({ url: "/api/admin/wall/settings/business/orgchart", method: "POST",
-      body: { agentId: "ops", role: "Night shift", reportsTo: "cx", start: "09:00", end: "17:00", days: ["mon", "tue", "wed", "thu", "fri"] } })
     fill(w, { "st-bm-channel": "", "st-bm-chat": "", "st-bm-user": "", "st-bm-sender": "", "st-bm-client": "example" })
     await w.submit({ "data-st-form": "biz-contact" })
     expect(w.el("st-n-biz-contact").textContent).toBe("Not saved: give a chat id, a username or a sender id.")
-    expect(w.writes()).toHaveLength(1)
+    expect(w.writes()).toHaveLength(0)
     await confirm(w, "bm:0")
-    expect(w.writes()[1]).toEqual({ url: "/api/admin/wall/settings/business/contact", method: "DELETE", body: { channel: "telegram", chatId: "1001" } })
+    expect(w.writes()[0]).toEqual({ url: "/api/admin/wall/settings/business/contact", method: "DELETE", body: { channel: "telegram", chatId: "1001" } })
     await confirm(w, "bp:example/app")
-    expect(w.writes()[2]).toEqual({ url: "/api/admin/wall/settings/business/project", method: "DELETE", body: { id: "example/app" } })
+    expect(w.writes()[1]).toEqual({ url: "/api/admin/wall/settings/business/project", method: "DELETE", body: { id: "example/app" } })
+  })
+})
+
+describe("Hub Settings: the org chart is the /org editor (#1678)", () => {
+  const SETUP = {
+    members: [{ ref: "agent:cx", kind: "agent", id: "cx", name: "Customer Desk", title: "Support lead" }, { ref: "agent:ops", kind: "agent", id: "ops", name: "Night Shift" }],
+    relations: [{ from: "agent:ops", type: "reports-to", to: "agent:cx" }],
+  }
+  const CHOICES = { agents: [{ ref: "agent:cx", name: "Customer Desk" }, { ref: "agent:ops", name: "Night Shift" }], people: [], roles: [], types: ["reports-to", "dotted-line", "acts-for"] }
+  const withOrg = (org: unknown): Route => (u) => (u === "/api/admin/org" ? { status: 200, body: org } : undefined)
+
+  it("shows the editor instead of the typed-id form, and saves a move only after Save the move", async () => {
+    const w = open("business", withOrg({ exists: true, canEdit: true, setup: SETUP, choices: CHOICES }), true)
+    await w.settle()
+    let html = settingsHtml(w)
+    expect(html).toContain('id="st-org-edit"')
+    expect(html).toContain('data-oe="add-relation"')
+    expect(html).not.toContain('data-st-form="biz-org"')
+    expect(html).not.toContain("Restart the daemon after a change here")
+    fill(w, { "oe-rel-from": "agent:cx", "oe-rel-type": "dotted-line", "oe-rel-to": "agent:ops" })
+    await w.click({ "data-oe": "add-relation" })
+    expect(w.writes()).toHaveLength(0)
+    html = settingsHtml(w)
+    expect(html).toContain("Customer Desk will have a dotted line to Night Shift.")
+    await w.click({ "data-oe": "confirm" })
+    expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/org/chart", method: "POST",
+      body: { op: "add-relation", from: "agent:cx", type: "dotted-line", to: "agent:ops" } }])
+    // A removal asks first too, and Cancel sends nothing.
+    await w.click({ "data-oe": "remove-relation", "data-oe-from": "agent:ops", "data-oe-type": "reports-to", "data-oe-to": "agent:cx" })
+    expect(settingsHtml(w)).toContain("Night Shift will no longer report to Customer Desk.")
+    await w.click({ "data-oe": "cancel" })
+    expect(w.writes()).toHaveLength(1)
+    expect(settingsHtml(w)).toContain("Cancelled. Nothing changed.")
+  })
+
+  it("shows the server's refusal in the editor's status line", async () => {
+    const refused: Route = (u, i) => (u === "/api/admin/wall/settings/org/chart" && i.method === "POST"
+      ? { status: 400, body: { error: "Night Shift already reports to Customer Desk." } } : withOrg({ exists: true, canEdit: true, setup: SETUP, choices: CHOICES })(u, i))
+    const w = open("business", refused, true)
+    await w.settle()
+    w.el("oe-role-0").value = "Head of support"
+    await w.click({ "data-oe": "set-role", "data-oe-i": "0", "data-oe-member": "agent:cx" })
+    expect(w.writes()[0].body).toEqual({ op: "set-role", member: "agent:cx", role: "Head of support" })
+    expect(settingsHtml(w)).toContain('<p class="oe-msg is-bad" role="status">Night Shift already reports to Customer Desk.</p>')
+  })
+
+  it("shows no editor when the org reply says the viewer cannot edit", async () => {
+    const w = open("business", withOrg({ exists: true, canEdit: false }), true)
+    await w.settle()
+    const html = settingsHtml(w)
+    expect(html).toContain("Only the owner changes the org chart.")
+    expect(html).not.toContain("data-oe=")
   })
 })
 
@@ -358,7 +405,7 @@ describe("agentx.json with its literal secrets hidden (#1428 phase 3)", () => {
 
 describe("Phase 3 writes are the owner's, and reach the classic handlers (#1428)", () => {
   const WRITES: Array<[string, string, unknown]> = [
-    ["POST", "mesh/peers", {}], ["DELETE", "mesh/peers", {}], ["POST", "mesh/toggle", {}], ["POST", "mesh/health", {}],
+    ["POST", "mesh/peers", {}], ["DELETE", "mesh/peers", {}], ["POST", "mesh/toggle", {}], ["POST", "mesh/health", {}], ["POST", "org/chart", {}],
     ["POST", "business/orgchart", {}], ["DELETE", "business/orgchart", {}], ["POST", "business/project", {}], ["DELETE", "business/project", {}],
     ["POST", "business/client", {}], ["DELETE", "business/client", {}], ["POST", "business/contact", {}], ["DELETE", "business/contact", {}],
     ["POST", "boards", {}], ["DELETE", "boards", {}], ["POST", "boards/columns", {}], ["DELETE", "boards/columns", {}],
