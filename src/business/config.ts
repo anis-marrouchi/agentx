@@ -147,7 +147,8 @@ export const businessConfigSchema = z.object({
    *  written like relations. They group cards on the chart and change no
    *  reporting line. See departments.ts. */
   departments: z.record(z.string(), z.object({
-    name: z.string().min(1),
+    /** Shown on the Org page; the department's key when unset. */
+    name: z.string().min(1).optional(),
     head: z.string().min(1).optional(),
     members: z.array(z.string().min(1)).default([]),
   })).default({}),
