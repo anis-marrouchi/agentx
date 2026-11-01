@@ -31,7 +31,7 @@ import { HUB_NAME } from "../hub-name"
 import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
 
 export const WALL_ORG_SCRIPT = String.raw`
-  var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null };
+  var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null, headShown: false };
   var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
   var ORG_CHART_HREF = '/org';
   var ORG_ICON = { person: '${ORG_PERSON_ICON}', agent: '${ORG_AGENT_ICON}' };
@@ -193,6 +193,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     size.style.width = phone ? '' : chart.offsetWidth * ORG.zoom + 'px';
     size.style.height = phone ? '' : chart.offsetHeight * ORG.zoom + 'px';
     if (phone) return;
+    orgShowHead(chart);
     var box = {};
     chart.querySelectorAll('[data-org-key]').forEach(function (el) {
       box[el.getAttribute('data-org-key')] = { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight, band: el.getAttribute('data-org-band') };
@@ -223,6 +224,20 @@ export const WALL_ORG_SCRIPT = String.raw`
       }
     });
     svg.innerHTML = out + bands.titles;
+  }
+  // As showHead() on /org: a chart wider than the pane centres its root across
+  // the full width, so the head lands off screen. On the first paint of the
+  // Chart view, scroll the head (a person root, else the first root) into the
+  // middle; later repaints keep the reader's scroll.
+  function orgShowHead(chart) {
+    var scroll = orgEl('wog-scroll');
+    if (ORG.headShown || !scroll || scroll.scrollWidth <= scroll.clientWidth) return;
+    var top = chart.querySelectorAll('.wog__card.is-top');
+    if (!top.length) return;
+    var head = Array.prototype.filter.call(top, function (c) { return c.classList.contains('is-person'); })[0] || top[0];
+    var box = scroll.getBoundingClientRect(), at = head.getBoundingClientRect();
+    scroll.scrollLeft += at.left + at.width / 2 - (box.left + box.width / 2);
+    ORG.headShown = true;
   }
   // A department's band (#1681): a box round its members' cards, under the
   // lines, and its title (name and head) over them. Folded-away members leave it.
