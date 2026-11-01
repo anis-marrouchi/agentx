@@ -4,6 +4,8 @@ Status: **for review, nothing built.** The owner's comment on #1710 stopped the 
 
 Revision 2 answers the review of the first version (9e6a6f47): restart sessions can no longer be locked out, the fallback runs the rules only, the time budget is written down, and a failed local check can be told apart from an allow.
 
+Revision 3 answers the re-review of 903cf41e: the step 3 allow list covers the restart forms people actually type (`gui/$(id -u)`, `sudo systemctl`, `npx tsx … cli.ts`), and the hook timeout leaves room for node start-up on a loaded host.
+
 Checked on main (`01dfa6ce`). All names below are made up: the agent `demo-agent`, the machine `studio`.
 
 ## In one paragraph
@@ -77,9 +79,10 @@ The key change is `--connect-timeout 1` with a long `--max-time`. A daemon that 
 | curl connect | 1 s | Refused or no answer → go to fallback straight away |
 | curl total | 55 s | Daemon answers: allow/deny/ask passed through, including a dialog answer. Non-2xx → fallback. No answer after 55 s (hung daemon) → fallback |
 | daemon dialog | 45 s | Ends inside the curl's 55 s, so its answer is always read |
+| node start-up of the fallback | ~0.5 s idle, several s loaded | Not inside `--deadline-ms`, which is measured once the process runs |
 | rules-only fallback | 3 s (own deadline) | Prints the verdict, or `AGENTX_GUARD_ERROR` on error or deadline |
 | step 2 | ~5 ms | Shell only |
-| hook `timeout` | **60 s** (raised from 10) | Worst case is 55 + 3 + shell, under 60, so Claude Code never drops the hook (dropping it would allow the call) |
+| hook `timeout` | **75 s** (raised from 10) | Worst case is 55 + start-up + 3 + shell. That leaves about 17 s for node start-up and the shell, so Claude Code does not drop the hook even on a loaded host (dropping it would allow the call) |
 
 Load dependence that remains: a call takes the fallback only when the daemon cannot be reached, gives an error, or hangs for 55 s. The deterministic verdict is the same on both paths. Only the seat and dialog step differs: on the fallback it is skipped, and a rules-level `ask` becomes deny. Denying is the safe direction, and the reason text makes clear it is a "daemon not answering" deny, not a policy one.
 
@@ -98,8 +101,10 @@ The fallback cannot call `<release dir>/dist/cli.js`. On a host that runs one di
 The local check counts as failed when it prints `AGENTX_GUARD_ERROR`, exits non-zero, or cannot be found.
 
 - **Daemon-started sessions** (`AGENTX_GUARD=required`, a new variable set next to `AGENTX_AGENT_ID` in `src/agents/runtime.ts` and `src/agents/claude-process-factory.ts`): deny with a readable reason, **except a fixed allow list**:
-  - Bash commands that, after trimming spaces, are exactly `agentx daemon start|restart|status`, `<path>/cli.js daemon start|restart|status` or `node <path>/cli.js daemon start|restart|status` (optionally `--when-idle`), `launchctl kickstart [-k] gui/<uid>/<label>`, `launchctl bootstrap|bootout gui/<uid> <plist>`, `systemctl --user start|restart|status <unit>`.
-  - The match is on the whole `command` string and allows only `[A-Za-z0-9_./~@:= -]`. No `;`, `&`, `|`, `$`, backticks, redirects or newlines, so `agentx daemon start; dropdb x` is refused. If the parse fails, the call is denied, which is the safe direction.
+  - Bash commands that, after trimming spaces, are exactly `agentx daemon start|restart|status`, `<path>/cli.js daemon start|restart|status` or `node <path>/cli.js daemon start|restart|status` (optionally `--when-idle`), `npx tsx <path>/cli.ts daemon start|restart|status`, `launchctl kickstart [-k] gui/<uid>/<label>`, `launchctl bootstrap|bootout gui/<uid> <plist>`, `systemctl --user start|restart|status <unit>`, `sudo systemctl start|restart|status <unit>`.
+  - In the `gui/` argument, `<uid>` is digits, or exactly one of the tokens `$(id -u)` and `$UID`, as in `launchctl kickstart -k gui/$(id -u)/<label>`. The two tokens are accepted only there, as the whole `<uid>`.
+  - Apart from those two tokens, the match is on the whole `command` string and allows only `[A-Za-z0-9_./~@:= -]`. Any other `$`, backticks, `;`, `&`, `|`, redirects or newlines are refused, so `agentx daemon start; dropdb x`, `launchctl kickstart -k gui/$(id -u)/x; dropdb y` and a `gui/` argument with backticks are refused. If the parse fails, the call is denied, which is the safe direction.
+  - Any other restart form is not supported in this slot. The runbooks that tell agents how to restart the daemon use only the forms above.
   - Write and Edit are always denied in this slot.
 - **Everyone else** (a person in a workspace folder, the user-scope attach hook): allow, as today. A person who sets the variable by hand only makes their own session stricter.
 
@@ -136,9 +141,9 @@ Both paths write an audit row (`recordDecision`). A duplicate now only happens w
 
 1. `agentx guard check --rules-only [--deadline-ms N]`: no `assessRisk`, no dialog, rules `ask` → deny, `AGENTX_GUARD_ERROR` marker on internal error or deadline, exit 0 always.
 2. The daemon writes the stable `<AGENTX_HOME>/bin/agentx-guard` link on start.
-3. One shared hook-command builder used by `guardHookCommand` and the attach `guardHookEntries`. It builds steps 1 and 3 (step 3 only in the workspace hook, active only with `AGENTX_GUARD=required`), with the fixed daemon start/restart allow list. Hook `timeout` 60.
+3. One shared hook-command builder used by `guardHookCommand` and the attach `guardHookEntries`. It builds steps 1 and 3 (step 3 only in the workspace hook, active only with `AGENTX_GUARD=required`), with the fixed daemon start/restart allow list. Hook `timeout` 75.
 4. `AGENTX_GUARD=required` set on daemon-started processes.
-5. The doc comments on `guardHookCommand` and `hookCommand` (attach) are corrected; the claim that "daemon down means there are no agent tool calls" is removed.
+5. The doc comments on `guardHookCommand` and `hookCommand` (attach) are corrected; the claim that "daemon down means there are no agent tool calls" is removed. The comment on `guardHookEntries` (`src/attach/install.ts:56-58`) no longer says the daemon resolves the attached identity per call: `/guard/check` reads the agent only from `?agent=`.
 6. `docs/reference/config-agents.md` gets an **If something is wrong** entry for both deny messages.
 
 ## Acceptance
@@ -146,10 +151,10 @@ Both paths write an audit row (`recordDecision`). A duplicate now only happens w
 Tests run the real hook command (the builder takes the budget as a parameter, so tests use small values) against a stand-in daemon:
 
 - 2xx pass-through, empty 2xx (allow), HTTP 500 → fallback, no listener → fallback.
-- **Slow stand-in daemon** (accepts the connection, answers after the curl `--max-time`): the fallback runs, and the hook's total wall time stays under the hook `timeout`.
+- **Slow stand-in daemon** (accepts the connection, answers after the curl `--max-time`) with a **slow fallback start** (the stand-in CLI sleeps before it runs, standing in for node start-up on a loaded host): the fallback runs, and the hook's total wall time stays under the hook `timeout`.
 - Stand-in daemon that answers within `--max-time` but after 3 s: its answer is used (case 5).
 - `--rules-only`: a Write makes no seat call and opens no dialog (the seat and dialog are stubbed to throw); a rules `ask` comes back as deny; an internal error prints the marker.
 - Fallback fails (marker, missing CLI, broken link, `PATH` without `agentx`), with and without `AGENTX_GUARD=required`.
-- **Required session, daemon down, CLI missing → `agentx daemon start` is allowed**; so are the other allow-list forms; `agentx daemon start; dropdb x`, `agentx daemon start && rm -rf ~`, a Write and an Edit are denied.
+- **Required session, daemon down, CLI missing → `agentx daemon start` is allowed**; so are the other allow-list forms, including `launchctl kickstart -k gui/$(id -u)/<label>`, `launchctl kickstart -k gui/$UID/<label>`, `sudo systemctl restart <unit>` and `npx tsx <path>/cli.ts daemon restart`. Denied: `agentx daemon start; dropdb x`, `agentx daemon start && rm -rf ~`, `launchctl kickstart -k gui/$(id -u)/x; dropdb y`, a `gui/` argument with backticks (`` gui/`id -u`/x ``), a `gui/` argument with any other `$` (`gui/$(whoami)/x`, `gui/$HOME/x`), `$(id -u)` outside the `gui/` argument, `sudo systemctl stop <unit>`, a Write and an Edit.
 - The hook never exits 2 in any case.
 - The fast path is measured again on loopback (about 1 ms).
