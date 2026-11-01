@@ -2581,12 +2581,31 @@ function renderIntegrationsBlock(a) {
       if (st === 'unset') return '<span class="ax-pill ax-pill--warn" style="font-size:10px"><span class="ax-pill__dot"></span>' + escapeHtml(k) + '=UNSET</span>';
       return '<span class="ax-pill ax-pill--off" style="font-size:10px">' + escapeHtml(k) + '</span>';
     }).join(' ');
+    // Outside-API sign-in (#1696): connected, expiry, what is missing. No token is ever sent here.
+    let oauthLine = '';
+    if (i.oauth) {
+      const o = i.oauth;
+      const pill = o.connected && !(o.problems || []).length
+        ? '<span class="ax-pill ax-pill--ok" style="font-size:10px"><span class="ax-pill__dot"></span>connected</span>'
+        : o.connected
+          ? '<span class="ax-pill ax-pill--warn" style="font-size:10px"><span class="ax-pill__dot"></span>needs attention</span>'
+          : '<span class="ax-pill ax-pill--warn" style="font-size:10px"><span class="ax-pill__dot"></span>not connected</span>';
+      const facts = [escapeHtml(o.title)];
+      if (o.refreshes) facts.push('refreshes itself');
+      if (o.expiresAt) facts.push('expires ' + escapeHtml(new Date(o.expiresAt).toISOString().slice(0, 10)));
+      oauthLine = '<div style="margin-top:4px">' + pill + ' <span style="font-size:10.5px;color:var(--ax-muted)">' + facts.join(' · ') + '</span></div>' +
+        ((o.problems || []).length
+          ? '<details style="margin-top:3px"><summary style="cursor:pointer;font-size:10.5px;color:var(--ax-muted)">' + o.problems.length + ' to fix</summary>' +
+            o.problems.map((p) => '<div style="font-size:10.5px;color:var(--ax-muted);margin-top:2px">' + escapeHtml(p) + '</div>').join('') + '</details>'
+          : '');
+    }
     const credText = Object.entries(i.credentials || {}).map(([k, v]) => k + '=' + v).join(', ');
     const metaText = Object.entries(i.metadata || {}).map(([k, v]) => k + '=' + v).join(' · ');
     return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--ax-surface);border:1px solid var(--ax-border);border-radius:5px;margin-top:6px">' +
       '<div style="flex:1">' +
         '<div style="font-size:12px"><span class="mono" style="color:var(--ax-accent,#3a7bd5)">' + escapeHtml(i.kind) + '</span> · <b>' + escapeHtml(i.label) + '</b>' + (i.enabled === false ? ' <span class="ax-pill ax-pill--off" style="font-size:10px">disabled</span>' : '') + '</div>' +
         (statusBits ? '<div style="margin-top:4px">' + statusBits + '</div>' : '') +
+        oauthLine +
         (credText ? '<div style="font-size:10.5px;color:var(--ax-muted);margin-top:3px;font-family:var(--ax-mono)">' + escapeHtml(credText) + '</div>' : '') +
         (metaText ? '<div style="font-size:10.5px;color:var(--ax-muted);margin-top:2px">' + escapeHtml(metaText) + '</div>' : '') +
       '</div>' +

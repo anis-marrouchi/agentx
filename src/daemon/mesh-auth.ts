@@ -44,6 +44,9 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/approvals" || path.startsWith("/approvals/") ||
     // Content drafts: posts not yet approved, and the owner's past posts.
     path === "/content" || path.startsWith("/content/") ||
+    // Outside-API reads (#1696): they run with the owner's tokens and
+    // return the owner's analytics.
+    path === "/integrations" || path.startsWith("/integrations/") ||
     // What is on the owner's screen (#1100): card titles, held notices,
     // queued spoken lines and requests, with who raised each.
     path === "/screen" ||

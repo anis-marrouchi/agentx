@@ -987,6 +987,24 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_integration_read",
+    description:
+      "Read data from an outside API the owner connected for you (analytics such as page or channel insights). Read-only: there is no way to post or change anything. " +
+      "Without `read`, lists your connected integrations and the named reads each allows, with their parameters. With `kind` and `read`, runs that read and returns the API's JSON (cut at 16,000 characters). " +
+      "Only the listed parameters and values are accepted. You never see a token. " +
+      "Example: {kind:'example', read:'account_report', params:{metric:'views,reach', since:'2026-10-01'}}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        kind: { type: "string", description: "Integration kind, as listed. Required with read." },
+        read: { type: "string", description: "Named read to run. Omit to list what you can read." },
+        label: { type: "string", description: "Which integration, when you have more than one of the same kind." },
+        params: { type: "object", description: "The read's parameters, e.g. {metric:'views,reach'}." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
     name: "agentx_picture",
     description:
       `Set or remove your own profile picture, shown on the ${HUB_NAME}, the Org page and Settings instead of your initials. ` +
@@ -2005,6 +2023,12 @@ async function handleToolCall(
     case "agentx_content": {
       const { runContentTool } = await import("@/content/tool")
       const text = await runContentTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_integration_read": {
+      const { runIntegrationTool } = await import("@/integrations/tool")
+      const text = await runIntegrationTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 

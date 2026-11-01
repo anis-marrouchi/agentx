@@ -174,9 +174,11 @@ Each item in `agents.<id>.integrations` declares one service. Secrets never go i
 | `credentials.refreshTokenEnv` | string | — | Environment variable for an OAuth refresh token. |
 | `credentials.clientIdEnv` | string | — | Environment variable for an OAuth client id. |
 | `credentials.clientSecretEnv` | string | — | Environment variable for an OAuth client secret. |
-| `credentials.auth` | `"keyring"` | — | The credential is in the system keyring instead of an environment variable. |
+| `credentials.auth` | `"keyring"` | — | The credential is in the system keyring instead of an environment variable. `connect` stores its sign-in this way, under the name `integration:<agent>:<kind>:<label>`. |
 | `credentials.sessionDir` | string | — | Folder holding a login session, for services such as WhatsApp. |
 | `metadata` | map of string, number or boolean | `{}` | Non-secret details (username, host, account id), shown in the dashboard and to skills. |
+| `metadata.reads` | string | — | For a service you sign in to with `connect`: the reads the agent may run, comma-separated. Unset allows every read. See [Let agents read data from outside services](../integrations.md). |
+| `metadata.oauthScopes`, `metadata.oauthConnectedAt`, `metadata.oauthExpiresAt` | string, number | — | Written by `agentx agent integrations connect`: the permissions granted, when, and when a token that cannot renew itself runs out. Not secret. |
 | `enabled` | boolean | `true` | Turns the integration off without removing it. |
 
 ### Voice

@@ -32,6 +32,7 @@ export const AGENTX_TOOL_NAMES: readonly string[] = [
   "agentx_schedule",
   "agentx_approval",
   "agentx_content",
+  "agentx_integration_read",
   "agentx_picture",
   "agentx_note",
   "agentx_request",
@@ -63,6 +64,7 @@ export const READ_TOOL_NAMES: readonly string[] = [
   "agentx_health",
   "agentx_node",
   "agentx_crons",
+  "agentx_integration_read",
   "agentx_wiki_query",
 ]
 
