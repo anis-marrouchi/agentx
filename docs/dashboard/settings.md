@@ -35,7 +35,7 @@ The **Org chart** part of Business is the same editor as [Edit org](./org.md#edi
 
 *Scripted demo data; your team's names will differ.*
 
-To check it worked, open `/org`: it shows the same chart, with the change. If a change is refused, the editor's status line says why, and nothing is saved. Work hours for an org chart entry are no longer set here; use `agentx business orgchart add` with `--start`, `--end` and `--days` in the terminal.
+To check it worked, open `/org`: it shows the same chart, with the change. If a change is refused, the editor's status line says why, and nothing is saved. Each agent's working hours (start, end and days) are set here too, with **Save hours**; see [Set an agent's working hours](./org.md#set-an-agent-s-working-hours).
 
 `/admin`, the old Settings address, opens this page. `/hub#page=settings&section=` followed by a section's name, such as `/hub#page=settings&section=channels`, opens that section directly.
 

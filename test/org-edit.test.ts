@@ -160,6 +160,40 @@ describe("editing the org chart", () => {
     })
   })
 
+  // Working hours (#1715): start, end and days, for agents only.
+  it("shows an agent's working hours and sets them, keeping a lunch break", () => {
+    const cfg = base()
+    expect(readOrgSetup(cfg).members[0].schedule).toEqual({ start: "08:00", end: "12:00", days: ["mon"] })
+    cfg.business.orgChart.pm.schedule = { ...schedule, lunch: { start: "12:00", end: "13:00" } }
+    expect(applyOrgEdit(cfg, { op: "set-schedule", member: "agent:pm", start: "10:00", end: "18:30", days: ["fri", "mon", "wed"] }))
+      .toBe("PM works Monday, Wednesday and Friday, 10:00 to 18:30")
+    expect(cfg.business.orgChart.pm.schedule).toEqual({ start: "10:00", end: "18:30", days: ["mon", "wed", "fri"], lunch: { start: "12:00", end: "13:00" } })
+    expect(applyOrgEdit(cfg, { op: "set-schedule", member: "agent:lead", start: "07:00", end: "15:00", days: ["mon", "tue", "wed", "thu", "fri", "sat"] }))
+      .toBe("Lead works Monday to Saturday, 07:00 to 15:00")
+    // The edited chart still loads.
+    expect(org(cfg).get("pm")?.schedule.start).toBe("10:00")
+  })
+
+  it("clears working hours back to 09:00 to 17:00, Monday to Friday", () => {
+    const cfg = base()
+    expect(applyOrgEdit(cfg, { op: "set-schedule", member: "agent:pm", start: "", end: " ", days: [] })).toBe("PM works Monday to Friday, 09:00 to 17:00")
+    expect(cfg.business.orgChart.pm.schedule).toEqual({ start: "09:00", end: "17:00", days: ["mon", "tue", "wed", "thu", "fri"] })
+  })
+
+  it("refuses bad working hours, and hours for a person, changing nothing", () => {
+    const cfg = base()
+    applyOrgEdit(cfg, { op: "add-member", member: "person:kim" })
+    const before = structuredClone(cfg)
+    expect(() => applyOrgEdit(cfg, { op: "set-schedule", member: "agent:pm", start: "9am" })).toThrow('The start time "9am" is not a time. Write it as HH:MM')
+    expect(() => applyOrgEdit(cfg, { op: "set-schedule", member: "agent:pm", end: "24:00" })).toThrow('The end time "24:00" is not a time.')
+    expect(() => applyOrgEdit(cfg, { op: "set-schedule", member: "agent:pm", start: "17:00", end: "09:00" })).toThrow("The end time (09:00) must be after the start time (17:00).")
+    expect(() => applyOrgEdit(cfg, { op: "set-schedule", member: "agent:pm", days: ["funday"] })).toThrow('"funday" is not a day.')
+    expect(() => applyOrgEdit(cfg, { op: "set-schedule", member: "agent:pm", days: "mon" as any })).toThrow("Pick the working days")
+    expect(() => applyOrgEdit(cfg, { op: "set-schedule", member: "person:kim", start: "09:00" })).toThrow("Working hours are for agents: Kim is a person.")
+    expect(() => applyOrgEdit(cfg, { op: "set-schedule", member: "agent:dev" })).toThrow("agent:dev is not in the org chart.")
+    expect(cfg).toEqual(before)
+  })
+
   it("lets an edit through on a chart that was already broken, if it adds no new problem", () => {
     const cfg = base()
     cfg.business.relations = [{ from: "pm", to: "person:gone", type: "dotted-line" }]
@@ -283,6 +317,18 @@ describe("POST /api/admin/org/chart", () => {
     const plain = await call("POST", "/api/admin/agents", NEW)
     expect(plain).toMatchObject({ status: 200, json: { summary: 'added agent "ops"' } })
     expect(saved().business).toEqual(base().business)
+  })
+
+  it("saves working hours for the owner with a backup, and answers 403 to anyone else (#1715)", async () => {
+    const hours = { op: "set-schedule", member: "agent:pm", start: "10:00", end: "16:00", days: ["tue", "thu"] }
+    expect(await call("POST", "/api/admin/org/chart", hours, false)).toMatchObject({ status: 403, json: { error: "Only the owner can change the org chart." } })
+    expect((await call("POST", "/api/admin/org/chart", hours)).status).toBe(403)
+    expect(saved()).toEqual(base())
+    expect(backups()).toEqual([])
+    const r = await call("POST", "/api/admin/org/chart", hours, true)
+    expect(r).toMatchObject({ status: 200, json: { summary: "PM works Tuesday and Thursday, 10:00 to 16:00" } })
+    expect(JSON.parse(readFileSync(r.json.backupPath, "utf-8")).business.orgChart.pm.schedule).toEqual(schedule)
+    expect(saved().business.orgChart.pm.schedule).toEqual({ start: "10:00", end: "16:00", days: ["tue", "thu"] })
   })
 
   it("is the owner's only: anyone else sees the chart and cannot change it", async () => {

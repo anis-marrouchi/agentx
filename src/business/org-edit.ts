@@ -25,6 +25,8 @@ export interface OrgSetupMember {
   role?: string
   /** That role's title. */
   title?: string
+  /** An agent's working hours (#1715): orgChart.<id>.schedule. */
+  schedule?: { start: string; end: string; days: string[] }
 }
 
 /** The chart as the setup page shows it: who is in it, and every line. */
@@ -47,9 +49,41 @@ export type OrgEdit =
   | { op: "remove-member"; member: string }
   | { op: "add-relation"; from: string; type: string; to: string }
   | { op: "remove-relation"; from: string; type: string; to: string }
+  | { op: "set-schedule"; member: string; start?: string; end?: string; days?: string[] }
 
 const ROLE_MAX = 80
 const DEFAULT_SCHEDULE = { days: ["mon", "tue", "wed", "thu", "fri"], start: "09:00", end: "17:00" }
+const WEEK = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+const DAY_NAME: Record<string, string> = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" }
+
+/** The working hours `edit` asks for (#1715). An empty field goes back to
+ *  the default, as `agentx business orgchart add` does: 09:00, 17:00,
+ *  Monday to Friday. Throws a plain sentence for a bad time or day. */
+function cleanSchedule(edit: { start?: unknown; end?: unknown; days?: unknown }): { start: string; end: string; days: string[] } {
+  const time = (v: unknown, label: string, fallback: string) => {
+    const t = String(v ?? "").trim()
+    if (!t) return fallback
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new Error(`The ${label} time "${t}" is not a time. Write it as HH:MM, for example 09:00.`)
+    return t
+  }
+  const start = time(edit.start, "start", DEFAULT_SCHEDULE.start)
+  const end = time(edit.end, "end", DEFAULT_SCHEDULE.end)
+  if (end <= start) throw new Error(`The end time (${end}) must be after the start time (${start}).`)
+  if (edit.days != null && !Array.isArray(edit.days)) throw new Error("Pick the working days from Monday to Sunday.")
+  const asked = ((edit.days as unknown[]) ?? []).map((d) => String(d).trim().toLowerCase())
+  const bad = asked.find((d) => !WEEK.includes(d))
+  if (bad) throw new Error(`"${bad}" is not a day. Use mon, tue, wed, thu, fri, sat or sun.`)
+  const days = asked.length ? WEEK.filter((d) => asked.includes(d)) : [...DEFAULT_SCHEDULE.days]
+  return { start, end, days }
+}
+
+/** "Monday to Friday", "Monday, Wednesday and Friday". */
+function daysText(days: string[]): string {
+  const i = WEEK.indexOf(days[0])
+  if (days.length > 2 && days.every((d, n) => WEEK.indexOf(d) === i + n)) return `${DAY_NAME[days[0]]} to ${DAY_NAME[days[days.length - 1]]}`
+  const names = days.map((d) => DAY_NAME[d])
+  return names.length < 2 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1]
+}
 
 export const RELATION_LABEL: Record<RelationType, string> = {
   "reports-to": "reports to",
@@ -88,15 +122,18 @@ export function readOrgSetup(cfg: any): OrgSetup {
   const agents = knownAgents(cfg)
   const people = knownPeople(cfg)
   const relations = orgRelations(b)
-  const member = (kind: OrgMemberKind, id: string, role: string | undefined): OrgSetupMember => ({
+  const member = (kind: OrgMemberKind, id: string, role: string | undefined, sch?: any): OrgSetupMember => ({
     ref: `${kind}:${id}`,
     kind,
     id,
     name: (kind === "agent" ? agents.get(id) : people.get(id)) ?? id,
     ...(role ? { role, title: String(roles[role]?.title || role) } : {}),
+    ...(sch && typeof sch === "object"
+      ? { schedule: { start: String(sch.start ?? ""), end: String(sch.end ?? ""), days: Array.isArray(sch.days) ? sch.days.map(String) : [...DEFAULT_SCHEDULE.days] } }
+      : {}),
   })
   const members = [
-    ...Object.entries(b.orgChart ?? {}).map(([id, e]: [string, any]) => member("agent", id, e?.role)),
+    ...Object.entries(b.orgChart ?? {}).map(([id, e]: [string, any]) => member("agent", id, e?.role, e?.schedule)),
     ...Object.entries(b.orgPeople ?? {}).map(([id, p]: [string, any]) => member("person", id, p?.role)),
   ]
   const seen = new Set(members.map((m) => m.ref))
@@ -288,6 +325,17 @@ export function applyOrgEdit(cfg: any, edit: OrgEdit): string {
         throw new Error("That line is not in the org chart any more. Reload the page.")
       }
       summary = `${name(r.from)} no longer ${RELATION_LABEL[r.type as RelationType] ?? r.type} ${name(r.to)}`
+      break
+    }
+    case "set-schedule": {
+      const m = byRef.get(memberKey(String(edit.member ?? "")))
+      if (!m) throw new Error(`${edit.member} is not in the org chart.`)
+      if (m.kind !== "agent") throw new Error(`Working hours are for agents: ${m.name} is a person.`)
+      const sch = cleanSchedule(edit)
+      const entry = b.orgChart[m.id]
+      // A lunch break set from the CLI stays.
+      entry.schedule = { ...(entry.schedule ?? {}), ...sch }
+      summary = `${m.name} works ${daysText(sch.days)}, ${sch.start} to ${sch.end}`
       break
     }
     default:

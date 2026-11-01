@@ -2,6 +2,7 @@
 //
 // The owner adds agents and people to the org chart, sets each one's role,
 // and adds or removes typed relations: reports to, dotted line, acts for.
+// Each agent's working hours (start, end, days) save with Save hours (#1715).
 // It reads GET /api/admin/org (its `setup`, `choices` and `canEdit`) and
 // writes one change at a time with POST /api/admin/org/chart, which checks
 // the change and refuses it with a plain sentence. Anyone else gets no
@@ -14,7 +15,7 @@
 // Shipped to the browser through injectFns, so each function is
 // self-contained.
 
-interface SetupMember { ref: string; kind: "agent" | "person"; id: string; name: string; title?: string }
+interface SetupMember { ref: string; kind: "agent" | "person"; id: string; name: string; title?: string; schedule?: { start: string; end: string; days: string[] } }
 interface SetupRelation { from: string; to: string; type: string }
 export interface OrgSetupReply {
   exists?: boolean
@@ -22,7 +23,7 @@ export interface OrgSetupReply {
   setup?: { members: SetupMember[]; relations: SetupRelation[] }
   choices?: { agents: Array<{ ref: string; name: string }>; people: Array<{ ref: string; name: string }>; roles: Array<{ key: string; title: string }>; types: string[] }
 }
-export interface OrgChange { op: string; member?: string; role?: string; from?: string; to?: string; type?: string }
+export interface OrgChange { op: string; member?: string; role?: string; from?: string; to?: string; type?: string; start?: string; end?: string; days?: string[] }
 export interface OrgConfirm { text: string; steps: OrgChange[]; undo: OrgChange[] }
 
 /** The confirm step for a change that moves or removes a line: one line
@@ -102,13 +103,26 @@ export function orgEditHtml(org: OrgSetupReply | null, msg: { text: string; bad:
     '<button type="button" class="ax-btn" data-oe="add-member"' + (fa || fp ? "" : " disabled") + ">Add</button></div>" +
     '<datalist id="oe-roles">' + c.roles.map((r) => opt(r.title, r.key)).join("") + "</datalist>"
 
+  // An agent's working hours (#1715): start, end and days, saved with Save hours.
+  const WEEK: Array<[string, string, string]> = [["mon", "Mon", "Monday"], ["tue", "Tue", "Tuesday"], ["wed", "Wed", "Wednesday"], ["thu", "Thu", "Thursday"], ["fri", "Fri", "Friday"], ["sat", "Sat", "Saturday"], ["sun", "Sun", "Sunday"]]
+  const hours = (m: SetupMember, i: number) => {
+    if (m.kind !== "agent") return ""
+    const s = m.schedule || { start: "", end: "", days: [] }
+    return '<fieldset class="oe-hours"><legend class="org-kind">Working hours of ' + esc(m.name) + "</legend>" +
+      '<label for="oe-start-' + i + '">Start <input type="time" id="oe-start-' + i + '" value="' + esc(s.start) + '" aria-label="Start time of ' + esc(m.name) + '"></label>' +
+      '<label for="oe-end-' + i + '">End <input type="time" id="oe-end-' + i + '" value="' + esc(s.end) + '" aria-label="End time of ' + esc(m.name) + '"></label>' +
+      '<span class="oe-days" role="group" aria-label="Working days of ' + esc(m.name) + '">' + WEEK.map((d) =>
+        '<label class="oe-day"><input type="checkbox" name="oe-days-' + i + '" value="' + d[0] + '"' + (s.days.indexOf(d[0]) >= 0 ? " checked" : "") + ' aria-label="' + d[2] + '">' + d[1] + "</label>").join("") + "</span>" +
+      '<button type="button" class="ax-btn" data-oe="set-schedule" data-oe-i="' + i + '" data-oe-member="' + esc(m.ref) + '">Save hours</button></fieldset>'
+  }
+
   const rows = members.length ? '<ul class="oe-rows">' + members.map((m, i) =>
     '<li class="oe-row"><span class="oe-who"><b>' + esc(m.name) + '</b><span class="org-kind">' + (m.kind === "person" ? "Person" : "Agent") + "</span></span>" +
       '<label class="oe-role" for="oe-role-' + i + '"><span class="org-kind">Role</span><input id="oe-role-' + i + '" list="oe-roles" maxlength="80" value="' + esc(m.title || "") + '" aria-label="Role of ' + esc(m.name) + '"></label>' +
       '<span class="oe-acts"><button type="button" class="ax-btn" data-oe="set-role" data-oe-i="' + i + '" data-oe-member="' + esc(m.ref) + '">Save role</button>' +
       '<button type="button" class="ax-btn" data-oe="remove-member" data-oe-member="' + esc(m.ref) + '" aria-label="Remove ' + esc(m.name) + '">Remove</button>' +
       // The Hub's new-agent form, with this member as the boss (#1678). "/hub" is HUB_PATH, written out: this function ships alone.
-      '<a class="ax-btn" href="/hub#page=settings&amp;section=agents&amp;under=' + encodeURIComponent(m.ref) + '" aria-label="Add an agent who reports to ' + esc(m.name) + '">Add agent here</a></span></li>',
+      '<a class="ax-btn" href="/hub#page=settings&amp;section=agents&amp;under=' + encodeURIComponent(m.ref) + '" aria-label="Add an agent who reports to ' + esc(m.name) + '">Add agent here</a></span>' + hours(m, i) + "</li>",
   ).join("") + "</ul>" : '<p class="org-quiet">No one in the org chart yet. Add a member above.</p>'
 
   const rels = org.setup.relations
@@ -131,7 +145,8 @@ export function orgEditHtml(org: OrgSetupReply | null, msg: { text: string; bad:
     '<h2 class="org-h2">Relations <span class="org-kind">' + rels.length + "</span></h2>" + lines + addRel +
     '<dl class="oe-legend"><dt>Reports to</dt><dd>The line manager, one at most. Work an agent cannot finish goes up this line.</dd>' +
       "<dt>Dotted line to</dt><dd>A second manager for one topic or project.</dd>" +
-      "<dt>Acts for</dt><dd>An agent works on behalf of a person.</dd></dl>"
+      "<dt>Acts for</dt><dd>An agent works on behalf of a person.</dd>" +
+      "<dt>Working hours</dt><dd>When an agent is on the clock. An empty start or end, or no day ticked, goes back to 09:00 to 17:00, Monday to Friday.</dd></dl>"
 }
 
 /** What a page gives the editor: the org it shows, how a change is sent,
@@ -201,6 +216,11 @@ export function orgEditor(host: OrgEditorHost) {
       } else if (op === "cancel") cancel()
       else if (op === "add-member") { if (field("oe-add-member")) save([{ op, member: field("oe-add-member"), role: field("oe-add-role") }], [], b) }
       else if (op === "set-role") save([{ op, member: at("member"), role: field("oe-role-" + at("i")) }], [], b)
+      else if (op === "set-schedule") {
+        const days: string[] = []
+        document.querySelectorAll('input[name="oe-days-' + at("i") + '"]').forEach((el) => { if ((el as HTMLInputElement).checked) days.push((el as HTMLInputElement).value) })
+        save([{ op, member: at("member"), start: field("oe-start-" + at("i")), end: field("oe-end-" + at("i")), days }], [], b)
+      }
       else if (op === "add-relation") ask({ op, from: field("oe-rel-from"), type: field("oe-rel-type"), to: field("oe-rel-to") }, b)
       else if (op === "remove-member") ask({ op, member: at("member") }, b)
       else if (op === "remove-relation") ask({ op, from: at("from"), type: at("type"), to: at("to") }, b)
@@ -229,6 +249,12 @@ export const ORG_EDIT_CSS = `
 .oe-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; flex: 1 1 160px; min-width: 0; }
 .oe-role { flex: 0 1 200px; }
 .oe-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.oe-hours { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.oe-hours legend { padding: 0; margin: 0 0 2px; }
+.oe-hours > label { display: flex; flex-direction: column; gap: 2px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.oe-days { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 5px 0; }
+.oe-day { display: inline-flex; align-items: center; gap: 4px; font-size: var(--ax-fs-xs); color: var(--ax-text); }
+.org-edit .oe-day input { padding: 0; }
 .oe-legend { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 16px 0 0; padding: 10px 12px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); }
 .oe-legend dt { font-weight: 600; }
 .oe-legend dd { margin: 0; color: var(--ax-text-2); }
