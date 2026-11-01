@@ -63,7 +63,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     <ul class="org-legend" aria-label="Legend">
       <li><span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>plain card, with its status</li>
       <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, warm fill</li>
-      <li id="org-legend-remote" hidden><span class="org-tag is-agent org-legend-remote">${ORG_AGENT_ICON}Agent</span>dashed: on another node, shown not routed; grey when that node is down</li>
+      <li id="org-legend-remote" hidden><span class="org-tag is-agent org-legend-remote">${ORG_AGENT_ICON}Agent</span>dashed: on another node, shown not routed; grey when that node is down or not a peer</li>
       <li id="org-legend-dept" hidden><span class="org-legend-dept">Department</span>a dashed box round its members</li>
     </ul>
     <div id="org-depts" class="org-depts" hidden></div>

@@ -140,6 +140,8 @@ When you retire a node and take it out of `mesh.peers`, the chart may still name
 
 1. **Terminal:** remove the node from `mesh.peers` in `agentx.json`, then run `agentx daemon restart`. The daemon log has one line naming the node, for example `[business] org names agents on old-server, not in mesh.peers: shown as not a peer, never sent work`.
 2. **Browser:** on the Hub, select **Org**. Each agent on that node has a grey card with the chip **not a peer: old-server**. On `/org` the card says **On old-server, not a peer**.
+
+   ![The /org chart: the agent on old-server has a grey dashed card that says "On old-server, not a peer"; the rest of the chart is as usual](/screenshots/org/not-a-peer.png)
 3. **Terminal:** run `agentx business relation list`. A dim line under the relations says **not a peer in mesh.peers (shown, never sent work): old-server**. It is not a problem, so other edits to the chart are still saved.
 4. **Terminal:** when you are ready, take the agent out of the chart. Remove each relation that names it, for example `agentx business relation remove agent:old-server/helper reports-to person:sam`, and take it out of its department in `agentx.json`. On `/org`, **Edit org** can remove its lines too.
 
