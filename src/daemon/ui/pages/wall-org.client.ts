@@ -88,7 +88,8 @@ export const WALL_ORG_SCRIPT = String.raw`
     var dept = at && b.department ? orgDept(b.department) : null;
     var chips = (head ? '<span class="wog__chip is-lead">Head</span>' : '') + (dept ? '<span class="wog__chip is-dept">' + esc(dept.name) + '</span>' : '') +
       actsFor.map(function (e) { return '<span class="wog__chip is-acts">acts for ' + esc(orgName(e.to)) + '</span>'; }).join('') +
-      dotted.map(function (e) { return '<span class="wog__chip is-dotted' + (ORG.dotted ? '' : ' is-quiet') + '">dotted line to ' + esc(orgName(e.to)) + '</span>'; }).join('');
+      dotted.map(function (e) { return '<span class="wog__chip is-dotted' + (ORG.dotted ? '' : ' is-quiet') + '">dotted line to ' + esc(orgName(e.to)) + '</span>'; }).join('') +
+      (b.worksWith || []).map(function (w) { return '<span class="wog__chip is-with">works with ' + esc(w.name) + ' (' + esc(w.role) + ')</span>'; }).join('');
     var fold = at && reports ? '<button type="button" class="wog__fold" data-org-fold="' + esc(b.key) + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
       (folded ? 'Show ' + orgUnder(d, b.key) + ' under ' : 'Hide ' + reports + (reports === 1 ? ' report' : ' reports')) + '</button>' : '';
     var place = !at ? '' : (at.band != null ? ' data-org-band="' + at.band + '"' : '') +

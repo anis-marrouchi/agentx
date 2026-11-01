@@ -83,6 +83,8 @@ The `--reports-to` of `agentx business orgchart add` is a `reports-to` relation,
 6. **Browser:** on the Hub, select **Org**, then **Refresh**. A person sits in the chart with the agents that report to them under them. A **dotted-line** shows as **dotted line to** *name* on the card, and as a dashed arrow with **Show dotted lines**. An **acts-for** shows as **acts for** *name* on the agent's card.
 7. **Browser:** on the `/org` page, a person's card has a **Person** tag, a round shape with a coloured left edge, and no Pause button. An agent's card has an **Agent** tag. A legend above the chart shows both; the agents that report to that person sit under it. Under an agent's job, its card lists **Dotted line to …** and **Acts for …**.
 
+Only your own people get a card: a person whose role in `people` is `owner` or `member`. A `client` or `guest`, someone from another organisation or a supplier, never gets a card, even when a relation names them. The relation shows as a line on the other card instead, for example **works with Zahra (guest)**, with no arrow.
+
 The relations are saved under `business.relations` in `agentx.json`; see the [configuration reference](../reference/config-operations.md#business).
 
 ## Group members into a department
@@ -100,7 +102,7 @@ A **department** puts members of the chart in one named group with a head, for e
 2. **Browser:** on the Hub, select **Org**, then **Refresh**. The page opens on **Departments**: one dashed box per department with its name, the head's card on top marked **Head**, and the members' cards in a grid under it. Everyone in no department is in a last box, **Not in a department**. On a phone the boxes stack. The `/org` page opens the same way.
 3. **Browser:** select **Chart** for the reporting chart. There the department's members sit side by side in one dashed band, titled **Engineering · head** *name*, and each card has an **Engineering** chip. On the `/org` page the members sit in one dashed box under their boss.
 
-A department that names someone unknown, or a member in two departments, shows above the chart as **Problem in the org chart**. The daemon still starts.
+A department that names someone unknown, a member in two departments, or a client or guest as head or member, shows above the chart as **Problem in the org chart**, for example "Department Engineering cannot list Zahra: Zahra is a guest, and only owners and members of the organisation can be in a department". The daemon still starts.
 
 ## What each card shows on the `/org` page
 
@@ -137,7 +139,7 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 
 ## Check it worked
 
-1. **Browser:** on the Hub, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each person a relation names, is a card one row under its boss, joined to it by a solid line. On `/org`, each agent is a card under its boss.
+1. **Browser:** on the Hub, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each owner or member a relation names, is a card one row under its boss, joined to it by a solid line. On `/org`, each agent is a card under its boss.
 2. Click **Pause** on a card. It says **Paused by the owner**, and a message to that agent is answered with "is paused by the owner".
 3. Click **Resume**. The card says **Idle** again.
 4. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.

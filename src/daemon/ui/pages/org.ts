@@ -194,11 +194,13 @@ export const ORG_PEOPLE_JS = `
     var rels = d.relations || [], names = {}, nodes = {};
     (function index(list) { (list || []).forEach(function (n) { nodes['agent:' + n.id] = n; names['agent:' + n.id] = n.name; index(n.reports); }); })(d.roots);
     (d.outside || []).forEach(function (n) { names['agent:' + n.id] = n.name; });
-    var named = {};
+    var named = {}, outsiders = {};
     rels.forEach(function (r) { named[r.from] = true; named[r.to] = true; });
     (d.people || []).forEach(function (p) {
       var key = 'person:' + p.id;
       names[key] = p.name;
+      // Only personnel get a card; a client or guest is a line on the other card.
+      if (p.outsider) { outsiders[key] = p.name + ' (' + p.outsider + ')'; return; }
       if (named[key] || p.placed) nodes[key] = { kind: 'person', id: p.id, name: p.name, title: p.title, reports: [] };
     });
     // Departments (#1681): their members and head get a card, and a member its department.
@@ -206,13 +208,20 @@ export const ORG_PEOPLE_JS = `
       (dep.head ? [dep.head] : []).concat(dep.members).forEach(function (key) {
         var m = /^person:(.*)$/.exec(key);
         var p = m && (d.people || []).find(function (x) { return x.id === m[1]; });
-        if (p && !nodes[key]) nodes[key] = { kind: 'person', id: p.id, name: p.name, title: p.title, reports: [] };
+        if (p && !p.outsider && !nodes[key]) nodes[key] ={ kind: 'person', id: p.id, name: p.name, title: p.title, reports: [] };
       });
       dep.members.forEach(function (key) { if (nodes[key] && !nodes[key].department) nodes[key].department = dep.id; });
     });
     rels.forEach(function (r) {
+      if (r.type === 'acts-for') return;
+      [[r.from, r.to], [r.to, r.from]].forEach(function (ends) {
+        var n = nodes[ends[0]], w = outsiders[ends[1]];
+        if (n && w && (n.worksWith = n.worksWith || []).indexOf(w) < 0) n.worksWith.push(w);
+      });
+    });
+    rels.forEach(function (r) {
       var n = nodes[r.from];
-      if (!n || r.type === 'reports-to') return;
+      if (!n || r.type === 'reports-to' || (r.type === 'dotted-line' && outsiders[r.to])) return;
       var k = r.type === 'dotted-line' ? 'dottedLine' : 'actsFor';
       (n[k] = n[k] || []).push(r.to);
     });
@@ -284,7 +293,8 @@ const ORG_SCRIPT = `
   function nameOf(ref) { return names[ref] || String(ref).replace(/^[a-z]+:/, ''); }
   function links(n) {
     var rows = (n.dottedLine || []).map(function (r) { return 'Dotted line to ' + nameOf(r); })
-      .concat((n.actsFor || []).map(function (r) { return 'Acts for ' + nameOf(r); }));
+      .concat((n.actsFor || []).map(function (r) { return 'Acts for ' + nameOf(r); }))
+      .concat((n.worksWith || []).map(function (w) { return 'Works with ' + w; }));
     return rows.length ? '<div class="org-links">' + rows.map(function (t) { return '<div>' + esc(t) + '</div>'; }).join('') + '</div>' : '';
   }
   var depts = {};   // department id -> department (#1681)
@@ -351,6 +361,7 @@ const ORG_SCRIPT = `
       var deptsEl = document.getElementById('org-depts');
       deptsEl.hidden = !deptView;
       tree.hidden = deptView;
+      if (!deptView) showHead();
       if (deptView) {
         var byKey = org.nodes;
         d.outside.forEach(function (n) { byKey['agent:' + n.id] = byKey['agent:' + n.id] || n; });
@@ -364,6 +375,20 @@ const ORG_SCRIPT = `
       if (!d.live) { say('The daemon did not answer, so working or idle is unknown. Start it with: agentx daemon start', true); warned = true; }
       else if (warned) { say(''); warned = false; }
     } catch (e) { say('Could not load the org chart: ' + e.message, true); }
+  }
+  // A chart wider than the page centres its root across the full width, so
+  // the head lands off screen. On the first paint of the Chart view, scroll the
+  // head (a person root, else the first root) into the middle; later repaints
+  // keep the reader's scroll.
+  var headShown = false;
+  function showHead() {
+    if (headShown || tree.scrollWidth <= tree.clientWidth) return;
+    var top = tree.querySelectorAll(':scope > ul > li > .org-card');
+    if (!top.length) return;
+    var head = Array.prototype.filter.call(top, function (c) { return c.classList.contains('is-person'); })[0] || top[0];
+    var box = tree.getBoundingClientRect(), at = head.getBoundingClientRect();
+    tree.scrollLeft += at.left + at.width / 2 - (box.left + box.width / 2);
+    headShown = true;
   }
   var view = 'dept';   // 'dept' or 'chart' (#1681)
   document.addEventListener('click', function (ev) {

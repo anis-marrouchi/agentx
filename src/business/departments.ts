@@ -31,11 +31,16 @@ export function orgDepartments(business: {
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
 }
 
-/** The first thing wrong with `departments`, or undefined when they hold. */
+/** A person who is not personnel: role `client` or `guest` (Anis 11-01). */
+export interface Outsider { name: string; role: "client" | "guest" }
+
+/** The first thing wrong with `departments`, or undefined when they hold.
+ *  `outsiders` (person id → name and role) may not head or join one. */
 export function departmentsProblem(
   departments: OrgDepartment[],
   agents: ReadonlySet<string>,
   people: ReadonlySet<string>,
+  outsiders: ReadonlyMap<string, Outsider> = new Map(),
 ): string | undefined {
   const unknown = (key: string) => {
     const m = parseMember(key)
@@ -45,11 +50,20 @@ export function departmentsProblem(
     const m = parseMember(key)
     return m.kind === "agent" ? `"${m.id}", which is not an agent in business.orgChart` : `"${m.id}", which is not a person in people`
   }
+  const outsider = (key: string) => {
+    const m = parseMember(key)
+    return m.kind === "person" ? outsiders.get(m.id) : undefined
+  }
+  const notStaff = (o: Outsider) => `${o.name} is a ${o.role}, and only owners and members of the organisation can be in a department`
   const inDept = new Map<string, string>()
   for (const d of departments) {
     if (d.head && unknown(d.head)) return `Department ${d.name} is headed by ${what(d.head)}`
+    const head = d.head ? outsider(d.head) : undefined
+    if (head) return `Department ${d.name} cannot be headed by ${head.name}: ${notStaff(head)}`
     for (const m of d.members) {
       if (unknown(m)) return `Department ${d.name} lists ${what(m)}`
+      const o = outsider(m)
+      if (o) return `Department ${d.name} cannot list ${o.name}: ${notStaff(o)}`
       const had = inDept.get(m)
       if (had) return `"${m}" is in both department ${had} and ${d.name}; a member is in one department`
       inDept.set(m, d.name)
