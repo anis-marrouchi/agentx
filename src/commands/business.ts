@@ -3,7 +3,7 @@ import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import { loadDaemonConfig } from "@/daemon/config"
 import { RELATION_TYPES, configRelationsProblem, memberKey, memberLabel, orgRelations, parseMember, type RelationType } from "@/business/relations"
-import { leadKey, orgProjects, projectsProblem } from "@/business/org-projects"
+import { leadKey, projectWriteProblem } from "@/business/org-projects"
 
 // --- agentx business — manage the business layer config ---
 //
@@ -242,12 +242,11 @@ function idList(v: string | undefined): string[] {
   return String(v || "").split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
 }
 
-/** Refuse a write that would give project `id` an unknown lead or team
- *  member, or a lead that is not a person (#1687). The PM is checked as
- *  before, by the Organization at load. */
-function checkProject(cfg: any, id: string): void {
-  const known = [new Set(Object.keys(cfg.business?.orgChart || {})), new Set<string>((cfg.people || []).map((p: any) => String(p.id)))] as const
-  const problem = projectsProblem(orgProjects(cfg.business).filter((p) => p.id === id), ...known)
+/** Refuse a write that gives project `id` an unknown lead or team member,
+ *  or a lead that is not a person (#1687). Only what the write sets is
+ *  checked. The PM is checked as before, by the Organization at load. */
+function checkProject(cfg: any, id: string, write: { lead?: string; team?: string[] }): void {
+  const problem = projectWriteProblem(cfg, id, write)
   if (problem) throw new Error(problem)
 }
 
@@ -286,7 +285,7 @@ project
   .option("--client <name>", "client this project belongs to (drives activity-graph attribution)")
   .option("--name <name>", "display name on the Org page (default: the id)")
   .option("--lead <personId>", "the person who leads it, person:<id> (a bare id is read as a person)")
-  .option("--team <members>", "who works on it, comma separated: agent:<id>, person:<id> or a bare agent id; replaces the team")
+  .option("--team <members>", "who works on it, comma separated: agent:<id> of an org-chart agent, person:<id> or a bare agent id; replaces the team, \"\" clears it")
   .action((id: string, opts) => {
     mutate((cfg) => {
       cfg.business = cfg.business || {}
@@ -306,7 +305,7 @@ project
       // --team "" clears the team.
       const saved = cfg.business.projects[idx >= 0 ? idx : cfg.business.projects.length - 1]
       if (team && !team.length) delete saved.team
-      checkProject(cfg, id)
+      checkProject(cfg, id, { lead: opts.lead, team })
       return idx >= 0 ? `project "${id}" updated` : `project "${id}" added`
     })
   })
@@ -331,7 +330,7 @@ const team = project
 
 team
   .command("add <id> <member>")
-  .description("put a member on the project's team: agent:<id>, person:<id> or a bare agent id")
+  .description("put a member on the project's team: agent:<id> of an org-chart agent, person:<id> or a bare agent id")
   .action((id: string, member: string) => {
     mutate((cfg) => {
       const p = (cfg.business?.projects || []).find((x: any) => x.id === id)
@@ -339,8 +338,8 @@ team
       const key = memberKey(member)
       const list: string[] = (p.team || []).map(memberKey)
       if (list.includes(key)) return `${key} is already on project "${id}"`
+      checkProject(cfg, id, { team: [key] })
       p.team = [...(p.team || []), key]
-      checkProject(cfg, id)
       return `${key} added to project "${id}"`
     })
   })

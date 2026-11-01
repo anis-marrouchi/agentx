@@ -741,7 +741,7 @@ const ADMIN_PAGE_BODY = `
       <div id="business-project-list"></div>
       <details class="add-form" style="margin-top:10px">
         <summary class="primary">+ Add or update project</summary>
-        <p class="hint" style="margin:8px 0 0">To change a project, press its <b>Edit</b> button: the form fills with what is saved. A blank name, lead or team clears it.</p>
+        <p class="hint" style="margin:8px 0 0">To change a project, press its <b>Edit</b> button: the form fills with what is saved. A blank field keeps what is saved; tick <b>Clear</b> to remove a name, lead or team.</p>
         <div style="margin-top:10px">
           <label>Project id<span class="hint">(<code>owner/repo</code> for GitLab/GitHub; stable string for internal projects)</span></label>
           <input id="bp-id" placeholder="globex/system" />
@@ -753,8 +753,13 @@ const ADMIN_PAGE_BODY = `
           <input id="bp-name" placeholder="Globex website" />
           <label>Lead <span class="hint">(the person who leads it: <code>person:&lt;id&gt;</code>; the PM stays the agent)</span></label>
           <input id="bp-lead" placeholder="person:sam" />
-          <label>Team <span class="hint">(who works on it, comma separated: <code>agent:&lt;id&gt;</code>, <code>person:&lt;id&gt;</code> or a bare agent id; blank clears it)</span></label>
+          <label>Team <span class="hint">(who works on it, comma separated: <code>agent:&lt;id&gt;</code> of an org-chart agent, <code>person:&lt;id&gt;</code> or a bare agent id; replaces the team)</span></label>
           <input id="bp-team" placeholder="agent:dev-globex, person:kim" />
+          <div style="display:flex;gap:14px;margin-top:8px;font-size:12px">Clear:
+            <label><input type="checkbox" id="bp-clear-name" /> name</label>
+            <label><input type="checkbox" id="bp-clear-lead" /> lead</label>
+            <label><input type="checkbox" id="bp-clear-team" /> team</label>
+          </div>
           <div class="actions"><button class="primary" onclick="upsertProject()">Save project</button><div id="bp-msg" class="msg"></div></div>
         </div>
       </details>
@@ -1758,9 +1763,12 @@ window.upsertProject = async function() {
   const name = $('bp-name').value.trim();
   const lead = $('bp-lead').value.trim();
   const team = $('bp-team').value.split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  // A blank field keeps what is saved; only a ticked Clear removes it.
+  const clear = ['name', 'lead', 'team'].filter(function(k){ return $('bp-clear-' + k).checked; });
   try {
-    await req('POST', '/api/admin/business/project', { id, pm, client, name, lead, team });
+    await req('POST', '/api/admin/business/project', { id, pm, client, name, lead, team, clear });
     ['bp-id', 'bp-pm', 'bp-client', 'bp-name', 'bp-lead', 'bp-team'].forEach(function(k){ $(k).value = ''; });
+    ['name', 'lead', 'team'].forEach(function(k){ $('bp-clear-' + k).checked = false; });
     showMsg($('bp-msg'), 'ok', 'Project saved');
     await load();
   } catch (e) { showMsg($('bp-msg'), 'err', e.message); }

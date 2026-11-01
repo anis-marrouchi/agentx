@@ -2980,9 +2980,9 @@ Add or update a project entry.
 | `--client <name>` | — | Client this project belongs to (drives activity-graph attribution). |
 | `--name <name>` | the id | Display name on the Org page. |
 | `--lead <personId>` | — | The person who leads it, `person:<id>`. A bare id is read as a person. |
-| `--team <members>` | — | Who works on it, comma separated: `agent:<id>`, `person:<id>` or a bare agent id. Replaces the team; `--team ""` clears it. |
+| `--team <members>` | — | Who works on it, comma separated: `agent:<id>` of an org-chart agent, `person:<id>` or a bare agent id. Replaces the team; `--team ""` clears it. |
 
-Refused, and nothing saved, when the lead or a team member is unknown.
+Refused, and nothing saved, when the lead or a team member you give is unknown. A member saved earlier and since removed does not block other changes; the Org page reports it.
 
 ### `agentx business project remove <id>`
 
@@ -2992,7 +2992,7 @@ No flags.
 
 ### `agentx business project team add <id> <member>`
 
-Put one member on the project's team: `agent:<id>`, `person:<id>` or a bare agent id. Refused when the member is unknown.
+Put one member on the project's team: `agent:<id>` of an org-chart agent, `person:<id>` or a bare agent id. Refused when the member is unknown.
 
 No flags.
 

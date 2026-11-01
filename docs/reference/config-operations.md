@@ -226,7 +226,7 @@ Each entry in `business.projects`:
 | `client` | string | — | Client the project belongs to. Defaults to the part of `id` before the first `/`. |
 | `name` | string | the `id` | Name shown on the Org page's Projects view. |
 | `lead` | string | — | The person who leads the project, `person:<id>`. A bare id is read as a person. Shown on the Org page only; `pm` stays the agent. |
-| `team` | list of strings | — | Who works on the project: `agent:<id>`, `person:<id>`, or a bare agent id. Shown on the Org page only; one member can be on several projects. |
+| `team` | list of strings | — | Who works on the project: `agent:<id>` of an agent in `business.orgChart`, `person:<id>`, or a bare agent id. Shown on the Org page only; one member can be on several projects. |
 
 Each entry in `business.contactMap` (the first match wins: `chatId`, then `username`, then `channel`):
 

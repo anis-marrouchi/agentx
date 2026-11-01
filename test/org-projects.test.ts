@@ -202,18 +202,34 @@ describe("agentx business project (#1687)", () => {
     return { status, json: JSON.parse(out) }
   }
 
-  it("the admin route upsertProject takes name, lead and team; a field left out is kept", async () => {
+  it("the admin route upsertProject takes name, lead and team; a field left out or blank is kept", async () => {
     expect((await call({ id: "acme/app", pm: "pm", name: "Acme app", lead: "sam", team: ["dev", "person:kim"] })).status).toBe(200)
-    expect(saved()[0]).toEqual({ id: "acme/app", pm: "pm", name: "Acme app", lead: "person:sam", team: ["agent:dev", "person:kim"] })
+    const full = { id: "acme/app", pm: "pm", name: "Acme app", lead: "person:sam", team: ["agent:dev", "person:kim"] }
+    expect(saved()[0]).toEqual(full)
     await call({ id: "acme/app", pm: "pm", client: "acme" })
-    expect(saved()[0]).toEqual({ id: "acme/app", pm: "pm", client: "acme", name: "Acme app", lead: "person:sam", team: ["agent:dev", "person:kim"] })
-    // Blank clears; a comma list works too.
-    await call({ id: "acme/app", name: "", lead: "", team: "dev" })
+    expect(saved()[0]).toEqual({ ...full, client: "acme" })
+    // What the /admin form sends without Edit: blanks keep what is saved.
+    await call({ id: "acme/app", pm: "pm", client: "", name: "", lead: "", team: [], clear: [] })
+    expect(saved()[0]).toEqual({ ...full, client: "acme" })
+    // Clear removes; a comma list works too.
+    await call({ id: "acme/app", team: "dev", clear: ["name", "lead"] })
     expect(saved()[0]).toEqual({ id: "acme/app", pm: "pm", client: "acme", team: ["agent:dev"] })
+    await call({ id: "acme/app", clear: ["team"] })
+    expect(saved()[0]).toEqual({ id: "acme/app", pm: "pm", client: "acme" })
+    await call({ id: "acme/app", team: "dev" })
     const bad = await call({ id: "acme/app", team: ["ghost"] })
     expect(bad.status).toBeGreaterThanOrEqual(400)
     expect(bad.json.error).toContain('"ghost", which is not an agent in business.orgChart')
     expect(saved()[0].team).toEqual(["agent:dev"])
+  })
+
+  it("a team member saved earlier and since gone does not block a PM change", async () => {
+    const cfg = JSON.parse(readFileSync(join(dir, "agentx.json"), "utf-8"))
+    cfg.business.projects[0].team = ["agent:gone"]
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify(cfg))
+    expect((await call({ id: "acme/app", pm: "pm" })).status).toBe(200)
+    await run("project", "team", "add", "acme/app", "dev")
+    expect(saved()[0]).toEqual({ id: "acme/app", pm: "pm", team: ["agent:gone", "agent:dev"] })
   })
 
   it("refuses an unknown member or lead, and changes nothing", async () => {

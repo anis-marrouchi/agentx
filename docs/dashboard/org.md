@@ -165,7 +165,7 @@ Each project can have three kinds of member:
    ```
 
 2. **Terminal:** to add or remove one team member later, run `agentx business project team add globex/site person:lee` or `agentx business project team remove globex/site person:lee`.
-3. **Browser:** or, in **Settings**, open **Business**, then **Projects**. Click **Edit** on the project, fill in **Name**, **Lead** and **Team**, then click **Save project**.
+3. **Browser:** or, in **Settings**, open **Business**, then **Projects**. Click **Edit** on the project, fill in **Name**, **Lead** and **Team**, then click **Save project**. A blank field keeps what is saved. To remove a name, lead or team, tick its **Clear** box before you save.
 4. **Browser:** on the Hub, select **Org**, then **Projects**. Each project is a dashed box with its client and name on top, the **Lead** and **PM** cards under them, then the team. On the `/org` page, click **Projects** next to **Chart**. The address ends with `?view=projects`, so you can bookmark it.
 
 Members who are on no project are listed at the end under **Not in a project**. A project with only a PM still shows, with **No team yet.** On a phone the boxes sit one under the other.

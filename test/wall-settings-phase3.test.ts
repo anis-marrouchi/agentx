@@ -160,6 +160,10 @@ describe("Hub Settings: a project's name, lead and team (#1687)", () => {
     fill(w, { "st-bp-id": "example/app", "st-bp-pm": "cx", "st-bp-client": "", "st-bp-name": "", "st-bp-lead": "", "st-bp-team": "" })
     await w.submit({ "data-st-form": "biz-proj" })
     expect(w.writes()[1].body).toEqual({ id: "example/app", pm: "cx", client: "" })
+    // A ticked Clear removes the lead and the team.
+    fill(w, { "st-bp-id": "example/app", "st-bp-pm": "", "st-bp-client": "", "st-bp-name": "", "st-bp-lead": "", "st-bp-team": "", "st-bp-clear-lead": true, "st-bp-clear-team": true })
+    await w.submit({ "data-st-form": "biz-proj" })
+    expect(w.writes()[2].body).toEqual({ id: "example/app", pm: "", client: "", clear: ["lead", "team"] })
   })
 })
 

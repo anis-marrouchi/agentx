@@ -68,7 +68,8 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
         '<div class="wsf__row">' + stChField('st-bp-pm', 'PM', '', 'pm-agent', '(agent id: drives the PM gate)') + stChField('st-bp-client', 'Client', '', 'example') + '</div>' +
         '<div class="wsf__row">' + stChField('st-bp-name', 'Name', '', 'Example app', '(shown on the Org page)') + stChField('st-bp-lead', 'Lead', '', 'person:sam', '(the person who leads it)') + '</div>' +
         stChField('st-bp-team', 'Team', '', 'agent:dev-agent, person:kim', '(comma separated; replaces the team)') +
-        '<p class="wsf__hint">Leave name, lead or team blank to keep what is saved.</p>' +
+        '<p class="wsf__hint">Leave a field blank to keep what is saved. Tick Clear to remove a name, lead or team.</p>' +
+        '<div class="wsf__row">' + ['name', 'lead', 'team'].map(function (k) { return '<label class="wsf__check"><input type="checkbox" id="st-bp-clear-' + k + '"> Clear ' + k + '</label>'; }).join('') + '</div>' +
         '<div class="wsf__foot"><button type="submit" class="ax-btn">Save project</button>' + stNoteHtml('biz-proj') + '</div></form></details></section>' +
       '<section class="wsc"><h3>Clients <small>' + clientRows.length + '</small></h3><p class="wsj__sub">A client exists as soon as a project or a contact names it. Set one up only to treat it differently.</p>' + stBizList(clientRows, 'No client yet: add a project or a contact mapping.') +
       '<details class="wsc"><summary><h3>Set up a client</h3></summary><form class="wsf" data-st-form="biz-client">' +
@@ -100,6 +101,8 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
       if (stVal('st-bp-name').trim()) proj.name = stVal('st-bp-name').trim();
       if (stVal('st-bp-lead').trim()) proj.lead = stVal('st-bp-lead').trim();
       if (team.length) proj.team = team;
+      var clear = ['name', 'lead', 'team'].filter(function (k) { var c = $('st-bp-clear-' + k); return c && c.checked; });
+      if (clear.length) proj.clear = clear;
       stSetSave('biz-proj', 'POST', 'business/project', proj, 'Project saved.', 'biz');
     } else if (kind === 'biz-client') {
       stSetSave('biz-client', 'POST', 'business/client', {

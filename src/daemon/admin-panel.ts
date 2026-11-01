@@ -19,7 +19,7 @@ import { getWhatsAppState } from "./whatsapp-state"
 import { emailAccountBlock, passwordEnvFor } from "@/channels/email/settings"
 import { holdAgent, holdsRoot, readHolds, releaseAgent } from "@/agents/holds"
 import { buildOrgView } from "@/business/org-view"
-import { leadKey, orgProjects, projectsProblem } from "@/business/org-projects"
+import { leadKey, projectWriteProblem } from "@/business/org-projects"
 import { applyOrgEdit, orgChoices, readOrgSetup } from "@/business/org-edit"
 
 // --- /admin panel: form-driven management for agents, channels, crons ---
@@ -1329,28 +1329,27 @@ async function upsertProject(body: any) {
   if (!id) throw new Error("project id required")
   const pm = body?.pm ? String(body.pm).trim() : ""
   const client = body?.client ? String(body.client).trim() : ""
-  // #1687: name, lead and team. A field left out keeps what is saved; an
-  // empty name, lead or team clears it.
-  const text = (k: string) => (k in (body || {}) ? String(body[k] ?? "").trim() : undefined)
-  const name = text("name")
-  const lead = text("lead")
-  const team = !body || !("team" in body) ? undefined
-    : [...new Set((Array.isArray(body.team) ? body.team : String(body.team ?? "").split(/[\s,]+/))
-      .map((x: any) => String(x).trim()).filter(Boolean).map(memberKey))] as string[]
+  // #1687: name, lead and team. A field left out or blank keeps what is
+  // saved; `clear` names the ones to remove, e.g. ["lead", "team"].
+  const name = body?.name ? String(body.name).trim() : ""
+  const lead = body?.lead ? String(body.lead).trim() : ""
+  const team = [...new Set((Array.isArray(body?.team) ? body.team : String(body?.team ?? "").split(/[\s,]+/))
+    .map((x: any) => String(x).trim()).filter(Boolean).map(memberKey))] as string[]
+  const clear = new Set((Array.isArray(body?.clear) ? body.clear : []).map(String))
   const { summary } = mutateAgentxConfig((cfg) => {
     cfg.business = cfg.business || {}
     cfg.business.projects = cfg.business.projects || []
     const idx = cfg.business.projects.findIndex((p: any) => p.id === id)
     const next: any = { ...(idx >= 0 ? cfg.business.projects[idx] : {}), id, ...(pm ? { pm } : {}), ...(client ? { client } : {}) }
-    if (name !== undefined) { if (name) next.name = name; else delete next.name }
-    if (lead !== undefined) { if (lead) next.lead = leadKey(lead); else delete next.lead }
-    if (team !== undefined) { if (team.length) next.team = team; else delete next.team }
+    for (const k of ["name", "lead", "team"]) if (clear.has(k)) delete next[k]
+    if (name) next.name = name
+    if (lead) next.lead = leadKey(lead)
+    if (team.length) next.team = team
+    // Refuse an unknown lead or team member this write sets (#1687).
+    const problem = projectWriteProblem(cfg, id, { lead, team })
+    if (problem) throw new Error(problem)
     if (idx >= 0) cfg.business.projects[idx] = next
     else cfg.business.projects.push(next)
-    // Refuse an unknown lead or team member now, for this project only (#1687).
-    const known = [new Set(Object.keys(cfg.business.orgChart || {})), new Set<string>((cfg.people || []).map((p: any) => String(p.id)))] as const
-    const problem = projectsProblem(orgProjects(cfg.business).filter((p) => p.id === id), ...known)
-    if (problem) throw new Error(problem)
     return idx >= 0 ? `project "${id}" updated` : `project "${id}" added`
   })
   return { summary }

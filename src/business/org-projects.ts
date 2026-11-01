@@ -50,6 +50,22 @@ export function orgProjects(business: { projects?: ProjectInput[] } | undefined)
     .sort((a, b) => a.client.localeCompare(b.client) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
 }
 
+/** What is wrong with the `lead` and `team` members one write sets on
+ *  project `id`, or undefined. Only what the write names is checked, so a
+ *  team member saved earlier and since gone does not block, say, a PM
+ *  change; the Org page still reports it. */
+export function projectWriteProblem(
+  cfg: { business?: { orgChart?: Record<string, unknown> }; people?: Array<{ id: unknown }> },
+  id: string,
+  write: { lead?: string; team?: string[] },
+): string | undefined {
+  if (!write.lead && !write.team?.length) return undefined
+  const agents = new Set(Object.keys(cfg.business?.orgChart || {}))
+  const people = new Set((cfg.people || []).map((p) => String(p.id)))
+  const p: OrgProject = { id, name: id, client: "", ...(write.lead ? { lead: leadKey(write.lead) } : {}), team: (write.team ?? []).map(memberKey) }
+  return projectsProblem([p], agents, people)
+}
+
 /** The first thing wrong with the projects' `lead` and `team`, or undefined.
  *  `pm` is not checked here: the Organization refuses an unknown PM as before. */
 export function projectsProblem(
