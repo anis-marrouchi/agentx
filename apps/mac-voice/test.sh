@@ -69,7 +69,7 @@ swiftc -O -o "$out/floor-tests" Sources/AgentXVoice/Floor.swift Tests/Floor/main
   -target arm64-apple-macosx14.0
 "$out/floor-tests"
 swiftc -O -o "$out/artifacts-web-tests" Sources/AgentXVoice/Artifacts.swift Sources/AgentXVoice/Markdown.swift \
-  Tests/ArtifactsWeb/main.swift -framework AppKit -framework WebKit -target arm64-apple-macosx14.0
+  Sources/AgentXVoice/CardWeb.swift Tests/ArtifactsWeb/main.swift -framework AppKit -framework WebKit -target arm64-apple-macosx14.0
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
 python3 Tests/ArtifactsWeb/serve.py "$port" Resources &
 server=$!

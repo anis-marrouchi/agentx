@@ -32,5 +32,18 @@ check(md.contains("<img class=\"md-img\" alt=\"Trend\" src=\"https://example.com
 check(md.contains("<a href=\"https://example.com/d\">docs</a>"), "a link stays a link")
 check(!md.contains("!<a") && !md.contains("href=\"https://example.com/t.png\""), "the picture is not also a link")
 
+// The card is same-origin with the daemon (#1680): only web and daemon-path
+// targets become links.
+let rel = Markdown.toHTML("[report](/app-files?agent=a&file=r.pdf)")
+check(rel.contains("<a href=\"/app-files?agent=a&amp;file=r.pdf\">report</a>"), "a daemon path is a link")
+for target in ["javascript:fetch('/x')", "JavaScript:alert(1)", "data:text/html,hi", "vbscript:x", "//example.com/x", "file:///etc/hosts"] {
+    let out = Markdown.toHTML("[open](\(target))")
+    check(!out.contains("<a"), "[open](\(target)) stays text")
+    check(out.contains("[open]("), "[open](\(target)) shows as written")
+}
+let quoted = Markdown.toHTML(#"[a](https://example.com/"onmouseover="x) and https://example.com/"onclick="y"#)
+check(quoted.contains("<a href=") && quoted.range(of: #"<a href="[^"]*"[^>]"#, options: .regularExpression) == nil,
+      "a quote cannot leave the href")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

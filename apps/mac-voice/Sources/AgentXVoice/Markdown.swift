@@ -112,9 +112,13 @@ enum Markdown {
         // A picture on the web, before links: `![alt](https://...)` is a
         // link with a `!` in front.
         s = replace(s, #"!\[([^\]"]*)\]\((https?://[^)\s"]+)\)"#, "<img class=\"md-img\" alt=\"$1\" src=\"$2\">")
-        s = replace(s, #"\[([^\]]+)\]\(([^)\s]+)\)"#, "<a href=\"$2\">$1</a>")
+        // Links only to the web or to a path on the daemon. The card is
+        // same-origin with the daemon, so `javascript:`, `data:` and the
+        // like stay text (#1680). No `"`, so a target cannot leave its
+        // attribute.
+        s = replace(s, #"\[([^\]]+)\]\(((?:https?://|/(?!/))[^)\s"]*)\)"#, "<a href=\"$2\">$1</a>")
         // Bare URLs, but not ones already inside an href.
-        s = replace(s, #"(?<!["=])\b(https?://[^\s<)]+)"#, "<a href=\"$1\">$1</a>")
+        s = replace(s, #"(?<!["=])\b(https?://[^\s<)"]+)"#, "<a href=\"$1\">$1</a>")
         return s
     }
 

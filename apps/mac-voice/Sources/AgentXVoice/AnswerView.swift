@@ -19,8 +19,9 @@ final class AnswerView: NSView {
     // code, tables. An NSTextView shows that as a mess of asterisks and
     // hashes, which defeats the answer's only purpose: being MORE readable
     // than the spoken answer, not less. Text in it is selectable, and it
-    // scrolls once the answer is taller than the pill lets it grow.
-    private let web = WKWebView()
+    // scrolls once the answer is taller than the pill lets it grow. The
+    // page runs no script of its own: it is same-origin with the daemon.
+    private let web = WKWebView(frame: .zero, configuration: CardWeb.configuration())
     private let links = NSStackView()
     private let thumb = NSImageView()
     private let actions = NSStackView()
