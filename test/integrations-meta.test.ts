@@ -3,7 +3,7 @@ import type { DaemonConfig, Integration } from "../src/daemon/config"
 import { BUILTIN_PROVIDERS, providerFor } from "../src/integrations/providers"
 import { META, META_GRAPH_VERSION, META_SCOPES, clearMetaPageTokens, pageIdFor } from "../src/integrations/providers/meta"
 import { buildAuthorizeRequest } from "../src/integrations/oauth"
-import { signIn, storeGrant } from "../src/integrations/connect"
+import { checkRedirectUri, signIn, storeGrant } from "../src/integrations/connect"
 import { integrationAccount, memoryKeyring } from "../src/integrations/keyring"
 import { clearTokenCache, resolveAccessToken } from "../src/integrations/resolve"
 import { buildReadUrl, readCatalog, runIntegrationRead } from "../src/integrations/read"
@@ -108,6 +108,32 @@ describe("meta connect", () => {
     })
     expect(env).toEqual({ META_HELPER_ACCESS_TOKEN: "LONG" })
     expect(saved.integration.metadata).toMatchObject({ oauthExpiresAt: NOW + 5_184_000_000, oauthScopes: "pages_show_list read_insights" })
+  })
+
+  it("warns and keeps the asked-for permissions when /me/permissions fails", async () => {
+    const { f } = fakeGraph((url) => {
+      if (url.searchParams.get("grant_type") === "fb_exchange_token") return { body: { access_token: "LONG", expires_in: 5_184_000 } }
+      if (url.pathname.endsWith("/oauth/access_token")) return { body: { access_token: "SHORT", expires_in: 3600 } }
+      return { status: 500, body: { error: { message: "temporarily unavailable" } } }
+    })
+    const warnings: string[] = []
+    const grant = await signIn({
+      agentId: "helper", spec: META, integration: integ(), clientId: "app-id", clientSecret: "app-secret",
+      redirectUri: "http://localhost:19876/callback", fetch: f, now: () => NOW, getCallback: async () => ({ code: "c" }),
+      warn: (m) => warnings.push(m),
+    })
+    expect(grant.scopes).toEqual(META_SCOPES)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatch(/Could not read the granted permissions/)
+    expect(warnings[0]).not.toContain("LONG")
+  })
+
+  it("accepts only https, or http on localhost, as --redirect-uri", () => {
+    expect(checkRedirectUri("https://example.com/cb")).toBe("https://example.com/cb")
+    expect(checkRedirectUri("http://localhost:8080/cb")).toBe("http://localhost:8080/cb")
+    for (const bad of ["http://example.com/cb", "ftp://localhost/cb", "file://localhost/cb", "https://example.com/cb#x", "not a url"]) {
+      expect(checkRedirectUri(bad)).toBeNull()
+    }
   })
 
   it("fails without leaking a token when the swap is refused", async () => {
