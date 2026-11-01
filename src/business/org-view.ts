@@ -1,7 +1,7 @@
 import type { AgentHold } from "@/agents/holds"
 import { orgRelations, parseMember, relationsProblem, type OrgRelation } from "./relations"
 import { layoutOrg, type OrgPlacement } from "./org-layout"
-import { departmentsProblem, orgDepartments, type OrgDepartment } from "./departments"
+import { departmentBoxes, departmentsProblem, orgDepartments, type DepartmentBox, type OrgDepartment } from "./departments"
 
 // --- The Org view's data (#1169), from agentx.json, the holds and the daemon ---
 //
@@ -60,6 +60,9 @@ export interface OrgView {
   relations: OrgRelation[]
   /** Departments (#1681), members and head as `agent:<id>` / `person:<id>`. */
   departments: OrgDepartment[]
+  /** The Departments view (#1681): a box per department, head on top, and
+   *  `rest`, every card and agent outside the chart no department holds. */
+  byDepartment: { boxes: DepartmentBox[]; rest: string[] }
   /** The chart for the Wall's Org page (#1419). */
   diagram: OrgDiagram
   /** What is wrong with the relations, when something is; the daemon refuses
@@ -149,7 +152,11 @@ export function buildOrgView(
   const known = [new Set(Object.keys(chart)), new Set(people.map((p) => p.id))] as const
   const problem = relationsProblem(relations, ...known) ?? departmentsProblem(departments, ...known)
   const diagram = orgDiagram(nodes, config.people ?? [], people, relations, departments)
-  return { roots, outside, live: live !== null, people, relations, departments, diagram, ...(problem ? { problem } : {}) }
+  // People first, then agents, each by name; agents outside the chart last.
+  const everyone = [...diagram.boxes].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "person" ? -1 : 1))
+    .map((b) => b.key).concat(outside.map((n) => `agent:${n.id}`))
+  const byDepartment = departmentBoxes(departments, everyone)
+  return { roots, outside, live: live !== null, people, relations, departments, byDepartment, diagram, ...(problem ? { problem } : {}) }
 }
 
 const PERSON_TITLE: Record<string, string> = { owner: "Owner", client: "Client", guest: "Guest" }

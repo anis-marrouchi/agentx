@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { businessConfigSchema } from "../src/business/config"
-import { departmentsProblem, orgDepartments } from "../src/business/departments"
+import { departmentBoxes, departmentsProblem, orgDepartments } from "../src/business/departments"
 import { layoutOrg } from "../src/business/org-layout"
 import { buildOrgView } from "../src/business/org-view"
 import { ORG_PEOPLE_JS, renderOrgPage } from "../src/daemon/ui/pages/org"
@@ -126,11 +126,53 @@ describe("department rules (COO, #1681)", () => {
   })
 })
 
+describe("the Departments view data (#1681)", () => {
+  it("keeps the head out of the member grid and lists everyone no department holds", () => {
+    const depts = orgDepartments({ departments: { dev: { name: "Dev", head: "person:anis", members: ["person:anis", "pm"] }, ops: { name: "Ops", members: [] } } })
+    expect(departmentBoxes(depts, ["person:anis", "agent:pm", "agent:qa", "agent:qa"])).toEqual({
+      boxes: [
+        { id: "dev", name: "Dev", head: "person:anis", members: ["agent:pm"] },
+        { id: "ops", name: "Ops", members: [] },
+      ],
+      rest: ["agent:qa"],
+    })
+  })
+
+  it("is on the org view: people first then agents by name, outside agents last", () => {
+    const view = buildOrgView({ ...config, agents: { ...config.agents, loose: { name: "Loose" } } }, {}, null)
+    expect(view.byDepartment).toEqual({
+      boxes: [{ id: "dev", name: "Dev", head: "person:anis", members: ["agent:pm", "agent:ops", "person:saber"] }],
+      rest: ["agent:sales", "agent:loose"],
+    })
+    expect(buildOrgView({ agents: { a: {} } }, {}, null).byDepartment).toEqual({ boxes: [], rest: ["agent:a"] })
+  })
+})
+
 describe("the /org page (#1681)", () => {
-  const helpers = new Function(`${ORG_PEOPLE_JS}; return { withPeople: withPeople, byDept: byDept }`)() as {
-    withPeople: (d: any) => { roots: any[]; names: Record<string, string> }
+  const helpers = new Function(`${ORG_PEOPLE_JS}; return { withPeople: withPeople, byDept: byDept, deptViewHtml: deptViewHtml }`)() as {
+    withPeople: (d: any) => { roots: any[]; names: Record<string, string>; nodes: Record<string, any> }
     byDept: (list: any[], depts: Record<string, any>) => any[]
+    deptViewHtml: (by: any, cardOf: (k: string) => string, esc: (s: string) => string) => string
   }
+
+  it("has a Departments / Chart switch, hidden until there are departments", () => {
+    const page = renderOrgPage()
+    expect(page).toContain('<div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button>')
+    expect(page).toContain('<div id="org-depts" class="org-depts" hidden></div>')
+  })
+
+  it("draws the Departments view: name, Head then the head's card, member grid, then the rest", () => {
+    const view = buildOrgView({ ...config, agents: { ...config.agents, loose: { name: "Loose" } } }, {}, null)
+    const html = helpers.deptViewHtml(view.byDepartment, (k) => `[${k}]`, (s) => s)
+    expect(html).toBe('<section class="org-dbox" data-dept="dev" aria-label="Dev"><h2 class="org-dname">Dev</h2>'
+      + '<div class="org-dhead"><span class="org-lead">Head</span>[person:anis]</div>'
+      + '<div class="org-dgrid">[agent:pm][agent:ops][person:saber]</div></section>'
+      + '<section class="org-dbox is-rest" aria-label="Not in a department"><h2 class="org-dname">Not in a department</h2>'
+      + '<div class="org-dgrid">[agent:sales][agent:loose]</div></section>')
+    // Every key it asks for has a node to draw, outside agents aside.
+    const nodes = helpers.withPeople(view).nodes
+    for (const k of ["person:anis", "agent:pm", "agent:ops", "person:saber", "agent:sales"]) expect(nodes[k]).toBeTruthy()
+  })
 
   it("has a legend with the person and agent tags", () => {
     const page = renderOrgPage()
