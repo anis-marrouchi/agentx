@@ -65,6 +65,9 @@ swiftc -O -o "$out/listen-again-tests" Sources/AgentXVoice/ListenAgain.swift Tes
 swiftc -O -o "$out/artifacts-tests" Sources/AgentXVoice/Artifacts.swift Sources/AgentXVoice/Markdown.swift \
   Tests/Artifacts/main.swift -target arm64-apple-macosx14.0
 "$out/artifacts-tests"
+swiftc -O -o "$out/markdown-tests" Sources/AgentXVoice/Markdown.swift Tests/Markdown/main.swift \
+  -target arm64-apple-macosx14.0
+"$out/markdown-tests"
 swiftc -O -o "$out/floor-tests" Sources/AgentXVoice/Floor.swift Tests/Floor/main.swift \
   -target arm64-apple-macosx14.0
 "$out/floor-tests"
