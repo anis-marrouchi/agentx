@@ -7,6 +7,11 @@
 // names get a card too (#1418), and a card lists its dotted-line and
 // acts-for links. A problem with the relations shows above the tree.
 //
+// People and agents differ on sight (#1681): a tag with an icon and the
+// word on each card, a person's card round-cornered with an accent edge,
+// and a legend above the tree. A department (#1681) is one dashed box in
+// the tree: under its head, titled with its name, holding its members.
+//
 // Edit org (#1420), owner only: who is in the chart, their roles and the
 // lines between them, with a confirm step for moves and removals. The
 // panel is org-setup.ts; anyone else sees no Edit button. /org#edit opens
@@ -22,6 +27,7 @@ import { pageHead, renderShell, type TopbarPeer } from ".."
 import { injectFns } from "../inject"
 import { HUB_NEEDS_YOU, HUB_PATH } from "../hub-name"
 import { orgConfirmFor, orgEditHtml } from "./org-setup"
+import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
 
 export interface OrgPageOpts {
   peers?: TopbarPeer[]
@@ -46,6 +52,11 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
       <p>Give each agent a role and a boss under <code>business.orgChart</code> in <code>agentx.json</code>, with the roles under <code>business.roles</code>. Until then every agent is listed below, side by side.</p>
     </section>
     <p id="org-problem" class="org-problem" role="alert" hidden></p>
+    <ul class="org-legend" aria-label="Legend">
+      <li><span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>plain card, with its status</li>
+      <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, accent edge</li>
+      <li id="org-legend-dept" hidden><span class="org-legend-dept">Department</span>a dashed box round its members</li>
+    </ul>
     <div id="org-tree" class="org-tree" aria-label="Org chart"><p class="org-quiet">Loading…</p></div>
     <section id="org-outside" hidden aria-labelledby="org-outside-title">
       <h2 id="org-outside-title" class="org-h2">Not in the org chart</h2>
@@ -73,7 +84,7 @@ const ORG_CSS = `
 .org-none p { margin: 0; color: var(--ax-text-2); }
 .org code { font-family: var(--ax-mono); font-size: 11.5px; background: var(--ax-surface-2); padding: 1px 6px; border-radius: var(--ax-radius-sm); }
 .org-h2 { margin: 28px 0 10px; font-size: 14px; }
-.org-tree { overflow-x: auto; padding-bottom: 8px; }
+.org-tree { overflow-x: auto; padding: 12px 0 8px; }
 .org-tree ul, .org-row { list-style: none; margin: 0; padding: 0; }
 .org-tree > ul { display: flex; gap: 24px; width: max-content; margin: 0 auto; }
 .org-tree li { position: relative; display: flex; flex-direction: column; align-items: center; }
@@ -102,8 +113,23 @@ const ORG_CSS = `
 .org-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .org-acts a, .org-acts button { font: inherit; font-size: var(--ax-fs-xs); padding: 3px 9px; border-radius: var(--ax-radius-sm); border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-surface-2); color: var(--ax-text); text-decoration: none; cursor: pointer; }
 .org-acts button:disabled { opacity: 0.6; cursor: default; }
-.org-card.is-person { background: var(--ax-surface-2); }
+.org-card { position: relative; }
+.org-card.is-person { background: var(--ax-surface-2); border-color: var(--ax-accent); border-left-width: 4px; border-radius: 22px; }
 .org-kind { font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; line-height: 17px; border-radius: 999px; border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text-2); white-space: nowrap; }
+.org-tag svg { fill: currentColor; }
+.org-tag .org-eye { fill: var(--ax-bg); }
+.org-tag.is-person { border-color: var(--ax-accent); color: var(--ax-accent); }
+.org-card > .org-tag { position: absolute; top: -9px; right: 12px; }
+.org-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 0 0 14px; padding: 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.org-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.org-legend li[hidden] { display: none; }
+.org-legend-dept { padding: 0 8px; line-height: 17px; border: 1.5px dashed var(--ax-accent); border-radius: var(--ax-radius-sm); color: var(--ax-accent); font-weight: 600; }
+.org-tree li.org-dept > .org-dept-box { padding: 10px 10px 4px; border: 1.5px dashed var(--ax-accent); border-radius: 16px; background: var(--ax-blue-t, var(--ax-surface)); }
+.org-dept-name { display: block; margin: 0 0 4px; font-size: var(--ax-fs-sm); font-weight: 700; color: var(--ax-accent); text-align: center; }
+.org-dept-head { display: block; margin: -2px 0 2px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); text-align: center; }
+.org-tree .org-dept-box > ul { display: flex; position: relative; padding-top: 0; }
+.org-tree .org-dept-box > ul > li { padding: 10px 6px 6px; }
 .org-links { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-bar { display: flex; justify-content: flex-end; margin: 0 0 8px; }
 .org-edit { margin: 0 0 24px; padding: 12px 16px 16px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
@@ -128,6 +154,7 @@ const ORG_CSS = `
   .org-edit { padding: 10px 12px 14px; }
   .oe-form > *, .oe-role { flex: 1 1 100%; }
   .oe-legend { grid-template-columns: 1fr; }
+  .org-card > .org-tag { position: static; display: inline-flex; margin: 0 0 6px; }
 }
 .org-problem { margin: 0 0 12px; padding: 10px 14px; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius); font-size: var(--ax-fs-sm); color: var(--ax-amber-ink); }
 `
@@ -149,6 +176,15 @@ export const ORG_PEOPLE_JS = `
       names[key] = p.name;
       if (named[key] || p.placed) nodes[key] = { kind: 'person', id: p.id, name: p.name, title: p.title, reports: [] };
     });
+    // Departments (#1681): their members and head get a card, and a member its department.
+    (d.departments || []).forEach(function (dep) {
+      (dep.head ? [dep.head] : []).concat(dep.members).forEach(function (key) {
+        var m = /^person:(.*)$/.exec(key);
+        var p = m && (d.people || []).find(function (x) { return x.id === m[1]; });
+        if (p && !nodes[key]) nodes[key] = { kind: 'person', id: p.id, name: p.name, title: p.title, reports: [] };
+      });
+      dep.members.forEach(function (key) { if (nodes[key] && !nodes[key].department) nodes[key].department = dep.id; });
+    });
     rels.forEach(function (r) {
       var n = nodes[r.from];
       if (!n || r.type === 'reports-to') return;
@@ -169,6 +205,19 @@ export const ORG_PEOPLE_JS = `
     d.roots.forEach(function (n) { if (String(n.reportsTo || '').indexOf('person:') === 0) moveUnder(n, n.reportsTo); });
     rels.forEach(function (r) { if (r.type === 'reports-to' && r.from.indexOf('person:') === 0 && nodes[r.from]) moveUnder(nodes[r.from], r.to); });
     return { roots: roots, names: names };
+  }
+  /** One list of siblings as it is drawn (#1681): each department's members
+   *  together in one item { dept, items }, where the first of them stood;
+   *  everyone else as they were. */
+  function byDept(list, depts) {
+    var out = [], at = {};
+    list.forEach(function (n) {
+      var dep = n.department && depts[n.department];
+      if (!dep) { out.push(n); return; }
+      if (!at[dep.id]) { at[dep.id] = { dept: dep, items: [] }; out.push(at[dep.id]); }
+      at[dep.id].items.push(n);
+    });
+    return out;
   }
 `
 
@@ -194,9 +243,11 @@ const ORG_SCRIPT = `
       .concat((n.actsFor || []).map(function (r) { return 'Acts for ' + nameOf(r); }));
     return rows.length ? '<div class="org-links">' + rows.map(function (t) { return '<div>' + esc(t) + '</div>'; }).join('') + '</div>' : '';
   }
+  var depts = {};   // department id -> department (#1681)
+  function kind(person) { return person ? '<span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>' : '<span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>'; }
   function personCard(n) {
-    return '<div class="org-card is-person" data-person="' + esc(n.id) + '">'
-      + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span><span class="org-kind">Person</span></div>'
+    return '<div class="org-card is-person" data-person="' + esc(n.id) + '">' + kind(true)
+      + '<div class="org-top"><span class="org-name">' + esc(n.name) + '</span></div>'
       + (n.title ? '<p class="org-title">' + esc(n.title) + '</p>' : '')
       + links(n) + '</div>';
   }
@@ -211,7 +262,7 @@ const ORG_SCRIPT = `
     if (n.status === 'waiting') acts += '<a href="${HUB_NEEDS_YOU}">Decide in Needs you</a>';
     else if (n.status === 'paused') acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="0">Resume</button>';
     else acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="1">Pause</button>';
-    return '<div class="org-card is-' + esc(n.status) + '" data-agent="' + esc(n.id) + '">'
+    return '<div class="org-card is-' + esc(n.status) + '" data-agent="' + esc(n.id) + '">' + kind(false)
       + '<div class="org-top' + (pics[n.id] ? ' org-top--pic' : '') + '">' + (pics[n.id] ? '<span class="org-av"><img src="' + esc(pics[n.id]) + '" alt=""></span>' : '') + '<span class="org-name">' + esc(n.name) + '</span><span class="org-id">' + esc(n.id) + '</span></div>'
       + (n.title ? '<p class="org-title">' + esc(n.title) + '</p>' : '')
       + (n.job ? '<p class="org-job">' + esc(n.job) + '</p>' : '')
@@ -219,9 +270,15 @@ const ORG_SCRIPT = `
       + '<span class="org-state is-' + esc(n.status) + '">' + esc(state) + '</span>'
       + '<div class="org-acts">' + acts + '</div></div>';
   }
+  function item(n) {
+    return '<li>' + card(n) + (n.reports && n.reports.length ? branch(n.reports) : '') + '</li>';
+  }
   function branch(list) {
-    return '<ul>' + list.map(function (n) {
-      return '<li>' + card(n) + (n.reports && n.reports.length ? branch(n.reports) : '') + '</li>';
+    return '<ul>' + byDept(list, depts).map(function (x) {
+      if (!x.dept) return item(x);
+      var head = x.dept.head ? '<span class="org-dept-head">Head: ' + esc(nameOf(x.dept.head)) + '</span>' : '';
+      return '<li class="org-dept" data-dept="' + esc(x.dept.id) + '"><div class="org-dept-box"><span class="org-dept-name">' + esc(x.dept.name) + '</span>' + head
+        + '<ul>' + x.items.map(item).join('') + '</ul></div></li>';
     }).join('') + '</ul>';
   }
   async function load() {
@@ -235,7 +292,10 @@ const ORG_SCRIPT = `
       if (!d.exists) { tree.innerHTML = '<p class="org-quiet">No agentx.json in this folder.</p>'; return; }
       var probEl = document.getElementById('org-problem');
       probEl.hidden = !d.problem;
-      probEl.textContent = d.problem ? 'Problem in the org relations: ' + d.problem : '';
+      probEl.textContent = d.problem ? 'Problem in the org chart: ' + d.problem : '';
+      depts = {};
+      (d.departments || []).forEach(function (dep) { depts[dep.id] = dep; });
+      document.getElementById('org-legend-dept').hidden = !(d.departments || []).length;
       E.org = d;
       paintEdit();
       var org = withPeople(d);

@@ -143,6 +143,14 @@ export const businessConfigSchema = z.object({
    *  top-level `people` list, with the role they hold (a key of `roles`).
    *  A person named in a relation is in the chart without an entry here. */
   orgPeople: z.record(z.string(), z.object({ role: z.string().optional() })).default({}),
+  /** Departments (#1681): org members grouped under a name and a head, refs
+   *  written like relations. They group cards on the chart and change no
+   *  reporting line. See departments.ts. */
+  departments: z.record(z.string(), z.object({
+    name: z.string().min(1),
+    head: z.string().min(1).optional(),
+    members: z.array(z.string().min(1)).default([]),
+  })).default({}),
   /** Per-project metadata. Phase 3 — defaults to empty array, so
    *  existing agentx.json files validate without modification. */
   projects: z.array(projectSchema).default([]),
