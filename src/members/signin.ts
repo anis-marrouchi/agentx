@@ -138,7 +138,11 @@ export interface SignInDeps {
   now?: () => number
   minMs?: number
   log?: (line: string) => void
+  /** The account each person first signed in with (#1675); the file in `root` when unset. */
+  accounts?: SignInAccountStore
 }
+
+const accountsOf = (deps: Pick<SignInDeps, "accounts" | "root">) => deps.accounts ?? new SignInAccountStore(deps.root)
 
 /** The mail with the link. Plain text: no tracking, nothing to load. */
 export function signInMail(p: { person: Pick<Person, "name" | "role">; email: string; origin: string; code: string; senderName: string }): OutgoingMail {
@@ -269,7 +273,7 @@ export function openSession(
   settlePending(person, deps)
   if (deps.sessions.approved(person.id) || auto) {
     const { session, value } = deps.sessions.create(person.id, name, { approvedAt: at })
-    if (how.account) new SignInAccountStore(deps.root).keepFirst(person.id, how.account)
+    if (how.account) accountsOf(deps).keepFirst(person.id, how.account)
     deps.members.log({ person: person.id, event: "signed-in", address: client, detail: `${name} (${how.via}${auto ? ", auto" : ""})` })
     log(`[member] ${person.id} signed in by ${how.via} on "${name}" from ${client} (session ${session.id})`)
     return { status: 200, body: { person: person.id, name, state: "active" }, value }
@@ -302,7 +306,7 @@ export type PersonAccess =
 
 /** Whether an ax_person cookie value opens the member page right now. Reads
  *  the owner's answer on a first sign-in's card the first time it is there. */
-export function personAccess(value: string | null, deps: Pick<SignInDeps, "sessions" | "members" | "people" | "root" | "log">): PersonAccess {
+export function personAccess(value: string | null, deps: Pick<SignInDeps, "sessions" | "members" | "people" | "root" | "log" | "accounts">): PersonAccess {
   const found = value ? deps.sessions.verify(value, deps.people()) : null
   if (!found || !SIGN_IN_ROLES.includes(found.person.role)) return { ok: false, waiting: false }
   const { session, person } = found
@@ -314,17 +318,27 @@ export function personAccess(value: string | null, deps: Pick<SignInDeps, "sessi
 
 /** Applies the owner's answers on this person's waiting sessions. Before a
  *  provider account is matched too, so a yes keeps its account first. */
-export function settlePending(person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log">): void {
+export function settlePending(person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log" | "accounts">): void {
   for (const s of deps.sessions.sessions(person.id)) if (s.state === "pending" && !s.endedAt) settle(s, person, deps)
 }
 
 /** Applies the owner's answer on a waiting session's card, once it is there. */
-function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log">): "yes" | "no" | null {
+function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log" | "accounts">): "yes" | "no" | null {
   const log = deps.log ?? ((line: string) => console.log(line))
   const card = session.cardId ? readCard(deps.root, session.cardId) : null
   const answer = cardAnswer(card)
+  // A yes for a second provider account, after another was kept for this
+  // person (two cards waiting, both answered yes), lets nobody in.
+  const kept = answer === "yes" && session.account ? accountsOf(deps).get(person.id, session.account.issuer) : null
+  if (kept && kept !== session.account!.subject) {
+    const reason = "another account was kept for this person first"
+    deps.sessions.end(person.id, session.id, reason)
+    deps.members.log({ person: person.id, event: "refused", detail: `${session.label}: ${reason}` })
+    log(`[member] ${person.id}: first sign-in on "${session.label}" refused: ${reason}`)
+    return "no"
+  }
   if (answer === "yes") {
-    if (deps.sessions.approve(session.id) && session.account) new SignInAccountStore(deps.root).keepFirst(person.id, session.account)
+    if (deps.sessions.approve(session.id) && session.account) accountsOf(deps).keepFirst(person.id, session.account)
     deps.members.log({ person: person.id, event: "approved", detail: `${session.label} (email link)${card?.decided_by ? `, by ${card.decided_by}` : ""}` })
     log(`[member] ${person.id}: first sign-in on "${session.label}" approved`)
   } else if (answer === "no") {

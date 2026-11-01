@@ -223,6 +223,21 @@ describe("coming back", () => {
     expect(accounts.get("dana", ISSUER)).toBe("sub-dana")
   })
 
+  it("lets in only the kept account when the owner says yes to two waiting accounts", async () => {
+    expect((await signIn("dana@example.com", "sub-dana")).status).toBe(302)
+    expect((await signIn("dana@example.com", "sub-other")).status).toBe(302)
+    const waiting = listCards(dir).filter((c) => c.status === "pending")
+    expect(waiting).toHaveLength(2)
+    for (const c of waiting) decideCard(dir, c.id, "yes", { by: "owner" })
+    // The next sign-in reads both yeses, the older card first.
+    expect((await signIn("dana@example.com", "sub-dana")).status).toBe(302)
+    expect(accounts.get("dana", ISSUER)).toBe("sub-dana")
+    const other = sessions.sessions("dana").find((s) => s.account?.subject === "sub-other")!
+    expect(other.endedAt).toBeTruthy()
+    expect(other.approvedAt).toBeUndefined()
+    expect((await signIn("dana@example.com", "sub-other")).status).toBe(401)
+  })
+
   it("keeps no account when the network check refuses the sign-in", async () => {
     PEOPLE[0] = { ...PEOPLE[0], identities: ["email:dana@example.com", "tailscale:dana@example.com"] }
     setup = { ...SETUP, firstSignIn: "auto" }

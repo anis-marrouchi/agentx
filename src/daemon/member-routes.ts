@@ -139,15 +139,16 @@ export async function handleMemberRequest(
   }
 
   // Signing in with a link sent by email (#1478, members/signin.ts).
+  const accounts = ctx.signInAccounts ?? new SignInAccountStore(ctx.root)
   const signIn: SignInDeps = {
     links: ctx.signInLinks ?? new SignInLinkStore(ctx.root), sessions: ctx.sessions ?? new PersonSessionStore(ctx.root),
     members, people: ctx.people, root: ctx.root, limiter: deps.limiter, setup: ctx.signInSetup ?? (() => null),
     perAddress: ctx.signInPerAddress ?? defaultPerAddress, perClient: ctx.signInPerClient ?? defaultPerClient,
-    send: ctx.sendMail, minMs: ctx.pairMinMs, log: ctx.log, now: ctx.now,
+    send: ctx.sendMail, minMs: ctx.pairMinMs, log: ctx.log, now: ctx.now, accounts,
   }
   const oidc: OidcDeps = {
     ...signIn, oidc: ctx.oidcSetup ?? (() => null), fetch: ctx.fetch,
-    states: ctx.oidcStates ?? defaultOidcStates, accounts: ctx.signInAccounts ?? new SignInAccountStore(ctx.root),
+    states: ctx.oidcStates ?? defaultOidcStates, accounts,
   }
   const provider = oidc.oidc()?.name ?? null
   if (method === "GET" && path === "/member/signin") return send(res, 200, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup(), provider))
