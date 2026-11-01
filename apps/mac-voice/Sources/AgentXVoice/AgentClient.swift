@@ -30,6 +30,8 @@ enum AgentClient {
         /// The daemon took the words for the floor holder's own sound
         /// (#924): no agent was asked and nothing is said back.
         var dropped = false
+        /// Files the agent declared (#1670), shown under the text.
+        var artifacts: [Artifact] = []
     }
 
     /// What, if anything, to say about the step now running.
@@ -305,6 +307,7 @@ enum AgentClient {
             let error: String?
             let duration: Int?
             let dropped: String?
+            let artifacts: [Artifact]?
         }
         let reply = try? JSONDecoder().decode(Reply.self, from: data)
         let voice = reply?.voice
@@ -328,7 +331,9 @@ enum AgentClient {
             throw VoiceError.api("daemon HTTP \(status): \(detail)")
         }
         if let err = reply?.error, !err.isEmpty { throw VoiceError.api(err) }
-        guard let text = reply?.text ?? reply?.full, !text.isEmpty else {
+        // An answer that is only a file has no words to say, and is not empty.
+        let files = reply?.artifacts ?? []
+        guard let text = reply?.text ?? reply?.full, !text.isEmpty || !files.isEmpty else {
             throw VoiceError.api("agent returned an empty answer")
         }
         let buttons = (reply?.ui?.buttons ?? []).map { ($0.label, $0.url) }
@@ -343,7 +348,7 @@ enum AgentClient {
         return Answer(text: text, written: reply?.full,
                       buttons: buttons + extra, imageURL: image,
                       durationMs: reply?.duration, agentID: reply?.agentId, voice: voice,
-                      presenceMode: reply?.presence?.mode)
+                      presenceMode: reply?.presence?.mode, artifacts: files)
     }
 
     // MARK: Open requests

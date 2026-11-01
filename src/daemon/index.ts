@@ -165,6 +165,7 @@ import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
+import { voiceArtifacts } from "@/daemon/voice-artifacts"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
@@ -8372,12 +8373,15 @@ export class AgentXDaemon {
             if (remote) {
               const answer = await this.voiceMesh.ask(agentId, message, voice, introduce)
               const { cleanText, ui } = extractUiDirective(answer.content)
+              // Its files are on the peer: listed, but not served from here.
+              const shown = voiceArtifacts(cleanText, agentId, null)
               if (!answer.error) this.voiceIntros.spoke(session, agentId)
-              const spoken = answer.error ? null : toSpeakable(cleanText, this.config.voice.spokenMaxChars)
+              const spoken = answer.error ? null : toSpeakable(shown.text, this.config.voice.spokenMaxChars)
               reply(answer.error ? 502 : 200, {
                 agentId, voice: voiceForText(voice, spoken), presence: null,
                 text: spoken && this.sayAs(spoken),
-                full: answer.error ? null : cleanText,
+                full: answer.error ? null : shown.text,
+                artifacts: answer.error ? [] : shown.artifacts,
                 ui: ui ?? null,
                 error: answer.error,
                 duration: answer.duration,
@@ -8453,7 +8457,9 @@ export class AgentXDaemon {
             // rather than in each client, for the same reason /ask owns the
             // voice prompt: two parsers drift.
             const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
-            const speakable = toSpeakable(withoutDirective, this.config.voice.spokenMaxChars)
+            // Files the agent declared, as the phone app shows them (#1670).
+            const shown = voiceArtifacts(withoutDirective, agentId, def?.workspace ?? null)
+            const speakable = toSpeakable(shown.text, this.config.voice.spokenMaxChars)
             const ui = safeUi(directive)
             finishThread({
               content: withoutDirective, ...(response.error ? { error: String(response.error) } : {}), ...(ui ? { ui } : {}),
@@ -8473,7 +8479,8 @@ export class AgentXDaemon {
               // The answer as written — what a client SHOWS, while `text` is
               // what it speaks. They differ: spoken text drops URLs and
               // markdown, which are exactly what is worth reading.
-              full: withoutDirective,
+              full: shown.text,
+              artifacts: shown.artifacts,
               ui: directive ?? null,
               error: response.error,
               duration: response.duration,
