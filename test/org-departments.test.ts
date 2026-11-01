@@ -160,9 +160,10 @@ describe("the /org page (#1681)", () => {
     deptViewHtml: (by: any, cardOf: (k: string) => string, esc: (s: string) => string) => string
   }
 
-  it("has a Departments / Chart switch, hidden until there are departments", () => {
+  it("has a Departments / Chart / Projects switch; Departments hidden until there are departments", () => {
     const page = renderOrgPage()
-    expect(page).toContain('<div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button>')
+    expect(page).toContain('<div id="org-views" class="org-views" role="group" aria-label="View"><button type="button" data-org-view="dept" aria-pressed="true" hidden>Departments</button>')
+    expect(page).toContain("function shownView() { return view === 'dept' && !(lastOrg && (lastOrg.departments || []).length) ? 'chart' : view; }")
     expect(page).toContain('<div id="org-depts" class="org-depts" hidden></div>')
   })
 
@@ -223,7 +224,7 @@ describe("the /org page (#1681)", () => {
     expect(fit).toContain("Math.max(FIT_FLOOR, Math.min(1, Math.floor(room / w * 100) / 100))")
     expect(page).toContain("var zoom = 1, fitted = false, FIT_FLOOR = 0.6;")
     // First paint: fit, then the widest department box's left edge, never the head centred.
-    expect(page).toMatch(/if \(!deptView\) \{ fit\(\); showStart\(\); \}\s*zoomLabel\(\);\s*moreCue\(\);/)
+    expect(page).toMatch(/if \(!deptView && view !== 'projects'\) \{ fit\(\); showStart\(\); \}\s*zoomLabel\(\);\s*moreCue\(\);/)
     const start = page.slice(page.indexOf("function showStart("), page.indexOf("function moreSide("))
     expect(start).toContain("tree.querySelectorAll('.org-dept-box')")
     expect(start).not.toContain("box.width / 2")

@@ -29,10 +29,26 @@
 
 import { HUB_NAME } from "../hub-name"
 import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
+import { ORG_PROJECTS_CSS, ORG_PROJECTS_JS } from "./org-projects"
 
 export const WALL_ORG_SCRIPT = String.raw`
   var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null, fitted: false, startShown: false };
   var ORG_FIT_FLOOR = 0.6;
+${ORG_PROJECTS_JS}
+  /** Departments (when there are any), Chart and Projects (#1681, #1687). */
+  function orgViewsHtml() {
+    return '<span class="wog__views" role="group" aria-label="View">' +
+      (orgDepts().length ? [['dept', 'Departments']] : []).concat([['chart', 'Chart'], ['projects', 'Projects']]).map(function (v) {
+        return '<button type="button" data-org-view="' + v[0] + '" aria-pressed="' + (orgView() === v[0] ? 'true' : 'false') + '">' + v[1] + '</button>';
+      }).join('') + '</span>';
+  }
+  /** The Projects view (#1687): the shared boxes, under the same toolbar. */
+  function orgProjectsPageHtml() {
+    return '<div class="wog__toolbar wog__tools" role="toolbar" aria-label="Org tools">' + orgViewsHtml() +
+        '<a class="ax-btn ax-btn--ghost wog__edit" href="' + ORG_CHART_HREF + '?view=projects">Open the org chart</a></div>' +
+      (S.org.problem ? '<p class="wog__problem" role="alert">Something in the org chart does not hold: ' + esc(S.org.problem) + '</p>' : '') +
+      '<div class="wog__projects">' + orgProjectsHtml(S.org, esc) + '</div>';
+  }
   var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
   // An agent on another node (agent:<node>/<id>): how its node last answered.
   var ORG_REMOTE = { up: 'Shown, not routed to: runs on', down: 'Its node does not answer; last seen on', unseen: 'Not seen yet on' };
@@ -44,8 +60,8 @@ export const WALL_ORG_SCRIPT = String.raw`
   }
   function orgDept(id) { return ((S.org && S.org.departments) || []).find(function (x) { return x.id === id; }) || null; }
   function orgDepts() { return (S.org && S.org.departments) || []; }
-  /** 'dept' or 'chart': Departments first when there are any, until a tap. */
-  function orgView() { return orgDepts().length ? (ORG.view || 'dept') : 'chart'; }
+  /** 'dept', 'chart' or 'projects': Departments first when there are any, until a tap. */
+  function orgView() { return ORG.view === 'projects' ? 'projects' : orgDepts().length ? (ORG.view || 'dept') : 'chart'; }
   function orgDiagram() { return S.org && S.org.diagram && S.org.diagram.boxes ? S.org.diagram : null; }
   /** Cards in the chart, for the nav; null until the org is read. */
   function orgCount() { var d = orgDiagram(); return d ? d.boxes.length : null; }
@@ -110,12 +126,8 @@ export const WALL_ORG_SCRIPT = String.raw`
   function orgLegendHtml(d) {
     var dotted = d.edges.some(function (e) { return e.type === 'dotted-line'; });
     var chart = orgView() === 'chart';
-    var views = orgDepts().length ? '<span class="wog__views" role="group" aria-label="View">' +
-      [['dept', 'Departments'], ['chart', 'Chart']].map(function (v) {
-        return '<button type="button" data-org-view="' + v[0] + '" aria-pressed="' + (orgView() === v[0] ? 'true' : 'false') + '">' + v[1] + '</button>';
-      }).join('') + '</span>' : '';
     // The toolbar row sits above the legend, so a new switch has room in it.
-    var tools = '<div class="wog__toolbar wog__tools" role="toolbar" aria-label="Org tools">' + views +
+    var tools = '<div class="wog__toolbar wog__tools" role="toolbar" aria-label="Org tools">' + orgViewsHtml() +
         (chart && dotted ? '<button type="button" class="wog__toggle" data-org-dotted aria-pressed="' + (ORG.dotted ? 'true' : 'false') + '">Show dotted lines</button>' : '') +
         (chart ? '<span class="wog__zoom" role="group" aria-label="Zoom"><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button>' +
           '<button type="button" data-org-zoom="0" title="Back to 100%">' + Math.round(ORG.zoom * 100) + '%</button>' +
@@ -157,6 +169,7 @@ export const WALL_ORG_SCRIPT = String.raw`
     if (!S.org) return '<p class="ax-wall__empty">Loading…</p>';
     if (S.org.error) return '<p class="ax-wall__empty">Could not load the org chart: ' + esc(S.org.error) + '. The rest of the ${HUB_NAME} still works.</p>';
     if (S.org.exists === false) return '<p class="ax-wall__empty">This machine has no agentx.json, so there is no org chart.</p>';
+    if (orgView() === 'projects') return orgProjectsPageHtml();
     var d = orgDiagram();
     if (!d || !d.boxes.length) return '<div class="wog__none"><h2>No org chart yet</h2><p>Give each agent a role and a boss, and the chart appears here.</p>' +
       '<a class="ax-btn" href="' + ORG_CHART_HREF + '">Open the org chart</a></div>' + (d ? '<div class="wog__inrail">' + orgRailHtml(d) + '</div>' : '');
@@ -344,7 +357,13 @@ export const WALL_ORG_SCRIPT = String.raw`
   document.addEventListener('click', function (ev) {
     var t = ev.target.closest('[data-org-fold],[data-org-zoom],[data-org-dotted],[data-org-view]');
     if (!t) return;
-    if (t.hasAttribute('data-org-view')) { ORG.view = t.getAttribute('data-org-view'); render(); return; }
+    if (t.hasAttribute('data-org-view')) {
+      ORG.view = t.getAttribute('data-org-view');
+      render();
+      var host = $('wall-org'), again = host.querySelector ? host.querySelector('[data-org-view="' + ORG.view + '"]') : null;
+      if (again) again.focus();
+      return;
+    }
     if (t.hasAttribute('data-org-zoom')) { orgZoom(Number(t.getAttribute('data-org-zoom'))); return; }
     if (t.hasAttribute('data-org-dotted')) { ORG.dotted = !ORG.dotted; render(); return; }
     var k = t.getAttribute('data-org-fold');
@@ -362,7 +381,7 @@ export const WALL_ORG_SCRIPT = String.raw`
   document.addEventListener('scroll', function (ev) { if (ev.target && ev.target.id === 'wog-scroll') orgEdges(); }, true);
 `
 
-export const WALL_ORG_CSS = `
+export const WALL_ORG_CSS = ORG_PROJECTS_CSS + `
 /* Org (#1419): a top-down chart; an indented list on a phone. */
 .ax-wall__org { padding: 0 0 24px; }
 .ax-wall__org, .ax-wall__orgrail { --wog-person-bg: color-mix(in oklch, #f08c3c 16%, var(--ax-bg)); --wog-person-ink: color-mix(in oklch, #d4691f 80%, var(--ax-text)); }
@@ -402,6 +421,7 @@ export const WALL_ORG_CSS = `
 .wog__card.is-also { background: transparent; border-style: dashed; }
 .wod__also { margin: 14px 0 0; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-muted); }
 .wog__edit { font-size: var(--ax-fs-xs); padding: 3px 12px; }
+.wog__projects { padding: 16px; }
 .wog__problem { margin: 10px 16px 0; padding: 8px 12px; border-radius: var(--ax-radius); background: var(--ax-amber-t); color: var(--ax-amber-ink); font-size: var(--ax-fs-sm); }
 .wog__note { padding: 8px 16px 0; }
 .wog__owner { display: none; }

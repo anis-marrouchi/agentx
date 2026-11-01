@@ -3,6 +3,7 @@ import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import { loadDaemonConfig } from "@/daemon/config"
 import { RELATION_TYPES, configRelationsProblem, memberKey, memberLabel, orgRelations, parseMember, type RelationType } from "@/business/relations"
+import { leadKey, projectWriteProblem } from "@/business/org-projects"
 
 // --- agentx business — manage the business layer config ---
 //
@@ -15,7 +16,8 @@ import { RELATION_TYPES, configRelationsProblem, memberKey, memberLabel, orgRela
 //   show      — read-only summary
 //   orgchart  — add / remove / list entries (agentId → { role, reportsTo, schedule })
 //   relation  — add / remove / list typed links between people and agents (#1418)
-//   project   — add / remove / list (id, pm?, client?)
+//   project   — add / remove / list (id, pm?, client?, name?, lead?, team?),
+//               and team add / remove for one member (#1687)
 //   contact   — add / remove / list (chatId/username → client/project)
 //
 // Out of scope for this round (use Advanced JSON tab in /admin or hand-
@@ -235,9 +237,34 @@ relation
 
 // ---- project -------------------------------------------------------------
 
+/** Split "a,b c" into ids, without blanks. */
+function idList(v: string | undefined): string[] {
+  return String(v || "").split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
+}
+
+/** Refuse a write that gives project `id` an unknown lead or team member,
+ *  or a lead that is not a person (#1687). Only what the write sets is
+ *  checked. The PM is checked as before, by the Organization at load. */
+function checkProject(cfg: any, id: string, write: { lead?: string; team?: string[] }): void {
+  const problem = projectWriteProblem(cfg, id, write)
+  if (problem) throw new Error(problem)
+}
+
+/** One project's line for `project list`. */
+function projectLine(p: any): string {
+  const bits = [
+    p.name && p.name !== p.id ? `"${p.name}"` : "",
+    p.pm ? `pm=${p.pm}` : "",
+    p.lead ? `lead=${p.lead}` : "",
+    p.client ? `client=${p.client}` : "",
+    p.team?.length ? `team=${p.team.join(",")}` : "",
+  ].filter(Boolean)
+  return `  ${chalk.cyan(p.id)}  ${bits.join(" ")}`.trimEnd()
+}
+
 const project = business
   .command("project")
-  .description("manage business.projects — id, pm, client")
+  .description("manage business.projects — id, pm, client, name, lead, team")
 
 project
   .command("list")
@@ -248,24 +275,37 @@ project
     const projects = b.projects || []
     if (opts.json) { console.log(JSON.stringify(projects, null, 2)); return }
     if (projects.length === 0) { console.log(chalk.dim("  no projects")); return }
-    for (const p of projects) {
-      console.log(`  ${chalk.cyan(p.id)}  ${p.pm ? `pm=${p.pm}` : ""} ${p.client ? `client=${p.client}` : ""}`.trimEnd())
-    }
+    for (const p of projects) console.log(projectLine(p))
   })
 
 project
   .command("add <id>")
   .description("add or update a project entry")
-  .option("--pm <agentId>", "PM responsible for this project (drives PM gate)")
+  .option("--pm <agentId>", "PM agent responsible for this project (drives PM gate)")
   .option("--client <name>", "client this project belongs to (drives activity-graph attribution)")
+  .option("--name <name>", "display name on the Org page (default: the id)")
+  .option("--lead <personId>", "the person who leads it, person:<id> (a bare id is read as a person)")
+  .option("--team <members>", "who works on it, comma separated: agent:<id> of an org-chart agent, person:<id> or a bare agent id; replaces the team, \"\" clears it")
   .action((id: string, opts) => {
     mutate((cfg) => {
       cfg.business = cfg.business || {}
       cfg.business.projects = cfg.business.projects || []
       const idx = cfg.business.projects.findIndex((p: any) => p.id === id)
-      const next = { id, ...(opts.pm ? { pm: opts.pm } : {}), ...(opts.client ? { client: opts.client } : {}) }
+      const team = opts.team !== undefined ? [...new Set(idList(opts.team).map(memberKey))] : undefined
+      const next = {
+        id,
+        ...(opts.pm ? { pm: opts.pm } : {}),
+        ...(opts.client ? { client: opts.client } : {}),
+        ...(opts.name ? { name: opts.name } : {}),
+        ...(opts.lead ? { lead: leadKey(opts.lead) } : {}),
+        ...(team ? { team } : {}),
+      }
       if (idx >= 0) cfg.business.projects[idx] = { ...cfg.business.projects[idx], ...next }
       else cfg.business.projects.push(next)
+      // --team "" clears the team.
+      const saved = cfg.business.projects[idx >= 0 ? idx : cfg.business.projects.length - 1]
+      if (team && !team.length) delete saved.team
+      checkProject(cfg, id, { lead: opts.lead, team })
       return idx >= 0 ? `project "${id}" updated` : `project "${id}" added`
     })
   })
@@ -281,6 +321,43 @@ project
       cfg.business.projects = list.filter((p: any) => p.id !== id)
       if (cfg.business.projects.length === before) throw new Error(`no project "${id}"`)
       return `project "${id}" removed`
+    })
+  })
+
+const team = project
+  .command("team")
+  .description("add or remove one member of a project's team (#1687)")
+
+team
+  .command("add <id> <member>")
+  .description("put a member on the project's team: agent:<id> of an org-chart agent, person:<id> or a bare agent id")
+  .action((id: string, member: string) => {
+    mutate((cfg) => {
+      const p = (cfg.business?.projects || []).find((x: any) => x.id === id)
+      if (!p) throw new Error(`no project "${id}"`)
+      const key = memberKey(member)
+      const list: string[] = (p.team || []).map(memberKey)
+      if (list.includes(key)) return `${key} is already on project "${id}"`
+      checkProject(cfg, id, { team: [key] })
+      p.team = [...(p.team || []), key]
+      return `${key} added to project "${id}"`
+    })
+  })
+
+team
+  .command("remove <id> <member>")
+  .alias("rm")
+  .description("take a member off the project's team")
+  .action((id: string, member: string) => {
+    mutate((cfg) => {
+      const p = (cfg.business?.projects || []).find((x: any) => x.id === id)
+      if (!p) throw new Error(`no project "${id}"`)
+      const key = memberKey(member)
+      const kept = (p.team || []).filter((m: string) => memberKey(m) !== key)
+      if (kept.length === (p.team || []).length) throw new Error(`${key} is not on project "${id}"`)
+      if (kept.length) p.team = kept
+      else delete p.team
+      return `${key} removed from project "${id}"`
     })
   })
 

@@ -32,6 +32,7 @@ import { injectFns } from "../inject"
 import { HUB_NEEDS_YOU, HUB_PATH } from "../hub-name"
 import { orgConfirmFor, orgEditHtml } from "./org-setup"
 import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
+import { ORG_PROJECTS_CSS, ORG_PROJECTS_JS } from "./org-projects"
 
 export interface OrgPageOpts {
   peers?: TopbarPeer[]
@@ -49,7 +50,8 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
   }) + `
   <div class="org">
     <div id="org-msg" class="org-msg" role="status" aria-live="polite"></div>
-    <div class="org-bar"><button type="button" id="org-edit-btn" class="ax-btn" data-org-edit aria-controls="org-edit" aria-expanded="false" hidden>Edit org</button></div>
+    <div class="org-bar">
+      <button type="button" id="org-edit-btn" class="ax-btn" data-org-edit aria-controls="org-edit" aria-expanded="false" hidden>Edit org</button></div>
     <section id="org-edit" class="org-edit" aria-label="Edit the org chart" hidden></section>
     <section id="org-none" class="org-none" hidden aria-labelledby="org-none-title">
       <h2 id="org-none-title">No org chart yet</h2>
@@ -57,9 +59,11 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     </section>
     <p id="org-problem" class="org-problem" role="alert" hidden></p>
     <div class="org-toolbar" role="toolbar" aria-label="Org tools">
-      <div id="org-views" class="org-views" role="group" aria-label="View" hidden><button type="button" data-org-view="dept" aria-pressed="true">Departments</button><button type="button" data-org-view="chart" aria-pressed="false">Chart</button></div>
+      <div id="org-views" class="org-views" role="group" aria-label="View"><button type="button" data-org-view="dept" aria-pressed="true" hidden>Departments</button><button type="button" data-org-view="chart" aria-pressed="false" aria-controls="org-chart-view">Chart</button><button type="button" data-org-view="projects" aria-pressed="false" aria-controls="org-projects">Projects</button></div>
       <div id="org-zoom" class="org-views org-zoom" role="group" aria-label="Zoom" hidden><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button><button type="button" id="org-zoom-at" data-org-zoom="0" title="Back to 100%">100%</button><button type="button" data-org-zoom="1" aria-label="Zoom in">+</button></div>
     </div>
+    <section id="org-projects" class="org-projects" aria-label="Projects" hidden></section>
+    <div id="org-chart-view">
     <ul class="org-legend" aria-label="Legend">
       <li><span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>plain card, with its status</li>
       <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, warm fill</li>
@@ -79,6 +83,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
       <p class="org-quiet">Name one in a relation or a department as <code>agent:&lt;node&gt;/&lt;id&gt;</code> to place it. It is shown, never routed to.</p>
       <ul id="org-mesh-list" class="org-nodes"></ul>
     </section>
+    </div>
   </div>`
   return renderShell({
     title: "AgentX · Org",
@@ -86,7 +91,7 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     subtitle: "Org",
     peers: opts.peers,
     body,
-    css: ORG_CSS,
+    css: ORG_CSS + ORG_PROJECTS_CSS,
     scripts: `${tokenScript}<script>${ORG_SCRIPT}</script>`,
   })
 }
@@ -179,7 +184,7 @@ const ORG_CSS = `
 .org-home { padding: 0 9px; line-height: 18px; border-radius: 999px; border: var(--ax-border-w) solid var(--ax-border-2); font-size: 11px; font-weight: 600; }
 #org-outside.is-in-depts { display: none; }
 .org-links { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
-.org-bar { display: flex; justify-content: flex-end; margin: 0 0 8px; }
+.org-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin: 0 0 12px; }
 .org-edit { margin: 0 0 24px; padding: 12px 16px 16px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
 .oe-lead { margin: 0 0 6px; color: var(--ax-text-2); }
 .oe-msg { min-height: 1.4em; margin: 0 0 6px; }
@@ -329,7 +334,7 @@ export const ORG_PEOPLE_JS = `
 `
 
 const ORG_SCRIPT = `
-(function () {${ORG_PEOPLE_JS}
+(function () {${ORG_PEOPLE_JS}${ORG_PROJECTS_JS}
   ${injectFns({ orgConfirmFor, orgEditHtml })}
   var tree = document.getElementById('org-tree');
   var msg = document.getElementById('org-msg');
@@ -352,6 +357,33 @@ const ORG_SCRIPT = `
     return rows.length ? '<div class="org-links">' + rows.map(function (t) { return '<div>' + esc(t) + '</div>'; }).join('') + '</div>' : '';
   }
   var depts = {};   // department id -> department (#1681)
+  // Departments, Chart or Projects (#1681, #1687); Projects is kept in the
+  // address as ?view=projects. Departments falls back to Chart when there are none.
+  var view = /[?&]view=projects(&|$)/.test(location.search) ? 'projects' : 'dept';
+  var lastOrg = null, projHtml = '';
+  function shownView() { return view === 'dept' && !(lastOrg && (lastOrg.departments || []).length) ? 'chart' : view; }
+  function paintView() {
+    document.querySelector('[data-org-view="dept"]').hidden = !(lastOrg && (lastOrg.departments || []).length);
+    document.querySelectorAll('[data-org-view]').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-org-view') === shownView() ? 'true' : 'false'); });
+    var on = view === 'projects';
+    document.getElementById('org-chart-view').hidden = on;
+    var box = document.getElementById('org-projects');
+    box.hidden = !on;
+    if (on && lastOrg) document.getElementById('org-none').hidden = true;
+    if (!on || !lastOrg) return;
+    var html = orgProjectsHtml(lastOrg, esc);
+    if (html !== projHtml) box.innerHTML = projHtml = html;
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('[data-org-view]') : null;
+    if (!b) return;
+    view = b.getAttribute('data-org-view');
+    var u = new URL(location.href);
+    if (view === 'projects') u.searchParams.set('view', 'projects'); else u.searchParams.delete('view');
+    history.replaceState(null, '', u.pathname + u.search + u.hash);
+    paintView();
+    if (view !== 'projects' && lastOrg) load();
+  });
   function kind(person) { return person ? '<span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>' : '<span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>'; }
   function personCard(n) {
     return '<div class="org-card is-person" data-person="' + esc(n.id) + '">' + kind(true)
@@ -408,19 +440,19 @@ const ORG_SCRIPT = `
       document.getElementById('org-legend-also').hidden = !((d.byDepartment && d.byDepartment.boxes) || []).some(function (b) { return b.also; });
       E.org = d;
       paintEdit();
+      lastOrg = d;
+      paintView();
       var org = withPeople(d);
       names = org.names;
-      document.getElementById('org-none').hidden = org.roots.length > 0;
+      document.getElementById('org-none').hidden = org.roots.length > 0 || view === 'projects';
       tree.innerHTML = org.roots.length ? branch(org.roots) : '';
       if (tree.firstElementChild) tree.firstElementChild.style.zoom = zoom;
       var hasDepts = (d.departments || []).length > 0, deptView = hasDepts && view === 'dept';
-      document.getElementById('org-views').hidden = !hasDepts;
-      document.querySelectorAll('[data-org-view]').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-org-view') === (deptView ? 'dept' : 'chart') ? 'true' : 'false'); });
       var deptsEl = document.getElementById('org-depts');
       deptsEl.hidden = !deptView;
       tree.hidden = deptView;
-      document.getElementById('org-zoom').hidden = deptView || !org.roots.length;
-      if (!deptView) { fit(); showStart(); }
+      document.getElementById('org-zoom').hidden = deptView || view === 'projects' || !org.roots.length;
+      if (!deptView && view !== 'projects') { fit(); showStart(); }
       zoomLabel();
       moreCue();
       if (deptView) {
@@ -509,13 +541,6 @@ const ORG_SCRIPT = `
   document.addEventListener('click', function (ev) {
     var b = ev.target.closest ? ev.target.closest('button[data-org-scroll]') : null;
     if (b) tree.scrollBy({ left: Number(b.getAttribute('data-org-scroll')) * tree.clientWidth * 0.8, behavior: 'smooth' });
-  });
-  var view = 'dept';   // 'dept' or 'chart' (#1681)
-  document.addEventListener('click', function (ev) {
-    var v = ev.target.closest ? ev.target.closest('button[data-org-view]') : null;
-    if (!v) return;
-    view = v.getAttribute('data-org-view');
-    load();
   });
   document.addEventListener('click', async function (ev) {
     var b = ev.target.closest ? ev.target.closest('button[data-hold]') : null;
