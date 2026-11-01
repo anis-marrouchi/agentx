@@ -84,6 +84,7 @@ export function departmentsProblem(
       if (o) return `Department ${d.name} cannot also list ${o.name}: ${notStaff(o)}`
       const at = home.get(m)
       if (at === d.id) return `"${m}" is a member of department ${d.name} already; alsoMembers is for members whose home is another department`
+      if (m === d.head) return `"${m}" heads department ${d.name} already; alsoMembers is for members whose home is another department`
       if (!at) return `"${m}" is in alsoMembers of department ${d.name} but has no home; list them in the members of one department first`
     }
   }
@@ -113,7 +114,8 @@ export interface DepartmentBox {
 
 /** The Departments view (#1681): a box per department, then everyone in
  *  `everyone` (card keys, in order) that no department holds or heads.
- *  An also-member with no other home (a problem the page shows) is left out. */
+ *  An also-member with no other home, or who heads this department (problems
+ *  the page shows), is left out. */
 export function departmentBoxes(
   departments: OrgDepartment[],
   everyone: string[],
@@ -126,7 +128,7 @@ export function departmentBoxes(
     for (const m of d.members) held.add(m)
     const also = (d.alsoMembers ?? []).flatMap((key) => {
       const at = home.get(key)
-      return at && at !== d.id ? [{ key, home: nameOf.get(at)! }] : []
+      return at && at !== d.id && key !== d.head ? [{ key, home: nameOf.get(at)! }] : []
     })
     return {
       id: d.id, name: d.name, ...(d.head ? { head: d.head } : {}), members: d.members.filter((m) => m !== d.head),

@@ -2111,6 +2111,22 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(html).toContain("Outlined: also works here, home is another department")
   })
 
+  it("has no also-works legend line when every also-member was left out", async () => {
+    const org = { exists: true, ...buildOrgView({
+      agents: { ann: { name: "Ann" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      business: {
+        orgChart: { ann: { reportsTo: "person:sam" } },
+        departments: { ops: { name: "Ops", members: [], alsoMembers: ["ann"] } },
+      },
+    }, {}, null) }
+    const w = openWall({ org, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    expect(html).not.toContain("wod__also")
+    expect(html).not.toContain("Outlined: also works here")
+  })
+
   it("keeps the chart and no view switch when there are no departments (#1681)", async () => {
     const w = openWall({ org: ORG, hash: "#page=org" })
     await w.settle()

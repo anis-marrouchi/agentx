@@ -376,6 +376,9 @@ describe("alsoMembers: one member in several departments (Anis 11-01)", () => {
       .toBe('Department Sales also lists "qa", which is not an agent in business.orgChart')
     expect(departmentsProblem([dev, sales(["person:zahra"])], agents, people, new Set(), new Map([["zahra", { name: "Zahra", role: "guest" as const }]])))
       .toBe("Department Sales cannot also list Zahra: Zahra is a guest, and only owners and members of the organisation can be in a department")
+    // Heading the same department and also listed there would draw them twice.
+    expect(departmentsProblem([dev, { ...sales(["agent:pm"]), head: "agent:pm" }], agents, people))
+      .toBe('"agent:pm" heads department Sales already; alsoMembers is for members whose home is another department')
     // Two homes is still refused, alsoMembers or not.
     expect(departmentsProblem([dev, { ...sales([]), members: ["agent:pm"] }], agents, people))
       .toBe('"agent:pm" is in both department Dev and Sales; a member is in one department')
@@ -399,6 +402,14 @@ describe("alsoMembers: one member in several departments (Anis 11-01)", () => {
   it("leaves out an also-member with no home rather than draw a wrong chip", () => {
     const depts = orgDepartments({ departments: { sales: { name: "Sales", members: [], alsoMembers: ["pm"] } } })
     expect(departmentBoxes(depts, ["agent:pm"])).toEqual({ boxes: [{ id: "sales", name: "Sales", members: [] }], rest: ["agent:pm"] })
+  })
+
+  it("leaves out an also-member who heads that same department, so the box shows them once", () => {
+    const depts = orgDepartments({ departments: {
+      dev: { name: "Dev", members: ["pm"] },
+      sales: { name: "Sales", head: "pm", members: [], alsoMembers: ["pm"] },
+    } })
+    expect(departmentBoxes(depts, ["agent:pm"]).boxes.find((b) => b.id === "sales")).toEqual({ id: "sales", name: "Sales", head: "agent:pm", members: [] })
   })
 
   it("draws them on /org as outlined cards under a Home chip, with a legend line", () => {

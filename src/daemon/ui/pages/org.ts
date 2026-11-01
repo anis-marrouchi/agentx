@@ -405,7 +405,7 @@ const ORG_SCRIPT = `
       (d.departments || []).forEach(function (dep) { depts[dep.id] = dep; });
       document.getElementById('org-legend-dept').hidden = !(d.departments || []).length;
       document.getElementById('org-legend-remote').hidden = !((d.diagram && d.diagram.boxes) || []).some(function (b) { return b.remote; });
-      document.getElementById('org-legend-also').hidden = !(d.departments || []).some(function (x) { return x.alsoMembers; });
+      document.getElementById('org-legend-also').hidden = !((d.byDepartment && d.byDepartment.boxes) || []).some(function (b) { return b.also; });
       E.org = d;
       paintEdit();
       var org = withPeople(d);

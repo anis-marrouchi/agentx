@@ -128,7 +128,7 @@ export const WALL_ORG_SCRIPT = String.raw`
         '<li><span class="wog__key is-person"></span>' + orgKindHtml('person') + '</li>' +
         (d.boxes.some(function (b) { return b.remote; }) ? '<li><span class="wog__key is-remote"></span>On another node: shown, not routed to; grey when it does not answer</li>' : '') +
         (!chart ? '<li><span class="wog__chip is-lead">Head</span>Heads the department</li>' +
-          (orgDepts().some(function (x) { return x.alsoMembers; }) ? '<li><span class="wog__chip is-home">Home: …</span>Outlined: also works here, home is another department</li>' : '') :
+          (((S.org && S.org.byDepartment && S.org.byDepartment.boxes) || []).some(function (x) { return x.also; }) ? '<li><span class="wog__chip is-home">Home: …</span>Outlined: also works here, home is another department</li>' : '') :
           (orgDepts().length ? '<li><span class="wog__key is-dept"></span>Department</li>' : '') +
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln" d="M2 5H26"/></svg>Reports to</li>' +
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln is-dotted" d="M2 5H26"/></svg>Dotted line: a second boss for one topic</li>' +
