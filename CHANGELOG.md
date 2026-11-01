@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.201.0](https://github.com/anis-marrouchi/agentx/compare/v0.200.1...v0.201.0) (2026-11-01)
+
+
+### Features
+
+* **voice:** start AgentX Voice reduced to the orb by default ([#1685](https://github.com/anis-marrouchi/agentx/issues/1685)) ([75864ec](https://github.com/anis-marrouchi/agentx/commit/75864ec628bc4550ababd8233389a25516cd6377))
+
+
+### Bug Fixes
+
+* **voice:** render markdown tables in the answer card ([#1682](https://github.com/anis-marrouchi/agentx/issues/1682)) ([111105e](https://github.com/anis-marrouchi/agentx/commit/111105e36ca0e2b1a007e22a198d2809756bcaa3))
+
 ## [0.200.1](https://github.com/anis-marrouchi/agentx/compare/v0.200.0...v0.200.1) (2026-11-01)
 
 
