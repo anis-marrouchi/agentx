@@ -433,6 +433,38 @@ Validate env vars are set for one or all integrations on an agent.
 
 No flags.
 
+### `agentx agent integrations connect <agentId> <kind>`
+
+Sign in to an outside API (OAuth) and store the token for an agent. See [Let agents read data from outside services](../integrations.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--label <text>` | the kind | Which integration of this kind (created when missing). |
+| `--client-id-env <name>` | `<KIND>_CLIENT_ID` | Env var with the app's client id. |
+| `--client-secret-env <name>` | `<KIND>_CLIENT_SECRET` | Env var with the app's client secret. |
+| `--with <names>` | — | Comma-separated optional permissions the provider offers (e.g. revenue). |
+| `--reads <names>` | every read | Comma-separated reads this integration allows. |
+| `--store <where>` | `keyring` when this machine has one, else `env` | Where the token is kept: the OS keyring or `.env`. |
+| `--port <n>` | `19876` | Loopback port for the sign-in answer. |
+| `--paste` | — | No loopback: paste the address the browser lands on. |
+| `--no-browser` | — | Print the sign-in address instead of opening it. |
+
+### `agentx agent integrations status <agentId>`
+
+Show sign-in status of an agent's outside-API integrations: connected, expiry, missing permissions. Exits with 1 when one is not connected.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--json` | — | Emit JSON. |
+
+### `agentx agent integrations disconnect <agentId> <kind>`
+
+Forget the stored sign-in for an outside-API integration. The entry and its app settings stay.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--label <text>` | — | Which integration of this kind. |
+
 ## channel
 
 `agentx channel`: Manage channels — add telegram/whatsapp/gitlab, list.

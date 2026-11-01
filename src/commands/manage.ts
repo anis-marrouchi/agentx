@@ -479,6 +479,190 @@ integrations
     if (bad > 0) process.exit(1)
   })
 
+// --- OAuth connect / status / disconnect (#1696) ---
+//
+// For kinds with a provider spec (src/integrations/providers): the owner
+// signs in once in the browser; the grant goes to the OS keyring (or .env)
+// and the daemon refreshes access tokens at use time.
+
+function findOrStartIntegration(cfg: any, agentId: string, kind: string, label?: string): { list: any[]; idx: number } {
+  const a = cfg.agents[agentId]
+  a.integrations = (a.integrations as any[] | undefined) ?? []
+  const list = a.integrations as any[]
+  const idx = list.findIndex((i: any) => i.kind === kind && (!label || i.label === label))
+  return { list, idx }
+}
+
+integrations
+  .command("connect <agentId> <kind>")
+  .description("sign in to an outside API (OAuth) and store the token for an agent")
+  .option("--label <text>", "which integration of this kind (created when missing; default: the kind)")
+  .option("--client-id-env <name>", "env var with the app's client id (default: <KIND>_CLIENT_ID)")
+  .option("--client-secret-env <name>", "env var with the app's client secret (default: <KIND>_CLIENT_SECRET)")
+  .option("--with <names>", "comma-separated optional permissions the provider offers (e.g. revenue)")
+  .option("--reads <names>", "comma-separated reads this integration allows (default: every read the provider offers)")
+  .option("--store <where>", "keyring or env (default: keyring when this machine has one)")
+  .option("--port <n>", "loopback port for the sign-in answer", "19876")
+  .option("--paste", "no loopback: paste the address the browser lands on (for a machine without a browser)")
+  .option("--no-browser", "print the sign-in address instead of opening it")
+  .action(async (agentId: string, kind: string, opts) => {
+    const { providerFor, BUILTIN_PROVIDERS } = await import("@/integrations/providers")
+    const { resolveClient } = await import("@/integrations/resolve")
+    const { signIn, storeGrant } = await import("@/integrations/connect")
+    const { systemKeyring } = await import("@/integrations/keyring")
+    const { waitForLoopbackCallback, parseCallback } = await import("@/integrations/oauth")
+    const { setDotenvKey } = await import("@/utils/dotenv")
+
+    const cfg = loadConfig()
+    if (!cfg.agents?.[agentId]) { console.log(chalk.red(`  Agent "${agentId}" not found`)); process.exit(1) }
+    const spec = providerFor(kind)
+    if (!spec) {
+      const known = Object.keys(BUILTIN_PROVIDERS)
+      console.log(chalk.red(`  No sign-in support for "${kind}". ${known.length ? `Supported: ${known.join(", ")}` : "No provider is built in yet."}`))
+      process.exit(1)
+    }
+    const port = Number(opts.port)
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) { console.log(chalk.red("  --port must be 1024-65535")); process.exit(1) }
+    const store = String(opts.store || "").trim() || (systemKeyring().available() ? "keyring" : "env")
+    if (store !== "keyring" && store !== "env") { console.log(chalk.red("  --store must be keyring or env")); process.exit(1) }
+    if (store === "keyring" && !systemKeyring().available()) {
+      console.log(chalk.red("  No OS keyring on this machine (macOS Keychain or Linux secret-tool). Use --store env."))
+      process.exit(1)
+    }
+
+    const label = String(opts.label || "").trim() || undefined
+    let { list, idx } = findOrStartIntegration(cfg, agentId, kind, label)
+    const envName = (s: string) => s.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()
+    if (idx === -1) {
+      list.push({
+        kind,
+        label: label ?? kind,
+        credentials: {
+          clientIdEnv: String(opts.clientIdEnv || `${envName(kind)}_CLIENT_ID`),
+          clientSecretEnv: String(opts.clientSecretEnv || `${envName(kind)}_CLIENT_SECRET`),
+        },
+        metadata: {},
+        enabled: true,
+      })
+      idx = list.length - 1
+    } else {
+      list[idx].credentials = { ...(list[idx].credentials ?? {}) }
+      if (opts.clientIdEnv) list[idx].credentials.clientIdEnv = String(opts.clientIdEnv)
+      if (opts.clientSecretEnv) list[idx].credentials.clientSecretEnv = String(opts.clientSecretEnv)
+      list[idx].credentials.clientIdEnv ??= `${envName(kind)}_CLIENT_ID`
+      list[idx].credentials.clientSecretEnv ??= `${envName(kind)}_CLIENT_SECRET`
+    }
+    if (opts.reads !== undefined) {
+      const names = String(opts.reads).split(",").map((x) => x.trim()).filter(Boolean)
+      const unknownReads = names.filter((n) => !Object.prototype.hasOwnProperty.call(spec.reads, n))
+      if (unknownReads.length) { console.log(chalk.red(`  Unknown read(s): ${unknownReads.join(", ")}. ${spec.title} offers: ${Object.keys(spec.reads).join(", ")}`)); process.exit(1) }
+      list[idx].metadata = { ...(list[idx].metadata ?? {}) }
+      if (names.length) list[idx].metadata.reads = names.join(",")
+      else delete list[idx].metadata.reads
+    }
+    const integration = list[idx]
+    for (const [k, v] of Object.entries(integration.credentials as Record<string, string>)) {
+      if (!/^[A-Z][A-Z0-9_]*$/.test(String(v)) && k.endsWith("Env")) { console.log(chalk.red(`  ${k} must be an uppercase env var name (got "${v}")`)); process.exit(1) }
+    }
+    const client = resolveClient(integration)
+    if (!client.ok) {
+      console.log(chalk.red(`  ${client.reason}`))
+      console.log(chalk.dim(`  Put the app's client id and secret in .env next to agentx.json, then run this again.`))
+      process.exit(1)
+    }
+
+    const redirectUri = `http://localhost:${port}/callback`
+    console.log()
+    console.log(chalk.bold(`  Connect ${spec.title} for ${agentId} ("${integration.label}")`))
+    console.log(chalk.dim(`  Redirect address (add it to your app's allowed redirects): ${redirectUri}`))
+    const extras = String(opts.with || "").split(",").map((s) => s.trim()).filter(Boolean)
+    try {
+      const grant = await signIn({
+        agentId, spec, integration, clientId: client.clientId, clientSecret: client.clientSecret, redirectUri, extras,
+        getCallback: async (authorizeUrl, state) => {
+          const wait = opts.paste ? null : waitForLoopbackCallback(port, state)
+          if (wait) await wait.ready
+          console.log(`\n  Open this address and approve:\n\n  ${chalk.cyan(authorizeUrl)}\n`)
+          if (opts.browser !== false && !opts.paste) {
+            const { openBrowser } = await import("@/utils/open-browser")
+            openBrowser(authorizeUrl)
+          }
+          if (wait) {
+            console.log(chalk.dim("  Waiting for the browser (5 minutes)..."))
+            return wait.result
+          }
+          const r = await prompts({ type: "text", name: "url", message: "Paste the whole address the browser landed on" })
+          return parseCallback(String(r.url || ""), state)
+        },
+      })
+      const saved = storeGrant(agentId, integration, grant, store as "keyring" | "env", {
+        keyring: systemKeyring(),
+        writeEnv: (key, value) => setDotenvKey(resolve(process.cwd(), ".env"), key, value),
+      })
+      list[idx] = saved.integration
+      await saveConfig(cfg)
+      console.log(chalk.green(`  ✓ ${agentId}: ${spec.title} connected; token kept in ${saved.where}`))
+      console.log(chalk.dim(`  Granted: ${grant.scopes.join(" ") || "(not reported)"}`))
+      if (!grant.refreshToken && grant.expiresAt) console.log(chalk.yellow(`  This token cannot refresh itself; it expires on ${new Date(grant.expiresAt).toISOString().slice(0, 10)}. Connect again before then.`))
+      if (store === "env") console.log(chalk.dim("  Restart the daemon so it reads the new .env value: agentx daemon restart"))
+      console.log(chalk.dim(`  Check it: agentx agent integrations status ${agentId}`))
+    } catch (e: any) {
+      console.log(chalk.red(`  ✗ not connected: ${e?.message ?? e}`))
+      process.exit(1)
+    }
+    process.exit(0)
+  })
+
+integrations
+  .command("status <agentId>")
+  .description("show sign-in status of an agent's outside-API integrations: connected, expiry, missing permissions")
+  .option("--json", "emit JSON")
+  .action(async (agentId: string, opts) => {
+    const { providerFor } = await import("@/integrations/providers")
+    const { integrationStatus } = await import("@/integrations/status")
+    const cfg = loadConfig()
+    const a = cfg.agents?.[agentId]
+    if (!a) { console.log(chalk.red(`  Agent "${agentId}" not found`)); process.exit(1) }
+    const rows = ((a.integrations as any[] | undefined) ?? [])
+      .map((i: any) => ({ i, spec: providerFor(i.kind) }))
+      .filter((r) => r.spec)
+      .map(({ i, spec }) => ({ kind: i.kind, label: i.label, enabled: i.enabled !== false, ...integrationStatus(agentId, i, spec!) }))
+    if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return }
+    if (!rows.length) { console.log(chalk.dim(`\n  ${agentId}: no outside-API integrations. Add one with: agentx agent integrations connect ${agentId} <kind>\n`)); return }
+    console.log()
+    for (const r of rows) {
+      const head = r.connected && !r.problems.length ? chalk.green("✓") : r.connected ? chalk.yellow("!") : chalk.red("✗")
+      const bits = [r.connected ? "connected" : "not connected"]
+      if (r.store) bits.push(`token in ${r.store}`)
+      if (r.refreshes) bits.push("refreshes itself")
+      if (r.expiresAt) bits.push(`expires ${new Date(r.expiresAt).toISOString().slice(0, 10)}`)
+      if (!r.enabled) bits.push("disabled")
+      console.log(`    ${head} ${r.kind} "${r.label}": ${bits.join(", ")}`)
+      for (const p of r.problems) console.log(`      ${chalk.dim(p)}`)
+    }
+    console.log()
+    if (rows.some((r) => !r.connected)) process.exitCode = 1
+  })
+
+integrations
+  .command("disconnect <agentId> <kind>")
+  .description("forget the stored sign-in for an outside-API integration (the entry stays)")
+  .option("--label <text>", "which integration of this kind")
+  .action(async (agentId: string, kind: string, opts) => {
+    const { forgetGrant } = await import("@/integrations/connect")
+    const { systemKeyring } = await import("@/integrations/keyring")
+    const cfg = loadConfig()
+    if (!cfg.agents?.[agentId]) { console.log(chalk.red(`  Agent "${agentId}" not found`)); process.exit(1) }
+    const { list, idx } = findOrStartIntegration(cfg, agentId, kind, opts.label ? String(opts.label) : undefined)
+    if (idx === -1) { console.log(chalk.red(`  ${agentId} has no ${kind} integration`)); process.exit(1) }
+    const r = forgetGrant(agentId, list[idx], systemKeyring())
+    list[idx] = r.integration
+    await saveConfig(cfg)
+    console.log(chalk.green(`  ✓ ${agentId}: ${kind} "${r.integration.label}" disconnected${r.removedFromKeyring ? " (removed from the OS keyring)" : ""}`))
+    if (r.envLeft.length) console.log(chalk.yellow(`  Delete ${r.envLeft.join(" and ")} from .env yourself, then restart the daemon.`))
+    console.log(chalk.dim("  To remove the app's access entirely, also revoke it in the provider's account settings."))
+  })
+
 agent.addCommand(integrations)
 
 // ==================== agentx channel ====================

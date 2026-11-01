@@ -65,6 +65,7 @@ const groups = [
     { text: "Answer customer email", link: "/jobs/answer-email" },
     { text: "Watch a WhatsApp chat", link: "/jobs/watch-whatsapp" },
     { text: "Draft posts in your voice", link: "/jobs/content" },
+    { text: "Let agents read data from outside services", link: "/integrations" },
     { text: "Get notified", link: "/jobs/notifications" },
     { text: "See waiting decisions in Reminders and Calendar", link: "/jobs/reminders-mirror" },
     { text: "Get agents' ideas in Apple Notes", link: "/jobs/ideas-to-notes" },

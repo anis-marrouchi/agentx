@@ -5,7 +5,9 @@ import { accessSync, constants, existsSync, readFileSync, readdirSync, statSync 
 import { join, resolve } from "path"
 import { homedir } from "os"
 import { createRequire } from "module"
-import { loadDaemonConfig } from "@/daemon/config"
+import { INTEGRATION_KINDS, loadDaemonConfig } from "@/daemon/config"
+import { BUILTIN_PROVIDERS, providerFor } from "@/integrations/providers"
+import { integrationStatus } from "@/integrations/status"
 import { findOnPath, plistPathEnv } from "@/desktop/install"
 import { localSettings } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
@@ -765,6 +767,7 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
     "hubspot", "salesforce", "pipedrive", "odoo",
     "trello", "linear", "asana", "jira", "notion",
     "stripe", "sentry", "vercel", "twilio", "custom",
+    ...INTEGRATION_KINDS, ...Object.keys(BUILTIN_PROVIDERS),
   ])
   for (const [agentId, a] of Object.entries((cfg.agents ?? {}) as Record<string, any>)) {
     const list = (a.integrations as any[] | undefined) ?? []
@@ -794,6 +797,19 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
             severity: "warn",
             title: `agents.${agentId}.integrations[${i.kind}/${i.label}].${k} -> $${v} but env var is unset (in this shell)`,
             fix: `Set ${v} on the daemon environment. The daemon's process.env is what matters; this warning fires from your local shell.`,
+          })
+        }
+      }
+      // Outside-API sign-ins (#1696): connected, expiry, missing scopes.
+      const spec = i.enabled === false ? null : providerFor(i.kind)
+      if (spec) {
+        const st = integrationStatus(agentId, i, spec)
+        for (const problem of st.problems) {
+          if (/env var .* is unset/.test(problem)) continue // reported just above
+          findings.push({
+            severity: "warn",
+            title: `agents.${agentId}.integrations[${i.kind}/${i.label}]: ${problem}`,
+            fix: st.connected ? `Run agentx agent integrations status ${agentId} for details.` : `Run agentx agent integrations connect ${agentId} ${i.kind}${i.label !== i.kind ? ` --label "${i.label}"` : ""}.`,
           })
         }
       }

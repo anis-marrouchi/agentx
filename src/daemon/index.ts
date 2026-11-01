@@ -5326,6 +5326,17 @@ export class AgentXDaemon {
         return
       }
 
+      // Outside-API reads (#1696): the named, GET-only reads of an agent's
+      // connected integrations. Tokens stay here. Gated by isMeshGatedPath.
+      if (path === "/integrations" || path.startsWith("/integrations/")) {
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const { handleIntegrationsApi } = await import("@/integrations/daemon-api")
+        const reply = await handleIntegrationsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, url.searchParams, this.config)
+        if (req.method === "POST" && reply.status === 200) this.log(`[integrations] ${String((body as any)?.agent)} read ${String((body as any)?.kind)}/${String((body as any)?.read)}`)
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
       // Approvals inbox, agent side: raise a card, read the inbox. Deciding
       // is refused here (operator surfaces only). Gated like agent memory
       // by isMeshGatedPath above.

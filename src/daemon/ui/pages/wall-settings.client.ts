@@ -223,7 +223,10 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
    *  not answer, a restart pending. [agents, mesh, health] */
   function stAttention() {
     var agents = ((S.st.data && S.st.data.agents) || []).filter(function (a) {
-      var unset = (a.integrations || []).some(function (i) { return Object.keys(i.credStatus || {}).some(function (k) { return i.credStatus[k] === 'unset'; }); });
+      var unset = (a.integrations || []).some(function (i) {
+        if (i.enabled !== false && i.oauth && (!i.oauth.connected || (i.oauth.problems || []).length)) return true;
+        return Object.keys(i.credStatus || {}).some(function (k) { return i.credStatus[k] === 'unset'; });
+      });
       return unset || stOrgNode(a.id).status === 'waiting';
     }).length;
     var down = ((S.live && S.live.nodes) || []).filter(nodeDown).length;
@@ -398,10 +401,20 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
         var st = i.credStatus[k];
         return '<span class="chip ' + (st === 'set' ? 'chip--done' : st === 'unset' ? 'chip--warn' : 'chip--ghost') + '">' + esc(k) + (st === 'set' ? ' set' : st === 'unset' ? ' not set' : '') + '</span>';
       }).join(' ');
+      // Outside-API sign-in (#1696): connected, expiry, what to fix. Never a token.
+      var o = i.oauth, signin = '';
+      if (o) {
+        var probs = o.problems || [];
+        var facts = [esc(o.title)];
+        if (o.refreshes) facts.push('renews itself');
+        if (o.expiresAt) facts.push('expires ' + esc(new Date(o.expiresAt).toISOString().slice(0, 10)));
+        signin = '<div><span class="chip ' + (o.connected && !probs.length ? 'chip--done">connected' : o.connected ? 'chip--warn">needs attention' : 'chip--warn">not connected') + '</span> <small>' + facts.join(' · ') + '</small></div>' +
+          (probs.length ? '<details class="wsx"><summary>' + probs.length + ' to fix</summary>' + probs.map(function (p) { return '<small>' + esc(p) + '</small>'; }).join('') + '</details>' : '');
+      }
       var refs = Object.keys(i.credentials || {}).map(function (k) { return k + '=' + i.credentials[k]; }).join(', ');
       var meta = Object.keys(i.metadata || {}).map(function (k) { return k + '=' + i.metadata[k]; }).join(' · ');
       return '<li class="wsi"><div><b>' + esc(i.label) + '</b> <code>' + esc(i.kind) + '</code>' + (i.enabled === false ? ' <span class="chip chip--ghost">off</span>' : '') +
-        (status ? '<div>' + status + '</div>' : '') + (refs ? '<small>' + esc(refs) + '</small>' : '') + (meta ? '<small>' + esc(meta) + '</small>' : '') + '</div>' +
+        signin + (status ? '<div>' + status + '</div>' : '') + (refs ? '<small>' + esc(refs) + '</small>' : '') + (meta ? '<small>' + esc(meta) + '</small>' : '') + '</div>' +
         '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="ask" data-key="int:' + n + '">Remove</button>' +
         stConfirmHtml('int:' + n, 'Remove ' + esc(i.kind) + ' "' + esc(i.label) + '" from @' + esc(a.id) + '?', 'Remove') + '</li>';
     }).join('');

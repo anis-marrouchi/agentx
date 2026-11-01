@@ -30,3 +30,16 @@ export function addDotenvKey(path: string, key: string, value: string): boolean 
   appendFileSync(path, `${sep}${key}=${value}\n`)
   return true
 }
+
+/** Set KEY=value in .env, replacing every earlier line for KEY. Same file
+ *  rules as addDotenvKey (created or tightened to mode 600). */
+export function setDotenvKey(path: string, key: string, value: string): void {
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) throw new Error(`not an environment variable name: ${key}`)
+  if (!value || /[\r\n]/.test(value)) throw new Error("the value must be one non-empty line")
+  if (!existsSync(path)) { addDotenvKey(path, key, value); return }
+  try { chmodSync(path, 0o600) } catch {}
+  const isKey = new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`)
+  const kept = readFileSync(path, "utf-8").split("\n").filter((line) => !isKey.test(line))
+  while (kept.length && kept[kept.length - 1] === "") kept.pop()
+  writeFileSync(path, `${kept.join("\n")}${kept.length ? "\n" : ""}${key}=${value}\n`, { mode: 0o600 })
+}

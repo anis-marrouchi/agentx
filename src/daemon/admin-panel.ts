@@ -8,6 +8,8 @@ import { cronValueOf } from "@/crons/value-line"
 import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
 import { TokenStore } from "./token-store"
+import { providerFor } from "@/integrations/providers"
+import { integrationStatus } from "@/integrations/status"
 import { crossFieldProblems, daemonConfigSchema, expandEnvVars, loadDaemonConfig } from "./config"
 import { localSettings, patchLocal } from "@/notify/local"
 import { patchScreen, screenSettings } from "@/computer-use/capture-settings"
@@ -314,6 +316,14 @@ function getAdminState() {
         credentials: creds,
         credStatus,
         metadata: i.metadata || {},
+        // Outside-API sign-in (#1696): connected, expiry, missing scopes.
+        // Token-free by construction (integrationStatus never returns one).
+        ...(() => {
+          const spec = providerFor(i.kind)
+          if (!spec) return {}
+          const st = integrationStatus(id, i, spec)
+          return { oauth: { title: spec.title, connected: st.connected, store: st.store, expiresAt: st.expiresAt, refreshes: st.refreshes, missingScopes: st.missingScopes, problems: st.problems } }
+        })(),
       }
     }),
   }))
