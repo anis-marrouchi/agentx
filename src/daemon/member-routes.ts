@@ -9,6 +9,7 @@ import { MemberStore } from "@/members/store"
 import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
 import { PERSON_COOKIE, PERSON_SESSION_MAX_AGE_S, PersonSessionStore } from "@/members/person-sessions"
 import { SendLimiter, SignInLinkStore, askSignInLink, personAccess, signInWithLink, type SignInDeps, type SignInSetup } from "@/members/signin"
+import { OidcStateStore, SignInAccountStore, STATE_COOKIE, STATE_TTL_MS, finishOidc, startOidc, type OidcDeps, type OidcSetup } from "@/members/oidc"
 import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor, type PersonWork, type SentItem, type WorkItem } from "@/members/work"
 import { agentIdsFor, agentsOf, type AgentCard } from "@/members/agents"
@@ -67,11 +68,17 @@ export interface MemberRouteCtx {
   signInPerAddress?: SendLimiter
   signInPerClient?: SendLimiter
   sendMail?: SignInDeps["send"]
+  /** Signing in with an OpenID Connect provider (#1675): null while unset. */
+  oidcSetup?: () => OidcSetup | null
+  oidcStates?: OidcStateStore
+  signInAccounts?: SignInAccountStore
+  fetch?: OidcDeps["fetch"]
 }
 
 const defaultPairLimiter = new PairAttemptLimiter()
 const defaultPerAddress = new SendLimiter(5)
 const defaultPerClient = new SendLimiter(20)
+const defaultOidcStates = new OidcStateStore()
 const asMember = (line: string) => line.replace(/^\[app\]/, "[member]")
 const defaultRejectLog = new RejectLog((line) => console.log(asMember(line)))
 /** One reject log per log sink, so its once-a-minute rule spans requests. */
@@ -138,7 +145,33 @@ export async function handleMemberRequest(
     perAddress: ctx.signInPerAddress ?? defaultPerAddress, perClient: ctx.signInPerClient ?? defaultPerClient,
     send: ctx.sendMail, minMs: ctx.pairMinMs, log: ctx.log, now: ctx.now,
   }
-  if (method === "GET" && path === "/member/signin") return send(res, 200, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup()))
+  const oidc: OidcDeps = {
+    ...signIn, oidc: ctx.oidcSetup ?? (() => null), fetch: ctx.fetch,
+    states: ctx.oidcStates ?? defaultOidcStates, accounts: ctx.signInAccounts ?? new SignInAccountStore(ctx.root),
+  }
+  const provider = oidc.oidc()?.name ?? null
+  if (method === "GET" && path === "/member/signin") return send(res, 200, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup(), provider))
+  if (method === "GET" && path === "/member/signin/oidc") {
+    const result = await startOidc(new URL(req.url || path, "http://x"), oidc)
+    if (result.status !== 302) return send(res, result.status, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup(), provider, result.error))
+    res.setHeader("Set-Cookie", `${STATE_COOKIE}=${result.state}; Path=/member/signin/oidc; Max-Age=${STATE_TTL_MS / 1000}; HttpOnly; Secure; SameSite=Lax`)
+    res.writeHead(302, { Location: result.location, "Cache-Control": "no-store" })
+    res.end()
+    return true
+  }
+  if (method === "GET" && path === "/member/signin/oidc/done") {
+    const result = await finishOidc(req, new URL(req.url || path, "http://x"), cookie(req, STATE_COOKIE), oidc)
+    const cookies = [`${STATE_COOKIE}=; Path=/member/signin/oidc; Max-Age=0; HttpOnly; Secure; SameSite=Lax`]
+    if (result.status !== 200) {
+      res.setHeader("Set-Cookie", cookies)
+      if (result.status === 429) res.setHeader("Retry-After", String(result.retryAfter))
+      return send(res, result.status, "text/html; charset=utf-8", renderMemberSignInPage(!!signIn.setup(), provider, result.body.error))
+    }
+    res.setHeader("Set-Cookie", [...cookies, personCookie(result.value)])
+    res.writeHead(302, { Location: "/member", "Cache-Control": "no-store" })
+    res.end()
+    return true
+  }
   if (method === "POST" && path === "/api/member/signin-link") {
     const result = await askSignInLink(req, signIn)
     return sendJson(res, result.status, result.body)
@@ -167,7 +200,7 @@ export async function handleMemberRequest(
         path.slice(0, 120),
         rejectFields(req, credentialState(cookie(req, MEMBER_COOKIE), tokens), sent ? credentialState(sent, tokens) : null),
       )
-      if (path === "/member") return send(res, 401, "text/html; charset=utf-8", renderMemberLockedPage(!!signIn.setup()))
+      if (path === "/member") return send(res, 401, "text/html; charset=utf-8", renderMemberLockedPage(!!signIn.setup() || !!provider))
       return sendJson(res, 401, { error: access.error, hint: "ask the owner to run: agentx people invite <you>" })
     }
     // Paired, waiting for the owner. 202 on the page: the service worker

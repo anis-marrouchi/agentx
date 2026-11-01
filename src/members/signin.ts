@@ -211,7 +211,6 @@ export type SignInResult =
  *  of the person's, waiting for the owner on their first sign-in. */
 export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Promise<SignInResult> {
   const started = Date.now()
-  const now = deps.now ?? Date.now
   const log = deps.log ?? ((line: string) => console.log(line))
   const setup = deps.setup()
   if (!setup) return { status: 404, body: { error: NOT_SET_UP } }
@@ -233,10 +232,25 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
     return { status: 401, body: { error: LINK_FAILED } }
   }
   deps.limiter.succeed(client)
+  return openSession(req, person, label, { via: "email link", proof: `the link mailed to ${person.name.slice(0, 60)}` }, setup, deps)
+}
+
+/** How a person proved who they are, for the logs and the owner's card. */
+export interface SignInProof { via: string; proof: string }
+
+/** What follows once the person is known, by a link or a sign-in provider:
+ *  the network check, then straight in, or the owner's first-sign-in card. */
+export function openSession(
+  req: IncomingMessage, person: Person, label: string, how: SignInProof,
+  setup: Pick<SignInSetup, "firstSignIn">, deps: SignInDeps,
+): Exclude<SignInResult, { status: 429 }> {
+  const now = deps.now ?? Date.now
+  const log = deps.log ?? ((line: string) => console.log(line))
+  const client = clientAddress(req)
   const login = networkLogin(req)
   const expected = networkIdentities(person)
   if (expected.length && (!login || !expected.includes(login))) {
-    deps.members.log({ person: person.id, event: "refused", address: client, detail: `sign-in link: network login ${login ?? "missing"}; expected ${expected.join(" or ")}` })
+    deps.members.log({ person: person.id, event: "refused", address: client, detail: `sign-in ${how.via}: network login ${login ?? "missing"}; expected ${expected.join(" or ")}` })
     log(`[member] ${person.id}: sign-in from ${client} refused: the network says "${login ?? "nobody"}", expected ${expected.join(" or ")}`)
     return { status: 403, body: { error: NETWORK_MISMATCH } }
   }
@@ -249,8 +263,8 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
   for (const s of deps.sessions.sessions(person.id)) if (s.state === "pending" && !s.endedAt) settle(s, person, deps)
   if (deps.sessions.approved(person.id) || auto) {
     const { session, value } = deps.sessions.create(person.id, name, { approvedAt: at })
-    deps.members.log({ person: person.id, event: "signed-in", address: client, detail: `${name} (email link${auto ? ", auto" : ""})` })
-    log(`[member] ${person.id} signed in by email link on "${name}" from ${client} (session ${session.id})`)
+    deps.members.log({ person: person.id, event: "signed-in", address: client, detail: `${name} (${how.via}${auto ? ", auto" : ""})` })
+    log(`[member] ${person.id} signed in by ${how.via} on "${name}" from ${client} (session ${session.id})`)
     return { status: 200, body: { person: person.id, name, state: "active" }, value }
   }
 
@@ -260,7 +274,7 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
   const card = createCard(deps.root, {
     title: `${who} signed in for the first time`,
     ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Browser name, as typed there: "${name}". Let them see their own work?`,
-    recommend: `Signed in with the link mailed to ${who}. Yes if you expected it. No if you did not.`,
+    recommend: `Signed in with ${how.proof}. Yes if you expected it. No if you did not.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,
   }, { now: now() })
@@ -270,8 +284,8 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
     return { status: 503, body: { error: TOO_MANY_WAITING } }
   }
   const { session, value } = deps.sessions.create(person.id, name, { state: "pending", cardId: card.card.id })
-  deps.members.log({ person: person.id, event: "paired", address: client, detail: `${name} (email link, first sign-in)` })
-  log(`[member] ${person.id} signed in by email link for the first time on "${name}" from ${client}; waiting for the owner (card ${card.card.id}, session ${session.id})`)
+  deps.members.log({ person: person.id, event: "paired", address: client, detail: `${name} (${how.via}, first sign-in)` })
+  log(`[member] ${person.id} signed in by ${how.via} for the first time on "${name}" from ${client}; waiting for the owner (card ${card.card.id}, session ${session.id})`)
   return { status: 200, body: { person: person.id, name, state: "pending" }, value }
 }
 

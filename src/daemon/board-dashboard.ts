@@ -286,6 +286,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       const signIn = ctx.config.wall.signIn, sender = ctx.config.mail.sender
       return signIn && sender ? { origin: signIn.origin, sender, firstSignIn: signIn.firstSignIn } : null
     },
+    oidcSetup: () => {
+      const signIn = ctx.config.wall.signIn
+      return signIn?.oidc ? { ...signIn.oidc, origin: signIn.origin, firstSignIn: signIn.firstSignIn } : null
+    },
   })) return
   // The Wall's portfolio summary (#1194): a `wall:portfolio` key or the
   // dashboard key, nothing else; counts and titles only (wall-portfolio.ts).
