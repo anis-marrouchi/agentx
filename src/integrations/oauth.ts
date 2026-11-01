@@ -145,7 +145,8 @@ export function parseCallback(urlText: string, expectedState: string): CallbackR
 const PAGE = (title: string, body: string) =>
   `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem"><h1 style="font-size:1.25rem">${title}</h1><p>${body}</p></body>`
 
-/** Wait for one browser redirect on 127.0.0.1 (and ::1 when it exists).
+/** Wait for the browser redirect that carries this request's state, on
+ *  127.0.0.1 (and ::1 when it exists).
  *  Only loopback: the sign-in answer never reaches another machine. */
 export function waitForLoopbackCallback(
   port: number,
@@ -164,7 +165,9 @@ export function waitForLoopbackCallback(
     res.end("code" in r
       ? PAGE("AgentX is connected", "You can close this tab and go back to the terminal.")
       : PAGE("AgentX could not connect", r.error.replace(/[<>&]/g, "")))
-    settle(r)
+    // Only the answer to this request ends the wait: a stray or forged
+    // request with another state must not cancel the sign-in.
+    if (url.searchParams.get("state") === expectedState) settle(r)
   }
   const listen = (host: string, required: boolean) => new Promise<void>((ok, fail) => {
     const s = createServer(handler)

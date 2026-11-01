@@ -79,7 +79,7 @@ On a computer without a browser (a server you reach over SSH), add `--paste`:
 Where the token goes:
 
 - **The keyring** when your computer has one. This is the default.
-- **`.env`** otherwise, or with `--store env`. Restart the daemon after connecting so it reads the new value.
+- **`.env`** otherwise, or with `--store env`. Restart the daemon after connecting so it reads the new value. When the service sends a new refresh token, AgentX writes it to `.env` for you.
 
 Options of `connect`:
 

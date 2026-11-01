@@ -107,6 +107,15 @@ describe("oauth", () => {
     expect(await wait.result).toEqual({ code: "xyz" })
   })
 
+  it("keeps waiting when a callback carries another state", async () => {
+    const port = 20000 + Math.floor(Math.random() * 20000)
+    const wait = waitForLoopbackCallback(port, "s1", 5000)
+    await wait.ready
+    expect((await fetch(`http://127.0.0.1:${port}/callback?error=access_denied&state=forged`)).status).toBe(400)
+    expect((await fetch(`http://127.0.0.1:${port}/callback?code=xyz&state=s1`)).status).toBe(200)
+    expect(await wait.result).toEqual({ code: "xyz" })
+  })
+
   it("cuts token-shaped text out of provider errors", () => {
     expect(safeProviderText("bad refresh_token=abc.def")).toBe("bad refresh_token=[redacted]")
     expect(safeProviderText("x " + "A".repeat(50))).toBe("x [redacted]")
@@ -206,6 +215,17 @@ describe("token resolution", () => {
     expect(r).toMatchObject({ status: "ok", token: "FROM_ENV" })
   })
 
+  it("writes a rotated refresh token back to .env and the process env", async () => {
+    const { f } = fakeFetch(() => ({ body: { access_token: "FROM_ENV", refresh_token: "RT2", expires_in: 3600 } }))
+    const i = integ({ credentials: { clientIdEnv: "FAKE_CLIENT_ID", clientSecretEnv: "FAKE_CLIENT_SECRET", refreshTokenEnv: "FAKE_RT_ROT" } })
+    const env: NodeJS.ProcessEnv = { ...ENV, FAKE_RT_ROT: "RT1" }
+    const written: [string, string][] = []
+    const r = await resolveAccessToken("helper", i, FAKE, { env, fetch: f, now: () => NOW, writeEnv: (k, v) => written.push([k, v]) })
+    expect(r).toMatchObject({ status: "ok", token: "FROM_ENV" })
+    expect(written).toEqual([["FAKE_RT_ROT", "RT2"]])
+    expect(env.FAKE_RT_ROT).toBe("RT2")
+  })
+
   it("explains what is wrong without a token in the reason", async () => {
     const keyring = memoryKeyring()
     const notConnected = await resolveAccessToken("helper", integ(), FAKE, { keyring, env: ENV, now: () => NOW })
@@ -245,6 +265,14 @@ describe("named reads", () => {
     expect(buildReadUrl(FAKE, read, { metric: "views", extra: "1" }, { accountId: "42" })).toMatchObject({ ok: false, error: expect.stringContaining('unknown parameter "extra"') })
     expect(buildReadUrl(FAKE, read, { metric: "views,revenue" }, { accountId: "42" })).toMatchObject({ ok: false, error: expect.stringContaining('"revenue" is not allowed') })
     expect(buildReadUrl(FAKE, read, { metric: "views", accountId: "../admin" }, {})).toMatchObject({ ok: false })
+    // Dot segments pass the id pattern but would climb out of the path.
+    // Checked on a path param without its own pattern, like the Meta reads.
+    const insights = { description: "Insights.", path: "/{page}/insights", params: { page: { description: "Page id", required: true } } }
+    for (const page of ["..", ".", "..."]) {
+      expect(buildReadUrl(FAKE, insights, { page }, {})).toMatchObject({ ok: false, error: expect.stringContaining("plain id") })
+    }
+    const ok = buildReadUrl(FAKE, insights, { page: "a.b" }, {})
+    expect(ok.ok && ok.url.toString()).toBe("https://api.fake.test/v1/a.b/insights")
     expect(buildReadUrl(FAKE, read, { metric: "views", since: "yesterday" }, { accountId: "42" })).toMatchObject({ ok: false })
     expect(buildReadUrl(FAKE, read, {}, { accountId: "42" })).toMatchObject({ ok: false, error: expect.stringContaining('"metric" is required') })
   })

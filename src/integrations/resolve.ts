@@ -14,6 +14,8 @@ import type { Integration } from "@/daemon/config"
 import type { KeyringStore } from "./keyring"
 import { integrationAccount, systemKeyring } from "./keyring"
 import { refreshGrant } from "./oauth"
+import { setDotenvKey } from "@/utils/dotenv"
+import { resolve } from "path"
 import type { OAuthGrant, ProviderSpec } from "./providers/types"
 
 export type ResolvedStatus = "ok" | "env-unset" | "no-credential" | "kind-not-found" | "agent-not-found"
@@ -137,7 +139,8 @@ export function resolveAgentCredential(
 //   - `auth: "keyring"`: the OS keyring entry for (agent, kind, label),
 //     holding the whole grant (access + refresh token, expiry, scopes).
 //   - `refreshTokenEnv`: a refresh token in the environment (.env); access
-//     tokens are fetched with it and kept in memory only.
+//     tokens are fetched with it and kept in memory only. A rotated refresh
+//     token is written back to .env (and the process env).
 //   - `tokenEnv`: a static access token (no refresh).
 // Access tokens are refreshed here, at use time, a minute before they
 // expire. Nothing in this section returns or logs a refresh token.
@@ -147,6 +150,9 @@ export interface TokenDeps {
   fetch?: typeof fetch
   env?: NodeJS.ProcessEnv
   now?: () => number
+  /** Persist a rotated refresh token for a `refreshTokenEnv` integration.
+   *  Default: the .env in the folder AgentX runs in. */
+  writeEnv?: (key: string, value: string) => void
 }
 
 export type StoredGrant =
@@ -257,6 +263,11 @@ export async function resolveAccessToken(
       if (stored.source === "keyring") {
         const keyring = deps.keyring ?? systemKeyring()
         try { keyring.set(integrationAccount(agentId, i.kind, i.label), JSON.stringify(next)) } catch { /* the new token still works for this process */ }
+      } else if (stored.source === "refresh-env" && i.credentials?.refreshTokenEnv && next.refreshToken && next.refreshToken !== g.refreshToken) {
+        const envKey = i.credentials.refreshTokenEnv
+        ;(deps.env ?? process.env)[envKey] = next.refreshToken
+        const writeEnv = deps.writeEnv ?? ((k: string, v: string) => setDotenvKey(resolve(process.cwd(), ".env"), k, v))
+        try { writeEnv(envKey, next.refreshToken) } catch { /* the new token still works until a restart */ }
       }
       tokenCache.set(key, { token: next.accessToken, expiresAt: next.expiresAt })
       return { status: "ok", token: next.accessToken, expiresAt: next.expiresAt }

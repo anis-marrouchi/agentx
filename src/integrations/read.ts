@@ -79,7 +79,8 @@ export function buildReadUrl(
   const path = read.path.replace(/\{([A-Za-z0-9_]+)\}/g, (_m, name: string) => {
     const v = values[name]
     if (!v) { pathError ||= `parameter "${name}" is required for the path`; return "" }
-    if (!ID_PARAM.test(v)) { pathError ||= `"${name}" must be a plain id`; return "" }
+    // "." and ".." are dot segments: the URL parser would climb out of the path.
+    if (!ID_PARAM.test(v) || /^\.+$/.test(v)) { pathError ||= `"${name}" must be a plain id`; return "" }
     used.add(name)
     return encodeURIComponent(v)
   })
