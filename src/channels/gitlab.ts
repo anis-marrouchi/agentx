@@ -4,6 +4,7 @@ import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
 import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeBody, forgeSender, forgeAuthorLabel, mappedForgeUsernames } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
+import { isStatusComment } from "@/requests/status"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
 
@@ -676,9 +677,14 @@ export class GitLabAdapter implements ChannelAdapter {
     // username misconfiguration. Only from an account an agent posts with
     // (a token owner, a configured or known bot username): anyone can type
     // the signature, and it must not hide their note or relabel it (#287).
-    const sourceAgent = this.postsAs(user.username) || this.isBotUser(user.username)
-      ? detectAgentxMarker(note)
-      : null
+    const trusted = this.postsAs(user.username) || this.isBotUser(user.username)
+    const sourceAgent = trusted ? detectAgentxMarker(note) : null
+    // A request-status note is never a hand-off, whichever agent signed it
+    // or mentioned (#383, as in the GitHub channel).
+    if (trusted && isStatusComment(note)) {
+      this.log(`AgentX status note, skipping (note ${noteId})`)
+      res.writeHead(200); res.end("ok"); return
+    }
     if (sourceAgent) {
       // Allow bot-to-bot handoff: if an agent's comment @mentions a DIFFERENT agent
       const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "")) || []
