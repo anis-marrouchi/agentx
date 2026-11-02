@@ -1,5 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
+import { resolve } from "path"
+import { resolveDaemonRoot } from "@/utils/daemon-root"
 import { callingAgent } from "@/agents/holds"
 import { createCard, IF_SILENT_VALUES, listCards, type DecisionCard } from "@/approvals/cards"
 import { mirrorTally, tallyLine } from "@/approvals/mirror"
@@ -17,6 +19,15 @@ import { parseDestination, readApprovalSettings, updateApprovalSettings, type Ap
 
 export const approvals = new Command("approvals")
   .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, wiki facts and questions, WhatsApp and email replies, posts)")
+  // The inbox lives in the daemon's folder. Every source reads under the
+  // working folder (cards, settings, the requests db), so move there first:
+  // run from anywhere else the inbox looked empty.
+  .hook("preAction", (_cmd, action) => {
+    const capture = action.getOptionValue("capture")
+    if (typeof capture === "string") action.setOptionValue("capture", resolve(capture))
+    const root = resolveDaemonRoot()
+    if (root !== process.cwd()) process.chdir(root)
+  })
 
 const KIND_LABEL: Record<InboxItem["kind"], string> = {
   card: "card",
