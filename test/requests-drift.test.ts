@@ -292,6 +292,9 @@ describe("reading the forges", () => {
       { state: "closed", created_at: at(20) }, { state: "reopened", created_at: at(10) },
     ]) : json({}, 404)) as unknown as typeof fetch
     expect(await driftForge({ gitlab: { url: "https://gl.example" } }, gl).reopenedAt!("gitlab", "acme/app", 11)).toBe(NOW - 10 * 3_600_000)
+    // Every page full: a later reopen may be unread, so it cannot say.
+    const many = (async () => json(Array.from({ length: 100 }, () => ({ event: "labeled", created_at: at(1) })))) as unknown as typeof fetch
+    expect(await driftForge({ github: { apiUrl: "https://api.github.com" } }, many).reopenedAt!("github", "o/r", 11)).toMatchObject({ error: expect.stringMatching(/more than 300 events/) })
   })
 
   it("asks GitHub's compare, and says null when it cannot tell", async () => {

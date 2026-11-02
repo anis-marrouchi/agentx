@@ -174,9 +174,10 @@ export function driftForge(connectors: ForgeConnectors, doFetch: typeof fetch = 
           const at = Date.parse(e?.created_at ?? "")
           if (reopen(e) && at > (last ?? 0)) last = at
         }
-        if (rows.length < 100) break
+        if (rows.length < 100) return last
       }
-      return last
+      // More events than were read: a later reopen may be among them.
+      return { error: `more than ${MAX_PAGES * 100} events, the last reopen is not known` }
     },
   }
 }
