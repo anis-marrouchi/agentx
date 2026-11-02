@@ -95,6 +95,8 @@ export class TurnInterrupted extends Error {
  *  the per-turn AGENTX_TASK_ID does, and is left out. */
 export function persistentCallerEnv(env: NodeJS.ProcessEnv, key: ProcessKey): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = key.agentId
+  // The guard hook refuses calls it cannot check in this session (#1710).
+  env.AGENTX_GUARD = "required"
   env.AGENTX_CHANNEL = key.channel
   env.AGENTX_CHAT_ID = key.chatId
   delete env.AGENTX_TASK_ID
