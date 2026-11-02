@@ -472,7 +472,8 @@ const ORG_SCRIPT = `
       depts = {};
       (d.departments || []).forEach(function (dep) { depts[dep.id] = dep; });
       document.getElementById('org-legend-dept').hidden = !(d.departments || []).length;
-      document.getElementById('org-legend-remote').hidden = who === 'people' || !((d.diagram && d.diagram.boxes) || []).some(function (b) { return b.remote; });      document.getElementById('org-legend-also').hidden = !((d.byDepartment && d.byDepartment.boxes) || []).some(function (b) { return b.also; });
+      document.getElementById('org-legend-remote').hidden = who === 'people' || !((d.diagram && d.diagram.boxes) || []).some(function (b) { return b.remote; });
+      document.getElementById('org-legend-also').hidden = !((d.byDepartment && d.byDepartment.boxes) || []).some(function (b) { return b.also; });
       E.org = d;
       paintEdit();
       lastOrg = d;
