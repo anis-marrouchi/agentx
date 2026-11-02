@@ -32,6 +32,8 @@ export interface McpStdioServerConfig {
   env?: Record<string, string>
   /** agentx-only: enforced by the guard hook, stripped from .mcp.json. */
   allowTools?: string[]
+  /** agentx-only: reads that skip the write card (#1736), stripped too. */
+  readTools?: string[]
 }
 
 /** HTTP MCP server (Streamable HTTP transport). Claude Code reads this
@@ -46,6 +48,8 @@ export interface McpHttpServerConfig {
   headersEnv?: Record<string, string>
   /** agentx-only: enforced by the guard hook, stripped from .mcp.json. */
   allowTools?: string[]
+  /** agentx-only: reads that skip the write card (#1736), stripped too. */
+  readTools?: string[]
 }
 
 export type McpServerConfig = McpStdioServerConfig | McpHttpServerConfig
@@ -110,7 +114,7 @@ export function syncMcpToWorkspace(workspacePath: string, mcp: McpServerMap): Sy
 export function toWorkspaceMcp(mcp: McpServerMap): McpServerMap {
   const out: McpServerMap = {}
   for (const [name, server] of Object.entries(mcp)) {
-    const { allowTools: _allow, ...rest } = server as McpServerConfig & { allowTools?: string[] }
+    const { allowTools: _allow, readTools: _read, ...rest } = server as McpServerConfig
     if ((rest as McpHttpServerConfig).type === "http") {
       const { headersEnv: _env, headers: _headers, ...http } = rest as McpHttpServerConfig
       const headers = placeholderHeaders(server as McpHttpServerConfig)

@@ -91,7 +91,16 @@ export interface OrgProposalOrigin {
   kind: "org-proposal"
 }
 
-export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
+/** A write tool of an MCP server with an allow list waits for the owner
+ *  (agent/mcp-confirm.ts, #1736). The waiting call reads the answer; the
+ *  agent is not sent a result turn. */
+export interface McpWriteOrigin {
+  kind: "mcp-write"
+  server: string
+  tool: string
+}
+
+export type CardOrigin = McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

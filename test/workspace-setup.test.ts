@@ -6,10 +6,13 @@ import { resolve } from "path"
 import {
   generateClaudeMd,
   mcpGuardHookCommand,
+  MCP_GUARD_CURL_S,
+  MCP_GUARD_HOOK_TIMEOUT_S,
   patchGuardrails,
   readManagedHash,
   setupWorkspace,
 } from "../src/agents/workspace-setup"
+import { MCP_CONFIRM_WAIT_S } from "../src/agent/mcp-confirm"
 import type { AgentDef } from "../src/daemon/config"
 
 const baseAgent = (overrides: Partial<AgentDef> = {}): AgentDef => ({
@@ -323,6 +326,12 @@ describe("destructive-action guardrails wiring", () => {
     // Fails closed: no `|| true`, and a deny is printed when curl fails.
     expect(entry.hooks[0].command).not.toContain("|| true")
     expect(entry.hooks[0].command).toContain('"permissionDecision":"deny"')
+    // Waits for a write tool's card (#1736): curl gives up before Claude
+    // Code times out the hook, so the deny is printed, never skipped.
+    expect(entry.hooks[0].command).toContain(`--max-time ${MCP_GUARD_CURL_S} `)
+    expect(MCP_GUARD_CURL_S).toBeGreaterThan(MCP_CONFIRM_WAIT_S)
+    expect(entry.hooks[0].timeout).toBe(MCP_GUARD_HOOK_TIMEOUT_S)
+    expect(MCP_GUARD_HOOK_TIMEOUT_S).toBeGreaterThan(MCP_GUARD_CURL_S)
     expect(patchGuardrails(workspace, "coder-agent", "18800", mcp)).toBe(false) // idempotent
     // List removed: the MCP entry goes away on the next start.
     expect(patchGuardrails(workspace, "coder-agent", "18800", { social: {} })).toBe(true)

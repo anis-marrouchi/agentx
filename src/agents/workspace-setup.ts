@@ -6,6 +6,7 @@ import { generateAgentsMd } from "./bootstrap"
 import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, canReadOriginals } from "./observation-pack"
 import { allowListHookMatcher, type McpPolicyFields } from "@/agent/mcp-policy"
+import { MCP_CONFIRM_WAIT_S } from "@/agent/mcp-confirm"
 import { buildGuardHookCommand, GUARD_HOOK_TIMEOUT_S } from "@/guard/hook-command"
 
 // Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
@@ -227,10 +228,18 @@ function guardHookCommand(agentId: string, daemonPort: string, root: string = pr
   return buildGuardHookCommand({ port: daemonPort, root, agentId, required: true })
 }
 
+/** How long curl waits for /guard/check on an MCP tool: the write card's
+ *  wait (#1736) plus room for the daemon to answer after it. */
+export const MCP_GUARD_CURL_S = MCP_CONFIRM_WAIT_S + 15
+/** Claude Code's limit for the whole hook, above curl's: a hook Claude
+ *  Code times out does not block the call, so curl must give up first. */
+export const MCP_GUARD_HOOK_TIMEOUT_S = MCP_GUARD_CURL_S + 15
+
 /** The guard command for MCP tools with an `allowTools` list (#1698). Unlike
  *  [guardHookCommand] it fails CLOSED: when the daemon cannot answer (down,
- *  restarting, slower than 3 s, HTTP error) it prints a deny, so a listed
- *  server's tools never run unchecked. */
+ *  restarting, HTTP error, slower than [MCP_GUARD_CURL_S]) it prints a
+ *  deny, so a listed server's tools never run unchecked. The daemon may
+ *  hold the answer while a write tool's Approvals card waits (#1736). */
 export function mcpGuardHookCommand(agentId: string, daemonPort: string): string {
   const url = `http://127.0.0.1:${daemonPort}/guard/check?agent=${encodeURIComponent(agentId)}`
   const deny = JSON.stringify({
@@ -240,7 +249,7 @@ export function mcpGuardHookCommand(agentId: string, daemonPort: string): string
       permissionDecisionReason: "AgentX guard did not answer; tools of an MCP server with an allow list are refused until it does.",
     },
   })
-  return `out=$(curl -sf --max-time 3 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null) && printf '%s' "$out" || printf '%s' '${deny}'`
+  return `out=$(curl -sf --max-time ${MCP_GUARD_CURL_S} -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null) && printf '%s' "$out" || printf '%s' '${deny}'`
 }
 
 /** PreToolUse hook entries wiring the guard onto Bash + Write/Edit, and
@@ -258,7 +267,7 @@ function guardPreToolUseHooks(
   ]
   const mcpMatcher = allowListHookMatcher(mcp)
   if (mcpMatcher) {
-    entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command: mcpGuardHookCommand(agentId, daemonPort), timeout: 10 }] })
+    entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command: mcpGuardHookCommand(agentId, daemonPort), timeout: MCP_GUARD_HOOK_TIMEOUT_S }] })
   }
   return entries
 }

@@ -164,6 +164,8 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
       if (card.origin?.kind === "plan-step") continue
       // A merge-policy card updates the PR's status (#1047), not a turn.
       if (card.origin?.kind === "merge-policy") continue
+      // An MCP write card (#1736): the waiting tool call got the answer.
+      if (card.origin?.kind === "mcp-write") continue
       if (!settings.notifyAgent || !deps.tellAgent) continue
       if (deps.hasAgent && !deps.hasAgent(card.raised_by)) {
         log(`[approvals] ${card.id}: agent "${card.raised_by}" isn't on this node; result not delivered`)

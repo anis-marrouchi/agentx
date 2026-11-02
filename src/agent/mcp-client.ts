@@ -27,6 +27,8 @@ export interface McpStdioSpec {
   env?: Record<string, string>
   /** Only these tools are listed and callable (see mcp-policy.ts). */
   allowTools?: string[]
+  /** Listed tools that skip the write card (see mcp-policy.ts). */
+  readTools?: string[]
 }
 
 /** HTTP MCP server (Streamable HTTP transport) — POST JSON-RPC bodies to
@@ -42,6 +44,8 @@ export interface McpHttpSpec {
   headersEnv?: Record<string, string>
   /** Only these tools are listed and callable (see mcp-policy.ts). */
   allowTools?: string[]
+  /** Listed tools that skip the write card (see mcp-policy.ts). */
+  readTools?: string[]
 }
 
 export type McpServerSpec = McpStdioSpec | McpHttpSpec
@@ -408,7 +412,13 @@ export interface McpPool {
  *  the orchestrator can drop into runAgenticLoop. A server that fails
  *  to initialize is dropped from the catalog (with a debug log) so one
  *  broken entry can't disable the whole tier. */
-export async function startMcpPool(servers: McpServerMap): Promise<McpPool> {
+export interface McpPoolOptions {
+  /** Asked before every call; a string refuses the call with that reason.
+   *  The orchestrator tier passes the write-tool card here (#1736). */
+  beforeCall?: (name: string, input: Record<string, unknown>) => Promise<string | null>
+}
+
+export async function startMcpPool(servers: McpServerMap, opts: McpPoolOptions = {}): Promise<McpPool> {
   const clients = new Map<string, McpClient>()
   const tools: McpTool[] = []
   const router = new Map<string, { client: McpClient; remote: string }>()
@@ -446,6 +456,8 @@ export async function startMcpPool(servers: McpServerMap): Promise<McpPool> {
       const route = router.get(name)
       if (!route) return { content: `Unknown MCP tool: ${name}`, isError: true }
       try {
+        const refused = opts.beforeCall ? await opts.beforeCall(name, input) : null
+        if (refused) return { content: refused, isError: true }
         return await route.client.callTool(route.remote, input)
       } catch (e: any) {
         return { content: `MCP call failed: ${e.message}`, isError: true }
