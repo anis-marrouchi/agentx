@@ -41,9 +41,12 @@ import {
 //            is taken only in the daemon's popup on the home machine (macOS,
 //            approvals.popup.enabled), where a person has to click it. The
 //            dashboard, even opened on this machine, the CLI, a phone, a
-//            mesh peer and a channel reply can say no, never yes: a local
-//            process, an agent or an ssh tunnel looks the same as the owner
-//            at a loopback address. Once confirmed, the session carries full owner rights
+//            mesh peer and a channel reply can say no, never yes: an ssh
+//            tunnel or an agent looks the same as the owner at a loopback
+//            address. Popup-only stops a remote yes (phone, mesh, channel,
+//            dashboard), not a local process running as the owner: that
+//            can write .agentx/approvals/*.json or the person-sessions file
+//            directly and read dashboard.token. Once confirmed, the session carries full owner rights
 //            at every owner gate of board-dashboard.ts (ownerAccess), for as
 //            long as the person's role is still owner (design note, answer 4).
 
