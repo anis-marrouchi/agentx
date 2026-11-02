@@ -251,9 +251,15 @@ describe("destructive-action guardrails wiring", () => {
       expect(c).toContain("http://127.0.0.1:18800/guard/check?agent=devops-agent")
       expect(c).not.toContain("dist/cli.js")
       // Load-bearing: a PreToolUse hook exiting 2 blocks the call, and curl
-      // uses exit 2 for init failures. `|| true` keeps that from ever
-      // masquerading as a policy deny.
-      expect(c.trim().endsWith("|| true")).toBe(true)
+      // uses exit 2 for init failures. The command always ends in `exit 0`.
+      expect(c.trim().endsWith("exit 0")).toBe(true)
+      // #1710: the rules-only fallback, then the last-resort deny for
+      // daemon-started sessions.
+      expect(c).toContain("guard check --rules-only")
+      expect(c).toContain('[ "$AGENTX_GUARD" = required ]')
+    }
+    for (const e of pre.filter((e: any) => e.matcher === "Bash" || e.matcher === "Write|Edit")) {
+      expect(e.hooks[0].timeout).toBe(75)
     }
   })
 

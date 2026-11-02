@@ -6,6 +6,7 @@ import { generateAgentsMd } from "./bootstrap"
 import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, canReadOriginals } from "./observation-pack"
 import { allowListHookMatcher, type McpPolicyFields } from "@/agent/mcp-policy"
+import { buildGuardHookCommand, GUARD_HOOK_TIMEOUT_S } from "@/guard/hook-command"
 
 // Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
 // files apart from user-edited ones. On daemon start, files with the marker
@@ -213,21 +214,17 @@ const GUARDRAIL_DENY = [
 
 /**
  * The command the PreToolUse hook runs. This fires on EVERY Bash/Write/Edit
- * call, so it must be cheap: spawning `node dist/cli.js guard check` cost
- * ~300ms of interpreter + bundle boot per tool call. Instead we POST the
- * payload to the already-running daemon over loopback (~1ms) and pipe its
- * response straight back to Claude Code. `/guard/check` is loopback-only.
- *
- * The trailing `|| true` is load-bearing: a PreToolUse hook exiting 2 BLOCKS
- * the tool call, and curl uses exit 2 for its own init failures. Forcing
- * exit 0 means a curl/daemon problem can never masquerade as a policy deny.
- * If the daemon is unreachable we fail open — acceptable because the daemon
- * is what spawns the agents in the first place, so "daemon down" means there
- * are no agent tool calls to guard.
+ * call, so the usual path is cheap: POST the payload to the running daemon
+ * over loopback (~1ms; `/guard/check` is loopback-only). The daemon can be
+ * unreachable while an agent still runs (a restart under a warm process or
+ * a detached cloud session) or while a person works in this folder. Then the
+ * hook checks the rules locally, and if that fails too, refuses the call in
+ * sessions the daemon started, except the commands that start the daemon
+ * (#1710). See guard/hook-command.ts. `root` is the install root, which is
+ * the daemon's working directory.
  */
-function guardHookCommand(agentId: string, daemonPort: string): string {
-  const url = `http://127.0.0.1:${daemonPort}/guard/check?agent=${encodeURIComponent(agentId)}`
-  return `curl -s --max-time 3 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null || true`
+function guardHookCommand(agentId: string, daemonPort: string, root: string = process.cwd()): string {
+  return buildGuardHookCommand({ port: daemonPort, root, agentId, required: true })
 }
 
 /** The guard command for MCP tools with an `allowTools` list (#1698). Unlike
@@ -256,8 +253,8 @@ function guardPreToolUseHooks(
 ): unknown[] {
   const command = guardHookCommand(agentId, daemonPort)
   const entries: unknown[] = [
-    { matcher: "Bash", hooks: [{ type: "command", command, timeout: 10 }] },
-    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: 10 }] },
+    { matcher: "Bash", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
+    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
   ]
   const mcpMatcher = allowListHookMatcher(mcp)
   if (mcpMatcher) {

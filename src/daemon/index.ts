@@ -19,6 +19,7 @@ import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { isRestricted } from "@/guard/autonomy"
+import { writeGuardCliLink } from "@/guard/hook-command"
 import { OPEN_STATES, type OpenState, type RequestRecord } from "@/requests/store"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
@@ -512,6 +513,18 @@ export class AgentXDaemon {
     const warnings = validateWorkspaces(this.config)
     for (const w of warnings) {
       this.log(`  ⚠ ${w}`)
+    }
+
+    // The guard hook's fallback CLI (#1710): a stable path to this daemon's
+    // own node and cli.js, so the local check survives a release directory
+    // being switched or removed. Skipped when not run from a built cli.js.
+    const cliEntry = process.argv[1] ? resolve(process.argv[1]) : ""
+    if (cliEntry.endsWith(".js")) {
+      try {
+        this.log(`  Guard fallback CLI: ${writeGuardCliLink(process.cwd(), process.execPath, cliEntry)}`)
+      } catch (e: any) {
+        this.log(`  ⚠ guard fallback CLI link not written: ${e?.message ?? e}`)
+      }
     }
 
     // Set up agent workspaces with Claude Code best practices (non-destructive)

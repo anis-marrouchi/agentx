@@ -10,7 +10,7 @@ export { evaluate } from "./engine"
 export { resolveTargets, buildResolveEnv, expandVars, extractHost, matchProtected, normalizeProtectedSet } from "./resolve"
 export { recordDecision, listDecisions } from "./audit"
 export type { DecisionRow } from "./audit"
-export { runGuard, runCheckFromStdin, payloadToInput, decisionOutput, verdictReason } from "./check"
+export { runGuard, runCheckFromStdin, runRulesOnlyFromStdin, payloadToInput, decisionOutput, verdictReason } from "./check"
 export type { PreToolUsePayload, RunGuardOptions, GuardResult } from "./check"
 
 /**

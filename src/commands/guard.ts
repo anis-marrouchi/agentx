@@ -5,6 +5,7 @@ import { resolve, join, dirname } from "path"
 import {
   runGuard,
   runCheckFromStdin,
+  runRulesOnlyFromStdin,
   listDecisions,
   loadPolicy,
   guessInstallRoot,
@@ -43,7 +44,19 @@ guard
   .option("--agent <id>", "agent id this workspace belongs to")
   .option("--root <dir>", "AgentX install root (holds .agentx/guardrails + .agentx/db.sqlite)")
   .option("--env <name>", "environment scope (e.g. production)")
+  .option("--rules-only", "the hook's fallback when the daemon is not answering: rules only, no model check or dialog")
+  .option("--deadline-ms <n>", "with --rules-only: give up after this long", "3000")
   .action(async (opts) => {
+    if (opts.rulesOnly) {
+      const deadlineMs = Number(opts.deadlineMs)
+      await runRulesOnlyFromStdin({
+        root: rootOf(opts),
+        agentId: opts.agent,
+        env: opts.env,
+        deadlineMs: Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : 3000,
+      })
+      process.exit(0)
+    }
     await runCheckFromStdin({ root: rootOf(opts), agentId: opts.agent, env: opts.env })
     // Always exit 0 — the guard fails open at the hook layer; real blocking is
     // via the JSON decision on stdout, never a nonzero exit.

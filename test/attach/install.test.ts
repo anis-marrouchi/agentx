@@ -94,6 +94,20 @@ describe("install", () => {
     expect(matchers).toEqual(["Bash", "Write|Edit"])
   })
 
+  it("the user-scope guard falls back to the local rules but never denies on its own failure (#1710)", () => {
+    installAttachHooks("19900", { path: file, root: "/srv/agentx" })
+    for (const e of read().hooks.PreToolUse) {
+      const h = e.hooks[0]
+      expect(h.timeout).toBe(75)
+      expect(h.command).toContain("/guard/check")
+      expect(h.command).not.toContain("?agent=")
+      expect(h.command).toContain("'/srv/agentx/.agentx/bin/agentx-guard' guard check --rules-only")
+      expect(h.command).not.toContain('"$AGENTX_GUARD"')
+      expect(h.command).not.toContain("permissionDecision")
+      expect(h.command.trim().endsWith("exit 0")).toBe(true)
+    }
+  })
+
   it("can skip the guard when explicitly asked", () => {
     const r = installAttachHooks("19900", { path: file, withGuard: false })
     expect(r.guardInstalled).toBe(false)

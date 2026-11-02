@@ -3,6 +3,7 @@ import { evaluate } from "./engine"
 import { recordDecision } from "./audit"
 import { assessRisk } from "./risk"
 import { confirmDestructive } from "./confirm"
+import { GUARD_ERROR_MARKER } from "./hook-command"
 import type { GuardInput, GuardMode, ResolvedPolicy, Verdict } from "./types"
 
 // --- `agentx guard check`: the PreToolUse hook entrypoint ---
@@ -117,6 +118,65 @@ async function readStdin(): Promise<string> {
   const chunks: Buffer[] = []
   for await (const c of process.stdin) chunks.push(Buffer.from(c))
   return Buffer.concat(chunks).toString("utf8")
+}
+
+/** The reason when the rules ask for a confirmation the fallback cannot give. */
+export const RULES_ONLY_ASK_REASON = "needs confirmation; the daemon is not answering, try again once it is"
+
+/**
+ * The hook's fallback while the daemon cannot be reached (#1710): the
+ * deterministic rules only. No risk assessment, no model seat, no dialog, no
+ * network. A rules `ask` becomes a deny, since only the daemon can ask. Any
+ * internal error, or running past `deadlineMs`, gives GUARD_ERROR_MARKER, so
+ * the hook can tell a failed check from an allow. Never throws.
+ */
+export async function runRulesOnly(
+  raw: string,
+  opts: { root: string; agentId?: string; env?: string; started?: number; deadlineMs?: number },
+): Promise<string> {
+  const started = opts.started ?? Date.now()
+  const late = () => opts.deadlineMs !== undefined && Date.now() - started > opts.deadlineMs
+  try {
+    if (!raw.trim()) return GUARD_ERROR_MARKER
+    const payload = JSON.parse(raw) as PreToolUsePayload
+    const input = payloadToInput(payload, opts.agentId, opts.env)
+    const { verdict } = runGuard(input, { root: opts.root, agentId: opts.agentId, env: opts.env })
+    // Policy load and evaluation are synchronous, so the deadline timer
+    // cannot cut them short; a result that arrives late is not used.
+    if (late()) return GUARD_ERROR_MARKER
+    if (verdict.effectiveAction === "ask") {
+      const ruled = verdictReason(verdict)
+      return JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: `${ruled} Refused because it ${RULES_ONLY_ASK_REASON}.`,
+        },
+      })
+    }
+    return decisionOutput(verdict).stdout
+  } catch {
+    return GUARD_ERROR_MARKER
+  }
+}
+
+/** `agentx guard check --rules-only`: read stdin, print the fallback answer.
+ *  Past `deadlineMs` (counted once the command runs, so node start-up is
+ *  not in it) it prints the marker. */
+export async function runRulesOnlyFromStdin(opts: {
+  root: string
+  agentId?: string
+  env?: string
+  deadlineMs: number
+}): Promise<void> {
+  const started = Date.now()
+  const deadline = new Promise<string>((done) => {
+    setTimeout(() => done(GUARD_ERROR_MARKER), opts.deadlineMs).unref()
+  })
+  const work = readStdin()
+    .then((raw) => runRulesOnly(raw, { ...opts, started }))
+    .catch(() => GUARD_ERROR_MARKER)
+  process.stdout.write(await Promise.race([work, deadline]))
 }
 
 /**

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { homedir } from "os"
 import { dirname, resolve } from "path"
+import { buildGuardHookCommand, GUARD_HOOK_TIMEOUT_S } from "@/guard/hook-command"
 
 // --- Installing the attach hooks into Claude Code ---
 //
@@ -29,9 +30,10 @@ export const GUARD_MARKER = "/guard/check"
 
 type HookEntry = { matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> }
 
-/** One-line curl to the daemon. `--data-binary @-` streams the hook's stdin
- *  payload through unread; `|| true` means a stopped daemon degrades to "no
- *  opinion" instead of erroring in the human's session. */
+/** One-line curl to the daemon for the attach events. `--data-binary @-`
+ *  streams the hook's stdin payload through unread; `|| true` means a stopped
+ *  daemon degrades to "no opinion" instead of erroring in the human's
+ *  session. The guard hook is built by guard/hook-command.ts instead. */
 function hookCommand(route: string, port: string, query = ""): string {
   const url = `http://127.0.0.1:${port}${route}${query}`
   return `curl -s --max-time 3 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null || true`
@@ -53,14 +55,17 @@ export function attachHookBlock(port: string): Record<string, HookEntry[]> {
   }
 }
 
-/** PreToolUse guard, user-scope. Mirrors the per-workspace form in
- *  agents/workspace-setup.ts but without an `?agent=` — an attached session's
- *  identity is a runtime binding, so the daemon resolves it per call. */
-export function guardHookEntries(port: string): HookEntry[] {
-  const command = hookCommand("/guard/check", port)
+/** PreToolUse guard, user-scope. Built like the per-workspace form in
+ *  agents/workspace-setup.ts (daemon, then the rules checked locally), but
+ *  without an `?agent=` and without the last-resort deny: this hook runs in
+ *  every session on the machine, including the one used to restart the
+ *  daemon, so a failed check still allows (#1710). `/guard/check` reads the
+ *  agent only from `?agent=`, so both paths apply the install-wide policy. */
+export function guardHookEntries(port: string, root: string = process.cwd()): HookEntry[] {
+  const command = buildGuardHookCommand({ port, root })
   return [
-    { matcher: "Bash", hooks: [{ type: "command", command, timeout: 10 }] },
-    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: 10 }] },
+    { matcher: "Bash", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
+    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
   ]
 }
 
@@ -112,7 +117,7 @@ export function configuredDaemonPort(root: string = process.cwd()): string {
  */
 export function installAttachHooks(
   port: string,
-  opts: { path?: string; withGuard?: boolean } = {},
+  opts: { path?: string; withGuard?: boolean; root?: string } = {},
 ): InstallResult {
   const path = opts.path ?? userSettingsPath()
   const withGuard = opts.withGuard !== false
@@ -143,7 +148,7 @@ export function installAttachHooks(
     const others = Array.isArray(hooks.PreToolUse)
       ? hooks.PreToolUse.filter((e: any) => !isOurs(e, GUARD_MARKER))
       : []
-    hooks.PreToolUse = [...others, ...guardHookEntries(port)]
+    hooks.PreToolUse = [...others, ...guardHookEntries(port, opts.root)]
     guardInstalled = true
   }
 

@@ -565,6 +565,8 @@ function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
  *  changes every turn. */
 export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = task.agentId
+  // The guard hook refuses calls it cannot check in this session (#1710).
+  env.AGENTX_GUARD = "required"
   // The running task, so a daemon endpoint the agent calls (agent memory)
   // can check the caller really is this agent, mid-run.
   if (task.runningTaskId) env.AGENTX_TASK_ID = task.runningTaskId
