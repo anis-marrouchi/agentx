@@ -165,6 +165,15 @@ An agent that runs on another AgentX node of your mesh can sit in your chart too
    The card has no status dot and no Pause button, and selecting it opens nothing: that node runs the agent. The counts beside the chart give **Other nodes** apart from **Agents**.
 5. **Browser:** under the chart, **On other nodes, not placed yet** lists every agent your peers host that the chart does not place yet, by node. On `/org` the same list gives each one's `agent:<node>/<id>` to copy.
 
+## Show only people or only agents
+
+Next to the views, **Show** picks who is on the **Chart** and **Departments** views: **Everyone** (the default), **People** or **Agents**. Agents on other nodes count as agents. The **Projects** view has no switch.
+
+1. **Browser:** on the Hub, select **Org**, then **People** next to **Show**. Only the people's cards stay. A person whose boss is an agent now sits under the nearest person above that agent, or at the top when there is none, so the chart keeps its shape with no gaps.
+2. **Browser:** select **Departments**. Each box shows how many of its members are on screen, for example **1 of 4**. A head the switch hides is a line of text, **Head: COO (agent)**, in place of a card. A box with nobody left on screen says **No people here** (or **No agents here**).
+3. **Browser:** the counts in **In the org** beside the chart still count the whole org, whatever **Show** is set to.
+4. **Browser:** the address keeps the choice, so you can bookmark it: `who=people` or `who=agents` in the Hub's address, `?who=people` or `?who=agents` on `/org`. **Everyone** leaves it out.
+
 ## See who runs each project
 
 The **Projects** view shows each project with the people and agents on it: who manages it at the top, and the team under them. It sits next to the other views: pick **Departments** (shown when you have departments), **Chart** or **Projects** at the top of the Org page.
@@ -241,7 +250,8 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 3. Click **Resume**. The card says **Idle** again.
 4. Select **Projects**. Each project in `business.projects` is a box with its PM card, and its lead and team when you set them.
 5. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
-6. As the owner, in **Edit org**, change an agent's **End** time and select **Save hours**. The line at the top ends with **Saved.**, and after a reload of the page the new time is still there. In `agentx.json`, `business.orgChart.<agent>.schedule` has the new time, and a backup copy (`agentx.json.bak.…`) sits next to the file.
+6. Next to **Show**, select **People**, then **Agents**. Each time only that kind of card stays, and the address ends with `who=people` or `who=agents`. Select **Everyone** to see the whole org again.
+7. As the owner, in **Edit org**, change an agent's **End** time and select **Save hours**. The line at the top ends with **Saved.**, and after a reload of the page the new time is still there. In `agentx.json`, `business.orgChart.<agent>.schedule` has the new time, and a backup copy (`agentx.json.bak.…`) sits next to the file.
 
 ## If something is wrong
 
@@ -259,6 +269,7 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 - **`agentx business orgchart add` ran, but saving any setting now fails with `business.mainChannel: Required`:** you turned `business.enabled` on. The business layer needs a chat to post to; set `business.mainChannel`, or turn it off again.
 - **A new agent still does nothing after your yes:** it was added while the daemon was running. Run `agentx daemon restart`.
 - **No Edit org button on `/org`:** you opened the dashboard without the owner's key. On the dashboard's own computer, open it at `127.0.0.1`; from another machine, sign in with the dashboard key (`dashboard.token`).
+- **Someone is missing from the chart or a department:** check **Show** next to the views. **People** or **Agents** hides the other kind; select **Everyone**. A link with `who=` in it opens with that setting.
 - **A line or a removal is not saved:** select **Save the move** in the box at the top of the edit panel. **Cancel**, the **Escape** key, or **Done editing** drops the change.
 - **"The end time (…) must be after the start time (…)":** an agent's working day must end after it starts, on the same day. Change **Start** or **End** and select **Save hours** again. Nothing was saved.
 - **"… is not a time":** type the time as hours and minutes, for example `09:00`. Nothing was saved.
