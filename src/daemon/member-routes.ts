@@ -8,7 +8,7 @@ import { appIconPng } from "./app-icon"
 import { MemberStore } from "@/members/store"
 import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
 import { PERSON_COOKIE, PERSON_SESSION_MAX_AGE_S, PersonSessionStore } from "@/members/person-sessions"
-import { SendLimiter, SignInLinkStore, askSignInLink, personAccess, signInWithLink, type SignInDeps, type SignInSetup } from "@/members/signin"
+import { OWNER_HOME, SendLimiter, SignInLinkStore, askSignInLink, personAccess, signInWithLink, type SignInDeps, type SignInSetup } from "@/members/signin"
 import { OidcStateStore, SignInAccountStore, STATE_COOKIE, STATE_TTL_MS, finishOidc, startOidc, type OidcDeps, type OidcSetup } from "@/members/oidc"
 import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor, type PersonWork, type SentItem, type WorkItem } from "@/members/work"
@@ -41,7 +41,9 @@ import { CLIENT_MANIFEST_PATH, renderClientManifest, renderClientPage } from "./
 //
 // A browser signed in by an email link (#1478, members/signin.ts) holds an
 // ax_person session instead of a key; it opens the same page for the same
-// person, once the owner has let that person in.
+// person, once the owner has let that person in. The owner may sign in by
+// link too: their browser waits here until it is confirmed on the home
+// machine, then /member sends it to the Wall, the owner's home.
 
 export const MEMBER_COOKIE = "agentx_member"
 const COOKIE_MAX_AGE = 90 * 86400
@@ -189,8 +191,24 @@ export async function handleMemberRequest(
   const access = memberAccess(memberToken(req), deps, clientAddress(req))
   const signed = !access.ok && access.status === 401 ? personAccess(cookie(req, PERSON_COOKIE), signIn) : null
   if (signed && !signed.ok && signed.waiting) {
-    if (path === "/member") return send(res, 202, "text/html; charset=utf-8", renderMemberWaitingPage(true))
+    if (path === "/member") return send(res, 202, "text/html; charset=utf-8", renderMemberWaitingPage(true, signed.owner ? { elsewhere: !!signed.elsewhere } : undefined))
+    if (signed.owner) return sendJson(res, 403, { error: "Confirm this browser on the home machine.", waiting: true, ...(signed.elsewhere ? { elsewhere: true } : {}) })
     return sendJson(res, 403, { error: "waiting for the owner to let you in", waiting: true })
+  }
+  // The owner's confirmed browser: the owner's home is the Wall, not /member.
+  if (signed?.ok && signed.person.role === "owner") {
+    if (method === "GET" && path === "/member") {
+      res.writeHead(302, { Location: OWNER_HOME, "Cache-Control": "no-store" })
+      res.end()
+      return true
+    }
+    if (method === "GET" && path === "/api/member/me") {
+      return sendJson(res, 200, {
+        person: signed.person.id, name: signed.person.name, role: "owner", device: signed.session.label,
+        since: signed.session.approvedAt ?? signed.session.startedAt, node: ctx.nodeName ?? null, home: OWNER_HOME,
+      })
+    }
+    return sendJson(res, 404, { error: "the owner's page is the Wall", home: OWNER_HOME })
   }
   const who = access.ok
     ? { personId: access.personId, device: access.device.name, since: access.device.approvedAt ?? access.device.createdAt }

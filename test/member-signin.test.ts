@@ -101,14 +101,24 @@ describe("asking for a link", () => {
     expect(sent[1].text).toContain('"Your project"')
   })
 
-  it("answers an unknown address, the owner and a guest the same, and mails none of them", async () => {
+  it("answers an unknown address and a guest the same, and mails neither", async () => {
     const known = await (await ask("dana@example.com")).json()
-    for (const email of ["nobody@example.com", "boss@example.com", "gus@example.com"]) {
+    for (const email of ["nobody@example.com", "gus@example.com"]) {
       const r = await ask(email)
       expect(r.status).toBe(200)
       expect(await r.json()).toEqual(known)
     }
     expect(sent).toHaveLength(1)
+  })
+
+  it("mails the owner a link too, with the same answer as an unknown address", async () => {
+    const unknown = await (await ask("nobody@example.com")).json()
+    const r = await ask("boss@example.com")
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual(unknown)
+    expect(sent.map((m) => m.to)).toEqual(["boss@example.com"])
+    expect(sent[0].text).toContain("sign in to your Wall as the owner")
+    expect(sent[0].text).toContain("https://studio.example-tailnet.ts.net/member/signin#")
   })
 
   it("sends at most 5 links an hour to one address", async () => {
@@ -280,6 +290,83 @@ describe("spending a link", () => {
     expect(r.status).toBe(403)
     expect(r.headers.get("set-cookie")).toBeNull()
     expect(sessions.sessions("dana")).toHaveLength(0)
+  })
+})
+
+describe("the owner signing in by link", () => {
+  async function ownerLink() {
+    await ask("boss@example.com")
+    return codeOf(sent[sent.length - 1])
+  }
+  const cookieOf = (r: Response) => (r.headers.get("set-cookie") || "").split(";")[0]
+  const me = (cookie: string) => fetch(`${base}/api/member/me`, { headers: { cookie } })
+
+  it("waits on the home machine's card, then lands on the Wall, not /member", async () => {
+    const r = await spend(await ownerLink(), "Boss's laptop")
+    expect(await r.json()).toMatchObject({ person: "boss", state: "pending" })
+    const cookie = cookieOf(r)
+    const [card] = listCards(dir, "pending")
+    expect(card.title).toBe("Boss signed in as the owner from a new browser")
+    expect(card.ask).toContain("Give this browser full owner rights?")
+    expect(card.if_silent).toBe("discard")
+    const waiting = await fetch(`${base}/member`, { headers: { cookie }, redirect: "manual" })
+    expect(waiting.status).toBe(202)
+    expect(await waiting.text()).toContain("Confirm this browser on the home machine")
+    expect((await me(cookie)).status).toBe(403)
+    decideCard(dir, card.id, "yes", { by: "operator (dashboard)", local: true })
+    const r2 = await me(cookie)
+    expect(r2.status).toBe(200)
+    expect(await r2.json()).toMatchObject({ person: "boss", role: "owner", home: "/" })
+    const page = await fetch(`${base}/member`, { headers: { cookie }, redirect: "manual" })
+    expect(page.status).toBe(302)
+    expect(page.headers.get("location")).toBe("/")
+    // The member's work list is not the owner's page.
+    expect((await fetch(`${base}/api/member/work`, { headers: { cookie } })).status).toBe(404)
+  })
+
+  it("keeps waiting when the yes came from away from the home machine, and says so", async () => {
+    const cookie = cookieOf(await spend(await ownerLink()))
+    decideCard(dir, listCards(dir, "pending")[0].id, "yes", { by: "Boss (phone app)" })
+    const r = await me(cookie)
+    expect(r.status).toBe(403)
+    expect(await r.json()).toMatchObject({ waiting: true, elsewhere: true })
+    const page = await (await fetch(`${base}/member`, { headers: { cookie } })).text()
+    expect(page).toContain("does not count")
+    expect(page).toContain("Confirm this browser on the home machine")
+    expect(members.events("boss").some((e) => e.event === "refused" && /away from the home machine/.test(e.detail ?? ""))).toBe(true)
+  })
+
+  it("raises a new card for each new browser, even after a yes, and auto never applies", async () => {
+    setup = { ...SETUP, firstSignIn: "auto" }
+    await spend(await ownerLink())
+    decideCard(dir, listCards(dir, "pending")[0].id, "yes", { by: "operator (dashboard)", local: true })
+    const second = await spend(await ownerLink(), "Phone")
+    expect(await second.json()).toMatchObject({ state: "pending" })
+    expect(listCards(dir, "pending")).toHaveLength(1)
+    expect((await me(cookieOf(second))).status).toBe(403)
+  })
+
+  it("ends the browser's session when the owner says no on the card", async () => {
+    const cookie = cookieOf(await spend(await ownerLink()))
+    decideCard(dir, listCards(dir, "pending")[0].id, "no", { by: "operator (dashboard)", local: true })
+    expect((await me(cookie)).status).toBe(401)
+  })
+
+  it("fits the owner's card question in 300 characters with the longest values", async () => {
+    const login = `${"a".repeat(68)}@example.com`
+    PEOPLE[2] = { ...PEOPLE[2], name: "N".repeat(80), identities: ["email:boss@example.com", `tailscale:${login}`] }
+    const r = await post("/api/member/signin", { code: await ownerLink(), machine: "M".repeat(80) },
+      { "Tailscale-User-Login": login, "X-Forwarded-For": "ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255" })
+    expect(await r.json()).toMatchObject({ state: "pending" })
+    const [card] = listCards(dir, "pending")
+    expect(card.ask.length).toBeLessThanOrEqual(300)
+    expect(card.title.length).toBeLessThanOrEqual(120)
+  })
+
+  it("is closed for the owner too while sign-in is not set up", async () => {
+    setup = null
+    expect((await ask("boss@example.com")).status).toBe(404)
+    expect(sent).toHaveLength(0)
   })
 })
 

@@ -222,8 +222,11 @@ ${enabled ? `<script>${SIGNIN_SCRIPT}</script>` : ""}
 }
 
 /** Shown with 202 while the owner has not answered the pairing card, or
- *  the card of a person's first sign-in by email (`signedIn`). */
-export function renderMemberWaitingPage(signedIn = false): string {
+ *  the card of a person's first sign-in by email (`signedIn`). `owner`: the
+ *  owner's own new browser, which only a yes on the home machine lets in;
+ *  `elsewhere` when a yes came from somewhere else and did not count. */
+export function renderMemberWaitingPage(signedIn = false, owner?: { elsewhere: boolean }): string {
+  if (owner) return ownerWaitingPage(owner.elsewhere)
   return `<!doctype html>
 <html lang="en">
 <head>${head("Waiting for the owner · AgentX")}<style>${WAITING_CSS}</style></head>
@@ -242,6 +245,26 @@ ${bar(signedIn ? "You are signed in" : "This machine is paired")}
 <script>${WAITING_SCRIPT.replace("__REFUSED__", signedIn
   ? "The owner did not let this sign-in through. Ask them, then sign in again."
   : "The owner did not approve this machine. Ask the person who invited you for a new code.").replace("__AGAIN__", signedIn ? "/member/signin" : "/member")}</script>
+</body>
+</html>`
+}
+
+function ownerWaitingPage(elsewhere: boolean): string {
+  return `<!doctype html>
+<html lang="en">
+<head>${head("Confirm this browser on the home machine · AgentX")}<style>${WAITING_CSS}</style></head>
+<body>
+${bar("You are signed in as the owner")}
+<main class="narrow">
+  <div class="card">
+    <h2><span class="pulse" aria-hidden="true"></span>Confirm this browser on the home machine</h2>
+    <p id="msg" role="status">${elsewhere
+      ? "A yes for this browser was given away from the home machine, so it does not count. Ask for a new link, then answer its card on the dashboard opened on the home machine itself."
+      : "This is a new browser for the owner. Open the dashboard on the home machine itself and answer the card there. A yes from a phone or another browser does not count. This page opens the Wall by itself once it is confirmed."}</p>
+    <p class="help">Until then this browser has no owner rights.${elsewhere ? ` <a href="/member/signin">Ask for a new link</a>.` : ""}</p>
+  </div>
+</main>
+<script>${WAITING_SCRIPT.replace("__REFUSED__", "This browser was not confirmed. Sign in again to ask once more.").replace("__AGAIN__", "/member/signin")}</script>
 </body>
 </html>`
 }
