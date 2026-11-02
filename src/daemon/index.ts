@@ -83,6 +83,7 @@ import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
+import { applyOrgProposal, handleOrgApi, isOwnerContext, orgProposalLines, readOrgProposal } from "@/business/org-proposals"
 import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { runExceptionsDigest } from "@/crons/exceptions-digest"
@@ -2541,10 +2542,16 @@ export class AgentXDaemon {
             this.status?.board.cardResolved(card)
             this.workflowCardResult(card)
             void this.mergePolicy?.onCard(card)
+            // An org chart proposal (#1678): the daemon applies it on yes.
+            const org = applyOrgProposal(card, { root: process.cwd() })
+            if (org && org.status !== "pending") this.log(`[org] ${card.id}: ${org.status}: ${org.result}`)
           },
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
-          tellAgent: async (_agentId, text, card) => this.tellAgentCardResult(card, text),
+          // An org proposal's message says what the daemon did with it (#1678).
+          tellAgent: async (_agentId, text, card) => this.tellAgentCardResult(card, card.origin?.kind === "org-proposal"
+            ? [text, ...orgProposalLines(readOrgProposal(process.cwd(), card.id))].join("\n")
+            : text),
           // A card from an agent on another node goes back there with its
           // result; that node runs the turn (#668).
           tellPeer: async (node, card) => {
@@ -5058,6 +5065,16 @@ export class AgentXDaemon {
     return warmProcessChat(turn.context)
   }
 
+  /** The agent of the running turn this request proves, and whether the
+   *  owner started that turn (org-proposals.ts isOwnerContext, #1678). */
+  private orgCaller(req: IncomingMessage, claimed?: string): { agentId: string; owner: boolean } | null {
+    const proof = this.callerProof(req)
+    const agentId = this.provenAgent(proof, claimed)
+    if (!agentId) return null
+    const turn = this.registry.findRunningTurn(agentId, proof.taskId ? { taskId: proof.taskId } : { channel: proof.channel, chatId: proof.chatId })
+    return { agentId, owner: !!turn && isOwnerContext(turn.context as any, this.config.requests, this.config.people ?? []) }
+  }
+
   /** The agent whose running turn `proof` names: the owner of its task,
    *  or `claimed` when its channel and chat match a running turn of that
    *  agent. Null when the call proves none. */
@@ -5354,6 +5371,32 @@ export class AgentXDaemon {
         const reply = await handleIntegrationsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, url.searchParams, this.config)
         if (req.method === "POST" && reply.status === 200) this.log(`[integrations] ${String((body as any)?.agent)} read ${String((body as any)?.kind)}/${String((body as any)?.read)}`)
         this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // The org chart by chat (#1678): an agent reads the chart and proposes
+      // changes the owner asked for; one Approvals card, nothing written
+      // before yes. Gated by isMeshGatedPath above.
+      if (path === "/api/org" || path.startsWith("/api/org/")) {
+        const body = req.method === "POST" ? ((await readBody(req).catch(() => ({}))) ?? {}) as Record<string, unknown> : undefined
+        const claimed = typeof body?.raised_by === "string" ? body.raised_by.trim() : undefined
+        const r = body?.reply as Record<string, unknown> | undefined
+        const reply = r && typeof r.channel === "string" && typeof r.chatId === "string"
+          ? { channel: r.channel, chatId: r.chatId, ...(typeof r.accountId === "string" ? { accountId: r.accountId } : {}) }
+          : undefined
+        const reply2 = handleOrgApi(req.method || "GET", path, body, {
+          root: process.cwd(),
+          settings: this.config.approvals,
+          caller: () => this.orgCaller(req, claimed),
+          ...(reply ? { reply } : {}),
+          onCard: (card) => {
+            this.log(`[org] ${card.raised_by} proposed an org chart change: card ${card.id}`)
+            const turn = this.provenTurn(card.raised_by, this.callerProof(req))
+            this.requests?.tracker.cardRaised(card, turn)
+            this.status?.board.cardRaised(card, turn)
+          },
+        })
+        this.json(res, reply2.status, reply2.body)
         return
       }
 

@@ -159,6 +159,17 @@ How the list is applied depends on the agent's engine:
 
 When the service lets you choose which tools a server offers, set the same list there too, so the limit holds on both sides.
 
+#### The org chart tool (`agentx_org`)
+
+Every agent gets the `agentx_org` tool on its `agentx` tool server. It lets an agent turn your request in chat into a change to the org chart that waits for your yes; see [Change the org chart by chat](../dashboard/org.md#change-the-org-chart-by-chat).
+
+| Action | What it does |
+|---|---|
+| `show` (default) | Lists every member with its ref (`agent:<id>` or `person:<id>`), every line, and the agents and people not in the chart yet. |
+| `propose` | Sends 1 to 5 `changes` (the same ones the org editor makes: `add-member`, `set-role`, `remove-member`, `add-relation`, `remove-relation`, `set-schedule`), an optional `newAgent` (`id`, `name`, `role`, `reportsTo`) and an optional `why`. The daemon checks them and makes one Approvals card. Nothing is written before your yes; then the daemon applies them all or none. |
+
+Only a turn you started may propose: anyone else, a schedule or another agent is refused with "Only the owner can change the org chart." Proposals are kept in `.agentx/org-proposals/`, one file per card.
+
 ### Integrations
 
 Each item in `agents.<id>.integrations` declares one service. Secrets never go in `agentx.json`: credentials name an environment variable (uppercase, such as `HELPER_CRM_TOKEN`) or the system keyring.
@@ -534,9 +545,11 @@ A process is not stopped for being quiet while it still has work of its own: a b
 7. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
 8. **Terminal:** with `session.resumeGate.mode` set to `"shadow"`, after an agent picks a conversation up, run `agentx daemon logs`. A line `resume gate (shadow) for <channel>:<chat>: would resume: …` or `would start fresh: …` shows both prices. In `"active"` mode, a line `cost rotation for …` marks a conversation that started fresh.
 9. **Terminal:** with `headersEnv` or `allowTools` on a tool server, run `agentx doctor`. A line `N MCP server(s) with header variables, all set` shows the keys were found. Open the agent's `.mcp.json`: the header reads `${CONNECTOR_API_KEY}`, not the key itself.
+10. **Terminal:** after an agent proposed an org chart change and you said yes, run `agentx daemon logs`. A line `[org] <card id>: applied: …` shows the daemon applied it, and `.agentx/org-proposals/<card id>.json` says `"status": "applied"`.
 
 ## If something is wrong
 
+- **The daemon log shows `[org] <card id>: failed: …`:** the chart changed between the card and your yes, and the change no longer held. Nothing was saved. Ask the agent again.
 - **`agentx doctor` says `MCP server "<name>" of <agent>: header variable(s) not set`:** add the named variable to `.env` and restart the daemon. Without it the server gets no key and refuses every call.
 - **A `claude-code` agent says a tool call was refused with `is not on the allowTools list`:** the tool is left off that server's `allowTools`. Add its name (as the message prints it) if the agent should use it, then restart the daemon.
 - **A `claude-code` agent says a call was refused because it `needs confirmation; the daemon is not answering`:** the daemon could not be reached, so the guard checked the call locally with the rules only. A rule asks for a confirmation, and only the daemon can show that dialog. Start the daemon (`agentx daemon status`, then `agentx daemon start`) and try again.

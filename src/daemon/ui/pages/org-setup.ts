@@ -72,6 +72,33 @@ export function orgConfirmFor(setup: { members: SetupMember[]; relations: SetupR
   return null
 }
 
+/** The chart as a read-only tree of nested lists, for Settings → Business
+ *  above the editor (#1678): each member under its reports-to boss, with
+ *  its role, and its other lines in words. Empty when there is no one. */
+export function orgTreeHtml(setup: { members: SetupMember[]; relations: SetupRelation[] } | undefined): string {
+  const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c])
+  const LINE: Record<string, string> = { "dotted-line": "dotted line to", "acts-for": "acts for" }
+  if (!setup || !setup.members.length) return ""
+  const byRef: Record<string, SetupMember> = {}
+  for (const m of setup.members) byRef[m.ref] = m
+  const boss: Record<string, string> = {}
+  for (const r of setup.relations) if (r.type === "reports-to" && byRef[r.to]) boss[r.from] = r.to
+  const name = (ref: string) => (byRef[ref] ? byRef[ref].name : ref.replace(/^(agent|person):/, ""))
+  const seen: Record<string, boolean> = {}
+  const item = (m: SetupMember): string => {
+    seen[m.ref] = true
+    const other = setup.relations.filter((r) => r.from === m.ref && r.type !== "reports-to").map((r) => (LINE[r.type] || r.type) + " " + name(r.to))
+    const under = setup.members.filter((x) => boss[x.ref] === m.ref && !seen[x.ref])
+    return "<li><b>" + esc(m.name) + "</b> <span class=\"org-kind\">" + (m.kind === "person" ? "Person" : "Agent") + (m.title ? " · " + esc(m.title) : "") + "</span>" +
+      (other.length ? " <small>" + esc(other.join(", ")) + "</small>" : "") +
+      (under.length ? "<ul>" + under.map(item).join("") + "</ul>" : "") + "</li>"
+  }
+  // A boss loop leaves members with a boss and no top: they are listed at the top too.
+  const tops = setup.members.filter((m) => !boss[m.ref])
+  const html = tops.map(item).join("")
+  return '<ul class="oe-tree" aria-label="Org chart">' + html + setup.members.filter((m) => !seen[m.ref]).map(item).join("") + "</ul>"
+}
+
 /** The edit panel. `msg` is the answer to the last change; `pending` is
  *  the line of a change waiting for Save the move or Cancel. */
 export function orgEditHtml(org: OrgSetupReply | null, msg: { text: string; bad: boolean }, pending?: string): string {
@@ -235,6 +262,10 @@ export function orgEditor(host: OrgEditorHost) {
 
 /** The editor's styles, under an .org-edit box, for both pages. */
 export const ORG_EDIT_CSS = `
+.oe-tree, .oe-tree ul { list-style: none; margin: 0; padding: 0; font-size: var(--ax-fs-sm); }
+.oe-tree ul { margin-left: 10px; padding-left: 12px; border-left: var(--ax-border-w) solid var(--ax-border-2); }
+.oe-tree li { padding: 3px 0; }
+.oe-tree small { color: var(--ax-text-2); }
 .org-edit { margin: 0 0 24px; padding: 12px 16px 16px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
 .oe-lead { margin: 0 0 6px; color: var(--ax-text-2); }
 .oe-msg { min-height: 1.4em; margin: 0 0 6px; }

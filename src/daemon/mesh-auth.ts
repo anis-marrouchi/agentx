@@ -42,6 +42,9 @@ export function isMeshGatedPath(path: string): boolean {
     // Approvals list held memory facts and draft wiki articles, and a card
     // written from off-box would ask the operator in an agent's name.
     path === "/approvals" || path.startsWith("/approvals/") ||
+    // The org chart names people, and a proposal asks the owner in an
+    // agent's name (#1678).
+    path === "/api/org" || path.startsWith("/api/org/") ||
     // Content drafts: posts not yet approved, and the owner's past posts.
     path === "/content" || path.startsWith("/content/") ||
     // Outside-API reads (#1696): they run with the owner's tokens and

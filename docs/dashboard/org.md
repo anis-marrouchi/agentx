@@ -8,7 +8,7 @@ The Hub only shows the chart. Changing the chart and pausing an agent are done o
 
 ## Edit the org chart
 
-On `/org`, you, the owner, decide who is in the chart, the role each one holds, each agent's working hours, and who reports to whom, people included. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Anyone else sees the chart only: there is no **Edit org** button for them, and the dashboard refuses their changes. The same editor is open in **Settings → Business** on the Hub, so a change made in either place shows in both.
+On `/org`, you, the owner, decide who is in the chart, the role each one holds, each agent's working hours, and who reports to whom, people included. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Anyone else sees the chart only: there is no **Edit org** button for them, and the dashboard refuses their changes. The same editor is open in **Settings → Business** on the Hub, so a change made in either place shows in both. There, the chart sits above the editor as a short tree: each member under their boss, with their role and their other lines.
 
 1. **Browser:** open `/org`, or select **Open the org chart** on the Hub's **Agents** or **Org** page.
 2. Select **Edit org** above the chart. The edit panel opens. To open `/org` with the panel already open, go to `/org#edit`.
@@ -243,6 +243,18 @@ From the terminal: `agentx approvals approve agent:<id>` or `agentx approvals re
 
 This is a guard, not a lock. An agent that edits `agentx.json` by hand is not caught by it. To keep agents from changing the configuration at all, limit what their tools may write; see [SECURITY.md](https://github.com/anis-marrouchi/agentx/blob/main/SECURITY.md).
 
+## Change the org chart by chat
+
+You can also ask an agent in chat, for example "CX reports to Sales now" or "add a support agent under CX". The agent does not change the chart itself: it sends the change to your [Approvals](./approvals.md) inbox as one card, and AgentX applies it when you say yes.
+
+1. **Chat:** write the change to any agent, in your own words. Only you can ask this: a message from someone else, a schedule or another agent is answered with "Only the owner can change the org chart."
+2. The agent reads the chart, matches the names you used to its members, and checks the change. If the change would break the chart, the agent tells you why in one sentence, for example "Lead cannot report to CX: CX already reports up to Lead." No card is made and nothing changes.
+3. Otherwise the agent says the change is waiting for your yes. **Browser:** open **Needs you** on the Hub, or the Approvals page. The card is called **Change the org chart** (or **Add … to the org chart** for a new agent), and its question says what will change, for example "CX will report to Sales, not Lead. … Apply?" A new agent's card also names its role and its folder.
+4. Select **Yes** to apply it, or **No** to drop it. If nobody answers before the card expires, nothing changes.
+5. Within a minute of your yes, AgentX applies every change on the card together, or none of them, saves `agentx.json` with a backup, and the chart uses it at once. The agent tells you it is done. A new agent starts after the next `agentx daemon restart`.
+
+One card holds up to five changes. If the chart changed between the card and your yes, AgentX checks the changes again first. If one no longer holds, nothing is saved and the agent tells you why.
+
 ## Check it worked
 
 1. **Browser:** on the Hub, select **Org**. Each member of `business.orgChart` or `business.orgPeople`, and each owner or member a relation names, is a card one row under its boss, joined to it by a solid line. On `/org`, each agent is a card under its boss.
@@ -252,6 +264,8 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 5. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
 6. Next to **Show**, select **People**, then **Agents**. Each time only that kind of card stays, and the address ends with `who=people` or `who=agents`. Select **Everyone** to see the whole org again.
 7. As the owner, in **Edit org**, change an agent's **End** time and select **Save hours**. The line at the top ends with **Saved.**, and after a reload of the page the new time is still there. In `agentx.json`, `business.orgChart.<agent>.schedule` has the new time, and a backup copy (`agentx.json.bak.…`) sits next to the file.
+8. **Chat:** ask an agent to put one agent under another. A card **Change the org chart** appears in **Needs you**, and `agentx.json` is unchanged. Select **Yes**. Within a minute the agent says it is done, and the Org page shows the agent under its new boss.
+9. **Browser:** on the Hub, open **Settings → Business**. Above the editor, the chart shows as a tree with each member under their boss.
 
 ## If something is wrong
 
@@ -276,3 +290,6 @@ This is a guard, not a lock. An agent that edits `agentx.json` by hand is not ca
 - **No working hours next to a member:** that member is a person. Only agents have working hours.
 - **A person is missing from the Member list in Edit org:** add them on the [People](./people.md) page first, then reload `/org`.
 - **"Only the owner can pause an agent":** the command ran inside an agent's terminal. Run it from your own terminal, or use the Org page.
+- **The agent says "Only the owner can change the org chart.":** the message did not come from you as the owner. On a chat app, your account must be in `requests.from`, or listed in `people` with the role `owner`. A schedule, another agent or a forwarded task cannot propose changes.
+- **You said yes, and the chart did not change:** the change no longer held when AgentX applied it, because the chart changed in between. The agent's reply says why; ask again. If the agent said nothing, check that the daemon is running (`agentx daemon status`): the change is applied by the daemon within a minute of your yes.
+- **The agent used the wrong member:** say No on the card, then ask again with the name exactly as the Org page shows it.

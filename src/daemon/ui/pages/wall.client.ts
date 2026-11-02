@@ -72,7 +72,7 @@ import { WALL_COST_SCRIPT } from "./wall-cost.client"
 import { WALL_ORG_SCRIPT } from "./wall-org.client"
 import { layoutOrg } from "@/business/org-layout"
 import { orgWhoDepartments, orgWhoFilter, orgWhoKeeps, orgWhoOf } from "@/business/org-who"
-import { orgConfirmFor, orgEditHtml, orgEditor } from "./org-setup"
+import { orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml } from "./org-setup"
 import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
@@ -91,7 +91,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
-  ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor })}
+  ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
