@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import Database from "better-sqlite3"
 import { issueLinks } from "../src/requests/drift/refs"
+import { STATUS_TAG } from "../src/requests/status"
 import { checkProject, DEFAULT_DRIFT_SETTINGS, proofNote, statusOf, type DriftCheckDeps, type DriftProject, type DriftSettings } from "../src/requests/drift/check"
 import { driftForge, sameCommit, type DriftForge, type MergedChange } from "../src/requests/drift/forge"
 import { liveReader } from "../src/requests/drift/live"
@@ -8,6 +9,7 @@ import { DriftStore, WRITE_TRIES } from "../src/requests/drift/store"
 import { runDriftSweep, WRITE_TIMEOUT_MS, type DriftSweepDeps } from "../src/requests/drift/sweep"
 import type { ForgeReader } from "../src/requests/checkers/issue"
 import { requestsConfigSchema } from "../src/daemon/config"
+import { GitHubAdapter } from "../src/channels/github"
 
 // Status follows the work (#1138 step F): merged merge requests mapped to
 // the issues they close, compared with where each issue says it is.
@@ -174,6 +176,61 @@ describe("finding the drift", () => {
     expect(down.errors).toEqual(["acme/app: merged changes: HTTP 502"])
   })
 
+  it("a merge before the issue was reopened does not make it live-not-done (#1719)", async () => {
+    const one = [change(1, "aaaaaaa1", { description: "Closes #11", mergedAt: NOW - DAY })]
+    const reopened = (at: number | null | { error: string }): DriftForge => ({ ...fakeForge(one, { live1: ["aaaaaaa1"] }), reopenedAt: async () => at })
+    const after = await checkProject(project(), deps(reopened(NOW - 3_600_000), read))
+    expect(after.drifts).toEqual([])
+    const before = await checkProject(project(), deps(reopened(NOW - 2 * DAY), read))
+    expect(before.drifts.map((d) => d.kind)).toEqual(["live-not-done"])
+    const never = await checkProject(project(), deps(reopened(null), read))
+    expect(never.drifts.map((d) => d.kind)).toEqual(["live-not-done"])
+    // Not known whether it was reopened: not judged, never moved to Done.
+    const unknown = await checkProject(project(), deps(reopened({ error: "HTTP 502" }), read))
+    expect(unknown.drifts).toEqual([])
+    expect(unknown.errors).toEqual(["acme/app#11: reopened: HTTP 502"])
+  })
+
+  it("a merge after the reopen still counts, and only it is shown", async () => {
+    const two = [
+      change(1, "aaaaaaa1", { description: "Closes #11", mergedAt: NOW - 3 * DAY }),
+      change(2, "bbbbbbb2", { description: "Closes #11", mergedAt: NOW - 3_600_000 }),
+    ]
+    const forge2: DriftForge = { ...fakeForge(two, { live1: ["aaaaaaa1", "bbbbbbb2"] }), reopenedAt: async () => NOW - DAY }
+    const r = await checkProject(project(), deps(forge2, read))
+    expect(r.drifts.map((d) => [d.kind, d.changes.map((c) => c.ref)])).toEqual([["live-not-done", ["acme/app!2"]]])
+  })
+
+  it("the proof note carries the status tag, so the GitHub channel drops it (#1719)", async () => {
+    const r = await checkProject(project(), deps(forge, read))
+    const note = proofNote(r.drifts.find((d) => d.number === 11)!, "Done")
+    expect(note).toContain(STATUS_TAG)
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })))
+    try {
+      const adapter = new GitHubAdapter({
+        token: "t", routes: [{ repo: "acme/app", agent: "coder" }],
+        agentMappings: [{ agentId: "coder", githubUsernames: ["owner"] }],
+      } as any, () => {})
+      const got: string[] = []
+      adapter.onMessage(async (m: any) => { got.push(m.text) })
+      const comment = (id: number, body: string) => ({
+        action: "created",
+        comment: { id, body, user: { login: "owner", id: 1 } },
+        issue: { number: 11, title: "Checkout fails" },
+        repository: { full_name: "acme/app", html_url: "u" },
+      })
+      await (adapter as any).handleIssueComment(comment(1, note))
+      await new Promise((r) => setTimeout(r, 0))
+      expect(got).toEqual([])
+      // The owner's own words still start a turn.
+      await (adapter as any).handleIssueComment(comment(2, "Please look at this again."))
+      await new Promise((r) => setTimeout(r, 0))
+      expect(got).toHaveLength(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it("the proof note names the merge, the running commit and when it was checked", async () => {
     const r = await checkProject(project(), deps(forge, read))
     const note = proofNote(r.drifts.find((d) => d.number === 11)!, "Done")
@@ -220,6 +277,24 @@ describe("reading the forges", () => {
         { number: 6, base: { ref: "release/1" }, merge_commit_sha: "def5678", merged_at: at, updated_at: at },
       ]) : json({}, 404)) as unknown as typeof fetch
     expect((await driftForge({ github: { apiUrl: "https://api.github.com" } }, gh).merged("github", "o/r", NOW - 7 * DAY) as MergedChange[]).map((m) => m.ref)).toEqual(["o/r#5"])
+  })
+
+  it("reads the last reopen of an issue on both forges", async () => {
+    const at = (h: number) => new Date(NOW - h * 3_600_000).toISOString()
+    const gh = (async (url: string) => url.includes("/issues/11/events") ? json([
+      { event: "reopened", created_at: at(30) }, { event: "closed", created_at: at(20) }, { event: "reopened", created_at: at(10) }, { event: "labeled", created_at: at(5) },
+    ]) : url.includes("/issues/12/events") ? json([{ event: "closed", created_at: at(5) }]) : json({}, 500)) as unknown as typeof fetch
+    const f = driftForge({ github: { apiUrl: "https://api.github.com" } }, gh)
+    expect(await f.reopenedAt!("github", "o/r", 11)).toBe(NOW - 10 * 3_600_000)
+    expect(await f.reopenedAt!("github", "o/r", 12)).toBeNull()
+    expect(await f.reopenedAt!("github", "o/r", 13)).toEqual({ error: "HTTP 500" })
+    const gl = (async (url: string) => url.includes("/issues/11/resource_state_events") ? json([
+      { state: "closed", created_at: at(20) }, { state: "reopened", created_at: at(10) },
+    ]) : json({}, 404)) as unknown as typeof fetch
+    expect(await driftForge({ gitlab: { url: "https://gl.example" } }, gl).reopenedAt!("gitlab", "acme/app", 11)).toBe(NOW - 10 * 3_600_000)
+    // Every page full: a later reopen may be unread, so it cannot say.
+    const many = (async () => json(Array.from({ length: 100 }, () => ({ event: "labeled", created_at: at(1) })))) as unknown as typeof fetch
+    expect(await driftForge({ github: { apiUrl: "https://api.github.com" } }, many).reopenedAt!("github", "o/r", 11)).toMatchObject({ error: expect.stringMatching(/more than 300 events/) })
   })
 
   it("asks GitHub's compare, and says null when it cannot tell", async () => {
@@ -338,6 +413,12 @@ describe("the daemon's drift check", () => {
     const s = setup({ write: true, writeProjects: ["acme/app"] }, { writeIssue: async () => ({ ok: false, error: "HTTP 403", attempts: [{ kind: "PUT issue", ok: false, status: 403 }] }) })
     for (let i = 0; i < WRITE_TRIES + 2; i++) await s.run(NOW + i * 3_600_000)
     expect(s.store.list().find((r) => r.kind === "live-not-done")).toMatchObject({ writtenAt: null, writeTries: WRITE_TRIES, writeError: "HTTP 403" })
+  })
+
+  it("write mode leaves an issue reopened after its merge alone (#1719)", async () => {
+    const s = setup({ write: true, writeProjects: ["acme/app"] }, { forge: { ...forge, reopenedAt: async () => NOW - 3_600_000 } })
+    expect((await s.run()).written).toBe(0)
+    expect(s.writes).toEqual([])
   })
 
   it("off, it reads nothing", async () => {
