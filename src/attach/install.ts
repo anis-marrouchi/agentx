@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { homedir } from "os"
 import { dirname, resolve } from "path"
 import { buildGuardHookCommand, GUARD_HOOK_TIMEOUT_S } from "@/guard/hook-command"
+import { resolveDaemonRoot } from "@/utils/daemon-root"
 
 // --- Installing the attach hooks into Claude Code ---
 //
@@ -60,8 +61,10 @@ export function attachHookBlock(port: string): Record<string, HookEntry[]> {
  *  without an `?agent=` and without the last-resort deny: this hook runs in
  *  every session on the machine, including the one used to restart the
  *  daemon, so a failed check still allows (#1710). `/guard/check` reads the
- *  agent only from `?agent=`, so both paths apply the install-wide policy. */
-export function guardHookEntries(port: string, root: string = process.cwd()): HookEntry[] {
+ *  agent only from `?agent=`, so both paths apply the install-wide policy.
+ *  `root` defaults to the daemon's folder, not the working folder: install
+ *  runs from anywhere, and a wrong --root makes the fallback check nothing. */
+export function guardHookEntries(port: string, root: string = resolveDaemonRoot()): HookEntry[] {
   const command = buildGuardHookCommand({ port, root })
   return [
     { matcher: "Bash", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },

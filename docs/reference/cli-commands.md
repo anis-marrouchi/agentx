@@ -878,6 +878,7 @@ Wire the attach hooks into ~/.claude/settings.json (one time, all sessions).
 | `--port <n>` | — | Daemon port the hooks should call (default: node.bind in agentx.json). |
 | `--path <file>` | — | Settings file to patch (default: ~/.claude/settings.json). |
 | `--no-guard` | — | Skip the PreToolUse guard hook (not recommended). |
+| `--root <dir>` | — | Daemon folder the guard reads its rules from (default: the folder the daemon runs in). |
 
 ### `agentx attach uninstall`
 

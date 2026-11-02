@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "fs"
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import {
@@ -105,6 +105,30 @@ describe("install", () => {
       expect(h.command).not.toContain('"$AGENTX_GUARD"')
       expect(h.command).not.toContain("permissionDecision")
       expect(h.command.trim().endsWith("exit 0")).toBe(true)
+    }
+  })
+
+  it("run from a foreign folder, the guard's --root is the daemon's folder, not the working one (#1710)", () => {
+    const home = path.join(dir, "home")
+    const install = path.join(dir, "install")
+    const foreign = path.join(dir, "elsewhere")
+    for (const d of [path.join(home, ".agentx"), install, foreign]) mkdirSync(d, { recursive: true })
+    writeFileSync(path.join(home, ".agentx", "daemon-root"), install + "\n")
+    const cwd = process.cwd()
+    const env = { HOME: process.env.HOME, AGENTX_ROOT: process.env.AGENTX_ROOT }
+    process.env.HOME = home
+    delete process.env.AGENTX_ROOT
+    process.chdir(foreign)
+    try {
+      installAttachHooks("19900", { path: file })
+    } finally {
+      process.chdir(cwd)
+      process.env.HOME = env.HOME
+      if (env.AGENTX_ROOT !== undefined) process.env.AGENTX_ROOT = env.AGENTX_ROOT
+    }
+    for (const e of read().hooks.PreToolUse) {
+      expect(e.hooks[0].command).toContain(`--root '${install}'`)
+      expect(e.hooks[0].command).not.toContain(foreign)
     }
   })
 
