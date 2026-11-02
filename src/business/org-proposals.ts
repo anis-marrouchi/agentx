@@ -27,6 +27,7 @@ import type { RelationType } from "./relations"
 
 export const NOT_OWNER = "Only the owner can change the org chart."
 export const MAX_CHANGES = 5
+export const CHANGED_MEANING = "The org chart changed since the card, so these changes would now do something other than what it said. Ask again."
 
 export interface NewAgent {
   id: string
@@ -303,7 +304,11 @@ export function applyOrgProposal(
     let changed = false as boolean
     const { summary } = mutateAgentxConfig((cfg) => {
       changed = orgShapeHash(cfg) !== p.shape
-      return applyOrgPlan(cfg, p, deps.root).join(" ")
+      const text = applyOrgPlan(cfg, p, deps.root).join(" ")
+      // The owner said yes to the card's text: if the changed chart makes
+      // the same changes mean something else, refuse rather than guess.
+      if (changed && text !== p.text) throw new Error(CHANGED_MEANING)
+      return text
     }, { configPath: deps.configPath, skipReload: deps.skipReload })
     if (p.newAgent) {
       const ws = agentsDir(deps.root, p.newAgent.id)

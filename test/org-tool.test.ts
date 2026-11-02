@@ -6,7 +6,7 @@ import { decideCard, listCards, readCard } from "../src/approvals/cards"
 import { runApprovalsSweep, type ApprovalSettings } from "../src/approvals/sweep"
 import { readOrgSetup } from "../src/business/org-edit"
 import {
-  applyOrgProposal, handleOrgApi, isOwnerContext, NOT_OWNER, orgProposalLines, readOrgProposal, type OrgApiDeps,
+  applyOrgProposal, CHANGED_MEANING, handleOrgApi, isOwnerContext, NOT_OWNER, orgProposalLines, readOrgProposal, type OrgApiDeps,
 } from "../src/business/org-proposals"
 import { runOrgTool } from "../src/business/org-tool"
 import { operatorContext } from "../src/requests/operator"
@@ -128,6 +128,20 @@ describe("POST /api/org/proposals", () => {
     expect(done).toMatchObject({ status: "failed", result: "CX cannot report to Sales: Sales already reports up to CX." })
     expect(readFileSync(cfgPath, "utf-8")).toBe(before)
     expect(orgProposalLines(done)[0]).toContain("Nothing was changed")
+  })
+
+  it("refuses on yes when the chart changed and the changes would now mean something else", () => {
+    propose({ changes: [{ op: "add-relation", from: "agent:cx", type: "reports-to", to: "agent:sales" }] })
+    const [card] = listCards(root)
+    expect(card.ask).toContain("not Lead")
+    // Meanwhile CX was moved under Dev: the same change would now replace Dev, not Lead.
+    const c = readCfg()
+    c.business.orgChart.cx.reportsTo = "dev"
+    writeCfg(c)
+    const before = readFileSync(cfgPath, "utf-8")
+    const done = apply(yes(card.id))!
+    expect(done).toMatchObject({ status: "failed", result: CHANGED_MEANING })
+    expect(readFileSync(cfgPath, "utf-8")).toBe(before)
   })
 
   it("applies on yes after a change elsewhere when it still holds, and says so", () => {
