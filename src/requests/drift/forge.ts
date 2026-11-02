@@ -27,6 +27,9 @@ export interface DriftForge {
   /** Is `commit` in `live` (the same commit, or an ancestor)? Null: the
    *  forge could not say (an unknown commit, a forge that is down). */
   contains(provider: Provider, project: string, commit: string, live: string): Promise<boolean | null>
+  /** When the issue was last reopened (ms), null if never. A merge before
+   *  that no longer speaks for the issue (#1719). Unset: not checked. */
+  reopenedAt?(provider: Provider, project: string, number: number): Promise<number | null | { error: string }>
 }
 
 const TIMEOUT_MS = 15_000
@@ -146,6 +149,34 @@ export function driftForge(connectors: ForgeConnectors, doFetch: typeof fetch = 
       if (status === "ahead" || status === "identical") return true
       if (status === "behind" || status === "diverged") return false
       return null
+    },
+
+    async reopenedAt(provider, project, number) {
+      let last: number | null = null
+      // Oldest first on both forges: the last reopen seen is the latest.
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        let r: Awaited<ReturnType<typeof get>>
+        let reopen: (e: any) => boolean
+        if (provider === "gitlab") {
+          const gl = gitlab(project)
+          if (!gl) return { error: "no gitlab connector on this node" }
+          r = await get(`${gl.base}/issues/${number}/resource_state_events?per_page=100&page=${page}`, gl.headers)
+          reopen = (e) => e?.state === "reopened"
+        } else {
+          const gh = github()
+          if (!gh) return { error: "no github connector on this node" }
+          r = await get(`${gh.api}/repos/${project}/issues/${number}/events?per_page=100&page=${page}`, gh.headers)
+          reopen = (e) => e?.event === "reopened"
+        }
+        if (!r.ok) return { error: r.error }
+        const rows: any[] = Array.isArray(r.body) ? r.body : []
+        for (const e of rows) {
+          const at = Date.parse(e?.created_at ?? "")
+          if (reopen(e) && at > (last ?? 0)) last = at
+        }
+        if (rows.length < 100) break
+      }
+      return last
     },
   }
 }

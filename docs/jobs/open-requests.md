@@ -226,9 +226,9 @@ An issue can say **Doing** or **Review** after its work has merged and gone live
 | live, not Done | The change runs on every place listed under the project's `live`, and the issue is not Done. |
 | Done, not live | The issue says Done (or is closed), and a change it names does not run there yet. |
 
-A merge request closes an issue when its title or description says so with a closing word (`Closes #12`, `Fixes group/app#3`), or when its branch starts with the issue number (`12-fix-login`). A plain mention (`Part of #12`, `Refs #12`) is not a close, even when the branch carries that number. A step of a larger issue does not finish it.
+A merge request closes an issue when its title or description says so with a closing word (`Closes #12`, `Fixes group/app#3`), or when its branch starts with the issue number (`12-fix-login`). A plain mention (`Part of #12`, `Refs #12`) is not a close, even when the branch carries that number. A step of a larger issue does not finish it. An issue reopened after the merge is not "live, not Done" because of that merge. Only a merge made after the reopen counts.
 
-Each drift is told to you once, in one notice per check. By default nothing is written: the issue keeps its labels. With `write` on and the project in `writeProjects`, an issue whose work is live gets its Done label and a comment that quotes the merge and the running commit. It is never closed. List only your own projects. A label change on a client's project can send the client an email.
+Each drift is told to you once, in one notice per check. By default nothing is written: the issue keeps its labels. With `write` on and the project in `writeProjects`, an issue whose work is live gets its Done label and a comment that quotes the merge and the running commit. That comment is marked as a status, so the GitHub channel never hands it to an agent or a cloud session. It is never closed. List only your own projects. A label change on a client's project can send the client an email.
 
 To check by hand, run `agentx requests drift --project group/app`. It prints the drifts and changes nothing. Add `--live self` to compare with this computer's build, or a health address whose JSON holds `commit`.
 

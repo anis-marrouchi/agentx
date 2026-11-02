@@ -3,6 +3,7 @@ import type { CheckerSettings } from "../checkers"
 import type { ForgeReader } from "../checkers/issue"
 import { issueLinks, issueRef, type Provider } from "./refs"
 import type { DriftForge, MergedChange } from "./forge"
+import { STATUS_TAG } from "../status"
 
 // --- Status follows the work: find the drift (#1138 step F) ---
 //
@@ -205,7 +206,18 @@ export async function checkProject(project: DriftProject, deps: DriftCheckDeps):
       : issueLive !== "live" && (status === "todo" || status === "doing") ? "merged-not-review"
       : null
     if (!kind) continue
-    const shown = kind === "done-not-live" ? changes.filter((c) => live.get(c) === "not-live") : changes
+    let shown = kind === "done-not-live" ? changes.filter((c) => live.get(c) === "not-live") : changes
+    // Reopened after its merges: they no longer say the work is done, and
+    // write mode must not put Done back (#1719). Not known: not judged.
+    if (kind === "live-not-done" && deps.forge.reopenedAt) {
+      const reopened = await deps.forge.reopenedAt(project.provider, p, number)
+      if (reopened !== null && typeof reopened === "object") {
+        out.errors.push(`${p}#${number}: reopened: ${reopened.error}`)
+        continue
+      }
+      if (reopened !== null) shown = shown.filter((c) => c.mergedAt > reopened)
+      if (!shown.length) continue
+    }
     if (kind === "done-not-live" && !shown.some((c) => now - c.mergedAt >= graceMs)) continue
     const d: Omit<Drift, "line"> = {
       kind, provider: project.provider, issue: `${p}#${number}`, project: p, number, issueUrl: item.url,
@@ -248,5 +260,8 @@ export function proofNote(d: Drift, done: string): string {
     `- Checked: ${day(d.checkedAt)}`,
     "",
     `Was: ${said(d)}. The issue is not closed by this.`,
+    // Posted with the owner's token: the tag tells the forge channels it is
+    // a status, never a message to an agent (#1719).
+    STATUS_TAG,
   ].join("\n")
 }
