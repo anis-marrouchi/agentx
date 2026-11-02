@@ -220,6 +220,12 @@ describe("guard hook: local check fails too", () => {
     "/opt/agentx/dist/cli.js daemon restart",
     "node /opt/agentx/dist/cli.js daemon start",
     "npx tsx ~/agentx/src/cli.ts daemon restart",
+    "npx tsx src/cli.ts daemon start",
+    "npx tsx src/cli.ts daemon start --detach",
+    "agentx daemon start --detach",
+    "agentx daemon start -d --config ~/agentx/agentx.json",
+    "agentx daemon start --config=/srv/agentx/agentx.json --port 19900",
+    "node dist/cli.js daemon restart -c agentx.json",
     "launchctl kickstart -k gui/501/ai.agentx.daemon",
     "launchctl kickstart -k gui/$(id -u)/ai.agentx.daemon",
     "launchctl kickstart -k gui/$UID/ai.agentx.daemon",
@@ -242,6 +248,9 @@ describe("guard hook: local check fails too", () => {
     "agentx daemon start $(id -u)",
     "sudo systemctl stop agentx",
     'agentx daemon start "x"',
+    "agentx daemon start --config x; dropdb y",
+    "agentx daemon start --config $(id -u)",
+    "agentx daemon stop --detach",
   ]
 
   for (const c of allowed) {

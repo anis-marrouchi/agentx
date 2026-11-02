@@ -1,4 +1,5 @@
 import { Command } from "commander"
+import { resolve } from "path"
 import chalk from "chalk"
 import {
   installAttachHooks,
@@ -7,6 +8,7 @@ import {
   userSettingsPath,
   configuredDaemonPort,
 } from "@/attach/install"
+import { resolveDaemonRoot } from "@/utils/daemon-root"
 import { DELIVERY_MODES, isDeliveryMode, type AttachSession, type DeliveryMode } from "@/attach"
 
 // --- agentx attach ---
@@ -294,10 +296,12 @@ attach
   .option("--port <n>", "daemon port the hooks should call (default: node.bind in agentx.json)")
   .option("--path <file>", "settings file to patch (default: ~/.claude/settings.json)")
   .option("--no-guard", "skip the PreToolUse guard hook (not recommended)")
+  .option("--root <dir>", "daemon folder the guard reads its rules from (default: the folder the daemon runs in)")
   .action((opts) => {
     try {
-      const port = String(opts.port || configuredDaemonPort())
-      const r = installAttachHooks(port, { path: opts.path, withGuard: opts.guard })
+      const root = opts.root ? resolve(opts.root) : resolveDaemonRoot()
+      const port = String(opts.port || configuredDaemonPort(root))
+      const r = installAttachHooks(port, { path: opts.path, withGuard: opts.guard, root })
       console.log(
         r.changed
           ? `${chalk.green("✓")} Installed attach hooks in ${chalk.gray(r.path)}`
@@ -305,7 +309,7 @@ attach
       )
       console.log(chalk.gray(`  Events: ${r.events.join(", ")} → 127.0.0.1:${port}`))
       if (r.guardInstalled) {
-        console.log(chalk.gray("  PreToolUse guard installed at user scope."))
+        console.log(chalk.gray(`  PreToolUse guard installed at user scope (rules from ${root}).`))
         console.log(
           chalk.gray(
             "  (An attached session runs under your permissions, not the agent's workspace\n" +

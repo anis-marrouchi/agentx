@@ -64,8 +64,8 @@ function sq(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
-const STARTS = "(start|restart|status)( +--when-idle)?"
 const WORD = "[A-Za-z0-9_./~@:=-]+"
+const STARTS = `(start|restart|status)( +(-d|--detach|--when-idle|(-c|--config|--port)( +|=)${WORD}))*`
 const UID = "([0-9]+|\\$\\(id -u\\)|\\$UID)"
 
 /** The commands a daemon-started session may still run when neither check
@@ -75,8 +75,8 @@ const UID = "([0-9]+|\\$\\(id -u\\)|\\$UID)"
  *  redirect or newline fails the match. Exported for tests. */
 export const DAEMON_RESTART_ALLOW = [
   `agentx +daemon +${STARTS}`,
-  `(node +)?${WORD}/cli\\.js +daemon +${STARTS}`,
-  `npx +tsx +${WORD}/cli\\.ts +daemon +${STARTS}`,
+  `(node +)?(${WORD}/)?cli\\.js +daemon +${STARTS}`,
+  `npx +tsx +(${WORD}/)?cli\\.ts +daemon +${STARTS}`,
   `launchctl +kickstart( +-k)? +gui/${UID}/${WORD}`,
   `launchctl +(bootstrap|bootout) +gui/${UID} +${WORD}`,
   `systemctl +--user +(start|restart|status) +${WORD}`,
