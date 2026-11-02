@@ -223,7 +223,7 @@ describe("finding the drift", () => {
       await new Promise((r) => setTimeout(r, 0))
       expect(got).toEqual([])
       // The owner's own words still start a turn.
-      await (adapter as any).handleIssueComment(comment(2, "Please look at this again."))
+      await (adapter as any).handleIssueComment(comment(2, "@coder Please look at this again."))
       await new Promise((r) => setTimeout(r, 0))
       expect(got).toHaveLength(1)
     } finally {

@@ -750,11 +750,11 @@ describe("editing the comment on the forge", () => {
     await (adapter as any).handleIssueComment(comment(1, status))
     await new Promise((r) => setTimeout(r, 0))
     expect(got).toEqual([])
-    await (adapter as any).handleIssueComment(comment(2, markBody("Verdict: NOT READY", "devops")))
+    await (adapter as any).handleIssueComment(comment(2, markBody("@coder Verdict: NOT READY", "devops")))
     await new Promise((r) => setTimeout(r, 0))
     expect(got).toHaveLength(1)
     // Typed by someone AgentX does not post as: an ordinary comment.
-    await (adapter as any).handleIssueComment(comment(3, status, "outsider"))
+    await (adapter as any).handleIssueComment(comment(3, `@coder ${status}`, "outsider"))
     await new Promise((r) => setTimeout(r, 0))
     expect(got).toHaveLength(2)
   })
