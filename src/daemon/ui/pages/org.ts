@@ -15,6 +15,8 @@
 // When there are departments the page opens on the Departments view: a box
 // per department, its name, the head's card on top and the members' cards
 // in a grid, then "Not in a department"; "Chart" shows the tree.
+// Beside the views, Show: Everyone | People | Agents (#1681 item 6) filters
+// both, as the Hub's does (org-who.ts); ?who= keeps it in the address.
 //
 // Edit org (#1420), owner only: who is in the chart, their roles and the
 // lines between them, with a confirm step for moves and removals. The
@@ -33,6 +35,7 @@ import { HUB_NEEDS_YOU, HUB_PATH } from "../hub-name"
 import { ORG_EDIT_CSS, orgConfirmFor, orgEditHtml, orgEditor } from "./org-setup"
 import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
 import { ORG_PROJECTS_CSS, ORG_PROJECTS_JS } from "./org-projects"
+import { orgWhoDepartments, orgWhoFilter, orgWhoKeeps, orgWhoOf } from "@/business/org-who"
 
 export interface OrgPageOpts {
   peers?: TopbarPeer[]
@@ -60,13 +63,14 @@ export function renderOrgPage(opts: OrgPageOpts = {}): string {
     <p id="org-problem" class="org-problem" role="alert" hidden></p>
     <div class="org-toolbar" role="toolbar" aria-label="Org tools">
       <div id="org-views" class="org-views" role="group" aria-label="View"><button type="button" data-org-view="dept" aria-pressed="true" hidden>Departments</button><button type="button" data-org-view="chart" aria-pressed="false" aria-controls="org-chart-view">Chart</button><button type="button" data-org-view="projects" aria-pressed="false" aria-controls="org-projects">Projects</button></div>
+      <div id="org-who" class="org-show"><span id="org-who-l">Show</span><div class="org-views" role="group" aria-labelledby="org-who-l"><button type="button" data-org-who="everyone" aria-pressed="true">Everyone</button><button type="button" data-org-who="people" aria-pressed="false">People</button><button type="button" data-org-who="agents" aria-pressed="false">Agents</button></div></div>
       <div id="org-zoom" class="org-views org-zoom" role="group" aria-label="Zoom" hidden><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button><button type="button" id="org-zoom-at" data-org-zoom="0" title="Back to 100%">100%</button><button type="button" data-org-zoom="1" aria-label="Zoom in">+</button></div>
     </div>
     <section id="org-projects" class="org-projects" aria-label="Projects" hidden></section>
     <div id="org-chart-view">
     <ul class="org-legend" aria-label="Legend">
-      <li><span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>plain card, with its status</li>
-      <li><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, warm fill</li>
+      <li data-org-legend="agent"><span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>plain card, with its status</li>
+      <li data-org-legend="person"><span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>round card, warm fill</li>
       <li id="org-legend-remote" hidden><span class="org-tag is-agent org-legend-remote">${ORG_AGENT_ICON}Agent</span>dashed: on another node, shown not routed; grey when that node is down</li>
       <li id="org-legend-dept" hidden><span class="org-legend-dept">Department</span>a dashed box round its members</li>
       <li id="org-legend-also" hidden><span class="org-home">Home: …</span>outlined: also works here, home is another department</li>
@@ -167,6 +171,10 @@ const ORG_CSS = `
 .org-views[hidden], .org-depts[hidden], .org-tree[hidden] { display: none; }
 .org-views button { font: inherit; font-size: var(--ax-fs-sm); font-weight: 600; background: none; border: 0; color: var(--ax-text); padding: 4px 14px; cursor: pointer; }
 .org-views button[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); }
+/* The label stays on the line of its buttons. */
+.org-show { display: inline-flex; align-items: center; gap: 8px; margin-left: 4px; font-size: var(--ax-fs-sm); font-weight: 600; color: var(--ax-text-2); white-space: nowrap; }
+.org-show[hidden] { display: none; }
+.org-dname small { margin-left: 4px; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-text-2); }
 .org-depts { display: grid; gap: 16px; }
 .org-dbox { padding: 12px 14px 14px; border: 1.5px dashed var(--ax-accent); border-radius: 16px; background: var(--ax-blue-t, var(--ax-surface)); }
 .org-dbox.is-rest { border-color: var(--ax-border-2); background: var(--ax-surface); }
@@ -278,19 +286,29 @@ export const ORG_PEOPLE_JS = `
    *  head's card on top, the members' cards in a grid; then "Not in a
    *  department". cardOf(key) is a card's html, or '' for no card. Who also
    *  works in a box (alsoMembers) comes last in it, outlined, under a
-   *  "Home: <department>" chip. */
-  function deptViewHtml(by, cardOf, esc) {
+   *  "Home: <department>" chip. With who "people" or "agents" (#1681 item 6)
+   *  by is orgWhoDepartments' answer: a count "2 of 5" by each name, a hidden
+   *  head as a text line (nameOf gives its name), "No people here" for a box
+   *  the switch empties. */
+  function deptViewHtml(by, cardOf, esc, who, nameOf) {
+    var some = who === 'people' || who === 'agents', none = who === 'people' ? 'No people here' : 'No agents here';
     function grid(keys) { return '<div class="org-dgrid">' + keys.map(cardOf).join('') + '</div>'; }
+    function count(shown, total) { return some ? ' <small>' + shown + ' of ' + total + '</small>' : ''; }
     var boxes = (by.boxes || []).map(function (dep) {
+      var hidden = some && dep.hiddenHead;
       return '<section class="org-dbox" data-dept="' + esc(dep.id) + '" aria-label="' + esc(dep.name) + '">'
-        + '<h2 class="org-dname">' + esc(dep.name) + '</h2>'
-        + (dep.head ? '<div class="org-dhead"><span class="org-lead">Head</span>' + cardOf(dep.head) + '</div>' : '<p class="org-quiet">No head set</p>')
-        + (dep.members.length ? grid(dep.members) : '<p class="org-quiet">No members yet</p>')
+        + '<h2 class="org-dname">' + esc(dep.name) + count(dep.shown, dep.total) + '</h2>'
+        + (dep.head ? '<div class="org-dhead"><span class="org-lead">Head</span>' + cardOf(dep.head) + '</div>'
+          : hidden ? '<p class="org-quiet">Head: ' + esc(nameOf(dep.hiddenHead)) + (dep.hiddenHead.indexOf('person:') === 0 ? ' (person)' : ' (agent)') + '</p>'
+          : '<p class="org-quiet">No head set</p>')
+        + (dep.members.length ? grid(dep.members) : '<p class="org-quiet">' + (some && dep.total > (dep.head || dep.hiddenHead ? 1 : 0) ? none : 'No members yet') + '</p>')
         + (dep.also ? '<h3 class="org-also-name">Also works here</h3><div class="org-dgrid">' + dep.also.map(function (a) {
           return '<div class="org-also"><span class="org-home">Home: ' + esc(a.home) + '</span>' + cardOf(a.key) + '</div>';
         }).join('') + '</div>' : '') + '</section>';
     }).join('');
-    var rest = (by.rest || []).length ? '<section class="org-dbox is-rest" aria-label="Not in a department"><h2 class="org-dname">Not in a department</h2>' + grid(by.rest) + '</section>' : '';
+    var restN = some && by.restTotal != null ? by.restTotal : (by.rest || []).length;
+    var rest = restN ? '<section class="org-dbox is-rest" aria-label="Not in a department"><h2 class="org-dname">Not in a department' + count(by.rest.length, restN) + '</h2>'
+      + (by.rest.length ? grid(by.rest) : '<p class="org-quiet">' + none + '</p>') + '</section>' : '';
     return boxes + rest;
   }
   /** One list of siblings as it is drawn (#1681): each department's members
@@ -306,6 +324,24 @@ export const ORG_PEOPLE_JS = `
     });
     return out;
   }
+  /** The tree withPeople built, as the who switch shows it (#1681 item 6):
+   *  copies of the shown nodes, each under its nearest shown boss
+   *  (orgWhoFilter, injected), the rest at the top. */
+  function whoTree(roots, who) {
+    if (who !== 'people' && who !== 'agents') return roots;
+    var list = [], byKey = {}, top = [];
+    (function walk(ns, boss) {
+      (ns || []).forEach(function (n) {
+        var key = (n.kind === 'person' ? 'person:' : 'agent:') + n.id;
+        if (byKey[key]) return;
+        byKey[key] = Object.assign({}, n, { reports: [] });
+        list.push(boss ? { key: key, boss: boss } : { key: key });
+        walk(n.reports, key);
+      });
+    })(roots, '');
+    orgWhoFilter(list, who).forEach(function (m) { (m.boss ? byKey[m.boss].reports : top).push(byKey[m.key]); });
+    return top;
+  }
   /** A department box's title: its name, and its head when it has one. */
   function deptTitleHtml(dep, nameOf, esc) {
     return '<span class="org-dept-name">' + esc(dep.name) + '</span>'
@@ -315,7 +351,7 @@ export const ORG_PEOPLE_JS = `
 
 const ORG_SCRIPT = `
 (function () {${ORG_PEOPLE_JS}${ORG_PROJECTS_JS}
-  ${injectFns({ orgConfirmFor, orgEditHtml, orgEditor })}
+  ${injectFns({ orgConfirmFor, orgEditHtml, orgEditor, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments })}
   var tree = document.getElementById('org-tree');
   var msg = document.getElementById('org-msg');
   var warned = false;
@@ -341,11 +377,19 @@ const ORG_SCRIPT = `
   // address as ?view=projects. Departments falls back to Chart when there are none.
   var view = /[?&]view=projects(&|$)/.test(location.search) ? 'projects' : 'dept';
   var lastOrg = null, projHtml = '';
+  // Show: Everyone, People or Agents (#1681 item 6), on Chart and
+  // Departments; kept in the address as ?who=, left out for Everyone.
+  var who = orgWhoOf(new URLSearchParams(location.search).get('who'));
   function shownView() { return view === 'dept' && !(lastOrg && (lastOrg.departments || []).length) ? 'chart' : view; }
   function paintView() {
     document.querySelector('[data-org-view="dept"]').hidden = !(lastOrg && (lastOrg.departments || []).length);
     document.querySelectorAll('[data-org-view]').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-org-view') === shownView() ? 'true' : 'false'); });
+    document.querySelectorAll('[data-org-who]').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-org-who') === who ? 'true' : 'false'); });
     var on = view === 'projects';
+    document.getElementById('org-who').hidden = on;
+    // A legend line for a kind the switch hides goes too.
+    document.querySelector('[data-org-legend="agent"]').hidden = who === 'people';
+    document.querySelector('[data-org-legend="person"]').hidden = who === 'agents';
     document.getElementById('org-chart-view').hidden = on;
     var box = document.getElementById('org-projects');
     box.hidden = !on;
@@ -363,6 +407,18 @@ const ORG_SCRIPT = `
     history.replaceState(null, '', u.pathname + u.search + u.hash);
     paintView();
     if (view !== 'projects' && lastOrg) load();
+  });
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('[data-org-who]') : null;
+    if (!b) return;
+    who = orgWhoOf(b.getAttribute('data-org-who'));
+    var u = new URL(location.href);
+    if (who === 'everyone') u.searchParams.delete('who'); else u.searchParams.set('who', who);
+    history.replaceState(null, '', u.pathname + u.search + u.hash);
+    // A new set of cards: fit the chart to the page again.
+    fitted = false; startShown = false; zoom = 1;
+    paintView();
+    if (lastOrg) load();
   });
   function kind(person) { return person ? '<span class="org-tag is-person">${ORG_PERSON_ICON}Person</span>' : '<span class="org-tag is-agent">${ORG_AGENT_ICON}Agent</span>'; }
   function personCard(n) {
@@ -416,8 +472,7 @@ const ORG_SCRIPT = `
       depts = {};
       (d.departments || []).forEach(function (dep) { depts[dep.id] = dep; });
       document.getElementById('org-legend-dept').hidden = !(d.departments || []).length;
-      document.getElementById('org-legend-remote').hidden = !((d.diagram && d.diagram.boxes) || []).some(function (b) { return b.remote; });
-      document.getElementById('org-legend-also').hidden = !((d.byDepartment && d.byDepartment.boxes) || []).some(function (b) { return b.also; });
+      document.getElementById('org-legend-remote').hidden = who === 'people' || !((d.diagram && d.diagram.boxes) || []).some(function (b) { return b.remote; });      document.getElementById('org-legend-also').hidden = !((d.byDepartment && d.byDepartment.boxes) || []).some(function (b) { return b.also; });
       E.org = d;
       paintEdit();
       lastOrg = d;
@@ -425,7 +480,8 @@ const ORG_SCRIPT = `
       var org = withPeople(d);
       names = org.names;
       document.getElementById('org-none').hidden = org.roots.length > 0 || view === 'projects';
-      tree.innerHTML = org.roots.length ? branch(org.roots) : '';
+      var shown = whoTree(org.roots, who);
+      tree.innerHTML = shown.length ? branch(shown) : org.roots.length ? '<p class="org-quiet">' + (who === 'people' ? 'No people' : 'No agents') + ' in the chart.</p>' : '';
       if (tree.firstElementChild) tree.firstElementChild.style.zoom = zoom;
       var hasDepts = (d.departments || []).length > 0, deptView = hasDepts && view === 'dept';
       var deptsEl = document.getElementById('org-depts');
@@ -438,7 +494,7 @@ const ORG_SCRIPT = `
       if (deptView) {
         var byKey = org.nodes;
         d.outside.forEach(function (n) { byKey['agent:' + n.id] = byKey['agent:' + n.id] || n; });
-        deptsEl.innerHTML = deptViewHtml(d.byDepartment || { boxes: [], rest: [] }, function (k) { return byKey[k] ? card(byKey[k]) : ''; }, esc);
+        deptsEl.innerHTML = deptViewHtml(orgWhoDepartments(d.byDepartment || { boxes: [], rest: [] }, who), function (k) { return byKey[k] ? card(byKey[k]) : ''; }, esc, who, nameOf);
       }
       document.getElementById('org-outside').classList.toggle('is-in-depts', deptView);
       var out = document.getElementById('org-outside');

@@ -20,6 +20,9 @@
 //     and the members' cards in a grid under it, then "Not in a
 //     department". No lines, so a phone just stacks the boxes. The chart
 //     is one tap away.
+//   - Show: Everyone | People | Agents (#1681 item 6) filters the Chart and
+//     Departments cards (org-who.ts), kept in the hash as who=. The rail
+//     still counts the whole org.
 //   - A card opens the agent's Wall profile; a branch folds and unfolds;
 //     the chart zooms with its buttons or ctrl + wheel (a trackpad pinch).
 //   - On a phone the chart is an indented list with thread lines.
@@ -32,7 +35,7 @@ import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
 import { ORG_PROJECTS_CSS, ORG_PROJECTS_JS } from "./org-projects"
 
 export const WALL_ORG_SCRIPT = String.raw`
-  var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null, fitted: false, startShown: false };
+  var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null, who: 'everyone', fitted: false, startShown: false };
   var ORG_FIT_FLOOR = 0.6;
 ${ORG_PROJECTS_JS}
   /** Departments (when there are any), Chart and Projects (#1681, #1687). */
@@ -41,6 +44,33 @@ ${ORG_PROJECTS_JS}
       (orgDepts().length ? [['dept', 'Departments']] : []).concat([['chart', 'Chart'], ['projects', 'Projects']]).map(function (v) {
         return '<button type="button" data-org-view="' + v[0] + '" aria-pressed="' + (orgView() === v[0] ? 'true' : 'false') + '">' + v[1] + '</button>';
       }).join('') + '</span>';
+  }
+  /** Show: Everyone, People or Agents (#1681 item 6), on the Chart and
+   *  Departments views. Kept in the hash as who=, left out for Everyone. */
+  function orgWhoHtml() {
+    return '<span class="wog__show">Show<span class="wog__views" role="group" aria-label="Show">' +
+      [['everyone', 'Everyone'], ['people', 'People'], ['agents', 'Agents']].map(function (v) {
+        return '<button type="button" data-org-who="' + v[0] + '" aria-pressed="' + (ORG.who === v[0] ? 'true' : 'false') + '">' + v[1] + '</button>';
+      }).join('') + '</span></span>';
+  }
+  function orgRead(q) { ORG.who = orgWhoOf(q.get('who')); }
+  function orgWrite(q) { if (ORG.who !== 'everyone') q.set('who', ORG.who); }
+  /** The chart as the switch shows it: hidden cards leave before layout, and
+   *  their reports move up to the nearest shown boss (orgWhoFilter). Lines and
+   *  chips to a hidden card stay as chip text only. */
+  function orgShown(d) {
+    if (!d || ORG.who === 'everyone') return d;
+    var keep = {};
+    orgWhoFilter(d.boxes.map(function (b) { return { key: b.key, boss: b.parent }; }), ORG.who).forEach(function (m) { keep[m.key] = m; });
+    var boxes = d.boxes.filter(function (b) { return keep[b.key]; }).map(function (b) {
+      var c = Object.assign({}, b);
+      delete c.parent;
+      if (keep[b.key].boss) c.parent = keep[b.key].boss;
+      return c;
+    });
+    var edges = boxes.filter(function (b) { return b.parent; }).map(function (b) { return { from: b.key, to: b.parent, type: 'reports-to' }; })
+      .concat(d.edges.filter(function (e) { return e.type !== 'reports-to' && keep[e.from]; }));
+    return { boxes: boxes, edges: edges, columns: d.columns, levels: d.levels };
   }
   /** The Projects view (#1687): the shared boxes, under the same toolbar. */
   function orgProjectsPageHtml() {
@@ -127,7 +157,7 @@ ${ORG_PROJECTS_JS}
     var dotted = d.edges.some(function (e) { return e.type === 'dotted-line'; });
     var chart = orgView() === 'chart';
     // The toolbar row sits above the legend, so a new switch has room in it.
-    var tools = '<div class="wog__toolbar wog__tools" role="toolbar" aria-label="Org tools">' + orgViewsHtml() +
+    var tools = '<div class="wog__toolbar wog__tools" role="toolbar" aria-label="Org tools">' + orgViewsHtml() + orgWhoHtml() +
         (chart && dotted ? '<button type="button" class="wog__toggle" data-org-dotted aria-pressed="' + (ORG.dotted ? 'true' : 'false') + '">Show dotted lines</button>' : '') +
         (chart ? '<span class="wog__zoom" role="group" aria-label="Zoom"><button type="button" data-org-zoom="-1" aria-label="Zoom out">−</button>' +
           '<button type="button" data-org-zoom="0" title="Back to 100%">' + Math.round(ORG.zoom * 100) + '%</button>' +
@@ -136,15 +166,16 @@ ${ORG_PROJECTS_JS}
       '</div>';
     return tools + '<div class="wog__bar">' +
       '<ul class="wog__legend" aria-label="Legend">' +
-        '<li><span class="wog__key is-card"></span>' + orgKindHtml('agent') + '</li>' +
-        '<li><span class="wog__key is-person"></span>' + orgKindHtml('person') + '</li>' +
-        (d.boxes.some(function (b) { return b.remote; }) ? '<li><span class="wog__key is-remote"></span>On another node: shown, not routed to; grey when it does not answer</li>' : '') +
+        // A legend line for a kind the switch hides goes too.
+        (ORG.who !== 'people' ? '<li><span class="wog__key is-card"></span>' + orgKindHtml('agent') + '</li>' : '') +
+        (ORG.who !== 'agents' ? '<li><span class="wog__key is-person"></span>' + orgKindHtml('person') + '</li>' : '') +
+        (ORG.who !== 'people' && d.boxes.some(function (b) { return b.remote; }) ?'<li><span class="wog__key is-remote"></span>On another node: shown, not routed to; grey when it does not answer</li>' : '') +
         (!chart ? '<li><span class="wog__chip is-lead">Head</span>Heads the department</li>' +
           (((S.org && S.org.byDepartment && S.org.byDepartment.boxes) || []).some(function (x) { return x.also; }) ? '<li><span class="wog__chip is-home">Home: …</span>Outlined: also works here, home is another department</li>' : '') :
           (orgDepts().length ? '<li><span class="wog__key is-dept"></span>Department</li>' : '') +
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln" d="M2 5H26"/></svg>Reports to</li>' +
           '<li><svg width="28" height="10" aria-hidden="true"><path class="wog__ln is-dotted" d="M2 5H26"/></svg>Dotted line: a second boss for one topic</li>' +
-          '<li><span class="wog__chip is-acts">acts for …</span>Works on behalf of a person</li>') +
+          (ORG.who !== 'people' ? '<li><span class="wog__chip is-acts">acts for …</span>Works on behalf of a person</li>' : '')) +
       '</ul></div>';
   }
   /** Counts and the agents not in the chart: the side rail, or under the chart when narrow. */
@@ -177,23 +208,31 @@ ${ORG_PROJECTS_JS}
       '<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>' +
       (S.org.problem ? '<p class="wog__problem" role="alert">Something in the org chart does not hold: ' + esc(S.org.problem) + '</p>' : '') +
       (S.org.live === false ? '<p class="ax-wall__count wog__note">The daemon did not answer, so working or idle is not known.</p>' : '');
+    // The rail counts the whole org, whatever the switch shows.
     if (orgView() === 'dept') return top + orgDeptsHtml(d) + '<div class="wog__inrail">' + orgRailHtml(d) + '</div>';
-    var hidden = orgHidden(d);
-    var shown = d.boxes.filter(function (b) { return !hidden[b.key]; });
-    var lay = layoutOrg(shown.map(function (b) { return b.department ? { key: b.key, name: b.name, group: b.department } : { key: b.key, name: b.name }; }), d.edges);
+    var rail = '<div class="wog__inrail">' + orgRailHtml(d) + '</div>';
+    var sd = orgShown(d);
+    if (!sd.boxes.length) return top + '<p class="ax-wall__empty">' + (ORG.who === 'people' ? 'No people' : 'No agents') + ' in the chart.</p>' + rail;
+    var hidden = orgHidden(sd);
+    var shown = sd.boxes.filter(function (b) { return !hidden[b.key]; });
+    var lay = layoutOrg(shown.map(function (b) { return b.department ? { key: b.key, name: b.name, group: b.department } : { key: b.key, name: b.name }; }), sd.edges);
     var byKey = {};
     shown.forEach(function (b) { byKey[b.key] = b; });
-    var cards = lay.boxes.map(function (at) { return orgCardHtml(byKey[at.key], at, d); }).join('');
+    var cards = lay.boxes.map(function (at) { return orgCardHtml(byKey[at.key], at, sd); }).join('');
     return top +
       '<div class="wog__scroll" id="wog-scroll"><div class="wog__size" id="wog-size"><div class="wog__chart" id="wog-chart" style="--wog-cols: ' + lay.columns + '; transform: scale(' + ORG.zoom + ')">' +
-        '<svg class="wog__lines" id="wog-lines" aria-hidden="true"></svg>' + cards + '</div></div></div>' +
-      '<div class="wog__inrail">' + orgRailHtml(d) + '</div>';
+        '<svg class="wog__lines" id="wog-lines" aria-hidden="true"></svg>' + cards + '</div></div></div>' + rail;
   }
 
   // The Departments view (#1681): per department its name, the head's card
   // on top, the members' cards in a grid; then everyone no department holds.
+  // The who switch filters the cards; a hidden head is a text line, and the
+  // count says how many of the department it shows.
   function orgDeptsHtml(d) {
-    var by = S.org.byDepartment || { boxes: [], rest: [] };
+    var by = orgWhoDepartments(S.org.byDepartment || { boxes: [], rest: [] }, ORG.who);
+    var all = ORG.who === 'everyone', none = ORG.who === 'people' ? 'No people here' : 'No agents here';
+    function count(shown, total) { return all ? String(total) : shown + ' of ' + total; }
+    function headLine(key) { return '<p class="wod__nohead">Head: ' + esc(orgName(key)) + (key.indexOf('person:') === 0 ? ' (person)' : ' (agent)') + '</p>'; }
     var cards = {};
     d.boxes.forEach(function (b) { cards[b.key] = b; });
     ((S.org && S.org.outside) || []).forEach(function (n) {
@@ -203,16 +242,17 @@ ${ORG_PROJECTS_JS}
     function grid(keys) { return keys.length ? '<div class="wod__grid">' + keys.map(function (k) { return card(k); }).join('') + '</div>' : ''; }
     var boxes = by.boxes.map(function (dep) {
       return '<section class="wod__box" data-org-dept="' + esc(dep.id) + '" aria-label="' + esc(dep.name) + '">' +
-        '<h3 class="wod__name">' + esc(dep.name) + ' <small>' + (dep.members.length + (dep.head ? 1 : 0)) + (dep.also ? ' + ' + dep.also.length + ' also' : '') + '</small></h3>' +
-        (dep.head ? '<div class="wod__head">' + card(dep.head, true) + '</div>' : '<p class="wod__nohead">No head set</p>') +
-        (dep.members.length ? grid(dep.members) : '<p class="wod__nohead">No members yet</p>') +
+        '<h3 class="wod__name">' + esc(dep.name) + ' <small>' + count(dep.shown, dep.total) + (dep.also ? ' + ' + dep.also.length + ' also' : '') + '</small></h3>' +
+        (dep.head ? '<div class="wod__head">' + card(dep.head, true) + '</div>' : dep.hiddenHead ? headLine(dep.hiddenHead) : '<p class="wod__nohead">No head set</p>') +
+        (dep.members.length ? grid(dep.members) : '<p class="wod__nohead">' + (dep.total > (dep.head || dep.hiddenHead ? 1 : 0) ? none : 'No members yet') + '</p>') +
         // Who also works here, outlined, with their home department.
         (dep.also ? '<h4 class="wod__also">Also works here</h4><div class="wod__grid">' +
           dep.also.map(function (a) { return card(a.key, false, a.home); }).join('') + '</div>' : '') +
       '</section>';
     }).join('');
-    var rest = by.rest.length ? '<section class="wod__box is-rest" aria-label="Not in a department">' +
-      '<h3 class="wod__name">Not in a department <small>' + by.rest.length + '</small></h3>' + grid(by.rest) + '</section>' : '';
+    var rest = by.restTotal ? '<section class="wod__box is-rest" aria-label="Not in a department">' +
+      '<h3 class="wod__name">Not in a department <small>' + count(by.rest.length, by.restTotal) + '</small></h3>' +
+      (by.rest.length ? grid(by.rest) : '<p class="wod__nohead">' + none + '</p>') + '</section>' : '';
     return '<div class="wod">' + boxes + rest + '</div>';
   }
 
@@ -221,7 +261,7 @@ ${ORG_PROJECTS_JS}
   /** An element this page drew (not in the Wall's skeleton), or null. */
   function orgEl(id) { return document.querySelector('#' + id); }
   function orgDraw() {
-    var chart = orgEl('wog-chart'), svg = orgEl('wog-lines'), size = orgEl('wog-size'), d = orgDiagram();
+    var chart = orgEl('wog-chart'), svg = orgEl('wog-lines'), size = orgEl('wog-size'), d = orgShown(orgDiagram());
     if (!chart || !svg || !d) return;
     var phone = !svg.getClientRects().length;
     size.style.width = phone ? '' : chart.offsetWidth * ORG.zoom + 'px';
@@ -355,8 +395,20 @@ ${ORG_PROJECTS_JS}
     render();
   }
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-org-fold],[data-org-zoom],[data-org-dotted],[data-org-view]');
+    var t = ev.target.closest('[data-org-fold],[data-org-zoom],[data-org-dotted],[data-org-view],[data-org-who]');
     if (!t) return;
+    if (t.hasAttribute('data-org-who')) {
+      // A new set of cards: fit the chart to the pane again.
+      ORG.who = orgWhoOf(t.getAttribute('data-org-who'));
+      ORG.fitted = false;
+      ORG.startShown = false;
+      ORG.zoom = 1;
+      writeHash();
+      render();
+      var on = $('wall-org').querySelector('[data-org-who="' + ORG.who + '"]');
+      if (on) on.focus();
+      return;
+    }
     if (t.hasAttribute('data-org-view')) {
       ORG.view = t.getAttribute('data-org-view');
       render();
@@ -403,6 +455,8 @@ export const WALL_ORG_CSS = ORG_PROJECTS_CSS + `
 .wog__views { display: inline-flex; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); overflow: hidden; }
 .wog__views button { font: inherit; font-weight: 600; background: none; border: 0; color: var(--ax-text); padding: 3px 12px; cursor: pointer; }
 .wog__views button[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); }
+/* The label stays on the line of its buttons. */
+.wog__show { display: inline-flex; align-items: center; gap: 8px; margin-left: 4px; font-weight: 600; color: var(--ax-muted); white-space: nowrap; }
 /* Departments view (#1681): boxes that stack, the head on top of a card grid. */
 .wod { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; }
 .wod__box { min-width: 0; }
