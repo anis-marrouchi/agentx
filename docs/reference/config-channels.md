@@ -191,6 +191,11 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 | `channels.github.pullRequestActions` | list of strings | `["opened", "reopened", "ready_for_review"]` | Pull request changes that start a run. |
 | `channels.github.ignoreOwnChanges` | boolean | `true` | A label, assignment, close or edit made by an account AgentX posts with starts no run. This covers the GitHub App, the token owners, the `githubUsernames` above and accounts of other computers on the mesh. Opening or reopening an issue always counts. |
 | `channels.github.debounceSeconds` | number (0–3600) | `30` | Several changes to one issue or pull request within this many seconds start one run. The run sees the latest state and lists every change. Each new change restarts the wait. `0` starts a run for every change. |
+| `channels.github.triggerLabel` | string | `"agentx"` | Adding this label to an issue or pull request starts a run, whoever adds it. Other labels follow `issueActions` and `pullRequestActions`. |
+
+### Which comments start a run
+
+A comment, review or review comment starts a run only when it @-mentions the repository's agent. Any of these counts: `@` followed by the agent id (`@coder-agent`), one of the agent's `mentions` (`@coder`), or one of its `githubUsernames`. A comment without a mention starts nothing, even when a cloud session is already open for the issue. Mentioning a handle without the `@` does not count. The daemon log names every comment it skips.
 
 ### Which changes start a run
 
@@ -199,6 +204,8 @@ GitHub sends a separate message for each change to an issue: opened, labeled, as
 1. **Project rule.** If the repository has a project rule with an `actions` list under `github.issues` or `github.pull_request`, that list decides which changes count. Its other filters, such as required labels, still apply.
 2. **Channel list.** Without such a list, `issueActions` or `pullRequestActions` decides. A rule that only sets labels does not let `closed` through. To run on `closed`, add it to a rule's `actions` list or to the channel list.
 3. **AgentX's own changes.** A label or assignment that AgentX made itself, for example when it files an issue for an agent, starts nothing while `ignoreOwnChanges` is on.
+
+Adding `triggerLabel` skips steps 2 and 3. A project rule's filters still apply.
 
 Changes that pass all three steps wait `debounceSeconds` before the agent starts, so a burst becomes one run.
 

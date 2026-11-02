@@ -69,6 +69,9 @@ export interface GitHubChannelConfig {
    *  with the latest state; the window restarts with each event. 0 runs
    *  each event as it arrives. */
   debounceSeconds?: number
+  /** Adding this label to an issue or PR starts a run, whoever adds it and
+   *  whatever the action lists say (#1719). */
+  triggerLabel?: string
 }
 
 /** Defaults for the event gate (#612). `channels.github` in agentx.json
@@ -79,7 +82,25 @@ export const GITHUB_EVENT_DEFAULTS = {
   pullRequestActions: ["opened", "reopened", "ready_for_review"],
   ignoreOwnChanges: true,
   debounceSeconds: 30,
+  triggerLabel: "agentx",
 } as const
+
+/** True when `text` @-mentions one of `handles` ("@coder"), as a whole
+ *  word: "@coder-agent" does not mention "@coder". Case-insensitive. A
+ *  comment starts a run only when it mentions the agent (#1719). */
+export function mentionsAgent(text: string | undefined, handles: string[]): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  return handles.some((h) => {
+    const handle = h.toLowerCase()
+    for (let i = lower.indexOf(handle); i >= 0; i = lower.indexOf(handle, i + 1)) {
+      const before = lower[i - 1]
+      const after = lower[i + handle.length]
+      if ((!before || !/[\w@]/.test(before)) && (!after || !/[\w-]/.test(after))) return true
+    }
+    return false
+  })
+}
 
 /** Actions that count even when AgentX's own account caused them: the
  *  token owner is often a person who opens issues by hand. */
@@ -155,6 +176,8 @@ interface GitHubPREvent {
   /** Who caused the event: the person or app that labeled, assigned,
    *  closed or edited. Differs from `pull_request.user`, the author. */
   sender?: GitHubUser
+  /** The label added or removed, on `labeled` and `unlabeled`. */
+  label?: { name: string }
   repository: GitHubRepo
 }
 
@@ -217,6 +240,7 @@ interface GitHubIssueEvent {
   }
   /** Who caused the event (see GitHubPREvent.sender). */
   sender?: GitHubUser
+  label?: { name: string }
   repository: GitHubRepo
 }
 
@@ -264,6 +288,8 @@ export class GitHubAdapter implements ChannelAdapter {
   /** Logins the mesh peers post with (#522): a comment a peer posted with
    *  its own token reaches the node that has the webhook. */
   private peerPostingLogins?: () => string[]
+  /** An agent's configured `mentions` (#1719). */
+  private agentMentions?: (agentId: string) => string[]
   private sentCommentIds: Set<string> = new Set()
   private log: (...args: unknown[]) => void
   private sendCommentForwarder?: (node: string, repo: string, issueNumber: number, agentId: string, text: string) => Promise<string>
@@ -295,6 +321,12 @@ export class GitHubAdapter implements ChannelAdapter {
   /** How this node learns the logins its mesh peers post with (#522). */
   setPeerPostingLogins(fn: () => string[]): void {
     this.peerPostingLogins = fn
+  }
+
+  /** How this node reads an agent's `mentions`, the handles a comment
+   *  must name to reach it (#1719). */
+  setAgentMentions(fn: (agentId: string) => string[]): void {
+    this.agentMentions = fn
   }
 
   /** The logins this node posts with, for its agent card: peers read them. */
@@ -684,6 +716,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const type = isPR ? "pull" : "issue"
     const chatId = `${repo}:${type}:${event.issue.number}`
     const agentId = this.resolveAgent(repo)
+    if (!this.mentionGate(agentId, comment.body, `comment ${commentId} on ${chatId}`)) return
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
 
     const channelMeta = await this.getChannelMeta(chatId)
@@ -748,6 +781,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const verdict = this.gateEvent(`PR #${pr.number} on ${repo}`, {
       action: event.action,
       senderLogin: event.sender?.login,
+      label: event.label?.name,
       ruleActions: rule?.actions,
       defaultActions: this.config.pullRequestActions ?? GITHUB_EVENT_DEFAULTS.pullRequestActions,
       settingName: "pullRequestActions",
@@ -818,6 +852,7 @@ export class GitHubAdapter implements ChannelAdapter {
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
     const agentId = this.resolveAgent(repo)
+    if (!this.mentionGate(agentId, review.body, `review ${review.id} on ${chatId}`)) return
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
 
     const incoming: IncomingMessage = {
@@ -850,6 +885,7 @@ export class GitHubAdapter implements ChannelAdapter {
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
     const agentId = this.resolveAgent(repo)
+    if (!this.mentionGate(agentId, comment.body, `review comment ${comment.id} on ${chatId}`)) return
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
 
     const incoming: IncomingMessage = {
@@ -880,6 +916,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const verdict = this.gateEvent(`Issue #${issue.number} on ${repo}`, {
       action: event.action,
       senderLogin: event.sender?.login,
+      label: event.label?.name,
       ruleActions: rule?.actions,
       defaultActions: this.config.issueActions ?? GITHUB_EVENT_DEFAULTS.issueActions,
       settingName: "issueActions",
@@ -928,11 +965,14 @@ export class GitHubAdapter implements ChannelAdapter {
    *      `labeled` or `edited` through.
    *   3. A change one of AgentX's own accounts made starts nothing, unless
    *      it opened or reopened the thread.
+   * Adding `triggerLabel` skips steps 2 and 3 (#1719).
    * True when the event may start a run; every drop is logged with why.
    */
   private gateEvent(what: string, input: {
     action: string
     senderLogin?: string
+    /** The label added, on `labeled`. */
+    label?: string
     ruleActions?: string[]
     defaultActions: readonly string[]
     settingName: "issueActions" | "pullRequestActions"
@@ -942,6 +982,10 @@ export class GitHubAdapter implements ChannelAdapter {
       this.log(`${what} dropped by rule: ${input.decision.reason}`)
       return false
     }
+    // Adding the trigger label is an explicit ask, like an @-mention (#1719):
+    // the action lists and the own-change check do not apply to it.
+    const triggerLabel = this.config.triggerLabel ?? GITHUB_EVENT_DEFAULTS.triggerLabel
+    if (input.action === "labeled" && triggerLabel && input.label?.toLowerCase() === triggerLabel.toLowerCase()) return true
     if (!input.ruleActions?.length && !input.defaultActions.includes(input.action)) {
       this.log(`${what} skipped: action="${input.action}" not in channels.github.${input.settingName}=${JSON.stringify(input.defaultActions)} (a project rule's actions list replaces it)`)
       return false
@@ -1030,6 +1074,21 @@ export class GitHubAdapter implements ChannelAdapter {
    *  as a dependency updater, are not. */
   isAgentLogin(login: string): boolean {
     return this.postsAs(login) || this.isBotUser(login)
+  }
+
+  /** A comment, review or review comment starts a run only when it
+   *  @-mentions the repo's agent: its id, a `mentions` handle or a GitHub
+   *  login it posts with (#1719). A plain comment starts nothing, not even
+   *  a follow-up to an open cloud session. */
+  private mentionGate(agentId: string | undefined, body: string | undefined, what: string): boolean {
+    if (!agentId) return false
+    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
+    const handles = [agentId, ...(this.agentMentions?.(agentId) ?? []), ...(mapping?.githubUsernames ?? [])]
+      .map((h) => h.trim().replace(/^@?/, "@"))
+      .filter((h) => h.length > 1)
+    if (mentionsAgent(body, handles)) return true
+    this.log(`[github] ${what} skipped: it does not @-mention ${agentId} (${handles.join(", ")})`)
+    return false
   }
 
   private resolveAgent(repo: string): string | undefined {

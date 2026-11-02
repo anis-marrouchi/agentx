@@ -739,6 +739,9 @@ const channelsConfigSchema = z.object({
      *  one run, carrying the latest state. The window restarts with each
      *  event. 0 starts a run per event. */
     debounceSeconds: z.number().min(0).max(3600).default(30),
+    /** Adding this label to an issue or pull request starts a run, whoever
+     *  adds it (#1719). A comment starts one only with an @-mention. */
+    triggerLabel: z.string().min(1).default("agentx"),
   }).default({}),
   /** ntfy push notifications — outbound only. The operator-facing tap on
    *  the shoulder: cron failures, task errors, and anything an agent decides

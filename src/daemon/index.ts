@@ -3719,6 +3719,7 @@ export class AgentXDaemon {
       // posting logins are ours too, or its agents answer themselves (#522).
       if (this.mesh) this.github.setPeerPostingLogins(() => this.mesh!.directory().flatMap((p) => p.githubLogins))
       this.github.setProjectRules(this.projectRules)
+      this.github.setAgentMentions((id) => this.config.agents[id]?.mentions ?? [])
       this.reviewGate = this.buildReviewGate(this.github)
       this.mergePolicy = this.buildMergePolicy(this.github)
       this.github.onPullRequestEvent((event) => {
