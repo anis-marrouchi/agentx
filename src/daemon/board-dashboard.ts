@@ -995,8 +995,6 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     await handleApprovalsPanelApi(req, res, answerRoute ?? path, url, {
       node: { url: ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), name: ctx.config.node?.name || "this computer" },
       owner: wallOwnerOk(req, ctx),
-      // An answer from the dashboard opened on this machine itself (#1478).
-      local: !isOffBox(req),
     })
     return
   }

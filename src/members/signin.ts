@@ -37,10 +37,13 @@ import {
 //            go straight in. `wall.signIn.firstSignIn: "auto"` skips the
 //            card for members, never for clients.
 //   owner    every new owner browser raises its own card, whatever was said
-//            before, and `auto` never applies. Only a yes given on the home
-//            machine (cards.ts `decided_from: "local"`) counts; a yes from a
-//            phone, a browser elsewhere or a mesh peer leaves the browser
-//            waiting. Once confirmed, the session carries full owner rights
+//            before, and `auto` never applies. The card is popup-only: a yes
+//            is taken only in the daemon's popup on the home machine (macOS,
+//            approvals.popup.enabled), where a person has to click it. The
+//            dashboard, even opened on this machine, the CLI, a phone, a
+//            mesh peer and a channel reply can say no, never yes: a local
+//            process, an agent or an ssh tunnel looks the same as the owner
+//            at a loopback address. Once confirmed, the session carries full owner rights
 //            at every owner gate of board-dashboard.ts (ownerAccess), for as
 //            long as the person's role is still owner (design note, answer 4).
 
@@ -141,7 +144,11 @@ export interface SignInDeps {
   root: string
   /** Wrong links per network address, the pairing code's lockout. */
   limiter: PairAttemptLimiter
-  /** Links per address, and per network address, an hour (design note §3). */
+  /** Links an hour (design note §3): per address from one network address,
+   *  per address from anywhere (a higher ceiling), and per network address.
+   *  Keyed by requester first, so a stranger asking for the owner's address
+   *  cannot use up the owner's own links (#1478). */
+  perRequester: SendLimiter
   perAddress: SendLimiter
   perClient: SendLimiter
   /** Null while `wall.signIn.origin` or `mail.sender` is unset. */
@@ -197,7 +204,7 @@ export async function askSignInLink(req: IncomingMessage, deps: SignInDeps): Pro
   if (!person || !LINK_ROLES.includes(person.role)) {
     // The typed address is not logged: it may belong to nobody here.
     log(`[member] sign-in link asked from ${client}: no link (${person ? `role ${person.role}` : "unknown address"})`)
-  } else if (!deps.perAddress.take(email)) {
+  } else if (!deps.perRequester.take(`${client} ${email}`) || !deps.perAddress.take(email)) {
     deps.members.log({ person: person.id, event: "refused", address: client, detail: "sign-in link: too many this hour" })
     log(`[member] sign-in link for ${person.id} not sent: too many this hour`)
   } else {
@@ -299,8 +306,8 @@ export function openSession(
   const from = `From ${client}, ${login ? `network login ${login}` : "no network login reported"}.`
   const card = createCard(deps.root, owner ? {
     title: `${who} signed in as the owner from a new browser`,
-    ask: `${from} Browser: "${name}". Give this browser full owner rights? Answer on the home machine.`,
-    recommend: `Signed in with ${how.proof}. Yes only if it is you, answered here on the home machine: a yes from a phone or another browser does not count. No if it is not you.`,
+    ask: `${from} Browser: "${name}". Give it full owner rights? A yes counts only in the popup here.`,
+    recommend: `Signed in with ${how.proof}. Yes only if it is you: the yes is taken only in the popup on the home machine. No if it is not you.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,
   } : {
@@ -309,7 +316,7 @@ export function openSession(
     recommend: `Signed in with ${how.proof}. Yes if you expected it. No if you did not.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,
-  }, { now: now() })
+  }, { now: now(), popupOnly: owner })
   if (!card.ok) {
     deps.members.log({ person: person.id, event: "refused", address: client, detail: card.error })
     log(`[member] ${person.id}: sign-in from ${client} refused: ${card.error}`)
@@ -369,8 +376,9 @@ function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "
   const log = deps.log ?? ((line: string) => console.log(line))
   const card = session.cardId ? readCard(deps.root, session.cardId) : null
   const answer = cardAnswer(card)
-  // An owner browser takes only a yes given on the home machine itself.
-  if (answer === "yes" && (session.role === "owner" || person.role === "owner") && card?.decided_from !== "local") {
+  // An owner browser takes only a yes clicked in the popup. decideCard
+  // already refuses any other yes on its card; this is the second lock.
+  if (answer === "yes" && (session.role === "owner" || person.role === "owner") && card?.decided_from !== "popup") {
     if (deps.sessions.noteOffBoxYes(session.id)) {
       const reason = `the yes came from away from the home machine${card?.decided_by ? ` (${card.decided_by})` : ""}; confirm this browser on the home machine`
       deps.members.log({ person: person.id, event: "refused", detail: `${session.label}: ${reason}` })

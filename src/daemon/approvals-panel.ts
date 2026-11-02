@@ -69,9 +69,6 @@ export interface ApprovalsPanelOpts {
   /** The Wall's owner check (#1440): sent back as `owner`, so the page
    *  shows read-only cards to anyone else. The guard still decides. */
   owner?: boolean
-  /** The caller is on this machine itself (loopback, no proxy headers):
-   *  its answers are recorded as local (cards.ts `decided_from`, #1478). */
-  local?: boolean
 }
 
 /** Returns false when the path isn't one of ours. */
@@ -121,7 +118,6 @@ export async function handleApprovalsPanelApi(
         force: body.force === true,
         laterHours: settings.laterHours,
         by: "operator (dashboard)",
-        local: opts.local === true,
         ...choiceAnswer(body),
       })
       if (!r.ok) { sendJson(res, 409, { error: r.error }); return true }

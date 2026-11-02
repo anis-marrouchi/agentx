@@ -508,12 +508,12 @@ To check the setup, run `agentx mail test you@example.com` in the folder with `a
 
 ## wall sign-in
 
-Lets a teammate or a client sign in to their page with a link sent by email, instead of a pairing code ([#1478](https://github.com/anis-marrouchi/agentx/issues/1478)). It needs the [mail sender](#mail-sender) too. Without both, the sign-in page says it is not set up. How it works for the person: [Let them sign in with their email](../jobs/members.md#or-let-them-sign-in-with-their-email). The owner can sign in by link too, with full owner rights once each new browser is confirmed on the home machine: [You, the owner, by link](../jobs/members.md#you-the-owner-by-link).
+Lets a teammate or a client sign in to their page with a link sent by email, instead of a pairing code ([#1478](https://github.com/anis-marrouchi/agentx/issues/1478)). It needs the [mail sender](#mail-sender) too. Without both, the sign-in page says it is not set up. How it works for the person: [Let them sign in with their email](../jobs/members.md#or-let-them-sign-in-with-their-email). The owner can sign in by link too, with full owner rights once each new browser is confirmed in the popup on the home machine: [You, the owner, by link](../jobs/members.md#you-the-owner-by-link).
 
 | Key | Default | What it does |
 |---|---|---|
 | `wall.signIn.origin` | required | The fixed `https://` address people open, without a path, for example `https://your-mac.tailnet-name.ts.net`. Every mailed link starts with it, whatever address a request came in on. |
-| `wall.signIn.firstSignIn` | `"card"` | `"card"`: a person's first sign-in waits for your yes on a decision card. `"auto"`: a member goes straight in. A client always gets the card, and each new owner browser always waits for a yes on the home machine. |
+| `wall.signIn.firstSignIn` | `"card"` | `"card"`: a person's first sign-in waits for your yes on a decision card. `"auto"`: a member goes straight in. A client always gets the card, and each new owner browser always waits for a yes in the popup on the home machine. |
 
 ```json
 "wall": {

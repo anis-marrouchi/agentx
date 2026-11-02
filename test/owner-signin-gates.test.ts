@@ -7,14 +7,15 @@ import type { AddressInfo } from "net"
 import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { sessionValue } from "../src/daemon/dashboard-session"
-import { createCard, decideCard, readCard } from "../src/approvals/cards"
+import { createCard, decideCard, POPUP_ONLY, readCard } from "../src/approvals/cards"
+import { approvals } from "../src/commands/approvals"
 import { ENDED_BY_OWNER, PERSON_COOKIE, PersonSessionStore } from "../src/members/person-sessions"
 import type { Person } from "../src/people/people"
 
-// #1478: the owner signs in by link. A browser confirmed on the home machine
-// carries full owner rights at every owner gate of board-dashboard.ts; a
-// member's or a client's session, an owner browser still waiting, or one
-// whose yes came from away from the home machine, passes none of them.
+// #1478: the owner signs in by link. A browser confirmed in the popup on the
+// home machine carries full owner rights at every owner gate of
+// board-dashboard.ts; a member's or a client's session, an owner browser
+// still waiting, or one whose yes came from anywhere else, passes none.
 
 const TOKEN = "dash-secret"
 const OFF = { "X-Forwarded-For": "100.64.0.9" }
@@ -64,14 +65,16 @@ async function start(withToken = true): Promise<string> {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 
-/** A browser signed in by link, waiting on its card, as openSession leaves it. */
-function signedIn(personId: string, opts: { owner?: boolean } = {}): { value: string; cardId: string; sessionId: string } {
-  const card = createCard(dir, { title: "signed in", ask: "Let them in?", recommend: "Yes if expected.", if_silent: "discard", raised_by: "members" })
+/** A browser signed in by link, waiting on its card, as openSession leaves
+ *  it: an owner's card is popup-only unless `popupOnly: false` (a card
+ *  written by hand, for the second lock in settle). */
+function signedIn(personId: string, opts: { owner?: boolean; popupOnly?: boolean } = {}): { value: string; cardId: string; sessionId: string } {
+  const card = createCard(dir, { title: "signed in", ask: "Let them in?", recommend: "Yes if expected.", if_silent: "discard", raised_by: "members" }, { popupOnly: opts.popupOnly ?? !!opts.owner })
   if (!card.ok) throw new Error(card.error)
   const { session, value } = new PersonSessionStore(dir).create(personId, "Chrome", { state: "pending", cardId: card.card.id, ...(opts.owner ? { role: "owner" as const } : {}) })
   return { value, cardId: card.card.id, sessionId: session.id }
 }
-const yes = (cardId: string, local: boolean) => decideCard(dir, cardId, "yes", { by: local ? "operator (dashboard)" : "Anis (phone app)", local })
+const yes = (cardId: string, popup: boolean) => decideCard(dir, cardId, "yes", { by: popup ? "operator (popup)" : "Anis (phone app)", popup })
 
 // Every owner gate on main 0985376f, counted again for #1478 (the list is
 // in board-dashboard.ts, above ownerCredential).
@@ -107,7 +110,7 @@ const person = (value: string) => `${PERSON_COOKIE}=${value}`
 const hubOwnerView = async (base: string, cookie: string) => (await (await fetch(`${base}/hub`, { headers: { ...OFF, Cookie: cookie } })).text()).includes("window.AX_WALL_SETTINGS = ")
 
 describe("an owner browser signed in by link, with dashboard.token set", () => {
-  it("passes no owner gate while it waits, and every one once confirmed on the home machine", async () => {
+  it("passes no owner gate while it waits, and every one once confirmed in the popup", async () => {
     const base = await start()
     const b = signedIn("anis", { owner: true })
     await refusedAll(base, person(b.value))
@@ -119,9 +122,18 @@ describe("an owner browser signed in by link, with dashboard.token set", () => {
     expect(new PersonSessionStore(dir).sessions("anis")[0]).toMatchObject({ approvedAt: expect.any(String) })
   })
 
-  it("stays without owner rights when the yes came from away from the home machine", async () => {
+  it("refuses a yes from outside the popup, and the browser keeps waiting", async () => {
     const base = await start()
     const b = signedIn("anis", { owner: true })
+    expect(yes(b.cardId, false)).toEqual({ ok: false, error: POPUP_ONLY })
+    expect(readCard(dir, b.cardId)?.status).toBe("pending")
+    await refusedAll(base, person(b.value))
+    expect(new PersonSessionStore(dir).sessions("anis")[0]).toMatchObject({ state: "pending" })
+  })
+
+  it("second lock: a yes outside the popup on a card that is not popup-only lets nobody in", async () => {
+    const base = await start()
+    const b = signedIn("anis", { owner: true, popupOnly: false })
     yes(b.cardId, false)
     await refusedAll(base, person(b.value))
     expect(await hubOwnerView(base, person(b.value))).toBe(false)
@@ -202,32 +214,64 @@ describe("an owner browser with no dashboard.token", () => {
   })
 })
 
-describe("telling a yes on the home machine from one given elsewhere", () => {
-  const decide = (base: string, cardId: string, headers: Record<string, string>) => fetch(`${base}/api/admin/approvals/decide`, {
+describe("owner sign-in cards: a yes only in the popup", () => {
+  const decide = (base: string, cardId: string, headers: Record<string, string>, action = "yes") => fetch(`${base}/api/admin/approvals/decide`, {
     method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...headers },
-    body: JSON.stringify({ key: `card:${cardId}`, action: "yes" }),
+    body: JSON.stringify({ key: `card:${cardId}`, action }),
   })
 
-  it("records a local answer only for the dashboard opened on this machine", async () => {
+  it("the HTTP decide route refuses a yes, even from loopback with the dashboard token", async () => {
     const base = await start()
     const here = signedIn("anis", { owner: true })
-    expect((await decide(base, here.cardId, { Authorization: `Bearer ${TOKEN}` })).status).toBe(200)
-    expect(readCard(dir, here.cardId)).toMatchObject({ status: "decided", decided_from: "local" })
-    await passesAll(base, person(here.value))
+    const r = await decide(base, here.cardId, { Authorization: `Bearer ${TOKEN}` })
+    expect(r.status).toBe(409)
+    expect((await r.json() as { error: string }).error).toBe(POPUP_ONLY)
+    expect(readCard(dir, here.cardId)?.status).toBe("pending")
+    await refusedAll(base, person(here.value))
 
     const away = signedIn("anis", { owner: true })
-    expect((await decide(base, away.cardId, { ...OFF, Cookie: `ax_session=${sessionValue(TOKEN)}` })).status).toBe(200)
-    expect(readCard(dir, away.cardId)?.decided_from).toBeUndefined()
-    await refusedAll(base, person(away.value))
+    expect((await decide(base, away.cardId, { ...OFF, Cookie: `ax_session=${sessionValue(TOKEN)}` })).status).toBe(409)
+    expect(readCard(dir, away.cardId)?.status).toBe("pending")
   })
 
-  it("does not count a yes from another confirmed owner browser off the box", async () => {
+  it("the HTTP decide route refuses a yes from another confirmed owner browser", async () => {
     const base = await start()
     const first = signedIn("anis", { owner: true })
     yes(first.cardId, true)
     const second = signedIn("anis", { owner: true })
-    expect((await decide(base, second.cardId, { ...OFF, Cookie: person(first.value) })).status).toBe(200)
-    expect(readCard(dir, second.cardId)?.decided_from).toBeUndefined()
+    expect((await decide(base, second.cardId, { ...OFF, Cookie: person(first.value) })).status).toBe(409)
+    expect(readCard(dir, second.cardId)?.status).toBe("pending")
     await refusedAll(base, person(second.value))
+  })
+
+  it("the HTTP decide route still takes a no", async () => {
+    const base = await start()
+    const b = signedIn("anis", { owner: true })
+    expect((await decide(base, b.cardId, { Authorization: `Bearer ${TOKEN}` }, "no")).status).toBe(200)
+    expect(readCard(dir, b.cardId)).toMatchObject({ status: "decided", verdict: "no" })
+  })
+
+  it("the CLI refuses a yes, with or without AGENTX_AGENT_ID", async () => {
+    await start()
+    const saved = process.env.AGENTX_AGENT_ID
+    const errors: string[] = []
+    const err = console.error
+    console.error = (...a: unknown[]) => { errors.push(a.join(" ")) }
+    try {
+      for (const agent of [undefined, "some-agent"]) {
+        if (agent) process.env.AGENTX_AGENT_ID = agent
+        else delete process.env.AGENTX_AGENT_ID
+        const b = signedIn("anis", { owner: true })
+        await approvals.parseAsync(["approve", `card:${b.cardId}`], { from: "user" })
+        expect(readCard(dir, b.cardId)?.status).toBe("pending")
+        expect(process.exitCode).toBe(1)
+        process.exitCode = 0
+      }
+    } finally {
+      console.error = err
+      if (saved === undefined) delete process.env.AGENTX_AGENT_ID
+      else process.env.AGENTX_AGENT_ID = saved
+    }
+    expect(errors.filter((e) => e.includes(POPUP_ONLY))).toHaveLength(2)
   })
 })

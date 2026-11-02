@@ -35,7 +35,7 @@ export function registerCardCommands(approvals: Command): void {
       if (opts.sample) { console.log(`  answer (not recorded): ${JSON.stringify(answer)}`); return }
       if (answer.action === "dismiss") { console.log(chalk.dim(`  not answered${answer.why ? ` (${answer.why})` : ""}; the card is still waiting`)); return }
       const r = await decide({ root: process.cwd() }, `card:${card.id}`, answer.action, {
-        by: "operator (popup)", local: true, ...(answer.action === "yes" ? { choice: answer.choice, text: answer.text } : {}),
+        by: "operator (popup)", ...(answer.action === "yes" ? { choice: answer.choice, text: answer.text } : {}),
       })
       if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
       console.log(chalk.green(`  ✓ ${r.message}`))

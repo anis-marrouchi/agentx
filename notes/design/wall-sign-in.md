@@ -169,7 +169,7 @@ A request on these paths without a personal session gets the sign-in page, never
 - A person's **first** sign-in raises an approval card ("Dana signed in for the first time, from Chrome on a Mac. Let them in?"), the same card as a new member machine (`createCard` in `members/pairing.ts`). Until the owner says yes, Dana sees "Waiting for the owner", as a new member machine does.
 - Later sign-ins of the same person, from any browser, go straight in, and appear on their People page.
 - A setting lets the owner skip the card for members ([answer 3](#answers-from-the-owner)). For clients, the card stays.
-- The owner is different: the owner's first sign-in from **each new browser** must be confirmed on the home machine itself (the dashboard opened there, not a phone card), before that browser gets owner rights ([answer 4](#answers-from-the-owner)). This setting does not skip it.
+- The owner is different: the owner's first sign-in from **each new browser** must be confirmed in the daemon's popup on the home machine (not the dashboard, even opened there, not the CLI, not a phone card: a local process or agent looks the same as the owner at a loopback address), before that browser gets owner rights ([answer 4](#answers-from-the-owner)). This setting does not skip it.
 
 ### 9. One identity for every mesh (#1479)
 

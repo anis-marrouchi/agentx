@@ -68,6 +68,7 @@ export interface MemberRouteCtx {
   signInSetup?: () => SignInSetup | null
   sessions?: PersonSessionStore
   signInLinks?: SignInLinkStore
+  signInPerRequester?: SendLimiter
   signInPerAddress?: SendLimiter
   signInPerClient?: SendLimiter
   sendMail?: SignInDeps["send"]
@@ -79,7 +80,8 @@ export interface MemberRouteCtx {
 }
 
 const defaultPairLimiter = new PairAttemptLimiter()
-const defaultPerAddress = new SendLimiter(5)
+const defaultPerRequester = new SendLimiter(5)
+const defaultPerAddress = new SendLimiter(20)
 const defaultPerClient = new SendLimiter(20)
 const defaultOidcStates = new OidcStateStore()
 const asMember = (line: string) => line.replace(/^\[app\]/, "[member]")
@@ -146,7 +148,7 @@ export async function handleMemberRequest(
   const signIn: SignInDeps = {
     links: ctx.signInLinks ?? new SignInLinkStore(ctx.root), sessions: ctx.sessions ?? new PersonSessionStore(ctx.root),
     members, people: ctx.people, root: ctx.root, limiter: deps.limiter, setup: ctx.signInSetup ?? (() => null),
-    perAddress: ctx.signInPerAddress ?? defaultPerAddress, perClient: ctx.signInPerClient ?? defaultPerClient,
+    perRequester: ctx.signInPerRequester ?? defaultPerRequester, perAddress: ctx.signInPerAddress ?? defaultPerAddress, perClient: ctx.signInPerClient ?? defaultPerClient,
     send: ctx.sendMail, minMs: ctx.pairMinMs, log: ctx.log, now: ctx.now, accounts,
   }
   const oidc: OidcDeps = {

@@ -193,7 +193,7 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
       return "shown"
     }
     const r = await decide(ctx, key, answer.action, {
-      by: "operator (popup)", local: true,
+      by: "operator (popup)", popup: true,
       ...(answer.action === "yes" ? { choice: answer.choice, text: answer.text } : {}),
     })
     log(r.ok ? `[approvals] popup: ${r.message}` : `[approvals] popup: ${key} not recorded: ${r.error}`)

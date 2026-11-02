@@ -106,27 +106,28 @@ Instead of a pairing code, a teammate or a client can ask for a link by mail. Th
 
    ![The page a first sign-in shows until you answer: Waiting for the owner](/screenshots/members/signin-waiting.png)
 
-A link works once, for 15 minutes, and a new one replaces the one before. An address gets at most 5 links an hour, and one network address can ask 20 times an hour. Only the link's hash is kept, in `.agentx/signin-links.json`. If you change or remove the person's `email:` address, a link already sent stops working. A signed-in browser stays signed in for 30 days. **End access** on their People page, or removing the person, signs it out at once. After End access, the person's next sign-in raises a new card, as the first one did, unless `wall.signIn.firstSignIn` is `auto` and they are a member. If the person has a `tailscale:` login on their entry, the network must report that login when they sign in, as for pairing.
+A link works once, for 15 minutes, and a new one replaces the one before. One network address gets at most 5 links an hour for the same address and can ask 20 times an hour; an address gets at most 20 links an hour from everywhere together. So a stranger asking for your address cannot use up your own links. Only the link's hash is kept, in `.agentx/signin-links.json`. If you change or remove the person's `email:` address, a link already sent stops working. A signed-in browser stays signed in for 30 days. **End access** on their People page, or removing the person, signs it out at once. After End access, the person's next sign-in raises a new card, as the first one did, unless `wall.signIn.firstSignIn` is `auto` and they are a member. If the person has a `tailscale:` login on their entry, the network must report that login when they sign in, as for pairing.
 
 ### You, the owner, by link
 
-You can sign in the same way from another browser, and get your full owner rights there: the Hub, its writes and Settings. Each new browser must first be confirmed by you **on the home machine**, the computer that runs the dashboard. A yes from your phone, from another browser or from another machine of your mesh does not count.
+You can sign in the same way from another browser, and get your full owner rights there: the Hub, its writes and Settings. Each new browser must first be confirmed by you **in the popup on the home machine**, the Mac that runs the daemon. Only the popup takes the yes, because a person has to click it there. The dashboard (even opened on the home machine), `agentx approvals approve`, the phone app, another browser and a mesh peer can answer **No** but never **Yes**: to them, a program or an agent on the Mac looks the same as you.
 
 **Config needed** (once, by whoever runs the machine):
 
 - `wall.signIn.origin`: the Hub's private Tailscale HTTPS address, for example `https://your-mac.tailnet-name.ts.net` ([wall sign-in](../reference/config-operations.md#wall-sign-in)).
 - `mail.sender`: `kind` `"smtp"`, `from` `no-reply@<your mail provider's sending domain>`, and the provider's SMTP login as `${VAR}` references, with the values in `.env` ([mail sender](../reference/config-operations.md#mail-sender)).
+- `approvals.popup.enabled: true`. The popup runs on macOS only, so an owner sign-in by link cannot be confirmed on a home machine that is not a Mac.
 - An `email:` identity on your own people entry, the one with `role` `owner`: `agentx people link <your id> email:you@example.com`.
 
 Without the first two, the sign-in page says it is not set up, for you as for everyone.
 
 1. **The other browser:** open `https://your-mac.tailnet-name.ts.net/member/signin`, type your address and select **Send me a link**. The answer is the same as for any address.
 2. **Your mail:** open the link, give this browser a name and select **Sign in**. The page says **Confirm this browser on the home machine**. Until you do, this browser has no owner rights.
-3. **The home machine:** open the dashboard there, at its own address (`http://localhost:4202`, not the Tailscale address), and go to **Needs you** on the Hub. A card **Anna K signed in as the owner from a new browser** (with your name) shows where the sign-in came from and the browser's name.
-4. **The home machine:** answer **Yes** if it is you. **No** signs that browser out.
+3. **The home machine:** within a minute the popup shows a card **Anna K signed in as the owner from a new browser** (with your name), with where the sign-in came from and the browser's name. If you dismissed it, select **Show on Mac** on the card in **Needs you** to bring it back.
+4. **The home machine:** answer **Yes** in the popup if it is you. **No** signs that browser out.
 5. **The other browser:** the page opens the Hub by itself, as the owner.
 
-Every new browser asks again, even after you said yes to another one, and `wall.signIn.firstSignIn: "auto"` never skips it. A card answered from anywhere else (the phone app, a browser on another computer, a mesh peer) is recorded but does not let the browser in: its page then says the yes did not count, and you ask for a new link and answer its card on the home machine. The card is dropped if nobody answers. **End access** on your People page, removing yourself from the list, or changing your role away from `owner` takes the owner rights away at the browser's next request. This browser reaches the Hub at the sign-in address only if that address serves it: with only the `/member` paths published ([above](#serve-only-the-member-page)), it gets "not found" there.
+Every new browser asks again, even after you said yes to another one, and `wall.signIn.firstSignIn: "auto"` never skips it. A yes from anywhere but the popup is refused with "this card takes a yes only in the popup on the home machine", and the card keeps waiting. The card is dropped if nobody answers. **End access** on your People page, removing yourself from the list, or changing your role away from `owner` takes the owner rights away at the browser's next request. This browser reaches the Hub at the sign-in address only if that address serves it: with only the `/member` paths published ([above](#serve-only-the-member-page)), it gets "not found" there.
 
 ### Or with Google
 
@@ -184,7 +185,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 2. **Their browser:** **My work** shows a request they made on their channel, with the right state.
 3. **Their browser:** opening `https://<your computer>/`, `/hub` or `/app` shows nothing of yours: only `/member` answers. On **My work**, a card busy with your task shows its first 200 characters and that you started it, but not where it was asked and no **Show this request** button; once it is finished, the card shows nothing of it.
 4. **Their browser:** while an agent is busy, they send it a second message on their channel. Within 30 seconds the card says **Your message is in line**, and the message appears at the top of **What you sent** as **In line**.
-5. **Owner by link:** a new owner browser shows **Confirm this browser on the home machine** until you answer its card on the home machine. Answer it from the phone app first: the browser keeps waiting and says the yes did not count. After a yes on the home machine, the browser opens the Hub with **Settings** in its menu. After **End access** on your People page, its next click asks it to sign in again.
+5. **Owner by link:** a new owner browser shows **Confirm this browser on the home machine** until you answer its card in the popup on the home machine. Try a yes from the phone app or the dashboard first: it is refused and the browser keeps waiting. After a yes in the popup, the browser opens the Hub with **Settings** in its menu. After **End access** on your People page, its next click asks it to sign in again.
 6. **The access rule holds:** a port other than 443 does not answer the teammate. The daemon (18800) and the dashboard (4202) listen on your own computer only, so they refuse a teammate even with no rule at all and prove nothing here. Open a test port for a minute instead.
 
    **Terminal (yours):** serve an empty folder on port 8099, and confirm it answers on your Tailscale address:
@@ -211,7 +212,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 - **The teammate sees Your project instead of My work:** their role is `client`. Set `role` to `member` in `agentx.json`; the page changes on the next open.
 - **"The private network says someone else is connecting":** the login Tailscale reports for their machine is not among the person's `tailscale:` identities. Check with `agentx people show <id>` and fix the identity, or remove it to accept whatever login is reported.
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
-- **Your own new browser still says "Confirm this browser on the home machine" after you said yes:** the yes was given away from the home machine (the phone app, another browser, or the dashboard opened at its Tailscale address, which counts as another machine). Ask for a new link, then answer the new card in the dashboard opened at `http://localhost:4202` on the home machine. The members log says `the yes came from away from the home machine`.
+- **"This card takes a yes only in the popup on the home machine":** you said yes to an owner sign-in card outside the popup. Select **Show on Mac** on the card and answer it there. No popup shows: `approvals.popup.enabled` is off, Focus or a call is holding it, or the home machine is not a Mac.
 - **The owner gets no link mail:** your people entry has no `email:` identity, or `wall.signIn.origin` or `mail.sender` is unset. Run `agentx people show <your id>` and `agentx mail test you@example.com`.
 - **After the yes, the Hub address answers "not found":** only the `/member` paths are published on the sign-in address. Open the Hub from a computer that reaches the dashboard directly.
 - **The page is empty:** request tracking is off (`agentx requests settings`), or the teammate's identity on that channel is not on their person entry, so their requests were not stamped with their id.

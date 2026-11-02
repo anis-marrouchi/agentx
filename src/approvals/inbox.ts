@@ -599,9 +599,9 @@ export interface DecideOptions {
   text?: string
   /** Content drafts: the `text_hash` of the post the operator was shown. */
   seen?: string
-  /** Given on this machine itself (cards.ts `decided_from`). Only the
-   *  callers that know it set it: never from a request's own say-so. */
-  local?: boolean
+  /** Clicked in the daemon's popup (cards.ts `decided_from`). Only the
+   *  popup runner sets it: never from a request's own say-so. */
+  popup?: boolean
 }
 
 export type DecideResult = { ok: true; message: string } | { ok: false; error: string }
@@ -673,7 +673,7 @@ async function decideItem(ctx: InboxContext, key: string, action: InboxAction, o
   const yes = action === "yes"
   switch (kind) {
     case "card": {
-      const r = decideCard(ctx.root, ref, yes ? "yes" : "no", { by, note: opts.note, now, choice: opts.choice, text: opts.text, local: opts.local })
+      const r = decideCard(ctx.root, ref, yes ? "yes" : "no", { by, note: opts.note, now, choice: opts.choice, text: opts.text, popup: opts.popup })
       if (!r.ok) return r
       return { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}${r.card.choice ? ` (${r.card.choice}${r.card.choice_suggested ? ", the suggested option" : ""})` : ""}` }
     }
