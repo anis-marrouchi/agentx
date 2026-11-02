@@ -82,6 +82,9 @@ export interface ReadSpec {
   fixedQuery?: Record<string, string>
   /** Scopes this read needs; doctor flags reads whose scopes were not granted. */
   scopes?: string[]
+  /** API root for this read when it differs from the provider's (e.g.
+   *  YouTube Analytics beside the YouTube Data API). No trailing slash. */
+  baseUrl?: string
 }
 
 export interface ProviderSpec {

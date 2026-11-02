@@ -85,8 +85,9 @@ export function buildReadUrl(
     return encodeURIComponent(v)
   })
   if (pathError) return { ok: false, error: pathError }
-  const base = new URL(spec.baseUrl)
-  const url = new URL(spec.baseUrl + path)
+  const root = read.baseUrl ?? spec.baseUrl
+  const base = new URL(root)
+  const url = new URL(root + path)
   if (url.origin !== base.origin) return { ok: false, error: "the read left the provider's address" }
   // Belt and braces: no dot segment in the read's own path, and the parsed
   // path still sits under the base path, so nothing climbed out.
