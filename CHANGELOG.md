@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.204.0](https://github.com/anis-marrouchi/agentx/compare/v0.203.0...v0.204.0) (2026-11-02)
+
+
+### Features
+
+* **integrations:** Meta provider for Facebook Page and Instagram insights ([#1718](https://github.com/anis-marrouchi/agentx/issues/1718)) ([e0cfd5f](https://github.com/anis-marrouchi/agentx/commit/e0cfd5f424a8d74e6e8962847ddbf94af4d985ef))
+* **org:** show everyone, people or agents on Chart and Departments ([#1723](https://github.com/anis-marrouchi/agentx/issues/1723)) ([d0a1b83](https://github.com/anis-marrouchi/agentx/commit/d0a1b833dfd09987e9bb7488657eaa0978c75af1))
+
+
+### Bug Fixes
+
+* **drift:** skip reopened issues and tag the proof note as a status ([#1722](https://github.com/anis-marrouchi/agentx/issues/1722)) ([534b2e9](https://github.com/anis-marrouchi/agentx/commit/534b2e9edf6f8f808c6cc1f9f28856078c414547))
+* **integrations:** Meta connect review follow-ups ([#1720](https://github.com/anis-marrouchi/agentx/issues/1720)) ([c91f260](https://github.com/anis-marrouchi/agentx/commit/c91f260a0b1794dce3d91cef025ebaeb5536d7c1))
+
 ## [0.203.0](https://github.com/anis-marrouchi/agentx/compare/v0.202.0...v0.203.0) (2026-11-01)
 
 
