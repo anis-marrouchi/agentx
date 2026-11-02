@@ -51,6 +51,11 @@ function refusal(server: string, tool: string, why: string): string {
     `Do not retry it or work around it. Say what you were trying to do and wait for instructions.`
 }
 
+/** A decided card's answer: null (run) on yes, else the refusal. */
+function verdictOf(card: DecisionCard, server: string, tool: string): string | null {
+  return card.verdict === "yes" ? null : refusal(server, tool, `the owner said no on card ${card.id}`)
+}
+
 /**
  * Ask before a write tool runs. Resolves to null when the call may run
  * (not a gated write, or the owner said yes), else the refusal the agent
@@ -89,19 +94,26 @@ export async function mcpWriteDenial(
     while (true) {
       const card = readCard(deps.root, id)
       if (!card) return refusal(server, tool, "the confirmation card is gone")
-      if (card.status === "decided") {
-        return card.verdict === "yes" ? null : refusal(server, tool, `the owner said no on card ${id}`)
-      }
+      if (card.status === "decided") return verdictOf(card, server, tool)
       if (card.status !== "pending") return refusal(server, tool, `card ${id} was not answered in time`)
       if (now() - start >= waitMs) {
-        // Close it, so a late yes cannot look like it ran the call.
+        // Close it, so a late yes cannot look like it ran the call. An
+        // answer can land while the wait runs out, so read the card again
+        // right before closing it, and once more after: a yes saved on
+        // either side of our save is the owner's answer, not lost (#1737).
+        const latest = readCard(deps.root, id)
+        if (!latest) return refusal(server, tool, "the confirmation card is gone")
+        if (latest.status === "decided") return verdictOf(latest, server, tool)
+        if (latest.status !== "pending") return refusal(server, tool, `card ${id} was not answered in time`)
         saveCard(deps.root, {
-          ...card,
+          ...latest,
           status: "expired",
           outcome: "discard",
           decided_by: "expiry",
           decided_at: new Date(now()).toISOString(),
         })
+        const after = readCard(deps.root, id)
+        if (after?.status === "decided") return verdictOf(after, server, tool)
         return refusal(server, tool, `card ${id} was not answered within ${minutes} min`)
       }
       await sleep(pollMs)

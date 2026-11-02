@@ -108,6 +108,25 @@ describe("mcpWriteDenial", () => {
     expect(decideCard(root, card.id, "yes").ok).toBe(false)
   })
 
+  it("a yes that lands just as the wait runs out is kept, and the call runs", async () => {
+    const deps = harness()
+    const clock = deps.now
+    let raced = false
+    // The loop has read the card as pending; the owner says yes right as
+    // the clock crosses the end of the wait, before the card is closed.
+    deps.now = () => {
+      const t = clock()
+      if (!raced && t >= Date.parse("2026-11-02T10:00:00Z") + deps.waitMs) {
+        raced = true
+        expect(decideCard(root, listCards(root, "pending")[0].id, "yes").ok).toBe(true)
+      }
+      return t
+    }
+    expect(await mcpWriteDenial("mcp__social__CREATE_POST", {}, servers, deps)).toBeNull()
+    expect(raced).toBe(true)
+    expect(listCards(root)[0]).toMatchObject({ status: "decided", verdict: "yes" })
+  })
+
   it("a card that cannot be raised refuses the call", async () => {
     writeFileSync(join(root, ".agentx"), "not a folder")
     const r = await mcpWriteDenial("mcp__social__CREATE_POST", {}, servers, harness())
