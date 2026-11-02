@@ -77,6 +77,9 @@ const mcpStdioServerSchema = z.object({
   args: z.array(z.string()).default([]),
   env: z.record(z.string(), z.string()).optional(),
   allowTools: mcpAllowToolsSchema,
+  /** Listed tools that only read though their names do not say so; they
+   *  skip the write confirmation card (#1736). */
+  readTools: mcpAllowToolsSchema,
 })
 
 const mcpHttpServerSchema = z.object({
@@ -90,6 +93,9 @@ const mcpHttpServerSchema = z.object({
     .record(z.string(), z.string().regex(/^[A-Z_][A-Z0-9_]*$/, "use an uppercase environment variable name, such as CONNECTOR_API_KEY"))
     .optional(),
   allowTools: mcpAllowToolsSchema,
+  /** Listed tools that only read though their names do not say so; they
+   *  skip the write confirmation card (#1736). */
+  readTools: mcpAllowToolsSchema,
 })
 
 // HTTP variant first so a record with `type: "http"` matches the HTTP

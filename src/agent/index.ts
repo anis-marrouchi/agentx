@@ -16,7 +16,7 @@ import { debug } from "@/observability"
 import { MemoryHierarchy, ContextBuilder, loadProjectInstructions } from "@/memory"
 import type { Skill } from "./skills/types"
 import { runAgenticLoop, supportsAgenticLoop, type AgenticProgressEvent } from "./orchestrator"
-import { startMcpPool, type McpPool, type McpServerMap } from "./mcp-client"
+import { startMcpPool, type McpPool, type McpPoolOptions, type McpServerMap } from "./mcp-client"
 import { AsyncQueue } from "@/utils/async-queue"
 
 // --- Agent Orchestrator: the brain that coordinates everything ---
@@ -79,6 +79,9 @@ export interface GenerateOptions {
    *  src/agents/runtime.ts — CLI-backed tiers (claude-code, codex-cli)
    *  load their own `.mcp.json` natively and ignore this. */
   mcpServers?: McpServerMap
+  /** Asked before each MCP tool call; a string refuses it with that
+   *  reason. The runtime wires the write-tool card here (#1736). */
+  beforeMcpCall?: McpPoolOptions["beforeCall"]
 }
 
 export interface GenerateResult {
@@ -232,7 +235,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   // this codepath). Always closed in `finally` so a crash inside the
   // loop can't leak child processes.
   const mcpPool = options.mcpServers && Object.keys(options.mcpServers).length > 0
-    ? await startMcpPool(options.mcpServers)
+    ? await startMcpPool(options.mcpServers, { beforeCall: options.beforeMcpCall })
     : undefined
 
   let agenticResult: Awaited<ReturnType<typeof runAgenticLoop>>
@@ -486,7 +489,7 @@ export async function* generateStream(
     let mcpPool: McpPool | undefined
     if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
       try {
-        mcpPool = await startMcpPool(options.mcpServers)
+        mcpPool = await startMcpPool(options.mcpServers, { beforeCall: options.beforeMcpCall })
       } catch (e: any) {
         yield { type: "error", error: `MCP pool startup failed: ${e.message}` }
         return

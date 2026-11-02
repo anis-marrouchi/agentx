@@ -207,6 +207,7 @@ import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
 import { mcpAllowListDenial } from "@/agent/mcp-policy"
+import { mcpWriteDenial } from "@/agent/mcp-confirm"
 import { agentxToolServer, syncMcpToWorkspace, withAgentXToolServer, type McpServerMap } from "@/agents/agent-mcp"
 import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegraph-bootstrap"
 import { REMEMBER_SKILL_FILENAME, rememberSkillBody, upgradeRememberSkill } from "@/agents/skills/remember-skill"
@@ -5658,8 +5659,17 @@ export class AgentXDaemon {
         }
         // MCP allow list (#1698): a tool left off a server's allowTools is
         // refused here; the workspace hook only matches those servers.
+        // A listed tool that writes waits for one Approvals card (#1736);
+        // the hook waits with it (workspace-setup.ts mcpGuardHookCommand).
+        const mcpTool = String((payload as any)?.tool_name ?? "")
+        const mcpServers = agentId ? (this.config.agents[agentId] as any)?.mcp : undefined
         const mcpDenial = agentId
-          ? mcpAllowListDenial(String((payload as any)?.tool_name ?? ""), (this.config.agents[agentId] as any)?.mcp)
+          ? mcpAllowListDenial(mcpTool, mcpServers) ?? await mcpWriteDenial(mcpTool, (payload as any)?.tool_input, mcpServers, {
+            root: process.cwd(),
+            agentId,
+            settings: this.config.approvals,
+            onCard: (card) => this.log(`  guard: ${agentId} asked to run ${mcpTool}: card ${card.id} waits for the owner`),
+          })
           : null
         if (mcpDenial) {
           this.log(`  guard: ${agentId} ${mcpDenial}`)

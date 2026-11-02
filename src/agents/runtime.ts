@@ -32,7 +32,8 @@ import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
 import { TurnDeadlineExceeded, TurnInterrupted } from "./claude-process-factory"
 import { effectiveMcpConfig } from "./codegraph-bootstrap"
-import { resolveHttpHeaders } from "@/agent/mcp-policy"
+import { resolveHttpHeaders, type McpPolicyFields } from "@/agent/mcp-policy"
+import { mcpWriteDenial } from "@/agent/mcp-confirm"
 import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonomy"
 import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
 import { clearPersonLimits, personLimitsUnsupported, registerPersonLimits, withPersonLimitHook } from "@/guard/person-limits"
@@ -1826,6 +1827,12 @@ export async function executeOrchestrator(
       providerOpts,
       abortSignal: combined.signal,
       mcpServers: hasMcp ? mcpServers : undefined,
+      // A write tool of a server with an allow list waits for one
+      // Approvals card, as on the claude-code tier's guard hook (#1736).
+      beforeMcpCall: hasMcp
+        ? (name: string, input: Record<string, unknown>) =>
+          mcpWriteDenial(name, input, mcpServers as Record<string, McpPolicyFields>, { root: process.cwd(), agentId: task.agentId })
+        : undefined,
     }
 
     if (onDelta) {

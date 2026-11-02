@@ -128,6 +128,7 @@ Each entry under `agents.<id>.mcp.<name>` is either a local command or an HTTP s
 | `headers` | map of string | — | HTTP headers sent to the server, written as is. Do not put a key here: a `${VAR}` in `agentx.json` is filled in when AgentX starts, and the value lands in the workspace's `.mcp.json`. Use `headersEnv` for keys. |
 | `headersEnv` | map of string | — | HTTP headers whose value is kept in an environment variable. Each entry is a header name and the variable's name, such as `{ "x-api-key": "CONNECTOR_API_KEY" }`. The variable holds the whole header value. AgentX reads it when it connects, and `.mcp.json` only holds `${CONNECTOR_API_KEY}`, which Claude Code fills in itself. HTTP servers only. |
 | `allowTools` | list of string | — | The only tools of this server the agent may use, by the name the server gives them. `*` is a wildcard, so `GET_*` allows every tool whose name starts with `GET_`. Left out, every tool is allowed; an empty list allows none. See [Limit a tool server](#limit-a-tool-server). |
+| `readTools` | list of string | — | Tools on `allowTools` that only read, though their names do not say so. They run without asking you first. Same patterns as `allowTools`. Only used with `allowTools`. See [Write tools ask you first](#write-tools-ask-you-first). |
 
 #### Limit a tool server
 
@@ -158,6 +159,31 @@ How the list is applied depends on the agent's engine:
 | `codex-cli`, `opencode` | Not checked. Set the same list on the tool server itself, when it offers one. |
 
 When the service lets you choose which tools a server offers, set the same list there too, so the limit holds on both sides.
+
+#### Write tools ask you first
+
+On a server with an `allowTools` list, a tool that changes something in the outside service (posts, uploads, deletes, sends a message) does not run straight away. AgentX shows you one Approvals card first, and the agent waits for your answer. A tool that only reads runs as before, with no card. Servers without an `allowTools` list are not affected.
+
+AgentX tells the two apart by the tool's name. A name whose first action word reads, such as `GET_PAGE_INSIGHTS`, `list_posts` or `QUERY_ANALYTICS`, is a read, as long as no word that writes (`create`, `delete`, `send`, `upload` and the like) follows. Every other name counts as a write, including a name with no action word AgentX knows. When in doubt, AgentX asks.
+
+1. **Agent:** the agent calls a write tool, for example `CREATE_POST` on the `connector` server.
+2. **Browser:** open **Approvals** on the dashboard. A card titled `<agent> wants to write with connector: CREATE_POST` shows what the agent wants to send.
+3. **Browser:** click **Yes** to let the call run, or **No** to stop it.
+
+If nobody answers within 3 minutes, the call does not run and the card closes. A late yes on a closed card is refused. The agent is told the call was stopped and is asked not to try another way.
+
+If a tool only reads but its name does not show it (for example `SUMMARIZE_WEEK`), add it to `readTools` so it runs without a card:
+
+```json
+"connector": {
+  "type": "http",
+  "url": "https://connector.example.com/mcp",
+  "allowTools": ["GET_*", "CREATE_POST", "SUMMARIZE_WEEK"],
+  "readTools": ["SUMMARIZE_WEEK"]
+}
+```
+
+This applies to the `orchestrator` and `claude-code` engines. `codex-cli` and `opencode` agents are not checked.
 
 #### The org chart tool (`agentx_org`)
 
@@ -545,12 +571,15 @@ A process is not stopped for being quiet while it still has work of its own: a b
 7. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
 8. **Terminal:** with `session.resumeGate.mode` set to `"shadow"`, after an agent picks a conversation up, run `agentx daemon logs`. A line `resume gate (shadow) for <channel>:<chat>: would resume: …` or `would start fresh: …` shows both prices. In `"active"` mode, a line `cost rotation for …` marks a conversation that started fresh.
 9. **Terminal:** with `headersEnv` or `allowTools` on a tool server, run `agentx doctor`. A line `N MCP server(s) with header variables, all set` shows the keys were found. Open the agent's `.mcp.json`: the header reads `${CONNECTOR_API_KEY}`, not the key itself.
-10. **Terminal:** after an agent proposed an org chart change and you said yes, run `agentx daemon logs`. A line `[org] <card id>: applied: …` shows the daemon applied it, and `.agentx/org-proposals/<card id>.json` says `"status": "applied"`.
+10. **Terminal:** after a `claude-code` agent calls a write tool of a server with `allowTools`, run `agentx daemon logs`. A line `guard: <agent> asked to run mcp__<server>__<tool>: card <card id> waits for the owner` shows the card was raised. The card is in **Approvals** on the dashboard.
+11. **Terminal:** after an agent proposed an org chart change and you said yes, run `agentx daemon logs`. A line `[org] <card id>: applied: …` shows the daemon applied it, and `.agentx/org-proposals/<card id>.json` says `"status": "applied"`.
 
 ## If something is wrong
 
 - **The daemon log shows `[org] <card id>: failed: …`:** the chart changed between the card and your yes, and the change no longer held. Nothing was saved. Ask the agent again.
 - **`agentx doctor` says `MCP server "<name>" of <agent>: header variable(s) not set`:** add the named variable to `.env` and restart the daemon. Without it the server gets no key and refuses every call.
+- **An agent says a tool call `writes data and was not run`:** the tool was treated as a write and nobody said yes within 3 minutes, or you said no. Ask the agent to try again and answer the card in **Approvals**. If the tool only reads, add it to that server's `readTools` and restart the daemon.
+- **An agent says a write tool was not run because `the confirmation card could not be raised`:** the agent already has 25 cards waiting. Answer or close some in **Approvals**, then ask again.
 - **A `claude-code` agent says a tool call was refused with `is not on the allowTools list`:** the tool is left off that server's `allowTools`. Add its name (as the message prints it) if the agent should use it, then restart the daemon.
 - **A `claude-code` agent says a call was refused because it `needs confirmation; the daemon is not answering`:** the daemon could not be reached, so the guard checked the call locally with the rules only. A rule asks for a confirmation, and only the daemon can show that dialog. Start the daemon (`agentx daemon status`, then `agentx daemon start`) and try again.
 - **A `claude-code` agent says a call was refused because `the AgentX guard could not check this call`:** the daemon is not answering, and the local check could not run either. Agent sessions are then refused every call except `agentx daemon start|restart|status` and the `launchctl` or `systemctl` commands that start the daemon. Start the daemon. If the local check keeps failing while the daemon is up, restart the daemon once so it rewrites `.agentx/bin/agentx-guard`, the link the check runs through. Your own Claude Code sessions are not refused this way.

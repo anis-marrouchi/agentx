@@ -14,6 +14,9 @@
 //   allowTools  the only tools of that server an agent may use. Exact
 //               names, `*` as a wildcard. The orchestrator tier never lists
 //               the others; the claude-code tier's guard hook refuses them.
+//               A tool on the list that writes waits for one Approvals
+//               card first (#1736, below); `readTools` names reads the
+//               tool names do not give away.
 //
 // Pure helpers only: no I/O, so mcp-client, agent-mcp, the runtime and the
 // daemon's /guard/check can all share them.
@@ -25,6 +28,9 @@ export interface McpPolicyFields {
   headers?: Record<string, string>
   headersEnv?: Record<string, string>
   allowTools?: string[]
+  /** Tools of that list that only read, though their names do not say so:
+   *  they run without a card (#1736). Same patterns as `allowTools`. */
+  readTools?: string[]
 }
 
 /** Headers to send on every request: the literal `headers`, then each
@@ -98,4 +104,82 @@ export function allowListHookMatcher(servers: Record<string, McpPolicyFields> | 
     .map(([n]) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
   if (names.length === 0) return null
   return `mcp__(${names.join("|")})__.*`
+}
+
+// --- Write tools ask first (#1736) ---
+//
+// A tool on a server's `allowTools` list that can write (post, upload,
+// delete, send...) waits for one Approvals card before it runs. Reads run
+// as before. The split is by the tool's NAME, deterministically, because
+// the guard hook sees only the name: a server's own "read only" hint is
+// not trusted, since a server that lies would skip the card.
+//
+// Over-inclusive on purpose: a name with no verb we know is a write. One
+// extra card is the right side to err on. A read tool the names get wrong
+// goes on the server's `readTools` list.
+
+const READ_VERBS = new Set([
+  "get", "list", "read", "search", "query", "fetch", "find", "describe", "count",
+  "view", "show", "lookup", "retrieve", "browse", "check", "inspect", "preview",
+])
+
+/** Write anywhere in the name, even after a read verb (SEARCH_AND_DELETE). */
+const WRITE_VERBS = new Set([
+  "create", "add", "insert", "update", "edit", "modify", "patch", "upsert", "put", "set",
+  "delete", "remove", "destroy", "erase", "purge", "archive", "unarchive", "trash",
+  "send", "publish", "upload", "invite", "submit", "write", "save", "move", "rename",
+  "merge", "revoke", "grant", "assign", "transfer", "pay", "charge", "refund",
+  "approve", "reject", "cancel", "enable", "disable", "execute", "trigger", "deploy",
+  "install", "uninstall", "kill", "reset", "clear", "mark", "ban", "unban", "mute",
+  "unmute", "follow", "unfollow", "subscribe", "unsubscribe", "import", "restore",
+])
+
+/** Also nouns (a post, a comment, a run): a write only as the first verb,
+ *  so GET_POST reads and POST_PHOTO writes. */
+const NOUN_VERBS = new Set([
+  "post", "comment", "reply", "like", "unlike", "share", "schedule", "message", "copy",
+  "star", "pin", "block", "react", "run", "start", "stop", "open", "close", "book",
+])
+
+/** A tool name in lower-case words: `FACEBOOK_GET_PAGE_INSIGHTS` and
+ *  `getPageInsights` both give get, page, insights. */
+function nameWords(tool: string): string[] {
+  return tool
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+}
+
+/** Does the tool's name say it only reads? The first verb must be a read
+ *  verb, and no write verb may follow. No known verb at all: not a read. */
+export function isReadToolName(tool: string): boolean {
+  const words = nameWords(tool)
+  const first = words.find((w) => READ_VERBS.has(w) || WRITE_VERBS.has(w) || NOUN_VERBS.has(w))
+  if (!first || !READ_VERBS.has(first)) return false
+  return !words.some((w) => WRITE_VERBS.has(w))
+}
+
+/** The server and tool of a namespaced `mcp__<server>__<tool>` call that
+ *  must wait for a card, or null. Only servers with an `allowTools` list
+ *  are gated, only tools that list allows (the rest are refused before
+ *  this), and never a tool on `readTools` or one whose name reads. */
+export function mcpWriteNeedingConfirm(
+  toolName: string,
+  servers: Record<string, McpPolicyFields> | undefined,
+): { server: string; tool: string } | null {
+  if (!servers || !toolName.startsWith("mcp__")) return null
+  const names = Object.keys(servers).sort((a, b) => b.length - a.length)
+  for (const server of names) {
+    const prefix = `mcp__${server}__`
+    if (!toolName.startsWith(prefix)) continue
+    const spec = servers[server]
+    if (!spec?.allowTools) return null
+    const tool = toolName.slice(prefix.length)
+    if (!toolAllowed(spec.allowTools, tool)) return null
+    if (spec.readTools && toolAllowed(spec.readTools, tool)) return null
+    return isReadToolName(tool) ? null : { server, tool }
+  }
+  return null
 }
