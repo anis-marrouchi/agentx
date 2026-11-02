@@ -76,6 +76,14 @@ describe("GitHub comments start a run only on an @-mention (#1719)", () => {
     expect(logs.some((l) => l.includes("does not @-mention coder-agent"))).toBe(true)
   })
 
+  it("a plain comment from the account AgentX posts with starts nothing (#1719, 08:47Z)", async () => {
+    const { gh, runs } = adapter({ agentMappings: [{ agentId: "coder-agent", githubUsernames: [OWNER] }] })
+    await deliver(gh, "issue_comment", commentEvent("Close test on v0.204.0: this issue should stay closed."))
+    expect(runs).toHaveLength(0)
+    await deliver(gh, "issue_comment", commentEvent("@coder-agent please check this"))
+    expect(runs).toHaveLength(1)
+  })
+
   it("a plain comment on a pull request starts nothing", async () => {
     const { gh, runs } = adapter()
     await deliver(gh, "issue_comment", commentEvent("Looks good to me.", { pr: true }))
