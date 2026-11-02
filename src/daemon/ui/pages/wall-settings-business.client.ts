@@ -5,8 +5,9 @@
 // stChField(), stSetSave(), stPaint() and the Hub's esc().
 //
 // What the classic /admin Business and Boards tabs do, with the same calls:
-//   Business  the org chart in the /org editor (orgEditor, org-setup.ts;
-//             POST org/chart, #1678), then projects, clients and the
+//   Business  the org chart as a read-only tree (orgTreeHtml), above
+//             the /org editor (orgEditor, org-setup.ts; POST org/chart,
+//             #1678), then projects, clients and the
 //             contact map, each listed with add-or-update and remove
 //             (POST/DELETE business/{project,client,contact});
 //             shown only when the business layer is on, as there.
@@ -52,6 +53,7 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
     return '<header class="wst__h"><h2>Business</h2><p>The org chart, projects, clients and which chat belongs to which client: the data behind the PM gate and the activity graph. The same as <code>agentx business</code>. The org chart applies at once; projects, clients and the contact map at the next start.</p></header>' +
       stNoteHtml('biz') +
       '<section class="wsc"><h3>Org chart</h3><p class="wsj__sub">Who reports to whom, the same editor as the Org page.</p>' +
+        (S.st.org ? orgTreeHtml(S.st.org.setup) : '') +
         '<div class="org-edit" id="st-org-edit">' + (!S.st.org ? '<p class="ax-wall__empty">Could not read the org chart.</p>' : ST_OE.html() || '<p class="ax-wall__empty">Only the owner changes the org chart.</p>') + '</div></section>' +
       '<section class="wsc"><h3>Projects <small>' + projRows.length + '</small></h3>' + stBizList(projRows, 'No project.') +
       '<details class="wsc"><summary><h3>Add or update a project</h3></summary><form class="wsf" data-st-form="biz-proj">' +

@@ -175,6 +175,16 @@ describe("Hub Settings: the org chart is the /org editor (#1678)", () => {
     expect(settingsHtml(w)).toContain("Cancelled. Nothing changed.")
   })
 
+  it("shows the chart as a read-only tree above the editor, to everyone (#1678 q1)", async () => {
+    for (const canEdit of [true, false]) {
+      const w = open("business", withOrg({ exists: true, canEdit, setup: SETUP, ...(canEdit ? { choices: CHOICES } : {}) }), true)
+      await w.settle()
+      const html = settingsHtml(w)
+      expect(html).toMatch(/<ul class="oe-tree"[^>]*><li><b>Customer Desk<\/b>.*?<ul><li><b>Night Shift<\/b>/)
+      expect(html.indexOf('class="oe-tree"')).toBeLessThan(html.indexOf('id="st-org-edit"'))
+    }
+  })
+
   it("shows the server's refusal in the editor's status line", async () => {
     const refused: Route = (u, i) => (u === "/api/admin/wall/settings/org/chart" && i.method === "POST"
       ? { status: 400, body: { error: "Night Shift already reports to Customer Desk." } } : withOrg({ exists: true, canEdit: true, setup: SETUP, choices: CHOICES })(u, i))
