@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.205.0](https://github.com/anis-marrouchi/agentx/compare/v0.204.0...v0.205.0) (2026-11-02)
+
+
+### Features
+
+* **integrations:** YouTube Data and Analytics reads (P2b) ([#1727](https://github.com/anis-marrouchi/agentx/issues/1727)) ([46e935e](https://github.com/anis-marrouchi/agentx/commit/46e935e889f03ea77b4feb932f9df13a63985ac9))
+* **org:** change the org chart by chat through one Approvals card ([#1728](https://github.com/anis-marrouchi/agentx/issues/1728)) ([d55cf83](https://github.com/anis-marrouchi/agentx/commit/d55cf83ec5ce89da6aea1704b6178a2ac7931af6))
+
+
+### Bug Fixes
+
+* **approvals:** find the daemon's inbox from any folder ([#1725](https://github.com/anis-marrouchi/agentx/issues/1725)) ([e928142](https://github.com/anis-marrouchi/agentx/commit/e928142044946b816b82bb5b5126c706c0ea839c))
+* **github:** start a run only on an @-mention or the trigger label ([#1732](https://github.com/anis-marrouchi/agentx/issues/1732)) ([045c56c](https://github.com/anis-marrouchi/agentx/commit/045c56cdcf10d22614e8740cfcf25b7fb6d7a303))
+* **guard:** attach install points the guard at the daemon's folder ([#1733](https://github.com/anis-marrouchi/agentx/issues/1733)) ([eb109fa](https://github.com/anis-marrouchi/agentx/commit/eb109fa504496a12e716e044fb35392928eb1f02)), closes [#1710](https://github.com/anis-marrouchi/agentx/issues/1710)
+* **guard:** check the rules locally when the daemon is not answering ([#1726](https://github.com/anis-marrouchi/agentx/issues/1726)) ([b724939](https://github.com/anis-marrouchi/agentx/commit/b7249392252d76cbd73936bc0b0edad4646168f2)), closes [#1710](https://github.com/anis-marrouchi/agentx/issues/1710)
+
 ## [0.204.0](https://github.com/anis-marrouchi/agentx/compare/v0.203.0...v0.204.0) (2026-11-02)
 
 
