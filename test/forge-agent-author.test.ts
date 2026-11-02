@@ -14,6 +14,7 @@ import {
   ownText,
 } from "../src/channels/outbound-marker"
 import { classifyInitiator } from "../src/a2a/initiator"
+import { STATUS_TAG } from "../src/requests/status"
 import { recordsFromEntries } from "../src/wiki/facts/sources/entries"
 import { MessageRouter } from "../src/channels/router"
 import { fromIncoming } from "../src/channels/inbound/envelope"
@@ -382,6 +383,17 @@ describe("GitLab adapter", () => {
     await (gl as any).handleNote(note(markBody("@coder_bot please look", "coder-agent"), OUTSIDER), res())
     expect(received).toHaveLength(1)
     expect(received[0].sender).toMatchObject({ username: OUTSIDER })
+  })
+
+  it("drops a status note that mentions another agent, but only from an account AgentX posts as", async () => {
+    const gl = makeGitLab(async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => "{}" }))
+    const received: IncomingMessage[] = []
+    gl.onMessage(async (m) => { received.push(m) })
+    const status = `@coder_bot Request status: done\n${STATUS_TAG}`
+    await (gl as any).handleNote(note(markBody(status, "reviewer-agent")), res())
+    expect(received).toHaveLength(0)
+    await (gl as any).handleNote(note(status, OUTSIDER), res())
+    expect(received).toHaveLength(1)
   })
 
   it("still drops a signed echo from an account AgentX posts as", async () => {

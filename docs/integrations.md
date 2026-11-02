@@ -23,7 +23,7 @@ Words used on this page:
 - **Read**: one named question the agent may ask the service, such as "page totals for a period". The agent picks a read by name; it cannot write its own request.
 
 ::: info Which services
-Built in: **Facebook Pages and Instagram** (kind `meta`), see [Facebook and Instagram](#facebook-and-instagram). YouTube Analytics is added next.
+Built in: **Facebook Pages and Instagram** (kind `meta`), see [Facebook and Instagram](#facebook-and-instagram), and **YouTube** (kind `youtube`), see [YouTube](#youtube).
 :::
 
 You need:
@@ -191,6 +191,72 @@ Good to know:
 - Meta retired the old "impressions" and "fans" figures. Views (`page_media_view`, `views`) replace them; AgentX does not offer the retired names.
 - For Page reads AgentX asks Meta for a token for that one Page, keeps it in memory for an hour, and never shows it.
 
+## YouTube
+
+Kind: `youtube`. The agent can read the YouTube channel you sign in with: its counts, its uploads, and YouTube Analytics (views, watch time, likes, comments, shares, subscribers, audience by age and gender, traffic sources, devices, Shorts against long videos), and estimated revenue if you opt in. It reads only the channel that signed in. It cannot upload, comment or change anything.
+
+You need:
+
+- A Google account that owns or manages the channel.
+- For revenue: a channel in the YouTube Partner Program.
+
+### Create the Google project
+
+1. **Browser:** open the Google Cloud console (console.cloud.google.com) and create a project.
+2. **Browser:** under **APIs & Services › Library**, enable **YouTube Data API v3** and **YouTube Analytics API**.
+3. **Browser:** under **APIs & Services › OAuth consent screen**, choose **External**, fill in the app name and your email, and add yourself as a test user.
+4. **Browser:** set the publishing status to **In production**. In **Testing**, Google ends the sign-in after 7 days. With fewer than 100 users you do not need Google's verification: at sign-in, select **Advanced**, then **Go to (your app)**.
+5. **Browser:** under **APIs & Services › Credentials**, select **Create credentials › OAuth client ID**, type **Web application**, and add `http://localhost:19876/callback` under **Authorised redirect URIs**. Copy the **Client ID** and the **Client secret**.
+6. **Terminal:** put them in `.env` next to `agentx.json`:
+
+   ```bash
+   echo 'YOUTUBE_CLIENT_ID=paste-the-client-id-here' >> .env
+   echo 'YOUTUBE_CLIENT_SECRET=paste-the-client-secret-here' >> .env
+   ```
+
+7. **Terminal:** run `agentx daemon restart`.
+
+### Connect
+
+1. **Terminal:** run, with your agent in place of `helper`. Add `--with revenue` only if you want revenue figures:
+
+   ```bash
+   agentx agent integrations connect helper youtube
+   ```
+
+2. **Browser:** choose the Google account, then the channel if the account has several. Approve every permission.
+3. **Terminal:** the command prints `✓ helper: YouTube connected`.
+
+Google's access tokens last an hour, and AgentX renews them by itself.
+
+### Choose the default uploads list
+
+The agent can find it itself with the `channel` read. To save it that step:
+
+1. **Telegram, or the dashboard chat:** ask the agent `What is my YouTube uploads playlist id?`. It starts with `UU`.
+2. **Terminal:** open `agentx.json`, find the agent's `youtube` integration and add it under `metadata`:
+
+   ```json
+   "metadata": { "playlistId": "UUxxxxxxxxxxxxxxxxxxxxxx" }
+   ```
+
+3. **Terminal:** run `agentx daemon restart`.
+
+### What the agent can read
+
+| Read | What it returns |
+|---|---|
+| `channel` | The channel: title, subscriber, view and video counts, and the uploads playlist id. |
+| `uploads` | Recent uploads: video id, title, publish time. |
+| `videos` | Up to 50 videos: details, duration, privacy status, and public views, likes and comments. |
+| `report` | YouTube Analytics for a date range: `views`, `engagedViews`, `estimatedMinutesWatched`, `averageViewDuration`, `averageViewPercentage`, `likes`, `dislikes`, `comments`, `shares`, `subscribersGained`, `subscribersLost`, playlist adds and removes, card figures, and `viewerPercentage` by `ageGroup` and `gender`. Split by day, month, video, country, traffic source, device, Shorts (`creatorContentType`) and more. |
+| `revenue_report` | `estimatedRevenue`, `estimatedAdRevenue`, `grossRevenue`, `cpm`, `playbackBasedCpm`, `monetizedPlaybacks`, `adImpressions`. Needs `--with revenue`. |
+
+Good to know:
+
+- Impressions and click-through rate of thumbnails are not in the YouTube Analytics API, so the agent cannot read them.
+- Revenue comes back only for a channel in the Partner Program. For any other channel YouTube answers 403.
+
 ## Disconnect
 
 1. **Terminal:** forget the sign-in:
@@ -229,4 +295,7 @@ Good to know:
 | Meta: the browser says the return address is not allowed, after you switched the app to Live | Use an `https` return address with `--paste --redirect-uri`. See [Return address in Live mode](#create-the-meta-app). |
 | Meta: an Instagram read says the account does not exist or has no insights | The Instagram account must be a professional account linked to a Page you selected at sign-in. Run the `pages` read: the account should show under its Page. |
 | Meta: `(#100) ... metric` | Meta does not offer that figure for this Page or period, for example earnings on a Page that does not earn money. Ask for another metric or period. |
+| YouTube: the agent says to connect again a week after connecting | The Google project is still in **Testing**, where Google ends sign-ins after 7 days. Set it to **In production** (see [Create the Google project](#create-the-google-project)) and run `connect` again. |
+| YouTube: `revenue_report` says 403 | Connect again with `--with revenue`. If it still says 403, the channel is not in the YouTube Partner Program. |
+| YouTube: `report` says 400 with `The query is not supported` | YouTube does not allow that mix of metrics and dimensions. For example, `viewerPercentage` needs `ageGroup` or `gender` as the dimension, and the `video` dimension needs `maxResults` and `sort`. |
 | The agent gets `... said 403` | The account or app lacks a permission for that read, or the account is not the right type. Check the service's own setup steps. |
