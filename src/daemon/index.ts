@@ -46,6 +46,7 @@ import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
 import { applyConnectAttemptTimeout, DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS } from "./net-family"
 import { buildInfo, diskBuild } from "@/utils/build-info"
+import { writeDaemonRoot } from "@/utils/daemon-root"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
 import { openDb, pruneSqliteTables, insertTaskQueue, completeTaskQueue, getTaskQueue, listTaskQueueByConversation } from "@/storage/sqlite"
@@ -1239,6 +1240,8 @@ export class AgentXDaemon {
     mkdirSync(dirname(pidFile), { recursive: true })
     writeFileSync(pidFile, String(process.pid))
     this.log(`  PID: ${process.pid} (${pidFile})`)
+    // So `agentx approvals` and friends find this folder from anywhere.
+    try { writeDaemonRoot(process.cwd()) } catch (e: any) { this.log(`  could not record the daemon folder: ${e?.message ?? e}`) }
 
     // Catch unhandled errors — log but don't crash
     process.on("uncaughtException", (err) => {

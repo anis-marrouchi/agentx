@@ -82,7 +82,7 @@ With several machines connected, a card raised on another machine shows **from**
    ```sh
    agentx approvals list
    ```
-   Each item starts with a key such as `card:2026-01-05-send-the-newsletter-ab12` or `schedule:friday-summary`.
+   Each item starts with a key such as `card:2026-01-05-send-the-newsletter-ab12` or `schedule:friday-summary`. It works from any folder: the daemon records the folder it runs in, and `agentx approvals` reads the inbox there. Set `AGENTX_ROOT` to read another install's inbox.
 2. **Terminal:** answer one, using its key:
    ```sh
    agentx approvals approve card:2026-01-05-send-the-newsletter-ab12
