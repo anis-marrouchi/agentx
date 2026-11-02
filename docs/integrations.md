@@ -225,6 +225,7 @@ Good to know:
 | `not granted: ...` | You unticked a permission at sign-in. Run `connect` again and approve every one. |
 | `the token expires on ...` | That service does not renew its tokens by itself. Run `connect` again before that date. |
 | Meta: `does not manage Page ...` | The account you connected is not an admin of that Page, or you did not select the Page when you signed in. Run `connect` again and select it. |
+| Meta: `connect` says it could not read the granted permissions | Meta did not answer the permission check right after sign-in. The connection works, but `status` cannot tell you if you unticked a permission. Run `connect` again later to get the full check. |
 | Meta: the browser says the return address is not allowed, after you switched the app to Live | Use an `https` return address with `--paste --redirect-uri`. See [Return address in Live mode](#create-the-meta-app). |
 | Meta: an Instagram read says the account does not exist or has no insights | The Instagram account must be a professional account linked to a Page you selected at sign-in. Run the `pages` read: the account should show under its Page. |
 | Meta: `(#100) ... metric` | Meta does not offer that figure for this Page or period, for example earnings on a Page that does not earn money. Ask for another metric or period. |

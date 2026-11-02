@@ -22,6 +22,19 @@ export interface ConnectInput {
   getCallback: (authorizeUrl: string, state: string) => Promise<CallbackResult>
   fetch?: typeof fetch
   now?: () => number
+  /** Non-fatal problems found while connecting (e.g. a check that could not run). */
+  warn?: (message: string) => void
+}
+
+/** A return address given with `--redirect-uri`, normalised, or null when it
+ *  is not https (or http on localhost) or carries a #fragment. */
+export function checkRedirectUri(raw: string): string | null {
+  let u: URL
+  try { u = new URL(raw) } catch { return null }
+  if (u.hash) return null
+  if (u.protocol === "https:") return u.toString()
+  if (u.protocol === "http:" && u.hostname === "localhost") return u.toString()
+  return null
 }
 
 export async function signIn(input: ConnectInput): Promise<OAuthGrant> {
@@ -38,6 +51,7 @@ export async function signIn(input: ConnectInput): Promise<OAuthGrant> {
     clientId: input.clientId,
     clientSecret: input.clientSecret,
     now: (input.now ?? Date.now)(),
+    warn: input.warn,
   })
 }
 
