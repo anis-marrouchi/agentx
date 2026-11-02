@@ -84,7 +84,14 @@ export interface MergePolicyOrigin {
   sha: string
 }
 
-export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin
+/** The owner asked an agent in chat to change the org chart (#1678). The
+ *  changes are kept beside the card (business/org-proposals.ts); YES makes
+ *  the daemon apply them, and the agent is told what happened. */
+export interface OrgProposalOrigin {
+  kind: "org-proposal"
+}
+
+export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

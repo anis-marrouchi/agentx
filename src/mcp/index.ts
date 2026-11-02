@@ -965,6 +965,34 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_org",
+    description:
+      "Change the org chart when the owner asks in chat (who reports to whom, dotted lines, acts-for, members, roles). You never write the chart: propose sends the changes to the owner's Approvals inbox as one card, and on their yes the daemon applies them. Only a turn the owner started may propose. " +
+      "Actions: show (default: every member with its ref, every line, and who is not in the chart yet), propose. " +
+      "Call show first and take the refs from it; never guess an id. A new boss for someone who has one replaces the old line. A refused change comes back as a plain sentence: tell the owner. " +
+      "Example: {action:'propose', changes:[{op:'add-relation', from:'agent:support', type:'reports-to', to:'agent:sales'}], why:'The owner asked in chat'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["show", "propose"], description: "show (default) or propose." },
+        changes: {
+          type: "array",
+          description: "propose: 1-5 changes, applied in order, all or nothing. Each has op: add-member {member, role}, set-role {member, role}, remove-member {member}, add-relation {from, type, to}, remove-relation {from, type, to}, set-schedule {member, start, end, days}. Members are refs from show (agent:<id> or person:<id>); type is reports-to, dotted-line or acts-for.",
+          items: { type: "object" },
+        },
+        newAgent: {
+          type: "object",
+          description: "propose, optional: a new agent to create in the same yes, before the changes. {id, name, role, reportsTo} with reportsTo a ref from show. It starts after the next daemon restart.",
+          properties: { id: { type: "string" }, name: { type: "string" }, role: { type: "string" }, reportsTo: { type: "string" } },
+        },
+        why: { type: "string", description: "propose, optional: one line on why, shown on the card as your advice." },
+        channel: { type: "string", description: "Current chat's channel, from your task context, so the result can mention it." },
+        chatId: { type: "string", description: "Current chat id, from your task context." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
     name: "agentx_content",
     description:
       "Draft posts in the owner's voice for LinkedIn or X, and hold them for approval. You never publish: the owner's yes in the Approvals inbox posts it (or saves it ready to paste when no connector is set). " +
@@ -2017,6 +2045,12 @@ async function handleToolCall(
     case "agentx_approval": {
       const { runApprovalTool } = await import("@/approvals/tool")
       const text = await runApprovalTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_org": {
+      const { runOrgTool } = await import("@/business/org-tool")
+      const text = await runOrgTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 
