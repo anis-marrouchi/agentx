@@ -42,6 +42,22 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: ${{ steps.baseline.outputs.config }}
           manifest-file: .release-please-manifest.json
+      # Release Please writes every `Refs #N` footer as ", closes [#N]" in
+      # the release PR body, so merging the release PR would close issues
+      # that the fixes only referenced (#1731). Say "refs" instead; closing
+      # an issue stays a separate decision.
+      - name: Keep the release PR from closing issues
+        if: ${{ steps.release.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          PR_JSON: ${{ steps.release.outputs.pr }}
+        run: |
+          number=$(jq -r '.number' <<<"$PR_JSON")
+          body=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json body -q .body)
+          fixed=$(printf '%s' "$body" | sed -E 's/([ ,(])([Cc]loses|[Ff]ixes|[Rr]esolves) \[#/\1refs [#/g')
+          if [ "$fixed" != "$body" ]; then
+            printf '%s' "$fixed" | gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --body-file -
+          fi
 
   publish:
     needs: version
