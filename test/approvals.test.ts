@@ -655,6 +655,8 @@ describe("the dashboard (operator) API", () => {
     const ok = await fetch(`${base}/api/admin/approvals/decide`, { method: "POST", body, headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" } })
     expect(ok.status).toBe(200)
     expect(readCard(root, c.card.id)).toMatchObject({ status: "decided", verdict: "yes", decided_by: "operator (dashboard)" })
+    // Not marked local unless the dashboard says its caller is on this machine (#1478).
+    expect(readCard(root, c.card.id)?.decided_from).toBeUndefined()
 
     const again = await fetch(`${base}/api/admin/approvals/decide`, { method: "POST", body, headers: { "X-Requested-With": "agentx-board" } })
     expect(again.status).toBe(409)

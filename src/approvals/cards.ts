@@ -68,6 +68,11 @@ export interface DecisionCard extends CardChoices {
    *  record still shows what was originally asked. */
   if_silent_asked?: "approve"
   decided_by?: string
+  /** "local" when the answer was given on this machine itself: the
+   *  dashboard opened here (loopback, no proxy), the popup, or the CLI run
+   *  by the owner. Unset for a phone, a browser elsewhere, a mesh peer or a
+   *  channel reply. A new owner browser counts only a local yes (#1478). */
+  decided_from?: "local"
   decided_at?: string
   note?: string
   /** The option the operator picked, when the card offered choices. */
@@ -358,7 +363,7 @@ export function decideCard(
   root: string,
   id: string,
   verdict: Verdict,
-  opts: { by?: string; note?: string; now?: number; choice?: string | number; text?: string } = {},
+  opts: { by?: string; note?: string; now?: number; choice?: string | number; text?: string; local?: boolean } = {},
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const card = readCard(root, id)
   if (!card) return { ok: false, error: `no card "${id}"` }
@@ -371,6 +376,7 @@ export function decideCard(
     status: "decided",
     verdict,
     decided_by: opts.by ?? "operator",
+    ...(opts.local ? { decided_from: "local" as const } : {}),
     decided_at: new Date(opts.now ?? Date.now()).toISOString(),
     ...(note ? { note } : {}),
     ...(answer.choice ? { choice: answer.choice } : {}),
