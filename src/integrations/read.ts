@@ -52,7 +52,7 @@ export function buildReadUrl(
   read: ReadSpec,
   params: Record<string, unknown>,
   metadata: Record<string, unknown>,
-): { ok: true; url: URL } | { ok: false; error: string } {
+): { ok: true; url: URL; values: Record<string, string> } | { ok: false; error: string } {
   for (const k of Object.keys(params)) {
     if (!read.params[k]) return { ok: false, error: `unknown parameter "${k}". Allowed: ${Object.keys(read.params).join(", ") || "none"}` }
   }
@@ -95,7 +95,7 @@ export function buildReadUrl(
   }
   for (const [k, v] of Object.entries(values)) if (!used.has(k)) url.searchParams.set(k, v)
   for (const [k, v] of Object.entries(read.fixedQuery ?? {})) url.searchParams.set(k, v)
-  return { ok: true, url }
+  return { ok: true, url, values }
 }
 
 /** Run one named read for an agent. */
@@ -116,17 +116,28 @@ export async function runIntegrationRead(config: DaemonConfig, req: ReadRequest,
   const token = await resolveAccessToken(req.agentId, i, spec, deps)
   if (token.status !== "ok") return { ok: false, status: 409, error: token.reason }
 
+  const f = deps.fetch ?? fetch
+  let sendToken = token.token
+  if (spec.readToken) {
+    try {
+      sendToken = await spec.readToken({ read: req.read, values: built.values, token: token.token, fetch: f, now: (deps.now ?? Date.now)() })
+    } catch (e: any) {
+      const why = safeProviderText(String(e?.message ?? e)).split(token.token).join("[redacted]")
+      return { ok: false, status: 403, error: `${spec.title}: ${why}` }
+    }
+  }
   const headers: Record<string, string> = { Accept: "application/json" }
-  if ((spec.tokenIn ?? "header") === "header") headers.Authorization = `Bearer ${token.token}`
-  else built.url.searchParams.set(spec.tokenParam ?? "access_token", token.token)
+  if ((spec.tokenIn ?? "header") === "header") headers.Authorization = `Bearer ${sendToken}`
+  else built.url.searchParams.set(spec.tokenParam ?? "access_token", sendToken)
 
   let res: Response
   try {
-    res = await (deps.fetch ?? fetch)(built.url.toString(), { method: "GET", headers, signal: AbortSignal.timeout(20_000), redirect: "error" })
+    res = await f(built.url.toString(), { method: "GET", headers, signal: AbortSignal.timeout(20_000), redirect: "error" })
   } catch (e: any) {
     return { ok: false, status: 502, error: `couldn't reach ${spec.title}: ${safeProviderText(String(e?.message ?? e))}` }
   }
-  const text = (await res.text().catch(() => "")).split(token.token).join("[redacted]")
+  let text = (await res.text().catch(() => "")).split(token.token).join("[redacted]")
+  if (sendToken !== token.token) text = text.split(sendToken).join("[redacted]")
   if (!res.ok) {
     let why = text
     try { const j = JSON.parse(text); why = j?.error?.message || j?.error_description || j?.error || text } catch {}

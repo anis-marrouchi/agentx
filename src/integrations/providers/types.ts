@@ -95,4 +95,20 @@ export interface ProviderSpec {
   /** Query parameter name when tokenIn is "query". Default "access_token". */
   tokenParam?: string
   reads: Record<string, ReadSpec>
+  /** Swap the integration's token for the one a read needs, after the
+   *  read's values were checked (e.g. Meta Page insights need a Page token
+   *  derived from the user token). Returns the token to send; it is cut
+   *  from answers like the integration's own. Throw with a token-free
+   *  message when no such token can be had. */
+  readToken?: (req: ReadTokenRequest) => Promise<string>
+}
+
+export interface ReadTokenRequest {
+  read: string
+  /** The read's checked values (path and query), after defaults and metadata. */
+  values: Readonly<Record<string, string>>
+  /** The integration's own access token. */
+  token: string
+  fetch: typeof fetch
+  now: number
 }

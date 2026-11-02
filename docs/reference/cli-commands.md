@@ -447,6 +447,7 @@ Sign in to an outside API (OAuth) and store the token for an agent. See [Let age
 | `--store <where>` | `keyring` when this machine has one, else `env` | Where the token is kept: the OS keyring or `.env`. |
 | `--port <n>` | `19876` | Loopback port for the sign-in answer. |
 | `--paste` | — | No loopback: paste the address the browser lands on. |
+| `--redirect-uri <url>` | `http://localhost:<port>/callback` | With `--paste`: the return address registered in the app, when it cannot be localhost (for example an `https` page for a Meta app in Live mode). |
 | `--no-browser` | — | Print the sign-in address instead of opening it. |
 
 ### `agentx agent integrations status <agentId>`

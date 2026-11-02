@@ -382,7 +382,7 @@ describe("daemon API and agent tool", () => {
     expect(isMeshGatedPath("/integrations/reads")).toBe(true)
     expect(AGENTX_TOOL_NAMES).toContain("agentx_integration_read")
     expect(READ_TOOL_NAMES).toContain("agentx_integration_read")
-    expect(BUILTIN_PROVIDERS).toEqual({})
+    expect(Object.keys(BUILTIN_PROVIDERS)).toEqual(["meta"])
     // A read-only (report) routine, such as a weekly digest, may use it.
     expect(evaluateAutonomy("report", { tool: "mcp__agentx__agentx_integration_read" } as any)).toMatchObject({ allowed: true })
   })
