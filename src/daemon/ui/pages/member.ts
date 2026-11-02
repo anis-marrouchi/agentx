@@ -14,6 +14,7 @@
 import { AX_TOKENS_CSS } from "../tokens"
 import { injectFns } from "../inject"
 import { esc } from "../util"
+import { HUB_NAME } from "../hub-name"
 import { formatPairInput } from "./app-pair-logic"
 import { agentLine, connectionNote, freedAgents, plainPreview, requestState, sentState, summaryLine } from "./member-logic"
 import { WORK_SCRIPT } from "./member-work.client"
@@ -260,7 +261,7 @@ ${bar("You are signed in as the owner")}
     <h2><span class="pulse" aria-hidden="true"></span>Confirm this browser on the home machine</h2>
     <p id="msg" role="status">${elsewhere
       ? "A yes for this browser was given away from the home machine, so it does not count. Ask for a new link, then answer its card on the dashboard opened on the home machine itself."
-      : "This is a new browser for the owner. Open the dashboard on the home machine itself and answer the card there. A yes from a phone or another browser does not count. This page opens the Wall by itself once it is confirmed."}</p>
+      : `This is a new browser for the owner. Open the dashboard on the home machine itself and answer the card there. A yes from a phone or another browser does not count. This page opens the ${HUB_NAME} by itself once it is confirmed.`}</p>
     <p class="help">Until then this browser has no owner rights.${elsewhere ? ` <a href="/member/signin">Ask for a new link</a>.` : ""}</p>
   </div>
 </main>

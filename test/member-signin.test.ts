@@ -117,7 +117,7 @@ describe("asking for a link", () => {
     expect(r.status).toBe(200)
     expect(await r.json()).toEqual(unknown)
     expect(sent.map((m) => m.to)).toEqual(["boss@example.com"])
-    expect(sent[0].text).toContain("sign in to your Wall as the owner")
+    expect(sent[0].text).toContain("sign in to your Hub as the owner")
     expect(sent[0].text).toContain("https://studio.example-tailnet.ts.net/member/signin#")
   })
 

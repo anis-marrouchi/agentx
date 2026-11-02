@@ -9,6 +9,7 @@ import { MemberStore } from "@/members/store"
 import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
 import { PERSON_COOKIE, PERSON_SESSION_MAX_AGE_S, PersonSessionStore } from "@/members/person-sessions"
 import { OWNER_HOME, SendLimiter, SignInLinkStore, askSignInLink, personAccess, signInWithLink, type SignInDeps, type SignInSetup } from "@/members/signin"
+import { HUB_NAME } from "@/daemon/ui/hub-name"
 import { OidcStateStore, SignInAccountStore, STATE_COOKIE, STATE_TTL_MS, finishOidc, startOidc, type OidcDeps, type OidcSetup } from "@/members/oidc"
 import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor, type PersonWork, type SentItem, type WorkItem } from "@/members/work"
@@ -208,7 +209,7 @@ export async function handleMemberRequest(
         since: signed.session.approvedAt ?? signed.session.startedAt, node: ctx.nodeName ?? null, home: OWNER_HOME,
       })
     }
-    return sendJson(res, 404, { error: "the owner's page is the Wall", home: OWNER_HOME })
+    return sendJson(res, 404, { error: `the owner's page is the ${HUB_NAME}`, home: OWNER_HOME })
   }
   const who = access.ok
     ? { personId: access.personId, device: access.device.name, since: access.device.approvedAt ?? access.device.createdAt }

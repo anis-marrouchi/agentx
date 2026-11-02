@@ -114,7 +114,7 @@ You can sign in the same way from another browser, and get your full owner right
 
 **Config needed** (once, by whoever runs the machine):
 
-- `wall.signIn.origin`: the Wall's private Tailscale HTTPS address, for example `https://your-mac.tailnet-name.ts.net` ([wall sign-in](../reference/config-operations.md#wall-sign-in)).
+- `wall.signIn.origin`: the Hub's private Tailscale HTTPS address, for example `https://your-mac.tailnet-name.ts.net` ([wall sign-in](../reference/config-operations.md#wall-sign-in)).
 - `mail.sender`: `kind` `"smtp"`, `from` `no-reply@<your mail provider's sending domain>`, and the provider's SMTP login as `${VAR}` references, with the values in `.env` ([mail sender](../reference/config-operations.md#mail-sender)).
 - An `email:` identity on your own people entry, the one with `role` `owner`: `agentx people link <your id> email:you@example.com`.
 

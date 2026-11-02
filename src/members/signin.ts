@@ -6,6 +6,7 @@ import { readJson } from "@/daemon/app-fleet"
 import type { MailSenderConfig } from "@/daemon/config"
 import type { OutgoingMail } from "@/channels/email/smtp"
 import { sendSystemMail } from "@/mail/sender"
+import { HUB_NAME } from "@/daemon/ui/hub-name"
 import { createCard, readCard } from "@/approvals/cards"
 import { splitIdentity, type Person } from "@/people/people"
 import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
@@ -163,7 +164,7 @@ export function signInMail(p: { person: Pick<Person, "name" | "role">; email: st
     text: [
       `Hi ${p.person.name},`,
       ``,
-      p.person.role === "owner" ? `Open this link to sign in to your Wall as the owner:` : `Open this link to sign in to "${pageFor(p.person.role)}":`,
+      p.person.role === "owner" ? `Open this link to sign in to your ${HUB_NAME} as the owner:` : `Open this link to sign in to "${pageFor(p.person.role)}":`,
       ``,
       `${p.origin.replace(/\/+$/, "")}/member/signin#${p.code}`,
       ``,
