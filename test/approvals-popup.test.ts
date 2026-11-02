@@ -250,7 +250,14 @@ describe("when the popup shows", () => {
     const show = async () => ({ action: "yes" as const, choice: SLOTS[0], text: "Thursday then" })
     await popNext(deps({ show }))
     const done = readCard(root, c.id)!
-    expect(done).toMatchObject({ status: "decided", verdict: "yes", choice: SLOTS[0], text: "Thursday then", decided_by: "operator (popup)" })
+    expect(done).toMatchObject({ status: "decided", verdict: "yes", choice: SLOTS[0], text: "Thursday then", decided_by: "operator (popup)", decided_from: "popup" })
+  })
+
+  it("takes a yes on a popup-only card (owner sign-in, #1478)", async () => {
+    const r = createCard(root, BASE, { now: NOW, popupOnly: true })
+    if (!r.ok) throw new Error(r.error)
+    await popNext(deps({ show: async () => ({ action: "yes" as const }) }))
+    expect(readCard(root, r.card.id)).toMatchObject({ status: "decided", verdict: "yes", decided_from: "popup" })
   })
 
   it("one at a time", async () => {

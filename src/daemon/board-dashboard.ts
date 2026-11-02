@@ -12,8 +12,9 @@ import { dashboardTokenForNode } from "./mesh-auth"
 import { handleLogin, hasSession, hasStreamTicket, isOffBox, pageToken, redirectToLogin, streamTicket, STREAM_TICKET_TTL_S } from "./dashboard-session"
 import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
 import { currentPeople, handleMemberRequest } from "./member-routes"
+import { PERSON_COOKIE, PersonSessionStore } from "@/members/person-sessions"
+import { ownerAccess } from "@/members/signin"
 import { MemberStore } from "@/members/store"
-import { PersonSessionStore } from "@/members/person-sessions"
 import { forgeLink } from "@/members/work"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
 import { deriveStage, transitionDiff } from "@/boards/config"
@@ -1296,20 +1297,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
-  if (path.startsWith("/api/") && ctx.token) {
+  if (path.startsWith("/api/") && ctx.token && !ownerCredential(req, ctx)) {
     // Legacy: if dashboard.token is configured, every /api/* request must
-    // carry it (or a scoped token with dashboard:write).
-    const authHeader = req.headers.authorization || ""
-    const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-    if (got === ctx.token || hasSession(req, ctx.token)) { /* fall through */ }
-    else {
-      const tokStore = new TokenStore()
-      const rec = got ? tokStore.verify(got) : null
-      if (!rec || !recordHasScope(rec, "dashboard:write")) {
-        sendJson(res, 401, { error: "unauthorized" })
-        return
-      }
-    }
+    // carry the owner's credential (ownerCredential: the token, its session,
+    // a scoped token with dashboard:write, or a confirmed owner browser).
+    sendJson(res, 401, { error: "unauthorized" })
+    return
   }
 
   // Mesh feed (#166) — the newest events on the primary daemon's bus. That
@@ -3327,21 +3320,76 @@ async function handleActivityGraphFleet(
   sendJson(res, 200, await withForgeStatus(await buildFleetActivitySnapshot(hours, ctx.config)))
 }
 
-/** dashboard.token (if configured), or a stored token with dashboard:write. */
-function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
-  if (!ctx.token) return true
-  const authHeader = req.headers.authorization || ""
-  const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-  if (got === ctx.token || hasSession(req, ctx.token)) return true
-  const rec = got ? new TokenStore().verify(got) : null
-  return !!rec && recordHasScope(rec, "dashboard:write")
+// --- Who is the owner: the one question every owner gate asks (#1478) ---
+//
+// The gates on this page, counted on main 0985376f:
+//   1. wallOwnerOk: the Wall write guard, the workflow editor guard, a
+//      workflow run, and the `owner` flag of the Approvals answers.
+//   2. adminTokenOk: the peer proxy for another node's API, and the
+//      /api/admin/* gate, which also hands out stream tickets.
+//   3. the general /api/* check, which /api/workflows relies on.
+//   4. pageAllowed: pages opened from another machine.
+//   5. isDashboardOwner: the admin API's `owner` flag, /api/admin/deploy
+//      and reading the workflow editor.
+//   6. wallOwner: the Wall page's owner view (Settings).
+// Stream tickets (streamTicketOk) are signed with the token and handed out
+// only past gate 2, so they are not a gate of their own.
+// Each asks ownerCredential, the one place a signed-in owner browser
+// (ax_person) is read. A member's or a client's session is never the owner.
+
+/** A browser the owner signed in by link and confirmed on the home machine
+ *  (members/signin.ts ownerAccess): its session is live, and the person's
+ *  role on the people list, read again now, is still owner. Never for a
+ *  request another site started: the cookie is SameSite=Lax. */
+const ownerPersonSeen = new WeakMap<IncomingMessage, boolean>()
+function ownerPerson(req: IncomingMessage, ctx: Ctx): boolean {
+  const seen = ownerPersonSeen.get(req)
+  if (seen !== undefined) return seen
+  let value = ""
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const i = part.indexOf("=")
+    if (i > 0 && part.slice(0, i).trim() === PERSON_COOKIE) value = part.slice(i + 1).trim()
+  }
+  const root = process.cwd()
+  const ok = !!value && classifyBrowserRequest(req.headers) !== "foreign" && ownerAccess(value, {
+    sessions: new PersonSessionStore(root), members: membersStore(ctx.config.members.logRetentionDays),
+    people: () => currentPeople(ctx.config.people), root,
+  })
+  ownerPersonSeen.set(req, ok)
+  return ok
 }
 
-/** The owner, for a Wall write (#1454): the dashboard token, its session
- *  cookie or a dashboard:write key. With no token set, only a caller on
- *  this machine: a board bound off loopback without one reads, never writes. */
+/** The owner's credential: dashboard.token, its ax_session cookie, a stored
+ *  token with dashboard:write, or a confirmed owner browser (ownerPerson). */
+function ownerCredential(req: IncomingMessage, ctx: Ctx): boolean {
+  if (ctx.token) {
+    const authHeader = req.headers.authorization || ""
+    const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+    if (got === ctx.token || hasSession(req, ctx.token)) return true
+    const rec = got ? new TokenStore().verify(got) : null
+    if (rec && recordHasScope(rec, "dashboard:write")) return true
+  }
+  return ownerPerson(req, ctx)
+}
+
+/** Is this request the owner's? With dashboard.token set: the owner's
+ *  credential. Without one: a caller on this machine, or a confirmed owner
+ *  browser; never anyone else from off the box. */
+function ownerRequest(req: IncomingMessage, ctx: Ctx): boolean {
+  return ctx.token ? ownerCredential(req, ctx) : (!isOffBox(req) || ownerPerson(req, ctx))
+}
+
+/** The owner's credential when dashboard.token is set; open without one,
+ *  as before #1478 (the /api/admin reads of a token-less board). */
+function adminTokenOk(req: IncomingMessage, ctx: Ctx): boolean {
+  return !ctx.token || ownerCredential(req, ctx)
+}
+
+/** The owner, for a Wall write (#1454): with no token set, only a caller on
+ *  this machine or a confirmed owner browser: a board bound off loopback
+ *  without one reads, never writes. */
 function wallOwnerOk(req: IncomingMessage, ctx: Ctx): boolean {
-  return adminTokenOk(req, ctx) && (!!ctx.token || !isOffBox(req))
+  return ownerRequest(req, ctx)
 }
 
 const STREAM_TICKET_PATH = "/api/admin/stream-ticket"
@@ -3357,14 +3405,14 @@ function streamTicketOk(req: IncomingMessage, ctx: Ctx, method: string, path: st
  *  a signed-in session, or a dashboard:write key. Without one: a caller on
  *  this computer, never one from off the box. */
 function isDashboardOwner(req: IncomingMessage, ctx: Ctx): boolean {
-  return ctx.token ? adminTokenOk(req, ctx) : !isOffBox(req)
+  return ownerRequest(req, ctx)
 }
 
 /** A page that carries AX_LOCAL_TOKEN (#1306). Off-box, a caller that has not
  *  signed in goes to /login; one that has gets the page without the token
  *  (pageToken), and its session cookie carries the page's API calls. */
 function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: string): boolean {
-  if (ctx.token && isOffBox(req) && !adminTokenOk(req, ctx)) {
+  if (ctx.token && isOffBox(req) && !ownerCredential(req, ctx)) {
     redirectToLogin(res, path)
     return false
   }
@@ -3377,7 +3425,7 @@ function pageAllowed(req: IncomingMessage, res: ServerResponse, ctx: Ctx, path: 
  *  accepts; with none, only a caller on this machine, since writes from
  *  off the box are refused and every save would fail. */
 function wallOwner(req: IncomingMessage, ctx: Ctx): boolean {
-  return ctx.token ? (!!pageToken(req, ctx.token) || adminTokenOk(req, ctx)) : !isOffBox(req)
+  return ctx.token ? (!!pageToken(req, ctx.token) || ownerCredential(req, ctx)) : ownerRequest(req, ctx)
 }
 
 function wallPageOpts(req: IncomingMessage, ctx: Ctx) {

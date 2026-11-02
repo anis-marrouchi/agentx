@@ -7,12 +7,12 @@ import type { Person } from "@/people/people"
 // --- Personal sessions on the Wall: the ax_person cookie (#1478, slice 1) ---
 //
 // A person who signs in (by an email link, slice 3) gets a session of their
-// own, not the owner's ax_session. Its cookie is ax_person, and no owner
-// gate in board-dashboard.ts reads it: wallOwnerOk, adminTokenOk (admin API
-// and peer proxy), the general /api check, pageAllowed, isDashboardOwner
-// and wallOwner all look at the dashboard token, its ax_session cookie or a
-// dashboard:write key only. So a member's session can never pass as the
-// owner, even if one gate is missed (notes/design/wall-sign-in.md, Decision 1).
+// own, not the owner's ax_session. Its cookie is ax_person. The owner gates
+// in board-dashboard.ts take it only through ownerCredential, and only for
+// a session started as the owner (`role: "owner"`), confirmed on the home
+// machine, of a person whose role is still owner (signin.ts ownerAccess).
+// A member's or a client's session passes no owner gate
+// (notes/design/wall-sign-in.md, Decision 1).
 //
 // The cookie holds 32 random bytes. This file keeps only their sha256, with
 // the person, when the session started and was last used, and a short label
@@ -48,6 +48,13 @@ export interface PersonSession {
   /** The provider account a waiting first sign-in came with (#1675): kept
    *  for the person only on the owner's yes. */
   account?: SignInAccount
+  /** Started as the owner (#1478): the only kind of session that can carry
+   *  owner rights, once confirmed on the home machine. A member's session
+   *  never turns into one when their role changes. */
+  role?: "owner"
+  /** When a yes for this owner browser was found given away from the home
+   *  machine: it does not count, and the browser keeps waiting. */
+  offBoxYes?: string
 }
 
 interface SessionsFile { sessions: PersonSession[] }
@@ -62,7 +69,7 @@ export class PersonSessionStore {
   }
 
   /** A new session for `personId`. The value goes in the cookie, once; only its hash is kept. */
-  create(personId: string, label: string, extra: Pick<PersonSession, "state" | "cardId" | "approvedAt" | "account"> = {}): { session: PersonSession; value: string } {
+  create(personId: string, label: string, extra: Pick<PersonSession, "state" | "cardId" | "approvedAt" | "account" | "role"> = {}): { session: PersonSession; value: string } {
     const value = randomBytes(32).toString("base64url")
     const at = new Date(this.now()).toISOString()
     const session: PersonSession = { id: randomBytes(8).toString("hex"), hash: sha256(value), personId, label, startedAt: at, lastUsedAt: at, ...extra }
@@ -96,6 +103,17 @@ export class PersonSessionStore {
     session.approvedAt = new Date(this.now()).toISOString()
     this.save(data)
     return session
+  }
+
+  /** A yes for this waiting owner browser came from away from the home
+   *  machine. Recorded once, so the logs say it once. */
+  noteOffBoxYes(id: string): boolean {
+    const data = this.load()
+    const session = data.sessions.find((s) => s.id === id)
+    if (!session || session.endedAt || session.offBoxYes) return false
+    session.offBoxYes = new Date(this.now()).toISOString()
+    this.save(data)
+    return true
   }
 
   /** The person a cookie value belongs to, when its session is live and the

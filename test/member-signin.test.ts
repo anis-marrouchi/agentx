@@ -55,14 +55,15 @@ beforeEach(async () => {
     { id: "gus", name: "Gus", role: "guest", identities: ["email:gus@example.com"] },
   ]
   const limiter = new PairAttemptLimiter()
-  const perAddress = new SendLimiter(5, 3600_000, now)
+  const perRequester = new SendLimiter(5, 3600_000, now)
+  const perAddress = new SendLimiter(20, 3600_000, now)
   const perClient = new SendLimiter(20, 3600_000, now)
   server = createServer(async (req, res) => {
     const path = new URL(req.url || "/", "http://x").pathname
     const handled = await handleMemberRequest(req, res, path, req.method || "GET", {
       tokens, members, pairCodes: new PairCodeStore(dir), pairLimiter: limiter, pairMinMs: 0, root: dir,
       people: () => PEOPLE, log: () => {},
-      signInSetup: () => setup, signInLinks: links, sessions, now, signInPerAddress: perAddress, signInPerClient: perClient,
+      signInSetup: () => setup, signInLinks: links, sessions, now, signInPerRequester: perRequester, signInPerAddress: perAddress, signInPerClient: perClient,
       sendMail: async (_s, mail) => { sent.push(mail); return "<id@test>" },
     })
     if (!handled) { res.writeHead(418); res.end() }
@@ -101,14 +102,24 @@ describe("asking for a link", () => {
     expect(sent[1].text).toContain('"Your project"')
   })
 
-  it("answers an unknown address, the owner and a guest the same, and mails none of them", async () => {
+  it("answers an unknown address and a guest the same, and mails neither", async () => {
     const known = await (await ask("dana@example.com")).json()
-    for (const email of ["nobody@example.com", "boss@example.com", "gus@example.com"]) {
+    for (const email of ["nobody@example.com", "gus@example.com"]) {
       const r = await ask(email)
       expect(r.status).toBe(200)
       expect(await r.json()).toEqual(known)
     }
     expect(sent).toHaveLength(1)
+  })
+
+  it("mails the owner a link too, with the same answer as an unknown address", async () => {
+    const unknown = await (await ask("nobody@example.com")).json()
+    const r = await ask("boss@example.com")
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual(unknown)
+    expect(sent.map((m) => m.to)).toEqual(["boss@example.com"])
+    expect(sent[0].text).toContain("sign in to your Hub as the owner")
+    expect(sent[0].text).toContain("https://studio.example-tailnet.ts.net/member/signin#")
   })
 
   it("sends at most 5 links an hour to one address", async () => {
@@ -117,6 +128,21 @@ describe("asking for a link", () => {
     clock += 3600_000
     await ask("dana@example.com")
     expect(sent).toHaveLength(6)
+  })
+
+  it("a stranger asking for the owner's address cannot use up the owner's links (#1478)", async () => {
+    const from = (ip: string) => post("/api/member/signin-link", { email: "boss@example.com" }, { "X-Forwarded-For": ip })
+    for (let i = 0; i < 7; i++) await from("100.64.0.66")
+    expect(sent).toHaveLength(5)
+    await from("100.64.0.9")
+    expect(sent).toHaveLength(6)
+  })
+
+  it("caps one address at 20 links an hour from everywhere together", async () => {
+    for (let n = 1; n <= 5; n++) {
+      for (let i = 0; i < 5; i++) await post("/api/member/signin-link", { email: "dana@example.com" }, { "X-Forwarded-For": `100.64.0.${n}` })
+    }
+    expect(sent).toHaveLength(20)
   })
 
   it("is closed while the origin or the sender is not set", async () => {
@@ -280,6 +306,84 @@ describe("spending a link", () => {
     expect(r.status).toBe(403)
     expect(r.headers.get("set-cookie")).toBeNull()
     expect(sessions.sessions("dana")).toHaveLength(0)
+  })
+})
+
+describe("the owner signing in by link", () => {
+  async function ownerLink() {
+    await ask("boss@example.com")
+    return codeOf(sent[sent.length - 1])
+  }
+  const cookieOf = (r: Response) => (r.headers.get("set-cookie") || "").split(";")[0]
+  const me = (cookie: string) => fetch(`${base}/api/member/me`, { headers: { cookie } })
+
+  it("waits on the popup card, then lands on the Wall, not /member", async () => {
+    const r = await spend(await ownerLink(), "Boss's laptop")
+    expect(await r.json()).toMatchObject({ person: "boss", state: "pending" })
+    const cookie = cookieOf(r)
+    const [card] = listCards(dir, "pending")
+    expect(card.title).toBe("Boss signed in as the owner from a new browser")
+    expect(card.ask).toContain("Give it full owner rights? A yes counts only in the popup here.")
+    expect(card.popup_only).toBe(true)
+    expect(card.if_silent).toBe("discard")
+    const waiting = await fetch(`${base}/member`, { headers: { cookie }, redirect: "manual" })
+    expect(waiting.status).toBe(202)
+    expect(await waiting.text()).toContain("Confirm this browser on the home machine")
+    expect((await me(cookie)).status).toBe(403)
+    decideCard(dir, card.id, "yes", { by: "operator (popup)", popup: true })
+    const r2 = await me(cookie)
+    expect(r2.status).toBe(200)
+    expect(await r2.json()).toMatchObject({ person: "boss", role: "owner", home: "/" })
+    const page = await fetch(`${base}/member`, { headers: { cookie }, redirect: "manual" })
+    expect(page.status).toBe(302)
+    expect(page.headers.get("location")).toBe("/")
+    // The member's work list is not the owner's page.
+    expect((await fetch(`${base}/api/member/work`, { headers: { cookie } })).status).toBe(404)
+  })
+
+  it("refuses a yes from outside the popup, and the browser keeps waiting", async () => {
+    const cookie = cookieOf(await spend(await ownerLink()))
+    const card = listCards(dir, "pending")[0]
+    expect(decideCard(dir, card.id, "yes", { by: "Boss (phone app)" })).toMatchObject({ ok: false })
+    const r = await me(cookie)
+    expect(r.status).toBe(403)
+    expect(await r.json()).toMatchObject({ waiting: true })
+    const page = await (await fetch(`${base}/member`, { headers: { cookie } })).text()
+    expect(page).toContain("in the popup on the home machine")
+    expect(page).toContain("Confirm this browser on the home machine")
+  })
+
+  it("raises a new card for each new browser, even after a yes, and auto never applies", async () => {
+    setup = { ...SETUP, firstSignIn: "auto" }
+    await spend(await ownerLink())
+    decideCard(dir, listCards(dir, "pending")[0].id, "yes", { by: "operator (popup)", popup: true })
+    const second = await spend(await ownerLink(), "Phone")
+    expect(await second.json()).toMatchObject({ state: "pending" })
+    expect(listCards(dir, "pending")).toHaveLength(1)
+    expect((await me(cookieOf(second))).status).toBe(403)
+  })
+
+  it("ends the browser's session when the owner says no on the card", async () => {
+    const cookie = cookieOf(await spend(await ownerLink()))
+    decideCard(dir, listCards(dir, "pending")[0].id, "no", { by: "operator (popup)", popup: true })
+    expect((await me(cookie)).status).toBe(401)
+  })
+
+  it("fits the owner's card question in 300 characters with the longest values", async () => {
+    const login = `${"a".repeat(68)}@example.com`
+    PEOPLE[2] = { ...PEOPLE[2], name: "N".repeat(80), identities: ["email:boss@example.com", `tailscale:${login}`] }
+    const r = await post("/api/member/signin", { code: await ownerLink(), machine: "M".repeat(80) },
+      { "Tailscale-User-Login": login, "X-Forwarded-For": "ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255" })
+    expect(await r.json()).toMatchObject({ state: "pending" })
+    const [card] = listCards(dir, "pending")
+    expect(card.ask.length).toBeLessThanOrEqual(300)
+    expect(card.title.length).toBeLessThanOrEqual(120)
+  })
+
+  it("is closed for the owner too while sign-in is not set up", async () => {
+    setup = null
+    expect((await ask("boss@example.com")).status).toBe(404)
+    expect(sent).toHaveLength(0)
   })
 })
 

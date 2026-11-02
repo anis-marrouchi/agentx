@@ -68,6 +68,13 @@ export interface DecisionCard extends CardChoices {
    *  record still shows what was originally asked. */
   if_silent_asked?: "approve"
   decided_by?: string
+  /** "popup" when the answer was clicked in the daemon's popup on this
+   *  machine. Unset for every other way in: the dashboard (even opened
+   *  here), the CLI, a phone, a mesh peer or a channel reply (#1478). */
+  decided_from?: "popup"
+  /** A yes counts only from the popup (owner sign-in, #1478): every other
+   *  way in can say no, never yes. Set by the daemon, never from input. */
+  popup_only?: true
   decided_at?: string
   note?: string
   /** The option the operator picked, when the card offered choices. */
@@ -240,6 +247,8 @@ export interface BuildCardOptions {
   /** The peer the card was forwarded from. The daemon sets it after
    *  checking the name against its mesh peers; never taken as sent. */
   node?: string
+  /** Set by the daemon only: see DecisionCard.popup_only. */
+  popupOnly?: boolean
 }
 
 export function buildCard(
@@ -301,6 +310,7 @@ export function buildCard(
       // Set by the daemon only (check-ins), never from what an agent sent.
       ...(opts.origin ? { origin: opts.origin } : {}),
       ...(followup ? { followup: followup as FollowupKind } : {}),
+      ...(opts.popupOnly ? { popup_only: true as const } : {}),
       status: "pending",
     },
   }
@@ -353,16 +363,20 @@ export function createCard(
   return { ok: true, card: saveNewCard(root, built.card) }
 }
 
-/** Record the operator's answer. Refuses anything no longer pending. */
+export const POPUP_ONLY = "this card takes a yes only in the popup on the home machine; here it can only be answered no"
+
+/** Record the operator's answer. Refuses anything no longer pending, and a
+ *  yes on a popup-only card from anywhere but the popup. */
 export function decideCard(
   root: string,
   id: string,
   verdict: Verdict,
-  opts: { by?: string; note?: string; now?: number; choice?: string | number; text?: string } = {},
+  opts: { by?: string; note?: string; now?: number; choice?: string | number; text?: string; popup?: boolean } = {},
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const card = readCard(root, id)
   if (!card) return { ok: false, error: `no card "${id}"` }
   if (card.status !== "pending") return { ok: false, error: `card "${id}" is already ${card.status}` }
+  if (card.popup_only && verdict === "yes" && !opts.popup) return { ok: false, error: POPUP_ONLY }
   const answer = resolveAnswer(card, verdict, opts)
   if (!answer.ok) return answer
   const note = oneLine(opts.note).slice(0, CARD_LIMITS.note)
@@ -371,6 +385,7 @@ export function decideCard(
     status: "decided",
     verdict,
     decided_by: opts.by ?? "operator",
+    ...(opts.popup ? { decided_from: "popup" as const } : {}),
     decided_at: new Date(opts.now ?? Date.now()).toISOString(),
     ...(note ? { note } : {}),
     ...(answer.choice ? { choice: answer.choice } : {}),

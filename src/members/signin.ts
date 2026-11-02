@@ -6,6 +6,7 @@ import { readJson } from "@/daemon/app-fleet"
 import type { MailSenderConfig } from "@/daemon/config"
 import type { OutgoingMail } from "@/channels/email/smtp"
 import { sendSystemMail } from "@/mail/sender"
+import { HUB_NAME } from "@/daemon/ui/hub-name"
 import { createCard, readCard } from "@/approvals/cards"
 import { splitIdentity, type Person } from "@/people/people"
 import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
@@ -23,10 +24,9 @@ import {
 // ax_person cookie), never a member key and never the owner's ax_session.
 // That session opens the person's /member page, as a paired machine does.
 //
-//   who      a member or a client whose people entry has `email:<address>`.
-//            The owner, a guest or an unknown address gets no link, and the
-//            answer is the same either way. The owner's sign-in waits for
-//            its home-machine confirmation (design note, answer 4).
+//   who      a member, a client or the owner whose people entry has
+//            `email:<address>`. A guest or an unknown address gets no link,
+//            and the answer is the same either way.
 //   the link 32 random bytes, once, for 15 minutes; only its hash is kept.
 //            It sits after the # in the mailed address, so it never reaches
 //            a server log, and opening it only shows a Sign in button: a
@@ -36,11 +36,29 @@ import {
 //            machine gets; until the yes, the browser waits. Later sign-ins
 //            go straight in. `wall.signIn.firstSignIn: "auto"` skips the
 //            card for members, never for clients.
+//   owner    every new owner browser raises its own card, whatever was said
+//            before, and `auto` never applies. The card is popup-only: a yes
+//            is taken only in the daemon's popup on the home machine (macOS,
+//            approvals.popup.enabled), where a person has to click it. The
+//            dashboard, even opened on this machine, the CLI, a phone, a
+//            mesh peer and a channel reply can say no, never yes: an ssh
+//            tunnel or an agent looks the same as the owner at a loopback
+//            address. Popup-only stops a remote yes (phone, mesh, channel,
+//            dashboard), not a local process running as the owner: that
+//            can write .agentx/approvals/*.json or the person-sessions file
+//            directly and read dashboard.token. Once confirmed, the session carries full owner rights
+//            at every owner gate of board-dashboard.ts (ownerAccess), for as
+//            long as the person's role is still owner (design note, answer 4).
 
 export const LINK_TTL_MS = 15 * 60 * 1000
 export const LINK_MINUTES = LINK_TTL_MS / 60000
-/** Roles that may sign in by link. */
+/** Roles that may sign in with a provider account (oidc.ts). */
 export const SIGN_IN_ROLES = ["member", "client"]
+/** Roles that may sign in by link: the owner too, each new browser
+ *  confirmed on the home machine. */
+export const LINK_ROLES = [...SIGN_IN_ROLES, "owner"]
+/** Where the owner lands once a browser is confirmed: the Wall. */
+export const OWNER_HOME = "/"
 export const LINK_FAILED = `That link didn't work. A link works once, for ${LINK_MINUTES} minutes. Ask for a new one.`
 export const LINK_ASKED = "If this address may sign in here, a link is on its way. Check your inbox."
 export const NOT_SET_UP = "Signing in by email is not set up here. Ask the person who invited you for a pairing code."
@@ -129,7 +147,11 @@ export interface SignInDeps {
   root: string
   /** Wrong links per network address, the pairing code's lockout. */
   limiter: PairAttemptLimiter
-  /** Links per address, and per network address, an hour (design note §3). */
+  /** Links an hour (design note §3): per address from one network address,
+   *  per address from anywhere (a higher ceiling), and per network address.
+   *  Keyed by requester first, so a stranger asking for the owner's address
+   *  cannot use up the owner's own links (#1478). */
+  perRequester: SendLimiter
   perAddress: SendLimiter
   perClient: SendLimiter
   /** Null while `wall.signIn.origin` or `mail.sender` is unset. */
@@ -152,7 +174,7 @@ export function signInMail(p: { person: Pick<Person, "name" | "role">; email: st
     text: [
       `Hi ${p.person.name},`,
       ``,
-      `Open this link to sign in to "${pageFor(p.person.role)}":`,
+      p.person.role === "owner" ? `Open this link to sign in to your ${HUB_NAME} as the owner:` : `Open this link to sign in to "${pageFor(p.person.role)}":`,
       ``,
       `${p.origin.replace(/\/+$/, "")}/member/signin#${p.code}`,
       ``,
@@ -182,10 +204,10 @@ export async function askSignInLink(req: IncomingMessage, deps: SignInDeps): Pro
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: "Type your email address." } }
 
   const person = personByEmail(deps.people(), email)
-  if (!person || !SIGN_IN_ROLES.includes(person.role)) {
+  if (!person || !LINK_ROLES.includes(person.role)) {
     // The typed address is not logged: it may belong to nobody here.
     log(`[member] sign-in link asked from ${client}: no link (${person ? `role ${person.role}` : "unknown address"})`)
-  } else if (!deps.perAddress.take(email)) {
+  } else if (!deps.perRequester.take(`${client} ${email}`) || !deps.perAddress.take(email)) {
     deps.members.log({ person: person.id, event: "refused", address: client, detail: "sign-in link: too many this hour" })
     log(`[member] sign-in link for ${person.id} not sent: too many this hour`)
   } else {
@@ -228,7 +250,7 @@ export async function signInWithLink(req: IncomingMessage, deps: SignInDeps): Pr
   const link = deps.links.spend(code)
   // Checked again now: the address must still be this person's, in a role that signs in.
   const found = link ? personByEmail(deps.people(), link.email) : null
-  const person = found && found.id === link!.personId && SIGN_IN_ROLES.includes(found.role) ? found : null
+  const person = found && found.id === link!.personId && LINK_ROLES.includes(found.role) ? found : null
   await padTo(started, deps.minMs ?? MIN_MS)
   if (!person) {
     deps.limiter.fail(client)
@@ -269,9 +291,11 @@ export function openSession(
 
   // Let in before, or a member under `auto`: straight in. A yes on an
   // earlier card counts even if that browser has not called back yet.
+  // Never for the owner: each new owner browser waits for its own card.
+  const owner = person.role === "owner"
   const auto = person.role === "member" && setup.firstSignIn === "auto"
   settlePending(person, deps)
-  if (deps.sessions.approved(person.id) || auto) {
+  if (!owner && (deps.sessions.approved(person.id) || auto)) {
     const { session, value } = deps.sessions.create(person.id, name, { approvedAt: at })
     if (how.account) accountsOf(deps).keepFirst(person.id, how.account)
     deps.members.log({ person: person.id, event: "signed-in", address: client, detail: `${name} (${how.via}${auto ? ", auto" : ""})` })
@@ -282,38 +306,65 @@ export function openSession(
   // The first sign-in: the owner's card. The name is in the title, so the
   // question stays under its 300 characters: at most 45 + 80 + 60 + 85.
   const who = person.name.slice(0, 60)
-  const card = createCard(deps.root, {
+  const from = `From ${client}, ${login ? `network login ${login}` : "no network login reported"}.`
+  const card = createCard(deps.root, owner ? {
+    title: `${who} signed in as the owner from a new browser`,
+    ask: `${from} Browser: "${name}". Give it full owner rights? A yes counts only in the popup here.`,
+    recommend: `Signed in with ${how.proof}. Yes only if it is you: the yes is taken only in the popup on the home machine. No if it is not you.`,
+    if_silent: "discard",
+    raised_by: PAIRING_CARD_BY,
+  } : {
     title: `${who} signed in for the first time`,
-    ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Browser name, as typed there: "${name}". Let them see their own work?`,
+    ask: `${from} Browser name, as typed there: "${name}". Let them see their own work?`,
     recommend: `Signed in with ${how.proof}. Yes if you expected it. No if you did not.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,
-  }, { now: now() })
+  }, { now: now(), popupOnly: owner })
   if (!card.ok) {
     deps.members.log({ person: person.id, event: "refused", address: client, detail: card.error })
     log(`[member] ${person.id}: sign-in from ${client} refused: ${card.error}`)
     return { status: 503, body: { error: TOO_MANY_WAITING } }
   }
-  const { session, value } = deps.sessions.create(person.id, name, { state: "pending", cardId: card.card.id, account: how.account })
-  deps.members.log({ person: person.id, event: "paired", address: client, detail: `${name} (${how.via}, first sign-in)` })
-  log(`[member] ${person.id} signed in by ${how.via} for the first time on "${name}" from ${client}; waiting for the owner (card ${card.card.id}, session ${session.id})`)
+  const { session, value } = deps.sessions.create(person.id, name, { state: "pending", cardId: card.card.id, account: how.account, ...(owner ? { role: "owner" as const } : {}) })
+  deps.members.log({ person: person.id, event: "paired", address: client, detail: `${name} (${how.via}, ${owner ? "new owner browser" : "first sign-in"})` })
+  log(owner
+    ? `[member] ${person.id} signed in as the owner by ${how.via} on a new browser "${name}" from ${client}; waiting for a yes on the home machine (card ${card.card.id}, session ${session.id})`
+    : `[member] ${person.id} signed in by ${how.via} for the first time on "${name}" from ${client}; waiting for the owner (card ${card.card.id}, session ${session.id})`)
   return { status: 200, body: { person: person.id, name, state: "pending" }, value }
 }
 
 export type PersonAccess =
   | { ok: true; session: PersonSession; person: Person }
-  | { ok: false; waiting: boolean }
+  /** `owner`: an owner browser waiting for the home machine; `elsewhere`:
+   *  its yes was given away from the home machine and does not count. */
+  | { ok: false; waiting: boolean; owner?: boolean; elsewhere?: boolean }
 
-/** Whether an ax_person cookie value opens the member page right now. Reads
- *  the owner's answer on a first sign-in's card the first time it is there. */
-export function personAccess(value: string | null, deps: Pick<SignInDeps, "sessions" | "members" | "people" | "root" | "log" | "accounts">): PersonAccess {
+type AccessDeps = Pick<SignInDeps, "sessions" | "members" | "people" | "root" | "log" | "accounts">
+
+/** Whether an ax_person cookie value is let in right now. Reads the owner's
+ *  answer on a first sign-in's card the first time it is there. The person's
+ *  role is the one on the people list now, read again on each call. */
+export function personAccess(value: string | null, deps: AccessDeps): PersonAccess {
   const found = value ? deps.sessions.verify(value, deps.people()) : null
-  if (!found || !SIGN_IN_ROLES.includes(found.person.role)) return { ok: false, waiting: false }
+  if (!found || !LINK_ROLES.includes(found.person.role)) return { ok: false, waiting: false }
   const { session, person } = found
+  const owner = person.role === "owner"
+  // A session started as a member or a client never becomes the owner's.
+  if (owner && session.role !== "owner") return { ok: false, waiting: false }
   if (session.state !== "pending") return { ok: true, session, person }
   const settled = settle(session, person, deps)
-  if (settled === "yes") return { ok: true, session: { ...session, state: undefined }, person }
-  return { ok: false, waiting: settled === null }
+  if (settled === "yes") return { ok: true, session: { ...session, state: undefined, approvedAt: session.approvedAt ?? new Date().toISOString() }, person }
+  return { ok: false, waiting: settled === null || settled === "elsewhere", ...(owner ? { owner } : {}), ...(settled === "elsewhere" ? { elsewhere: true } : {}) }
+}
+
+/** Whether an ax_person cookie value carries owner rights right now: a
+ *  session started as the owner, confirmed on the home machine, not ended,
+ *  of a person whose role on the people list is still owner. Every owner
+ *  gate of board-dashboard.ts asks this through ownerCredential. */
+export function ownerAccess(value: string | null, deps: AccessDeps): boolean {
+  if (!value) return false
+  const access = personAccess(value, deps)
+  return access.ok && access.person.role === "owner" && access.session.role === "owner" && !!access.session.approvedAt
 }
 
 /** Applies the owner's answers on this person's waiting sessions. Before a
@@ -322,11 +373,22 @@ export function settlePending(person: Person, deps: Pick<SignInDeps, "sessions" 
   for (const s of deps.sessions.sessions(person.id)) if (s.state === "pending" && !s.endedAt) settle(s, person, deps)
 }
 
-/** Applies the owner's answer on a waiting session's card, once it is there. */
-function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log" | "accounts">): "yes" | "no" | null {
+/** Applies the owner's answer on a waiting session's card, once it is there.
+ *  "elsewhere": a yes for an owner browser, given away from the home machine. */
+function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "sessions" | "members" | "root" | "log" | "accounts">): "yes" | "no" | "elsewhere" | null {
   const log = deps.log ?? ((line: string) => console.log(line))
   const card = session.cardId ? readCard(deps.root, session.cardId) : null
   const answer = cardAnswer(card)
+  // An owner browser takes only a yes clicked in the popup. decideCard
+  // already refuses any other yes on its card; this is the second lock.
+  if (answer === "yes" && (session.role === "owner" || person.role === "owner") && card?.decided_from !== "popup") {
+    if (deps.sessions.noteOffBoxYes(session.id)) {
+      const reason = `the yes came from away from the home machine${card?.decided_by ? ` (${card.decided_by})` : ""}; confirm this browser on the home machine`
+      deps.members.log({ person: person.id, event: "refused", detail: `${session.label}: ${reason}` })
+      log(`[member] ${person.id}: owner browser "${session.label}" not let in: ${reason}`)
+    }
+    return "elsewhere"
+  }
   // A yes for a second provider account, after another was kept for this
   // person (two cards waiting, both answered yes), lets nobody in.
   const kept = answer === "yes" && session.account ? accountsOf(deps).get(person.id, session.account.issuer) : null
@@ -339,8 +401,9 @@ function settle(session: PersonSession, person: Person, deps: Pick<SignInDeps, "
   }
   if (answer === "yes") {
     if (deps.sessions.approve(session.id) && session.account) accountsOf(deps).keepFirst(person.id, session.account)
-    deps.members.log({ person: person.id, event: "approved", detail: `${session.label} (email link)${card?.decided_by ? `, by ${card.decided_by}` : ""}` })
-    log(`[member] ${person.id}: first sign-in on "${session.label}" approved`)
+    const owner = session.role === "owner"
+    deps.members.log({ person: person.id, event: "approved", detail: `${session.label} (email link${owner ? ", owner, on the home machine" : ""})${card?.decided_by ? `, by ${card.decided_by}` : ""}` })
+    log(`[member] ${person.id}: ${owner ? "owner browser" : "first sign-in on"} "${session.label}" approved${owner ? " on the home machine: full owner rights" : ""}`)
   } else if (answer === "no") {
     const reason = card?.status === "expired" ? "the owner did not answer in time" : "the owner said no"
     deps.sessions.end(person.id, session.id, reason)
