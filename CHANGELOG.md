@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.206.0](https://github.com/anis-marrouchi/agentx/compare/v0.205.0...v0.206.0) (2026-11-02)
+
+
+### Features
+
+* **members:** the owner signs in by email link, confirmed on the home machine ([#1730](https://github.com/anis-marrouchi/agentx/issues/1730)) ([7f55527](https://github.com/anis-marrouchi/agentx/commit/7f5552781e91952b74efc9f6953e6721c7388cf4))
+
+
+### Bug Fixes
+
+* **release:** merging a release PR closes no issue ([#1734](https://github.com/anis-marrouchi/agentx/issues/1734)) ([29810c8](https://github.com/anis-marrouchi/agentx/commit/29810c89ff4796d8dc0ad78b6f2952e2935d0af7)), closes [#1731](https://github.com/anis-marrouchi/agentx/issues/1731)
+
 ## [0.205.0](https://github.com/anis-marrouchi/agentx/compare/v0.204.0...v0.205.0) (2026-11-02)
 
 
