@@ -172,6 +172,8 @@ AgentX tells the two apart by the tool's name. A name whose first action word re
 
 If nobody answers within 3 minutes, the call does not run and the card closes. A late yes on a closed card is refused. The agent is told the call was stopped and is asked not to try another way.
 
+This means write tools only work while you are around to answer. If nobody is watching Approvals, every write is stopped after 3 minutes. Plan write tasks for times when you can answer, or move a tool that only reads to `readTools`.
+
 If a tool only reads but its name does not show it (for example `SUMMARIZE_WEEK`), add it to `readTools` so it runs without a card:
 
 ```json
