@@ -987,7 +987,9 @@ export class GitLabAdapter implements ChannelAdapter {
           assigneesAdded: issueAssigneesAdded,
           labelsAdded: issueLabelsAdded,
           usernameToAgent: Object.fromEntries(this.usernameToAgent.entries()),
-          agentMappings: this.config.agentMappings || [],
+          // Without tokens: a workflow on this hook stores its context in run
+          // files, and the run API returns it.
+          agentMappings: (this.config.agentMappings || []).map(({ token: _token, ...mapping }) => mapping),
           defaultAgentId: defaultAgentId || null,
         })
         if (result.blocked) {

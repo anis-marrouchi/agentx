@@ -4,6 +4,7 @@ import { parseResultToken, resolveHandler } from "./nodes/handlers"
 import { deliver, messageKey, nextWakeAt, nudgeText, renderPersonMessage, stepVerdict } from "./nodes/follow-up"
 import { DEFAULT_FOLLOW_UP, type AgentExecuteRequest, type AgentExecuteResponse, type FollowUpDefaults, type NodeResult, type OwnerPort } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
+import { stripSecrets } from "./strip-secrets"
 import type { WorkflowStore } from "./store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
@@ -370,7 +371,7 @@ export class WorkflowDispatcher {
       chat: args.trigger?.chat,
       labels: args.trigger?.labels,
     }
-    return this.dispatchOne(wf, args.entityRef, args.event, effective)
+    return this.dispatchOne(wf, args.entityRef, stripSecrets(args.event), effective)
   }
 
   /** Fire 👀 + start the typing loop for a channel-triggered run, mirroring
@@ -437,13 +438,15 @@ export class WorkflowDispatcher {
      *  back through the mesh (no echo loops). */
     fromRemote?: { peer: string }
   }): Promise<{ claimed: Workflow[]; runs: WorkflowRun[] }> {
+    // Runs and mesh peers both get this event: no credential goes to either.
+    const event = stripSecrets(args.event)
     const matches = this.matchByTrigger(args.trigger, args.fromRemote)
     const willFan = matches.some((m) => m.fanOut)
     const toRun = willFan ? matches : matches.slice(0, 1)
     const claimed: Workflow[] = []
     const runs: WorkflowRun[] = []
     for (const wf of toRun) {
-      const r = await this.dispatchOne(wf, args.entityRef, args.event, args.trigger)
+      const r = await this.dispatchOne(wf, args.entityRef, event, args.trigger)
       if (r.claimed) claimed.push(wf)
       if (r.run) runs.push(r.run)
     }
@@ -460,7 +463,7 @@ export class WorkflowDispatcher {
       void Promise.resolve(this.forwarder.broadcastTrigger({
         trigger: args.trigger,
         entityRef: args.entityRef,
-        event: args.event,
+        event,
       })).catch((e: any) => this.log(`[mesh-broadcast] ${e?.message ?? e}`))
     }
 
