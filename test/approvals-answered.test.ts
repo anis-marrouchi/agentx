@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { appendFileSync, mkdtempSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { resolveCard, saveCard, type DecisionCard } from "../src/approvals/cards"
+import { readCard, resolveCard, saveCard, type DecisionCard } from "../src/approvals/cards"
 import { decide } from "../src/approvals/inbox"
+import { approvals } from "../src/commands/approvals"
 import { answeredSince, readAnswered, recordAnswered } from "../src/approvals/answered"
 import { handleApprovalsPanelApi } from "../src/daemon/approvals-panel"
 
@@ -33,6 +34,37 @@ describe("answered list (#1440)", () => {
     const list = readAnswered(root)
     expect(list.map((i) => [i.key, i.answer])).toEqual([["card:c", "no"], ["card:a", "yes"]])
     expect(list[1]).toMatchObject({ title: "Card a", kind: "card", raised_by: "quill", choice: "Tuesday", by: "operator (dashboard)" })
+  })
+
+  describe("through `agentx approvals`", () => {
+    const home = process.cwd()
+    afterEach(() => {
+      process.chdir(home)
+      vi.unstubAllEnvs()
+      vi.restoreAllMocks()
+    })
+
+    const answerByCli = async (agentId: string): Promise<{ root: string }> => {
+      const root = fresh()
+      saveCard(root, card("a"))
+      vi.stubEnv("AGENTX_ROOT", root)
+      vi.stubEnv("AGENTX_AGENT_ID", agentId)
+      vi.spyOn(console, "log").mockImplementation(() => {})
+      await approvals.parseAsync(["approve", "card:a"], { from: "user" })
+      return { root }
+    }
+
+    it("records the agent that ran it", async () => {
+      const { root } = await answerByCli("alpha")
+      expect(readCard(root, "a")).toMatchObject({ verdict: "yes", decided_by: "alpha" })
+      expect(readAnswered(root)[0]).toMatchObject({ key: "card:a", by: "alpha" })
+    })
+
+    it("records the operator when no agent ran it", async () => {
+      const { root } = await answerByCli("")
+      expect(readCard(root, "a")).toMatchObject({ verdict: "yes", decided_by: "operator" })
+      expect(readAnswered(root)[0]).toMatchObject({ key: "card:a", by: "operator" })
+    })
   })
 
   it("caps free text at 200 characters", async () => {

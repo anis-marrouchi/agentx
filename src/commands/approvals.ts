@@ -106,7 +106,7 @@ async function answer(key: string, action: InboxAction, opts: { force?: boolean;
   if (asker && key.startsWith("agent:")) {
     console.error(chalk.red(`  Only the owner decides on a new agent; agent "${asker}" asked.`)); process.exitCode = 1; return
   }
-  const r = await decide(ctx(), key, action, { force: opts.force, note: opts.note, laterHours: hours, choice: opts.choice, text: opts.text })
+  const r = await decide(ctx(), key, action, { force: opts.force, note: opts.note, laterHours: hours, choice: opts.choice, text: opts.text, by: asker })
   if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
   console.log(chalk.green(`  ✓ ${r.message}`))
 }
