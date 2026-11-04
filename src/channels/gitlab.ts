@@ -544,15 +544,6 @@ export class GitLabAdapter implements ChannelAdapter {
     }
 
     const token = agentToken || this.config.token
-    if (!agentToken && msg.agentId) {
-      // Global-token fallback. The note will appear in GitLab as authored
-      // by the global bot user (devops-acme), not the requesting agent.
-      // Mark in journalctl (not just debug.webhook) so operators can spot
-      // misattribution without flipping AGENTX_WEBHOOK_DEBUG.
-      this.log(`[gitlab/identity] note from "${msg.agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — agent has no per-agent token`)
-    } else if (!agentToken) {
-      this.log(`[gitlab/identity] note on ${msg.chatId} using GLOBAL token (${this.botUsername || "shared bot"}) — no agent id on the request`)
-    }
     debug.webhook("gitlab", "send", `agentId="${msg.agentId}" token=${agentToken ? "per-agent" : "GLOBAL(" + this.botUsername + ")"}`)
 
     try {
@@ -572,6 +563,13 @@ export class GitLabAdapter implements ChannelAdapter {
       const data = await res.json() as any
       const noteId = String(data.id || "")
       if (noteId) this.sentNoteIds.add(noteId)
+      if (!agentToken) {
+        // Global-token fallback. The note will appear in GitLab as authored
+        // by the global bot user (devops-acme), not the requesting agent.
+        // Mark in journalctl (not just debug.webhook) so operators can count
+        // misattribution without an API scan: agent, project and note.
+        this.log(`[gitlab/identity] note from "${msg.agentId || "unknown"}" using GLOBAL token (${this.botUsername || "shared bot"}) on ${project} ${noteableType}/${iid} note ${noteId || "?"} — ${msg.agentId ? "agent has no per-agent token" : "no agent id on the request"}`)
+      }
       return noteId
     } catch (e: any) {
       throw this.networkFailure("note", e, agentToken, msg.agentId)
@@ -605,6 +603,9 @@ export class GitLabAdapter implements ChannelAdapter {
     }
     const token = target.token || this.config.token
     if (!token) return false
+    if (!target.token) {
+      this.log(`[gitlab/identity] edit from "${agentId || "unknown"}" using GLOBAL token (${this.botUsername || "shared bot"}) on ${project} ${kind}/${iid} note ${noteId} — ${agentId ? "agent has no per-agent token" : "no agent id on the request"}`)
+    }
     try {
       const res = await fetch(`${this.config.host}/api/v4/projects/${encodeURIComponent(project)}/${kind}/${iid}/notes/${noteId}`, {
         method: "PUT",

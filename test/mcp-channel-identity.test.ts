@@ -100,7 +100,34 @@ describe("GitLab global token with no agent named", () => {
   it("logs a note posted with no agent id", async () => {
     const logs: string[] = []
     await adapter(logs).send({ channel: "gitlab", chatId: "acme/shop:issue:7", text: "hi" })
-    expect(logs.filter((l) => l.includes("[gitlab/identity]") && l.includes("no agent id"))).toHaveLength(1)
+    expect(logs.filter((l) => l.includes("[gitlab/identity]"))).toEqual([
+      expect.stringMatching(/note from "unknown" using GLOBAL token .* on acme\/shop issue\/7 note 5 — no agent id/),
+    ])
+  })
+
+  // The signature can name an agent the request did not: markBody keeps one
+  // the caller typed, so the log says what the request carried.
+  it("logs unknown when the text carries a typed signature and no agent id", async () => {
+    const logs: string[] = []
+    await adapter(logs).send({ channel: "gitlab", chatId: "acme/shop:issue:7", text: "hi\n\n<!-- agentx:pm-acme -->" })
+    expect(logs.filter((l) => l.includes("[gitlab/identity]"))).toEqual([
+      expect.stringContaining('note from "unknown"'),
+    ])
+  })
+
+  it("logs an edit with the global token", async () => {
+    const logs: string[] = []
+    await adapter(logs).editComment("acme/shop:issue:7", "9", "hi")
+    expect(logs.filter((l) => l.includes("[gitlab/identity]"))).toEqual([
+      expect.stringMatching(/edit from "unknown" using GLOBAL token .* on acme\/shop issues\/7 note 9 — no agent id/),
+    ])
+  })
+
+  it("logs nothing about the token when the post fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("no", { status: 403 })))
+    const logs: string[] = []
+    await expect(adapter(logs).send({ channel: "gitlab", chatId: "acme/shop:issue:7", text: "hi" })).rejects.toThrow()
+    expect(logs.filter((l) => l.includes("[gitlab/identity]"))).toEqual([])
   })
 
   it("logs a label change with no agent id", async () => {
@@ -109,9 +136,11 @@ describe("GitLab global token with no agent named", () => {
     expect(logs.filter((l) => l.includes("[gitlab/identity]") && l.includes("no agent id"))).toHaveLength(1)
   })
 
-  it("keeps the existing line when an agent without a token posts", async () => {
+  it("names the agent, project and note when an agent without a token posts", async () => {
     const logs: string[] = []
     await adapter(logs).send({ channel: "gitlab", chatId: "acme/shop:issue:7", text: "hi", agentId: "pm-acme" })
-    expect(logs.filter((l) => l.includes("[gitlab/identity]"))).toEqual([expect.stringContaining('note from "pm-acme"')])
+    expect(logs.filter((l) => l.includes("[gitlab/identity]"))).toEqual([
+      expect.stringMatching(/note from "pm-acme" using GLOBAL token .* on acme\/shop issue\/7 note 5 — agent has no per-agent token/),
+    ])
   })
 })
