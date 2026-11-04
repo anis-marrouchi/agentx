@@ -12,6 +12,8 @@ When **you** started the conversation, your agent does not keep you waiting whil
 
 If the helper fails, takes too long, or the machine restarts while it works, your agent still gets a message saying so, and tells you. You never have to ask "is it done yet?".
 
+When your agent asked several helpers at once, their answers come back together as one message. Your agent then sends you one update instead of one per helper. An answer waits up to two minutes for the other helpers still working; after that it comes back without them, and theirs follow later.
+
 Work that an agent started on its own, such as a schedule or a workflow, does not change: the agent waits for the helper's answer, as before.
 
 ## Which chats this applies to
@@ -33,7 +35,7 @@ The update needs a way back to you:
 
 ## Settings
 
-Both settings live under `mesh.delegation` in `agentx.json`. They apply to helpers on the same machine too, even with the mesh turned off.
+These settings live under `mesh.delegation` in `agentx.json`. They apply to helpers on the same machine too, even with the mesh turned off.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -41,6 +43,7 @@ Both settings live under `mesh.delegation` in `agentx.json`. They apply to helpe
 | `mesh.delegation.timeoutMinutes` | `30` | How long a helper has to answer. After this, your agent is told it timed out, and a helper on this machine is stopped. |
 | `mesh.delegation.requeueRelayOnRestart` | `true` | If AgentX restarts while your agent is passing a helper's answer on to you, your agent tries once more after the restart. Turn it off (`false`) to skip that second try. |
 | `mesh.delegation.callbackSends` | `true` | When one agent sends another a message and no person is waiting, the answer, a failure or a timeout still comes back to the sending agent, in the chat it sent from. Turn it off (`false`) to only queue such messages, as in older versions. |
+| `mesh.delegation.coalesceSeconds` | `120` | How long a helper's answer waits for the other helpers your agent asked from the same chat, so they all come back as one message. From 0 to 900. With `0`, only answers that are already in are joined. |
 
 To change one:
 
@@ -116,7 +119,7 @@ When a follow-up about the same work goes to an agent as a new message, the agen
 - A link and a reference to the same issue count as the same home: `https://git.example.com/team/app/-/issues/12` and `team/app#12` match. A merge request (`team/app!12`) is a different home from the issue with the same number.
 - When a run of an agent starts while another run of the same agent, in another chat, works on the same issue, the new run is told so in a first line that starts with `[agentx:same-home]`. It names the other run's chat and start time, and asks the agent to coordinate rather than redo or overwrite that work. The issue is taken from `home`, or from issue and merge request links and `group/project#12` references in the message. A bare `#12` is not used, because it names different work in every project.
 
-Without `home`, each message starts its own session, as before.
+Without `home`, the chat the message is sent from counts as its home, with a shorter window. When the same agent asks the same helper on this machine again from the same chat, and the helper's last run from that chat ended in the last 2 hours, the helper continues that run's session instead of starting a new one. The daemon log shows `continues its session from <channel>:<chat>`. Such a message never waits: if the helper's last run from that chat is still going, the new one starts a fresh session beside it.
 
 ### When the helper's run ends before the work does
 
@@ -156,6 +159,7 @@ Some requests are refused straight away with status `409`:
 - **`/send` answers `"is not in a2a chat"`:** the `agentId` you sent is not one of the two agents in the `chatId`. Send as the agent the chat belongs to, or use `POST /send/agent`.
 - **A queued `[send/agent] snd-…` line ends in `slot wait timed out after 360m`:** the other agent was busy for 6 hours straight, so the message was not run. Raise that agent's `maxConcurrent`, or look for a run that is stuck, then send the message again.
 - **`agentx_send_agent` says "could not be reached":** the daemon on this machine is not running. Start it with `agentx daemon start --detach`, then send again.
+- **Updates from several helpers arrive one by one:** each answer waits only `mesh.delegation.coalesceSeconds` (two minutes by default) for the others. A helper that takes longer sends its answer later, in a second update. Raise the setting if your helpers usually finish further apart.
 - **The status list is empty:** only delegations since the last restart are listed, and only on the machine that runs the asking agent.
 - **A follow-up started a new session anyway:** check that both messages named the same `home`, and went to an agent on the same machine. After a restart, or 12 hours after the last run ended, a new session starts. The daemon log line `is on … continues its session` shows when a session was continued. The line `a run on … is still going; starting a fresh session instead` means the earlier run outlasted the wait. Send the message after the earlier run ends. Raising `mesh.delegation.timeoutMinutes` (for a send, the agent's `maxExecutionMinutes`) rarely helps, because the earlier run usually has the same limit and started first.
 - **Two runs still worked on the same issue:** the second one was told (its first line starts with `[agentx:same-home]`). If it went on anyway, tell the sending agent to name `home`, so the second message waits for the first run instead. Only an agent's message whose answer comes back as a new message waits. Any other run (a person's chat, a schedule, a queued send) never waits; only the first line warns it.

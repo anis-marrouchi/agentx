@@ -517,6 +517,7 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     timeoutMs: cfg.timeoutMinutes * 60_000,
     asyncWhenHuman: cfg.asyncWhenHuman,
     requeueRelayOnRestart: cfg.requeueRelayOnRestart,
+    coalesceMs: cfg.coalesceSeconds * 1000,
     logPath: resolve(w.baseDir ?? process.cwd(), ".agentx/a2a/delegations.jsonl"),
     log: w.log,
     onStarted: w.onStarted,
