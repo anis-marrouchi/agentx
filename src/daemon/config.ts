@@ -1136,6 +1136,16 @@ const meshConfigSchema = z.object({
      *  one turn instead of one turn each (#1749). 0: only answers that
      *  are already in are joined. */
     coalesceSeconds: z.number().int().min(0).max(900).default(120),
+    /** Turn budget for chains no person started (#1756), checked on every
+     *  hand-off this node's agents make, local or to a peer, waiting or
+     *  called back. A refused hop answers 409 telling the agent to finish
+     *  the work itself or write to the owner once. 0 turns a brake off. */
+    agentChains: z.object({
+      /** Hand-offs one agent may start in a rolling hour. */
+      perAgentHour: z.number().int().min(0).max(10_000).default(15),
+      /** Hand-offs one chain (the same root) may make in a rolling day. */
+      perChainDay: z.number().int().min(0).max(100_000).default(40),
+    }).default({}),
   }).default({}),
 })
 

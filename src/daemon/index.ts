@@ -268,7 +268,8 @@ import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
-import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { AgentChainBudget } from "@/a2a/agent-chains"
+import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainBudgetCheck, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -317,6 +318,9 @@ export class AgentXDaemon {
   private delegations: DelegationManager
   /** Synchronous delegations in flight, to refuse cycles that could never finish. */
   private syncWaits = new SyncWaits()
+  /** Hand-offs counted for chains no person started (#1756). Read the
+   *  limits on every check, so a config reload applies at once. */
+  private agentChains = new AgentChainBudget(() => this.config.mesh.delegation.agentChains ?? { perAgentHour: 15, perChainDay: 40 })
   /** Recent /send/agent answers, so a retry gets the same task id (#847). */
   private sendAgentDedupe = new SendAgentDedupe()
   /** Phone-app callback replies waiting for the dashboard to file them. */
@@ -4547,7 +4551,7 @@ export class AgentXDaemon {
     req: IncomingMessage,
     body: Record<string, unknown>,
     target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
-    opts: { callback?: boolean; send?: boolean } = {},
+    opts: { callback?: boolean; send?: boolean; chainBudget?: boolean } = {},
   ): DelegationGateResult {
     const hint = callerHintFrom(req, body)
     const caller = resolveCallerTurn(hint, this.registry)
@@ -4558,6 +4562,15 @@ export class AgentXDaemon {
     if (!target.peer && this.registry.getAgent(target.callee)) {
       const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
       if (why) return { refused: why }
+    }
+    // #1756 — a chain no person started has a turn budget. Counted last, so
+    // a hop refused for another reason does not use it up.
+    if (opts.chainBudget !== false) {
+      const spent = chainBudgetCheck(this.agentChains, hint, caller, body, this.syncWaits)
+      if (spent) {
+        this.log(`[a2a] hand-off to ${target.callee}${target.peer ? `@${target.peer}` : ""} refused: agent-chain budget used (${caller?.agentId ?? hint.senderAgentId ?? "?"})`)
+        return { refused: spent }
+      }
     }
     const accepted = opts.callback === false ? null : this.startCallback(body, caller, target, { send: opts.send === true })
     if (accepted) return { accepted }
@@ -8607,8 +8620,18 @@ export class AgentXDaemon {
           // People permissions (#379), before every way out of this node:
           // the peer cannot check a person's limit. With no agent named
           // the peer picks one, so the peer's name stands for it.
-          const limited = hopRefusal(String(body.agent || body.peer), resolveCallerTurn(callerHintFrom(req, body), this.registry), this.registry, this.syncWaits)
+          const meshHint = callerHintFrom(req, body)
+          const meshCaller = resolveCallerTurn(meshHint, this.registry)
+          const limited = hopRefusal(String(body.agent || body.peer), meshCaller, this.registry, this.syncWaits)
           if (limited) { this.json(res, 409, { error: limited }); return }
+          // #1756 — every way out of this node counts against the
+          // agent-chain budget once, here; the callback gate below skips it.
+          const spent = chainBudgetCheck(this.agentChains, meshHint, meshCaller, body, this.syncWaits)
+          if (spent) {
+            this.log(`[a2a] /mesh/task to ${String(body.agent || "?")}@${String(body.peer)} refused: agent-chain budget used (${meshCaller?.agentId ?? meshHint.senderAgentId ?? "?"})`)
+            this.json(res, 409, { error: spent })
+            return
+          }
           // A host this node joined as a guest (#380): the message runs
           // as a turn of the host's agent inside the grant, and only the
           // answer comes back. No streaming, no callback: one request.
@@ -8690,7 +8713,7 @@ export class AgentXDaemon {
               peer: body.peer as string,
               message: body.message as string,
               calleeContext: meshContext,
-            })
+            }, { chainBudget: false })
             // A refusal is final here too, as on /task and /send/agent: it
             // used to fall through to the synchronous path below (#282).
             if (!("track" in gate)) {

@@ -44,6 +44,8 @@ These settings live under `mesh.delegation` in `agentx.json`. They apply to help
 | `mesh.delegation.requeueRelayOnRestart` | `true` | If AgentX restarts while your agent is passing a helper's answer on to you, your agent tries once more after the restart. Turn it off (`false`) to skip that second try. |
 | `mesh.delegation.callbackSends` | `true` | When one agent sends another a message and no person is waiting, the answer, a failure or a timeout still comes back to the sending agent, in the chat it sent from. Turn it off (`false`) to only queue such messages, as in older versions. |
 | `mesh.delegation.coalesceSeconds` | `120` | How long a helper's answer waits for the other helpers your agent asked from the same chat, so they all come back as one message. From 0 to 900. With `0`, only answers that are already in are joined. |
+| `mesh.delegation.agentChains.perAgentHour` | `15` | For work no person started, how many times one agent may hand work to another agent in the last hour. `0` turns this limit off. See [A limit for work no person started](#a-limit-for-work-no-person-started). |
+| `mesh.delegation.agentChains.perChainDay` | `40` | For work no person started, how many hand-offs one chain of work may make in the last 24 hours, whichever agents make them. `0` turns this limit off. |
 
 To change one:
 
@@ -133,6 +135,20 @@ Some requests are refused straight away with status `409`:
 
 - An agent asking itself.
 - A request that could never start, because every slot of the target agent is held by a turn that is waiting on the asking agent. For example, A asks B, B asks A, and A can only run one task at a time. This is checked on one machine only.
+- A hand-off past the limit for work no person started (see below).
+
+### A limit for work no person started
+
+When no person started the work (a schedule, a workflow, or agents answering each other), agents could keep handing work back and forth all day: each answer wakes the asking agent, and that turn may ask again. Each round costs a full agent turn. So AgentX gives such work a budget. A **chain** is all the work that grew from one starting point, such as one schedule or one agent's chat.
+
+- One agent may start at most `mesh.delegation.agentChains.perAgentHour` hand-offs (15 by default) in any rolling hour.
+- One chain may make at most `mesh.delegation.agentChains.perChainDay` hand-offs (40 by default) in any rolling 24 hours, whichever agents make them. All runs of one schedule count as one chain.
+
+A hand-off is any request from one agent to another through `agentx_task`, `agentx_send_agent`, `/task`, `/send/agent` or `/mesh/task`, to an agent on this machine or another one, whether it waits for the answer or not. A repeat that is dropped as a duplicate, and a helper writing back to the agent that asked it, do not count.
+
+Work a person started is never counted, however many agents it passes through.
+
+Past either limit, the request is refused with status `409`. The message tells the agent to stop handing out work: finish the work itself in the same turn, or write to the owner once with what is done and what is left. The daemon log shows a line with `agent-chain budget used`. The counts are kept in memory, so a daemon restart starts them over. Each machine counts the hand-offs it sees.
 
 ## Check it worked
 
@@ -144,6 +160,7 @@ Some requests are refused straight away with status `409`:
    curl -s http://127.0.0.1:18800/a2a/delegations
    ```
    The newest entry names both agents and shows `"status":"done"`.
+5. **Terminal:** to check the limit for work no person started, search the daemon log for `agent-chain budget used`. No lines means no hand-off was refused. Each line names the agent that reached the limit.
 
 ## If something is wrong
 
@@ -153,6 +170,7 @@ Some requests are refused straight away with status `409`:
 - **You get "was lost":** the machine restarted while the helper worked. Ask your agent to try again.
 - **You get "could not pass on the answer … because of a restart":** AgentX restarted twice while your agent was passing the answer on, or the second try failed. Ask your agent for the answer again. If you track requests, the request shows what the helper said. In the daemon log, the lines starting `[delegation` with the reference from the message say what happened.
 - **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.
+- **`409` with "Hand-off budget used":** work no person started reached `mesh.delegation.agentChains.perAgentHour` or `perChainDay`. Check the daemon log for `agent-chain budget used` to see which agent. If the agents were passing small things back and forth (read-backs, "accepted" messages), the limit did its job: change the agents' instructions so they finish the work themselves. If a schedule really needs more hand-offs, raise the limit, or set it to `0` to turn it off.
 - **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask. A dashboard log line starting `[app] warning:` means the dashboard passed over some updates: it was away too long, or too many arrived at once. Ask your agent for the answer again.
 - **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
 - **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.

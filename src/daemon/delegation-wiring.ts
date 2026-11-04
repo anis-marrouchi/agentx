@@ -20,7 +20,8 @@
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
 import { DelegationManager, type CallerTurn, type DelegationDeps, type DelegationOrigin } from "@/a2a/delegation"
-import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
+import { propagatedRootOf, rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
+import type { AgentChainBudget } from "@/a2a/agent-chains"
 import type { AgentRegistry } from "@/agents/registry"
 import type { SessionStore } from "@/agents/sessions"
 import type { A2AMesh } from "@/a2a/mesh"
@@ -228,6 +229,44 @@ export function hopRefusal(
   waits: SyncWaits,
 ): string | null {
   return caller ? registry.refusalFor(callee, { initiator: chainRootOf(caller, waits) }) : null
+}
+
+/**
+ * The agent and chain a hand-off counts against for the agent-chain turn
+ * budget (#1756), or null when it cannot be told to be agent work. A named
+ * local caller counts with its chain's root. A request with no named
+ * caller counts against its `senderAgentId` with the root its context
+ * carries; one from a mesh peer that carries none (an older peer's plain
+ * send) is agent work rooted at that sender. Anything else is not counted:
+ * work a person started must never be.
+ */
+export function chainBudgetSubject(
+  hint: CallerHint,
+  caller: CallerTurn | null,
+  body: Record<string, unknown>,
+  waits: SyncWaits,
+): { agentId: string; root: RootInitiator } | null {
+  if (caller) return { agentId: caller.agentId, root: chainRootOf(caller, waits) }
+  const agentId = hint.senderAgentId
+  if (!agentId) return null
+  const ctx = body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : undefined
+  const carried = propagatedRootOf(ctx)
+  if (carried) return { agentId, root: carried }
+  if (hint.meshForwarded || !hint.local) return { agentId, root: { kind: "agent", channel: "mesh", agentId } }
+  return null
+}
+
+/** Count a hand-off against the agent-chain budget (#1756): the refusal
+ *  the agent gets when the budget is used, else null. */
+export function chainBudgetCheck(
+  budget: Pick<AgentChainBudget, "take">,
+  hint: CallerHint,
+  caller: CallerTurn | null,
+  body: Record<string, unknown>,
+  waits: SyncWaits,
+): string | null {
+  const who = chainBudgetSubject(hint, caller, body, waits)
+  return who ? budget.take(who.agentId, who.root) : null
 }
 
 /**
