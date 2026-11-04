@@ -1,5 +1,6 @@
 import { routeMemo } from "@/wiki/facts/fact-proposals"
 import type { MemoryStore } from "./memory-store"
+import { initialReview, trustForChannel } from "./memory-trust"
 
 // --- Where a session memo goes once it is written (#273) ---
 //
@@ -28,7 +29,9 @@ export function storeRotationMemo(
     origin: m.reason === "continuity" ? "continuity-memo" : `rotation-memo:${m.reason}`,
     chat: `${m.channel}:${m.chatId}`,
   })
-  if (routed.workState.trim()) {
+  // A copy that would be held is never injected and only asks the owner a
+  // question. The pinned copy below is what the next session reads.
+  if (routed.workState.trim() && initialReview(trustForChannel(m.channel)) !== "held") {
     // Keywords from the chat id let BM25 surface the memo when the same
     // chat continues; without them it only floats up as a recent fact.
     const chatKeyword = m.chatId.split(/[:@.]/).filter(Boolean).slice(0, 4)
