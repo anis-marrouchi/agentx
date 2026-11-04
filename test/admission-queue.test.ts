@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, gateReasons, priorityOf, type AdmissionSettings, type AdmissionTicket } from "../src/admission/queue"
 import { parseMeminfo, parseSwapUsage, parseVmStat, ResourceSampler, type ResourceSample } from "../src/native/resources"
 import { formatQueue } from "../src/admission/format"
+import type { CloseIdleRequest, ProcessKey } from "../src/agents/process-registry"
 
 const roomy: ResourceSample = {
   at: 0, memTotalMB: 8192, memAvailableMB: 4000, swapTotalMB: 2048, swapUsedMB: 100, swapGrows: true,
@@ -355,5 +356,133 @@ describe("agentx queue output", () => {
     expect(text).toMatch(/Running \(1\)\n {2}a {2}normal {2}telegram/)
     expect(text).toMatch(/1\. b {2}normal {2}telegram:42 {2}waiting 5s/)
     expect(text).toMatch(/Next: b \(normal, telegram:42\)/)
+  })
+})
+
+describe("closing idle sessions under memory pressure (noqta/noqta#509)", () => {
+  const shut = { swapUsedMB: 7000 }
+
+  function setupClose(over: Partial<AdmissionSettings> = {}, sample: Partial<ResourceSample> = shut, found: ProcessKey[] = [{ agentId: "idle", channel: "telegram", chatId: "1" }]) {
+    let now = 1_000_000
+    const res = { current: { ...roomy, ...sample } as ResourceSample }
+    const settings: AdmissionSettings = {
+      ...DEFAULT_ADMISSION_SETTINGS,
+      minStartGapSeconds: 0,
+      boot: { windowSeconds: 0, startsPerInterval: 0, intervalSeconds: 30 },
+      sampleSeconds: 60,
+      ...over,
+    }
+    const logs: string[] = []
+    const calls: CloseIdleRequest[] = []
+    const sampler = new ResourceSampler("/", 0, async () => ({ ...res.current, at: now }))
+    const q = new AdmissionQueue(() => settings, sampler, (m) => logs.push(m), () => now, (req) => { calls.push(req); return found })
+    return { q, res, logs, calls, advance: (ms: number) => { now += ms } }
+  }
+
+  /** One run going (so the gate holds the next) and one held by the gate. */
+  async function holdOne(q: AdmissionQueue) {
+    ask(q, "running", { chatId: "r" })
+    await tick(); await tick()
+    ask(q, "held", { chatId: "h" })
+    await tick(); await tick()
+  }
+
+  it("closes a round when a run is held by swap, with the settings and reason", async () => {
+    const { q, calls, logs } = setupClose()
+    await holdOne(q)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ max: 3, minQuietMs: 60_000, dryRun: false })
+    expect(calls[0].reason).toBe("gate shut (swap: 7000 MB used, limit 6144 MB)")
+    expect(logs.join()).toMatch(/closed 1 idle session\(s\), 1 waiting/)
+  })
+
+  it("closes for short memory too", async () => {
+    const { q, calls } = setupClose({}, { memAvailableMB: 200 })
+    await holdOne(q)
+    expect(calls[0].reason).toMatch(/^gate shut \(memory: 200 MB available/)
+  })
+
+  it("waits settleSeconds between rounds, then closes again while the gate stays shut", async () => {
+    const { q, calls, advance } = setupClose()
+    await holdOne(q)
+    advance(29_000)
+    await q.pump()
+    expect(calls).toHaveLength(1)
+    advance(1_000)
+    await q.pump()
+    expect(calls).toHaveLength(2)
+  })
+
+  it("stops once the gate opens", async () => {
+    const { q, res, calls, advance } = setupClose()
+    await holdOne(q)
+    res.current = { ...roomy }
+    advance(60_000)
+    await q.pump()
+    expect(calls).toHaveLength(1)
+  })
+
+  it("spares a chat with a run waiting or running, and no other", async () => {
+    const { q, calls } = setupClose()
+    await holdOne(q)
+    const skip = calls[0].skip!
+    expect(skip({ agentId: "running", channel: "telegram", chatId: "r" })).toBe(true)
+    expect(skip({ agentId: "held", channel: "telegram", chatId: "h" })).toBe(true)
+    expect(skip({ agentId: "held", channel: "telegram", chatId: "other" })).toBe(false)
+  })
+
+  it("does nothing when only disk or load shuts the gate", async () => {
+    const disk = setupClose({}, { diskFreeMB: 100 })
+    await holdOne(disk.q)
+    expect(disk.q.snapshot().gate.open).toBe(false)
+    const load = setupClose({}, { load1: 100 })
+    await holdOne(load.q)
+    expect(load.q.snapshot().gate.open).toBe(false)
+    expect([...disk.calls, ...load.calls]).toEqual([])
+  })
+
+  it("does nothing when no run waits, or the only waiting run waits on its own agent", async () => {
+    const { q, calls } = setupClose()
+    const first = ask(q, "first")
+    await tick(); await tick()
+    expect(first.ticket).toBeTruthy()
+    expect(calls).toEqual([])
+    ask(q, "own", { canStart: () => false })
+    await tick(); await tick()
+    expect(calls).toEqual([])
+  })
+
+  it("is off with closeIdle.enabled false", async () => {
+    const { q, calls } = setupClose({ closeIdle: { ...DEFAULT_ADMISSION_SETTINGS.closeIdle, enabled: false } })
+    await holdOne(q)
+    expect(calls).toEqual([])
+  })
+
+  it("only names what it would close in observe mode", async () => {
+    const { q, calls, logs } = setupClose({ mode: "observe" })
+    ask(q, "first", { chatId: "1" })
+    await tick(); await tick()
+    ask(q, "second", { chatId: "2" })
+    await tick(); await tick()
+    expect(calls[0].dryRun).toBe(true)
+    expect(logs.join()).toMatch(/observe: would close 1 idle session\(s\) — idle:telegram:1/)
+  })
+
+  it("says once when there is nothing to close, and again after the gate has opened", async () => {
+    const { q, res, logs, calls, advance } = setupClose({}, shut, [])
+    await holdOne(q)
+    advance(5_000)
+    await q.pump()
+    expect(calls).toHaveLength(2)
+    const said = () => logs.filter((l) => l.includes("no idle session to close")).length
+    expect(said()).toBe(1)
+    res.current = { ...roomy }
+    await q.pump()
+    ask(q, "running2", { chatId: "x" })
+    await tick(); await tick()
+    res.current = { ...roomy, ...shut }
+    ask(q, "held2", { chatId: "y" })
+    await tick(); await tick()
+    expect(said()).toBe(2)
   })
 })

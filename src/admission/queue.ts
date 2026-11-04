@@ -25,6 +25,13 @@
 // delegationHeadroom over the cap: its parent holds a place while it
 // waits for the helper, so without headroom a full node deadlocks.
 
+//
+// Idle sessions give their memory back (noqta/noqta#509): while a run waits
+// only because memory or swap is short, the queue asks the process pool to
+// close a few idle sessions, reads again after settleSeconds, and repeats
+// until the gate opens.
+
+import { processKeyToString, type CloseIdleRequest, type ProcessKey } from "../agents/process-registry"
 import type { ResourceSample, ResourceSampler } from "../native/resources"
 
 export type AdmissionPriority = "owner" | "critical" | "normal" | "background"
@@ -75,6 +82,16 @@ export interface AdmissionSettings {
   /** Seconds between resource re-reads while work is waiting. */
   sampleSeconds: number
   classes: Record<string, AdmissionClass>
+  /** Close idle sessions while runs wait on memory or swap. */
+  closeIdle: {
+    enabled: boolean
+    /** Most sessions closed per round. */
+    maxPerRound: number
+    /** Never close a session quiet for less than this. */
+    minQuietSeconds: number
+    /** Wait this long after a round: swap keeps falling for a while. */
+    settleSeconds: number
+  }
   priority: {
     ownerChannels: string[]
     /** People ids (config.people) whose turns run at owner priority. */
@@ -102,6 +119,7 @@ export const DEFAULT_ADMISSION_SETTINGS: AdmissionSettings = {
   maxWaitMinutes: 60,
   sampleSeconds: 5,
   classes: {},
+  closeIdle: { enabled: true, maxPerRound: 3, minQuietSeconds: 60, settleSeconds: 30 },
   priority: {
     ownerChannels: ["voice", "app"],
     ownerPeople: [],
@@ -245,6 +263,8 @@ export class AdmissionQueue {
   private timer: ReturnType<typeof setTimeout> | null = null
   private closedAt: number | null = null
   private lastReasons: string[] = []
+  private lastCloseRoundAt: number | null = null
+  private saidNothingToClose = false
   private readonly bootAt: number
 
   constructor(
@@ -252,6 +272,7 @@ export class AdmissionQueue {
     private readonly sampler: ResourceSampler,
     private readonly log: (msg: string) => void = () => {},
     private readonly now: () => number = Date.now,
+    private readonly closeIdle: (req: CloseIdleRequest) => ProcessKey[] = () => [],
   ) {
     this.bootAt = now()
   }
@@ -405,6 +426,7 @@ export class AdmissionQueue {
       this.lastReasons = reasons
     }
     let holdAll = false
+    let heldByResources = false
     for (const e of this.ordered()) {
       const waitedMs = now - e.enqueuedAt
       // Only time the node held it counts: waiting for its own busy agent
@@ -428,7 +450,10 @@ export class AdmissionQueue {
       const sessionCap = cap + Math.max(extra, e.delegated ? s.delegationHeadroom : 0)
       if (this.running.size >= sessionCap) node.push(`session cap: ${this.running.size}/${sessionCap} running`)
       const holds: string[] = []
-      if (reasons.length && !(s.allowOneWhenIdle && this.running.size === 0)) holds.push(...reasons)
+      if (reasons.length && !(s.allowOneWhenIdle && this.running.size === 0)) {
+        holds.push(...reasons)
+        if (!own.length) heldByResources = true
+      }
       const pace = this.paceWait(e.priority, s, now)
       if (pace > 0) holds.push(`start pace: next start in ${Math.ceil(pace / 1000)}s`)
       node.push(...holds)
@@ -452,6 +477,36 @@ export class AdmissionQueue {
       }
       this.admitEntry(e, waitedMs)
     }
+    this.closeIdleRound(s, heldByResources ? reasons : [], now)
+  }
+
+  /** One round of closing idle sessions, when memory or swap holds a run. */
+  private closeIdleRound(s: AdmissionSettings, reasons: string[], now: number): void {
+    const memory = reasons.filter((r) => r.startsWith("memory:") || r.startsWith("swap:"))
+    if (!memory.length) { this.saidNothingToClose = false; return }
+    const c = s.closeIdle
+    if (!s.enabled || !c.enabled) return
+    if (this.lastCloseRoundAt !== null && now - this.lastCloseRoundAt < c.settleSeconds * 1000) return
+    // A chat with a run waiting or going needs its process: closing it
+    // would only make that run start another.
+    const needed = new Set([...this.waiting, ...this.running.values()].map((e) => processKeyToString({ agentId: e.agentId, channel: e.channel, chatId: e.chatId ?? "" })))
+    const observe = s.mode === "observe"
+    const keys = this.closeIdle({
+      max: c.maxPerRound,
+      minQuietMs: c.minQuietSeconds * 1000,
+      reason: `gate shut (${memory.join("; ")})`,
+      skip: (key) => needed.has(processKeyToString(key)),
+      dryRun: observe,
+    })
+    if (!keys.length) {
+      if (!this.saidNothingToClose) this.log(`[admission] gate shut (${memory.join("; ")}): no idle session to close`)
+      this.saidNothingToClose = true
+      return
+    }
+    this.saidNothingToClose = false
+    this.lastCloseRoundAt = now
+    if (observe) this.log(`[admission] observe: would close ${keys.length} idle session(s) — ${keys.map(processKeyToString).join(", ")}`)
+    else this.log(`[admission] gate shut (${memory.join("; ")}): closed ${keys.length} idle session(s), ${this.waiting.length} waiting`)
   }
 
   private admitEntry(e: Entry, waitedMs: number): void {

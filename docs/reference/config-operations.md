@@ -452,6 +452,10 @@ The session queue: every new agent session waits until the machine has room. Rea
 | `maxWaitMinutes` | `60` | Refuse work still waiting after this long, with a plain message; 0 = never. |
 | `sampleSeconds` | `5` | How often resources are read again while work waits. |
 | `classes` | `{}` | Named limits, e.g. `{ "browser": { "max": 1, "agents": ["web-tester"] } }`. |
+| `closeIdle.enabled` | `true` | While work waits on memory or swap, close idle sessions early. |
+| `closeIdle.maxPerRound` | `3` | Most sessions closed per round. |
+| `closeIdle.minQuietSeconds` | `60` | Never close a session quiet for less than this. |
+| `closeIdle.settleSeconds` | `30` | Seconds between rounds, so the next reading shows what the last round freed. |
 | `priority.ownerChannels` | `["voice", "app"]` | Channels whose work runs at owner priority. |
 | `priority.ownerPeople` | `[]` | People ids whose work runs at owner priority. |
 | `priority.criticalAgents` | `[]` | Agents whose work runs at critical priority. |

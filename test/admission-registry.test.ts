@@ -17,6 +17,7 @@ vi.mock("../src/agents/request-planner", async (importOriginal) => {
 })
 
 import { AgentRegistry } from "../src/agents/registry"
+import { setProcessRegistry } from "../src/agents/process-registry-instance"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 let dir: string
@@ -68,6 +69,22 @@ function start(r: AgentRegistry, agentId: string, channel = "api", callerSignal?
 const settle = () => new Promise((r) => setTimeout(r, 50))
 
 describe("node admission queue in the registry", () => {
+  it("asks the live process pool to close idle sessions while memory holds a run (noqta/noqta#509)", async () => {
+    const closeIdle = vi.fn(() => [])
+    setProcessRegistry({ closeIdle } as any)
+    try {
+      const r = registry({ maxSessions: 2, minAvailableMemoryMB: 1e9 })
+      await start(r, "a").started
+      expect(closeIdle).not.toHaveBeenCalled()
+      start(r, "b")
+      await vi.waitFor(() => expect(closeIdle).toHaveBeenCalled())
+      expect((closeIdle.mock.calls[0] as any[])[0].reason).toMatch(/^gate shut \(memory: /)
+      r.admission.close()
+    } finally {
+      setProcessRegistry(null)
+    }
+  })
+
   it("holds a run over the node cap and starts it when the running one ends", async () => {
     const r = registry()
     const first = start(r, "a")

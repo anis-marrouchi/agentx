@@ -2326,6 +2326,17 @@ export const daemonConfigSchema = z.object({
       agents: z.array(z.string()).optional(),
       channels: z.array(z.string()).optional(),
     })).default({}),
+    /** While runs wait on memory or swap, close idle sessions a few at a
+     *  time, ahead of processPool.maxIdleSeconds. */
+    closeIdle: z.object({
+      enabled: z.boolean().default(true),
+      /** Most sessions closed per round. */
+      maxPerRound: z.number().int().min(1).default(3),
+      /** Never close a session quiet for less than this. */
+      minQuietSeconds: z.number().int().min(0).default(60),
+      /** Seconds between rounds, so the next reading shows the last one. */
+      settleSeconds: z.number().int().min(1).default(30),
+    }).default({}),
     /** Queue order: owner > critical > normal > background, then age. */
     priority: z.object({
       ownerChannels: z.array(z.string()).default(["voice", "app"]),

@@ -40,6 +40,24 @@ For the first five minutes after AgentX starts, at most two sessions start every
 
 When AgentX stops, chat messages still waiting are not lost: they run again after the restart, through the queue. Other waiting work (a scheduled job, a message from another agent) is answered as interrupted, so the job's run is recorded and the other agent hears back.
 
+## Idle sessions make room
+
+A session that has finished its reply stays open for a while (`processPool.maxIdleSeconds`), so the next message in that chat starts faster. An open session still holds memory. When work is waiting only because memory or swap is short, AgentX closes some idle sessions early:
+
+1. It closes up to three sessions, the ones that have been quiet longest first (`admission.closeIdle.maxPerRound`).
+2. It waits 30 seconds (`admission.closeIdle.settleSeconds`) and reads the memory again, because swap keeps falling for a while after a session closes.
+3. It repeats until the gate opens, then stops.
+
+These sessions are never closed this way:
+
+- a session writing a reply, with a background task open, or writing a reply nobody asked for
+- a session quiet for less than 60 seconds (`admission.closeIdle.minQuietSeconds`)
+- a session whose chat has work waiting or running
+
+Nothing is lost when a session closes. The next message in that chat continues the same conversation, and only starts a little slower.
+
+Closing idle sessions does not help with a full disk or a high load, so AgentX does not close any for those. To turn this off, set `admission.closeIdle.enabled` to `false`. In `observe` mode, AgentX only logs `[admission] observe: would close`.
+
 ## Limit one kind of work
 
 To let only one browser job run at a time:
@@ -76,9 +94,12 @@ In an emergency, start the daemon with the environment variable `AGENTX_ADMISSIO
 1. Run this in a terminal: `agentx queue`
 2. Read the output. It shows when the machine was checked, its memory, swap, disk and load, whether the gate is open, the limits, what is running, what is waiting in order and why, and what runs next.
 3. For the same data as JSON, run `agentx queue --json`, or open `/api/queue` on the daemon (by default `http://localhost:18800/api/queue`).
+4. To see idle sessions making room, look in the daemon log for `[process-registry] closed idle`. There is one line for each session closed, with the reason.
 
 ## If something is wrong
 
 - **Work waits a long time.** Run `agentx queue` and read the "held by" line under each waiting item. If swap stays high long after the machine is quiet, raise `admission.maxSwapUsedMB`.
+- **The log says `no idle session to close` and work keeps waiting.** Every open session is in use, or the memory is held by other programs. Stop those programs or wait for the running work to finish.
+- **Chats often start slower while the machine is busy.** Idle sessions are being closed to make room. Raise `admission.closeIdle.minQuietSeconds` to keep them open longer.
 - **The machine still runs out of memory.** Lower `admission.maxSessions`, or raise `admission.minAvailableMemoryPercent`.
 - **`agentx queue` says HTTP 404.** The daemon is older than the command. Restart it after updating AgentX.
