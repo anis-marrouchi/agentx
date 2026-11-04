@@ -550,6 +550,8 @@ export class GitLabAdapter implements ChannelAdapter {
       // Mark in journalctl (not just debug.webhook) so operators can spot
       // misattribution without flipping AGENTX_WEBHOOK_DEBUG.
       this.log(`[gitlab/identity] note from "${msg.agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — agent has no per-agent token`)
+    } else if (!agentToken) {
+      this.log(`[gitlab/identity] note on ${msg.chatId} using GLOBAL token (${this.botUsername || "shared bot"}) — no agent id on the request`)
     }
     debug.webhook("gitlab", "send", `agentId="${msg.agentId}" token=${agentToken ? "per-agent" : "GLOBAL(" + this.botUsername + ")"}`)
 
@@ -2255,6 +2257,8 @@ export class GitLabAdapter implements ChannelAdapter {
     if (!token) { this.log(`setLabels failed: no token for "${agentId || "global"}"`); return null }
     if (!agentToken && agentId) {
       this.log(`[gitlab/identity] setLabels on ${project} ${kind}/${iid} from "${agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — label change will appear under the global bot`)
+    } else if (!agentToken) {
+      this.log(`[gitlab/identity] setLabels on ${project} ${kind}/${iid} using GLOBAL token (${this.botUsername || "shared bot"}) — no agent id on the request`)
     }
 
     const segment = kind === "merge_request" ? "merge_requests" : "issues"
