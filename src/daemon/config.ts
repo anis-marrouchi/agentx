@@ -1136,6 +1136,15 @@ const meshConfigSchema = z.object({
      *  one turn instead of one turn each (#1749). 0: only answers that
      *  are already in are joined. */
     coalesceSeconds: z.number().int().min(0).max(900).default(120),
+    /** Hand-off budget for work no person started (#1756): agents that keep
+     *  handing work to each other are told to finish it themselves or write
+     *  to the owner once. Work a person started is never counted. 0: off. */
+    agentChains: z.object({
+      /** Hand-offs one agent may start in a rolling hour. */
+      perAgentHour: z.number().int().min(0).max(1000).default(15),
+      /** Hand-offs one chain (the same root) may make in a rolling day. */
+      perChainDay: z.number().int().min(0).max(10000).default(40),
+    }).default({}),
   }).default({}),
 })
 

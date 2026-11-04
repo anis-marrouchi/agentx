@@ -268,6 +268,7 @@ import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
+import { ChainBudget } from "@/a2a/chain-budget"
 import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
@@ -317,6 +318,8 @@ export class AgentXDaemon {
   private delegations: DelegationManager
   /** Synchronous delegations in flight, to refuse cycles that could never finish. */
   private syncWaits = new SyncWaits()
+  /** Hand-offs of work no person started, per agent and per chain (#1756). */
+  private chainBudget = new ChainBudget(() => this.config.mesh.delegation.agentChains)
   /** Recent /send/agent answers, so a retry gets the same task id (#847). */
   private sendAgentDedupe = new SendAgentDedupe()
   /** Phone-app callback replies waiting for the dashboard to file them. */
@@ -4559,6 +4562,8 @@ export class AgentXDaemon {
       const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
       if (why) return { refused: why }
     }
+    const over = this.handOffRefusal(caller, target.peer ? `${target.callee}@${target.peer}` : target.callee)
+    if (over) return { refused: over }
     const accepted = opts.callback === false ? null : this.startCallback(body, caller, target, { send: opts.send === true })
     if (accepted) return { accepted }
     let runId: string | undefined
@@ -4577,6 +4582,16 @@ export class AgentXDaemon {
         end: () => { if (runId) this.syncWaits.end(runId) },
       },
     }
+  }
+
+  /** Hand-off budget for work no person started (#1756): why this hop is
+   *  refused, or null (it is then counted). A caller the daemon cannot
+   *  name is not counted. */
+  private handOffRefusal(caller: ReturnType<typeof resolveCallerTurn>, to: string): string | null {
+    if (!caller) return null
+    const over = this.chainBudget.take(caller.agentId, chainRootOf(caller, this.syncWaits))
+    if (over) this.log(`[delegation] ${caller.agentId} -> ${to} refused: ${over.split(". ")[0]}`)
+    return over
   }
 
   private startCallback(
@@ -8607,8 +8622,13 @@ export class AgentXDaemon {
           // People permissions (#379), before every way out of this node:
           // the peer cannot check a person's limit. With no agent named
           // the peer picks one, so the peer's name stands for it.
-          const limited = hopRefusal(String(body.agent || body.peer), resolveCallerTurn(callerHintFrom(req, body), this.registry), this.registry, this.syncWaits)
+          const meshCaller = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+          const limited = hopRefusal(String(body.agent || body.peer), meshCaller, this.registry, this.syncWaits)
           if (limited) { this.json(res, 409, { error: limited }); return }
+          // Hand-off budget (#1756) for the ways out that skip the
+          // delegation gate; a callback hop is counted there.
+          const overBudget = meshTaskMode(body, true) === "callback" ? null : this.handOffRefusal(meshCaller, `${String(body.agent || "?")}@${String(body.peer)}`)
+          if (overBudget) { this.json(res, 409, { error: overBudget }); return }
           // A host this node joined as a guest (#380): the message runs
           // as a turn of the host's agent inside the grant, and only the
           // answer comes back. No streaming, no callback: one request.
