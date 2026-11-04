@@ -258,6 +258,16 @@ async function runningIntentPath(): Promise<{ path?: string[]; graphWeight?: num
   }
 }
 
+/** The agentId a channel write carries: the one the caller named, else on
+ *  GitLab the running agent, whose token and signature the note should have.
+ *  Other channels keep their own default: there an agentId picks the agent's
+ *  bound Telegram bot, which may not be in the chat, or its GitHub token. */
+function postingAgentId(channel: string, args: Record<string, unknown>): string | undefined {
+  const named = args.agentId as string | undefined
+  if (named) return named
+  return channel === "gitlab" ? process.env.AGENTX_AGENT_ID || undefined : undefined
+}
+
 /** Test seams. `_reset…` drops the memoized value so a caller can change
  *  env/cwd; `_resolve…` exposes the uncached resolution itself. */
 export function _resetDaemonUrlForTesting(): void {
@@ -478,7 +488,7 @@ const TOOLS = [
         },
         agentId: {
           type: "string",
-          description: "Optional posting identity. Defaults to channel-adapter resolution from agentMappings.",
+          description: "Optional posting identity. On GitLab it defaults to the running agent (AGENTX_AGENT_ID). Elsewhere it defaults to channel-adapter resolution.",
         },
         accountId: {
           type: "string",
@@ -509,7 +519,7 @@ const TOOLS = [
         iid: { type: "string", description: "Numeric iid as a string." },
         add: { type: "array", items: { type: "string" }, description: "Labels to add." },
         remove: { type: "array", items: { type: "string" }, description: "Labels to remove." },
-        agentId: { type: "string", description: "Optional posting identity." },
+        agentId: { type: "string", description: "Optional posting identity. Defaults to the running agent (AGENTX_AGENT_ID)." },
       },
       required: ["project", "kind", "iid"],
     },
@@ -535,7 +545,7 @@ const TOOLS = [
         },
         agentId: {
           type: "string",
-          description: "Agent ID to send as (determines bot account on Telegram, GitLab token, etc.)",
+          description: "Agent ID to send as (determines bot account on Telegram, GitLab token, etc.). On GitLab it defaults to the running agent (AGENTX_AGENT_ID).",
         },
       },
       required: ["channel", "chatId", "text"],
@@ -1529,7 +1539,7 @@ async function handleToolCall(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           channel, chatId, text,
-          agentId: args.agentId,
+          agentId: postingAgentId(channel, args),
           accountId: args.accountId,
           replyTo: args.replyTo,
           idempotencyKey: args.idempotencyKey,
@@ -1558,7 +1568,7 @@ async function handleToolCall(
           channel, project, kind, iid,
           add: Array.isArray(args.add) ? args.add : [],
           remove: Array.isArray(args.remove) ? args.remove : [],
-          agentId: args.agentId,
+          agentId: postingAgentId(channel, args),
         }),
       })
       const data = await res.json() as any
@@ -1600,7 +1610,7 @@ async function handleToolCall(
       const res = await daemonFetch(`${daemonUrl()}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel, chatId, text, agentId: args.agentId }),
+        body: JSON.stringify({ channel, chatId, text, agentId: postingAgentId(channel, args) }),
       })
       const data = await res.json().catch(() => ({})) as any
       // Never "ok" in place of a missing ID: that hid lost GitLab notes (#984).

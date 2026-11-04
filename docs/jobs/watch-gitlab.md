@@ -73,6 +73,6 @@ To turn it off again, run `agentx request-status gitlab off`. Details: [`request
   1. **Browser, in GitLab:** create a new token with the `api` scope, as in step 1.
   2. **Terminal:** put the new token in `.env` in place of the old one.
   3. **Terminal:** run `agentx daemon restart`.
-- **A send says "Posted with the shared global gitlab token":** the post went through, but under the shared bot user, because that agent has no GitLab token of its own. To post as the agent, give it a token in `channels.gitlab.agentMappings`.
+- **A send says "Posted with the shared global gitlab token":** the post went through, but under the shared bot user, because that agent has no GitLab token of its own. To post as the agent, give it a token in `channels.gitlab.agentMappings`. An agent's own tools name it on GitLab without being told. A post with no agent behind it, such as a direct call to `/send`, also uses the shared bot and leaves a `[gitlab/identity]` line in `agentx daemon logs` that says "no agent id on the request".
 - **The status comment stays on "Working" after the agent answered:** the edit was refused. Check `agentx daemon logs` for `GitLab edit error`. The token must belong to the same GitLab user that wrote the comment.
 - **Still stuck:** follow [It's not answering](../help/its-not-answering.md).
