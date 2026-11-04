@@ -63,6 +63,7 @@ The mesh links several AgentX machines so their agents can reach each other. See
 | `mesh.delegation.timeoutMinutes` | number | `30` | Minutes a helper agent has to answer before the asking agent is told it timed out. From 1 to 240. |
 | `mesh.delegation.requeueRelayOnRestart` | boolean | `true` | If a restart stops your agent while it is passing a helper's answer on to you, your agent tries once more after the restart. If that try fails too, you get a short message saying the answer did not come through, and your open request is marked as needing attention. Turn it off (`false`) to skip the second try. |
 | `mesh.delegation.callbackSends` | boolean | `true` | An agent's `agentx_send_agent` that no person waits on comes back to it: the answer, failure or timeout arrives as a new message in the chat it sent from, and a message the other agent writes back lands there too. See [When an agent asks another agent](/jobs/ask-another-agent). Off: such sends are only queued. |
+| `mesh.delegation.coalesceSeconds` | number | `120` | When an agent asked several other agents from one chat, a finished answer waits this many seconds for the others still running, so the asking agent gets them all in one new message instead of one each. From 0 to 900. `0` joins only answers that are already in. See [When an agent asks another agent](/jobs/ask-another-agent). |
 
 Each entry in `mesh.peers`:
 
