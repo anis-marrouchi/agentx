@@ -88,6 +88,29 @@ describe("memos do not create unsourced facts", () => {
     expect(pinned[0]).toContain("UNVERIFIED claim")
   })
 
+  it("a memo from a channel on neither trust list is pinned but not held for review (#1741)", () => {
+    const store = new MemoryStore(root)
+    const pinned: string[] = []
+    for (const channel of ["requests", "app@peer-node"]) {
+      storeRotationMemo(store, { setRotationMemo: (_a, _c, _i, m) => { pinned.push(m) } }, {
+        wikiDir, agentId: "a", channel, chatId: "123", reason: "tier-2", memo,
+      })
+    }
+    expect(store.getAll("a")).toHaveLength(0)
+    expect(store.held("a")).toHaveLength(0)
+    expect(pinned).toHaveLength(2)
+    expect(pinned[0]).toContain("Reviewing PR #12")
+  })
+
+  it("a memo from an operator channel is still stored as memory", () => {
+    const store = new MemoryStore(root)
+    storeRotationMemo(store, { setRotationMemo: () => {} }, {
+      wikiDir, agentId: "a", channel: "dashboard", chatId: "123", reason: "tier-2", memo,
+    })
+    expect(store.getAll("a")).toHaveLength(1)
+    expect(store.held("a")).toHaveLength(0)
+  })
+
   it("a memo made only of claims adds no memory at all", () => {
     const store = new MemoryStore(root)
     storeRotationMemo(store, { setRotationMemo: () => {} }, {
