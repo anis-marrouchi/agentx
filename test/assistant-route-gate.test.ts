@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
-import { createServer, type Server } from "http"
+import { createServer, request, type Server } from "http"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -262,5 +262,68 @@ describe("daemon /agents/:id/workspace/* gate", () => {
     const base = await serveDaemon(buildDaemon(MESH_CONFIG), () => LOCAL)
     expect((await read(base, ".env", FOREIGN)).status).toBe(401)
     expect((await read(base, ".env", { ...FOREIGN, Authorization: `Bearer ${MESH}` })).status).toBe(401)
+  })
+})
+
+describe("daemon POST /chat gate", () => {
+  const turn = { agentId: "helper", user_id: "u", conversation_id: "c", message: "hello" }
+
+  it("answers 401 off the box with no credential, and runs no turn", async () => {
+    const base = await serveDaemon(buildDaemon(MESH_CONFIG), () => OFF_BOX)
+    expect((await call(base, "POST", "/chat", {}, turn)).status).toBe(401)
+    expect((await call(base, "POST", "/chat", { Authorization: "Bearer wrong" }, turn)).status).toBe(401)
+    expect(executed).toEqual([])
+  })
+
+  it("answers 401 before it reads the body", async () => {
+    const base = await serveDaemon(buildDaemon(MESH_CONFIG), () => OFF_BOX)
+    const { hostname, port } = new URL(base)
+    const status = await new Promise<number | undefined>((resolve, reject) => {
+      // Announces a body and never finishes it: only an answer that does not wait for it can arrive.
+      const req = request({ hostname, port, path: "/chat", method: "POST", headers: { "Content-Length": 1000 } }, (res) => {
+        res.resume()
+        resolve(res.statusCode)
+        req.destroy()
+      })
+      req.on("error", reject)
+      req.write("{")
+    })
+    expect(status).toBe(401)
+  })
+
+  it("refuses off the box on a node with no secret and no mesh token at all", async () => {
+    vi.stubEnv("MESH_TOKEN", "")
+    const base = await serveDaemon(buildDaemon(undefined), () => OFF_BOX)
+    expect((await call(base, "POST", "/chat", {}, turn)).status).toBe(401)
+    expect(executed).toEqual([])
+  })
+
+  it("is not opened by the mesh auth off switch", async () => {
+    vi.stubEnv("AGENTX_MESH_AUTH", "off")
+    const base = await serveDaemon(buildDaemon(MESH_CONFIG), () => OFF_BOX)
+    expect((await call(base, "POST", "/chat", {}, turn)).status).toBe(401)
+  })
+
+  it("runs the turn off the box with an accepted mesh token", async () => {
+    const base = await serveDaemon(buildDaemon(MESH_CONFIG), () => OFF_BOX)
+    expect((await call(base, "POST", "/chat", { Authorization: `Bearer ${PEER}` }, turn)).status).toBe(200)
+    expect(executed).toEqual(["hello"])
+  })
+
+  it("runs the turn on loopback with no credential where no secret is set", async () => {
+    const base = await serveDaemon(buildDaemon(MESH_CONFIG), () => LOCAL)
+    expect((await call(base, "POST", "/chat", {}, turn)).status).toBe(200)
+    expect(executed).toEqual(["hello"])
+  })
+
+  it("takes only the secret on a node that has one, from anywhere", async () => {
+    vi.stubEnv("AGENTX_CHAT_SECRET", "chat-secret")
+    const off = await serveDaemon(buildDaemon(MESH_CONFIG), () => OFF_BOX)
+    const local = await serveDaemon(buildDaemon(MESH_CONFIG), () => LOCAL)
+    expect((await call(local, "POST", "/chat", {}, turn)).status).toBe(401)
+    expect((await call(off, "POST", "/chat", { Authorization: `Bearer ${MESH}` }, turn)).status).toBe(401)
+    expect(executed).toEqual([])
+    expect((await call(off, "POST", "/chat", { Authorization: "Bearer chat-secret" }, turn)).status).toBe(200)
+    expect(executed).toEqual(["hello"])
   })
 })

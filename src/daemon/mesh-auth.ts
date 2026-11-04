@@ -188,6 +188,26 @@ export function workspaceFileAllowed(req: WorkspaceFileAuthRequest): boolean {
   return !req.chatSecret && LOOPBACK.has(req.remoteAddress)
 }
 
+export interface ChatAuthRequest {
+  remoteAddress: string
+  authorizationHeader: string
+  acceptedTokens: ReadonlySet<string>
+  chatSecret?: string
+}
+
+/**
+ * Who may post to /chat, which runs a turn on the agent the caller names. A
+ * node with a chat secret takes that secret and nothing else. Without one,
+ * loopback or an accepted mesh token; as with workspace files there is no
+ * no-tokens or off-switch exemption.
+ */
+export function chatAllowed(req: ChatAuthRequest): boolean {
+  const header = req.authorizationHeader || ""
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : ""
+  if (req.chatSecret) return token === req.chatSecret
+  return LOOPBACK.has(req.remoteAddress) || (!!token && req.acceptedTokens.has(token))
+}
+
 /** Config shape this module needs. Structural so callers can pass a full
  *  DaemonConfig without this module importing it. */
 export interface MeshTokenSources {
