@@ -235,6 +235,16 @@ export function callerFields(env: NodeJS.ProcessEnv = process.env): Record<strin
   return out
 }
 
+/** Whose identity a channel write (reply, label, send) goes out under
+ *  (#1745). An explicit agentId wins; otherwise the agent this MCP server
+ *  was launched for (AGENTX_AGENT_ID), so an agent's GitLab note carries
+ *  its own token and marker without the model naming itself. Undefined
+ *  for a non-agent caller, which keeps the adapter's global identity. */
+export function postingAgentId(args: Record<string, unknown>, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const explicit = typeof args.agentId === "string" ? args.agentId.trim() : ""
+  return explicit || env.AGENTX_AGENT_ID || undefined
+}
+
 /** The intent-graph path of the turn this process belongs to, from the
  *  daemon, with the configured retrieval weight. Undefined outside a
  *  running turn, before it is classified, or when the daemon is away. */
@@ -478,7 +488,7 @@ const TOOLS = [
         },
         agentId: {
           type: "string",
-          description: "Optional posting identity. Defaults to channel-adapter resolution from agentMappings.",
+          description: "Optional posting identity. Defaults to the calling agent (AGENTX_AGENT_ID) when an AgentX runtime launched this server; otherwise the channel's global identity.",
         },
         accountId: {
           type: "string",
@@ -509,7 +519,7 @@ const TOOLS = [
         iid: { type: "string", description: "Numeric iid as a string." },
         add: { type: "array", items: { type: "string" }, description: "Labels to add." },
         remove: { type: "array", items: { type: "string" }, description: "Labels to remove." },
-        agentId: { type: "string", description: "Optional posting identity." },
+        agentId: { type: "string", description: "Optional posting identity. Defaults to the calling agent (AGENTX_AGENT_ID)." },
       },
       required: ["project", "kind", "iid"],
     },
@@ -535,7 +545,7 @@ const TOOLS = [
         },
         agentId: {
           type: "string",
-          description: "Agent ID to send as (determines bot account on Telegram, GitLab token, etc.)",
+          description: "Agent ID to send as (determines bot account on Telegram, GitLab token, etc.). Defaults to the calling agent (AGENTX_AGENT_ID).",
         },
       },
       required: ["channel", "chatId", "text"],
@@ -1529,7 +1539,7 @@ async function handleToolCall(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           channel, chatId, text,
-          agentId: args.agentId,
+          agentId: postingAgentId(args),
           accountId: args.accountId,
           replyTo: args.replyTo,
           idempotencyKey: args.idempotencyKey,
@@ -1558,7 +1568,7 @@ async function handleToolCall(
           channel, project, kind, iid,
           add: Array.isArray(args.add) ? args.add : [],
           remove: Array.isArray(args.remove) ? args.remove : [],
-          agentId: args.agentId,
+          agentId: postingAgentId(args),
         }),
       })
       const data = await res.json() as any
@@ -1600,7 +1610,7 @@ async function handleToolCall(
       const res = await daemonFetch(`${daemonUrl()}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel, chatId, text, agentId: args.agentId }),
+        body: JSON.stringify({ channel, chatId, text, agentId: postingAgentId(args) }),
       })
       const data = await res.json().catch(() => ({})) as any
       // Never "ok" in place of a missing ID: that hid lost GitLab notes (#984).
