@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { resolve } from "path"
@@ -97,6 +97,46 @@ describe("memos do not create unsourced facts", () => {
     expect(store.getAll("a")).toHaveLength(0)
     expect(listFactProposals(new FactLedger(wikiDir))[0].origin).toBe("continuity-memo")
   })
+
+  it.each(["requests", "a-channel-added-later", "requests@peer-server"])(
+    "a memo on %s stores no held copy, and still pins and routes",
+    (channel) => {
+      const store = new MemoryStore(root)
+      const addMemory = vi.spyOn(store, "addMemory")
+      const pinned: string[] = []
+      const r = storeRotationMemo(store, { setRotationMemo: (_a, _c, _i, m) => { pinned.push(m) } }, {
+        wikiDir, agentId: "a", channel, chatId: "123", reason: "tier-2", memo,
+      })
+      expect(addMemory).not.toHaveBeenCalled()
+      expect(store.held("a")).toHaveLength(0)
+      expect(pinned).toHaveLength(1)
+      expect(pinned[0]).toContain("Reviewing PR #12")
+      expect(pinned[0]).toContain("UNVERIFIED claim")
+      expect(r.proposals).toBe(2)
+      expect(listFactProposals(new FactLedger(wikiDir), "pending")).toHaveLength(2)
+    },
+  )
+
+  it.each([["a2a", "internal"], ["cli", "operator"]])(
+    "a memo on %s is stored as an injectable fact",
+    (channel, trust) => {
+      const store = new MemoryStore(root)
+      const pinned: string[] = []
+      storeRotationMemo(store, { setRotationMemo: (_a, _c, _i, m) => { pinned.push(m) } }, {
+        wikiDir, agentId: "a", channel, chatId: "123", reason: "tier-2", memo,
+      })
+      const facts = store.getAll("a")
+      expect(facts).toHaveLength(1)
+      expect(facts[0]).toMatchObject({
+        category: "task-state",
+        content: "[Rotation memo · tier-2] - Reviewing PR #12 for the importer",
+        source: { channel, trust },
+      })
+      expect(facts[0].review).toBeUndefined()
+      expect(store.held("a")).toHaveLength(0)
+      expect(pinned).toHaveLength(1)
+    },
+  )
 
   it("reads subject and value from simple claims only", () => {
     expect(parseClaim("- The build server went down (per status page)")).toMatchObject({ subject: "The build server", value: "down", attribute: "outage status" })
