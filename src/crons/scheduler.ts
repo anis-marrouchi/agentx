@@ -676,7 +676,17 @@ export class CronScheduler {
 
         // Retry — scheduled runs only; the caller of a fired run decides.
         this.logRun(result)
-        if (!fire) this.scheduleRetry(jobId, retryAttempt)
+        if (fire) return
+        if (response.error) {
+          this.scheduleRetry(jobId, retryAttempt)
+          return
+        }
+        // Only the exit check failed: the command ran, and running it again
+        // can repeat a login or a post (noqta#503). Wait for the schedule, and
+        // save the run so a restart doesn't catch it up as a missed one.
+        this.log(`Job "${jobId}" failed its exit check, not retrying`)
+        this.saveLastRuns()
+        this.scheduleNext(jobId)
         return
       } else {
         // Success — reset error state

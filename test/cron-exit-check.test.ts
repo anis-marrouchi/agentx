@@ -163,7 +163,86 @@ describe("a prompt cron with expectExitZero", () => {
   })
 })
 
+// noqta#503: running the prompt again repeats whatever the command did, such
+// as a bank login or a public post, so a failed exit check waits for the
+// schedule. Agent and runtime errors keep their retries.
+describe("retrying a failed scheduled run", () => {
+  function spied(def: Record<string, unknown>, response: Record<string, unknown>) {
+    const r = run(def, response)
+    r.s.scheduleRetry = vi.fn()
+    r.s.scheduleNext = vi.fn()
+    return r
+  }
+
+  it.each([
+    ["a non-zero exit code", "The script failed\nEXIT=10"],
+    ["a missing exit code", "The script failed"],
+  ])("does not retry %s, and still counts and notifies", async (_name, content) => {
+    const { s, registry, go } = spied(job({ expectExitZero: true, onError: ["notify"] }), { content })
+    const notify = vi.fn(async () => {})
+    s.setNotifyCallback(notify)
+    await go()
+    expect(registry.execute).toHaveBeenCalledTimes(1)
+    expect(s.scheduleRetry).not.toHaveBeenCalled()
+    expect(s.scheduleNext).toHaveBeenCalledWith("absorb")
+    expect(s.jobs.get("absorb").consecutiveErrors).toBe(1)
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(runRecords()[0]).toMatchObject({ success: false })
+  })
+
+  it("remembers the run, so a restart does not run the command again as a missed run", async () => {
+    const { s, go } = spied(job({ expectExitZero: true }), { content: "EXIT=10" })
+    await go()
+    expect(s.loadLastRuns()?.absorb).toBe(s.jobs.get("absorb").lastRun.toISOString())
+  })
+
+  it("stops retrying when a retry fails only its exit check", async () => {
+    const { s } = spied(job({ expectExitZero: true }), { content: "EXIT=10" })
+    await s.executeJob("absorb", 1)
+    expect(s.scheduleRetry).not.toHaveBeenCalled()
+    expect(s.scheduleNext).toHaveBeenCalledWith("absorb")
+  })
+
+  it("retries an agent error on a job with the setting", async () => {
+    const { s, go } = spied(job({ expectExitZero: true }), { content: "EXIT=10", error: "agent crashed" })
+    await go()
+    expect(s.scheduleRetry).toHaveBeenCalledWith("absorb", 0)
+    expect(s.scheduleNext).not.toHaveBeenCalled()
+  })
+
+  it("retries a runtime error on a job with the setting", async () => {
+    const { s, registry, go } = spied(job({ expectExitZero: true }), {})
+    registry.execute.mockRejectedValueOnce(new Error("spawn failed"))
+    await go()
+    expect(s.scheduleRetry).toHaveBeenCalledWith("absorb", 0)
+    expect(s.scheduleNext).not.toHaveBeenCalled()
+  })
+
+  it("retries an agent error on a job without the setting", async () => {
+    const { s, go } = spied(job(), { content: "", error: "agent crashed" })
+    await go()
+    expect(s.scheduleRetry).toHaveBeenCalledWith("absorb", 0)
+    expect(s.scheduleNext).not.toHaveBeenCalled()
+  })
+
+  it("leaves a fired run's schedule alone", async () => {
+    const { s } = spied(job({ expectExitZero: true }), { content: "EXIT=10" })
+    await s.executeJob("absorb", 0, { firedAt: new Date(), payload: {} })
+    expect(s.scheduleRetry).not.toHaveBeenCalled()
+    expect(s.scheduleNext).not.toHaveBeenCalled()
+  })
+})
+
 describe("a prompt cron without the setting", () => {
+  it("does not retry a clean run whose text reports a failure", async () => {
+    const { s, go } = run(job(), { content: "The command failed\nEXIT=1" })
+    s.scheduleRetry = vi.fn()
+    s.scheduleNext = vi.fn()
+    await go()
+    expect(s.scheduleRetry).not.toHaveBeenCalled()
+    expect(s.scheduleNext).toHaveBeenCalledWith("absorb")
+  })
+
   it("is unchanged: a successful agent run is a success whatever the text says", async () => {
     const { registry, go } = run(job(), { content: "The command failed with MODULE_NOT_FOUND\nEXIT=1" })
     await go()
