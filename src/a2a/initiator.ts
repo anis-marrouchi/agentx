@@ -107,6 +107,10 @@ export function classifyInitiator(ctx: InitiatorContext | undefined | null): Ini
 export function rootInitiatorOf(ctx: InitiatorContext | undefined | null, agentId?: string): RootInitiator {
   const existing = validRoot(ctx?.initiator)
   if (existing) return existing
+  // A callback turn carries the root of the delegation it answers (#1749):
+  // work it hands on belongs to that chain, not to a new one it starts.
+  const answered = validRoot((ctx?.delegation as { root?: unknown } | undefined)?.root)
+  if (answered) return answered
   const root: RootInitiator = { kind: classifyInitiator(ctx), channel: ctx?.channel || "api" }
   if (ctx?.chatId) root.chatId = String(ctx.chatId)
   if (ctx?.sender) root.sender = String(ctx.sender)

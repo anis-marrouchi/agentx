@@ -194,9 +194,110 @@ describe("human-initiated delegation to a local agent", () => {
     })
     const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
     const b = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "b" })
-    await Promise.all([h.mgr.complete(a.taskId, { status: "done", text: "A" }), h.mgr.complete(b.taskId, { status: "done", text: "B" })])
+    const first = h.mgr.complete(a.taskId, { status: "done", text: "A" })
+    await new Promise((r) => setTimeout(r, 1))
+    // B comes back while A's callback turn is running: it gets the next one.
+    await Promise.all([first, h.mgr.complete(b.taskId, { status: "done", text: "B" })])
     expect(overlap).toBe(false)
     expect(order).toEqual([a.taskId, b.taskId])
+  })
+})
+
+describe("answers for one chat come back as one turn (#1749)", () => {
+  function many(over: Partial<DelegationDeps> = {}) {
+    const runs: Array<{ resolve: (v: { content: string; error?: string }) => void }> = []
+    const calls: any[] = []
+    const h = harness({
+      runLocal: (callee, message, context, opts) => {
+        calls.push({ callee, message, context, opts })
+        opts.onStart(`run-${calls.length}`)
+        const d = deferred<{ content: string; error?: string }>()
+        runs.push(d)
+        return d.promise
+      },
+      ...over,
+    })
+    return { h, runs, calls }
+  }
+
+  it("joins answers that are in before the callback starts", async () => {
+    const h = harness()
+    const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Check the build" })
+    const b = h.mgr.start({ caller: HUMAN_TURN, callee: "tester", message: "Run the tests" })
+    await Promise.all([h.mgr.complete(a.taskId, { status: "done", text: "Build green." }), h.mgr.complete(b.taskId, { status: "error", text: "2 failed" })])
+    expect(h.injected).toHaveLength(1)
+    const turn = h.injected[0]
+    expect(isDelegationRelay(turn.message)).toBe(true)
+    expect(turn.message).toContain("Build green.")
+    expect(turn.message).toContain("2 failed")
+    expect(turn.message).toContain("2 pieces of work you handed out came back together")
+    expect(turn.context.delegation).toMatchObject({ taskId: a.taskId, taskIds: [a.taskId, b.taskId] })
+    expect(h.delivered).toHaveLength(1)
+    expect(h.delivered[0]).toMatchObject({ taskId: b.taskId, outcome: "done" })
+  })
+
+  it("waits for the other delegations from the same chat, up to coalesceMs", async () => {
+    const { h, runs } = many({ coalesceMs: 10_000 })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "one" })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "tester", message: "two" })
+    runs[0].resolve({ content: "first" })
+    await flush()
+    expect(h.injected).toHaveLength(0)
+    runs[1].resolve({ content: "second" })
+    await flush()
+    await flush()
+    expect(h.injected).toHaveLength(1)
+    expect(h.injected[0].message).toContain("first")
+    expect(h.injected[0].message).toContain("second")
+  })
+
+  it("does not wait past coalesceMs for a delegation still running", async () => {
+    let now = 1_000_000
+    const { h, runs } = many({ coalesceMs: 50, now: () => now })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "quick" })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "tester", message: "slow" })
+    runs[0].resolve({ content: "quick answer" })
+    await flush()
+    expect(h.injected).toHaveLength(0)
+    now += 100
+    await flush()
+    expect(h.injected).toHaveLength(1)
+    expect(h.injected[0].message).toContain("quick answer")
+  })
+
+  it("does not wait for delegations from another chat or another kind", async () => {
+    const { h, runs } = many({ coalesceMs: 10_000 })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "mine" })
+    h.mgr.start({ caller: { ...HUMAN_TURN, context: { ...HUMAN_TURN.context, chatId: "chat-2" } }, callee: "tester", message: "other chat" })
+    runs[0].resolve({ content: "done here" })
+    await flush()
+    expect(h.injected).toHaveLength(1)
+  })
+
+  it("holds each answer of a joined turn a restart stopped", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-dlg-"))
+    try {
+      const logPath = join(dir, "delegations.jsonl")
+      const STOPPED = { content: "", error: "stopped mid-turn (registry-stop)" }
+      const h = harness({ logPath, injectTurn: async () => STOPPED })
+      const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
+      const b = h.mgr.start({ caller: HUMAN_TURN, callee: "tester", message: "b" })
+      await Promise.all([h.mgr.complete(a.taskId, { status: "done", text: "A" }), h.mgr.complete(b.taskId, { status: "done", text: "B" })])
+      const held = readFileSync(logPath, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.type === "relay")
+      expect(held.map((l) => l.id).sort()).toEqual([a.taskId, b.taskId].sort())
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("carries the root, so work handed on from the callback keeps it", async () => {
+    const h = harness()
+    const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
+    await h.mgr.complete(a.taskId, { status: "done", text: "ok" })
+    const callbackTurn: CallerTurn = { agentId: "front", taskId: "run-7", context: h.injected[0].context }
+    // A send from the callback turn: its callee runs under the person's root.
+    h.mgr.start({ caller: callbackTurn, callee: "tester", message: "follow up", kind: "send" })
+    expect(h.calls.runLocal[1].context.initiator).toMatchObject({ kind: "human", channel: "telegram", chatId: "chat-1" })
   })
 })
 
@@ -771,13 +872,34 @@ describe("one session per piece of work (#1100)", () => {
     expect(calls[2].opts.resumeFrom.map((c: any) => c.chatId)).toEqual([`a2a:planner:writer:${b.taskId}`, `a2a:planner:writer:${a.taskId}`])
   })
 
-  it("leaves work without a home as it was", async () => {
+  it("runs work without a home beside a run still going from the same chat", async () => {
     const { h, calls } = twoRuns()
     h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one", kind: "send" })
     h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "two", kind: "send" })
     await flush()
     expect(calls).toHaveLength(2)
     expect(calls[1].opts.resumeFrom).toBeUndefined()
+  })
+
+  it("continues the callee's last run from the same chat for work without a home (#1749)", async () => {
+    let now = 1_000_000
+    const { h, runs, calls } = twoRuns({ now: () => now, sameChatMs: 60_000 })
+    const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "two", kind: "send" })
+    // Another chat of the same caller does not share it.
+    h.mgr.start({ caller: { ...AGENT_TURN, context: { ...AGENT_TURN.context, chatId: "mcp:lead:planner:work-2" } }, callee: "writer", message: "elsewhere", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
+    expect(calls[1].context.home).toBeUndefined()
+    expect(calls[2].opts.resumeFrom).toBeUndefined()
+    runs[1].resolve({ content: "ok" })
+    await flush()
+    now += 120_000
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "much later", kind: "send" })
+    await flush()
+    expect(calls[3].opts.resumeFrom).toBeUndefined()
   })
 })
 

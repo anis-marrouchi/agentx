@@ -1131,6 +1131,11 @@ const meshConfigSchema = z.object({
      *  agent's own chat, and a message the callee writes back to it lands
      *  there too. Off: such a send is queued and its answer only logged. */
     callbackSends: z.boolean().default(true),
+    /** How long a finished delegation's answer waits for the other ones
+     *  still running from the same chat, so the asking agent gets them in
+     *  one turn instead of one turn each (#1749). 0: only answers that
+     *  are already in are joined. */
+    coalesceSeconds: z.number().int().min(0).max(900).default(120),
   }).default({}),
 })
 

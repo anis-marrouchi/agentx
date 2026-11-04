@@ -37,6 +37,12 @@ describe("classifyInitiator", () => {
 })
 
 describe("rootInitiatorOf", () => {
+  it("takes the root a callback turn carries for the delegation it answers (#1749)", () => {
+    const root = { kind: "human", channel: "app", chatId: "p1", agentId: "front" }
+    expect(rootInitiatorOf({ channel: "app", chatId: "p1", sender: "agent:worker", delegation: { taskId: "dlg-1", from: "worker", root } }, "front")).toEqual(root)
+    expect(classifyInitiator({ channel: "app", chatId: "p1", sender: "agent:worker", delegation: { taskId: "dlg-1", from: "worker", root } })).toBe("agent")
+  })
+
   it("makes this turn the root when none travels with it", () => {
     expect(rootInitiatorOf({ channel: "telegram", chatId: "c1", sender: "Sam" }, "front")).toEqual({
       kind: "human", channel: "telegram", chatId: "c1", sender: "Sam", agentId: "front",
