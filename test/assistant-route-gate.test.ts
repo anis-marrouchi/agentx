@@ -191,18 +191,27 @@ describe("dashboard proxy to a gated daemon", () => {
     expect((await call(board, "GET", `/api/assistant/threads?node=${encodeURIComponent(peerUrl)}`, owner)).status).toBe(200)
   })
 
-  it("passes the peer's refusal back when the peer does not accept the token", async () => {
+  it("reports the peer's refusal as the machine's, not as the owner signed out", async () => {
     const peerUrl = await serveDaemon(buildDaemon(MESH_CONFIG), () => OFF_BOX)
     const board = await serveBoard({ daemonUrl: "http://127.0.0.1:1", daemons: [{ name: "peer", url: peerUrl, token: "not-accepted" }] })
     const res = await call(board, "POST", "/api/assistant", owner, { agentId: "helper", message: "hello", node: peerUrl })
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toContain("refused this dashboard's token")
     expect(executed).toEqual([])
   })
 
   it("no longer reaches a primary on another host with only dashboard.token", async () => {
     const daemonUrl = await serveDaemon(buildDaemon(MESH_CONFIG), () => OFF_BOX)
     const board = await serveBoard({ daemonUrl })
-    expect((await call(board, "GET", "/api/assistant/threads", owner)).status).toBe(401)
+    const res = await call(board, "GET", "/api/assistant/threads", owner)
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toContain("refused this dashboard's token")
+  })
+
+  it("still answers 401 to a viewer who is not the owner", async () => {
+    const daemonUrl = await serveDaemon(buildDaemon(MESH_CONFIG), () => LOCAL)
+    const board = await serveBoard({ daemonUrl })
+    expect((await call(board, "GET", "/api/assistant/threads")).status).toBe(401)
   })
 })
 

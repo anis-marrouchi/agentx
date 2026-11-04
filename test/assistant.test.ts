@@ -107,3 +107,58 @@ describe("rendering what agents write", () => {
     expect(dmn).toContain("message: live.message, sender: live.sender")
   })
 })
+
+// The drawer's real script against a stubbed DOM and fetch.
+function openDrawer(route: (url: string) => { status: number; body: unknown } | undefined, thread?: string) {
+  const els = new Map<string, any>()
+  const make = (): any => {
+    const e: any = {
+      value: "", hidden: false, textContent: "", innerHTML: "", kids: [], on: {}, style: { setProperty() {} },
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      addEventListener: (t: string, f: (ev: any) => void) => { e.on[t] = f },
+      querySelector: () => null, querySelectorAll: () => [], setAttribute() {}, getAttribute: () => null, focus() {}, remove() {},
+      appendChild: (c: any) => { e.kids.push(c); return c },
+      append: (...c: any[]) => { e.kids.push(...c) },
+      replaceChildren: (...c: any[]) => { e.kids = c },
+    }
+    return e
+  }
+  const el = (id: string) => { if (!els.has(id)) els.set(id, make()); return els.get(id) }
+  const text = (e: any): string => (typeof e === "string" ? e : [e.textContent, ...e.kids.map(text)].join(""))
+  const doc = { getElementById: el, createElement: make, querySelector: () => null, addEventListener() {}, documentElement: make(), body: make() }
+  const store = new Map<string, string>(thread ? [["ax-assistant-thread", thread]] : [])
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v) }, removeItem: (k: string) => { store.delete(k) } }
+  const fetchStub = async (url: string) => {
+    const r = route(url) ?? { status: 200, body: { agents: [], nodes: [], threads: [] } }
+    return { ok: r.status < 400, status: r.status, json: async () => r.body }
+  }
+  new Function("document", "window", "localStorage", "location", "fetch", ASSISTANT_SCRIPT)(doc, {}, storage, { pathname: "/hub", search: "" }, fetchStub)
+  const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
+  return { el, text, settle }
+}
+
+describe("ask-an-agent drawer when a request is refused", () => {
+  const refused = { status: 502, body: { error: "That machine refused this dashboard's token." } }
+
+  it("names the machine's refusal to the signed-in owner, with no sign-in", async () => {
+    const w = openDrawer((url) => (url.startsWith("/api/assistant") ? refused : undefined), "t1")
+    await w.settle()
+    expect(w.text(w.el("ax-as-hist-empty"))).toContain("refused this dashboard")
+    expect(w.text(w.el("ax-as-hist-empty"))).not.toContain("Sign in")
+    expect(w.text(w.el("ax-as-log"))).toContain("refused this dashboard")
+    expect(w.text(w.el("ax-as-log"))).not.toContain("Sign in")
+    w.el("ax-as-agent").value = "scout"
+    w.el("ax-as-bar-input").value = "Hello"
+    w.el("ax-as-bar").on.submit({ preventDefault() {} })
+    await w.settle()
+    expect(w.text(w.el("ax-as-log"))).not.toContain("Sign in")
+    expect(w.el("ax-as-bar-input").value).toBe("Hello")
+  })
+
+  it("still offers sign-in on a 401, when the viewer is not the owner", async () => {
+    const w = openDrawer((url) => (url.startsWith("/api/assistant") ? { status: 401, body: { error: "unauthorized" } } : undefined), "t1")
+    await w.settle()
+    expect(w.text(w.el("ax-as-hist-empty"))).toContain("Sign in")
+    expect(w.text(w.el("ax-as-log"))).toContain("Sign in")
+  })
+})

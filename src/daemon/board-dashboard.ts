@@ -419,6 +419,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         headers: { "Content-Type": "application/json", ...(node.token ? { Authorization: `Bearer ${node.token}` } : {}) },
         ...(method === "POST" ? { body: JSON.stringify({ ...body, node: undefined }) } : {}),
       })
+      // The owner passed the check above, so a 401 here is the node refusing
+      // this dashboard's token. Passed on as is, it would ask the owner to sign in.
+      if (r.status === 401) {
+        sendJson(res, 502, { error: "That machine refused this dashboard's token. Give its dashboard.daemons entry a token it accepts.", node: node.url })
+        return
+      }
       const out = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
       // Which node holds it: the page reads the thread there again and
       // streams or stops its run through /api/task/* (#1528).

@@ -212,6 +212,26 @@ describe("Hub chat: on the page (#1528)", () => {
     expect(w.el("hc-send").disabled).toBe(false)
   })
 
+  it("names the machine's refusal to the signed-in owner, with no sign-in", async () => {
+    const refused = { status: 502, body: { error: "That machine refused this dashboard's token." } }
+    const w = openChat({ thread: "t1", route: (url) => (url.startsWith("/api/assistant") ? refused : undefined) })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.el("hc-log").innerHTML).toContain("refused this dashboard")
+    expect(w.el("hc-log").innerHTML).not.toContain("Sign in")
+    expect(w.ls.get("ax-assistant-thread")).toBe("t1")
+    w.el("hc-agent").value = "scout"
+    w.el("hc-text").value = "Hello"
+    await w.fire("hc-form", "submit")
+    expect(w.el("hc-log").innerHTML).toContain("refused this dashboard")
+    expect(w.el("hc-log").innerHTML).not.toContain("Sign in")
+    expect(w.el("hc-text").value).toBe("Hello")
+    await w.fire("hc-hist", "click")
+    expect(w.el("hc-hist-err").hidden).toBe(false)
+    expect(w.el("hc-hist-err").textContent).toContain("refused this dashboard")
+    expect(w.el("hc-hist-empty").hidden).toBe(true)
+  })
+
   it("shows sign-in when the API refuses the viewer", async () => {
     const w = openChat({ route: (url, init) => (url === "/api/assistant" && init.method === "POST" ? { status: 401, body: { error: "unauthorized" } } : undefined) })
     await w.settle()
