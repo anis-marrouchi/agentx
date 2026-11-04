@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.207.0](https://github.com/anis-marrouchi/agentx/compare/v0.206.1...v0.207.0) (2026-11-04)
+
+
+### Features
+
+* **admission:** close idle sessions while runs wait on memory ([#1748](https://github.com/anis-marrouchi/agentx/issues/1748)) ([abf7324](https://github.com/anis-marrouchi/agentx/commit/abf73240992e44719b8838836d9d4810ad55f73a))
+
+
+### Bug Fixes
+
+* **crons:** a restart keeps the last-run time of jobs that have not run yet ([#1740](https://github.com/anis-marrouchi/agentx/issues/1740)) ([#1754](https://github.com/anis-marrouchi/agentx/issues/1754)) ([399cb4d](https://github.com/anis-marrouchi/agentx/commit/399cb4d92e0e1eb9145dafa3aa03f7773556c164))
+* **daemon:** require a credential for the assistant, chat and workspace file routes ([#1752](https://github.com/anis-marrouchi/agentx/issues/1752)) ([f72629d](https://github.com/anis-marrouchi/agentx/commit/f72629df553e48f4cca8690a461629439ed70496))
+* **mcp:** GitLab writes name the running agent when no agentId is given ([#1746](https://github.com/anis-marrouchi/agentx/issues/1746)) ([0248719](https://github.com/anis-marrouchi/agentx/commit/024871949c137cece87306479e1b5e0fffef8657))
+* **workflows:** keep credentials out of run files, the run API and mesh events ([#1744](https://github.com/anis-marrouchi/agentx/issues/1744)) ([933ef8b](https://github.com/anis-marrouchi/agentx/commit/933ef8ba1442d179845b1f8bc12893e000cca741))
+
 ## [0.206.1](https://github.com/anis-marrouchi/agentx/compare/v0.206.0...v0.206.1) (2026-11-04)
 
 
