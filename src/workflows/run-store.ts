@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "crypto"
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { currentRoot } from "@/events/envelope"
+import { stripSecrets } from "./strip-secrets"
 import {
   type EntityRef,
   type NodeExecutionEntry,
@@ -138,7 +139,7 @@ export class RunStore {
       homeNode: this.nodeId,
       status: "running",
       pausedAt: undefined,
-      context: args.initialContext ?? {},
+      context: stripSecrets(args.initialContext ?? {}),
       pending: args.initialPending,
       entityRef: args.entityRef,
       history: [],
@@ -186,7 +187,8 @@ export class RunStore {
         }
       }
     }
-    return run
+    // A file written by an older version may still hold a credential.
+    return run && stripSecrets(run)
   }
 
   /** Look up the active run id for an entity, if any. */
@@ -245,7 +247,7 @@ export class RunStore {
       context: args.context,
       joinCounters: args.joinCounters,
     }
-    appendFileSync(this.runPath(args.runId, run.workflowId), JSON.stringify(line) + "\n")
+    appendFileSync(this.runPath(args.runId, run.workflowId), JSON.stringify(stripSecrets(line)) + "\n")
 
     // Refresh the index: completed/failed/canceled runs clear it; running +
     // paused runs keep it so webhook re-entry can still find the home node.
@@ -424,7 +426,7 @@ export class RunStore {
 
   private appendSnapshot(run: WorkflowRun): void {
     const line: RunEventLine = { v: 2, kind: "snapshot", run }
-    appendFileSync(this.runPath(run.id, run.workflowId), JSON.stringify(line) + "\n")
+    appendFileSync(this.runPath(run.id, run.workflowId), JSON.stringify(stripSecrets(line)) + "\n")
   }
 
   private writeIndex(entity: EntityRef, runId: string): void {
