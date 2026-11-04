@@ -194,9 +194,137 @@ describe("human-initiated delegation to a local agent", () => {
     })
     const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
     const b = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "b" })
-    await Promise.all([h.mgr.complete(a.taskId, { status: "done", text: "A" }), h.mgr.complete(b.taskId, { status: "done", text: "B" })])
+    const first = h.mgr.complete(a.taskId, { status: "done", text: "A" })
+    await new Promise((r) => setTimeout(r, 2)) // a's callback turn is running
+    await Promise.all([first, h.mgr.complete(b.taskId, { status: "done", text: "B" })])
     expect(overlap).toBe(false)
     expect(order).toEqual([a.taskId, b.taskId])
+  })
+})
+
+describe("answers for the same chat (#1749)", () => {
+  it("passes answers that are already in on in one turn", async () => {
+    const h = harness()
+    const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
+    const b = h.mgr.start({ caller: HUMAN_TURN, callee: "helper", message: "b" })
+    await Promise.all([h.mgr.complete(a.taskId, { status: "done", text: "A" }), h.mgr.complete(b.taskId, { status: "error", text: "B broke" })])
+    expect(h.injected).toHaveLength(1)
+    const msg = h.injected[0].message
+    expect(isDelegationRelay(msg)).toBe(true)
+    expect(msg).toContain("batch=2")
+    expect(msg).toContain(`task=${a.taskId}`)
+    expect(msg).toContain(`task=${b.taskId}`)
+    expect((h.injected[0].context.delegation as any).taskIds).toEqual([a.taskId, b.taskId])
+    expect(h.delivered).toHaveLength(1)
+  })
+
+  it("waits a bounded time for siblings still running, then answers once", async () => {
+    const h = harness({ coalesceMs: 60_000 })
+    const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
+    const b = h.mgr.start({ caller: HUMAN_TURN, callee: "helper", message: "b" })
+    const first = h.mgr.complete(a.taskId, { status: "done", text: "A" })
+    await flush()
+    expect(h.injected).toHaveLength(0) // b is still running
+    await h.mgr.complete(b.taskId, { status: "done", text: "B" })
+    await first
+    expect(h.injected).toHaveLength(1)
+    expect(h.injected[0].message).toContain("batch=2")
+  })
+
+  it("does not wait past coalesceMs", async () => {
+    const h = harness({ coalesceMs: 20 })
+    const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "helper", message: "b" })
+    await h.mgr.complete(a.taskId, { status: "done", text: "A" })
+    expect(h.injected).toHaveLength(1)
+    expect(h.injected[0].message).not.toContain("batch=")
+  })
+
+  it("never merges answers for different chats", async () => {
+    const h = harness({ coalesceMs: 60_000 })
+    const other: CallerTurn = { ...HUMAN_TURN, context: { ...HUMAN_TURN.context, chatId: "chat-2" } }
+    const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
+    h.mgr.start({ caller: other, callee: "worker", message: "b" })
+    await h.mgr.complete(a.taskId, { status: "done", text: "A" })
+    expect(h.injected).toHaveLength(1)
+    expect(h.injected[0].message).not.toContain("batch=")
+  })
+})
+
+describe("the root on callback turns (#1749)", () => {
+  it("carries the delegation's root, and hops from the callback keep it", async () => {
+    const h = harness()
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
+    h.local.resolve({ content: "done" })
+    await flush()
+    const ctx = h.injected[0].context
+    expect((ctx.delegation as any).root).toMatchObject({ kind: "human", channel: "telegram", chatId: "chat-1", sender: "Sam" })
+    // A send from the callback turn (from an agent's chat it would be "send")
+    const second = h.mgr.start({ caller: { agentId: "front", taskId: "run-9", context: ctx }, callee: "helper", message: "more" })
+    expect(second.record.root).toMatchObject({ kind: "human", channel: "telegram", sender: "Sam" })
+    expect(h.calls.runLocal[1].context.initiator).toMatchObject({ kind: "human", channel: "telegram" })
+  })
+})
+
+describe("a helper asked again from the same conversation (#1749)", () => {
+  function sequential(over: Partial<DelegationDeps> = {}) {
+    const runs: Array<ReturnType<typeof deferred<{ content: string; error?: string }>>> = []
+    const h = harness({
+      sameConversationMs: 60_000,
+      runLocal: (callee, message, context, opts) => {
+        h.calls.runLocal.push({ callee, message, context, opts })
+        const d = deferred<{ content: string; error?: string }>()
+        runs.push(d)
+        return d.promise
+      },
+      ...over,
+    })
+    return { ...h, runs }
+  }
+
+  it("continues the helper's ended session from that conversation", async () => {
+    const h = sequential()
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "one" })
+    h.runs[0].resolve({ content: "ok" })
+    await flush()
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "two" })
+    await flush()
+    expect(h.calls.runLocal[0].opts.resumeFrom).toBeUndefined()
+    expect(h.calls.runLocal[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: h.calls.runLocal[0].context.chatId }])
+  })
+
+  it("starts fresh, without waiting, while the earlier run still goes", async () => {
+    const h = sequential()
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "one" })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "two" })
+    await flush()
+    expect(h.calls.runLocal).toHaveLength(2)
+    expect(h.calls.runLocal[1].opts.resumeFrom).toBeUndefined()
+  })
+
+  it("does not continue from another conversation, another helper, or after the window", async () => {
+    let now = 1_000_000
+    const h = sequential({ now: () => now })
+    const other: CallerTurn = { ...HUMAN_TURN, context: { ...HUMAN_TURN.context, chatId: "chat-2" } }
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "one" })
+    h.runs[0].resolve({ content: "ok" })
+    await flush()
+    h.mgr.start({ caller: other, callee: "worker", message: "two" })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "helper", message: "three" })
+    now += 61_000
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "four" })
+    await flush()
+    expect(h.calls.runLocal.slice(1).map((c) => c.opts.resumeFrom)).toEqual([undefined, undefined, undefined])
+  })
+
+  it("is off when sameConversationMs is not set", async () => {
+    const h = sequential({ sameConversationMs: undefined })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "one" })
+    h.runs[0].resolve({ content: "ok" })
+    await flush()
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "two" })
+    await flush()
+    expect(h.calls.runLocal[1].opts.resumeFrom).toBeUndefined()
   })
 })
 

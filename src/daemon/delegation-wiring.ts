@@ -517,6 +517,10 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     timeoutMs: cfg.timeoutMinutes * 60_000,
     asyncWhenHuman: cfg.asyncWhenHuman,
     requeueRelayOnRestart: cfg.requeueRelayOnRestart,
+    // #1749: answers for one chat share a turn; a helper asked again from
+    // the same conversation continues its session there.
+    coalesceMs: cfg.coalesceSeconds * 1000,
+    sameConversationMs: cfg.continueMinutes * 60_000,
     logPath: resolve(w.baseDir ?? process.cwd(), ".agentx/a2a/delegations.jsonl"),
     log: w.log,
     onStarted: w.onStarted,

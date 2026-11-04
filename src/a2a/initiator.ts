@@ -9,7 +9,8 @@
 // The rules, in order:
 //   1. A propagated root (`context.initiator`) wins. It is stamped on the
 //      first hop of a delegation and travels with the context, including
-//      across mesh peers (sendTask forwards the context verbatim).
+//      across mesh peers (sendTask forwards the context verbatim). A
+//      callback turn carries it in `context.delegation.root` (#1749).
 //   2. Machine channels (cron, workflow, a2a, mcp, mesh, api, ...) are agent.
 //   3. A machine-shaped sender ("agent:x", "cron:y", ...) is agent. This is
 //      how router bot-to-bot chains and callback turns are marked, and how
@@ -78,10 +79,21 @@ function validRoot(v: unknown): RootInitiator | null {
   return root
 }
 
-/** The root a delegated hop carries in `context.initiator`, or null on a
- *  turn that is itself a root (read-only views such as the activity map). */
+/** The root a turn carries: a delegated hop's `context.initiator`, else a
+ *  callback turn's `context.delegation.root` (#1749). A callback turn
+ *  answers work someone else started, so hops it starts keep that root. */
+function carriedRoot(ctx: InitiatorContext | undefined | null): RootInitiator | null {
+  if (!ctx) return null
+  const own = validRoot(ctx.initiator)
+  if (own) return own
+  const dlg = ctx.delegation
+  return dlg && typeof dlg === "object" ? validRoot((dlg as Record<string, unknown>).root) : null
+}
+
+/** The root a delegated hop or callback turn carries, or null on a turn
+ *  that is itself a root (read-only views such as the activity map). */
 export function propagatedRootOf(ctx: InitiatorContext | undefined | null): RootInitiator | null {
-  return validRoot(ctx?.initiator)
+  return carriedRoot(ctx)
 }
 
 /** True for senders that name software rather than a person. */
@@ -93,7 +105,7 @@ export function isAgentSender(sender: unknown): boolean {
 
 /** Human or agent, for the chain this turn belongs to. */
 export function classifyInitiator(ctx: InitiatorContext | undefined | null): InitiatorKind {
-  const root = validRoot(ctx?.initiator)
+  const root = carriedRoot(ctx)
   if (root) return root.kind
   const channel = (ctx?.channel || "api").toLowerCase()
   if (AGENT_CHANNELS.has(channel)) return "agent"
@@ -105,7 +117,7 @@ export function classifyInitiator(ctx: InitiatorContext | undefined | null): Ini
 /** The root to stamp on the next hop. An existing root is passed on
  *  unchanged; otherwise this turn is the root. */
 export function rootInitiatorOf(ctx: InitiatorContext | undefined | null, agentId?: string): RootInitiator {
-  const existing = validRoot(ctx?.initiator)
+  const existing = carriedRoot(ctx)
   if (existing) return existing
   const root: RootInitiator = { kind: classifyInitiator(ctx), channel: ctx?.channel || "api" }
   if (ctx?.chatId) root.chatId = String(ctx.chatId)

@@ -168,6 +168,14 @@ export interface DelegationDeps {
   /** How long after a callee's run on a home ended a new delegation on
    *  that home still continues its session (#1100). Default 12 h. */
   sameHomeMs?: number
+  /** With no home: how long after a callee's last run for the same asking
+   *  chat ended a new delegation from that chat continues its session
+   *  (#1749). Never while a run of it is still going. Default 0: off. */
+  sameConversationMs?: number
+  /** How long the first answer for an asking chat waits for its siblings
+   *  (delegations from that chat still running), so they come back as one
+   *  turn (#1749). Default 0: only answers already in are merged. */
+  coalesceMs?: number
   /** start/done log; omit to keep state in memory only (tests). */
   logPath?: string
   now?: () => number
@@ -318,6 +326,31 @@ export function relayFailureNotice(rec: DelegationRecord, result: DelegationResu
 }
 
 /** A callback turn a restart stopped, waiting for its one re-run. */
+/** One answer waiting to be passed on in a callback turn. */
+interface CallbackItem {
+  rec: DelegationRecord
+  result: DelegationResult
+  /** The callee already wrote to the caller (relayReply). */
+  wrote?: boolean
+}
+
+/** Answers for one asking chat, collected into one callback turn (#1749). */
+interface Batch {
+  items: CallbackItem[]
+  firstAt: number
+  done: Promise<void>
+}
+
+/** The header of a callback turn that carries several answers at once. */
+export function buildBatchMessage(messages: string[]): string {
+  return [
+    `${DELEGATION_RESULT_MARKER} batch=${messages.length}]`,
+    `${messages.length} pieces of work you handed on from this conversation came back together. Read them all, then answer once for all of them.`,
+    "",
+    messages.map((m, i) => `--- ${i + 1} of ${messages.length} ---\n${m}`).join("\n\n"),
+  ].join("\n")
+}
+
 interface HeldRelay {
   record: DelegationRecord
   result: DelegationResult
@@ -354,8 +387,14 @@ export class DelegationManager {
   /** Per callee and home (#1100): the chat of its last run there, and
    *  that run while it is still going. In memory: a restart starts over. */
   private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null }>()
+  /** Per callee and asking chat, when no home is named (#1749): the chat of
+   *  its last run for that conversation. Same shape as `homes`, but a run
+   *  still going is never waited on. */
+  private conversations = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: boolean; endedAt: number | null }>()
   /** Callee chats with a same-home run going right now: never continued. */
   private busyChats = new Set<string>()
+  /** Answers waiting to be passed on, per asking chat (#1749). */
+  private batches = new Map<string, Batch>()
   private readonly now: () => number
 
   constructor(private deps: DelegationDeps) {
@@ -417,7 +456,7 @@ export class DelegationManager {
   relayReply(rec: DelegationRecord, text: string): void {
     this.answered.add(rec.id)
     this.deps.log(`[delegation ${rec.id}] ${rec.callee} wrote to ${rec.caller}; passed to ${rec.origin.channel}:${rec.origin.chatId}`)
-    void this.enqueue(rec, () => this.callback(rec, { status: "done", text }, 1, true))
+    void this.enqueue(rec, () => this.callback([{ rec, result: { status: "done", text } }], 1, true))
   }
 
   /** Launch the callee in the background and return its task id. */
@@ -484,6 +523,12 @@ export class DelegationManager {
     // home, still going or recent, is the session this one continues.
     const homeKey = home && !record.peer ? `${record.callee}\u0000${home}` : null
     const prior = homeKey ? this.sameHome(homeKey) : null
+    // No home: the asking conversation is the work (#1749). The callee's
+    // last run for it is continued, but only once it has ended.
+    const convKey = !home && !record.peer && (this.deps.sameConversationMs ?? 0) > 0
+      ? `${record.callee}\u0000${record.caller}\u0000${origin.channel}\u0000${origin.chatId}`
+      : null
+    const convPrior = convKey ? this.sameConversation(convKey) : null
     const calleeChat = { channel: String(calleeContext.channel), chatId: String(calleeContext.chatId) }
     // Newest first: a run that failed before it saved a session falls back
     // to the one before it. Read when it launches: while any earlier run on
@@ -492,15 +537,20 @@ export class DelegationManager {
     // an older chat names. No two runs write one session.
     const chatKeyOf = (c: { channel: string; chatId: string }) => `${record.callee}\u0000${c.channel}\u0000${c.chatId}`
     const resumable = () => {
-      const chats = prior?.chats ?? []
+      if (convPrior?.running) return []
+      const chats = prior?.chats ?? convPrior?.chats ?? []
       if (chats.some((c) => this.busyChats.has(chatKeyOf(c)))) {
-        this.deps.log(`[delegation ${id}] a run on ${home} is still going; starting a fresh session instead`)
+        this.deps.log(`[delegation ${id}] a run ${home ? `on ${home}` : "for this conversation"} is still going; starting a fresh session instead`)
         return []
       }
       return chats.filter((c) => !(c.channel === calleeChat.channel && c.chatId === calleeChat.chatId))
     }
     if (prior) {
       this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? "waits for it, then " : ""}continues its session`)
+    } else if (convPrior) {
+      this.deps.log(convPrior.running
+        ? `[delegation ${id}] ${record.callee} is still busy for this conversation (${convPrior.taskId}); starting a fresh session instead`
+        : `[delegation ${id}] ${record.callee} worked for this conversation (${convPrior.taskId}); continues its session`)
     }
 
     const timeoutMs = opts.timeoutMs ?? this.deps.timeoutMs
@@ -523,7 +573,7 @@ export class DelegationManager {
       }
       const resumeFrom = resumable()
       const mine = chatKeyOf(calleeChat)
-      if (homeKey) this.busyChats.add(mine)
+      if (homeKey || convKey) this.busyChats.add(mine)
       return this.deps.runLocal(record.callee, opts.message, calleeContext, {
         timeoutMs,
         onStart: (runId) => { this.localRuns.set(id, runId) },
@@ -537,6 +587,13 @@ export class DelegationManager {
       ? Promise.race([prior.running, new Promise<void>((r) => { const t = setTimeout(r, timeoutMs); (t as any).unref?.() })])
       : null
     const run = waitFor ? waitFor.then(launch) : launch()
+    if (convKey) {
+      this.conversations.set(convKey, { chats: [calleeChat, ...(convPrior?.chats ?? [])].slice(0, 3), taskId: id, running: true, endedAt: null })
+      void run.then(() => undefined, () => undefined).then(() => {
+        const c = this.conversations.get(convKey)
+        if (c?.taskId === id) { c.running = false; c.endedAt = this.now() }
+      })
+    }
     if (homeKey) {
       const running = run.then(() => undefined, () => undefined)
       this.homes.set(homeKey, { chats: [calleeChat, ...(prior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null })
@@ -591,8 +648,65 @@ export class DelegationManager {
     // comes back, said as such, since what it wrote may only have been a
     // progress note.
     const wrote = this.answered.delete(id)
-    await this.enqueue(rec, () => this.callback(rec, result, 1, false, wrote))
+    await this.collect({ rec, result, ...(wrote ? { wrote } : {}) })
     return true
+  }
+
+  /** The asking chat a callback goes to, and the kind of delegation: only
+   *  answers with the same key share a turn. */
+  private chatKey(rec: DelegationRecord): string {
+    return `${rec.caller}\u0000${rec.origin.channel}\u0000${rec.origin.chatId}`
+  }
+
+  /**
+   * Add an answer to its asking chat's open batch, or open one (#1749).
+   * The batch is passed on as one callback turn when its turn in the
+   * chat's queue comes and the caller's chat is free. Until then, later
+   * answers for the same chat join it, and the first answer waits up to
+   * coalesceMs for delegations from that chat that are still running.
+   * Resolves once the batch it joined has been called back.
+   */
+  private collect(item: CallbackItem): Promise<void> {
+    const key = `${this.chatKey(item.rec)}\u0000${item.rec.kind ?? ""}`
+    const open = this.batches.get(key)
+    if (open) {
+      open.items.push(item)
+      this.deps.log(`[delegation ${item.rec.id}] joins the answers waiting for ${item.rec.caller} (${open.items.length})`)
+      return open.done
+    }
+    const batch: Batch = { items: [item], firstAt: this.now(), done: Promise.resolve() }
+    this.batches.set(key, batch)
+    batch.done = this.enqueue(item.rec, async () => {
+      try {
+        await this.waitForSiblings(key, batch)
+        await this.waitUntilFree(item.rec.caller, item.rec.origin.channel, item.rec.origin.chatId)
+      } finally {
+        if (this.batches.get(key) === batch) this.batches.delete(key)
+      }
+      await this.callback(batch.items, 1, false, true)
+    })
+    return batch.done
+  }
+
+  /** Delegations from this batch's asking chat that have not answered. */
+  private siblingsOf(key: string): number {
+    let n = 0
+    for (const r of this.pendingById.values()) {
+      if (`${this.chatKey(r)}\u0000${r.kind ?? ""}` === key) n++
+    }
+    return n
+  }
+
+  /** Hold a batch while siblings still run, up to coalesceMs after its
+   *  first answer came in. */
+  private async waitForSiblings(key: string, batch: Batch): Promise<void> {
+    const max = this.deps.coalesceMs ?? 0
+    if (max <= 0 || this.siblingsOf(key) === 0) return
+    const poll = this.deps.pollMs ?? 500
+    this.deps.log(`[delegation ${batch.items[0].rec.id}] waits up to ${Math.round(max / 1000)}s for ${this.siblingsOf(key)} more answer(s) from the same chat`)
+    while (this.siblingsOf(key) > 0 && this.now() - batch.firstAt < max) {
+      await new Promise((r) => { const t = setTimeout(r, poll); (t as any).unref?.() })
+    }
   }
 
   /** One callback at a time per caller chat, in the order they come. */
@@ -643,7 +757,7 @@ export class DelegationManager {
       rerun++
       this.holdRelay({ ...h, attempt: 2 })
       this.deps.log(`[delegation ${rec.id}] re-running the callback to ${rec.caller} a restart stopped`)
-      return this.enqueue(rec, () => this.callback(rec, h.result, 2, h.reply === true))
+      return this.enqueue(rec, () => this.callback([{ rec, result: h.result }], 2, h.reply === true))
     }))
     return rerun
   }
@@ -674,6 +788,17 @@ export class DelegationManager {
       if (h.endedAt !== null && now - h.endedAt > window) this.homes.delete(k)
     }
     return this.homes.get(key) ?? null
+  }
+
+  /** The callee's last run for this asking chat (#1749): still going, or
+   *  ended within sameConversationMs. Old entries are dropped on the way. */
+  private sameConversation(key: string): { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: boolean } | null {
+    const window = this.deps.sameConversationMs ?? 0
+    const now = this.now()
+    for (const [k, c] of this.conversations) {
+      if (c.endedAt !== null && now - c.endedAt > window) this.conversations.delete(k)
+    }
+    return this.conversations.get(key) ?? null
   }
 
   /** A callee's run (by its run id) says it ends to wait for something
@@ -708,45 +833,58 @@ export class DelegationManager {
     this.timers.clear()
   }
 
-  /** `attempt` 2 is the one re-run of a callback a restart stopped. */
-  private async callback(rec: DelegationRecord, result: DelegationResult, attempt = 1, reply = false, wrote = false): Promise<void> {
+  /** `attempt` 2 is the one re-run of a callback a restart stopped (always
+   *  one item). Several items are answers for the same asking chat, passed
+   *  on in one turn (#1749). `free`: the caller's chat was just checked. */
+  private async callback(items: CallbackItem[], attempt = 1, reply = false, free = false): Promise<void> {
+    const rec = items[0].rec
     const { channel, chatId } = rec.origin
-    await this.waitUntilFree(rec.caller, channel, chatId)
+    if (!free) await this.waitUntilFree(rec.caller, channel, chatId)
+    const ids = items.map((i) => i.rec.id)
+    const tag = items.length > 1 ? `${rec.id} +${items.length - 1}` : rec.id
     const context: Record<string, unknown> = {
       ...rec.origin,
       sender: `agent:${rec.callee}`,
       delegation: {
-        taskId: rec.id, from: rec.callee, ...(rec.peer ? { peer: rec.peer } : {}), status: reply ? "reply" : result.status,
+        taskId: rec.id, from: rec.callee, ...(rec.peer ? { peer: rec.peer } : {}), status: reply ? "reply" : items[0].result.status,
+        ...(items.length > 1 ? { taskIds: ids } : {}),
         // A send from this turn counts one hop more (MAX_SEND_DEPTH).
-        depth: (rec.depth ?? 0) + 1,
+        depth: Math.max(...items.map((i) => i.rec.depth ?? 0)) + 1,
+        // Hops this turn starts keep the chain's root (#1749).
+        root: rec.root,
       },
     }
     let resp: { content: string; error?: string }
     try {
-      let note: string | undefined
-      try { note = this.deps.callbackNote?.(rec, result) } catch { /* a listener never stops a callback */ }
-      const base = buildCallbackMessage(rec, result, { reply, wrote })
-      const message = note ? `${base}\n\n${note}` : base
+      const messages = items.map((i) => {
+        let note: string | undefined
+        try { note = this.deps.callbackNote?.(i.rec, i.result) } catch { /* a listener never stops a callback */ }
+        const base = buildCallbackMessage(i.rec, i.result, { reply, wrote: i.wrote === true })
+        return note ? `${base}\n\n${note}` : base
+      })
+      const message = messages.length > 1 ? buildBatchMessage(messages) : messages[0]
+      if (items.length > 1) this.deps.log(`[delegation ${tag}] ${items.length} answers for ${rec.caller} passed on in one turn`)
       resp = await this.deps.injectTurn({ agentId: rec.caller, message, context })
     } catch (e: any) {
       resp = { content: "", error: e?.message ?? String(e) }
     }
     // A restart stopped the turn before it answered: the person would get
-    // nothing (the channels are already down). Keep it for one re-run after
-    // the next start; a re-run stopped too is told on the start after that.
+    // nothing (the channels are already down). Keep each answer for one
+    // re-run after the next start; a re-run stopped too is told on the
+    // start after that.
     if (stoppedByRestart(resp) && (attempt > 1 || this.deps.requeueRelayOnRestart !== false)) {
       if (attempt === 1) {
-        this.holdRelay({ record: rec, result, attempt: 1, ...(reply ? { reply } : {}) })
-        this.deps.log(`[delegation ${rec.id}] callback to ${rec.caller} stopped by a restart; it runs once more after the next start`)
+        for (const i of items) this.holdRelay({ record: i.rec, result: i.result, attempt: 1, ...(reply ? { reply } : {}) })
+        this.deps.log(`[delegation ${tag}] callback to ${rec.caller} stopped by a restart; it runs once more after the next start`)
       } else {
-        this.deps.log(`[delegation ${rec.id}] re-run of the callback to ${rec.caller} stopped by a restart too; the person is told after the next start`)
+        this.deps.log(`[delegation ${tag}] re-run of the callback to ${rec.caller} stopped by a restart too; the person is told after the next start`)
       }
       return
     }
     // The registry queued it behind other work; its flush replies on the
     // channel itself.
     if (isQueued(resp.error)) {
-      this.deps.log(`[delegation ${rec.id}] callback queued behind other work for ${rec.caller}`)
+      this.deps.log(`[delegation ${tag}] callback queued behind other work for ${rec.caller}`)
       if (attempt > 1) this.releaseRelay(rec.id)
       return
     }
@@ -755,32 +893,33 @@ export class DelegationManager {
     // goes to a person from here (its chat is an agent's anyway).
     if (rec.kind === "send") {
       if (attempt > 1) this.releaseRelay(rec.id)
-      if (!own) this.deps.log(`[delegation ${rec.id}] ${rec.caller} gave no reply to the callback${resp.error ? `: ${resp.error}` : ""}`)
+      if (!own) this.deps.log(`[delegation ${tag}] ${rec.caller} gave no reply to the callback${resp.error ? `: ${resp.error}` : ""}`)
       return
     }
     if (attempt > 1) {
       if (!own) {
-        await this.relayFailed(rec, result, `its re-run gave no reply${resp.error ? ` (${clip(resp.error, 200)})` : ""}`)
+        await this.relayFailed(rec, items[0].result, `its re-run gave no reply${resp.error ? ` (${clip(resp.error, 200)})` : ""}`)
         return
       }
       this.releaseRelay(rec.id)
       this.deps.log(`[delegation ${rec.id}] re-run of the callback to ${rec.caller} answered`)
     }
-    if (!own) this.deps.log(`[delegation ${rec.id}] ${rec.caller} gave no reply to the callback${resp.error ? `: ${resp.error}` : ""}; sending the plain result`)
-    const text = own ? resp.content : fallbackReply(rec, result)
+    if (!own) this.deps.log(`[delegation ${tag}] ${rec.caller} gave no reply to the callback${resp.error ? `: ${resp.error}` : ""}; sending the plain result`)
+    const text = own ? resp.content : items.map((i) => fallbackReply(i.rec, i.result)).join("\n\n")
     if (!this.deps.canDeliver(channel)) {
-      this.deps.log(`[delegation ${rec.id}] no route to ${channel}:${chatId}; the reply is in ${rec.caller}'s session only`)
+      this.deps.log(`[delegation ${tag}] no route to ${channel}:${chatId}; the reply is in ${rec.caller}'s session only`)
       return
     }
+    const okStatus = (r: DelegationResult) => r.status === "done" || r.status === "waiting"
     try {
       await this.deps.deliver({
         channel, chatId, text, agentId: rec.caller, accountId: rec.origin.accountId, record: !own,
         taskId: rec.id,
-        outcome: own || result.status === "done" || result.status === "waiting" ? "done" : "error",
+        outcome: own || items.some((i) => okStatus(i.result)) ? "done" : "error",
       })
-      this.deps.log(`[delegation ${rec.id}] ${rec.caller} updated ${channel}:${chatId}`)
+      this.deps.log(`[delegation ${tag}] ${rec.caller} updated ${channel}:${chatId}`)
     } catch (e: any) {
-      this.deps.log(`[delegation ${rec.id}] delivery to ${channel}:${chatId} failed: ${e?.message ?? e}`)
+      this.deps.log(`[delegation ${tag}] delivery to ${channel}:${chatId} failed: ${e?.message ?? e}`)
     }
   }
 

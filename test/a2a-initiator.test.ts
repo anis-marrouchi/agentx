@@ -93,3 +93,22 @@ describe("agrees with the phone app's turns (#276/#278)", () => {
     }
   })
 })
+
+describe("a callback turn's root (#1749)", () => {
+  const callback = {
+    channel: "a2a", chatId: "a2a:front:worker:dlg-1", sender: "agent:worker",
+    delegation: { taskId: "dlg-1", from: "worker", status: "done", root: { kind: "human", channel: "telegram", chatId: "c1", sender: "Sam" } },
+  }
+
+  it("is the delegation's root, not the callback turn itself", () => {
+    expect(rootInitiatorOf(callback, "front")).toEqual({ kind: "human", channel: "telegram", chatId: "c1", sender: "Sam" })
+    expect(classifyInitiator(callback)).toBe("human")
+    expect(isHumanFacingTurn(callback)).toBe(false)
+    expect(isInsideDelegation(callback)).toBe(true)
+  })
+
+  it("falls back to the turn itself when the callback carries no root", () => {
+    const { root: _r, ...dlg } = callback.delegation
+    expect(rootInitiatorOf({ ...callback, delegation: dlg }, "front")).toMatchObject({ kind: "agent", channel: "a2a" })
+  })
+})

@@ -63,6 +63,8 @@ The mesh links several AgentX machines so their agents can reach each other. See
 | `mesh.delegation.timeoutMinutes` | number | `30` | Minutes a helper agent has to answer before the asking agent is told it timed out. From 1 to 240. |
 | `mesh.delegation.requeueRelayOnRestart` | boolean | `true` | If a restart stops your agent while it is passing a helper's answer on to you, your agent tries once more after the restart. If that try fails too, you get a short message saying the answer did not come through, and your open request is marked as needing attention. Turn it off (`false`) to skip the second try. |
 | `mesh.delegation.callbackSends` | boolean | `true` | An agent's `agentx_send_agent` that no person waits on comes back to it: the answer, failure or timeout arrives as a new message in the chat it sent from, and a message the other agent writes back lands there too. See [When an agent asks another agent](/jobs/ask-another-agent). Off: such sends are only queued. |
+| `mesh.delegation.coalesceSeconds` | number | `120` | When an agent asked several helpers from one conversation, the first answer waits up to this many seconds for the others, so they reach the agent as one message. From 0 to 1800. `0` only joins answers that are already in. See [Several answers at once](/jobs/ask-another-agent#several-answers-at-once). |
+| `mesh.delegation.continueMinutes` | number | `60` | A helper asked again by the same agent from the same conversation, with no `home`, continues its earlier session when that run ended within this many minutes and is not still running. From 0 to 1440. `0`: always start fresh. See [One session per conversation](/jobs/ask-another-agent#one-session-per-conversation). |
 
 Each entry in `mesh.peers`:
 
