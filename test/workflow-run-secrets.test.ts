@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { appendFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "fs"
-import { createServer, type Server } from "http"
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http"
 import { tmpdir } from "os"
 import { join } from "path"
 import type { AddressInfo } from "net"
@@ -9,6 +9,7 @@ import { stripSecrets } from "../src/workflows/strip-secrets"
 import { GitLabAdapter } from "../src/channels/gitlab"
 import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { AgentXDaemon } from "../src/daemon"
 
 // A channel's agentMappings hold each agent's token. They reached run files
 // through the on:gitlab-issue hook context. No credential field may reach a
@@ -127,26 +128,65 @@ describe("workflow run secrets", () => {
     expect(JSON.stringify(broadcastTrigger.mock.calls)).not.toContain(SECRET)
   })
 
-  it("does not return a token from the run API, even from a file an older version wrote", async () => {
-    const { run } = await fire()
-    appendFileSync(join(runs.runsDir, `${run!.id}.jsonl`), JSON.stringify({
-      v: 2, kind: "snapshot", run: { ...run, context: { trigger: payload() } },
-    }) + "\n")
+  // A run file as an older version left it: a token on both kinds of line.
+  // No dispatcher here: its next write would replace the context being read.
+  const oldRunFile = () => {
+    const run = runs.create({ workflowId: "pickup", initialPending: ["done"], entityRef: { backend: "hook", id: "old" } })
+    const lines = [
+      { v: 2, kind: "snapshot", run: { ...run, context: { trigger: payload() } } },
+      {
+        v: 2, kind: "exec", runId: run.id, pending: [], context: { trigger: payload() },
+        entry: { nodeId: "done", idempotencyKey: "old", at: new Date().toISOString() },
+      },
+    ]
+    appendFileSync(join(runs.runsDir, `${run.id}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n")
     expect(fileText()).toContain(SECRET)
-
-    const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" } })
-    server = createServer((req, res) => {
-      void handleBoardRequest(req, res, { boards: [], sources: new Map(), config, workflowRuns: runs } as unknown as Ctx)
-    })
+    return run
+  }
+  const serve = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
+    server = createServer(handler)
     await new Promise<void>((r) => server!.listen(0, "127.0.0.1", () => r()))
-    const base = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`
-    for (const path of [`/api/workflows/runs/${run!.id}`, "/api/workflows/runs"]) {
+    return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`
+  }
+  const config = () => daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" } })
+  const dashboardCtx = (token?: string) =>
+    ({ boards: [], sources: new Map(), config: config(), workflowRuns: runs, token }) as unknown as Ctx
+
+  it("does not return a token from the dashboard's run routes, even from a file an older version wrote", async () => {
+    const run = oldRunFile()
+    const base = await serve((req, res) => { void handleBoardRequest(req, res, dashboardCtx()) })
+    for (const path of [`/api/workflows/runs/${run.id}`, "/api/workflows/runs"]) {
       const res = await fetch(base + path)
       expect(res.status, path).toBe(200)
       const body = await res.text()
-      expect(body, path).toContain(run!.id)
+      expect(body, path).toContain(run.id)
       expect(body, path).not.toContain(SECRET)
     }
+  })
+
+  it("does not return a token from the daemon's run routes, even from a file an older version wrote", async () => {
+    const run = oldRunFile()
+    const daemon = Object.assign(Object.create(AgentXDaemon.prototype), {
+      config: config(), workflowRuns: runs, workflowStore: store, log: () => {},
+    })
+    const base = await serve((req, res) => { void daemon.handleHttp(req, res) })
+    for (const path of [`/api/workflows/runs/${run.id}`, "/api/workflows/runs"]) {
+      const res = await fetch(base + path)
+      expect(res.status, path).toBe(200)
+      const body = await res.text()
+      expect(body, path).toContain(run.id)
+      expect(body, path).not.toContain(SECRET)
+    }
+  })
+
+  it("the dashboard's run routes need the owner's credential when dashboard.token is set", async () => {
+    const run = oldRunFile()
+    const base = await serve((req, res) => { void handleBoardRequest(req, res, dashboardCtx("dash-token")) })
+    for (const path of [`/api/workflows/runs/${run.id}`, "/api/workflows/runs"]) {
+      expect((await fetch(base + path)).status, path).toBe(401)
+    }
+    const res = await fetch(`${base}/api/workflows/runs/${run.id}`, { headers: { Authorization: "Bearer dash-token" } })
+    expect(res.status).toBe(200)
   })
 
   it("the GitLab issue hook context carries no token", async () => {
