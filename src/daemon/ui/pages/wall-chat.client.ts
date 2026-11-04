@@ -262,6 +262,12 @@ export const WALL_CHAT_SCRIPT = String.raw`
   function signedOut() {
     $('hc-log').innerHTML = '<div class="hc__guest"><b>Chat is for the owner</b><a class="ax-btn" href="/login?next=' + encodeURIComponent(location.pathname) + '">Sign in</a></div>';
   }
+  // The owner is signed in, but the machine holding the chat refused or did not answer.
+  function nodeDown(r) {
+    return r.json().catch(function () { return {}; }).then(function (d) {
+      $('hc-log').innerHTML = '<div class="hc__guest"><b>That machine did not answer</b>' + esc(d.error || 'HTTP ' + r.status) + '</div>';
+    });
+  }
   function loadThread(id) {
     clearTimeout(poll);
     if (!id) { thread = null; msgs = []; loaded = true; paintLog(); return Promise.resolve(); }
@@ -275,6 +281,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
       // A read of a conversation no longer open: drop it, whatever it says.
       if (id !== threadId) return;
       if (r.status === 401) { signedOut(); return; }
+      if (r.status === 502) return nodeDown(r);
       if (!r.ok) { setThread(null); thread = null; msgs = []; loaded = true; paintLog(); return; }
       return r.json().then(function (d) {
         if (id !== threadId) return;
@@ -304,6 +311,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
       body: JSON.stringify({ threadId: threadId || undefined, agentId: agent, node: node, message: text, context: pageContext() }),
     }).then(function (r) {
       if (r.status === 401) { $('hc-text').value = text; signedOut(); return; }
+      if (r.status === 502) { $('hc-text').value = text; return nodeDown(r); }
       return r.json().then(function (d) {
         if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
         setThread(d.threadId, d.node || node);
@@ -348,7 +356,14 @@ export const WALL_CHAT_SCRIPT = String.raw`
 
   // --- History, New, and the last conversation under the Chat box ---
   function threads() {
-    return fetch('/api/assistant/threads', { headers: headers() }).then(function (r) { return r.ok ? r.json() : { threads: [] }; })
+    return fetch('/api/assistant/threads', { headers: headers() }).then(function (r) {
+      var err = $('hc-hist-err');
+      if (r.status !== 502) { err.hidden = true; return r.ok ? r.json() : { threads: [] }; }
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        err.textContent = d.error || 'HTTP ' + r.status; err.hidden = false;
+        return { threads: [] };
+      });
+    })
       .then(function (d) { return d.threads || []; }, function () { return []; });
   }
   function markSeen() { store(SEEN_KEY, String(Date.now())); $('hc-dot').hidden = true; paintLast(lastThread); }
@@ -371,7 +386,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   });
   function paintHist() {
     return threads().then(function (list) {
-      $('hc-hist-empty').hidden = list.length > 0;
+      $('hc-hist-empty').hidden = list.length > 0 || !$('hc-hist-err').hidden;
       $('hc-hist-list').innerHTML = list.map(function (t) {
         return '<li' + (t.id === threadId ? ' class="is-on"' : '') + '><button type="button" class="hc__histt" data-hc-thread="' + esc(t.id) + '">' + esc(t.title) +
           '<small>' + esc(agentNames[t.agentId] || t.agentId) + '</small></button><button type="button" class="hc__histx" data-hc-del="' + esc(t.id) + '" aria-label="Delete">×</button></li>';

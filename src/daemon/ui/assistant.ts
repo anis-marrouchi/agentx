@@ -199,7 +199,8 @@ const t=window.AX_LOCAL_TOKEN||(()=>{try{return localStorage.getItem('ax_token')
 return t?Object.assign({},h,{Authorization:'Bearer '+t}):(h||{});
 }
 /* A 401 means this browser is not the owner yet: no token on the page and no
-   session cookie. Say so, with the way in, rather than look empty. */
+   session cookie. Say so, with the way in, rather than look empty. A node that
+   refuses the dashboard comes back as a 502 with its reason, and is not this. */
 function signInLink(){
 const a=document.createElement('a');
 a.href='/login?next='+encodeURIComponent(location.pathname+location.search);
@@ -293,7 +294,7 @@ async function loadThread(id,{quiet}={}){
 if(!id){renderMessages([]);$('ax-as-title').textContent='Ask an agent';return;}
 try{
  const r=await fetch('/api/assistant/thread?id='+encodeURIComponent(id),{headers:axAuth()});
- if(!r.ok){setThread(null);renderMessages([]);if(r.status===401)addSignIn();return;}
+ if(!r.ok){setThread(null);renderMessages([]);if(r.status===401)addSignIn();else{const d=await r.json().catch(()=>({}));if(d.error)add('err',d.error);}return;}
  const d=await r.json();
  $('ax-as-title').textContent=d.thread.title||'Ask an agent';
  if(d.thread.agentId)$('ax-as-agent').value=d.thread.agentId;
@@ -314,8 +315,13 @@ try{
   empty.replaceChildren(signInLink(),' to see past conversations.');
   empty.hidden=false;return;
  }
- empty.textContent='No past conversations yet.';
  const d=await r.json();
+ if(!r.ok){
+  $('ax-as-hist-list').innerHTML='';
+  empty.textContent=d.error||('HTTP '+r.status);
+  empty.hidden=false;return;
+ }
+ empty.textContent='No past conversations yet.';
  const list=d.threads||[];
  empty.hidden=list.length>0;
  $('ax-as-hist-list').innerHTML=list.map(t=>
@@ -368,7 +374,7 @@ try{
  if(!r.ok||d.error)throw new Error(d.error||('HTTP '+r.status));
  setThread(d.threadId);
  await loadThread(d.threadId);
-}catch(e){add('err',e.message);}
+}catch(e){input.value=text;add('err',e.message);}
 finally{busy=false;$('ax-as-bar-send').disabled=false;input.focus();}
 }
 

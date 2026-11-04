@@ -37,6 +37,10 @@ const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
  *  Bash, which the loopback exemption keeps working. */
 export function isMeshGatedPath(path: string): boolean {
   return path === "/api/memory" || path.startsWith("/api/memory/") ||
+    // The ask-an-agent drawer: a post runs a turn as the operator, and reads
+    // return the conversations. The same-host dashboard reaches it over
+    // loopback; one on another host sends a mesh token.
+    path === "/api/assistant" || path.startsWith("/api/assistant/") ||
     // An agent sets its own profile picture (#1425): it shows on every page.
     path === "/api/agent-picture" ||
     // Approvals list held memory facts and draft wiki articles, and a card
@@ -158,6 +162,50 @@ export function decideMeshAuth(req: MeshAuthRequest): MeshAuthDecision {
   if (token && req.acceptedTokens.has(token)) return { allowed: true, reason: "token" }
 
   return { allowed: false, reason: "missing-or-invalid-token" }
+}
+
+export interface WorkspaceFileAuthRequest {
+  remoteAddress: string
+  authorizationHeader: string
+  acceptedTokens: ReadonlySet<string>
+  chatSecret?: string
+  foreignBrowser?: boolean
+}
+
+/**
+ * Who may read a file under /agents/:id/workspace/. A workspace can hold
+ * secrets, so unlike decideMeshAuth this has no no-tokens or off-switch
+ * exemption. The chat secret stays valid for chat artifact callers. Loopback
+ * passes only where no chat secret is set: a node with one kept its loopback
+ * callers behind it, and a local reverse proxy arrives over loopback too.
+ */
+export function workspaceFileAllowed(req: WorkspaceFileAuthRequest): boolean {
+  const header = req.authorizationHeader || ""
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : ""
+  if (token && req.chatSecret && token === req.chatSecret) return true
+  if (req.foreignBrowser) return false
+  if (token && req.acceptedTokens.has(token)) return true
+  return !req.chatSecret && LOOPBACK.has(req.remoteAddress)
+}
+
+export interface ChatAuthRequest {
+  remoteAddress: string
+  authorizationHeader: string
+  acceptedTokens: ReadonlySet<string>
+  chatSecret?: string
+}
+
+/**
+ * Who may post to /chat, which runs a turn on the agent the caller names. A
+ * node with a chat secret takes that secret and nothing else. Without one,
+ * loopback or an accepted mesh token; as with workspace files there is no
+ * no-tokens or off-switch exemption.
+ */
+export function chatAllowed(req: ChatAuthRequest): boolean {
+  const header = req.authorizationHeader || ""
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : ""
+  if (req.chatSecret) return token === req.chatSecret
+  return LOOPBACK.has(req.remoteAddress) || (!!token && req.acceptedTokens.has(token))
 }
 
 /** Config shape this module needs. Structural so callers can pass a full

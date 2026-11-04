@@ -172,7 +172,7 @@ import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { voiceArtifacts } from "@/daemon/voice-artifacts"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
-import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
+import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens, workspaceFileAllowed, chatAllowed } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
 import { AGENT_PICTURE_PATH } from "@/pictures/pictures"
@@ -6318,13 +6318,15 @@ export class AgentXDaemon {
       //   GET /agents/:id/workspace/<filename>   (same Bearer auth)
       if (req.method === "POST" && path === "/chat") {
         // Bearer auth — AGENTX_CHAT_SECRET env, falling back to TELEGRAM_BOT_API_SECRET.
-        const chatSecret = process.env.AGENTX_CHAT_SECRET || process.env.TELEGRAM_BOT_API_SECRET
-        if (chatSecret) {
-          const authHeader = req.headers["authorization"] || ""
-          const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : ""
-          if (token !== chatSecret) {
-            this.json(res, 401, { error: "unauthorized" }); return
-          }
+        // See chatAllowed for a node with neither.
+        const allowed = chatAllowed({
+          remoteAddress: req.socket?.remoteAddress || "",
+          authorizationHeader: String(req.headers["authorization"] || ""),
+          acceptedTokens: collectAcceptedMeshTokens(this.config),
+          chatSecret: process.env.AGENTX_CHAT_SECRET || process.env.TELEGRAM_BOT_API_SECRET,
+        })
+        if (!allowed) {
+          this.json(res, 401, { error: "unauthorized" }); return
         }
 
         let body: any
@@ -6539,7 +6541,8 @@ export class AgentXDaemon {
 
       // GET /agents/:id/workspace/*filepath — binary passthrough for agent workspace files.
       //
-      // Authorization: Bearer <AGENTX_CHAT_SECRET>
+      // Authorization: Bearer <AGENTX_CHAT_SECRET or a mesh token>; see
+      // workspaceFileAllowed for who may read without one.
       //
       // Returns the raw file with an appropriate Content-Type so browsers /
       // example.com can display images, PDFs, and other artifacts the agent wrote
@@ -6547,13 +6550,15 @@ export class AgentXDaemon {
       // stay inside the agent's workspace directory.
       const workspaceFileMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/workspace\/(.+)$/)
       if (workspaceFileMatch) {
-        const chatSecret = process.env.AGENTX_CHAT_SECRET || process.env.TELEGRAM_BOT_API_SECRET
-        if (chatSecret) {
-          const authHeader = req.headers["authorization"] || ""
-          const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : ""
-          if (token !== chatSecret) {
-            this.json(res, 401, { error: "unauthorized" }); return
-          }
+        const allowed = workspaceFileAllowed({
+          remoteAddress: req.socket?.remoteAddress || "",
+          authorizationHeader: String(req.headers["authorization"] || ""),
+          acceptedTokens: collectAcceptedMeshTokens(this.config),
+          chatSecret: process.env.AGENTX_CHAT_SECRET || process.env.TELEGRAM_BOT_API_SECRET,
+          foreignBrowser: classifyBrowserRequest(req.headers) === "foreign",
+        })
+        if (!allowed) {
+          this.json(res, 401, { error: "unauthorized" }); return
         }
         const wsAgentId = workspaceFileMatch[1]
         const rawFilePath = decodeURIComponent(workspaceFileMatch[2])
