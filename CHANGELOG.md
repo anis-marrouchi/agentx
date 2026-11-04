@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.207.1](https://github.com/anis-marrouchi/agentx/compare/v0.207.0...v0.207.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **a2a:** budget hand-offs of work no person started ([#1756](https://github.com/anis-marrouchi/agentx/issues/1756)) ([#1757](https://github.com/anis-marrouchi/agentx/issues/1757)) ([4bbe713](https://github.com/anis-marrouchi/agentx/commit/4bbe71343574edff7fbef8e3d4d613517ad51e69))
+
 ## [0.207.0](https://github.com/anis-marrouchi/agentx/compare/v0.206.1...v0.207.0) (2026-11-04)
 
 
