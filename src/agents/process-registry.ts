@@ -234,6 +234,19 @@ export interface ProcessRegistryConfig {
   currentWorkspaceHash?: (key: ProcessKey, workspace: string) => string | null
 }
 
+/** What `closeIdle` may close. Busy processes and open work are always spared. */
+export interface CloseIdleRequest {
+  max: number
+  /** Spare a process quiet for less than this: its chat is probably still going. */
+  minQuietMs: number
+  /** Why, for the log line and the process's dead reason. */
+  reason: string
+  /** Spare these too, e.g. a chat with a run on its way to this process. */
+  skip?: (key: ProcessKey) => boolean
+  /** Only say which ones it would close. */
+  dryRun?: boolean
+}
+
 export class ProcessRegistry {
   private handles = new Map<ProcessKeyString, ProcessHandle>()
   private sweeper?: ReturnType<typeof setInterval>
@@ -376,6 +389,36 @@ export class ProcessRegistry {
     this.handles.delete(ks)
     this.handleWorkspace.delete(ks)
     await handle.kill(reason)
+  }
+
+  /**
+   * Close idle processes ahead of the idle timer, longest quiet first, to
+   * give their memory back. Same rules as the idle sweep: background tasks
+   * and a turn nobody asked for are work (#1560). Returns the keys closed.
+   */
+  closeIdle(req: CloseIdleRequest): ProcessKey[] {
+    const now = Date.now()
+    const quiet: Array<{ ks: ProcessKeyString; handle: ProcessHandle; quietFor: number }> = []
+    for (const [ks, handle] of this.handles.entries()) {
+      if (handle.state() !== "idle") continue
+      const snap = handle.snapshot()
+      if ((snap.backgroundTasks ?? 0) > 0 || snap.unaskedTurn) continue
+      const quietFor = now - Math.max(snap.lastTurnAt, snap.lastActivityAt ?? 0)
+      if (quietFor < req.minQuietMs || req.skip?.(handle.key)) continue
+      quiet.push({ ks, handle, quietFor })
+    }
+    const chosen = quiet.sort((a, b) => b.quietFor - a.quietFor).slice(0, req.max)
+    if (req.dryRun) return chosen.map((c) => c.handle.key)
+    for (const { ks, handle, quietFor } of chosen) {
+      const why = `quiet ${Math.round(quietFor / 1000)}s, ${req.reason}`
+      this.handles.delete(ks)
+      this.handleWorkspace.delete(ks)
+      this.cfg.log(`[process-registry] closed idle ${ks}: ${why}`)
+      void handle.kill(`closed idle (${why})`).catch((e: any) => {
+        this.cfg.log(`[process-registry] closing ${ks} failed: ${e?.message || e}`)
+      })
+    }
+    return chosen.map((c) => c.handle.key)
   }
 
   // ---------- internals ----------

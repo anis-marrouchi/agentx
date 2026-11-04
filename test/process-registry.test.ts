@@ -440,6 +440,79 @@ describe("ProcessRegistry — idle/stale sweep", () => {
   })
 })
 
+describe("ProcessRegistry — closeIdle (noqta/noqta#509)", () => {
+  const REQ = { max: 10, minQuietMs: 60_000, reason: "gate shut (swap: 7000 MB used, limit 6144 MB)" }
+
+  function setup() {
+    const logs: string[] = []
+    const reg = new ProcessRegistry({ factory: new FakeFactory(), idleTimeoutMs: 600_000, log: (m) => logs.push(m) })
+    const quietFor = (chat: string, ms: number) => {
+      const h = reg.acquire(KEY("a", chat), OPTS("a")) as FakeHandle
+      h.setIdle(Date.now() - ms)
+      return h
+    }
+    return { reg, logs, quietFor }
+  }
+
+  it("closes the longest quiet first, up to max, with a log line per close", () => {
+    const { reg, logs, quietFor } = setup()
+    const newer = quietFor("newer", 100_000)
+    const oldest = quietFor("oldest", 300_000)
+    const middle = quietFor("middle", 200_000)
+    expect(reg.closeIdle({ ...REQ, max: 2 }).map((k) => k.chatId)).toEqual(["oldest", "middle"])
+    expect(oldest.killReasons[0]).toMatch(/^closed idle \(quiet 300s, gate shut/)
+    expect(middle.killReasons).toHaveLength(1)
+    expect(newer.killReasons).toHaveLength(0)
+    expect(reg.list()).toHaveLength(1)
+    expect(logs.filter((l) => l.includes("closed idle"))).toEqual([
+      "[process-registry] closed idle a:telegram:oldest: quiet 300s, gate shut (swap: 7000 MB used, limit 6144 MB)",
+      "[process-registry] closed idle a:telegram:middle: quiet 200s, gate shut (swap: 7000 MB used, limit 6144 MB)",
+    ])
+  })
+
+  it("never closes a busy process or one with open work (#1560)", () => {
+    const { reg, quietFor } = setup()
+    const busy = quietFor("busy", 300_000)
+    busy.setBusy(Date.now() - 300_000)
+    const tasks = quietFor("tasks", 300_000)
+    tasks.setWork({ backgroundTasks: 1 })
+    const unasked = quietFor("unasked", 300_000)
+    unasked.setWork({ unaskedTurn: true })
+    expect(reg.closeIdle(REQ)).toEqual([])
+    for (const h of [busy, tasks, unasked]) expect(h.killReasons).toHaveLength(0)
+    expect(reg.list()).toHaveLength(3)
+  })
+
+  it("counts quiet from the last output, and spares a recent one", () => {
+    const { reg, quietFor } = setup()
+    const talking = quietFor("talking", 300_000)
+    talking.setWork({ lastActivityAt: Date.now() - 1_000 })
+    const recent = quietFor("recent", 1_000)
+    expect(reg.closeIdle(REQ)).toEqual([])
+    expect(talking.killReasons).toHaveLength(0)
+    expect(recent.killReasons).toHaveLength(0)
+  })
+
+  it("spares what the caller skips, and a dry run closes nothing", () => {
+    const { reg, quietFor } = setup()
+    const needed = quietFor("needed", 300_000)
+    const free = quietFor("free", 200_000)
+    const skip = (k: ProcessKey) => k.chatId === "needed"
+    expect(reg.closeIdle({ ...REQ, skip, dryRun: true }).map((k) => k.chatId)).toEqual(["free"])
+    expect(free.killReasons).toHaveLength(0)
+    expect(reg.list()).toHaveLength(2)
+    expect(reg.closeIdle({ ...REQ, skip }).map((k) => k.chatId)).toEqual(["free"])
+    expect(needed.killReasons).toHaveLength(0)
+  })
+
+  it("a turn after a close gets a new process", () => {
+    const { reg, quietFor } = setup()
+    const h = quietFor("c", 300_000)
+    reg.closeIdle(REQ)
+    expect(reg.acquire(KEY("a", "c"), OPTS("a"))).not.toBe(h)
+  })
+})
+
 describe("ProcessRegistry — CLAUDE.md drift sweep", () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())

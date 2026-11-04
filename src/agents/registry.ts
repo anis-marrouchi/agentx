@@ -794,6 +794,8 @@ export class AgentRegistry {
       // The disk that holds the daemon's data folder.
       new ResourceSampler(existsSync(resolve(process.cwd(), ".agentx")) ? resolve(process.cwd(), ".agentx") : process.cwd()),
       (m) => this.log(m),
+      Date.now,
+      (req) => getProcessRegistry()?.closeIdle(req) ?? [],
     )
 
     // Apply the claude-code fleet dispatch budget. See DaemonConfig.session
