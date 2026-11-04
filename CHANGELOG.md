@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.206.1](https://github.com/anis-marrouchi/agentx/compare/v0.206.0...v0.206.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **mcp:** a write tool on an allow list waits for one Approvals card ([#1737](https://github.com/anis-marrouchi/agentx/issues/1737)) ([c2a4c5d](https://github.com/anis-marrouchi/agentx/commit/c2a4c5df816c421fd24113ee90f5b84ade6d59b5)), closes [#1736](https://github.com/anis-marrouchi/agentx/issues/1736)
+* **mcp:** a yes that lands as the write wait runs out is not lost ([#1738](https://github.com/anis-marrouchi/agentx/issues/1738)) ([2c7ef81](https://github.com/anis-marrouchi/agentx/commit/2c7ef816bc734374f378b367cf14785744b749cc)), closes [#1737](https://github.com/anis-marrouchi/agentx/issues/1737)
+* **memory:** rotation memos stop asking the owner about held copies ([#1742](https://github.com/anis-marrouchi/agentx/issues/1742)) ([fdb2ab7](https://github.com/anis-marrouchi/agentx/commit/fdb2ab7d0f78f7101338652a59ca7a93137565c7)), closes [#1741](https://github.com/anis-marrouchi/agentx/issues/1741)
+
+
+### Performance Improvements
+
+* **a2a:** delegations reuse sessions and call back once per batch ([#1749](https://github.com/anis-marrouchi/agentx/issues/1749)) ([#1750](https://github.com/anis-marrouchi/agentx/issues/1750)) ([27888e4](https://github.com/anis-marrouchi/agentx/commit/27888e4c7e494794d3a9fe0d40647f538b3a0cb1))
+
 ## [0.206.0](https://github.com/anis-marrouchi/agentx/compare/v0.205.0...v0.206.0) (2026-11-02)
 
 
