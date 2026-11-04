@@ -936,9 +936,15 @@ export class CronScheduler {
 
   private saveLastRuns(): void {
     try {
+      // A job that has not run since this start keeps the time it last ran
+      // before it (#1740). Rewriting the file from memory alone erased it,
+      // and the next start then could not see the job's missed runs.
+      // Jobs no longer configured drop out.
+      const saved = this.loadLastRuns() ?? {}
       const data: Record<string, string> = {}
       for (const [id, job] of this.jobs) {
         if (job.lastRun) data[id] = job.lastRun.toISOString()
+        else if (typeof saved[id] === "string") data[id] = saved[id]
       }
       const dir = resolve(process.cwd(), ".agentx/cron")
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
