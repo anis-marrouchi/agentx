@@ -27,6 +27,8 @@ You see your workflows in two places:
 
 The line under the tabs counts your workflows, how many are on, and the runs of the last seven days. The page refreshes with the rest of the Hub, every minute, and when you select **Refresh**.
 
+The page shows the newest 100 runs first. Older runs, up to 500, fill in a moment later. Until they are in, a workflow with no run on screen shows no **looks stale** hint yet.
+
 ### Find one workflow
 
 1. Select a tab: **All**, **Running**, **Failed** or **Off**. The number on **Running** and **Failed** is how many workflows are in it.
