@@ -2451,8 +2451,9 @@ describe("The Workflows page on the Wall (#1445)", () => {
       return { runs: url.includes("before=") ? page2 : page1 }
     } })
     await w.settle()
-    expect(asked).toEqual([
-      "/api/workflows/runs?summary=1&limit=100",
+    // The Wall's failed-runs read asks limit=100 too; the page adds one older page.
+    expect(asked).toContain("/api/workflows/runs?summary=1&limit=100")
+    expect(asked.filter((u) => u.includes("before="))).toEqual([
       "/api/workflows/runs?summary=1&limit=100&before=" + encodeURIComponent(page1[99].updatedAt),
     ])
     // The weekly run from page two is drawn in its row's squares.
