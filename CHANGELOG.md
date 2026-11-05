@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.207.2](https://github.com/anis-marrouchi/agentx/compare/v0.207.1...v0.207.2) (2026-11-05)
+
+
+### Performance Improvements
+
+* **board:** smaller and fewer reads for Live, Workflows and the node picker ([f5e66b1](https://github.com/anis-marrouchi/agentx/commit/f5e66b1eb2d589c9a65fb7ffbe92cb9ac16fef21))
+
 ## [0.207.1](https://github.com/anis-marrouchi/agentx/compare/v0.207.0...v0.207.1) (2026-11-04)
 
 
