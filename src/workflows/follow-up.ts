@@ -1,4 +1,4 @@
-import { lintWorkflow, workflowSchema, type NodeType, type Workflow, type WorkflowRun } from "./types"
+import { lintWorkflow, workflowSchema, type NodeExecutionEntry, type NodeType, type Workflow, type WorkflowRun } from "./types"
 
 // --- Follow-up workflows: what agents, the CLI and the dashboard share (#788) ---
 //
@@ -116,6 +116,45 @@ export function slimPausedAt(p: WorkflowRun["pausedAt"]): WorkflowRun["pausedAt"
   if (p?.kind !== "ownerDecision" || !p.message) return p
   const { text: _text, ...recipient } = p.message
   return { ...p, message: { ...recipient, text: "" } }
+}
+
+/** A run's step as list APIs show it: no output bundle and no input keys,
+ *  the note cut short. The full step stays on GET /runs/:id. */
+export type SlimHistoryEntry = Pick<NodeExecutionEntry, "at" | "nodeId" | "status" | "note" | "startedAt" | "durationMs">
+export type SlimRun = Omit<Partial<WorkflowRun>, "history"> & { history: SlimHistoryEntry[] }
+
+const SLIM_NOTE_CHARS = 300
+
+/** A run as list APIs (`?summary=1`) show it: no context, the last five
+ *  steps without their outputs. The daemon and the board both use this,
+ *  so a page sees one shape whichever answered. */
+export function slimRun(r: WorkflowRun | SlimRun): SlimRun {
+  return {
+    id: r.id,
+    workflowId: r.workflowId,
+    workflowVersion: r.workflowVersion,
+    homeNode: r.homeNode,
+    status: r.status,
+    pending: r.pending,
+    entityRef: r.entityRef,
+    history: (r.history || []).slice(-5).map((h) => ({
+      at: h.at,
+      nodeId: h.nodeId,
+      status: h.status,
+      ...(h.note ? { note: h.note.length > SLIM_NOTE_CHARS ? h.note.slice(0, SLIM_NOTE_CHARS) + "…" : h.note } : {}),
+      ...(h.startedAt ? { startedAt: h.startedAt } : {}),
+      ...(typeof h.durationMs === "number" ? { durationMs: h.durationMs } : {}),
+    })),
+    parentRunId: r.parentRunId,
+    parentNodeId: r.parentNodeId,
+    rootRunId: r.rootRunId,
+    depth: r.depth,
+    // Follow-up runs (#788): what it is about, and what it waits on.
+    ...(r.meta ? { meta: r.meta } : {}),
+    ...(r.pausedAt ? { pausedAt: slimPausedAt(r.pausedAt) } : {}),
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  }
 }
 
 /** What a paused or running run is waiting on, in words. */

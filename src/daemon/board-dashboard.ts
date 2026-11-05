@@ -47,7 +47,7 @@ import { classicRedirect } from "./ui/classic-routes"
 import { handleWorkflowsApi, isWorkflowEditorWrite } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
-import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
+import { progressGroups, slimRun } from "@/workflows/follow-up"
 import { readRequiredSettings, updateRequiredSettings, type RequiredSettingsPatch } from "@/daemon/workflow-required-settings"
 import { budgetPatchProblem, updateBudget, type BudgetPatch } from "@/daemon/budget-settings"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
@@ -501,10 +501,14 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     try {
       const targets = monitorTargets(await resolveNodeTargets(ctx.config, ac.signal), ctx.config.mesh.peers)
       if (method === "GET" && monitorPath === "/api/monitor") {
+        // ?nodes=1: only which machines answer, for pages that pick a node.
+        // Each is asked for an empty page of actions, not its whole monitor.
+        const nodesOnly = url.searchParams.get("nodes") === "1"
         const nodes = await Promise.all(targets.map(async node => {
           try {
-            const r = await fetch(node.url + "/monitor", { headers: node.token ? { Authorization: `Bearer ${node.token}` } : {}, signal: ac.signal })
+            const r = await fetch(node.url + (nodesOnly ? "/monitor/actions?offset=1000000" : "/monitor"), { headers: node.token ? { Authorization: `Bearer ${node.token}` } : {}, signal: ac.signal })
             if (!r.ok) throw new Error(`HTTP ${r.status}`)
+            if (nodesOnly) { await r.body?.cancel(); return { name: node.name, url: node.url, ok: true } }
             return { name: node.name, url: node.url, ok: true, data: await r.json() }
           } catch (e: any) { return { name: node.name, url: node.url, ok: false, error: e.message } }
         }))
@@ -1441,23 +1445,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Follow-up runs still going, on this node and its peers, grouped by
   // what they concern (#788). Unreachable peers are skipped and named.
   if (method === "GET" && path === "/api/workflows/follow-ups") {
-    const targets: Array<{ url: string; token?: string }> = [
-      { url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
-      ...(ctx.config.dashboard.daemons || []).map((d) => ({ url: d.url, token: d.token })),
-    ]
     const unreachable: string[] = []
-    const remote = await Promise.all(targets.map(async (t) => {
-      const headers: Record<string, string> = {}
-      if (t.token) headers["Authorization"] = `Bearer ${t.token}`
-      try {
-        const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs?limit=500&summary=1`, { headers, signal: AbortSignal.timeout(5000) })
-        if (!r.ok) { unreachable.push(t.url); return [] }
-        const data = await r.json() as { runs?: WorkflowRun[] }
-        return Array.isArray(data.runs) ? data.runs : []
-      } catch { unreachable.push(t.url); return [] }
+    // Only the runs still going: a node that knows active=1 sends those
+    // alone; an older one sends its last 500 and progressGroups keeps the
+    // same ones.
+    const remote = await Promise.all(runTargets(ctx.config).map(async (t) => {
+      const runs = await fetchPeerRuns(t, "?limit=500&summary=1&active=1")
+      if (!runs) unreachable.push(t.url)
+      return runs ?? []
     }))
     const byId = new Map<string, WorkflowRun>()
-    for (const r of ctx.workflowRuns.list({ limit: 500 })) byId.set(r.id, r)
+    for (const r of ctx.workflowRuns.list({ limit: 500, active: true })) byId.set(r.id, r)
     for (const list of remote) for (const r of list) byId.set(r.id, { ...r, history: r.history ?? [], pending: r.pending ?? [] })
     const titles = new Map(ctx.workflowStore.list().map((w) => [w.id, w.title] as const))
     sendJson(res, 200, { groups: progressGroups([...byId.values()], (id) => titles.get(id)), unreachable })
@@ -1501,41 +1499,21 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       // multi-MB / 30s+ down to ~100KB / 1s. Run-detail (GET /runs/:id)
       // and SSE stream still return the full shape unchanged.
       const summary = url.searchParams.get("summary") === "1" || url.searchParams.get("summary") === "true"
-      const local = ctx.workflowRuns.list({ limit, workflowId })
-      const qs = `?limit=${limit}${workflowId ? `&workflowId=${encodeURIComponent(workflowId)}` : ""}${summary ? "&summary=1" : ""}`
-      // Fan out to every configured peer daemon in parallel. Primary
-      // (dashboard.daemonUrl) gets the dashboard.token; entries in
-      // dashboard.daemons use their own per-peer token. The summary flag
-      // is forwarded so peer daemons also slim their responses (the daemon
-      // handler in src/daemon/index.ts honors the same query param).
-      const targets: Array<{ url: string; token?: string }> = [
-        { url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
-        ...(ctx.config.dashboard.daemons || []).map((d) => ({ url: d.url, token: d.token })),
-      ]
-      const remoteLists = await Promise.all(targets.map(async (t) => {
-        const headers: Record<string, string> = {}
-        if (t.token) headers["Authorization"] = `Bearer ${t.token}`
-        try {
-          // 5s timeout per peer — a slow/unhealthy mesh node must not pin
-          // the dashboard's first paint forever. AbortController keeps the
-          // existing fetch ergonomics; on timeout we just skip this peer's
-          // contribution and merge whatever we have.
-          const ctrl = new AbortController()
-          const timer = setTimeout(() => ctrl.abort(), 5000)
-          try {
-            const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs${qs}`, { headers, signal: ctrl.signal })
-            if (!r.ok) return []
-            const data = await r.json() as { runs?: WorkflowRun[] }
-            return Array.isArray(data.runs) ? data.runs : []
-          } finally {
-            clearTimeout(timer)
-          }
-        } catch { return [] }
-      }))
+      // before=<ISO updatedAt>: the next page, runs older than the last one
+      // the page has. Each node pages itself; the merge below keeps the
+      // cut too, for a node too old to know the parameter.
+      const before = url.searchParams.get("before") || undefined
+      const local = ctx.workflowRuns.list({ limit, workflowId, before })
+      const qs = `?limit=${limit}${workflowId ? `&workflowId=${encodeURIComponent(workflowId)}` : ""}${summary ? "&summary=1" : ""}${before ? `&before=${encodeURIComponent(before)}` : ""}`
+      // Every configured daemon in parallel; summary is forwarded so they
+      // slim their own responses. One that does not answer is skipped.
+      const remoteLists = await Promise.all(runTargets(ctx.config).map(async (t) => (await fetchPeerRuns(t, qs)) ?? []))
       const byId = new Map<string, WorkflowRun>()
       for (const r of local) byId.set(r.id, r)
       for (const list of remoteLists) for (const r of list) byId.set(r.id, r)
-      const merged = Array.from(byId.values()).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, limit)
+      const merged = Array.from(byId.values())
+        .filter((r) => !before || r.updatedAt < before)
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, limit)
       // Ensure the local runs the listing returns are also slimmed; the
       // handleWorkflowsApi path further down does this for its branch but
       // we never reach it because this handler returns first.
@@ -1898,35 +1876,31 @@ async function applyTransition(
   }
 }
 
-// --- WorkSource construction ---
+// --- Workflow runs from every daemon ---
 
-/** Trim a WorkflowRun to just the fields the listing UI needs. Drops the
- *  per-run `context` (full webhook payload + per-node outputs, often 10-50KB
- *  each) and clips `history` to the last 5 entries. Both the dashboard's
- *  mesh-aggregation handler and workflows-api.ts call this for `summary=1`
- *  responses; the shape MUST match between the two so the page doesn't see
- *  divergent fields per code path. */
-function slimRun(r: WorkflowRun): Partial<WorkflowRun> {
-  return {
-    id: r.id,
-    workflowId: r.workflowId,
-    workflowVersion: r.workflowVersion,
-    homeNode: r.homeNode,
-    status: r.status,
-    pending: r.pending,
-    entityRef: r.entityRef,
-    history: (r.history || []).slice(-5),
-    parentRunId: r.parentRunId,
-    parentNodeId: r.parentNodeId,
-    rootRunId: r.rootRunId,
-    depth: r.depth,
-    // Follow-up runs (#788): what it is about, and what it waits on.
-    ...(r.meta ? { meta: r.meta } : {}),
-    ...(r.pausedAt ? { pausedAt: slimPausedAt(r.pausedAt) } : {}),
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-  }
+/** The daemons the board lists runs from: the primary with the
+ *  dashboard token, then each of dashboard.daemons with its own. */
+function runTargets(config: DaemonConfig): Array<{ url: string; token?: string }> {
+  return [
+    { url: config.dashboard.daemonUrl, token: config.dashboard.token },
+    ...(config.dashboard.daemons || []).map((d) => ({ url: d.url, token: d.token })),
+  ]
 }
+
+/** One daemon's /api/workflows/runs, or null when it does not answer in
+ *  5 s: a slow node must not hold the page's first paint. */
+async function fetchPeerRuns(t: { url: string; token?: string }, qs: string): Promise<WorkflowRun[] | null> {
+  const headers: Record<string, string> = {}
+  if (t.token) headers["Authorization"] = `Bearer ${t.token}`
+  try {
+    const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs${qs}`, { headers, signal: AbortSignal.timeout(5000) })
+    if (!r.ok) return null
+    const data = await r.json() as { runs?: WorkflowRun[] }
+    return Array.isArray(data.runs) ? data.runs : []
+  } catch { return null }
+}
+
+// --- WorkSource construction ---
 
 function buildWorkSource(board: BoardConfig, daemon: DaemonConfig): WorkSource {
   if (board.source.type === "gitlab") {
@@ -2390,6 +2364,11 @@ const NODE_TIMEOUT_MS = 6_000
 const STALE_NODE_TTL_MS = 5 * 60_000
 const lastGoodNode = new Map<string, { node: NodeLive; at: number }>()
 const inflightSnapshots = new Map<string, Promise<LiveSnapshot>>()
+/** A whole live snapshot is reused this long: every open tab and the SSE
+ *  tick read the same one instead of each asking every node again. One
+ *  with a node still checking is not kept, so asking again gets the rest. */
+const LIVE_REUSE_MS = 2_000
+const recentSnapshots = new Map<string, { snap: LiveSnapshot; at: number }>()
 
 /** A quick snapshot (#1442) waits this long for each node; one still
  *  answering shows its last good data, or nothing yet, marked checking. */
@@ -2408,6 +2387,8 @@ function buildLiveSnapshot(
   const key = day ? `${day.date}|${day.timezone}` : quick ? "live|quick" : "live"
   const running = inflightSnapshots.get(key)
   if (running) return running
+  const recent = day ? undefined : recentSnapshots.get(key)
+  if (recent && Date.now() - recent.at < LIVE_REUSE_MS) return Promise.resolve(recent.snap)
   const build = (async () => {
     const targets = await resolveNodeTargets(daemon, AbortSignal.timeout(TARGETS_TIMEOUT_MS))
     const nodes = await Promise.all(targets.map(async (d) => {
@@ -2425,7 +2406,9 @@ function buildLiveSnapshot(
       const node = await Promise.race([asking, late]).finally(() => clearTimeout(timer))
       return node ?? stillChecking(d)
     }))
-    return { ts: new Date().toISOString(), nodes, concurrent: liveOverlaps(nodes) }
+    const snap: LiveSnapshot = { ts: new Date().toISOString(), nodes, concurrent: liveOverlaps(nodes) }
+    if (!day && !nodes.some((n) => n.checking)) recentSnapshots.set(key, { snap, at: Date.now() })
+    return snap
   })().finally(() => inflightSnapshots.delete(key))
   inflightSnapshots.set(key, build)
   return build
@@ -2453,6 +2436,7 @@ export function withLastGood(url: string, node: NodeLive, now: number = Date.now
 export function resetLiveCaches(): void {
   lastGoodNode.clear()
   inflightSnapshots.clear()
+  recentSnapshots.clear()
   inflightNodes.clear()
 }
 

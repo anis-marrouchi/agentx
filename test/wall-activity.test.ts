@@ -77,12 +77,12 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
     const node = /^\/api\/monitor\/activity\?node=([^&]+)/.exec(url)
-    if (url === "/api/monitor" && opts.monitorHangs) return new Promise(() => {})
-    if (url === "/api/monitor" && opts.monitorFails) return Promise.resolve({ ok: false, status: 502, json: async () => ({ error: "bad gateway" }) })
+    if (url === "/api/monitor?nodes=1"&& opts.monitorHangs) return new Promise(() => {})
+    if (url === "/api/monitor?nodes=1"&& opts.monitorFails) return Promise.resolve({ ok: false, status: 502, json: async () => ({ error: "bad gateway" }) })
     if (url === "/api/node/build") return opts.build === undefined ? Promise.resolve({ ok: false, status: 502, json: async () => ({}) }) : opts.build === null ? Promise.reject(new Error("down")) : Promise.resolve({ ok: true, status: 200, json: async () => opts.build })
     const body = url.startsWith("/api/admin/wall?") ? { node: "node-a", syncedAt: NOW, nodes: [{ name: "node-a", ok: true }], failures: [], posts: opts.posts ?? [POST] }
       : url === "/api/live?quick=1" ? { nodes: [{ name: "node-a", url: "http://node-a", reachable: true, agents: [{ id: "cx", name: "Customer Desk" }, { id: "ops", name: "Night Shift" }] }] }
-      : url === "/api/monitor" ? NODES
+      : url === "/api/monitor?nodes=1"? NODES
       : node ? { node: decodeURIComponent(node[1]).replace("http://", ""), since: NOW - 24 * H, runs: runs[decodeURIComponent(node[1])] ?? [], marks: [] }
       : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
