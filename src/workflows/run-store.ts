@@ -310,8 +310,9 @@ export class RunStore {
   /** List runs, newest first. Task runs (#883) are left out unless
    *  `tasks` says otherwise; `workflowId: "task"` lists only them. A run
    *  file last written before `since` (ms) is skipped unread: a run starts
-   *  before its file's last write. */
-  list(opts: { workflowId?: string; limit?: number; tasks?: "exclude" | "include" | "only"; since?: number } = {}): WorkflowRun[] {
+   *  before its file's last write. `before` (ISO) pages: only runs last
+   *  updated earlier than it. `active` keeps running and paused runs. */
+  list(opts: { workflowId?: string; limit?: number; tasks?: "exclude" | "include" | "only"; since?: number; before?: string; active?: boolean } = {}): WorkflowRun[] {
     const tasks = opts.tasks ?? (opts.workflowId === TASK_WORKFLOW_ID ? "only" : "exclude")
     const dirs = tasks === "only" ? [this.tasksDir] : tasks === "include" ? [this.runsDir, this.tasksDir] : [this.runsDir]
     const files: Array<{ path: string; mtime: number }> = []
@@ -334,6 +335,8 @@ export class RunStore {
       if (opts.workflowId && run.workflowId !== opts.workflowId) continue
       // One an older version left in _runs, until moveTaskRuns() runs.
       if (tasks === "exclude" && run.workflowId === TASK_WORKFLOW_ID) continue
+      if (opts.before && !(run.updatedAt < opts.before)) continue
+      if (opts.active && run.status !== "running" && run.status !== "paused") continue
       out.push(run)
       if (opts.limit && out.length >= opts.limit) break
     }

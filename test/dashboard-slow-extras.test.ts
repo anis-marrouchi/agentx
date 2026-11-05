@@ -80,3 +80,61 @@ describe("live snapshot with slow optional endpoints", () => {
     }
   }, 15_000)
 })
+
+// A slow board over a remote link: every open tab and the SSE tick
+// share one whole live snapshot for a moment, and pages that only pick a
+// node read which nodes answer, not each node's whole monitor.
+describe("board reads kept small", () => {
+  async function withBoard(handler: (req: any, res: any, hits: string[]) => boolean, run: (base: string, hits: string[]) => Promise<void>) {
+    const hits: string[] = []
+    server = createServer((req, res) => {
+      hits.push(req.url || "/")
+      if (handler(req, res, hits)) return
+      res.writeHead(404); res.end("{}")
+    })
+    await new Promise<void>((r) => server!.listen(0, "127.0.0.1", () => r()))
+    const url = `http://127.0.0.1:${(server!.address() as any).port}`
+    const config = daemonConfigSchema.parse({ node: { id: "node-a", name: "node-a" }, dashboard: { daemonUrl: url } })
+    const dash = createServer((req, res) => { void handleBoardRequest(req, res, { boards: [], sources: new Map(), config } as unknown as Ctx) })
+    await new Promise<void>((r) => dash.listen(0, "127.0.0.1", () => r()))
+    try { await run(`http://127.0.0.1:${(dash.address() as any).port}`, hits) }
+    finally { await new Promise<void>((r) => dash.close(() => r())) }
+  }
+  const json = (res: any, b: unknown) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(b)); return true }
+
+  it("reuses a whole live snapshot for two seconds", async () => {
+    resetLiveCaches()
+    await withBoard((req, res) => {
+      const path = (req.url || "/").split("?")[0]
+      if (path === "/mesh") return json(res, [])
+      if (path === "/agents") return json(res, [{ id: "writer", name: "Writer" }])
+      return false
+    }, async (base, hits) => {
+      const a = await (await fetch(`${base}/api/live`)).json() as any
+      const b = await (await fetch(`${base}/api/live`)).json() as any
+      expect(a.nodes[0].reachable).toBe(true)
+      expect(b.ts).toBe(a.ts)
+      expect(hits.filter((h) => h.split("?")[0] === "/agents")).toHaveLength(1)
+    })
+  }, 10_000)
+
+  it("/api/monitor?nodes=1 names the nodes that answer without their monitor data", async () => {
+    await withBoard((req, res) => {
+      const path = (req.url || "/").split("?")[0]
+      if (path === "/mesh") return json(res, [])
+      if (path === "/monitor/actions") return json(res, { items: [], total: 900 })
+      if (path === "/monitor") return json(res, { actions: { items: [{ big: "x".repeat(1000) }], total: 1 } })
+      return false
+    }, async (base, hits) => {
+      const d = await (await fetch(`${base}/api/monitor?nodes=1`)).json() as any
+      expect(d.nodes).toHaveLength(1)
+      expect(d.nodes[0]).toMatchObject({ ok: true })
+      expect(d.nodes[0].data).toBeUndefined()
+      expect(hits).toContain("/monitor/actions?offset=1000000")
+      expect(hits).not.toContain("/monitor")
+      // Without the flag the whole monitor still comes back, for the classic pages.
+      const full = await (await fetch(`${base}/api/monitor`)).json() as any
+      expect(full.nodes[0].data.actions.total).toBe(1)
+    })
+  }, 10_000)
+})

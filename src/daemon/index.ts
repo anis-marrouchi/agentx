@@ -91,7 +91,7 @@ import { runMirror } from "@/approvals/mirror"
 import { requestStoreFor } from "@/approvals/inbox"
 import { configToken, githubIssueComments, postWeekly, runReportCommand } from "@/quality/epic-report"
 import { createCard, listCards, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
-import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
+import { blockedText, runEvidence, runSummary, slimRun } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
@@ -6286,27 +6286,13 @@ export class AgentXDaemon {
           // the last 5 entries. Honored by the dashboard's mesh-aggregation
           // handler when fanning out to peer daemons (see board-dashboard.ts).
           const summary = url.searchParams.get("summary") === "1" || url.searchParams.get("summary") === "true"
-          const runs = this.workflowRuns.list({ workflowId, limit })
+          // before=<ISO updatedAt>: the next page, older than the last run seen.
+          // active=1: running and paused runs only (the follow-ups column).
+          const before = url.searchParams.get("before") || undefined
+          const active = url.searchParams.get("active") === "1"
+          const runs = this.workflowRuns.list({ workflowId, limit, before, active })
           if (!summary) { this.json(res, 200, { runs }); return }
-          const slim = runs.map((r) => ({
-            id: r.id,
-            workflowId: r.workflowId,
-            workflowVersion: r.workflowVersion,
-            homeNode: r.homeNode,
-            status: r.status,
-            pending: r.pending,
-            entityRef: r.entityRef,
-            history: (r.history || []).slice(-5),
-            parentRunId: r.parentRunId,
-            parentNodeId: r.parentNodeId,
-            rootRunId: r.rootRunId,
-            depth: r.depth,
-            ...(r.meta ? { meta: r.meta } : {}),
-            ...(r.pausedAt ? { pausedAt: slimPausedAt(r.pausedAt) } : {}),
-            createdAt: r.createdAt,
-            updatedAt: r.updatedAt,
-          }))
-          this.json(res, 200, { runs: slim })
+          this.json(res, 200, { runs: runs.map(slimRun) })
           return
         }
         const runMatch = path.match(/^\/api\/workflows\/runs\/([^\/]+)$/)

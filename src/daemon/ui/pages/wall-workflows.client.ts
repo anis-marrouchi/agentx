@@ -17,7 +17,8 @@
 // in a workflow" setting).
 //
 // Reads: GET /api/workflows (this node's definitions) and
-// /api/workflows/runs?summary=1 (every machine's runs, slim), then one run
+// /api/workflows/runs?summary=1 (every machine's runs, slim, in pages of
+// 100 with before=<oldest updatedAt>), then one run
 // in full when a workflow is opened; the side column reads
 // /api/workflows/follow-ups and /api/workflows/required.
 //
@@ -42,6 +43,8 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
   var WF_STALE_DAYS = 30;
   /** The runs read for the page: enough for the squares and the stale rule. */
   var WF_RUNS = 500;
+  /** Read in pages of this many, newest first, so the first paints soon. */
+  var WF_PAGE = 100;
   var WF_TABS = [['', 'All'], ['running', 'Running'], ['failed', 'Failed'], ['off', 'Off']];
   var WF_KEYS = [['w-tab', 'tab'], ['w-q', 'q'], ['w-project', 'project'], ['w-open', 'open']];
   var WF_HOOK = { 'on:gitlab-issue': 'When a GitLab issue changes', 'on:gitlab-mr': 'When a GitLab merge request changes', 'on:gitlab-note': 'When someone comments on GitLab', 'on:gitlab-pipeline': 'When a GitLab pipeline ends' };
@@ -140,16 +143,31 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
   async function loadWorkflows() {
     if (WFP.loading) return;
     WFP.loading = true;
+    var page = [];
     try {
-      var got = await Promise.all([getJson('/api/workflows'), getJson('/api/workflows/runs?summary=1&limit=' + WF_RUNS)]);
+      var got = await Promise.all([getJson('/api/workflows'), getJson('/api/workflows/runs?summary=1&limit=' + WF_PAGE)]);
       WFP.defs = got[0].workflows || [];
-      WFP.runs = (got[1].runs || []).slice().sort(function (a, b) { return Date.parse(b.updatedAt) - Date.parse(a.updatedAt); });
-      WFP.capped = WFP.runs.length >= WF_RUNS;
+      page = got[1].runs || [];
+      wfSetRuns(page, page.length >= WF_PAGE);
       WFP.error = '';
     } catch (e) { WFP.error = e.message; }
-    WFP.loading = false;
     if (S.wfv.open) wfLoadRun(S.wfv.open);
     render();
+    // The first page is on screen; the older ones follow, up to WF_RUNS.
+    // Until the last one is in, a workflow with no run shown may have one.
+    try {
+      while (!WFP.error && page.length >= WF_PAGE && WFP.runs.length < WF_RUNS) {
+        var oldest = WFP.runs[WFP.runs.length - 1].updatedAt;
+        page = (await getJson('/api/workflows/runs?summary=1&limit=' + WF_PAGE + '&before=' + encodeURIComponent(oldest))).runs || [];
+        wfSetRuns(WFP.runs.concat(page), page.length >= WF_PAGE);
+        render();
+      }
+    } catch (e) { /* the runs read so far stay, counted as capped */ }
+    WFP.loading = false;
+  }
+  function wfSetRuns(runs, more) {
+    WFP.runs = runs.slice().sort(function (a, b) { return Date.parse(b.updatedAt) - Date.parse(a.updatedAt); });
+    WFP.capped = more || WFP.runs.length >= WF_RUNS;
   }
   /** The side column: best effort, each says so when it cannot be read. */
   function loadWorkflowSide() {

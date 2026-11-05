@@ -38,7 +38,7 @@ const APPROVALS = {
   snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
 }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown; wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -120,7 +120,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
       : url === "/api/admin/people" ? (opts.people ?? { people: [], paired: 0 })
       : url.startsWith("/api/admin/people/") && opts.person ? opts.person[decodeURIComponent(url.slice(18))]
       : url === "/api/workflows" ? (opts.workflows ?? { workflows: [] })
-      : url.startsWith("/api/workflows/runs?") && opts.wfRuns ? opts.wfRuns
+      : url.startsWith("/api/workflows/runs?") && opts.wfRuns ? (typeof opts.wfRuns === "function" ? opts.wfRuns(url) : opts.wfRuns)
       : url.startsWith("/api/workflows/runs/") && opts.wfRun ? { run: opts.wfRun[decodeURIComponent(url.slice(20))] }
       : url === "/api/workflows/follow-ups" ? { groups: [{ tag: "client:demo", rows: [{ runId: "w9" }, { runId: "w8" }] }], unreachable: [] }
       : url === "/api/workflows/required" ? { settings: { enabled: false }, agents: [] }
@@ -2416,7 +2416,9 @@ describe("The Workflows page on the Wall (#1445)", () => {
     expect(w.el("wall-workflows").hidden).toBe(false)
     expect(w.el("wall-feed").hidden).toBe(true)
     expect(w.el("wall-wf-new").hidden).toBe(false)
-    expect(w.calls.map((c) => c.url)).toContain("/api/workflows/runs?summary=1&limit=500")
+    expect(w.calls.map((c) => c.url)).toContain("/api/workflows/runs?summary=1&limit=100")
+    // A short first page is the last: no older page is asked for.
+    expect(w.calls.some((c) => c.url.includes("before="))).toBe(false)
     const html = w.el("wall-workflows").innerHTML
     expect(html).toContain("4 workflows, 3 on · ")
     // Failing first, the off one last.
@@ -2437,6 +2439,25 @@ describe("The Workflows page on the Wall (#1445)", () => {
     expect(side).toContain("<b>2</b> runs started for your requests")
     expect(side).toContain("Off. When on, each new task runs through a workflow.")
     expect(w.el("wall-aside").classList.contains("is-wf")).toBe(true)
+  })
+
+  it("reads runs in pages of 100, older ones after the first paint, until a short page", async () => {
+    // 100 recent runs of support-reply, then the weekly run on page two.
+    const page1 = Array.from({ length: 100 }, (_, i) => run("p" + i, "support-reply", "completed", (i + 1) * 60e3))
+    const page2 = [run("w1", "weekly", "completed", 3 * 86400e3)]
+    const asked: string[] = []
+    const w = openWall({ hash: "#page=workflows", workflows: WORKFLOWS, wfRuns: (url: string) => {
+      asked.push(url)
+      return { runs: url.includes("before=") ? page2 : page1 }
+    } })
+    await w.settle()
+    // The Wall's failed-runs read asks limit=100 too; the page adds one older page.
+    expect(asked).toContain("/api/workflows/runs?summary=1&limit=100")
+    expect(asked.filter((u) => u.includes("before="))).toEqual([
+      "/api/workflows/runs?summary=1&limit=100&before=" + encodeURIComponent(page1[99].updatedAt),
+    ])
+    // The weekly run from page two is drawn in its row's squares.
+    expect(w.el("wall-workflows").innerHTML).toMatch(/Weekly report[\s\S]*aria-label="Last 1 run: completed"/)
   })
 
   it("filters by tab, text and project, kept in the link", async () => {

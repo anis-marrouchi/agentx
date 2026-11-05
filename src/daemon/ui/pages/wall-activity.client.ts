@@ -16,7 +16,7 @@
 // classic history page. The side column sums up the period.
 //
 // Reads the same endpoints the classic /activity Timeline reads:
-// /api/monitor for the machines, then /api/monitor/activity per machine.
+// /api/monitor?nodes=1 for the machines, then /api/monitor/activity per machine.
 // No new counting: a run's cost is the one its trace stored, and a run
 // with none shows "–", not $0. Nothing here writes.
 
@@ -246,7 +246,7 @@ export const WALL_ACTIVITY_SCRIPT = String.raw`
     S.acts[k] = { loading: true, runs: had && had.runs, marks: had && had.marks, notes: had && had.notes };
     var hours = actPeriod(k)[2], from = Date.now() - hours * 3600e3, next;
     try {
-      var nodes = ((await getJson('/api/monitor')).nodes || []);
+      var nodes = ((await getJson('/api/monitor?nodes=1')).nodes || []);
       var runs = [], marks = {}, notes = [], down = nodes.filter(function (n) { return !n.ok; }).map(function (n) { return n.name; });
       await Promise.all(nodes.filter(function (n) { return n.ok; }).map(async function (n) {
         try {

@@ -165,7 +165,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     paintLog();
   }).catch(function () { $('hc-agent').innerHTML = '<option value="">Agents unavailable</option>'; });
   // The node picker shows only when there is more than one node to pick.
-  fetch('/api/monitor', { headers: headers() }).then(function (r) { return r.json(); }).then(function (d) {
+  fetch('/api/monitor?nodes=1', { headers: headers() }).then(function (r) { return r.json(); }).then(function (d) {
     var ns = (d.nodes || []).filter(function (n) { return n.ok; });
     if (ns.length < 2) return;
     $('hc-node').innerHTML = ns.map(function (n) { return '<option value="' + esc(n.url) + '">' + esc(n.name) + '</option>'; }).join('');

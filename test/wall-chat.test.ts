@@ -46,7 +46,7 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; no
     calls.push({ url, method, body: init.body ? JSON.parse(init.body) : undefined, headers: init.headers })
     const r = opts.route?.(url, init)
       ?? (url === "/api/agents" ? { status: 200, body: { agents: [{ id: "scout", name: "Scout" }, { id: "forge", name: "Forge" }] } }
-        : url === "/api/monitor" ? { status: 200, body: { nodes: [{ name: "studio", url: "http://studio", ok: true }] } }
+        : url === "/api/monitor?nodes=1" ?{ status: 200, body: { nodes: [{ name: "studio", url: "http://studio", ok: true }] } }
         : url === "/api/assistant/threads" ? { status: 200, body: { threads: [] } }
         : { status: 404, body: { error: "not found" } })
     return Promise.resolve(r).then((r) => {
