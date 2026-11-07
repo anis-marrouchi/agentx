@@ -32,3 +32,37 @@ export function resolveGitlabTokenForAgent(config: DaemonConfig, agentId?: strin
   if (globalToken) return { token: globalToken, source: "global" }
   return { token: undefined, source: integration.source }
 }
+
+// --- The agent's own token in its runs (glab, curl scripts) ---
+//
+// Every agent run inherited the daemon's GITLAB_TOKEN, so `glab` in any
+// agent's shell wrote as the shared account: the coder's notes and pushes
+// read as DevOps's on GitLab, and nobody could tell who did the work. The
+// daemon registers a resolver at start; each run then gets its own token
+// in GITLAB_TOKEN when it has one (agentMappings or integrations). An
+// agent without its own token keeps the inherited value.
+
+/** An agent's own GitLab token, never the global one. */
+export function ownGitlabToken(config: DaemonConfig, agentId: string): string | undefined {
+  const mapping = (config.channels.gitlab?.agentMappings || []).find((m: any) => m.agentId === agentId)
+  if (mapping?.token) return mapping.token
+  return gitlabIntegrationToken(config, agentId).token
+}
+
+let agentTokenResolver: ((agentId: string) => string | undefined) | null = null
+
+/** Set by the daemon (reads the live config at each call). Null: off. */
+export function setAgentGitlabTokenResolver(fn: ((agentId: string) => string | undefined) | null): void {
+  agentTokenResolver = fn
+}
+
+/** Put the agent's own GitLab token where glab and scripts read it. */
+export function withAgentGitlabEnv(env: NodeJS.ProcessEnv, agentId: string): NodeJS.ProcessEnv {
+  let token: string | undefined
+  try { token = agentTokenResolver?.(agentId) } catch { token = undefined }
+  if (token) {
+    env.GITLAB_TOKEN = token
+    env.GITLAB_ACCESS_TOKEN = token
+  }
+  return env
+}

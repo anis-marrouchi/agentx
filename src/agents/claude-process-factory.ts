@@ -1,3 +1,4 @@
+import { withAgentGitlabEnv } from "@/channels/gitlab-token"
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
 import { randomUUID } from "crypto"
 import { existsSync, readFileSync } from "fs"
@@ -95,6 +96,8 @@ export class TurnInterrupted extends Error {
  *  the per-turn AGENTX_TASK_ID does, and is left out. */
 export function persistentCallerEnv(env: NodeJS.ProcessEnv, key: ProcessKey): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = key.agentId
+  // glab and scripts write to GitLab as this agent, not the shared account.
+  withAgentGitlabEnv(env, key.agentId)
   // The guard hook refuses calls it cannot check in this session (#1710).
   env.AGENTX_GUARD = "required"
   env.AGENTX_CHANNEL = key.channel

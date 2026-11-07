@@ -675,6 +675,10 @@ const channelsConfigSchema = z.object({
      *  project's agents have migrated their gitlab skill to use channel.reply.
      *  Default true preserves today's behaviour for unmigrated projects. */
     autoReplyLegacy: z.boolean().default(true),
+    /** Each agent run gets the agent's own GitLab token (agentMappings or
+     *  integrations) in GITLAB_TOKEN, so glab and scripts in its shell
+     *  write as that agent. False: runs keep the daemon's GITLAB_TOKEN. */
+    ownTokenInAgentEnv: z.boolean().default(true),
     routes: z.array(z.object({
       project: z.string(),
       agent: z.string(),

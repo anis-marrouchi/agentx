@@ -1,3 +1,4 @@
+import { withAgentGitlabEnv } from "@/channels/gitlab-token"
 import { openCodeProcessPool, OpenCodeServerUnavailable } from "./opencode-process"
 import { execa } from "execa"
 import { codexProcessPool, CodexUnavailable } from "./codex-process"
@@ -566,6 +567,8 @@ function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
  *  changes every turn. */
 export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = task.agentId
+  // glab and scripts write to GitLab as this agent, not the shared account.
+  withAgentGitlabEnv(env, task.agentId)
   // The guard hook refuses calls it cannot check in this session (#1710).
   env.AGENTX_GUARD = "required"
   // The running task, so a daemon endpoint the agent calls (agent memory)

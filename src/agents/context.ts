@@ -140,6 +140,7 @@ export interface ContextInput {
   // History
   groupHistory?: string              // from GroupLog.buildContext()
   sessionHistory?: string            // from SessionStore.buildHistoryContext()
+  ownerDecisions?: string            // from buildOwnerDecisions() — fresh sessions only
   crossChatContext?: string           // from SessionStore.getCrossSessionSummary()
   /** Long-memory recall pre-fetched by the registry when the user message
    *  contains an explicit long-memory cue ("yesterday", "last week",
@@ -460,6 +461,18 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
     })
   }
 
+  // 2.7 Owner decisions — newest wiki rulings, ahead of the history and the
+  //     continuity memo they outrank (owner-decisions.ts). Fresh sessions only.
+  if (input.ownerDecisions) {
+    layers.push({
+      name: "owner-decisions",
+      priority: 2.7,
+      maxTokens: budget("owner-decisions", 1500),
+      content: input.ownerDecisions,
+      tags: ["owner", "decisions", "wiki"],
+    })
+  }
+
   // 7. History (group > session — prefer group if available)
   const history = input.groupHistory || input.sessionHistory
   if (history) {
@@ -536,7 +549,7 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       priority: 7.6,
       maxTokens: budget("rotation-memo", 800),
       content: [
-        `[Continuity memo — your previous session for this chat ended (${input.rotationMemo.reason}, ${input.rotationMemo.capturedAt}). Carry on from this work state; do not claim you lack prior context. It is a summary, not checked facts: re-check account, billing, outage or deploy state before stating it, or say it is unverified and ask the owner. Usage limits, resets, holds and this machine: call agentx_node:]`,
+        `[Continuity memo — your previous session for this chat ended (${input.rotationMemo.reason}, ${input.rotationMemo.capturedAt}). Carry on from this work state; do not claim you lack prior context. It is a summary, not checked facts, and owner decisions made after it win over it: re-check account, billing, outage or deploy state before stating it, or say it is unverified and ask the owner. Usage limits, resets, holds and this machine: call agentx_node:]`,
         markNodeFacts(input.rotationMemo.memo),
       ].join("\n"),
       tags: ["continuity", "rotation-memo"],

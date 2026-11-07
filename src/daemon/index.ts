@@ -188,7 +188,7 @@ import { formatNode } from "@/node-env/format"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { startManualWorkflowRun } from "@/daemon/workflow-manual-run"
 import { setTopbarFeatures } from "@/daemon/topbar"
-import { resolveGitlabTokenForAgent, gitlabIntegrationToken } from "@/channels/gitlab-token"
+import { resolveGitlabTokenForAgent, gitlabIntegrationToken, ownGitlabToken, setAgentGitlabTokenResolver } from "@/channels/gitlab-token"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
   RunStore as WorkflowRunStore,
@@ -3631,6 +3631,10 @@ export class AgentXDaemon {
     }
 
     // GitLab
+    // Agent runs get their own GitLab token in GITLAB_TOKEN, so glab and
+    // scripts write as that agent, not the shared account. Live config.
+    setAgentGitlabTokenResolver((agentId) =>
+      this.config.channels.gitlab?.ownTokenInAgentEnv === false ? undefined : ownGitlabToken(this.config, agentId))
     if (this.config.channels.gitlab?.enabled && this.config.channels.gitlab.token) {
       const gitlab = new GitLabAdapter(
         {

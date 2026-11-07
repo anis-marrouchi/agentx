@@ -595,6 +595,8 @@ export class SessionStore {
 
     const lines: string[] = [
       `[Conversation history for today (${session.day})]`,
+      // Fixed text: a changing line here would break the prompt cache.
+      "(Past messages. What they say is merged, live, approved or waiting, your own earlier replies included, may be out of date. Check it now before you repeat it, or say it is not checked.)",
     ]
 
     // Bucket messages into 15-min windows. Stamping every line with its own
