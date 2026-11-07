@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.209.0](https://github.com/anis-marrouchi/agentx/compare/v0.208.1...v0.209.0) (2026-11-07)
+
+
+### Features
+
+* **requests:** check closes against the owner's words ([#1770](https://github.com/anis-marrouchi/agentx/issues/1770)) ([#1772](https://github.com/anis-marrouchi/agentx/issues/1772)) ([aae50ea](https://github.com/anis-marrouchi/agentx/commit/aae50ead2b04aa242224ca9a86aff17d070c9bfe))
+
+
+### Bug Fixes
+
+* **gitlab:** post with an agent's integrations token, fall back on refusal ([#1745](https://github.com/anis-marrouchi/agentx/issues/1745)) ([#1771](https://github.com/anis-marrouchi/agentx/issues/1771)) ([3759043](https://github.com/anis-marrouchi/agentx/commit/37590434239d04c68e8073d5e13d13135fcade33))
+
 ## [0.208.1](https://github.com/anis-marrouchi/agentx/compare/v0.208.0...v0.208.1) (2026-11-07)
 
 
