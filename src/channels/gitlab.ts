@@ -7,6 +7,7 @@ import { getLedgerMode } from "@/intent/mode"
 import { isStatusComment } from "@/requests/status"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
+import { computeIssueTargets, describeIssueChange } from "./gitlab-issue-targets"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -1069,7 +1070,7 @@ export class GitLabAdapter implements ChannelAdapter {
             name: event.user.name,
             username: event.user.username,
           },
-          text: d.prompt || `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
+          text: d.prompt || `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${describeIssueChange(event)}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
           timestamp: new Date(),
           raw: event,
           resolvedAgent: d.agentId,
@@ -1128,9 +1129,9 @@ export class GitLabAdapter implements ChannelAdapter {
     // behavior so an issue assigned to an agent always gets that agent
     // engaged — matching how comments resolve via @mention. The
     // `on:gitlab-issue` hook above can still fully override or block.
-    const targets = this.computeIssueTargets(event, defaultAgentId)
+    const targets = computeIssueTargets(event, this.usernameToAgent, defaultAgentId)
     if (targets.length === 0) {
-      this.log(`Issue #${attrs.iid}: no agent target (no mention, no agent assignee, no default route)`)
+      this.log(`Issue #${attrs.iid} ${attrs.action}: no agent target (no new mention, no new agent assignee, not opened)`)
       res.writeHead(200); res.end("ok"); return
     }
 
@@ -1198,9 +1199,10 @@ export class GitLabAdapter implements ChannelAdapter {
         // Assignment-trigger gets a "start working" prompt; mention/default
         // get the standard issue summary. Both end with the issue URL so the
         // agent can navigate to it.
+        const change = describeIssueChange(event)
         const text = t.trigger === "assignee-added"
-          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${stripAgentxMarkers(attrs.title)}]\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\n${this.statusComments() ? "Start" : "Please acknowledge this assignment in a comment, then start"} working on the issue.`
-          : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${stripAgentxMarkers(attrs.title)}]\n${change}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\n${this.statusComments() ? "Start" : "Please acknowledge this assignment in a comment, then start"} working on the issue.`
+          : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${change}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`
 
         const incoming: IncomingMessage = {
           id: `issue-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
@@ -1232,59 +1234,6 @@ export class GitLabAdapter implements ChannelAdapter {
 
     res.writeHead(200)
     res.end("ok")
-  }
-
-  /** Compute the deterministic target set for an issue event. Order:
-   *    1. agent usernames @mentioned in the description (open events)
-   *    2. agent usernames newly added as assignees (changes.assignees diff)
-   *    3. agent usernames in the current full assignee list (catches
-   *       create-with-assignee where there are no `changes`)
-   *    4. project default route (fallback only when 1-3 produced nothing)
-   *  Each agent appears at most once; the first trigger that found them
-   *  wins for the dedup key. */
-  private computeIssueTargets(
-    event: GitLabIssueEvent,
-    defaultAgentId: string | undefined,
-  ): Array<{ agentId: string; trigger: "mention" | "assignee-added" | "assignee-current" | "default-route" }> {
-    const out: Array<{ agentId: string; trigger: "mention" | "assignee-added" | "assignee-current" | "default-route" }> = []
-    const seen = new Set<string>()
-    const add = (agentId: string | undefined, trigger: "mention" | "assignee-added" | "assignee-current" | "default-route") => {
-      if (!agentId || seen.has(agentId)) return
-      seen.add(agentId)
-      out.push({ agentId, trigger })
-    }
-
-    // 1. Mentions in description
-    const desc = event.object_attributes.description || ""
-    const mentions = desc.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "").toLowerCase()) || []
-    for (const u of mentions) {
-      add(this.usernameToAgent.get(u), "mention")
-    }
-
-    // 2. Newly added assignees (assignment trigger — the "start working" path)
-    const previous = new Set((event.changes?.assignees?.previous ?? []).map(a => a.username.toLowerCase()))
-    const current = (event.changes?.assignees?.current ?? []).map(a => a.username.toLowerCase())
-    for (const u of current) {
-      if (previous.has(u)) continue // unchanged assignment, not a fresh add
-      add(this.usernameToAgent.get(u), "assignee-added")
-    }
-
-    // 3. Current full assignee list (covers create-with-assignee where
-    //    `changes` is absent). Skipped when (2) already produced an agent
-    //    for this event to avoid the same assignee firing twice.
-    if (out.length === 0) {
-      const allAssignees = (event.assignees ?? []).map(a => a.username.toLowerCase())
-      for (const u of allAssignees) {
-        add(this.usernameToAgent.get(u), "assignee-current")
-      }
-    }
-
-    // 4. Project default route — only when nothing above resolved
-    if (out.length === 0) {
-      add(defaultAgentId, "default-route")
-    }
-
-    return out
   }
 
   /** Was this dispatch key fired within the dedup TTL window? */
