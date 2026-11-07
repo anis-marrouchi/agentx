@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.208.1](https://github.com/anis-marrouchi/agentx/compare/v0.208.0...v0.208.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **a2a:** cut repeat callbacks, duplicate sessions and FYI runs ([#1765](https://github.com/anis-marrouchi/agentx/issues/1765)) ([#1766](https://github.com/anis-marrouchi/agentx/issues/1766)) ([24bdbfb](https://github.com/anis-marrouchi/agentx/commit/24bdbfbf8f296f9e84d2419b782c51f8c2eb199a))
+* **a2a:** keep notices off person, guest and parsed runs ([#1765](https://github.com/anis-marrouchi/agentx/issues/1765)) ([#1769](https://github.com/anis-marrouchi/agentx/issues/1769)) ([90b8e94](https://github.com/anis-marrouchi/agentx/commit/90b8e9447b1ba178f0bea2c03301c2b03ced6b5c))
+* **gitlab:** wake agents only on a real issue start, not on every edit ([#1763](https://github.com/anis-marrouchi/agentx/issues/1763)) ([9ae3c03](https://github.com/anis-marrouchi/agentx/commit/9ae3c03b3b7b4f02b3a76348366448b211a68fc5))
+
 ## [0.208.0](https://github.com/anis-marrouchi/agentx/compare/v0.207.2...v0.208.0) (2026-11-07)
 
 
