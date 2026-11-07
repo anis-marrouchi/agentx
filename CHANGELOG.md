@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.208.0](https://github.com/anis-marrouchi/agentx/compare/v0.207.2...v0.208.0) (2026-11-07)
+
+
+### Features
+
+* **approvals:** record the agent that answers from the CLI ([#1755](https://github.com/anis-marrouchi/agentx/issues/1755)) ([9d25bb2](https://github.com/anis-marrouchi/agentx/commit/9d25bb2130c46c39c0783d39e3c8a0e1e9bb55df))
+
 ## [0.207.2](https://github.com/anis-marrouchi/agentx/compare/v0.207.1...v0.207.2) (2026-11-05)
 
 
