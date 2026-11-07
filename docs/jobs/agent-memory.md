@@ -51,12 +51,38 @@ When an agent starts a fresh conversation, for example after a long one is resta
 
 So a fresh conversation now starts with your newest decisions, ahead of the old messages and the summary:
 
-- AgentX takes the wiki pages of type **decision** updated in the last 7 days, newest first, at most 6.
+- AgentX takes the wiki pages of type **decision** updated in the last 7 days, newest first, at most 6. If you turn on approvals (see below), it takes only the pages you have approved.
 - From each page it takes the rule. When the page has later **Update** sections, the newest update comes first and the original rule is marked as older.
 - The block says that these decisions win where the old messages or the summary say something else.
 - The old messages carry a line saying that what they report (merged, live, approved, waiting) may be out of date, and must be checked before it is repeated.
 
 To change what agents follow, record the decision on a wiki decision page. A decision told to one agent in one chat does not reach the others until it is on that page.
+
+#### Approve each decision page (optional)
+
+Because these pages win over everything else, you can make AgentX use only the decision pages you have approved. Agents, the nightly wiki update (called **absorb**, which turns chat messages into wiki pages) and copies from other machines can all write decision pages. Without approvals, a page written from a client's message could change what your agents follow.
+
+Approvals are off by default: every recent decision page reaches new conversations. To turn them on, set this in `agentx.json` and restart the daemon:
+
+```json
+{ "wiki": { "decisionApprovals": { "required": true } } }
+```
+
+Once on, a decision page reaches new conversations only after you approve it. Approve the current pages first, or the block stays empty until you do.
+
+Your approval covers the page's title and text as they are when you approve. If anyone changes the text afterwards, the page stops reaching new conversations until you approve it again. A change to the date alone does not need a new approval.
+
+Run these commands from the AgentX folder (the one that holds `.agentx/wiki`), or add `--dir` with the path of the wiki. On the Mac that is `--dir ~/Developer/noqta/agentx/.agentx/wiki`. From any other folder the commands find no pages.
+
+To approve a decision page:
+
+1. **Terminal:** run `agentx wiki decisions list`. It shows each decision page updated in the last 7 days, with its agent and `approved`, `waiting for approval` or `changed since approval`.
+2. **Terminal:** run `agentx wiki decisions show <agent> "<title>"` and read the page.
+3. **Terminal:** run `agentx wiki decisions approve <agent> "<title>"`. It prints `✓ … approved`.
+
+To take back an approval, run `agentx wiki decisions revoke <agent> "<title>"`.
+
+Approve from your own terminal. The commands refuse to run inside an agent's work, so an agent cannot approve its own page.
 
 ### When two facts disagree
 
@@ -334,11 +360,15 @@ The **Edit** dialog on an agent's card in **Settings** has the same switch, **In
 8. `agentx memory facts flag-unsourced` reports `0 fact(s)` after you have run it with `--apply`.
 9. `agentx memory check --agent <agent>` ends with a line counting the notes that have both a source and a check date.
 10. After you turn the wiki absorb off for an agent, `agentx wiki absorb --dry-run` prints `absorb is off for this agent` next to it.
-11. Change a rule on a wiki decision page, then start a new conversation with an agent and ask what the rule is. It answers with the new rule, even when the old messages in that chat said otherwise.
+11. Change a rule on a wiki decision page (and, with approvals on, approve it with `agentx wiki decisions approve`), then start a new conversation with an agent and ask what the rule is. It answers with the new rule, even when the old messages in that chat said otherwise.
+12. `agentx wiki decisions list` shows `approved` next to that page. Edit the page again and it shows `changed since approval`.
 
 ## If something is wrong
 
-- **An agent repeats an old status or asks for an approval you removed:** check that your decision is on a wiki page of type `decision`, updated in the last 7 days, with the current rule in a **Rule** or **Update** section. A decision said in one chat only reaches other conversations from that page.
+- **An agent repeats an old status or asks for an approval you removed:** check that your decision is on a wiki page of type `decision`, updated in the last 7 days, with the current rule in a **Rule** or **Update** section. With approvals on, also check that `agentx wiki decisions list` shows it as `approved`. A decision said in one chat only reaches other conversations from that page.
+- **`agentx wiki decisions list` says there are no decision pages:** you ran it outside the AgentX folder. Run it from there, or add `--dir ~/Developer/noqta/agentx/.agentx/wiki` (the path on the Mac).
+- **With approvals on, a decision page you approved stopped reaching new conversations:** someone changed its text after you approved it, so `agentx wiki decisions list` shows `changed since approval`. Read what changed, then approve it again.
+- **`agentx wiki decisions approve` says it must run from a terminal:** you ran it inside an agent's work. Run it from your own terminal instead.
 - **Another machine's wiki shows no agents or no articles, and `agentx wiki sync` finds nothing there:** update AgentX on that machine. Versions up to 0.120.0 took longer than the 5-second limit to list a large wiki (about 25 seconds for 30 agents and 10,000 entries), so the other machines gave up and showed it as empty.
 - **`approve` says the article changed since this proposal:** someone edited it after the suggestion was made. Read both, then approve with `--force` or reject.
 - **`approve` says the proposal is already approved or rejected:** it was decided earlier. Check `agentx wiki proposals list --all`.

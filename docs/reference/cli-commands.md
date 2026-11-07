@@ -1544,6 +1544,45 @@ Decline a proposal; its sources aren't judged again until they change.
 | `--reason <text>` | — | Why, kept with the decision. |
 | `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
 
+### `agentx wiki decisions`
+
+Approve the decision pages agents follow ahead of older chat history (list, show, approve, revoke). With `wiki.decisionApprovals.required` on (off by default), only approved decision pages reach a new conversation; see [Agent memory](../jobs/agent-memory.md#approve-each-decision-page-optional). Run from the AgentX folder, or pass `--dir` with the wiki path (on the Mac, `--dir ~/Developer/noqta/agentx/.agentx/wiki`).
+
+### `agentx wiki decisions list`
+
+Decision pages updated in the last 7 days, and whether each is approved.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | One agent only. |
+| `--all` | — | Every decision page, whatever its date. |
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki decisions show <agent> <titleOrPath>`
+
+Print a decision page and whether it is approved.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki decisions approve <agent> <titleOrPath>`
+
+Approve a decision page as it stands now; any later edit needs a new approval. Refused inside an agent's run.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--note <text>` | — | Why, kept with the approval. |
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki decisions revoke <agent> <titleOrPath>`
+
+Take back an approval; with approvals required, the page stops reaching new conversations. Refused inside an agent's run.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+
 ### `agentx wiki notes`
 
 Notes agents leave for the wiki observe/sweep run: add, list, handle, config. See [Let agents leave notes for the wiki run](/jobs/wiki-notes).

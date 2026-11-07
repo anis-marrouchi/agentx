@@ -1255,6 +1255,96 @@ proposals
     console.log(chalk.green(`  ✓ ${id} rejected`))
   })
 
+// agentx wiki decisions — the owner approves decision pages before they
+// reach the owner-decisions block of a fresh session (#1778).
+const decisions = wiki
+  .command("decisions")
+  .description("approve the decision pages agents follow ahead of older chat history (list, show, approve, revoke)")
+
+decisions
+  .command("list")
+  .description("decision pages updated in the last 7 days, and whether each is approved")
+  .option("--agent <id>", "one agent only")
+  .option("--all", "every decision page, whatever its date")
+  .option("--dir <path>", "wiki directory")
+  .action(async (opts: { agent?: string; all?: boolean; dir?: string }) => {
+    const { readApprovals, decisionState } = await import("@/wiki/decision-approvals")
+    const { DECISION_DAYS } = await import("@/agents/owner-decisions")
+    const hub = getHub(opts.dir)
+    const agents = opts.agent ? [opts.agent] : hub.sharedScope("").filter((s) => s.id !== "shared").map((s) => s.id)
+    const since = Date.now() - DECISION_DAYS * 86_400_000
+    let shown = 0
+    for (const agentId of agents) {
+      const store = hub.getAgentWiki(agentId)
+      const approvals = readApprovals(store.baseDir)
+      const pages = store.listAllArticles()
+        .filter((a) => a.meta.type === "decision")
+        .filter((a) => opts.all || Date.parse(a.meta.lastUpdated || a.meta.created || "") >= since)
+        .sort((x, y) => String(y.meta.lastUpdated).localeCompare(String(x.meta.lastUpdated)))
+      for (const a of pages) {
+        const state = decisionState(a, approvals)
+        const label = state === "approved" ? chalk.green("approved")
+          : state === "changed" ? chalk.yellow("changed since approval")
+          : chalk.yellow("waiting for approval")
+        console.log(`  ${chalk.cyan(agentId)} ${a.path}: ${a.meta.title} ${chalk.dim(`(updated ${a.meta.lastUpdated || a.meta.created})`)} · ${label}`)
+        shown++
+      }
+    }
+    if (shown === 0) console.log(chalk.dim(opts.all ? "  no decision pages" : `  no decision pages updated in the last ${DECISION_DAYS} days`))
+  })
+
+decisions
+  .command("show <agent> <titleOrPath>")
+  .description("print a decision page and whether it is approved")
+  .option("--dir <path>", "wiki directory")
+  .action(async (agentId: string, titleOrPath: string, opts: { dir?: string }) => {
+    const { readApprovals, decisionState } = await import("@/wiki/decision-approvals")
+    const store = getHub(opts.dir).getAgentWiki(agentId)
+    const relPath = resolveArticlePath(store, titleOrPath, agentId)
+    const article = relPath ? store.readArticle(relPath) : null
+    if (!article) { console.error(chalk.red(`  no article matches "${titleOrPath}" in ${agentId}'s wiki`)); process.exitCode = 1; return }
+    const state = article.meta.type === "decision" ? decisionState(article, readApprovals(store.baseDir)) : "not a decision page"
+    console.log(chalk.bold(`  ${article.meta.title}`) + chalk.dim(`  → ${agentId}/${article.path} (updated ${article.meta.lastUpdated || article.meta.created}, ${state})`))
+    console.log()
+    console.log(article.content.split("\n").map((l) => `    ${l}`).join("\n"))
+  })
+
+decisions
+  .command("approve <agent> <titleOrPath>")
+  .description("approve a decision page as it stands now; any later edit needs a new approval")
+  .option("--note <text>", "why, kept with the approval")
+  .option("--dir <path>", "wiki directory")
+  .action(async (agentId: string, titleOrPath: string, opts: { note?: string; dir?: string }) => {
+    const { approvalRefusal, approveDecision } = await import("@/wiki/decision-approvals")
+    const refusal = approvalRefusal()
+    if (refusal) { console.error(chalk.red(`  ${refusal}`)); process.exitCode = 1; return }
+    const store = getHub(opts.dir).getAgentWiki(agentId)
+    const relPath = resolveArticlePath(store, titleOrPath, agentId)
+    const article = relPath ? store.readArticle(relPath) : null
+    if (!article) { console.error(chalk.red(`  no article matches "${titleOrPath}" in ${agentId}'s wiki`)); process.exitCode = 1; return }
+    if (article.meta.type !== "decision") {
+      console.error(chalk.red(`  ${article.path} is not a decision page (type: ${article.meta.type ?? "none"})`))
+      process.exitCode = 1
+      return
+    }
+    approveDecision(store.baseDir, article, { note: opts.note })
+    console.log(chalk.green(`  ✓ ${agentId}/${article.path} approved: "${article.meta.title}"`))
+  })
+
+decisions
+  .command("revoke <agent> <titleOrPath>")
+  .description("take back an approval; with approvals required, the page stops reaching new conversations")
+  .option("--dir <path>", "wiki directory")
+  .action(async (agentId: string, titleOrPath: string, opts: { dir?: string }) => {
+    const { approvalRefusal, revokeDecision } = await import("@/wiki/decision-approvals")
+    const refusal = approvalRefusal()
+    if (refusal) { console.error(chalk.red(`  ${refusal}`)); process.exitCode = 1; return }
+    const store = getHub(opts.dir).getAgentWiki(agentId)
+    const relPath = resolveArticlePath(store, titleOrPath, agentId) ?? titleOrPath
+    if (!revokeDecision(store.baseDir, relPath)) { console.error(chalk.red(`  ${agentId}/${relPath} has no approval`)); process.exitCode = 1; return }
+    console.log(chalk.green(`  ✓ approval of ${agentId}/${relPath} taken back`))
+  })
+
 /** "24h" / "7d" / "30m" → window in ms. (Same grammar as workflow absorb's
  *  parseSince, but returns the window size — runPromotion applies the clock.) */
 function parsePromoteSince(input: string | undefined): number | undefined {
