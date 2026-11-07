@@ -187,7 +187,7 @@ import { formatNode } from "@/node-env/format"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { startManualWorkflowRun } from "@/daemon/workflow-manual-run"
 import { setTopbarFeatures } from "@/daemon/topbar"
-import { resolveAgentCredential } from "@/integrations/resolve"
+import { resolveGitlabTokenForAgent, gitlabIntegrationToken } from "@/channels/gitlab-token"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
   RunStore as WorkflowRunStore,
@@ -3614,6 +3614,9 @@ export class AgentXDaemon {
           // (re)start. Add/remove an agent → no GitLab config change needed.
           knownAgentIds: Object.keys(this.config.agents),
           agentUsernamePrefixes: this.config.channels.gitlab.agentUsernamePrefixes,
+          // An agent's token declared in its integrations[] (gitlab-user,
+          // tokenEnv), read from the live config so a reload applies (#1745).
+          integrationToken: (agentId: string) => gitlabIntegrationToken(this.config, agentId).token,
         },
         this.log,
         this.hooks,
@@ -9246,24 +9249,10 @@ export class AgentXDaemon {
     res.end(JSON.stringify(data, null, 2))
   }
 
-  /** Resolve a GitLab API token for the given agent, checking (in order):
-   *    1. `channels.gitlab.agentMappings[].token` — legacy per-agent token
-   *    2. `agents[id].integrations[]` (kind=gitlab-user, tokenEnv) — newer
-   *       style used by agents declared via `agentx manage`
-   *    3. `channels.gitlab.token` — global fallback (group bot identity)
-   *  Returns the token plus a `source` tag for diagnostic logging. */
+  /** GitLab token for an agent: agentMappings, then integrations[], then
+   *  the global token. Shared with the GitLab adapter (#1745). */
   private resolveGitlabTokenForAgent(agentId?: string): { token: string | undefined; source: string } {
-    if (!agentId) {
-      return { token: this.config.channels.gitlab?.token, source: "global" }
-    }
-    const mapping = (this.config.channels.gitlab?.agentMappings || []).find((m: any) => m.agentId === agentId)
-    if (mapping?.token) return { token: mapping.token, source: "agentMappings" }
-    const credential = resolveAgentCredential(this.config, agentId, "gitlab-user", "tokenEnv")
-    if (credential.status === "ok" && credential.value) {
-      return { token: credential.value, source: `integrations(${credential.envVar})` }
-    }
-    if (this.config.channels.gitlab?.token) return { token: this.config.channels.gitlab.token, source: "global" }
-    return { token: undefined, source: credential.status }
+    return resolveGitlabTokenForAgent(this.config, agentId)
   }
 
   /** Pick today's usage rollup according to AGENTX_USAGE_READ:
