@@ -165,6 +165,27 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 }
 ```
 
+### Which account an agent posts as
+
+An agent's comments, comment edits, label changes, time logs and new issues go out with the first token found here:
+
+1. The `token` in the agent's `channels.gitlab.agentMappings` entry.
+2. Else, if that entry has a `node`, the post goes to that mesh computer, which uses its own token for the agent.
+3. Else, a `gitlab-user` entry in the agent's own `integrations` list (see [Configuration: agents and runtime](./config-agents.md)). Its `tokenEnv` names the variable in `.env` that holds the token.
+4. Else, the shared `channels.gitlab.token`.
+
+```json
+"agents": {
+  "helper": {
+    "integrations": [
+      { "kind": "gitlab-user", "label": "gitlab-user", "credentials": { "tokenEnv": "HELPER_GITLAB_TOKEN" } }
+    ]
+  }
+}
+```
+
+The agent's own GitLab user may not be a member of every project the shared token can reach. When GitLab refuses a write made with an `integrations` token (error `401`, `403` or `404`), AgentX tries the same write once more with the shared token. The comment then shows under the shared account, and the daemon log has a line that starts with `[gitlab/identity]` and names the agent, the project and the error. Other errors are not retried. A token from `agentMappings` is never retried this way.
+
 ### Which issue changes start an agent
 
 An issue change starts an agent only when one of these is true:
@@ -369,6 +390,7 @@ The call bot joins a call, writes down what is said and posts it to a chat. It d
 - **Telegram logs `409 Conflict`:** two daemons read the same bot. Set `pollInbound` to `false` on the machine that shouldn't read it.
 - **A GitHub issue starts no run:** the daemon log says why, with a line such as `skipped: action="labeled" not in channels.github.issueActions`. Add the change to `issueActions` or to the project rule's `actions` list.
 - **A GitHub issue still starts several runs:** the changes came further apart than `debounceSeconds`. Raise it.
+- **An agent's GitLab comment shows under the shared account:** run `agentx daemon logs` and look for `[gitlab/identity]`. `GLOBAL token` with `agent has no per-agent token` means the agent has no token in `agentMappings` or in its `integrations`; add one. `refused the agent's integrations token` means its GitLab user can't write to that project; add the user to the project, or fix the token named by `tokenEnv`.
 - **GitLab says the webhook failed:** check that `channels.gitlab.webhookPort` is reachable from GitLab and that the secret matches `channels.gitlab.webhookSecret`.
 - **A notification never arrives:** run `agentx daemon logs` and look for `ntfy: attempt` or `send failed` lines. `ETIMEDOUT` points at a slow link (see `node.connectAttemptTimeoutMs` in [Configuration: agents and runtime](./config-agents.md#node)); a `401` or `403` points at a wrong `token` or `topic`.
 - **A value is empty at runtime:** a `${…}` reference points at a variable missing from `.env`. Add it and restart the daemon.

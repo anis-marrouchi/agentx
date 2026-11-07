@@ -61,6 +61,23 @@ export interface GitLabChannelConfig {
   /** Prefixes for extra derived usernames (e.g. "team-" → @team-<agentId>).
    *  An organisation's naming convention, so it lives in config, not code. */
   agentUsernamePrefixes?: string[]
+  /** An agent's token from its `integrations[]` (kind gitlab-user,
+   *  tokenEnv). Wired by the daemon; used when `agentMappings` has no token
+   *  for the agent (#1745). */
+  integrationToken?: (agentId: string) => string | undefined
+}
+
+/** Statuses that mean "this token may not write here". A per-agent token
+ *  from integrations[] that gets one of these is retried with the global
+ *  token once (#1745). */
+const REFUSED_STATUSES = new Set([401, 403, 404])
+
+/** Where a GitLab write goes out: a local token (and where it came from), or
+ *  the mesh peer that holds the agent's token. Neither → the global token. */
+interface PostTarget {
+  token?: string
+  source?: "agentMappings" | "integrations"
+  node?: string
 }
 
 interface GitLabNoteEvent {
@@ -544,11 +561,11 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     }
 
-    const token = agentToken || this.config.token
     debug.webhook("gitlab", "send", `agentId="${msg.agentId}" token=${agentToken ? "per-agent" : "GLOBAL(" + this.botUsername + ")"}`)
 
+    let usedToken = agentToken
     try {
-      const res = await fetch(endpoint, {
+      const sent = await this.writeWithFallback("note", target, msg.agentId, project, (token) => fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -556,11 +573,13 @@ export class GitLabAdapter implements ChannelAdapter {
         },
         // Append hidden signature so we can detect our own comments on webhook
         body: JSON.stringify({ body: markBody(msg.text, msg.agentId || "unknown") }),
-      })
+      }))
+      const res = sent.res
+      usedToken = sent.agentToken
 
-      if (!res.ok) throw await this.writeFailure("note", res, agentToken, msg.agentId)
+      if (!res.ok) throw await this.writeFailure("note", res, usedToken, msg.agentId)
 
-      this.markTokenOk(agentToken, msg.agentId)
+      this.markTokenOk(usedToken, msg.agentId)
       const data = await res.json() as any
       const noteId = String(data.id || "")
       if (noteId) this.sentNoteIds.add(noteId)
@@ -573,7 +592,7 @@ export class GitLabAdapter implements ChannelAdapter {
       }
       return noteId
     } catch (e: any) {
-      throw this.networkFailure("note", e, agentToken, msg.agentId)
+      throw this.networkFailure("note", e, usedToken, msg.agentId)
     }
   }
 
@@ -608,13 +627,13 @@ export class GitLabAdapter implements ChannelAdapter {
       this.log(`[gitlab/identity] edit from "${agentId || "unknown"}" using GLOBAL token (${this.botUsername || "shared bot"}) on ${project} ${kind}/${iid} note ${noteId} — ${agentId ? "agent has no per-agent token" : "no agent id on the request"}`)
     }
     try {
-      const res = await fetch(`${this.config.host}/api/v4/projects/${encodeURIComponent(project)}/${kind}/${iid}/notes/${noteId}`, {
+      const { res } = await this.writeWithFallback("edit", target, agentId, project, (t) => fetch(`${this.config.host}/api/v4/projects/${encodeURIComponent(project)}/${kind}/${iid}/notes/${noteId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token },
+        headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": t },
         // Signed like a new note: GitLab sends the edit back as a note
         // event, and the signature is what tells it apart from a person's.
         body: JSON.stringify({ body: markBody(text, agentId || "unknown") }),
-      })
+      }))
       if (!res.ok) this.log(`GitLab edit error: ${res.status} ${(await res.text()).slice(0, 200)}`)
       return res.ok
     } catch (e: any) {
@@ -1801,16 +1820,21 @@ export class GitLabAdapter implements ChannelAdapter {
    * under its own identity, or replies die silently on the webhook node:
    *   1. Per-agent token on this node → post locally as the agent's user.
    *   2. Explicit `agentMappings[].node` → forward to the pinned peer.
-   *   3. Mesh directory — the healthy peer that hosts both the agent and
+   *   3. The agent's own `integrations[]` gitlab-user token on this node
+   *      (#1745). A refusal falls back to the global token once — see
+   *      writeWithFallback.
+   *   4. Mesh directory — the healthy peer that hosts both the agent and
    *      the GitLab channel wiring (its /gitlab/* endpoints resolve the
    *      token from the agent's own integrations[]).
-   *   4. Neither → caller falls back to the global token.
+   *   5. Neither → caller falls back to the global token.
    */
-  private resolvePostTarget(agentId?: string): { token?: string; node?: string } {
+  private resolvePostTarget(agentId?: string): PostTarget {
     if (!agentId) return {}
     const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
-    if (mapping?.token) return { token: mapping.token }
+    if (mapping?.token) return { token: mapping.token, source: "agentMappings" }
     if (mapping?.node) return { node: mapping.node }
+    const integrationToken = this.config.integrationToken?.(agentId)
+    if (integrationToken) return { token: integrationToken, source: "integrations" }
     if (this.mesh) {
       for (const peer of this.mesh.directory()) {
         if (!peer.healthy || !peer.channels?.includes("gitlab")) continue
@@ -1873,6 +1897,35 @@ export class GitLabAdapter implements ChannelAdapter {
   /** A write that succeeded proves its token works (again). */
   private markTokenOk(agentToken: string | undefined, agentId?: string): void {
     this.markToken(agentToken ? agentId || "global" : "global")
+  }
+
+  /** Send one write with the token `target` picked (or the global token).
+   *  A per-agent token from integrations[] can lack access to a project the
+   *  global token reaches: when GitLab answers 401/403/404 to it, retry once
+   *  with the global token and say so (#1745). Other errors, and tokens from
+   *  agentMappings, are not retried. Returns the response and the agent
+   *  token that produced it (undefined when the global token did). */
+  private async writeWithFallback(
+    action: string,
+    target: PostTarget,
+    agentId: string | undefined,
+    project: string,
+    write: (token: string) => Promise<Response>,
+  ): Promise<{ res: Response; agentToken?: string }> {
+    const res = await write(target.token || this.config.token)
+    if (
+      res.ok ||
+      target.source !== "integrations" ||
+      !REFUSED_STATUSES.has(res.status) ||
+      !this.config.token ||
+      target.token === this.config.token
+    ) {
+      return { res, agentToken: target.token }
+    }
+    const detail = gitlabErrorDetail(await res.text().catch(() => ""))
+    this.markToken(agentId || "global", res.status, detail)
+    this.log(`[gitlab/identity] ${action} from "${agentId}" on ${project}: GitLab refused the agent's integrations token (${res.status} ${detail}) — retrying once with GLOBAL token (${this.botUsername || "shared bot"})`)
+    return { res: await write(this.config.token), agentToken: undefined }
   }
 
   /**
@@ -2053,21 +2106,24 @@ export class GitLabAdapter implements ChannelAdapter {
       this.log(`[gitlab/identity] time-log on ${project} ${noteableType}/${iid} from "${agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — time will be attributed to the global bot, not the agent`)
     }
 
+    let usedToken = agentToken
     try {
-      const res = await fetch(endpoint, {
+      const sent = await this.writeWithFallback("time-log", target, agentId, project, (t) => fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "PRIVATE-TOKEN": token,
+          "PRIVATE-TOKEN": t,
         },
         body: JSON.stringify({ duration }),
-      })
+      }))
+      const res = sent.res
+      usedToken = sent.agentToken
 
-      if (!res.ok) throw await this.writeFailure("time-log", res, agentToken, agentId)
-      this.markTokenOk(agentToken, agentId)
+      if (!res.ok) throw await this.writeFailure("time-log", res, usedToken, agentId)
+      this.markTokenOk(usedToken, agentId)
       this.log(`Time logged: ${duration} on ${project} ${noteableType} #${iid} (${agentId || "global"})`)
     } catch (e: any) {
-      throw this.networkFailure("time-log", e, agentToken, agentId)
+      throw this.networkFailure("time-log", e, usedToken, agentId)
     }
   }
 
@@ -2161,22 +2217,25 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     }
 
+    let usedToken = agentToken
     try {
-      const res = await fetch(endpoint, {
+      const sent = await this.writeWithFallback("issue-create", target, agentId, project, (t) => fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "PRIVATE-TOKEN": token,
+          "PRIVATE-TOKEN": t,
         },
         body: body.toString(),
-      })
-      if (!res.ok) throw await this.writeFailure("issue-create", res, agentToken, agentId)
-      this.markTokenOk(agentToken, agentId)
+      }))
+      const res = sent.res
+      usedToken = sent.agentToken
+      if (!res.ok) throw await this.writeFailure("issue-create", res, usedToken, agentId)
+      this.markTokenOk(usedToken, agentId)
       const issue = await res.json() as { iid: number; web_url: string }
       this.log(`Issue created #${issue.iid} on ${project} (${agentId || "global"})`)
       return { iid: issue.iid, url: issue.web_url }
     } catch (e: any) {
-      throw this.networkFailure("issue-create", e, agentToken, agentId)
+      throw this.networkFailure("issue-create", e, usedToken, agentId)
     }
   }
 
@@ -2219,18 +2278,21 @@ export class GitLabAdapter implements ChannelAdapter {
     if (add.length) body.set("add_labels", add.join(","))
     if (remove.length) body.set("remove_labels", remove.join(","))
 
+    let usedToken = agentToken
     try {
-      const res = await fetch(endpoint, {
+      const sent = await this.writeWithFallback("setLabels", target, agentId, project, (t) => fetch(endpoint, {
         method: "PUT",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "PRIVATE-TOKEN": token },
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "PRIVATE-TOKEN": t },
         body: body.toString(),
-      })
-      if (!res.ok) throw await this.writeFailure("label change", res, agentToken, agentId)
-      this.markTokenOk(agentToken, agentId)
+      }))
+      const res = sent.res
+      usedToken = sent.agentToken
+      if (!res.ok) throw await this.writeFailure("label change", res, usedToken, agentId)
+      this.markTokenOk(usedToken, agentId)
       const data = await res.json() as { labels?: string[] }
       return data.labels ?? []
     } catch (e: any) {
-      throw this.networkFailure("label change", e, agentToken, agentId)
+      throw this.networkFailure("label change", e, usedToken, agentId)
     }
   }
 
