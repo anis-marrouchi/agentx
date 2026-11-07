@@ -165,6 +165,16 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 }
 ```
 
+### Which issue changes start an agent
+
+An issue change starts an agent only when one of these is true:
+
+- The issue was opened. Agents mentioned in the description start, then agent assignees. If neither exists, the agent in `routes` starts.
+- An agent was newly assigned.
+- A description edit added a mention of an agent. A mention that was already there starts nothing.
+
+A milestone, label, time, estimate, title or state change starts nothing, even on an issue assigned to an agent. The message the agent gets names what changed and who changed it. Comment mentions work as before. An `on:gitlab-issue` hook decides for itself and is not limited by these rules.
+
 ## GitHub
 
 | Key | Type | Default | What it does |
