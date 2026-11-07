@@ -397,7 +397,8 @@ For what is on your screen:
 - **A wiki claim or a missing-article question is not a card:** that is expected. See [Wiki claims and other wiki questions](#wiki-claims-and-other-wiki-questions).
 - **"Couldn't read …" above the list:** one of the sources couldn't be read, so the list may be incomplete. The message says which one; the other kinds still work.
 - **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it. On another device, [sign in](../jobs/reverse-proxy.md#sign-in-from-another-device) first.
-- **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.
+- **An agent gets "Decisions are made by the operator only":** that is expected. Agents can't answer through the daemon; an agent running the CLI from its shell can, and is recorded (see below).
+- **An agent's id shows as who answered on the Answered tab:** the agent ran `agentx approvals approve` or `reject` from its own shell. Answers given with no agent running the command show as the operator. Answers recorded before this version keep what they say.
 - **A card says `then: keep` although the agent asked for `approve`:** that is expected. A card never approves itself; answer it yourself if the work should go ahead.
 - **An agent gets "a card from you on this source is still pending":** it already has an open card with the same `source` link, so the same question would reach you twice. The message names the open card: answer it, or let the agent close it with the `resolve` action and raise a new one. Cards without a `source`, and cards from another agent or another machine, are not affected.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.

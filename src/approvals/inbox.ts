@@ -633,9 +633,10 @@ function findItem(ctx: InboxContext, kind: ApprovalKind, ref: string): InboxItem
 }
 
 /**
- * Apply the operator's answer through the source's own approve/reject,
- * and keep a yes or no on the answered list (answered.ts).
- * Operator surfaces only: never expose this to agents.
+ * Apply an answer through the source's own approve/reject, and keep a yes
+ * or no on the answered list (answered.ts). `opts.by` records who answered
+ * and defaults to the operator. An agent reaches this by running `agentx
+ * approvals` from its shell; only the kinds that check for that refuse it.
  */
 export async function decide(ctx: InboxContext, key: string, action: InboxAction, opts: DecideOptions = {}): Promise<DecideResult> {
   const parsed = action === "later" ? null : parseKey(key)
