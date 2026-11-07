@@ -49,6 +49,7 @@ import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/sub
 import { newEventId } from "@/intent/ulid"
 import { currentRoot } from "@/events/envelope"
 import { buildOwnerDecisions } from "./owner-decisions"
+import { decisionsForBlock } from "@/wiki/decision-approvals"
 import { WorkLanes, workKeyOf, takesNotices } from "./work-lane"
 import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
@@ -2671,10 +2672,15 @@ export class AgentRegistry {
 
     // The owner's newest decisions, ahead of the history and the memo
     // below, which can be hours old (owner-decisions.ts). Same gate as the
-    // catalog.
+    // catalog. With `wiki.decisionApprovals.required`, only decision pages
+    // the owner approved as they stand now (decision-approvals.ts, #1778).
     let ownerDecisions: string | undefined
     if (!resumeSessionId && !isCodexCli) {
-      try { ownerDecisions = buildOwnerDecisions(agentWiki.listArticles(task.agentId), Date.now()) || undefined } catch { /* the block is optional */ }
+      try {
+        const required = this.config.wiki?.decisionApprovals?.required === true
+        const pages = decisionsForBlock(agentWiki.listArticles(task.agentId), agentWiki.baseDir, required)
+        ownerDecisions = buildOwnerDecisions(pages, Date.now()) || undefined
+      } catch { /* the block is optional */ }
     }
 
     // Lean sessions fetch earlier turns with agentx_recent instead.

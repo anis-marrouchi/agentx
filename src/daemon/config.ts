@@ -2165,6 +2165,13 @@ export const daemonConfigSchema = z.object({
       /** Agent that answers. Unset: the page's owner agent. */
       agent: z.string().min(1).optional(),
     }).default({}),
+    /** Owner approval of decision pages (#1778). When `required`, only
+     *  decision pages the owner approved with `agentx wiki decisions approve`
+     *  reach the owner-decisions block of a fresh session. Off: every recent
+     *  decision page does, as #1776 specifies. */
+    decisionApprovals: z.object({
+      required: z.boolean().default(false),
+    }).default({}),
   }).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
