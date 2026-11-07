@@ -2,7 +2,7 @@ import type Database from "better-sqlite3"
 import { MAX_OPEN_PROMISES } from "./daemon-api"
 import { HEADLINE_MAX } from "./headline"
 import { openPromise } from "./promise"
-import { OPEN_STATES, OWED_TO_OWNER, type RequestRecord, type RequestStore } from "./store"
+import { CLOSED_BY_OWNER, OPEN_STATES, OWED_TO_OWNER, type RequestRecord, type RequestStore } from "./store"
 
 // --- Catch "I'll do X" as a promise (#1138 step E) ---
 //
@@ -278,7 +278,7 @@ export class PromiseCatcher {
   ownerTurnStarted(agentId: string, channel: string, chatId: string, runId: string): void {
     const now = this.now()
     for (const w of this.deps.log.waitingIn(agentId, channel, chatId)) {
-      if (w.opened) this.deps.store.close(w.requestId, "done", `the owner answered in chat (run ${runId})`, now)
+      if (w.opened) this.deps.store.close(w.requestId, "done", `the owner answered in chat (run ${runId})`, now, null, CLOSED_BY_OWNER)
       else this.deps.store.progress(w.requestId, now)
     }
   }

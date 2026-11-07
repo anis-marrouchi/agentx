@@ -1827,6 +1827,26 @@ export const requestsConfigSchema = z.object({
     /** Projects write mode may change, as listed under `projects`. */
     writeProjects: z.array(z.string().min(1)).default([]),
   }).default({}),
+  /** Owner check (src/requests/owner-check.ts, #1770): each close not
+   *  made by the owner (an agent's done or decline, a plan, a check,
+   *  settling, a workflow, an expired card) is read with one small model
+   *  call against the owner's words and latest note: match, mismatch or
+   *  unclear. A mismatch opens the request again as needing attention,
+   *  with the reason, and the owner is told once. Off by default: it
+   *  spends a model call on most closes. Needs `enabled` above. */
+  ownerCheck: z.object({
+    enabled: z.boolean().default(false),
+    /** Closes read per requests check (once a minute), at most. */
+    perCheck: z.number().int().min(1).max(50).default(5),
+    /** Only closes this recent are read, so turning it on does not read
+     *  the whole history. */
+    lookbackHours: z.number().positive().max(24 * 30).default(24),
+    /** Provider for the call. "claude-code" uses the auth the operator set
+     *  up (subscription or API key); no new paid path is opened. */
+    provider: z.string().min(1).default("claude-code"),
+    model: z.string().min(1).default("claude-haiku-4-5-20251001"),
+    timeoutSeconds: z.number().int().min(5).max(120).default(30),
+  }).default({}),
   /** Headlines (src/requests/headline.ts, #1126): a request the agent did
    *  not describe gets a few words saying what it is, written once by one
    *  small model call, so its card, push and Desk line are not titled with

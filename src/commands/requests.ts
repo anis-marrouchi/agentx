@@ -2,7 +2,9 @@ import { Command } from "commander"
 import { existsSync, readFileSync } from "fs"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
-import { CLOSED_STATES, OPEN_STATES, RequestStore, type RequestRecord } from "@/requests/store"
+import { CLOSED_BY_OWNER, CLOSED_STATES, OPEN_STATES, RequestStore, type RequestRecord } from "@/requests/store"
+import { callingAgent } from "@/agents/holds"
+import { closerWords } from "@/requests/owner-check"
 import { LIST_MAX } from "@/requests/daemon-api"
 import { startOfDay, todayRows } from "@/requests/today"
 import { DEFAULT_FLOW, describeFlow, FLOW_DAYS_MAX, flowReport } from "@/requests/flow"
@@ -206,6 +208,17 @@ function printStalled(s: RequestStore, json: boolean): void {
   console.log(chalk.dim(`\n  ${n} stalled. Close one by hand: agentx requests done <id> --reason <text> · agentx requests drop <id>`))
 }
 
+/** What the owner check said of the last close (#1770), or null when it
+ *  was not read. */
+function ownerCheckLine(r: RequestRecord): string | null {
+  if (r.ownerCheckedAt === null) return null
+  const why = r.ownerCheckDetail ? `: ${r.ownerCheckDetail}` : ""
+  if (r.ownerCheck === "match") return chalk.green(`    Owner check: matches what you asked${why}`)
+  if (r.ownerCheck === "mismatch") return chalk.red(`    Owner check: does not match what you asked${why}`)
+  if (r.ownerCheck === "unclear") return chalk.yellow(`    Owner check: unclear${why}`)
+  return chalk.dim(`    Owner check: ${r.ownerCheckDetail ?? "under way"}`)
+}
+
 requests
   .command("show <id>")
   .description("one request and the runs, delegations and cards linked to it")
@@ -216,6 +229,10 @@ requests
     if (!r || r.state === "candidate") { console.error(chalk.red(`  no request "${id}"`)); process.exitCode = 1; return }
     printRequest(r)
     console.log(chalk.dim(`    Last activity ${when(r.updatedAt)}${r.closedAt ? ` · closed ${when(r.closedAt)}` : ""}`))
+    // Who made the last close, and what the owner check said of it (#1770).
+    if (r.closedBy) console.log(chalk.dim(`    ${r.closedAt ? "Closed" : "Last closed"} by ${closerWords(r.closedBy)}`))
+    const check = ownerCheckLine(r)
+    if (check) console.log(check)
     for (const l of s.links(id)) console.log(chalk.dim(`    ${l.kind} ${l.ref} (${when(l.at)})`))
     const verdicts = s.verdicts(id)
     if (verdicts.length > 1) for (const v of verdicts) console.log(chalk.dim(`    qa ${describeQa(v)}`))
@@ -265,7 +282,8 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
       if (!detail) { console.error(chalk.red(`  ${missing}`)); process.exitCode = 1; return }
       const r = s.get(id)
       if (!r || r.state === "candidate") { console.error(chalk.red(`  no request "${id}"`)); process.exitCode = 1; return }
-      if (!s.close(id, name === "done" ? "done" : "dropped", detail, Date.now())) {
+      // Run from an agent's own shell, the close is that agent's (#1770).
+      if (!s.close(id, name === "done" ? "done" : "dropped", detail, Date.now(), null, callingAgent() ?? CLOSED_BY_OWNER)) {
         console.error(chalk.red(`  ${id} is already closed (${STATE_LABEL[r.state] ?? r.state})`)); process.exitCode = 1; return
       }
       console.log(chalk.green(`  ✓ ${id} ${name === "done" ? "closed as done" : "dropped"}`))
@@ -286,6 +304,7 @@ requests
   .option("--catch <on|off>", "read the reply of each of your turns for a promise or a question to you (one small model call each)")
   .option("--catch-cap <n>", "model calls a day the promise catch may make")
   .option("--settle <on|off>", "close a quiet request whose handed work all came back done, instead of bringing it back to you")
+  .option("--owner-check <on|off>", "read each close not made by you against your words, and open it again when it does not match (one small model call each)")
   .option("--home-closes <on|off>", "close a request once its issue or merge request home is merged or closed as completed")
   .option("--plans <on|off>", "follow requests of two or more steps as tracked plans")
   .option("--stall-minutes <n>", "minutes without progress before a plan step's agent is nudged")
@@ -332,6 +351,10 @@ requests
       if (opts.settle !== undefined) {
         if (opts.settle !== "on" && opts.settle !== "off") throw new Error("--settle takes on or off")
         patch.settleHandedBack = opts.settle === "on"
+      }
+      if (opts.ownerCheck !== undefined) {
+        if (opts.ownerCheck !== "on" && opts.ownerCheck !== "off") throw new Error("--owner-check takes on or off")
+        patch.ownerCheck = { enabled: opts.ownerCheck === "on" }
       }
       if (opts.homeCloses !== undefined) {
         if (opts.homeCloses !== "on" && opts.homeCloses !== "off") throw new Error("--home-closes takes on or off")
@@ -397,6 +420,7 @@ requests
     const caught = s.catchPromises
     console.log(`  Catch promises          ${caught?.enabled ? `on: each of your turns' reply is read, up to ${caught.dailyCap} call(s) a day` : "off"}`)
     console.log(`  Handed work came back   ${s.settleHandedBack === false ? "comes back to you when quiet" : "closed when quiet, with its link or marked unproven"}`)
+    console.log(`  Owner check             ${s.ownerCheck?.enabled ? "on: closes not made by you are read against your words" : "off"}`)
     console.log(`  Home closed             ${s.homeCloses === false ? "left open" : "closes the request: merged, or closed as completed"}`)
     const p = s.plans ?? DEFAULT_PLAN_SETTINGS
     console.log(`  Plans                   ${p.enabled ? "on" : "off"}`)

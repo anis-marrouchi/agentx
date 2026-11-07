@@ -17,12 +17,12 @@ import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } fro
 import { readInboxState, snooze } from "./state"
 import { recordAnswered } from "./answered"
 import { openDb } from "@/storage/sqlite"
-import { RequestStore, hasRequestTables } from "@/requests/store"
+import { CLOSED_BY_OWNER, RequestStore, hasRequestTables } from "@/requests/store"
 import { PlanStore, hasPlanTables } from "@/requests/plan-store"
 import { readRequestSettings } from "@/requests/settings"
 import { cardWords } from "@/requests/card-view"
 import { parseDotEnv } from "@/utils/workspace-env"
-import { readHolds, releaseAgent } from "@/agents/holds"
+import { callingAgent, readHolds, releaseAgent } from "@/agents/holds"
 import { applyConfigMutation, unsetAtPath } from "@/daemon/config-mutator"
 
 // --- The Approvals inbox: one list over every pending decision ---
@@ -754,7 +754,7 @@ async function decideItem(ctx: InboxContext, key: string, action: InboxAction, o
         store.requestPickup(ref, now)
         return { ok: true, message: `${key}: ${r.agentId} will be asked to pick it up again` }
       }
-      store.close(ref, "dropped", opts.note?.trim() || `dropped by ${by}`, now)
+      store.close(ref, "dropped", opts.note?.trim() || `dropped by ${by}`, now, null, callingAgent() ?? CLOSED_BY_OWNER)
       return { ok: true, message: `${key}: dropped` }
     }
   }

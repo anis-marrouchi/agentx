@@ -377,7 +377,7 @@ async function followPlan(deps: PlanSweepDeps, plan: PlanRecord, now: number, re
     if (!current) {
       if (plans.finish(r.id, "done", now)) {
         plans.event(r.id, null, "finished", `${steps.length} steps`, now)
-        requests.close(r.id, "done", planEvidence(steps), now)
+        requests.close(r.id, "done", planEvidence(steps), now, null, "plan")
         result.finished++
         deps.log(`[plans] ${r.id}: every step finished`)
       }

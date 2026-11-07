@@ -146,7 +146,31 @@ export interface RequestRecord {
   /** When the requests check sent it back to its agent on its own, after
    *  a usage limit or a restart stopped it (#1542). Once per request. */
   resentAt: number | null
+  // --- Who closed it, and the owner check (#1770). Null before them. ---
+  /** Who made the last close: "owner", an agent id, or what closed it on
+   *  its own ("plan", "settle", "check", "promise", "workflow",
+   *  "card-expired"). Kept when the request opens again. */
+  closedBy: string | null
+  /** What the owner check said about that close: did it keep to what the
+   *  owner asked? Null: not read (owner's own close, check off, or not yet). */
+  ownerCheck: OwnerCheckVerdict | null
+  /** The check's reason, or why it could not read the close. */
+  ownerCheckDetail: string | null
+  /** When the check took this close. */
+  ownerCheckedAt: number | null
 }
+
+/** Who closed a request (#1770): the owner, an agent id, or one of these. */
+export const CLOSED_BY_OWNER = "owner"
+export const CLOSERS = ["plan", "settle", "check", "promise", "workflow", "card-expired"] as const
+export type Closer = typeof CLOSED_BY_OWNER | (typeof CLOSERS)[number] | (string & {})
+
+/** The owner check's verdict on a close (#1770). */
+export type OwnerCheckVerdict = "match" | "mismatch" | "unclear"
+export const OWNER_CHECK_VERDICTS: readonly OwnerCheckVerdict[] = ["match", "mismatch", "unclear"]
+
+/** How the owner check words a request it opened again. */
+export const OWNER_CHECK_REASON = "Closed by "
 
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
 
@@ -229,6 +253,8 @@ export function ensureRequestTables(db: Database.Database): void {
   ensureColumns(db, "requests", [["sent_back_at", "INTEGER"]])
   // When the requests check resent it on its own (#1542): once, ever.
   ensureColumns(db, "requests", [["resent_at", "INTEGER"]])
+  // Who closed it, and the owner check of that close (#1770).
+  ensureColumns(db, "requests", [["closed_by", "TEXT"], ["owner_check", "TEXT"], ["owner_check_detail", "TEXT"], ["owner_checked_at", "INTEGER"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -276,6 +302,9 @@ function toRecord(r: any): RequestRecord {
     qa: r.qa_verdict && r.qa_by && typeof r.qa_at === "number" ? { verdict: r.qa_verdict, by: r.qa_by, at: r.qa_at, note: r.qa_note ?? null } : null,
     goal: r.goal_id && r.goal_title ? { id: r.goal_id, title: r.goal_title } : null,
     resentAt: r.resent_at ?? null,
+    closedBy: r.closed_by ?? null,
+    ownerCheck: (OWNER_CHECK_VERDICTS as readonly string[]).includes(r.owner_check) ? r.owner_check : null,
+    ownerCheckDetail: r.owner_check_detail ?? null, ownerCheckedAt: r.owner_checked_at ?? null,
   }
 }
 
@@ -322,6 +351,10 @@ const settleableAttention = (col: string) => `(${col} LIKE '${OVERDUE_REASON}%' 
 /** SET clause for a statement that writes `state`: the change time moves
  *  only when the state is really different. Takes the new state, then now. */
 const STATE_CHANGED = "state_changed_at = CASE WHEN state IS ? THEN state_changed_at ELSE ? END"
+
+/** SET clause of every close (#1770): who closed it, and no owner check
+ *  of it yet. Takes who closed it. */
+const NEW_CLOSE = "closed_by = ?, owner_check = NULL, owner_check_detail = NULL, owner_checked_at = NULL"
 
 export class RequestStore {
   constructor(private db: Database.Database) {
@@ -542,14 +575,14 @@ export class RequestStore {
 
   /** The checker found the evidence: closed as done, with its words. Its
    *  proof is the check that ran (#1138 D). */
-  closeVerified(id: string, evidence: string, now: number): boolean {
+  closeVerified(id: string, evidence: string, now: number, by: Closer = "check"): boolean {
     const text = evidence.trim().slice(0, REASON_MAX) || "the check was met"
     const proof: Proof = { kind: "check", value: text, ranAt: now }
     const closed = this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
-         checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?, proof = ?
+         checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?, proof = ?, ${NEW_CLOSE}
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(now, now, now, text, now, now, text, JSON.stringify(proof), id, ...CLOSED_STATES).changes > 0
+    ).run(now, now, now, text, now, now, text, JSON.stringify(proof), by, id, ...CLOSED_STATES).changes > 0
     if (closed) this.done(id)
     return closed
   }
@@ -752,9 +785,9 @@ export class RequestStore {
     const evidence = (proof ?? `unproven: ${detail}`).trim().slice(0, REASON_MAX)
     return this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
-         verify_state = ?, verify_detail = ?
+         verify_state = ?, verify_detail = ?, ${NEW_CLOSE}
        WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${settleableAttention("attention_reason")}))`,
-    ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
+    ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), "settle", id).changes > 0
   }
 
   links(requestId: string): Array<{ kind: LinkKind; ref: string; at: number }> {
@@ -816,15 +849,16 @@ export class RequestStore {
   }
 
   /** Close it: done needs evidence, declined and dropped need a reason.
-   *  A done may carry a typed proof (#1138 D), kept beside the evidence. */
-  close(id: string, state: ClosedState, detail: string, now: number, proof: Proof | null = null): boolean {
+   *  A done may carry a typed proof (#1138 D), kept beside the evidence.
+   *  `by`: who closes it (#1770); unset, nobody is named. */
+  close(id: string, state: ClosedState, detail: string, now: number, proof: Proof | null = null, by: Closer | null = null): boolean {
     const text = detail.trim()
     if (!text) throw new Error(state === "done" ? "a finished request needs a link to the evidence" : `a ${state} request needs a reason`)
     const kept = state === "done" && proof ? JSON.stringify(proof) : null
     const res = this.db.prepare(
-      `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?, proof = ?
+      `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?, proof = ?, ${NEW_CLOSE}
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept, id, ...CLOSED_STATES)
+    ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept, by, id, ...CLOSED_STATES)
     const closed = res.changes > 0
     if (closed && state === "done") this.done(id)
     return closed
@@ -977,6 +1011,48 @@ export class RequestStore {
       `SELECT state, created_at AS createdAt, close_reason AS closeReason, resent_at AS resentAt
        FROM requests WHERE created_at >= ? AND state != 'candidate' ORDER BY created_at, rowid`,
     ).all(since) as any
+  }
+
+  /** Closes the owner check reads (#1770): closed since `since` by anyone
+   *  but the owner, not taken yet, newest first. A close nobody is named
+   *  for (from before the column) and an agent's own promise (not the
+   *  owner's words) are left. */
+  closesToCheck(since: number, limit = 5): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(CLOSED_STATES.length)}) AND closed_at >= ?
+         AND closed_by IS NOT NULL AND closed_by != ? AND owner_checked_at IS NULL AND COALESCE(promise, 0) = 0
+       ORDER BY closed_at DESC, rowid DESC LIMIT ?`,
+    ).all(...CLOSED_STATES, since, CLOSED_BY_OWNER, limit).map(toRecord)
+  }
+
+  /** Take this close for the owner check: true for the one caller that
+   *  got it, so a close is read at most once, across restarts. Only while
+   *  it is still the same close. */
+  claimOwnerCheck(id: string, closedAt: number, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET owner_checked_at = ? WHERE id = ? AND closed_at = ? AND owner_checked_at IS NULL
+         AND state IN (${placeholders(CLOSED_STATES.length)})`,
+    ).run(now, id, closedAt, ...CLOSED_STATES).changes > 0
+  }
+
+  /** What the owner check said (null: it could not read the close), and
+   *  why. Not a touch. */
+  setOwnerCheck(id: string, verdict: OwnerCheckVerdict | null, detail: string): void {
+    this.db.prepare("UPDATE requests SET owner_check = ?, owner_check_detail = ? WHERE id = ?")
+      .run(verdict, detail.replace(/\s+/g, " ").trim().slice(0, REASON_MAX) || null, id)
+  }
+
+  /** The owner check found the close does not keep to the owner's words
+   *  (#1770): open again as needing attention, with the reason, for the
+   *  requests check to tell the owner once. Only the close that was read:
+   *  one the owner reopened or changed since is left. How it was closed,
+   *  and by whom, is kept. */
+  reopenMismatch(id: string, closedAt: number, reason: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET state = 'needs_attention', closed_at = NULL, updated_at = ?, state_changed_at = ?, attention_reason = ?,
+         notified_at = NULL, question = NULL, need = NULL
+       WHERE id = ? AND closed_at = ? AND state IN (${placeholders(CLOSED_STATES.length)})`,
+    ).run(now, now, reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX), id, closedAt, ...CLOSED_STATES).changes > 0
   }
 
   /** Delete closed requests older than `before`. Open ones never age out. */

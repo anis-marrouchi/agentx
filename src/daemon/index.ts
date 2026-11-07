@@ -106,6 +106,7 @@ import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { homeChecker } from "@/requests/home-check"
 import { FINISHED_STEP_STATES, type PlanStep } from "@/requests/plan-store"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
+import { checkCloses, DEFAULT_OWNER_CHECK, OWNER_CHECK_SYSTEM } from "@/requests/owner-check"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
@@ -3064,6 +3065,30 @@ export class AgentXDaemon {
     })
   }
 
+  private ownerCheckProvider?: { name: string; provider: AgentProvider }
+
+  /** Reads closes not made by the owner against the owner's words
+   *  (#1770): one small call each through the provider the operator set
+   *  up, read from the settings at each check. */
+  private checkRequestCloses(requests: AttachedRequests, now: number): Promise<{ checked: number; reopened: number }> {
+    const settings = () => ({ ...DEFAULT_OWNER_CHECK, ...this.config.requests.ownerCheck })
+    return checkCloses({
+      store: requests.store,
+      settings,
+      generate: async (prompt, signal) => {
+        const s = settings()
+        const name = s.provider ?? "claude-code"
+        if (this.ownerCheckProvider?.name !== name) this.ownerCheckProvider = { name, provider: createProvider(name as ProviderName) }
+        const res = await this.ownerCheckProvider.provider.generate(
+          [{ role: "system", content: OWNER_CHECK_SYSTEM }, { role: "user", content: prompt }],
+          { model: s.model ?? "claude-haiku-4-5-20251001", maxTokens: 300, abortSignal: signal, bare: true, noThinking: true },
+        )
+        return res.content || ""
+      },
+      log: this.log,
+    }, now)
+  }
+
   /** Reads an owner-facing turn's reply for a promise or a question to
    *  the owner (#1138 E): one small call through the provider the operator
    *  set up, no thinking, read from the settings at each call. */
@@ -3111,6 +3136,7 @@ export class AgentXDaemon {
         : requests.plans.steps(id).filter((s) => !FINISHED_STEP_STATES.includes(s.state)).map((s) => ({ step: `${s.idx}. ${s.name}`, agent: s.kind !== MESSAGE_KIND })),
       describe: (r) => headlines.ensure(r),
       fillHeadlines: () => headlines.fill(),
+      checkCloses: (now) => this.checkRequestCloses(requests, now),
       // A stopped request is a nag: its card is on the Desk at once, the
       // line about it waits for the daily digest (#1126).
       // A blocked plan step or a task watcher that fired is told in its
@@ -3393,7 +3419,7 @@ export class AgentXDaemon {
     if (!id || !store) return
     const now = Date.now()
     try {
-      if (run.status === "completed") store.close(id, "done", runEvidence(run), now)
+      if (run.status === "completed") store.close(id, "done", runEvidence(run), now, null, "workflow")
       else if (store.needsAttention(id, `Workflow run ${run.id} ${run.status === "canceled" ? "was stopped" : "did not finish"}: ${run.history.at(-1)?.note ?? run.status}`, now)) store.markNotified(id, now)
     } catch (e: any) {
       this.log(`[workflows] request ${id} after run ${run.id}: ${e?.message ?? e}`)

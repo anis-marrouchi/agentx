@@ -459,7 +459,7 @@ export function handleRequestsApi(
       if (!v) return { status: 202, body: { checking: describeCloseWhen(request.closeWhen) }, verify: { requestId: request.id, spec: request.closeWhen } }
       if (v.verdict === "met") {
         const said = str(input.evidence)
-        store.closeVerified(request.id, said && said !== v.detail ? `${v.detail} (agent: ${said})` : v.detail, now)
+        store.closeVerified(request.id, said && said !== v.detail ? `${v.detail} (agent: ${said})` : v.detail, now, agentId)
         if (home) store.setHome(request.id, home, now)
         return { status: 200, body: { request: store.get(request.id), verified: true } }
       }
@@ -542,8 +542,8 @@ export function handleRequestsApi(
         const question = str(input.question)
         if (!question) return { status: 400, body: { error: "wait needs `question`: what you are asking the owner" } }
         store.waitOnOwner(request.id, question, now, described.need ?? null)
-      } else if (action === "done") store.close(request.id, "done", str(input.evidence) || (proof ? describeProof(proof) : ""), now, proof)
-      else store.close(request.id, "declined", str(input.reason), now)
+      } else if (action === "done") store.close(request.id, "done", str(input.evidence) || (proof ? describeProof(proof) : ""), now, proof, agentId)
+      else store.close(request.id, "declined", str(input.reason), now, null, agentId)
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
       if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)

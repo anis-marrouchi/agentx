@@ -23,7 +23,9 @@ export function readRequestSettings(configPath?: string): RequestSettings {
   return parsed.success ? parsed.data : requestsConfigSchema.parse(undefined)
 }
 
-export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines" | "statusDrift" | "catchPromises" | "autoResend" | "flow">> & {
+export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines" | "statusDrift" | "catchPromises" | "autoResend" | "flow" | "ownerCheck">> & {
+  /** Only the switch. Provider, model and pace are set in agentx.json. */
+  ownerCheck?: { enabled?: boolean }
   autoResend?: Partial<ResendSettings>
   flow?: Partial<FlowSettings>
   /** The switch and the cap. Provider, model and timeout are set in agentx.json. */
@@ -57,6 +59,7 @@ export async function updateRequestSettings(
       }
     }
     if (patch.headlines?.enabled !== undefined) (r.headlines ??= {}).enabled = patch.headlines.enabled
+    if (patch.ownerCheck?.enabled !== undefined) (r.ownerCheck ??= {}).enabled = patch.ownerCheck.enabled
     if (patch.catchPromises) {
       const c = (r.catchPromises ??= {})
       for (const key of ["enabled", "dailyCap"] as const) {

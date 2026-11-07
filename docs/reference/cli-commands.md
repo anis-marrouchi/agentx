@@ -750,7 +750,7 @@ Open requests, oldest first.
 
 ### `agentx requests show <id>`
 
-One request and the runs, delegations and cards linked to it.
+One request and the runs, delegations and cards linked to it. A closed request also shows who closed it (`Closed by …`: you, an agent, or its plan, check, settling, promise, workflow or expired card) and, when the owner check read that close, its answer (`Owner check: …`).
 
 No flags.
 
@@ -763,7 +763,7 @@ Close a request as finished, with a link to the evidence or the reason.
 | `--evidence <link>` | — | Link to the proof: PR, issue, message, deploy. |
 | `--reason <text>` | — | Close it by hand without a link, saying why ("checked by hand"). Also closes a request whose check cannot tell. The proof reads `closed by owner: <text>`. |
 
-One of `--evidence` or `--reason` is required.
+One of `--evidence` or `--reason` is required. Run from an agent's own terminal (where `AGENTX_AGENT_ID` is set), the close is recorded as that agent's, not yours.
 
 ### `agentx requests drop <id>`
 
@@ -809,6 +809,7 @@ Show or change the requests settings (requests in agentx.json).
 | `--stale-hours <n>` | — | Hours without activity before an open request comes back to you. |
 | `--retention-days <n>` | — | Days a closed request is kept. |
 | `--headlines <on\|off>` | — | Write a headline for a request its agent did not describe (one small model call each). |
+| `--owner-check <on\|off>` | — | Read each close not made by you against your words, and open it again when it does not match (one small model call each). |
 | `--checks <kind,...>` | — | Checks agents may use to close a request (url, issue, git-ancestor, reply); "none" to turn them all off. |
 | `--check-every <minutes>` | — | How often each open request's check runs. |
 | `--auto-resend <on\|off>` | — | Send a request stopped by a usage limit or a restart back to its agent once, on its own. |

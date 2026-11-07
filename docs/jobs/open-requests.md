@@ -110,6 +110,34 @@ Turn it off with `agentx requests settings --auto-resend off`. Change the wait w
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
 
+Every close records who made it: you, the agent (by its name), or what closed it on its own: its plan, its check, settling, the promise it followed, its workflow, or a decision card that expired. `agentx requests show <id>` prints it on the line `Closed by …`. When an agent runs `agentx requests done` or `agentx requests drop` from its own terminal, the close is recorded under that agent's name, not yours.
+
+### Check a close against your words
+
+An agent can close your request in a way you did not ask for. For example, it declines a request because it "waits on the tester", right after you told it to drop the tester step. Or it closes it as done after doing only part of it. With the owner check on, AgentX reads each close you did not make yourself and compares it with what you asked.
+
+How it works:
+
+- It reads your request in your own words, your latest note on it (a reply or a hand-off note), and how it was closed. It does this with one short model call (a question sent to an AI model) per close.
+- The answer is one of three: **matches**, **does not match**, or **unclear**.
+- **Does not match:** the request opens again as **needs attention**, with the reason, and you are told once, like any other request that needs attention.
+- **Matches** or **unclear:** the request stays closed. The answer is kept on it.
+- Each close is read once. If the agent closes the request again, the new close is read again.
+- Your own closes are never read. Neither are an agent's own promises, because those are the agent's words, not yours.
+- Only closes from the last 24 hours are read, so turning it on does not go through your whole history.
+
+It is off by default, because it spends one model call on most closes. To turn it on:
+
+1. **Terminal:** go to the folder that holds `agentx.json`.
+2. **Terminal:** run `agentx requests settings --owner-check on`.
+
+To see what it said about a request:
+
+1. **Terminal:** run `agentx requests show <id>`.
+2. Read the line `Closed by …`, and below it the line `Owner check: …` with the reason.
+
+The engine, the model and how many closes are read per minute are set only in `agentx.json`, under `requests.ownerCheck`. See [Configuration: automation](../reference/config-automation.md#requests).
+
 ### When handed-on work came back and nobody closed it
 
 Agents often forget to close a request after the work they handed on comes back. Such a request used to come back to you as "Not finished", even though the work was done. Now the daily check closes it:
@@ -459,6 +487,7 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --stale-hours 48` | Hours without activity before a request comes back to you. Default 24. |
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
 | `agentx requests settings --headlines off` | Stops AgentX from writing a headline for a request its agent did not describe. Such a request is then titled with the start of your words. `on` turns it back on. Default on. |
+| `agentx requests settings --owner-check on` | Reads each close you did not make against your words, and opens it again when it does not match. `off` turns it off. Default off. See [Check a close against your words](#check-a-close-against-your-words). |
 | `agentx requests settings --settle off` | A quiet request whose handed-on work all came back done comes back to you instead of being closed. `on` turns closing back on. Default on. See [When handed-on work came back](#when-handed-on-work-came-back-and-nobody-closed-it). |
 | `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
 | `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
@@ -504,7 +533,9 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 19. **Terminal:** run `curl -s http://127.0.0.1:18800/requests/goals`. The goal is there, with its `open` and `done` counts and its `costUsd`.
 20. **Terminal:** run `agentx requests contract --since 1d --dry-run`. It prints **Five numbers**, the three dry-run lists, and ends with `Read only: nothing was told or written.`
 21. **Terminal:** run `agentx requests flow`. The first line gives today's date, the time zone, and how many of today's requests are closed. The table below it has one line per day.
-22. **Terminal:** run `agentx requests settings`. The line `Resend once` says `on: after a usage limit resets or a restart, 5 minute(s) on; …`. After an agent stops on its usage limit, the daemon log has a `resent once` line for the request once the limit resets, and you are told nothing unless it stops again.
+22. **Terminal:** run `agentx requests show <id>` on a request an agent closed. It shows `Closed by agent <name>`.
+23. **Terminal:** run `agentx requests settings --owner-check on`. The line `Owner check` says `on: closes not made by you are read against your words`. After the next close by an agent, `agentx requests show <id>` shows a line `Owner check: …` within a minute or two.
+24. **Terminal:** run `agentx requests settings`. The line `Resend once` says `on: after a usage limit resets or a restart, 5 minute(s) on; …`. After an agent stops on its usage limit, the daemon log has a `resent once` line for the request once the limit resets, and you are told nothing unless it stops again.
 
 ## If something is wrong
 
@@ -513,6 +544,11 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A request stopped by a usage limit was never resent:** the limit has not reset yet, or it was already resent once, or it is a promise or part of a tracked plan. `agentx requests show <id>` says why it stopped. After 12 hours you are told anyway.
 - **You were told about a limit or a restart failure at once:** auto-resend is off (`agentx requests settings`), the agent is not on this computer, the request had already been resent once, or AgentX chose not to pick the work up again after the restart. The reason in brackets after `not picked up again` says which.
 
+- **A request you saw closed is back as needs attention, with `does not match what you asked`:** the owner check found that the close does not keep to your words. Read the reason, then close it yourself, hand it back to the agent, or drop it. If the check is wrong too often, turn it off with `agentx requests settings --owner-check off`.
+- **`Owner check: not read: …`:** the model call failed, for example because the engine set in `requests.ownerCheck.provider` is not signed in on this computer. That close is not read again; the request stays closed.
+- **No `Owner check` line on a closed request:** you closed it yourself, it is an agent's own promise, it was closed more than 24 hours before the check was turned on, or the check is off. Run `agentx requests settings` to see.
+- **A close shows `Closed by <agent>` though you ran the command:** the terminal you used was an agent's, where `AGENTX_AGENT_ID` is set. Run it from your own terminal.
+- **`--owner-check takes on or off`:** write `on` or `off`, nothing else.
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 
 - **`no agentx.json here`:** you are not in the install folder, the one that holds `agentx.json`. A folder inside it does not count. Go to that folder and run the command again.

@@ -27,6 +27,9 @@ import { HUB_NAME } from "@/daemon/ui/hub-name"
 //      `settleHandedBack: false` raises it as quiet instead, as before.
 //      A hand-off that failed or was lost no longer holds it once a later
 //      one came back done (#1522).
+//   1b. Owner check (#1770, owner-check.ts): a close not made by the
+//      owner is read once against the owner's words. A mismatch opens it
+//      again as needing attention, told at step 3. `ownerCheck.enabled`.
 //   2. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
 //      reported an end. A loop with a due time needs attention once it is
@@ -81,6 +84,10 @@ export interface RequestSweepDeps {
   /** Gives a request its headline when it has none (#1126), so the owner
    *  is told what it is. Returns it as it is when none could be written. */
   describe?: (r: RequestRecord) => Promise<RequestRecord>
+  /** Reads closes not made by the owner against the owner's words
+   *  (#1770, owner-check.ts). A mismatch opens the request again as
+   *  needing attention, so this check tells the owner. Unset: not read. */
+  checkCloses?: (now: number) => Promise<{ checked: number; reopened: number }>
   /** Writes missing headlines of other open requests in the background. */
   fillHeadlines?: () => Promise<unknown>
   log: (msg: string) => void
@@ -103,6 +110,9 @@ export interface RequestSweepResult {
   resent: number
   /** Notices held while a resend is due. */
   held: number
+  /** Closes read by the owner check, and those it opened again (#1770). */
+  closesChecked: number
+  reopened: number
 }
 
 /** The pick-up turn ended. A turn that started is followed through its
@@ -189,7 +199,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, closesChecked: 0, reopened: 0 }
   if (!settings.enabled) return result
 
   if (deps.check) {
@@ -283,6 +293,18 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       }
     } catch (e: any) {
       log(`[requests] settle failed: ${e?.message ?? e}`)
+    }
+  }
+
+  // After every close of this check, before the notices: a close that
+  // does not match the owner's words is told in this same check.
+  if (deps.checkCloses) {
+    try {
+      const r = await deps.checkCloses(now)
+      result.closesChecked = r.checked
+      result.reopened = r.reopened
+    } catch (e: any) {
+      log(`[requests] owner check failed: ${e?.message ?? e}`)
     }
   }
 
