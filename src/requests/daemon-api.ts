@@ -542,8 +542,8 @@ export function handleRequestsApi(
         const question = str(input.question)
         if (!question) return { status: 400, body: { error: "wait needs `question`: what you are asking the owner" } }
         store.waitOnOwner(request.id, question, now, described.need ?? null)
-      } else if (action === "done") store.close(request.id, "done", str(input.evidence) || (proof ? describeProof(proof) : ""), now, proof)
-      else store.close(request.id, "declined", str(input.reason), now)
+      } else if (action === "done") store.close(request.id, "done", str(input.evidence) || (proof ? describeProof(proof) : ""), now, proof, agentId)
+      else store.close(request.id, "declined", str(input.reason), now, null, agentId)
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
       if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)

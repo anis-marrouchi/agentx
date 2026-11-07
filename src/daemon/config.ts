@@ -1692,6 +1692,21 @@ export const requestsConfigSchema = z.object({
     model: z.string().min(1).default("claude-haiku-4-5-20251001"),
     timeoutSeconds: z.number().int().min(5).max(120).default(30),
   }).default({}),
+  /** The owner-words check (src/requests/owner-check.ts): a request closed
+   *  by anyone but the owner (an agent, a plan, a check) is read against
+   *  the owner's words with one small model call. A close that does not
+   *  deliver what was asked opens again as needing attention, and the
+   *  owner is told once. Uses the provider already set up; off by default. */
+  ownerCheck: z.object({
+    enabled: z.boolean().default(false),
+    provider: z.string().min(1).default("claude-code"),
+    model: z.string().min(1).default("claude-sonnet-5-5"),
+    /** Closes read per requests check (once a minute). */
+    perCheck: z.number().int().min(1).max(20).default(2),
+    /** Closes older than this are not read. */
+    maxAgeHours: z.number().positive().max(24 * 30).default(48),
+    timeoutSeconds: z.number().int().min(5).max(300).default(60),
+  }).default({}),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
   /** Resend once (src/requests/resend.ts, #1542): a request that needs

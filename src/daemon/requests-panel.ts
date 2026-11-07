@@ -4,6 +4,7 @@ import { requestCard } from "@/requests/card-view"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { CHECK_KINDS, type CheckKind } from "@/requests/checkers"
 import { STALL_GROUPS, type StallGroup } from "@/requests/loops"
+import { OWNER_BY } from "@/requests/store"
 import { findConfigPath } from "./config-mutator"
 
 // --- Dashboard API for open requests (#356) ---
@@ -103,7 +104,7 @@ async function route(
     const detail = action === "done"
       ? (r.closeWhen ? `closed by owner: ${said || "checked by hand"}` : said || "closed by the owner (dashboard)")
       : (typeof body.reason === "string" && body.reason.trim() ? body.reason : "dropped by the owner (dashboard)")
-    if (!store.close(id, action === "done" ? "done" : "dropped", detail, ctx.now ?? Date.now())) {
+    if (!store.close(id, action === "done" ? "done" : "dropped", detail, ctx.now ?? Date.now(), null, OWNER_BY)) {
       return { status: 409, body: { error: `${id} is already closed` } }
     }
     return { status: 200, body: { ok: true, message: action === "done" ? `${id} closed as done` : `${id} dropped` } }

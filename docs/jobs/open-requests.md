@@ -108,7 +108,7 @@ Turn it off with `agentx requests settings --auto-resend off`. Change the wait w
 - **You checked it yourself:** `agentx requests done <id> --reason "checked by hand"`. This also closes a request whose check cannot tell. The proof then reads `closed by owner: checked by hand`. On the Hub, write the reason in the comment box, then select **Done**.
 - **You no longer want it:** `agentx requests drop <id>`. Add `--reason "…"` to say why.
 
-Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
+Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one. An agent that runs `agentx requests drop` or `agentx requests done` from its own run is recorded as that agent, not as you, and its close is checked as described below.
 
 ### When handed-on work came back and nobody closed it
 
@@ -125,6 +125,24 @@ Agents often forget to close a request after the work they handed on comes back.
 - Any other request that already needs attention is left as it is.
 
 To keep the old behaviour, run `agentx requests settings --settle off`.
+
+### When someone else closes your request: the owner-words check
+
+An agent can close your request in a way that does not do what you asked. It may do a smaller task, wait for something you never asked for (another person, a test, an approval you already gave), or decline it for a reason that goes against your words. The owner-words check reads every such close against your own words.
+
+- **What is checked:** every close you did not make yourself. That includes an agent closing it as done or declined, a plan finishing, a promise or a check closing it, handed-on work settling it, and an agent running `agentx requests` from its own run. Your own closes (the Hub, the terminal, a card or a chat answer) are never checked.
+- **How:** within a minute or two of the close, AgentX makes one short call to the model you set (Sonnet by default, through the provider you already use). It sends your words, your latest note on the request, and how the request was closed. The model answers **match**, **mismatch** or **unclear**.
+- **On a mismatch:** the request opens again as **needs attention**, with the reason starting `Closed without doing what you asked`. You are told once, like any request that needs attention. How it was closed stays in its record.
+- **On a match or unclear:** nothing happens. `agentx requests show <id>` shows the result.
+- Closes older than 48 hours are not read. A call that fails is tried again at the next check; after three failures the close is marked unclear.
+
+It is off by default. To turn it on, add this to `agentx.json` under `requests`, then restart AgentX:
+
+```json
+"ownerCheck": { "enabled": true }
+```
+
+The other settings are listed in [requests settings](/reference/config-automation#requests).
 
 ## Promises an agent makes
 
@@ -504,7 +522,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 19. **Terminal:** run `curl -s http://127.0.0.1:18800/requests/goals`. The goal is there, with its `open` and `done` counts and its `costUsd`.
 20. **Terminal:** run `agentx requests contract --since 1d --dry-run`. It prints **Five numbers**, the three dry-run lists, and ends with `Read only: nothing was told or written.`
 21. **Terminal:** run `agentx requests flow`. The first line gives today's date, the time zone, and how many of today's requests are closed. The table below it has one line per day.
-22. **Terminal:** run `agentx requests settings`. The line `Resend once` says `on: after a usage limit resets or a restart, 5 minute(s) on; …`. After an agent stops on its usage limit, the daemon log has a `resent once` line for the request once the limit resets, and you are told nothing unless it stops again.
+22. **Terminal:** with the owner-words check on, ask an agent for something specific, then ask it to decline the request for an unrelated reason. Within two minutes, `agentx requests` lists it again as needing attention, with a reason starting `Closed without doing what you asked`.
+23. **Terminal:** run `agentx requests settings`. The line `Resend once` says `on: after a usage limit resets or a restart, 5 minute(s) on; …`. After an agent stops on its usage limit, the daemon log has a `resent once` line for the request once the limit resets, and you are told nothing unless it stops again.
 
 ## If something is wrong
 
@@ -513,6 +532,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A request stopped by a usage limit was never resent:** the limit has not reset yet, or it was already resent once, or it is a promise or part of a tracked plan. `agentx requests show <id>` says why it stopped. After 12 hours you are told anyway.
 - **You were told about a limit or a restart failure at once:** auto-resend is off (`agentx requests settings`), the agent is not on this computer, the request had already been resent once, or AgentX chose not to pick the work up again after the restart. The reason in brackets after `not picked up again` says which.
 
+- **A request reopened with `Closed without doing what you asked`, but the close was right:** the owner-words check read it as a mismatch. Close it yourself (`agentx requests done <id> --reason "…"`); your own closes are never checked. If it happens often, set a stronger `requests.ownerCheck.model`.
+- **The owner-words check never reopens anything:** check that `requests.ownerCheck.enabled` is `true` in `agentx.json` and that AgentX was restarted. Search the daemon log for `owner-words check`: a `call failed` line means the provider or model could not be reached.
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 
 - **`no agentx.json here`:** you are not in the install folder, the one that holds `agentx.json`. A folder inside it does not count. Go to that folder and run the command again.
