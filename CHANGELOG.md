@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.209.2](https://github.com/anis-marrouchi/agentx/compare/v0.209.1...v0.209.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **wiki:** owner approves decision pages before they outrank history ([#1778](https://github.com/anis-marrouchi/agentx/issues/1778)) ([#1780](https://github.com/anis-marrouchi/agentx/issues/1780)) ([e21bf0a](https://github.com/anis-marrouchi/agentx/commit/e21bf0aed9212cbf0bbedd773811ea18527cff26))
+
 ## [0.209.1](https://github.com/anis-marrouchi/agentx/compare/v0.209.0...v0.209.1) (2026-11-07)
 
 
