@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { WorkLanes, workKeyOf, SAME_WORK_MARKER } from "../src/agents/work-lane"
+import { WorkLanes, workKeyOf, takesNotices, SAME_WORK_MARKER } from "../src/agents/work-lane"
 
 const REQ = "req-01M6TKA0XQ92ADP3408JTM88S6"
 
@@ -12,6 +12,22 @@ describe("workKeyOf", () => {
     expect(workKeyOf(`Do ${REQ} now`, "app")).toBeNull()
     expect(workKeyOf(`Do ${REQ} now`, "telegram")).toBeNull()
     expect(workKeyOf("Deploy the fix", "a2a")).toBeNull()
+  })
+  it("never holds back the operator's or a visitor's chat", () => {
+    for (const ch of ["dashboard", "web-chat", "tui", "admin", "test-drive", "guest", "public-api"]) {
+      expect(workKeyOf(`Do ${REQ} now`, ch)).toBeNull()
+    }
+  })
+})
+
+describe("takesNotices", () => {
+  it("lets notices ride only on agent work", () => {
+    for (const ch of ["a2a", "cron", "workflow", "reminder", "events", "business"]) expect(takesNotices(ch)).toBe(true)
+  })
+  it("keeps notices off person, visitor and parsed internal runs", () => {
+    for (const ch of ["app", "telegram", "guest", "public-api", "web-chat", "dashboard", "subagent", "api", "whatsapp-triage", "selftest", undefined]) {
+      expect(takesNotices(ch)).toBe(false)
+    }
   })
 })
 

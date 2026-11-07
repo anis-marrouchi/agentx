@@ -123,7 +123,7 @@ When a follow-up about the same work goes to an agent as a new message, the agen
 
 **Owner's requests.** A message to an agent that names one of the owner's [requests](/jobs/open-requests) (an ID such as `req-01ABC…`) waits while another run of the same agent works on that request, from any chat. This covers a plan step and another agent's message about the same request arriving seconds apart. When it starts, its first line begins with `[agentx:same-work`. That line gives the other run's answer and asks the agent not to redo that work. Rules:
 
-- A person's own chat (phone app, chat apps, voice) never waits.
+- A person's own chat never waits: the phone app, chat apps, voice, the dashboard and terminal chats, and chats with guests or the public API.
 - A run that belongs to the same chain of work as the one it would wait for goes ahead at once, so an agent's own hand-off coming back cannot get stuck.
 - The wait lasts at most 15 minutes. After that the run goes ahead beside the other one. The daemon log shows `going ahead beside a run still on it`.
 - The other run's answer is passed on if it ended in the last 45 minutes.
@@ -132,7 +132,7 @@ Without `home`, the chat the message is sent from counts as its home, with a sho
 
 ### A notice instead of a run
 
-Some messages are only for information: a watch script saying the machine has been on battery for 30 minutes, for example. Add `"notice": true` to the `/send/agent` body, and the message does not start a run. It is put at the head of the agent's next run that is not a person's chat, under a line starting `[agentx:notices`. If no such run starts within an hour, the waiting notices go to the agent together, as one run. For example (terminal):
+Some messages are only for information: a watch script saying the machine has been on battery for 30 minutes, for example. Add `"notice": true` to the `/send/agent` body, and the message does not start a run. It is put at the head of the agent's next run of agent work: a message from another agent, a schedule, a workflow, a reminder, an event or the business day cycle. It never goes into a person's or a guest's chat. It appears under a line starting `[agentx:notices`. If no such run starts within an hour, the waiting notices go to the agent together, as one run. For example (terminal):
 
 ```sh
 curl -s -X POST http://127.0.0.1:18800/send/agent -H 'Content-Type: application/json' \

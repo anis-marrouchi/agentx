@@ -21,11 +21,25 @@ export const LANE_MEMORY_MS = 45 * 60_000
 const NOTE_CLIP = 1500
 export const SAME_WORK_MARKER = "[agentx:same-work"
 
-/** Channels where a person waits on the answer: never held back. */
-const PERSON_CHANNELS = new Set(["app", "telegram", "whatsapp", "voice", "slack", "discord", "email", "sms", "ntfy"])
+/** Channels where a person waits on the answer: never held back. Includes
+ *  the operator's own chats (dashboard, web-chat, tui, admin, test-drive)
+ *  and outside visitors (guest, public-api). */
+const PERSON_CHANNELS = new Set([
+  "app", "telegram", "whatsapp", "voice", "slack", "discord", "email", "sms", "ntfy",
+  "dashboard", "web-chat", "tui", "admin", "test-drive", "workflow-editor", "guest", "public-api",
+])
 
 export function isPersonChannel(channel: string | undefined): boolean {
   return !!channel && PERSON_CHANNELS.has(channel)
+}
+
+/** Agent work no person reads live, where held notices may ride along.
+ *  An allowlist: a channel added later (a visitor's chat, a run whose
+ *  output code parses) never gets another agent's notices by default. */
+const NOTICE_CHANNELS = new Set(["a2a", "cron", "workflow", "reminder", "events", "business"])
+
+export function takesNotices(channel: string | undefined): boolean {
+  return !!channel && NOTICE_CHANNELS.has(channel)
 }
 
 export function workKeyOf(message: string | undefined, channel: string | undefined): string | null {

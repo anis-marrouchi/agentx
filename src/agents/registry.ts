@@ -48,7 +48,7 @@ const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
 import { currentRoot } from "@/events/envelope"
-import { WorkLanes, workKeyOf, isPersonChannel } from "./work-lane"
+import { WorkLanes, workKeyOf, takesNotices } from "./work-lane"
 import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
@@ -1396,9 +1396,10 @@ export class AgentRegistry {
     // One run at a time per agent and owner's request (work-lane.ts),
     // keyed on the message as sent, not on notices put before it.
     const key = workKeyOf(task.message, channel)
-    // Notices waiting for this agent ride on its next run that is not a
-    // person's chat (notices.ts).
-    if (!isPersonChannel(channel) && !task.preSpawnRetry && !task.timeLimitContinuation) {
+    // Notices waiting for this agent ride on its next run of agent work
+    // (a2a, cron, workflow, ...), never on a person's or visitor's chat
+    // nor on an internal run whose output is parsed (notices.ts).
+    if (takesNotices(channel) && !task.preSpawnRetry && !task.timeLimitContinuation) {
       const notes = this.notices.take(task.agentId)
       if (notes) task = { ...task, message: notes + task.message }
     }
