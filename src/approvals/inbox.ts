@@ -17,7 +17,7 @@ import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } fro
 import { readInboxState, snooze } from "./state"
 import { recordAnswered } from "./answered"
 import { openDb } from "@/storage/sqlite"
-import { RequestStore, hasRequestTables } from "@/requests/store"
+import { OWNER_BY, RequestStore, hasRequestTables } from "@/requests/store"
 import { PlanStore, hasPlanTables } from "@/requests/plan-store"
 import { readRequestSettings } from "@/requests/settings"
 import { cardWords } from "@/requests/card-view"
@@ -754,7 +754,7 @@ async function decideItem(ctx: InboxContext, key: string, action: InboxAction, o
         store.requestPickup(ref, now)
         return { ok: true, message: `${key}: ${r.agentId} will be asked to pick it up again` }
       }
-      store.close(ref, "dropped", opts.note?.trim() || `dropped by ${by}`, now)
+      store.close(ref, "dropped", opts.note?.trim() || `dropped by ${by}`, now, null, by === "operator" ? OWNER_BY : by)
       return { ok: true, message: `${key}: dropped` }
     }
   }

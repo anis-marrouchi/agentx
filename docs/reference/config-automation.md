@@ -364,6 +364,12 @@ To turn it on by hand:
 | `requests.autoResend.enabled` | boolean | `true` | A request that needs attention because a usage limit or a restart stopped it is sent back to its agent once, on its own. You are told only if it stops again. Promises, tracked plans, requests with a check, and requests whose agent is not on this computer are left. See [Resend once](/jobs/open-requests#resend-once-after-a-limit-or-a-restart). |
 | `requests.autoResend.afterMinutes` | number (0 to 1440) | `5` | Minutes after it stopped before it is resent. A usage limit also waits until it has reset. |
 | `requests.autoResend.holdMaxHours` | number (up to 168) | `12` | Hours your notice waits for the resend. Past it, you are told as before. |
+| `requests.ownerCheck.enabled` | boolean | `false` | Read every request close you did not make yourself against your own words. A close that does not deliver what you asked opens again as needing attention, and you are told once. See [the owner-words check](/jobs/open-requests#when-someone-else-closes-your-request-the-owner-words-check). |
+| `requests.ownerCheck.provider` | string | `"claude-code"` | Provider for the check's call. Use one you already set up. |
+| `requests.ownerCheck.model` | string | `"claude-sonnet-5-5"` | Model that reads each close. |
+| `requests.ownerCheck.perCheck` | number (1 to 20) | `2` | Closes read per requests check, once a minute. |
+| `requests.ownerCheck.maxAgeHours` | number | `48` | Closes older than this are not read. |
+| `requests.ownerCheck.timeoutSeconds` | number (5 to 300) | `60` | How long one call may take before it is tried again at the next check. |
 | `requests.flow.timeZone` | string | `"Africa/Tunis"` | The time zone whose day the daily [flow rate](/jobs/open-requests#how-many-requests-get-closed-the-flow-rate) counts by (`agentx requests flow`). |
 | `requests.flow.days` | whole number (1 to 90) | `7` | Days the flow rate shows when none are asked for. |
 | `requests.promises` | object | `{}` | One record for everything someone owes: proof on close, a fact when it closes. See [A promise closes with proof](/jobs/open-requests#a-promise-closes-with-proof-and-leaves-a-fact). |

@@ -272,7 +272,7 @@ export function closeWatcherLoop(store: RequestStore, w: Pick<WatcherRecord, "id
   const r = store.byLink("watcher", w.id)
   if (!r || !r.promise || !(OPEN_STATES as readonly string[]).includes(r.state)) return false
   const proof = w.evidence ? proofFromEvidence(w.evidence, now) : null
-  return store.close(r.id, "done", proof ? describeProof(proof) : w.reason || "the watched task was marked done", now, proof)
+  return store.close(r.id, "done", proof ? describeProof(proof) : w.reason || "the watched task was marked done", now, proof, "promise")
 }
 
 // ── The fact a kept promise leaves ────────────────────────────────────────

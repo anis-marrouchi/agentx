@@ -106,6 +106,7 @@ import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { homeChecker } from "@/requests/home-check"
 import { FINISHED_STEP_STATES, type PlanStep } from "@/requests/plan-store"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
+import { DEFAULT_OWNER_CHECK, OWNER_CHECK_SYSTEM, OwnerWordsCheck } from "@/requests/owner-check"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
@@ -3037,6 +3038,34 @@ export class AgentXDaemon {
   }
 
   private headlines?: HeadlineWriter
+  private ownerCheck?: OwnerWordsCheck
+
+  /** Reads closes not made by the owner against the owner's words
+   *  (src/requests/owner-check.ts): one small call each, through the
+   *  provider the operator set up, settings read at each call. */
+  private ownerWordsCheck(requests: AttachedRequests): OwnerWordsCheck {
+    if (this.ownerCheck) return this.ownerCheck
+    let provider: AgentProvider | undefined
+    let providerName: string | undefined
+    const settings = () => ({ ...DEFAULT_OWNER_CHECK, ...this.config.requests.ownerCheck })
+    return this.ownerCheck = new OwnerWordsCheck({
+      store: requests.store,
+      settings,
+      generate: async (prompt, signal) => {
+        const s = settings()
+        if (!provider || providerName !== s.provider) {
+          providerName = s.provider
+          provider = createProvider((s.provider ?? "claude-code") as ProviderName)
+        }
+        const res = await provider.generate(
+          [{ role: "system", content: OWNER_CHECK_SYSTEM }, { role: "user", content: prompt }],
+          { model: s.model ?? "claude-sonnet-5-5", maxTokens: 300, abortSignal: signal, bare: true, noThinking: true },
+        )
+        return res.content || ""
+      },
+      log: this.log,
+    })
+  }
 
   /** Writes the headline of a request its agent did not describe (#1126):
    *  one small call through the provider the operator set up, built on
@@ -3099,6 +3128,9 @@ export class AgentXDaemon {
     await this.sweepSprints(requests).catch((e: any) => this.log(`[sprints] check failed: ${e?.message ?? e}`))
     await this.checkGoalRecords(requests).catch((e: any) => this.log(`[goals] check failed: ${e?.message ?? e}`))
     const headlines = this.headlineWriter(requests)
+    // Fire and forget, like every model call here: a close it reopens is
+    // told by the next check, a minute later. One run at a time.
+    void this.ownerWordsCheck(requests).run()
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
@@ -3393,7 +3425,7 @@ export class AgentXDaemon {
     if (!id || !store) return
     const now = Date.now()
     try {
-      if (run.status === "completed") store.close(id, "done", runEvidence(run), now)
+      if (run.status === "completed") store.close(id, "done", runEvidence(run), now, null, "workflow")
       else if (store.needsAttention(id, `Workflow run ${run.id} ${run.status === "canceled" ? "was stopped" : "did not finish"}: ${run.history.at(-1)?.note ?? run.status}`, now)) store.markNotified(id, now)
     } catch (e: any) {
       this.log(`[workflows] request ${id} after run ${run.id}: ${e?.message ?? e}`)

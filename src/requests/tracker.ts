@@ -6,7 +6,8 @@ import type { CatchSettings, PromiseCatcher } from "./catch"
 import type { ResendSettings } from "./resend"
 import type { FlowSettings } from "./flow"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
-import { firstLink, HANDOFF_REASON, OPEN_STATES, OWED_TO_OWNER, type OpenState, type RequestStore } from "./store"
+import type { OwnerCheckSettings } from "./owner-check"
+import { firstLink, HANDOFF_REASON, OPEN_STATES, OWED_TO_OWNER, OWNER_BY, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
 //
@@ -63,6 +64,8 @@ export interface RequestSettings {
   /** The daily flow rate (#1542): whose day it counts by. Unset: the
    *  defaults (DEFAULT_FLOW). */
   flow?: FlowSettings
+  /** The owner-words check (owner-check.ts). Unset: off. */
+  ownerCheck?: Partial<OwnerCheckSettings>
 }
 
 /** The chat of a card's promise when no turn names one: the card itself. */
@@ -379,13 +382,13 @@ export class RequestTracker {
       const answered = card.status === "decided" || card.status === "resolved"
       if (req.promise && req.owedBy === OWED_TO_OWNER) {
         if (!answered) {
-          this.store.close(req.id, "dropped", `the card expired unanswered; "${applied}" was applied`, now)
+          this.store.close(req.id, "dropped", `the card expired unanswered; "${applied}" was applied`, now, null, "card-expired")
           return
         }
         const said = card.status === "resolved" ? "answered in chat" : `${card.verdict ?? "decided"}${card.choice ? `: ${card.choice}` : ""}`
         const at = card.decided_at ? Date.parse(card.decided_at) : NaN
         const ranAt = Number.isFinite(at) ? Math.min(at, now) : now
-        this.store.close(req.id, "done", `card ${card.id}: ${said}`, now, { kind: "output", value: said, ranAt })
+        this.store.close(req.id, "done", `card ${card.id}: ${said}`, now, { kind: "output", value: said, ranAt }, OWNER_BY)
         return
       }
       if (answered) {

@@ -2,7 +2,7 @@ import { Command } from "commander"
 import { existsSync, readFileSync } from "fs"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
-import { CLOSED_STATES, OPEN_STATES, RequestStore, type RequestRecord } from "@/requests/store"
+import { CLOSED_STATES, OPEN_STATES, OWNER_BY, RequestStore, type RequestRecord } from "@/requests/store"
 import { LIST_MAX } from "@/requests/daemon-api"
 import { startOfDay, todayRows } from "@/requests/today"
 import { DEFAULT_FLOW, describeFlow, FLOW_DAYS_MAX, flowReport } from "@/requests/flow"
@@ -105,6 +105,8 @@ function printRequest(r: RequestRecord): void {
   else if (r.qa) console.log((r.qa.verdict === "block" ? chalk.red : r.qa.verdict === "risk" ? chalk.yellow : chalk.green)(`    QA: ${describeQa(r.qa)}`))
   if (r.evidence) console.log(chalk.green(`    Evidence: ${r.evidence}`))
   if (r.closeReason) console.log(chalk.dim(`    Reason: ${r.closeReason}`))
+  if (r.closedBy) console.log(chalk.dim(`    Closed by: ${r.closedBy}`))
+  if (r.ownerCheck) console.log((r.ownerCheck === "mismatch" ? chalk.red : chalk.dim)(`    Owner-words check: ${r.ownerCheck}${r.ownerCheckNote ? ` (${r.ownerCheckNote})` : ""}`))
 }
 
 requests
@@ -265,7 +267,10 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
       if (!detail) { console.error(chalk.red(`  ${missing}`)); process.exitCode = 1; return }
       const r = s.get(id)
       if (!r || r.state === "candidate") { console.error(chalk.red(`  no request "${id}"`)); process.exitCode = 1; return }
-      if (!s.close(id, name === "done" ? "done" : "dropped", detail, Date.now())) {
+      // Run from an agent's own shell, it is that agent's close, and the
+      // owner-words check reads it like any other agent close.
+      const by = process.env.AGENTX_AGENT_ID?.trim() || OWNER_BY
+      if (!s.close(id, name === "done" ? "done" : "dropped", detail, Date.now(), null, by)) {
         console.error(chalk.red(`  ${id} is already closed (${STATE_LABEL[r.state] ?? r.state})`)); process.exitCode = 1; return
       }
       console.log(chalk.green(`  ✓ ${id} ${name === "done" ? "closed as done" : "dropped"}`))
