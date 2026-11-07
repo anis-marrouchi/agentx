@@ -81,7 +81,7 @@ When no person started the conversation (another agent, a schedule, a workflow) 
 
 A send to an agent on this machine may run as long as that agent's own `maxExecutionMinutes`, once more for each time a run that passes it is picked up again (`resume.timeLimit`, once by default: see [work that runs past its time limit](/jobs/restart-safely#work-that-runs-past-its-time-limit)), plus up to 25 minutes waiting for a free slot. The 30-minute `mesh.delegation.timeoutMinutes` does not cut it off. A send to an agent on another machine still uses `mesh.delegation.timeoutMinutes`.
 
-If the other agent writes back to the sender with `agentx_send_agent` while it works, that message goes into the sender's chat for that work too. It does not open a new chat. When the other agent's run ends, the sender is still told how it ended, because what it wrote may only have been a progress note.
+If the other agent writes back to the sender with `agentx_send_agent` while it works, that message goes into the sender's chat for that work too. It does not open a new chat. When the other agent's run ends, the sender is still told how it ended, because what it wrote may only have been a progress note. There is one exception: if the run finished well and its final answer mostly repeats what the other agent already wrote (half or more of its words), the sender is not woken again. The daemon log shows `end repeats what it already wrote … no callback turn`. A run that fails, times out or ends to wait is always reported.
 
 The callback turn is the sending agent's own work. Nothing from it is sent to a person. A send made from a person's chat (for example, while passing a helper's answer on to them) is not called back this way; it is queued as below.
 
@@ -121,7 +121,30 @@ When a follow-up about the same work goes to an agent as a new message, the agen
 - A link and a reference to the same issue count as the same home: `https://git.example.com/team/app/-/issues/12` and `team/app#12` match. A merge request (`team/app!12`) is a different home from the issue with the same number.
 - When a run of an agent starts while another run of the same agent, in another chat, works on the same issue, the new run is told so in a first line that starts with `[agentx:same-home]`. It names the other run's chat and start time, and asks the agent to coordinate rather than redo or overwrite that work. The issue is taken from `home`, or from issue and merge request links and `group/project#12` references in the message. A bare `#12` is not used, because it names different work in every project.
 
+**Owner's requests.** A message to an agent that names one of the owner's [requests](/jobs/open-requests) (an ID such as `req-01ABC…`) waits while another run of the same agent works on that request, from any chat. This covers a plan step and another agent's message about the same request arriving seconds apart. When it starts, its first line begins with `[agentx:same-work`. That line gives the other run's answer and asks the agent not to redo that work. Rules:
+
+- A person's own chat (phone app, chat apps, voice) never waits.
+- A run that belongs to the same chain of work as the one it would wait for goes ahead at once, so an agent's own hand-off coming back cannot get stuck.
+- The wait lasts at most 15 minutes. After that the run goes ahead beside the other one. The daemon log shows `going ahead beside a run still on it`.
+- The other run's answer is passed on if it ended in the last 45 minutes.
+
 Without `home`, the chat the message is sent from counts as its home, with a shorter window. When the same agent asks the same helper on this machine again from the same chat, and the helper's last run from that chat ended in the last 2 hours, the helper continues that run's session instead of starting a new one. The daemon log shows `continues its session from <channel>:<chat>`. Such a message never waits: if the helper's last run from that chat is still going, the new one starts a fresh session beside it.
+
+### A notice instead of a run
+
+Some messages are only for information: a watch script saying the machine has been on battery for 30 minutes, for example. Add `"notice": true` to the `/send/agent` body, and the message does not start a run. It is put at the head of the agent's next run that is not a person's chat, under a line starting `[agentx:notices`. If no such run starts within an hour, the waiting notices go to the agent together, as one run. For example (terminal):
+
+```sh
+curl -s -X POST http://127.0.0.1:18800/send/agent -H 'Content-Type: application/json' \
+  -d '{"agentId":"helper","senderAgentId":"watcher","notice":true,"text":"On battery for 30 min, now 63%."}'
+```
+
+The answer is `202` with `"status": "notice"` and how many notices wait for that agent. Things to know:
+
+- Up to 20 notices wait per agent. When there are more, the oldest are dropped.
+- Notices are kept in memory: a daemon restart loses the ones not yet passed on.
+- Notices work for agents on this machine only. For an agent on another machine, the message is sent as usual.
+- Send anything urgent as a plain message, without `notice`.
 
 ### When the helper's run ends before the work does
 
@@ -157,6 +180,8 @@ Some requests are refused straight away with status `409`:
 - **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.
 - **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask. A dashboard log line starting `[app] warning:` means the dashboard passed over some updates: it was away too long, or too many arrived at once. Ask your agent for the answer again.
 - **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
+- **A notice never reached the agent:** search the daemon log for `[send/agent] notice` (kept) and `[notices]` (sent after an hour). Check that the daemon did not restart in between.
+- **An agent seems slow to start on an owner's request:** search the daemon log for the request ID. `another run of this agent is on it` means it waits for that run, for up to 15 minutes.
 - **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.
 - **`/send` answers `"is not in a2a chat"`:** the `agentId` you sent is not one of the two agents in the `chatId`. Send as the agent the chat belongs to, or use `POST /send/agent`.
 - **A queued `[send/agent] snd-…` line ends in `slot wait timed out after 360m`:** the other agent was busy for 6 hours straight, so the message was not run. Raise that agent's `maxConcurrent`, or look for a run that is stuck, then send the message again.

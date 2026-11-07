@@ -336,6 +336,8 @@ export class AgentXDaemon {
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
+  /** Sends notices no run picked up within the hour (agents/notices.ts). */
+  private noticeSweep?: ReturnType<typeof setInterval>
   private callSweep?: ReturnType<typeof setInterval>
   private taskRunPrune?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
@@ -1455,6 +1457,7 @@ export class AgentXDaemon {
     }
 
     if (this.attachSweep) clearInterval(this.attachSweep)
+    if (this.noticeSweep) clearInterval(this.noticeSweep)
     if (this.callSweep) clearInterval(this.callSweep)
     if (this.taskRunPrune) clearInterval(this.taskRunPrune)
 
@@ -4376,6 +4379,21 @@ export class AgentXDaemon {
       } catch { /* best-effort */ }
     }, 1000)
     this.attachSweep.unref?.()
+
+    // Notices nobody's run picked up within the hour go as one run, so a
+    // quiet agent still gets them (agents/notices.ts).
+    this.noticeSweep = setInterval(() => {
+      for (const agentId of this.registry.notices.overdue()) {
+        this.log(`[notices] ${agentId}: ${this.registry.notices.count(agentId)} notice(s) waited an hour; sending them as one run`)
+        void this.registry.execute({
+          agentId,
+          message: "Notices that waited for your next run are below.",
+          context: { channel: "a2a", sender: "agent", chatId: "notices" },
+          slotWaitMs: SEND_AGENT_SLOT_WAIT_MS,
+        }).catch((e: any) => this.log(`[notices] ${agentId}: ${e?.message ?? e}`))
+      }
+    }, 60_000)
+    this.noticeSweep.unref?.()
   }
 
   /**
@@ -4411,6 +4429,14 @@ export class AgentXDaemon {
     if (seen) {
       this.log(`[send/agent] duplicate of ${String(seen.taskId)} from ${senderAgentId || "?"} → ${targetAgent}; not sent again`)
       this.json(res, 202, duplicateBody(seen))
+      return
+    }
+    // A notice (agents/notices.ts): no run of its own; it rides on the
+    // agent's next run, or goes after an hour. Local agents only.
+    if (body.notice === true && this.registry.getAgent(targetAgent)) {
+      const waiting = this.registry.notices.add(targetAgent, senderAgentId || "a script", text)
+      this.log(`[send/agent] notice from ${senderAgentId || "?"} → ${targetAgent} kept for its next run (${waiting} waiting)`)
+      this.json(res, 202, { accepted: true, status: "notice", waiting })
       return
     }
     // #1100 — a callee writing to the agent that asked it, from that

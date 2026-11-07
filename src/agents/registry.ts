@@ -48,6 +48,8 @@ const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
 import { currentRoot } from "@/events/envelope"
+import { WorkLanes, workKeyOf, isPersonChannel } from "./work-lane"
+import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
 import { debug } from "@/observability/debug"
@@ -704,6 +706,10 @@ export class AgentRegistry {
    * free and run at once.
    */
   private voiceClaims = new Set<string>()
+  /** One run at a time per agent and owner's request (work-lane.ts). */
+  private workLanes = new WorkLanes({ log: (line) => this.log(line) })
+  /** Notices for an agent's next run (notices.ts, /send/agent notice:true). */
+  readonly notices = new AgentNotices()
   /** Chat messages waiting for an agent paused by its monthly budget (#1162). */
   private budgetHolds: BudgetHolds
   private budgetReleaseTimer: ReturnType<typeof setInterval> | null = null
@@ -1386,6 +1392,30 @@ export class AgentRegistry {
    * active-task check becomes vacuously over-aggressive.
    */
   async execute(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, onEvent?: (event: any) => void): Promise<AgentResponse> {
+    const channel = task.context?.channel as string | undefined
+    // One run at a time per agent and owner's request (work-lane.ts),
+    // keyed on the message as sent, not on notices put before it.
+    const key = workKeyOf(task.message, channel)
+    // Notices waiting for this agent ride on its next run that is not a
+    // person's chat (notices.ts).
+    if (!isPersonChannel(channel) && !task.preSpawnRetry && !task.timeLimitContinuation) {
+      const notes = this.notices.take(task.agentId)
+      if (notes) task = { ...task, message: notes + task.message }
+    }
+    if (!key) return this.runWithRecovery(task, onDelta, onThinking, onEvent)
+    const entry = await this.workLanes.enter(task.agentId, key, currentRoot()?.rootId, task.callerSignal)
+    let response: AgentResponse = { content: "", error: "run did not end" }
+    try {
+      const run = entry.note ? { ...task, message: entry.note + task.message } : task
+      response = await this.runWithRecovery(run, onDelta, onThinking, onEvent)
+      return response
+    } finally {
+      const queued = !!response.error && isQueued(response.error)
+      entry.release({ text: response.error ? response.error : response.content ?? "", ok: !response.error, ran: !queued })
+    }
+  }
+
+  private async runWithRecovery(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, onEvent?: (event: any) => void): Promise<AgentResponse> {
     const startedAt = Date.now()
     let response: AgentResponse
     try {
@@ -1421,7 +1451,7 @@ export class AgentRegistry {
     // run that is live, not the dead one.
     if (preSpawn && !task.preSpawnRetry) {
       this.log(`[${task.agentId}] ${response.error}; retrying the run once`)
-      return this.execute({ ...task, preSpawnRetry: 1, runningTaskId: undefined }, onDelta, onThinking, onEvent)
+      return this.runWithRecovery({ ...task, preSpawnRetry: 1, runningTaskId: undefined }, onDelta, onThinking, onEvent)
     }
     if (preSpawn) {
       const step = response.error!.match(/in step "([^"]+)"/)?.[1] ?? "start"
@@ -1455,7 +1485,7 @@ export class AgentRegistry {
       const note = buildTimeLimitNote(limit.minutes, toolCalls, limit.continuation >= settings.maxContinuations)
       this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${stoppedTrace ?? "-"}: stopped at its ${limit.minutes}m time limit; continuing (${limit.continuation}/${settings.maxContinuations})`)
       const request = task.timeLimitRequest ?? task.message
-      return this.execute({
+      return this.runWithRecovery({
         ...task,
         message: `${note}\n${request}`,
         timeLimitRequest: request,

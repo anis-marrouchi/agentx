@@ -364,6 +364,23 @@ type LogLine =
   | ({ type: "relay"; id: string; ts: number } & HeldRelay)
   | { type: "relayed"; id: string; ts: number }
 
+/** Does a run's final answer add nothing to what the callee already wrote
+ *  to its caller? True when at least REPEAT_SHARE of its words are in what
+ *  was written. A progress note ("on it") followed by the real result
+ *  still comes back. Measured on 60 such ends (2026-11-05..07): the
+ *  caller answered "nothing new" to nearly all, at shares 0.15 to 0.90. */
+export function repeatsWritten(finalText: string, written: string[]): boolean {
+  const words = (t: string) => new Set(t.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._/#-]*/gu) ?? [])
+  const fin = words(finalText)
+  if (fin.size === 0) return true
+  const seen = words(written.join("\n"))
+  let shared = 0
+  for (const w of fin) if (seen.has(w)) shared++
+  return shared / fin.size >= REPEAT_SHARE
+}
+/** Share of the final answer's words already written for it to count as a repeat. */
+export const REPEAT_SHARE = 0.5
+
 export class DelegationManager {
   private pendingById = new Map<string, DelegationRecord>()
   /** Finished task id → how it ended, oldest first. */
@@ -381,9 +398,9 @@ export class DelegationManager {
   private heldRelays = new Map<string, HeldRelay>()
   /** Delegations whose callee said its run ends to wait (markWaiting). */
   private waiting = new Map<string, Waiting>()
-  /** Delegations whose callee already wrote to the caller (relayReply):
-   *  their plain end is not called back a second time. */
-  private answered = new Set<string>()
+  /** Delegations whose callee already wrote to the caller (relayReply),
+   *  with what it wrote: an end that only repeats it is not called back. */
+  private answered = new Map<string, string[]>()
   /** Per callee and home (#1100): the chat of its last run there, and
    *  that run while it is still going. In memory: a restart starts over. */
   private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null; implicit: boolean }>()
@@ -448,7 +465,7 @@ export class DelegationManager {
    *  delegation's own end is still called back: what the callee wrote may
    *  only have been a progress note. */
   relayReply(rec: DelegationRecord, text: string): void {
-    this.answered.add(rec.id)
+    this.answered.set(rec.id, [...(this.answered.get(rec.id) ?? []), text])
     this.deps.log(`[delegation ${rec.id}] ${rec.callee} wrote to ${rec.caller}; passed to ${rec.origin.channel}:${rec.origin.chatId}`)
     void this.enqueue(rec, () => this.callback([{ rec, result: { status: "done", text }, reply: true }]))
   }
@@ -633,9 +650,15 @@ export class DelegationManager {
 
     // The callee already wrote to the caller (relayReply): its end still
     // comes back, said as such, since what it wrote may only have been a
-    // progress note.
-    const wrote = this.answered.delete(id)
-    await this.queueCallback({ rec, result, wrote })
+    // progress note. An end that only repeats what it wrote is not: the
+    // caller's turn for it answered "nothing new" every time.
+    const written = this.answered.get(id)
+    this.answered.delete(id)
+    if (written && result.status === "done" && repeatsWritten(result.text, written)) {
+      this.deps.log(`[delegation ${id}] ${rec.callee}'s end repeats what it already wrote to ${rec.caller}; no callback turn`)
+      return true
+    }
+    await this.queueCallback({ rec, result, wrote: !!written })
     return true
   }
 

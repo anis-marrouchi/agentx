@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { DelegationManager, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
+import { DelegationManager, repeatsWritten, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
 
 // A person on a chat channel asked "front"; front delegates to "worker".
 const HUMAN_TURN: CallerTurn = {
@@ -673,6 +673,28 @@ describe("an agent's send calls its asker back (#1100)", () => {
     expect(h.injected[1].message).toContain("Final result: approved after changes.")
   })
 
+  it("does not call the asker back for an end that only repeats what the callee wrote", async () => {
+    const h = harness()
+    const { record } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Deploy the fix", kind: "send" })
+    h.mgr.relayReply(record, "Deployed bd4f to prod at 06:53Z. Read-back is fine, version endpoint answers 200, note posted on the issue.")
+    await flush()
+    expect(h.injected).toHaveLength(1)
+    h.local.resolve({ content: "Done: deployed bd4f to prod at 06:53Z, read-back fine, version endpoint 200, note posted on the issue." })
+    await flush()
+    expect(h.injected).toHaveLength(1)
+  })
+
+  it("still calls back an end that fails, even after the callee wrote", async () => {
+    const h = harness()
+    const { record } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Deploy the fix", kind: "send" })
+    h.mgr.relayReply(record, "Deploying now.")
+    await flush()
+    h.local.resolve({ content: "", error: "Deploying now failed" })
+    await flush()
+    expect(h.injected).toHaveLength(2)
+    expect(h.injected[1].message).toContain("status=error")
+  })
+
   it("does not take a person-started delegation's callee message as a reply", () => {
     const h = harness()
     const { taskId } = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
@@ -949,5 +971,14 @@ describe("a run that ends to wait is not done (#1100)", () => {
     h.local.resolve({ content: "asked for review" })
     await flush()
     expect(ends).toEqual([{ id: taskId, status: "waiting", text: "asked for review", waiting: { on: "review", dueAt: 123 } }])
+  })
+})
+
+describe("repeatsWritten", () => {
+  it("counts an end mostly made of words already written as a repeat", () => {
+    expect(repeatsWritten("Note 138001 posted on #412, all 30 names moved, no rollback.", ["All 30 names moved to the new server; note 138001 posted on #412. No rollback."])).toBe(true)
+  })
+  it("does not count a real result after a progress note", () => {
+    expect(repeatsWritten("Box posting-1 is live at 10.0.0.5, noVNC on :6080, Chrome 131 signed in.", ["On it, building the box now."])).toBe(false)
   })
 })
