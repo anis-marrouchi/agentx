@@ -149,6 +149,7 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 | `project` | string | required | Project path, such as `group/project`, or `*` for all other projects. |
 | `agent` | string | required | Agent for that project. |
 | `channels.gitlab.agentMappings` | list | `[]` | Links GitLab users to agents, so a mention of that user reaches the agent. |
+| `channels.gitlab.ownTokenInAgentEnv` | boolean | `true` | Each agent run gets the agent's own GitLab token in `GITLAB_TOKEN`, so `glab` and scripts in its shell write as that agent. See [Commands an agent runs](#commands-an-agent-runs). |
 | `agentId` | string | required | The agent. |
 | `gitlabUsernames` | list of strings | `[]` | GitLab usernames that stand for this agent. |
 | `keywords` | list of strings | `[]` | Accepted for older configs. Routing uses `@`-mentions only. |
@@ -185,6 +186,14 @@ An agent's comments, comment edits, label changes, time logs and new issues go o
 ```
 
 The agent's own GitLab user may not be a member of every project the shared token can reach. When GitLab refuses a write made with an `integrations` token (error `401`, `403` or `404`), AgentX tries the same write once more with the shared token. The comment then shows under the shared account, and the daemon log has a line that starts with `[gitlab/identity]` and names the agent, the project and the error. Other errors are not retried. A token from `agentMappings` is never retried this way.
+
+### Commands an agent runs
+
+Agents also write to GitLab themselves, with `glab` or a script in their own shell. Those commands read the token in `GITLAB_TOKEN`. Each agent run now gets the agent's own token there: the one from `agentMappings`, or else from its `integrations` entry. Its notes and pushes then show under its own GitLab user, not the shared account.
+
+- An agent with no token of its own keeps the token the daemon was started with.
+- The agent's own user must be a member of the projects it works on. If `glab` answers `403` or `404` for a project, add that user to the project.
+- To keep the old behaviour, set `channels.gitlab.ownTokenInAgentEnv` to `false` and restart AgentX.
 
 ### Which issue changes start an agent
 
@@ -382,6 +391,7 @@ The call bot joins a call, writes down what is said and posts it to a chat. It d
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
 2. **Terminal:** run `agentx config get channels.telegram.enabled` (or the field you changed). It prints the new value.
 3. **Terminal:** restart the daemon, then send the agent a test message on that channel. It answers.
+4. **GitLab:** ask an agent that has its own GitLab token to comment on an issue with `glab`. The comment shows under that agent's GitLab user.
 
 ## If something is wrong
 
@@ -391,6 +401,7 @@ The call bot joins a call, writes down what is said and posts it to a chat. It d
 - **A GitHub issue starts no run:** the daemon log says why, with a line such as `skipped: action="labeled" not in channels.github.issueActions`. Add the change to `issueActions` or to the project rule's `actions` list.
 - **A GitHub issue still starts several runs:** the changes came further apart than `debounceSeconds`. Raise it.
 - **An agent's GitLab comment shows under the shared account:** run `agentx daemon logs` and look for `[gitlab/identity]`. `GLOBAL token` with `agent has no per-agent token` means the agent has no token in `agentMappings` or in its `integrations`; add one. `refused the agent's integrations token` means its GitLab user can't write to that project; add the user to the project, or fix the token named by `tokenEnv`.
+- **`glab` in an agent's run answers `403` or `404`:** the run now uses the agent's own GitLab user, which is not a member of that project. Add the user to the project, or set `channels.gitlab.ownTokenInAgentEnv` to `false`.
 - **GitLab says the webhook failed:** check that `channels.gitlab.webhookPort` is reachable from GitLab and that the secret matches `channels.gitlab.webhookSecret`.
 - **A notification never arrives:** run `agentx daemon logs` and look for `ntfy: attempt` or `send failed` lines. `ETIMEDOUT` points at a slow link (see `node.connectAttemptTimeoutMs` in [Configuration: agents and runtime](./config-agents.md#node)); a `401` or `403` points at a wrong `token` or `topic`.
 - **A value is empty at runtime:** a `${…}` reference points at a variable missing from `.env`. Add it and restart the daemon.

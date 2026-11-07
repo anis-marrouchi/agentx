@@ -48,6 +48,7 @@ const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
 import { currentRoot } from "@/events/envelope"
+import { buildOwnerDecisions } from "./owner-decisions"
 import { WorkLanes, workKeyOf, takesNotices } from "./work-lane"
 import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
@@ -2668,6 +2669,14 @@ export class AgentRegistry {
       ? buildWikiContext(agentWiki, task.agentId, { notesInbox: wikiNotesHint(this.config) })
       : undefined
 
+    // The owner's newest decisions, ahead of the history and the memo
+    // below, which can be hours old (owner-decisions.ts). Same gate as the
+    // catalog.
+    let ownerDecisions: string | undefined
+    if (!resumeSessionId && !isCodexCli) {
+      try { ownerDecisions = buildOwnerDecisions(agentWiki.listArticles(task.agentId), Date.now()) || undefined } catch { /* the block is optional */ }
+    }
+
     // Lean sessions fetch earlier turns with agentx_recent instead.
     const sessionHistory = !resumeSessionId && !leanOnDemand
       ? this.sessions.buildHistoryContext(
@@ -3076,6 +3085,7 @@ export class AgentRegistry {
       // Kept on an isolated run too: it is about this run, not its context.
       watcherNote: (() => { try { return this.runNote?.(started) } catch { return undefined } })(),
       rotationMemo,
+      ownerDecisions,
       // Checked here, after the planner may have dropped the session.
       eventDigest: !resumeSessionId ? buildEventDigest(task.agentId, this.config.agents[task.agentId]?.subscriptions ?? state.def.subscriptions) : undefined,
       // How to show a file on the phone: once, when the session starts.
@@ -3102,7 +3112,7 @@ export class AgentRegistry {
         landscape: undefined, patternContext: undefined, procedureContext: undefined, workflowRunContext: undefined,
         references: undefined, skillInjection: undefined, sessionHistory: undefined, memoryContext: undefined,
         crossChatContext: undefined, longMemoryRecall: undefined, contextOnDemand: undefined, wikiContext: undefined,
-        handoverNote: undefined, rotationMemo: undefined, eventDigest: undefined, attachHint: undefined,
+        handoverNote: undefined, rotationMemo: undefined, ownerDecisions: undefined, eventDigest: undefined, attachHint: undefined,
       } satisfies Partial<ContextInput>)
     }
 

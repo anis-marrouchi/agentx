@@ -45,6 +45,19 @@ An agent's own notes don't copy these facts. When a note says the same thing as 
 
 When a long conversation is restarted, the agent writes a short summary of it to carry on from. AgentX keeps the parts about the work in progress, and deletes them after 7 days. Any claim in the summary about an outside service (a bill, an account, an outage or a deploy) is not kept as a fact. It's sent to you as a **fact proposal**, with where it came from, and it's marked `UNVERIFIED` when the conversation carries on.
 
+### Your newest decisions come first
+
+When an agent starts a fresh conversation, for example after a long one is restarted, it is also given the chat's recent messages and the summary above. Both can be hours old. An agent could read its own earlier reply ("this still needs your yes") and repeat it, after you had already changed the rule.
+
+So a fresh conversation now starts with your newest decisions, ahead of the old messages and the summary:
+
+- AgentX takes the wiki pages of type **decision** updated in the last 7 days, newest first, at most 6.
+- From each page it takes the rule. When the page has later **Update** sections, the newest update comes first and the original rule is marked as older.
+- The block says that these decisions win where the old messages or the summary say something else.
+- The old messages carry a line saying that what they report (merged, live, approved, waiting) may be out of date, and must be checked before it is repeated.
+
+To change what agents follow, record the decision on a wiki decision page. A decision told to one agent in one chat does not reach the others until it is on that page.
+
 ### When two facts disagree
 
 A new value only replaces a checked fact when it was checked more recently, or when you confirm it. Otherwise the old value stays, and AgentX adds a question for you to `agentx wiki questions`. Earlier values are kept with the fact, so nothing is lost.
@@ -321,9 +334,11 @@ The **Edit** dialog on an agent's card in **Settings** has the same switch, **In
 8. `agentx memory facts flag-unsourced` reports `0 fact(s)` after you have run it with `--apply`.
 9. `agentx memory check --agent <agent>` ends with a line counting the notes that have both a source and a check date.
 10. After you turn the wiki absorb off for an agent, `agentx wiki absorb --dry-run` prints `absorb is off for this agent` next to it.
+11. Change a rule on a wiki decision page, then start a new conversation with an agent and ask what the rule is. It answers with the new rule, even when the old messages in that chat said otherwise.
 
 ## If something is wrong
 
+- **An agent repeats an old status or asks for an approval you removed:** check that your decision is on a wiki page of type `decision`, updated in the last 7 days, with the current rule in a **Rule** or **Update** section. A decision said in one chat only reaches other conversations from that page.
 - **Another machine's wiki shows no agents or no articles, and `agentx wiki sync` finds nothing there:** update AgentX on that machine. Versions up to 0.120.0 took longer than the 5-second limit to list a large wiki (about 25 seconds for 30 agents and 10,000 entries), so the other machines gave up and showed it as empty.
 - **`approve` says the article changed since this proposal:** someone edited it after the suggestion was made. Read both, then approve with `--force` or reject.
 - **`approve` says the proposal is already approved or rejected:** it was decided earlier. Check `agentx wiki proposals list --all`.
