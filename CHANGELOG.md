@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.209.1](https://github.com/anis-marrouchi/agentx/compare/v0.209.0...v0.209.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **agents:** owner decisions ahead of stale history; agents' own GitLab token ([#1776](https://github.com/anis-marrouchi/agentx/issues/1776)) ([#1777](https://github.com/anis-marrouchi/agentx/issues/1777)) ([f449357](https://github.com/anis-marrouchi/agentx/commit/f449357c874497662aedf9d8c213a1696b13cba9))
+
 ## [0.209.0](https://github.com/anis-marrouchi/agentx/compare/v0.208.1...v0.209.0) (2026-11-07)
 
 
