@@ -7,7 +7,7 @@ import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { PlanStore } from "../src/requests/plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, type PlanSettings } from "../src/requests/plans"
-import { cutByRestart, ownerStepAction, planNotice, requeueInterruptedStep, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
+import { cutByRestart, ownerStepAction, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
 import { runRequestsSweep } from "../src/requests/sweep"
 import { handleRequestsApi, type RequestsApiDeps } from "../src/requests/daemon-api"
 import { requestsConfigSchema } from "../src/daemon/config"
@@ -347,6 +347,27 @@ describe("nudges", () => {
     await sweep()
     expect(turns).toHaveLength(2)
     expect(notices).toEqual([])
+  })
+
+  it("after a crash, hands the open step's turn to its agent again at the next sweep", async () => {
+    await sweep()
+    expect(turns).toHaveLength(1)
+    const startedAt = clock + 1000 // the pickup turn starts just after the hand-off
+    // The process dies: the turn's end never runs, so the step stays handed out.
+    clock += 2 * MIN
+    expect(requeueCrashedStep(requests, plans, "req-1", "coder", startedAt, clock)).toBeNull() // another agent's run
+    expect(requeueCrashedStep(requests, plans, "req-1", "devops", startedAt, clock)?.idx).toBe(2)
+    expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 0, dispatchedAt: null })
+    expect(plans.events("req-1").at(-1)).toMatchObject({ kind: "interrupted" })
+    clock += MIN
+    await sweep()
+    expect(turns).toHaveLength(2)
+    expect(turns[1].text).toContain("[agentx:plan-step id=req-1 step=2]")
+    expect(turns[1].text).not.toContain("nudge 1 of")
+    expect(notices).toEqual([])
+    // The new process already handed it out again: the old run leaves it alone.
+    expect(requeueCrashedStep(requests, plans, "req-1", "devops", startedAt, clock)).toBeNull()
+    expect(turns).toHaveLength(2)
   })
 
   it("tells a restart from a stall", () => {

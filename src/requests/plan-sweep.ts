@@ -117,6 +117,20 @@ export function requeueInterruptedStep(requests: RequestStore, plans: PlanStore,
   plans.event(step.requestId, step.idx, "interrupted", reason, now)
 }
 
+/** At startup, for a plan step turn the last process left open: a crash
+ *  (kill -9, panic, power loss) never ran the turn's end, so its step is
+ *  still active and marked as handed out. Hand it out again, as the drain
+ *  path does. A step handed out after the run started (by this process's
+ *  sweep, or one the drain path already requeued) is left alone. Returns
+ *  the step requeued, or null. */
+export function requeueCrashedStep(requests: RequestStore, plans: PlanStore, requestId: string, agentId: string, startedAt: number, now: number): PlanStep | null {
+  const step = plans.steps(requestId).find((s) =>
+    s.state === "active" && s.agentId === agentId && s.dispatchedAt !== null && s.dispatchedAt <= startedAt)
+  if (!step) return null
+  requeueInterruptedStep(requests, plans, step, "cut off: the daemon stopped without finishing the turn", now)
+  return step
+}
+
 /** The turn's error says a daemon restart stopped it (not a stall). */
 export function cutByRestart(error: string | undefined, errorKind: string | undefined): boolean {
   return errorKind === "interrupted" && /restart/i.test(error ?? "")
