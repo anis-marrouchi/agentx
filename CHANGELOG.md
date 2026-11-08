@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.211.0](https://github.com/anis-marrouchi/agentx/compare/v0.210.0...v0.211.0) (2026-11-08)
+
+
+### Features
+
+* **a2a:** agentx_lookup, look a colleague's work up instead of asking ([#1786](https://github.com/anis-marrouchi/agentx/issues/1786)) ([#1787](https://github.com/anis-marrouchi/agentx/issues/1787)) ([3cf2d03](https://github.com/anis-marrouchi/agentx/commit/3cf2d03a5e1d2b44e2f2995e3342a18d12552347))
+
 ## [0.210.0](https://github.com/anis-marrouchi/agentx/compare/v0.209.2...v0.210.0) (2026-11-08)
 
 
