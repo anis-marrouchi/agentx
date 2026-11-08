@@ -47,6 +47,16 @@ export function midTurnChannel(channel: string | undefined): boolean {
   return !!channel && !SKIP_CHANNELS.has(channel)
 }
 
+/** Whether a message in this chat may be offered to the run going in it.
+ *  A /send/agent call that names no sender lands in the shared a2a chat
+ *  "a2a": every sender-less send shares it, so a second one is not a
+ *  follow-up to the run going there but unrelated work, and must get a
+ *  turn (and an answer) of its own. */
+export function midTurnChat(channel: string | undefined, chatId: string | undefined): boolean {
+  if (!midTurnChannel(channel) || !chatId) return false
+  return !(channel === "a2a" && chatId === "a2a")
+}
+
 export class MidTurnInbox {
   private byKey = new Map<string, MidTurnEntry[]>()
   private taken = new Map<string, number>()

@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import http from "http"
 import { execFile } from "child_process"
-import { MidTurnInbox, midTurnKey, midTurnContext, hookOutput, midTurnChannel, MID_TURN_MARKER } from "../src/agents/mid-turn"
+import { MidTurnInbox, midTurnKey, midTurnContext, hookOutput, midTurnChannel, midTurnChat, MID_TURN_MARKER } from "../src/agents/mid-turn"
 import { MessageQueue } from "../src/agents/message-queue"
 import { midTurnHookCommand, patchGuardrails } from "../src/agents/workspace-setup"
 
@@ -34,6 +34,17 @@ describe("MidTurnInbox", () => {
     expect(midTurnChannel("app")).toBe(true)
     expect(midTurnChannel("telegram")).toBe(true)
     for (const c of ["requests", "cron", "workflow", "events", undefined]) expect(midTurnChannel(c)).toBe(false)
+  })
+
+  it("never offers a sender-less agent send to the run in the shared a2a chat", () => {
+    // /send/agent with no senderAgentId uses chatId "a2a": two such sends
+    // are unrelated, so the second must run as its own turn.
+    expect(midTurnChat("a2a", "a2a")).toBe(false)
+    expect(midTurnChat("a2a", "planner")).toBe(true)
+    expect(midTurnChat("app", "a2a")).toBe(true)
+    expect(midTurnChat("app", "chat-1")).toBe(true)
+    expect(midTurnChat("cron", "chat-1")).toBe(false)
+    expect(midTurnChat("app", undefined)).toBe(false)
   })
 
   it("tells the model what arrived and to say what it did about it", () => {

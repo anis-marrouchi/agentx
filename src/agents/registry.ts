@@ -1,4 +1,4 @@
-import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChannel, midTurnKey, type MidTurnEntry } from "./mid-turn"
+import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
@@ -4332,7 +4332,7 @@ export class AgentRegistry {
    *  inbox) and the message is a person's or an agent's words. */
   private offerMidTurn(task: AgentTask, state: { def: AgentDef; runningTasks: RunningTask[] }, channel: string, chatId: string): void {
     if (this.config.session?.midTurnMessages === false || task.midTurnId) return
-    if (state.def.tier !== "claude-code" || !midTurnChannel(channel)) return
+    if (state.def.tier !== "claude-code" || !midTurnChat(channel, chatId)) return
     if (task.preSpawnRetry || task.timeLimitContinuation || task.message.startsWith("[agentx:")) return
     if (!this.messageQueue.isBusy(task.agentId, channel, chatId)) return
     const run = state.runningTasks.find((r) => r.channel === channel && r.chatId === chatId)
