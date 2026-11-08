@@ -111,7 +111,7 @@ import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { DEFAULT_OWNER_CHECK, OWNER_CHECK_SYSTEM, OwnerWordsCheck } from "@/requests/owner-check"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
-import { blockStep, cutByRestart, planNotice, requeueInterruptedStep, runPlansSweep } from "@/requests/plan-sweep"
+import { blockStep, cutByRestart, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep } from "@/requests/plan-sweep"
 import { continueOnTurnEnd } from "@/requests/plan-continue"
 import { checkCount, forgeCounter } from "@/requests/checkers/count"
 import { checkGoals, goalBrief } from "@/requests/goal-store"
@@ -1919,7 +1919,12 @@ export class AgentXDaemon {
           // task a plan from the trace; running it again would answer nobody.
           if (run.channel === WIND_DOWN_CHANNEL) return "stop signal wind-down: its task got a plan from the trace"
           // A plan step's turn: the plan hands the step to its agent again.
-          if (run.channel === PICKUP_CHANNEL && run.chatId && this.requests?.plans.get(run.chatId)?.state === "active") return "plan step: the plan hands it to its agent again"
+          if (run.channel === PICKUP_CHANNEL && run.chatId && this.requests?.plans.get(run.chatId)?.state === "active") {
+            // After a crash the turn's end never ran: requeue its step here.
+            const step = requeueCrashedStep(this.requests.store, this.requests.plans, run.chatId, run.agentId, run.startedAt, Date.now())
+            if (step) this.log(`[plans] ${run.chatId} step ${step.idx}: turn on ${run.agentId} cut by a crash; handed to it again after the restart`)
+            return "plan step: the plan hands it to its agent again"
+          }
           // A task a stop-all stopped whose trace was still open (#1271):
           // resumeStopAll() resumes it from its plan.
           const order = this.signals.stopAllOwner(run.taskId)
