@@ -99,6 +99,7 @@ const groups = [
   ] },
   { text: "Teamwork", collapsed: true, items: [
     { text: "When an agent asks another", link: "/jobs/ask-another-agent" },
+    { text: "Talk to an agent while it works", link: "/jobs/talk-while-it-works" },
     { text: "Tell agents who is who", link: "/jobs/people" },
     { text: "Give agents and people a picture", link: "/jobs/profile-pictures" },
     { text: "Invite a teammate to their work page", link: "/jobs/members" },

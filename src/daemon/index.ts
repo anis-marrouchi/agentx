@@ -1,3 +1,4 @@
+import { hookOutput as midTurnHookOutput } from "@/agents/mid-turn"
 import { handleLookup } from "@/daemon/lookup-api"
 import { emitSignal, setSignalDb } from "@/improve/signals"
 import { openCodeProcessPool } from "@/agents/opencode-process"
@@ -5727,6 +5728,23 @@ export class AgentXDaemon {
       // hostnames, so it must never be reachable off-box. Answering here
       // instead of spawning `agentx guard check` keeps the per-tool-call
       // cost at ~1ms instead of ~300ms of node boot.
+      // The mid-turn hook after each tool call of an agent run (agents/mid-turn.ts):
+      // messages that arrived for the run going in its chat. Loopback only,
+      // like the guard; an empty 200 when there is nothing.
+      if (req.method === "GET" && path === "/runs/inbox") {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: "Forbidden: /runs/inbox is loopback-only" })
+          return
+        }
+        const agentId = url.searchParams.get("agent") || ""
+        const channel = url.searchParams.get("channel") || ""
+        const chatId = url.searchParams.get("chat") || ""
+        const taken = agentId && channel && chatId ? this.registry.takeMidTurn(agentId, channel, chatId) : []
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(midTurnHookOutput(taken))
+        return
+      }
+
       if (req.method === "POST" && path === "/guard/check") {
         if (!isLoopback(req.socket?.remoteAddress || "")) {
           this.json(res, 403, { error: "Forbidden: /guard/check is loopback-only" })

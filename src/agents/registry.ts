@@ -1,3 +1,4 @@
+import { DELIVERED_TEXT, MidTurnInbox, midTurnChannel, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
@@ -708,6 +709,8 @@ export class AgentRegistry {
    * free and run at once.
    */
   private voiceClaims = new Set<string>()
+  /** Messages for a run already going in their chat (mid-turn.ts). */
+  readonly midTurn = new MidTurnInbox()
   /** One run at a time per agent and owner's request (work-lane.ts). */
   private workLanes = new WorkLanes({ log: (line) => this.log(line) })
   /** Notices for an agent's next run (notices.ts, /send/agent notice:true). */
@@ -797,6 +800,8 @@ export class AgentRegistry {
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
     this.messageQueue = new MessageQueue()
+    // A message the running turn read mid-turn is not run again (mid-turn.ts).
+    this.messageQueue.wasTaken = (id) => this.midTurn.isTaken(id)
     this.admission = new AdmissionQueue(
       () => this.admissionSettings(),
       // The disk that holds the daemon's data folder.
@@ -1670,6 +1675,11 @@ export class AgentRegistry {
       }
     }
 
+    // A run of this agent is already going in this chat: offer the message
+    // to it as well, read after its next tool call (mid-turn.ts). It still
+    // takes its usual way below; if the run takes it, it is not run again.
+    this.offerMidTurn(task, state, qChannel, qChatId)
+
     // One turn at a time in a phone conversation: the dashboard keeps one
     // per conversation for the phone, but a spoken question /ask runs in
     // the same conversation (#1455) and the dashboard does not see it.
@@ -1742,6 +1752,7 @@ export class AgentRegistry {
         // callback will reply via the original channel when the slot frees.
         const mode = (state.def.queueMode as QueueMode) || "collect"
         const queued = this.messageQueue.enqueue(task.agentId, qChannel, qChatId, {
+          ...(task.midTurnId ? { midTurnId: task.midTurnId } : {}),
           text: task.message,
           sender: task.context?.sender || "User",
           timestamp: Date.now(),
@@ -1800,6 +1811,14 @@ export class AgentRegistry {
     // took is spent even though this run never starts; that is accepted,
     // since the next caller only waits one token interval longer.
     if (task.callerSignal?.aborted) { dropVoiceClaim(); return this.callerGone(task, "rate-limit wait") }
+
+    // The run this message waited behind took it mid-turn: its answer
+    // covers it, so it does not start a turn of its own.
+    if (this.midTurn.isTaken(task.midTurnId)) {
+      dropVoiceClaim()
+      this.log(`[${task.agentId}] message ${task.midTurnId} was read by the running turn; not run again chat=${qChannel}:${qChatId}`)
+      return { content: DELIVERED_TEXT, midTurnDelivered: true }
+    }
 
     // Node admission (#1521): wait for room on the node. The agent's slot is
     // NOT held while waiting: the queue checks it (canStart) and takes it
@@ -2185,6 +2204,8 @@ export class AgentRegistry {
         this.log(`[${task.agentId}] task history persist failed: ${e?.message}`)
       }
 
+      // What this run never took mid-turn goes on its usual way.
+      this.midTurn.endChat(midTurnKey(task.agentId, qChannel, qChatId))
       // Flush queued messages that arrived while this run was in progress
       this.messageQueue.markDone(task.agentId, qChannel, qChatId)
         .then((queued) => {
@@ -4303,6 +4324,29 @@ export class AgentRegistry {
       if (this.cancelRunningTask(taskId, reason)) n++
     }
     return n
+  }
+
+  /** Offer `task` to the run of its agent already going in its chat, when
+   *  that run can hear it (claude-code, whose workspace hook reads the
+   *  inbox) and the message is a person's or an agent's words. */
+  private offerMidTurn(task: AgentTask, state: { def: AgentDef; runningTasks: RunningTask[] }, channel: string, chatId: string): void {
+    if (this.config.session?.midTurnMessages === false || task.midTurnId) return
+    if (state.def.tier !== "claude-code" || !midTurnChannel(channel)) return
+    if (task.preSpawnRetry || task.timeLimitContinuation || task.message.startsWith("[agentx:")) return
+    if (!this.messageQueue.isBusy(task.agentId, channel, chatId)) return
+    const run = state.runningTasks.find((r) => r.channel === channel && r.chatId === chatId)
+    const from = String((task.context as any)?.sender?.name ?? (task.context as any)?.sender ?? "the owner")
+    const e = this.midTurn.offer(midTurnKey(task.agentId, channel, chatId), run?.id ?? "-", task.message, from)
+    task.midTurnId = e.id
+    this.log(`[${task.agentId}] message offered to the running turn ${run?.id ?? "in this chat"} (${e.id}) chat=${channel}:${chatId}`)
+  }
+
+  /** The hook's call after a tool call (GET /runs/inbox): messages for the
+   *  run going in this chat, marked taken. */
+  takeMidTurn(agentId: string, channel: string, chatId: string): MidTurnEntry[] {
+    const taken = this.midTurn.take(midTurnKey(agentId, channel, chatId))
+    if (taken.length) this.log(`[${agentId}] running turn read ${taken.length} message(s) mid-turn chat=${channel}:${chatId}`)
+    return taken
   }
 
   /**

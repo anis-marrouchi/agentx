@@ -102,6 +102,9 @@ export function persistentCallerEnv(env: NodeJS.ProcessEnv, key: ProcessKey): No
   env.AGENTX_GUARD = "required"
   env.AGENTX_CHANNEL = key.channel
   env.AGENTX_CHAT_ID = key.chatId
+  // A warm process is keyed by the queue's chat already (mid-turn.ts).
+  env.AGENTX_QUEUE_CHANNEL = key.channel
+  env.AGENTX_QUEUE_CHAT = key.chatId
   delete env.AGENTX_TASK_ID
   return env
 }
