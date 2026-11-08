@@ -1,4 +1,4 @@
-import { DELIVERED_TEXT, MidTurnInbox, midTurnChannel, midTurnKey, type MidTurnEntry } from "./mid-turn"
+import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChannel, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
@@ -1817,7 +1817,8 @@ export class AgentRegistry {
     if (this.midTurn.isTaken(task.midTurnId)) {
       dropVoiceClaim()
       this.log(`[${task.agentId}] message ${task.midTurnId} was read by the running turn; not run again chat=${qChannel}:${qChatId}`)
-      return { content: DELIVERED_TEXT, midTurnDelivered: true }
+      const spoken = qChannel === "voice" || spokenInApp
+      return { content: spoken ? DELIVERED_SPOKEN : DELIVERED_TEXT, midTurnDelivered: true }
     }
 
     // Node admission (#1521): wait for room on the node. The agent's slot is

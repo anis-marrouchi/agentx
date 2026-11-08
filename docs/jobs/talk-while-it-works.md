@@ -12,7 +12,7 @@ Now a message you send in the **same conversation** while the agent is working r
 4. The agent's answer covers your message. Your message does not start a second, separate turn.
 5. If the agent finishes before it takes another step, your message is handled as before: it runs as the next turn.
 
-On the phone app, a message read this way gets the reply "Delivered into the run that was already working in this chat". The answer you are waiting for comes from the run that was working.
+On the phone app, a message read this way gets the reply "Delivered into the run that was already working in this chat". In AgentX Voice (the desktop widget), or when you speak in the phone app, the agent says "Got it, I passed that on to the work in progress." The answer you are waiting for comes from the run that was working.
 
 ## What it applies to
 

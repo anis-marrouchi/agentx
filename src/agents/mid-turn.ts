@@ -19,6 +19,8 @@
 
 export const MID_TURN_MARKER = "[agentx:mid-turn"
 export const DELIVERED_TEXT = "Delivered into the run that was already working in this chat: it read this before it finished, and its answer covers it."
+/** The same, to be spoken (AgentX Voice, a spoken question in the app). */
+export const DELIVERED_SPOKEN = "Got it, I passed that on to the work in progress."
 /** How long a taken message is remembered for the caller still waiting on it. */
 const TAKEN_TTL_MS = 2 * 3_600_000
 const TEXT_CLIP = 4000
