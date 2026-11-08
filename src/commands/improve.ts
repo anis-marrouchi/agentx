@@ -5,6 +5,7 @@ import { openDb } from "@/storage/sqlite"
 import { findConfigPath } from "@/daemon/config-mutator"
 import { readSignals, SIGNAL_KINDS, SIGNAL_MEANING, summarizeSignals, type SignalKind } from "@/improve/signals"
 import { improvePass, type ImprovePassResult } from "@/improve/nightly"
+import { checkHeld, HELD_WINDOW_DAYS } from "@/improve/held"
 import { reviewWithClaudeCost } from "@/daemon/session-monitor"
 
 // --- agentx improve — self-improvement, stage 1: count failure signals (#1783) ---
@@ -77,6 +78,11 @@ export function printRanking(r: ImprovePassResult, limit = 10): void {
   }
   console.log(chalk.dim(`  Merge call: ${r.merge.ran ? `ran, ${r.merge.folded} group(s) folded${r.merge.usd != null ? `, $${r.merge.usd.toFixed(3)}` : ""}` : `not run (${r.merge.why})`}. Spent in 24 hours: $${r.spent.usd.toFixed(2)} of $${r.settings.dailyUsd.toFixed(2)}.`))
   if (r.savedDay) console.log(chalk.green(`  ✓ ranking saved for ${r.savedDay}`))
+  for (const h of r.held ?? []) {
+    if (h.verdict === "waiting") continue
+    const line = `  ${h.verdict === "held" ? "✓ held" : "✗ did not hold"}: card:${h.cardId} "${h.choice.slice(0, 50)}" (${h.agentId}): ${h.before} before, ${h.after} after`
+    console.log(h.verdict === "held" ? chalk.green(line) : chalk.yellow(line))
+  }
   if (r.handoff) {
     if (r.handoff.why) console.log(chalk.dim(`  Retro on the worst problem: not run (${r.handoff.why}).`))
     else console.log(chalk.dim(`  Retro on the worst problem: room for ${r.handoff.room} card(s) today (improve.maxCardsPerDay ${r.settings.maxCardsPerDay}).`))
@@ -104,4 +110,25 @@ improve
     if (opts.json) { console.log(JSON.stringify({ groups: r.groups, below: r.below, merge: r.merge, savedDay: r.savedDay ?? null, spentUsd: r.spent.usd }, null, 2)); return }
     printRanking(r)
     if (!opts.commit) console.log(chalk.dim("\n  Preview: nothing saved, no model called. Add --commit to save the ranking."))
+  })
+
+// --- agentx improve held — stage 4: did a picked fix lower its count (#1783) ---
+
+improve
+  .command("held")
+  .description(`for each fix picked on a self-improvement card: the problem's count in the ${HELD_WINDOW_DAYS} days after the pick against the ${HELD_WINDOW_DAYS} before`)
+  .option("--json", "print as JSON")
+  .action((opts: { json?: boolean }) => {
+    if (!existsSync(findConfigPath())) { console.error(chalk.red("  no agentx.json here: run this from the install folder, the one that holds agentx.json")); process.exitCode = 1; return }
+    const db = openDb()
+    if (!db) { process.exitCode = 1; return }
+    const checks = checkHeld(db, process.cwd())
+    if (opts.json) { console.log(JSON.stringify(checks, null, 2)); return }
+    if (!checks.length) { console.log(chalk.dim("  No fix picked on a self-improvement card yet.")); return }
+    for (const h of checks) {
+      const day = new Date(h.pickedAt).toISOString().slice(0, 10)
+      const verdict = h.verdict === "held" ? chalk.green("held") : h.verdict === "not-held" ? chalk.yellow("did not hold") : chalk.dim(`waiting, ${h.daysLeft} day(s) left`)
+      console.log(`  ${day}  card:${h.cardId}  ${h.agentId.padEnd(18)} ${String(h.before).padStart(4)} before  ${String(h.after).padStart(4)} after  ${verdict}`)
+      console.log(chalk.dim(`      ${h.choice.slice(0, 110)}`))
+    }
   })
