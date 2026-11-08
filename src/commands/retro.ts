@@ -4,7 +4,9 @@ import { existsSync } from "fs"
 import { resolve } from "path"
 import Database from "better-sqlite3"
 import { readApprovalSettings } from "@/approvals/settings"
-import { reviewWithClaude } from "@/daemon/session-monitor"
+import { reviewWithClaude, reviewWithClaudeCost } from "@/daemon/session-monitor"
+import { improvePass } from "@/improve/nightly"
+import { printRanking } from "@/commands/improve"
 import { prepareRetro, raiseRetroCard, RETRO_PROMPT } from "@/retro/retro"
 import { DEFAULT_RETRO_PER_DAY, DEFAULT_SWEEP_HOURS, sweepRetros } from "@/retro/sweep"
 import { beforeAfter, CHECK_WINDOW_DAYS, DEFAULT_CHECK_REVIEWS, DEFAULT_MIN_GOOD_FIRES, reviewChecksPass } from "@/retro/checks"
@@ -117,9 +119,24 @@ retro
     const db = openTraceDb(root, opts.path)
     if (!db) return
     const model = reviewerModel(opts.model)
+    const since = Date.now() - windowMs
+
+    // Stage 2 of self-improvement (#1783): rank the day's recurring failure
+    // signals. Free unless improve.enabled lets its one merge call run. A
+    // failure here never stops the sweep.
+    const wdb = new Database(resolve(root, opts.path ?? ".agentx/db.sqlite"))
+    try {
+      printRanking(await improvePass({ db: wdb, since, commit: opts.commit, call: (input, m, prompt) => reviewWithClaudeCost(input, m, undefined, prompt) }), 5)
+      console.log("")
+    } catch (e: any) {
+      console.error(chalk.yellow(`  Ranking the failure signals failed: ${String(e?.message ?? e).slice(0, 200)}`))
+    } finally {
+      wdb.close()
+    }
+
     const r = await sweepRetros({
       root, db, max, commit: opts.commit,
-      since: Date.now() - windowMs,
+      since,
       settings: readApprovalSettings(),
       propose: (input) => reviewWithClaude(input, model, undefined, RETRO_PROMPT),
     }).finally(() => db.close())

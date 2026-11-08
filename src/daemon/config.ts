@@ -1941,6 +1941,27 @@ export const qualityReportConfigSchema = z.object({
   if (q.enabled && (!q.repo || !q.issue)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "qualityReport.enabled needs repo and issue" })
 })
 
+/** Self-improvement (src/improve, #1783). Counting failure signals is
+ *  always on and free; everything that calls a model is off until
+ *  `enabled`, and then held to `dailyUsd` and `maxCardsPerDay` in code. */
+export const improveConfigSchema = z.object({
+  /** Let the nightly pass spend model calls: the merge of near-duplicate
+   *  groups and the retro on the worst group. Off: ranking only. */
+  enabled: z.boolean().default(false),
+  /** Dollars the self-improvement passes may spend in any 24 hours. A call
+   *  that would go past it is not started. */
+  dailyUsd: z.number().min(0).max(50).default(3),
+  /** Retro cards the self-improvement pass may raise in any 24 hours. The
+   *  retro's own limit (3 a day, counting every retro card) holds too. */
+  maxCardsPerDay: z.number().int().min(0).max(3).default(1),
+  /** The small model that merges near-duplicate groups, once a day. Empty:
+   *  no merge call. */
+  mergeModel: z.string().default("haiku"),
+  /** A group must come from at least this many separate requests,
+   *  hand-offs or runs to be ranked. */
+  minRefs: z.number().int().min(2).max(50).default(3),
+}).default({})
+
 export const approvalsConfigSchema = z.object({
   /** A card without an `expires` gets this many days. */
   defaultExpiryDays: z.number().positive().max(365).default(3),
@@ -2433,6 +2454,9 @@ export const daemonConfigSchema = z.object({
   /** Weekly quality report posted on the epic issue (src/quality, #994).
    *  Off by default. */
   qualityReport: qualityReportConfigSchema,
+  /** Self-improvement from failure signals (src/improve, #1783). Model
+   *  calls off by default; daily dollar and card caps enforced in code. */
+  improve: improveConfigSchema,
   /** Hand due Apple Reminders back to the agent that created them
    *  (src/reminders). macOS only; reads reminders whose notes end with the
    *  mac-pim skill's `agentx: agent=<id>` trailer. */

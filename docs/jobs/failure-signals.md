@@ -29,15 +29,31 @@ The same signal about the same request or hand-off within 10 minutes is counted 
 4. **Terminal:** to list the lines of one kind, add `--kind <kind>`, for example `agentx improve signals --kind owner_reopened --since 7d`.
 5. **Terminal:** for a script, add `--json`.
 
+## Rank what keeps coming back
+
+One failure is noise; the same failure again and again is worth fixing. Every night, the [retro sweep](./retro.md#let-it-run-every-night) groups the day's signals into problems and ranks them:
+
+- Signals of the same kind, from the same agent, that say the same thing are one problem. Numbers, request ids and links are left out when comparing, so "timed out after 612s" and "timed out after 30s" count as the same problem. Requests you reopened are grouped by agent only, because your words differ each time.
+- A problem is kept only when it came from at least 3 separate requests, hand-offs or runs.
+- The worst comes first. Each signal counts by how much it tells about you: a request you reopened, or a close that did not do what you asked, counts 3; a request that stalled or a hand-off that failed counts 2; the rest count 1.
+
+Ranking uses no AI model. When `improve.enabled` is on, one small AI call a day may merge problems that say the same thing in different words. It counts against `improve.dailyUsd` (see [settings](../reference/config-automation.md#improve)).
+
+1. **Terminal:** go to the folder that holds `agentx.json`.
+2. **Terminal:** run `agentx improve rank`. It lists the problems of the last 24 hours, worst first, with how many signals and separate requests each came from. Nothing is saved.
+3. **Terminal:** to look at a longer stretch, add `--since 7d`.
+4. **Terminal:** the nightly `agentx retro sweep --commit` saves the day's ranking. To save it by hand, run `agentx improve rank --commit`.
+
 ## What comes next
 
-Counting is stage 1. The plan, in order, is to rank the problems that recur, hand the worst one each day to a [retro](./retro.md) (which proposes fixes on one decision card for you to pick), and then check that the picked fix lowered its count. Each stage runs on a fixed daily budget.
+Counting is stage 1 and ranking stage 2. The plan, in order, is to hand the worst problem each day to a [retro](./retro.md) (which proposes fixes on one decision card for you to pick), and then check that the picked fix lowered its count. Each stage runs on a fixed daily budget.
 
 ## Check it worked
 
 1. **Browser:** on the Hub, write a comment on a request that an agent closed. The request opens again.
 2. **Terminal:** run `agentx improve signals --kind owner_reopened`. The request is listed with the agent and your comment.
 3. **Terminal:** run `agentx improve signals --since 7d`. The totals by kind and by agent are shown, or `none in this window` on a quiet install.
+4. **Terminal:** run `agentx improve rank --since 7d`. It prints `Recurring problems:` with a count, and a line `Merge call: not run (preview)`.
 
 ## If something is wrong
 
@@ -45,3 +61,5 @@ Counting is stage 1. The plan, in order, is to rank the problems that recur, han
 - **Every count is zero:** signals are only recorded since this version. Check with `agentx --version`, then wait for some work to happen.
 - **No hand-off signals appear:** hand-off signals are recorded by the running daemon. Restart it after updating so the new version records them.
 - **`--since must look like …`:** use a number with `d`, `h` or `m` (for example `7d`), or a date.
+- **`Recurring problems: 0` but signals are counted:** no problem came from 3 separate requests yet. Look at a longer stretch with `--since 7d`, or lower `improve.minRefs`.
+- **`Merge call: not run (daily budget: …)`:** the day's `improve.dailyUsd` is used up. It frees as the 24 hours roll on.
