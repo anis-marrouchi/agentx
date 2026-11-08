@@ -2829,6 +2829,10 @@ export const daemonConfigSchema = z.object({
    *    per REQUEST — 180K leaves headroom. NOT the cumulative turn total:
    *    that sums cache reads across every call and reads 10-20× too high. */
   session: z.object({
+    /** A message that arrives for an agent while it works in the same chat
+     *  is read by that run after its next tool call, as in interactive
+     *  Claude Code (src/agents/mid-turn.ts). claude-code agents only. */
+    midTurnMessages: z.boolean().default(true),
     staleMinutes: z.number().int().min(1).max(1440).default(720),
     maxTurnsPerSession: z.number().int().min(2).max(200).default(40),
     tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(180_000),

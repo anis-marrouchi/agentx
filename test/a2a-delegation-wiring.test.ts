@@ -280,7 +280,7 @@ describe("createDelegations wiring", () => {
 describe("caller identity for the tools an agent launches", () => {
   it("gives a warm process the agent and chat it serves, never a stale task id", () => {
     const env = persistentCallerEnv({ AGENTX_TASK_ID: "old" }, { agentId: "front", channel: "telegram", chatId: "chat-1" })
-    expect(env).toEqual({ AGENTX_AGENT_ID: "front", AGENTX_GUARD: "required", AGENTX_CHANNEL: "telegram", AGENTX_CHAT_ID: "chat-1" })
+    expect(env).toEqual({ AGENTX_AGENT_ID: "front", AGENTX_GUARD: "required", AGENTX_CHANNEL: "telegram", AGENTX_CHAT_ID: "chat-1", AGENTX_QUEUE_CHANNEL: "telegram", AGENTX_QUEUE_CHAT: "chat-1" })
   })
 
   it("marks a spawned turn as daemon-started for the guard hook (#1710)", () => {

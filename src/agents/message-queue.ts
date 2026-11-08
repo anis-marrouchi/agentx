@@ -22,6 +22,9 @@ export interface QueuedMessage {
    *  collect batch, whose `timestamp` is the flush time; a single queued
    *  message's own `timestamp` already is its queue time. */
   queuedAt?: number
+  /** Also offered to the run going in this chat (mid-turn.ts). Dropped at
+   *  the flush when that run took it. */
+  midTurnId?: string
 }
 
 /** A queued turn that waited longer than this is told the world may have
@@ -62,6 +65,9 @@ interface SessionQueue {
 export class MessageQueue {
   private queues: Map<string, SessionQueue> = new Map()
   private defaultMode: QueueMode
+
+  /** Did the running turn take this message mid-turn? (mid-turn.ts) */
+  wasTaken?: (midTurnId: string) => boolean
 
   constructor(defaultMode: QueueMode = "collect") {
     this.defaultMode = defaultMode
@@ -156,10 +162,10 @@ export class MessageQueue {
     const q = this.getOrCreate(agentId, channel, chatId)
     q.running = false
 
-    if (q.pending.length === 0) return []
-
-    const messages = [...q.pending]
+    // A message the run already took mid-turn is not run a second time.
+    const messages = q.pending.filter((m) => !(m.midTurnId && this.wasTaken?.(m.midTurnId)))
     q.pending = []
+    if (messages.length === 0) return []
 
     switch (q.mode) {
       case "collect": {

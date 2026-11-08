@@ -166,6 +166,8 @@ export interface AgentTask {
   /** Set on the one automatic retry of a run whose preparation steps hit
    *  the pre-spawn deadline (#340). A retry that hits it again is reported. */
   preSpawnRetry?: number
+  /** Offered to the run already going in this chat (mid-turn.ts). */
+  midTurnId?: string
   /** Set on a run that continues one stopped at its agent's time limit
    *  (#1257): how many continuations this request has had, and when its
    *  first run started (a caller's deadline counts from there). */
@@ -267,6 +269,9 @@ export interface AgentTask {
 }
 
 export interface AgentResponse {
+  /** The message was read by the run already going in its chat, which
+   *  answers it; no turn of its own ran (mid-turn.ts). */
+  midTurnDelivered?: boolean
   content: string
   error?: string
   /** Typed discriminator on `error`. Lets dispatchers and workflow nodes
@@ -576,6 +581,10 @@ export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.P
   if (task.runningTaskId) env.AGENTX_TASK_ID = task.runningTaskId
   if (task.context?.channel) env.AGENTX_CHANNEL = task.context.channel
   if (task.context?.chatId) env.AGENTX_CHAT_ID = task.context.chatId
+  // The chat as the run queue keys it, for the mid-turn hook (mid-turn.ts).
+  const queueChat = warmProcessChat(task.context as any)
+  env.AGENTX_QUEUE_CHANNEL = queueChat.channel
+  env.AGENTX_QUEUE_CHAT = queueChat.chatId
   return env
 }
 

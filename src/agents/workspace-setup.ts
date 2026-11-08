@@ -272,6 +272,25 @@ function guardPreToolUseHooks(
   return entries
 }
 
+/** The PostToolUse hook that reads, after each tool call, messages that
+ *  arrived for this run in its chat (agents/mid-turn.ts). One loopback
+ *  call (~ms); silent and exit 0 when the daemon is away, outside an agent
+ *  run, or when there is nothing. */
+export function midTurnHookCommand(daemonPort: string): string {
+  const url = `http://127.0.0.1:${daemonPort}/runs/inbox`
+  return `[ -n "$AGENTX_AGENT_ID" ] && [ -n "$AGENTX_QUEUE_CHAT" ] && curl -sf --max-time 2 -G --data-urlencode "agent=$AGENTX_AGENT_ID" --data-urlencode "channel=$AGENTX_QUEUE_CHANNEL" --data-urlencode "chat=$AGENTX_QUEUE_CHAT" '${url}' 2>/dev/null; true`
+}
+
+const MID_TURN_HOOK_TIMEOUT_S = 5
+
+function midTurnPostToolUseEntry(daemonPort: string): Record<string, unknown> {
+  return { matcher: "", hooks: [{ type: "command", command: midTurnHookCommand(daemonPort), timeout: MID_TURN_HOOK_TIMEOUT_S }] }
+}
+
+function isMidTurnEntry(entry: any): boolean {
+  return Array.isArray(entry?.hooks) && entry.hooks.some((h: any) => typeof h?.command === "string" && h.command.includes("/runs/inbox"))
+}
+
 /** Is this hook entry one of ours? Matches both the current curl form and
  *  the earlier `guard check` CLI form, so stale entries get replaced rather
  *  than duplicated. */
@@ -342,14 +361,15 @@ function generateSettings(agentId: string, def: AgentDef, daemonPort: string = "
     }],
   }]
 
-  // PostToolUse — log tool activity
+  // PostToolUse — log tool activity, and read messages that arrived for
+  // this run in its chat (mid-turn).
   hooks["PostToolUse"] = [{
     matcher: "Bash",
     hooks: [{
       type: "command",
       command: `jq -r '.tool_input.command // empty' >> /tmp/agentx-${agentId}-commands.log`,
     }],
-  }]
+  }, midTurnPostToolUseEntry(daemonPort)]
 
   // SessionStart after compaction — re-inject key context
   hooks["SessionStart"] = [{
@@ -654,6 +674,15 @@ export function patchGuardrails(
     const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort, mcp)]
     if (JSON.stringify(hooks.PreToolUse ?? null) !== JSON.stringify(desired)) {
       hooks.PreToolUse = desired
+      changed = true
+    }
+
+    // 3. PostToolUse mid-turn hook: messages that arrive for a run in its
+    //    chat are read after its next tool call. Replaced, never duplicated.
+    const post = Array.isArray(hooks.PostToolUse) ? hooks.PostToolUse.filter((e: any) => !isMidTurnEntry(e)) : []
+    const wantPost = [...post, midTurnPostToolUseEntry(daemonPort)]
+    if (JSON.stringify(hooks.PostToolUse ?? null) !== JSON.stringify(wantPost)) {
+      hooks.PostToolUse = wantPost
       changed = true
     }
 
