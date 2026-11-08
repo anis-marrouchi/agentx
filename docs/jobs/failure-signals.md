@@ -44,9 +44,23 @@ Ranking uses no AI model. When `improve.enabled` is on, one small AI call a day 
 3. **Terminal:** to look at a longer stretch, add `--since 7d`.
 4. **Terminal:** the nightly `agentx retro sweep --commit` saves the day's ranking. To save it by hand, run `agentx improve rank --commit`.
 
+## Turn the worst problem into fix choices
+
+When `improve.enabled` is on, the nightly `agentx retro sweep --commit` hands the worst problem of the day to a [retro](./retro.md). The retro reads the problem's signals and one run where it happened, and raises one decision card with up to four fixes. You pick one, or none; the agent the run belongs to builds the fix for review. Nothing changes until you pick.
+
+The limits all hold in code:
+
+- **Cards:** at most `improve.maxCardsPerDay` (default 1) from this pass in any 24 hours, and the retro's own limit of three retro cards a day counts them too.
+- **Money:** each retro call is counted against `improve.dailyUsd`. A call that would go past it is not started.
+- **One card per problem:** while a card about a problem is waiting, no new one is raised for it. A fix you turned down is not offered again for 30 days.
+
+1. **Terminal:** go to the folder that holds `agentx.json` and run `agentx retro sweep`. Under the ranking, a line `→ would retro problem <key> with run <run>` shows what tonight would hand over. Nothing is raised.
+2. **Settings:** to let it run, set `improve.enabled` to `true` (see [settings](../reference/config-automation.md#improve)).
+3. **Browser:** the morning after the nightly sweep, open **Approvals**. The card's source line names the run, and its title says what keeps going wrong.
+
 ## What comes next
 
-Counting is stage 1 and ranking stage 2. The plan, in order, is to hand the worst problem each day to a [retro](./retro.md) (which proposes fixes on one decision card for you to pick), and then check that the picked fix lowered its count. Each stage runs on a fixed daily budget.
+Counting is stage 1, ranking stage 2, and the retro on the worst problem stage 3. The last stage checks that the fix you picked lowered its count. Each stage runs on a fixed daily budget.
 
 ## Check it worked
 
@@ -63,3 +77,6 @@ Counting is stage 1 and ranking stage 2. The plan, in order, is to hand the wors
 - **`--since must look like …`:** use a number with `d`, `h` or `m` (for example `7d`), or a date.
 - **`Recurring problems: 0` but signals are counted:** no problem came from 3 separate requests yet. Look at a longer stretch with `--since 7d`, or lower `improve.minRefs`.
 - **`Merge call: not run (daily budget: …)`:** the day's `improve.dailyUsd` is used up. It frees as the 24 hours roll on.
+- **`Retro on the worst problem: not run (improve.enabled is off)`:** model calls are off. Set `improve.enabled` to `true` to allow them.
+- **`✗ problem <key>: no finished run found for its references`:** the runs behind the problem are gone from the trace history or still running. It is tried again the next night.
+- **`✗ problem <key>: no candidate fix points to a moment in the run`:** the retro's ideas could not be tied to the run, so no card was raised. The call was still counted against the budget.

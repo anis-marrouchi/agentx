@@ -121,12 +121,17 @@ retro
     const model = reviewerModel(opts.model)
     const since = Date.now() - windowMs
 
-    // Stage 2 of self-improvement (#1783): rank the day's recurring failure
-    // signals. Free unless improve.enabled lets its one merge call run. A
-    // failure here never stops the sweep.
+    // Self-improvement (#1783): rank the day's recurring failure signals
+    // (stage 2) and hand the worst to a retro (stage 3). No model call
+    // unless improve.enabled is on, then within improve.dailyUsd and
+    // improve.maxCardsPerDay. A failure here never stops the sweep.
     const wdb = new Database(resolve(root, opts.path ?? ".agentx/db.sqlite"))
     try {
-      printRanking(await improvePass({ db: wdb, since, commit: opts.commit, call: (input, m, prompt) => reviewWithClaudeCost(input, m, undefined, prompt) }), 5)
+      printRanking(await improvePass({
+        db: wdb, since, commit: opts.commit,
+        call: (input, m, prompt) => reviewWithClaudeCost(input, m, undefined, prompt),
+        retro: { root, approvals: readApprovalSettings(), retroMax: max, propose: (input) => reviewWithClaudeCost(input, model, undefined, RETRO_PROMPT) },
+      }), 5)
       console.log("")
     } catch (e: any) {
       console.error(chalk.yellow(`  Ranking the failure signals failed: ${String(e?.message ?? e).slice(0, 200)}`))

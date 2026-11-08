@@ -110,7 +110,7 @@ It keeps one run per failure (the one with the most points), skips failures that
    ```sh
    agentx retro sweep
    ```
-   It first prints the problems that keep coming back (see [rank what keeps coming back](./failure-signals.md#rank-what-keeps-coming-back)), then how many runs struggled, the worst ten with their points and signs, and a line starting `→ would retro` for each run it would read. Nothing is raised.
+   It first prints the problems that keep coming back (see [rank what keeps coming back](./failure-signals.md#rank-what-keeps-coming-back)) and which of them would get a retro of its own (see [turn the worst problem into fix choices](./failure-signals.md#turn-the-worst-problem-into-fix-choices)), then how many runs struggled, the worst ten with their points and signs, and a line starting `→ would retro` for each run it would read. Nothing is raised.
 2. **Terminal:** add a nightly job that runs it for real. Use any agent that can run commands in this folder:
    ```sh
    agentx schedule "daily at 2am" --agent <agent> --do "Run: agentx retro sweep --commit" --dry-run

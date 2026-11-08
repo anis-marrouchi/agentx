@@ -3,11 +3,14 @@
 // Runs inside the nightly `agentx retro sweep` (and by hand as
 // `agentx improve rank`). Stage 2: rank the day's recurring failure groups,
 // with at most one small-model merge call a day, and with `commit` save the
-// ranking. Model calls only when `improve.enabled`, within `improve.dailyUsd`.
+// ranking. Stage 3 (sweep only): hand the worst to the retro. Model calls
+// only when `improve.enabled`, within `improve.dailyUsd`.
 
 import type Database from "better-sqlite3"
 import { readImproveSettings, spentToday, type ImproveSettings } from "./budget"
-import { MERGE_PROMPT, rankSignals, saveRanking, type RankResult } from "./rank"
+import { MERGE_PROMPT, rankSignals, saveRanking, type RankResult, type SignalGroup } from "./rank"
+import { handWorstToRetro, type HandoffOutcome } from "./handoff"
+import type { ApprovalSettings } from "@/approvals/sweep"
 
 export interface ImprovePassOptions {
   /** Writable: the ranking and the spend are saved in it. */
@@ -18,6 +21,16 @@ export interface ImprovePassOptions {
   /** The small-model call: prompt + input → reply and cost. Not called
    *  without `commit`, or while `improve.enabled` is off. */
   call?: (input: string, model: string, systemPrompt: string) => Promise<{ text: string; usd: number | null }>
+  /** Stage 3: hand the worst problems to the retro. Unset: rank only. */
+  retro?: {
+    root: string
+    approvals: ApprovalSettings
+    /** The retro reviewer: RETRO_PROMPT + input → reply and cost. */
+    propose: (input: string) => Promise<{ text: string; usd: number | null }>
+    /** All retro cards allowed in any 24 hours (the sweep's --max). */
+    retroMax: number
+    noteFor?: (g: SignalGroup) => string | undefined
+  }
   now?: number
 }
 
@@ -25,6 +38,7 @@ export interface ImprovePassResult extends RankResult {
   settings: ImproveSettings
   /** The day the ranking was saved under; unset in a preview. */
   savedDay?: string
+  handoff?: { room: number; outcomes: HandoffOutcome[]; why?: string }
   spent: { usd: number }
 }
 
@@ -44,5 +58,19 @@ export async function improvePass(opts: ImprovePassOptions): Promise<ImprovePass
     r.merge = { ran: false, why: !opts.commit ? "preview" : !settings.enabled ? "improve.enabled is off" : "no merge model" }
   }
   const savedDay = opts.commit ? saveRanking(opts.db, r.groups, now) : undefined
-  return { ...r, settings, savedDay, spent: { usd: spentToday(opts.db, now).usd } }
+
+  // Stage 3: the worst problems go to the retro. A preview says which it
+  // would hand over; a commit asks the reviewer only when improve.enabled.
+  let handoff: ImprovePassResult["handoff"]
+  if (opts.retro) {
+    if (opts.commit && !settings.enabled) handoff = { room: 0, outcomes: [], why: "improve.enabled is off" }
+    else {
+      handoff = await handWorstToRetro({
+        root: opts.retro.root, db: opts.db, groups: r.groups, since: opts.since, settings,
+        approvals: opts.retro.approvals, propose: opts.retro.propose, retroMax: opts.retro.retroMax,
+        commit: opts.commit, noteFor: opts.retro.noteFor, now,
+      })
+    }
+  }
+  return { ...r, settings, savedDay, handoff, spent: { usd: spentToday(opts.db, now).usd } }
 }

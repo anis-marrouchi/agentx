@@ -77,6 +77,15 @@ export function printRanking(r: ImprovePassResult, limit = 10): void {
   }
   console.log(chalk.dim(`  Merge call: ${r.merge.ran ? `ran, ${r.merge.folded} group(s) folded${r.merge.usd != null ? `, $${r.merge.usd.toFixed(3)}` : ""}` : `not run (${r.merge.why})`}. Spent in 24 hours: $${r.spent.usd.toFixed(2)} of $${r.settings.dailyUsd.toFixed(2)}.`))
   if (r.savedDay) console.log(chalk.green(`  ✓ ranking saved for ${r.savedDay}`))
+  if (r.handoff) {
+    if (r.handoff.why) console.log(chalk.dim(`  Retro on the worst problem: not run (${r.handoff.why}).`))
+    else console.log(chalk.dim(`  Retro on the worst problem: room for ${r.handoff.room} card(s) today (improve.maxCardsPerDay ${r.settings.maxCardsPerDay}).`))
+    for (const o of r.handoff.outcomes) {
+      if (o.result === "raised") console.log(chalk.green(`  ✓ card:${o.cardId} raised for problem ${o.key} (run ${o.taskId}${o.usd != null ? `, $${o.usd.toFixed(2)}` : ""})`))
+      else if (o.result === "would-try") console.log(`  → would retro problem ${o.key} with run ${o.taskId}`)
+      else console.log(chalk.dim(`  ✗ problem ${o.key}: ${o.why}`))
+    }
+  }
 }
 
 improve
