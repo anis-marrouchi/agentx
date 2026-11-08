@@ -100,7 +100,7 @@ export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_
 
 /** The tools the `[Context on demand]` line names; kept whenever a lean
  *  start relies on that line. */
-export const AGENTX_ON_DEMAND_TOOLS: readonly string[] = ["agentx_agents", "agentx_recent", "agentx_wiki_query"]
+export const AGENTX_ON_DEMAND_TOOLS: readonly string[] = ["agentx_agents", "agentx_recent", "agentx_wiki_query", "agentx_lookup"]
 
 /** The built-in tools a lean session on `channel` gets: the channel's own
  *  list when one is set, else the shared `tools` list. Empty means every
@@ -265,6 +265,7 @@ export function onDemandContextNote(channel: string, chatId: string): string {
     `earlier messages on this chat (agentx_recent with channel="${channel}", chatId="${chatId}"), ` +
     `today's other chats of yours (agentx_recent without chatId), ` +
     `stored knowledge (agentx_wiki_query), ` +
+    `a colleague's or a work item's status (agentx_lookup, before asking them), ` +
     `and this machine, its programs, Claude usage limits and running work (agentx_node: answer from it with its check time, never from memory).`,
   ].join("\n")
 }

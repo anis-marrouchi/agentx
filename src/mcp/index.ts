@@ -554,6 +554,7 @@ const TOOLS = [
   {
     name: "agentx_send_agent",
     description:
+      "Use it to ask another agent for work or a decision. To learn what a colleague is on or where a piece of work stands, use agentx_lookup instead: it starts no run on their side. To pass on information that needs no answer, set notice=true. " +
       "Send a message to ANOTHER AGENT by exact agentId — uses the AgentX A2A mesh (or local registry when the agent lives on this daemon). This is the deterministic path for agent-to-agent communication; it never falls through to a contact lookup, so an unknown agentId returns 404 with the list of known agents instead of silently sending to a similarly-named human. Use this when the target is a registered agent. The call returns at once with a task id once the message is queued; do not send the same message again. When a person started this conversation, tell the person who you asked, end your turn, and the answer arrives later as a new message in this conversation.",
     inputSchema: {
       type: "object" as const,
@@ -577,6 +578,10 @@ const TOOLS = [
         home: {
           type: "string",
           description: "Optional but recommended for follow-ups: the issue or merge request this work is about (its link, or 'group/project#12'). A new message on the same home to the same agent waits for the run already on it and continues that session, instead of starting a second one beside it.",
+        },
+        notice: {
+          type: "boolean",
+          description: "Information only, no answer needed (a status, an FYI). The agent gets it at the start of its next run instead of a run of its own. Its own machine only.",
         },
       },
       required: ["agentId", "text"],
@@ -770,6 +775,22 @@ const TOOLS = [
           type: "string",
           description: "Whose landscape to return when landscape=true. Ignored when the AgentX runtime already identifies you.",
         },
+      },
+    },
+  },
+  {
+    name: "agentx_lookup",
+    description:
+      "Look up a colleague's work instead of asking them, the way you check the board before interrupting someone. " +
+      "agent=<id>: what that agent is on now, its open requests from the owner, its hand-offs still running, and what it finished in the last 48 hours with the start of each answer. " +
+      "work=<issue or merge request link, group/project#12 or group/project!12, or a req- id>: the owner's requests about it (open, or closed in the last 7 days) and every run about it in the last 7 days, newest first. " +
+      "It starts no run and asks nobody. Use it before agentx_send_agent whenever you only need to know a status; message the agent only when you need work or a decision. " +
+      "Runs from a person's own chat show that they happened, not what was said.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        agent: { type: "string", description: "Exact agentId of the colleague, here or on a mesh peer." },
+        work: { type: "string", description: "An issue or merge request link, a group/project#12 or group/project!12 ref, or an owner's request id (req-…)." },
       },
     },
   },
@@ -1624,6 +1645,7 @@ async function handleToolCall(
       const senderAgentId = args.senderAgentId as string | undefined
       const taskType = typeof args.taskType === "string" && args.taskType.trim() ? args.taskType.trim() : undefined
       const home = typeof args.home === "string" && args.home.trim() ? args.home.trim() : undefined
+      const notice = args.notice === true
       if (!agentId || !text) {
         return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
       }
@@ -1636,13 +1658,16 @@ async function handleToolCall(
         res = await daemonFetch(`${daemonUrl()}/send/agent`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...(taskType ? { taskType } : {}), ...(home ? { home } : {}), ...callerFields() }),
+          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...(taskType ? { taskType } : {}), ...(home ? { home } : {}), ...(notice ? { notice: true } : {}), ...callerFields() }),
           signal: AbortSignal.timeout(SEND_AGENT_TIMEOUT_MS),
         })
       } catch (e) {
         return { content: [{ type: "text", text: sendAgentFetchError(agentId, e) }] }
       }
       const data = await res.json().catch(() => ({})) as any
+      if (res.status === 202 && data?.accepted && data.status === "notice") {
+        return { content: [{ type: "text", text: `Notice kept for ${agentId}: it reads it at the start of its next run (${data.waiting} waiting). No run was started and no answer will come.` }] }
+      }
       if (res.status === 202 && data?.accepted) {
         return { content: [{ type: "text", text: data.note || `Delegated to ${agentId} (task ${data.taskId}).` }] }
       }
@@ -1785,6 +1810,17 @@ async function handleToolCall(
       const agent = process.env.AGENTX_AGENT_ID || (args.agentId as string | undefined)
       if (!agent) return { content: [{ type: "text", text: `${text}\n\nNo landscape: pass agentId to say whose to return.` }] }
       return { content: [{ type: "text", text: `${text}\n\n${await fetchLandscape(agent)}` }] }
+    }
+
+    case "agentx_lookup": {
+      const agent = typeof args.agent === "string" ? args.agent.trim() : ""
+      const work = typeof args.work === "string" ? args.work.trim() : ""
+      if (!agent === !work) return { content: [{ type: "text", text: "Error: give one of agent or work." }] }
+      const q = agent ? `agent=${encodeURIComponent(agent)}` : `work=${encodeURIComponent(work)}`
+      const res = await daemonFetch(`${daemonUrl()}/lookup?${q}`, { signal: AbortSignal.timeout(20_000) })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
+      return { content: [{ type: "text", text: String(data.text ?? "") }] }
     }
 
     case "agentx_voice_queue": {
