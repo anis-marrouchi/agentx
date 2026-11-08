@@ -108,6 +108,20 @@ export function planNotice(plans: PlanStore, r: RequestRecord): { title: string;
   }
 }
 
+/** A step whose turn a daemon restart cut off: not blocked (nothing went
+ *  wrong with the work), active again and handed to its agent by the next
+ *  sweep, as `requests step --retry` would. Plans used to block here, and
+ *  the step waited for the owner to retry it by hand. */
+export function requeueInterruptedStep(requests: RequestStore, plans: PlanStore, step: PlanStep, reason: string, now: number): void {
+  restartStep(requests, plans, step, now, true)
+  plans.event(step.requestId, step.idx, "interrupted", reason, now)
+}
+
+/** The turn's error says a daemon restart stopped it (not a stall). */
+export function cutByRestart(error: string | undefined, errorKind: string | undefined): boolean {
+  return errorKind === "interrupted" && /restart/i.test(error ?? "")
+}
+
 /** Unblock or restart a step: active again, with a fresh count of nudges. */
 function restartStep(requests: RequestStore, plans: PlanStore, step: PlanStep, now: number, redispatch: boolean): void {
   plans.updateStep(step.requestId, step.idx, {

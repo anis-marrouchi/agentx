@@ -7,7 +7,7 @@ import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { PlanStore } from "../src/requests/plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, type PlanSettings } from "../src/requests/plans"
-import { ownerStepAction, planNotice, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
+import { cutByRestart, ownerStepAction, planNotice, requeueInterruptedStep, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
 import { runRequestsSweep } from "../src/requests/sweep"
 import { handleRequestsApi, type RequestsApiDeps } from "../src/requests/daemon-api"
 import { requestsConfigSchema } from "../src/daemon/config"
@@ -333,6 +333,27 @@ describe("nudges", () => {
     await requestsSweep()
     expect(notices).toHaveLength(1)
     expect(turns).toHaveLength(4)
+  })
+
+  it("hands a step a restart cut off to its agent again, without blocking it or telling the owner", async () => {
+    await sweep()
+    expect(turns).toHaveLength(1)
+    clock += 2 * MIN
+    requeueInterruptedStep(requests, plans, plans.step("req-1", 2)!, "killed by daemon restart (drain limit 300s)", clock)
+    expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 0, dispatchedAt: null })
+    expect(plans.events("req-1").at(-1)).toMatchObject({ kind: "interrupted" })
+    expect(requests.get("req-1")?.state).not.toBe("needs_attention")
+    clock += MIN
+    await sweep()
+    expect(turns).toHaveLength(2)
+    expect(notices).toEqual([])
+  })
+
+  it("tells a restart from a stall", () => {
+    expect(cutByRestart("killed by daemon restart (drain limit 300s)", "interrupted")).toBe(true)
+    expect(cutByRestart('Agent "x" not started: the daemon is restarting', "interrupted")).toBe(true)
+    expect(cutByRestart("I couldn't get started on this: preparing the run stalled twice", "interrupted")).toBe(false)
+    expect(cutByRestart("killed by daemon restart", "stopped")).toBe(false)
   })
 
   it("starts the nudge count again when the owner agent reports new progress", async () => {
