@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.213.0](https://github.com/anis-marrouchi/agentx/compare/v0.212.0...v0.213.0) (2026-11-08)
+
+
+### Features
+
+* **agents:** hear a message while they work, after their next step ([#1798](https://github.com/anis-marrouchi/agentx/issues/1798)) ([#1799](https://github.com/anis-marrouchi/agentx/issues/1799)) ([f825d1a](https://github.com/anis-marrouchi/agentx/commit/f825d1ae3bdd28bb059418e47db7dc7e8bc4d372))
+
 ## [0.212.0](https://github.com/anis-marrouchi/agentx/compare/v0.211.1...v0.212.0) (2026-11-08)
 
 
