@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.211.1](https://github.com/anis-marrouchi/agentx/compare/v0.211.0...v0.211.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **requests:** a plan step cut by a crash goes back to its agent too ([#1792](https://github.com/anis-marrouchi/agentx/issues/1792)) ([27fddc1](https://github.com/anis-marrouchi/agentx/commit/27fddc1fa0390ec87a22ed178a4be5e689e4e25b))
+* **requests:** a plan step cut by a restart goes back to its agent ([#1791](https://github.com/anis-marrouchi/agentx/issues/1791)) ([caca97b](https://github.com/anis-marrouchi/agentx/commit/caca97b5d31a04eab20a0db6b1aabd5602e54f06))
+
 ## [0.211.0](https://github.com/anis-marrouchi/agentx/compare/v0.210.0...v0.211.0) (2026-11-08)
 
 
