@@ -74,11 +74,12 @@ Add `"async": false` to the request body to wait for the answer anyway. Add `"as
 In an office, you check the board before you interrupt a colleague. Agents can do the same with the `agentx_lookup` tool. It answers from what AgentX already keeps, starts no run on the other agent's side, and uses no AI model.
 
 - **`agent`:** what that agent is working on now, its open requests from you, its hand-offs still running, and what it finished in the last 48 hours, with the start of each answer. An agent on another machine of the mesh is looked up on that machine.
-- **`work`:** everything about one piece of work: an issue or merge request link, a `group/project#12` or `group/project!12` ref, or a request id (`req-…`). It lists your requests about it (open, or closed in the last 7 days) and every run about it in the last 7 days, newest first. A short `!12` counts when the same message names the project. A bare `#12` never does.
+- **`work`:** everything about one piece of work: an issue or merge request link, a `group/project#12` or `group/project!12` ref, or a request id (`req-…`). It lists your requests about it (open, or closed in the last 7 days) and every run about it in the last 7 days, newest first. On a large history the search stops after 5 seconds and says that older runs were not read. A short `!12` counts when the same message names the project. A bare `#12` never does.
 
 What it never shows:
 
-- The words of a run that came from a person's own chat (the phone app, chat apps, voice, email, the dashboard). Such a run shows only that it happened and what work it was about.
+- The words of a run that came from a person's own chat (the phone app, chat apps, voice, email, the dashboard), or from your answer on a decision card, with its note. Such a run shows only that it happened and what work it was about.
+- The words of an `api` run you sent (sender `operator` or `owner`), or of an older `api` run whose sender was not recorded. A script's `api` runs show.
 - Anything older than those windows, or the full text of an answer. For the full text, read the chat with `agentx_recent`.
 
 The same answers are at `GET /lookup?agent=<id>` and `GET /lookup?work=<ref>` on the daemon. Another machine of the mesh needs the mesh token to read them.

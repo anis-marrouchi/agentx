@@ -59,6 +59,8 @@ export interface TraceStartInput {
   resumedFrom?: string | null
   /** The known person who started the chain (people, #384). */
   person?: string | null
+  /** Who sent the message, "" when the channel named no one. */
+  sender?: string | null
 }
 
 export interface TraceEndInput {
@@ -212,8 +214,8 @@ export function recordTraceStart(
       task_id, agent_id, channel, chat_id, workflow_run_id, workflow_id,
       workflow_node_id, intent_event_id, intent_decided_by, resume_session_id,
       model, status, started_at, message_preview, original_message,
-      resume_origin, resume_attempt, resumed_from, person
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-flight', ?, ?, ?, ?, ?, ?, ?)
+      resume_origin, resume_attempt, resumed_from, person, sender
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-flight', ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     taskId,
     input.agentId,
@@ -233,6 +235,7 @@ export function recordTraceStart(
     input.resumeAttempt ?? 0,
     input.resumedFrom ?? null,
     input.person ?? null,
+    input.sender ?? null,
   )
   return taskId
 }

@@ -10,8 +10,8 @@ let db: Database.Database
 beforeEach(() => {
   db = new Database(":memory:")
   db.exec(`CREATE TABLE task_traces (task_id TEXT, agent_id TEXT, channel TEXT, chat_id TEXT, status TEXT, started_at INTEGER,
-    original_message TEXT, final_response TEXT, error TEXT)`)
-  const ins = db.prepare("INSERT INTO task_traces VALUES (?,?,?,?,?,?,?,?,?)")
+    original_message TEXT, final_response TEXT, error TEXT, sender TEXT)`)
+  const ins = db.prepare("INSERT INTO task_traces (task_id, agent_id, channel, chat_id, status, started_at, original_message, final_response, error) VALUES (?,?,?,?,?,?,?,?,?)")
   ins.run("t1", "builder", "a2a", "a2a:planner:builder:dlg-1", "ok", NOW - 2 * H, "Rebase team/app!52 on main please", "Rebased team/app!52 on main, mergeable, tests green.", null)
   ins.run("t2", "builder", "telegram", "12345", "ok", NOW - 1 * H, "my bank pin is 1234, also look at team/app!52", "Done, I looked.", null)
   ins.run("t3", "builder", "a2a", "a2a:planner:builder:dlg-2", "error", NOW - 3 * H, "Deploy team/app!53", null, "deploy failed: guard stop")
@@ -86,6 +86,56 @@ describe("agentx_lookup: a piece of work", () => {
     expect((await handleLookup(new URLSearchParams(""), deps())).status).toBe(400)
     expect((await handleLookup(new URLSearchParams("agent=a&work=b"), deps())).status).toBe(400)
     expect(workKey("team/app#12")).toEqual({ kind: "home", key: "team/app#12" })
+  })
+})
+
+describe("agentx_lookup: what the owner said stays private", () => {
+  const add = (id: string, channel: string, sender: string | null, msg: string, answer: string, at = NOW - 20 * 60_000) =>
+    db.prepare("INSERT INTO task_traces (task_id, agent_id, channel, chat_id, status, started_at, original_message, final_response, error, sender) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .run(id, "builder", channel, "c-" + id, "ok", at, msg, answer, null, sender)
+
+  it("hides the owner's note on a decision card (approvals)", async () => {
+    add("p1", "approvals", "operator", "Approved. Operator note: team/app!52 only after my dentist at 3", "Noted, merging after 3.")
+    for (const q of ["agent=builder", "work=team/app!52"]) {
+      const text = String((await handleLookup(new URLSearchParams(q), deps())).body.text)
+      expect(text).toContain("approvals")
+      expect(text).not.toContain("dentist")
+      expect(text).not.toContain("merging after 3")
+    }
+    const running = await handleLookup(new URLSearchParams("agent=builder"), deps({
+      running: () => [{ channel: "approvals", chatId: "card-1", sender: "operator", startedAt: new Date(NOW - 60_000), message: "Operator note: call my bank" }],
+    }))
+    expect(String(running.body.text)).not.toContain("call my bank")
+  })
+
+  it("on api, hides the owner's runs and unrecorded senders, shows a script's", async () => {
+    add("p2", "api", "operator", "team/app!52: owner says secret plan A", "owner answer A")
+    add("p3", "api", "Owner", "team/app!52: owner says secret plan B", "owner answer B")
+    add("p4", "api", null, "team/app!52: older row, sender unknown C", "unknown answer C")
+    add("p5", "api", "", "team/app!52: nightly script run D", "script answer D")
+    add("p6", "api", "release-bot", "team/app!52: release script E", "script answer E")
+    const text = String((await handleLookup(new URLSearchParams("work=team/app!52"), deps())).body.text)
+    for (const hidden of ["owner answer A", "owner answer B", "unknown answer C"]) expect(text).not.toContain(hidden)
+    expect(text).toContain("script answer D")
+    expect(text).toContain("script answer E")
+    const running = (sender: string | undefined) => handleLookup(new URLSearchParams("agent=builder"), deps({
+      running: () => [{ channel: "api", chatId: "default", sender, startedAt: new Date(NOW - 60_000), message: "Plan the trip to Rome" }],
+    }))
+    expect(String((await running("operator")).body.text)).not.toContain("Rome")
+    expect(String((await running(undefined)).body.text)).toContain("Rome")
+  })
+})
+
+describe("agentx_lookup: work runs are filtered before the limit", () => {
+  it("finds a true match behind more than 200 rows the pre-filter also matched", async () => {
+    const ins = db.prepare("INSERT INTO task_traces (task_id, agent_id, channel, chat_id, status, started_at, original_message, final_response, error, sender) VALUES (?,?,?,?,?,?,?,?,?,?)")
+    db.transaction(() => {
+      for (let i = 0; i < 300; i++) ins.run(`n${i}`, "ops", "a2a", "x", "ok", NOW - 10 * 60_000, `other/thing!52 is green (${i})`, "noise", null, "")
+    })()
+    // The true match is older than every noise row, but inside the window.
+    const text = String((await handleLookup(new URLSearchParams("work=team/app!52"), deps())).body.text)
+    expect(text).toContain("Rebased team/app!52")
+    expect(text).not.toContain("noise")
   })
 })
 

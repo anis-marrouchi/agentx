@@ -15,13 +15,19 @@
 //          request link or ref, or an owner's request id), across agents
 //
 // Bounded summaries only. A run that came from a person's own chat (phone
-// app, chat apps, voice, email) shows that it happened, never its words:
-// what a person said to one agent is not handed to another.
+// app, chat apps, voice, email, the owner's answer on a decision card)
+// shows that it happened, never its words: what a person said to one agent
+// is not handed to another. On "api" only the owner's runs are private
+// (sender operator or owner, or not recorded); a script's runs show.
 
 import { homeRefsOf, normalizeHome } from "./home"
 
-/** Channels where a person talks to the agent: their words stay private. */
-export const PERSON_CHANNELS = new Set(["app", "telegram", "whatsapp", "voice", "slack", "discord", "email", "sms", "ntfy", "dashboard", "web-chat", "tui", "guest", "public-api"])
+/** Channels where a person talks to the agent: their words stay private.
+ *  "approvals" carries the owner's note on a decision card. */
+export const PERSON_CHANNELS = new Set(["app", "telegram", "whatsapp", "voice", "slack", "discord", "email", "sms", "ntfy", "dashboard", "web-chat", "tui", "guest", "public-api", "approvals"])
+
+/** Channels shared by the owner and by scripts: private when the owner sent it. */
+const OWNER_SENDERS = new Set(["operator", "owner"])
 
 export const RECENT_HOURS = 48
 export const WORK_DAYS = 7
@@ -69,6 +75,8 @@ export interface WorkLookup {
   work: string
   requests: LookupRequest[]
   runs: LookupRun[]
+  /** The scan ran out of time before the window's oldest runs. */
+  partial?: boolean
 }
 
 export interface TraceRow {
@@ -80,6 +88,9 @@ export interface TraceRow {
   original_message: string | null
   final_response: string | null
   error: string | null
+  /** Who sent it; "" when no one was named, null or absent when the row
+   *  predates the record. */
+  sender?: string | null
 }
 
 export interface RequestRow {
@@ -89,6 +100,14 @@ export interface RequestRow {
 
 export function isPersonChannel(channel: string | null | undefined): boolean {
   return !!channel && PERSON_CHANNELS.has(channel)
+}
+
+/** Are this run's words a person's? A person's channel always; "api" when
+ *  the owner sent it, or when the sender was never recorded (older rows). */
+export function isPrivateRun(channel: string | null | undefined, sender: string | null | undefined): boolean {
+  if (isPersonChannel(channel)) return true
+  if (channel !== "api") return false
+  return sender == null || OWNER_SENDERS.has(sender.trim().toLowerCase())
 }
 
 function clip(t: string | null | undefined, n = TEXT_CLIP): string | undefined {
@@ -103,7 +122,7 @@ const iso = (ms: number) => new Date(ms).toISOString().slice(0, 16) + "Z"
 /** One run, as another agent may see it. */
 export function runView(r: TraceRow): LookupRun {
   const channel = r.channel ?? "?"
-  const person = isPersonChannel(channel)
+  const person = isPrivateRun(channel, r.sender)
   const refs = homeRefsOf(r.original_message?.slice(0, 2000) ?? "")
   const reqs = (r.original_message?.slice(0, 2000) ?? "").match(/\breq-[0-9A-HJKMNP-TV-Z]{26}\b/g) ?? []
   const named = [...new Set([...reqs, ...refs])].slice(0, 3).join(", ")
@@ -203,5 +222,6 @@ export function formatWorkLookup(l: WorkLookup): string {
   for (const q of l.requests) lines.push(`- ${q.id} (${q.agentId}) [${q.state}] ${q.headline}${q.need ? ` — needs: ${q.need}` : ""} (updated ${q.updatedAt})`)
   lines.push(l.runs.length ? `Runs about it in the last ${WORK_DAYS} days (newest first):` : `Runs about it in the last ${WORK_DAYS} days: none on this computer.`)
   for (const r of l.runs) lines.push(`- ${r.startedAt} ${r.agentId} ${r.status}, ${r.channel}${r.answer ? ` — ${r.answer}` : r.asked ? ` — asked: ${r.asked}` : ""}`)
+  if (l.partial) lines.push("(Search stopped early; older runs in the window were not read.)")
   return lines.join("\n")
 }

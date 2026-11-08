@@ -140,6 +140,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           resumeAttempt: p.resumeAttempt ?? 0,
           resumedFrom: p.resumedFrom ?? null,
           person: p.person?.id ?? null,
+          sender: p.sender?.name ?? p.sender?.id ?? p.sender?.username ?? "",
         },
         p.taskId,
       )
