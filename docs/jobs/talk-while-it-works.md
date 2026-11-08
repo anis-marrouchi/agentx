@@ -19,6 +19,8 @@ On the phone app, a message read this way gets the reply "Delivered into the run
 - Agents that run on Claude Code (tier `claude-code`).
 - Messages in the same conversation as the running work. A message in another conversation does not reach that run.
 - Messages from people and from other agents. Internal turns (a step of a request's plan, a schedule, a workflow) never interrupt a run this way.
+- A message one agent sends another without saying which agent it comes from is never passed into a run. Such messages all share one conversation, so a second one is a separate job: it gets its own turn and its own answer.
+- Only the agent itself reads your message, never a helper it starts for part of the work (a "subagent", which Claude Code starts for a side task). If the agent is busy waiting for a helper, your message waits until the agent's own next step.
 
 To stop the agent instead of correcting it, use **Stop** as before.
 
