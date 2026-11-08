@@ -58,9 +58,23 @@ The limits all hold in code:
 2. **Settings:** to let it run, set `improve.enabled` to `true` (see [settings](../reference/config-automation.md#improve)).
 3. **Browser:** the morning after the nightly sweep, open **Approvals**. The card's source line names the run, and its title says what keeps going wrong.
 
-## What comes next
+## Check that a picked fix held
 
-Counting is stage 1, ranking stage 2, and the retro on the worst problem stage 3. The last stage checks that the fix you picked lowered its count. Each stage runs on a fixed daily budget.
+A fix only counts if the problem comes back less often. For each fix you picked on one of these cards, AgentX compares the problem's signals in the 7 days after you picked it with the 7 days before. This uses no AI model.
+
+- **Held:** fewer signals after than before.
+- **Did not hold:** the same number or more. No separate card is raised about it. The next card about the same problem opens with a line naming the earlier card and both counts, so you see it next to the new choices.
+- **Waiting:** the 7 days after the pick are not over yet.
+
+The count starts on the day you pick, not the day the fix is deployed. A slow deploy can only make a fix look worse, never better, so a fix marked held did lower the count.
+
+1. **Terminal:** go to the folder that holds `agentx.json`.
+2. **Terminal:** run `agentx improve held`. Each picked fix is listed with its card, the agent, the counts before and after, and `held`, `did not hold` or `waiting, N day(s) left`.
+3. **Terminal:** the nightly `agentx retro sweep` prints the same verdict for each fix whose 7 days are over.
+
+## How the stages fit
+
+Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, and the check that a picked fix held stage 4. Only stages 3 and 2's merge use an AI model, and only when `improve.enabled` is on, within `improve.dailyUsd`.
 
 ## Check it worked
 
@@ -68,6 +82,7 @@ Counting is stage 1, ranking stage 2, and the retro on the worst problem stage 3
 2. **Terminal:** run `agentx improve signals --kind owner_reopened`. The request is listed with the agent and your comment.
 3. **Terminal:** run `agentx improve signals --since 7d`. The totals by kind and by agent are shown, or `none in this window` on a quiet install.
 4. **Terminal:** run `agentx improve rank --since 7d`. It prints `Recurring problems:` with a count, and a line `Merge call: not run (preview)`.
+5. **Terminal:** run `agentx improve held`. It lists the fixes you picked, or `No fix picked on a self-improvement card yet.`
 
 ## If something is wrong
 

@@ -3476,6 +3476,14 @@ Rank the problems that keep coming back, worst first: signals of the same kind, 
 | `--commit` | — | Save the day's ranking. When `improve.enabled` is on, also runs the one small AI call a day that merges problems worded differently. |
 | `--json` | — | Print as JSON. |
 
+### `agentx improve held`
+
+For each fix picked on a self-improvement card, compare the problem's count in the 7 days after the pick with the 7 days before: `held`, `did not hold`, or `waiting`. No AI model is used. See [Check that a picked fix held](../jobs/failure-signals.md#check-that-a-picked-fix-held).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--json` | — | Print as JSON. |
+
 ## retro (advanced)
 
 `agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).
