@@ -119,6 +119,7 @@ const groups = [
     { text: "It's not answering", link: "/help/its-not-answering" },
     { text: "Run a health check", link: "/help/doctor" },
     { text: "Stop a mistake from coming back", link: "/jobs/retro" },
+    { text: "See what keeps going wrong", link: "/jobs/failure-signals" },
     { text: "Understand costs", link: "/help/costs" },
   ] },
   { text: "Go deeper", collapsed: true, items: [

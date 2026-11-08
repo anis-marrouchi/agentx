@@ -1,3 +1,4 @@
+import { emitSignal, setSignalDb } from "@/improve/signals"
 import { openCodeProcessPool } from "@/agents/opencode-process"
 import { codexProcessPool } from "@/agents/codex-process"
 import { SessionMonitor, discoverClis, readMonitorBody } from "./session-monitor"
@@ -728,6 +729,8 @@ export class AgentXDaemon {
     try {
       const db = openDb()
       this.db = db
+      // Failure signals from code without a handle on the db (#1783).
+      setSignalDb(db)
       if (db) {
         // Close the runs the previous daemon left in flight, keeping them
         // as `interrupted` for the resume step once startup finishes
@@ -4621,14 +4624,18 @@ export class AgentXDaemon {
     const caller = resolveCallerTurn(hint, this.registry)
     // People permissions (#379): work a limited person started stops here,
     // whichever way the hop would have run.
+    const refused = (why: string, kind: string): DelegationGateResult => {
+      emitSignal({ kind: "handoff_refused", agentId: caller?.agentId ?? null, ref: caller?.taskId ?? null, detail: `${kind} -> ${target.callee}: ${why.split(". ")[0]}` })
+      return { refused: why }
+    }
     const limited = hopRefusal(target.callee, caller, this.registry, this.syncWaits)
-    if (limited) return { refused: limited }
+    if (limited) return refused(limited, "permissions")
     if (!target.peer && this.registry.getAgent(target.callee)) {
       const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
-      if (why) return { refused: why }
+      if (why) return refused(why, "cycle")
     }
     const over = this.handOffRefusal(caller, target.peer ? `${target.callee}@${target.peer}` : target.callee)
-    if (over) return { refused: over }
+    if (over) return refused(over, "budget")
     const accepted = opts.callback === false ? null : this.startCallback(body, caller, target, { send: opts.send === true })
     if (accepted) return { accepted }
     let runId: string | undefined

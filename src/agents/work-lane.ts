@@ -13,6 +13,8 @@
  * hand-off coming back, and waiting would deadlock it.
  */
 
+import { emitSignal } from "@/improve/signals"
+
 const REQUEST_ID = /\breq-[0-9A-HJKMNP-TV-Z]{26}\b/
 /** How long a run waits for the holder before it goes ahead anyway. */
 export const LANE_WAIT_MS = 15 * 60_000
@@ -81,7 +83,10 @@ export class WorkLanes {
         this.opts.log?.(`[${agentId}] ${key}: going ahead beside a run still on it (waited ${Math.round((this.now() - start) / 1000)}s)`)
         break
       }
-      if (!waited) this.opts.log?.(`[${agentId}] ${key}: another run of this agent is on it; waiting for it to end`)
+      if (!waited) {
+        this.opts.log?.(`[${agentId}] ${key}: another run of this agent is on it; waiting for it to end`)
+        emitSignal({ kind: "same_work_waited", agentId, ref: key, detail: "the same request reached this agent twice while one run was on it" })
+      }
       waited = true
       await Promise.race([h.done, (this.opts.sleep ?? defaultSleep)(1000)])
     }

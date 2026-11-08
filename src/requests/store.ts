@@ -1,3 +1,4 @@
+import { recordSignal, type SignalKind } from "@/improve/signals"
 import type Database from "better-sqlite3"
 import { ensureColumns, PERSON_COLUMNS } from "@/storage/sqlite"
 import { readCloseWhen, type CloseWhen } from "./checkers"
@@ -827,7 +828,14 @@ export class RequestStore {
       `UPDATE requests SET state = 'needs_attention', updated_at = ?, state_changed_at = ?, attention_reason = ?, notified_at = NULL
        WHERE id = ? AND state NOT IN ('needs_attention', ${placeholders(CLOSED_STATES.length)})`,
     ).run(now, now, reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX), id, ...CLOSED_STATES)
+    if (res.changes > 0) this.signal("request_stalled", id, reason, now)
     return res.changes > 0
+  }
+
+  /** A failure signal about this request (src/improve/signals.ts). */
+  private signal(kind: SignalKind, id: string, detail: string | null, now: number): void {
+    const agentId = (this.db.prepare("SELECT agent_id FROM requests WHERE id = ?").get(id) as { agent_id?: string } | undefined)?.agent_id ?? null
+    recordSignal(this.db, { kind, agentId, ref: id, detail }, now)
   }
 
   /** Close it: done needs evidence, declined and dropped need a reason.
@@ -870,11 +878,13 @@ export class RequestStore {
    *  the owner once. How it was closed stays in evidence / close_reason. */
   reopenForOwnerCheck(id: string, reason: string, now: number): boolean {
     const why = reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX)
-    return this.db.prepare(
+    const reopened = this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'needs_attention', closed_at = NULL, updated_at = ?, attention_reason = ?, notified_at = NULL,
          owner_check = 'mismatch', owner_check_at = ?, owner_check_note = ?
        WHERE id = ? AND owner_check = 'pending' AND state IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("needs_attention", now, now, why, now, why, id, ...CLOSED_STATES).changes > 0
+    if (reopened) this.signal("owner_check_mismatch", id, why, now)
+    return reopened
   }
 
   /** A candidate whose turn ended with nothing left to follow. */
@@ -993,11 +1003,15 @@ export class RequestStore {
    *  progress, with the comment as the owner's note, for its agent to pick
    *  up at the next check. How it was closed is kept until it closes again. */
   reopen(id: string, note: string, now: number): boolean {
-    return this.db.prepare(
+    const reopened = this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'in_progress', closed_at = NULL, updated_at = ?, attention_reason = NULL, notified_at = NULL,
          question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL
        WHERE id = ? AND state IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("in_progress", now, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...CLOSED_STATES).changes > 0
+    // The owner sending a closed request back is the clearest sign the
+    // close was wrong.
+    if (reopened) this.signal("owner_reopened", id, note || null, now)
+    return reopened
   }
 
   /** This note of the owner is given to the agent in a pick-up, or (false)

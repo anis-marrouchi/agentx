@@ -19,6 +19,7 @@
 // small start/done log per task id, so a restart can tell the person that
 // a delegation was lost instead of saying nothing.
 
+import { emitSignal } from "@/improve/signals"
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { dirname } from "path"
 import { randomBytes } from "crypto"
@@ -647,6 +648,9 @@ export class DelegationManager {
     if (entry) { entry.status = result.status; entry.endedAt = this.now() }
     this.deps.log(`[delegation ${id}] ${rec.callee} ${result.status} after ${Math.round((this.now() - rec.startedAt) / 1000)}s`)
     try { this.deps.onDone?.(rec, result) } catch { /* a listener never stops a callback */ }
+    if (result.status === "error" || result.status === "timeout" || result.status === "lost") {
+      emitSignal({ kind: "delegation_failed", agentId: rec.caller, ref: id, detail: `${rec.callee}${rec.peer ? `@${rec.peer}` : ""} ${result.status}: ${result.text.slice(0, 160)}` })
+    }
 
     // The callee already wrote to the caller (relayReply): its end still
     // comes back, said as such, since what it wrote may only have been a
@@ -656,6 +660,7 @@ export class DelegationManager {
     this.answered.delete(id)
     if (written && result.status === "done" && repeatsWritten(result.text, written)) {
       this.deps.log(`[delegation ${id}] ${rec.callee}'s end repeats what it already wrote to ${rec.caller}; no callback turn`)
+      emitSignal({ kind: "callback_repeat_skipped", agentId: rec.callee, ref: id, detail: `wrote to ${rec.caller}, then ended with the same answer` })
       return true
     }
     await this.queueCallback({ rec, result, wrote: !!written })

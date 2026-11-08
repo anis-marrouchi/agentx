@@ -3454,6 +3454,18 @@ The sessions still open for their issue, newest first: the issue, the session id
 
 Forget the session for each issue, written `owner/repo#number`, so the next comment on it runs normally. Takes the same `--file` and `--config` flags.
 
+## improve
+
+### `agentx improve signals`
+
+Count the failure signals: requests you reopened, closes that did not do what you asked, refused or failed hand-offs, and repeats. No AI model is used. See [See what keeps going wrong](../jobs/failure-signals.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <when>` | `24h` | How far back: `24h`, `7d`, `30m` or a date. |
+| `--kind <kind>` | — | List the lines of one kind instead of the counts. |
+| `--json` | — | Print as JSON. |
+
 ## retro (advanced)
 
 `agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).

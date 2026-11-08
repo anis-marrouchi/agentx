@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, afterEach } from "vitest"
+import { describe, it, expect, vi, afterEach, onTestFinished } from "vitest"
+import Database from "better-sqlite3"
+import { readSignals, setSignalDb } from "../src/improve/signals"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -674,6 +676,9 @@ describe("an agent's send calls its asker back (#1100)", () => {
   })
 
   it("does not call the asker back for an end that only repeats what the callee wrote", async () => {
+    const sigDb = new Database(":memory:")
+    setSignalDb(sigDb)
+    onTestFinished(() => { setSignalDb(null); sigDb.close() })
     const h = harness()
     const { record } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Deploy the fix", kind: "send" })
     h.mgr.relayReply(record, "Deployed bd4f to prod at 06:53Z. Read-back is fine, version endpoint answers 200, note posted on the issue.")
@@ -682,6 +687,7 @@ describe("an agent's send calls its asker back (#1100)", () => {
     h.local.resolve({ content: "Done: deployed bd4f to prod at 06:53Z, read-back fine, version endpoint 200, note posted on the issue." })
     await flush()
     expect(h.injected).toHaveLength(1)
+    expect(readSignals(sigDb, 0).map((r) => `${r.kind}:${r.agentId}`)).toEqual(["callback_repeat_skipped:builder"])
   })
 
   it("still calls back an end that fails, even after the callee wrote", async () => {
