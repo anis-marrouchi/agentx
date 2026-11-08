@@ -111,7 +111,7 @@ import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { DEFAULT_OWNER_CHECK, OWNER_CHECK_SYSTEM, OwnerWordsCheck } from "@/requests/owner-check"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
-import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
+import { blockStep, cutByRestart, planNotice, requeueInterruptedStep, runPlansSweep } from "@/requests/plan-sweep"
 import { continueOnTurnEnd } from "@/requests/plan-continue"
 import { checkCount, forgeCounter } from "@/requests/checkers/count"
 import { checkGoals, goalBrief } from "@/requests/goal-store"
@@ -1918,6 +1918,8 @@ export class AgentXDaemon {
           // A pause's plan-writing turn: signals.recover() above gave its
           // task a plan from the trace; running it again would answer nobody.
           if (run.channel === WIND_DOWN_CHANNEL) return "stop signal wind-down: its task got a plan from the trace"
+          // A plan step's turn: the plan hands the step to its agent again.
+          if (run.channel === PICKUP_CHANNEL && run.chatId && this.requests?.plans.get(run.chatId)?.state === "active") return "plan step: the plan hands it to its agent again"
           // A task a stop-all stopped whose trace was still open (#1271):
           // resumeStopAll() resumes it from its plan.
           const order = this.signals.stopAllOwner(run.taskId)
@@ -2857,7 +2859,18 @@ export class AgentXDaemon {
       this.log(`[plans] ${r.id} step ${step.idx}: turn on ${agentId} failed: ${error}`)
     }
     void this.registry.execute({ agentId, message: text, context: pickupContext(r.id) })
-      .then((res) => { if (res?.error && !isQueued(res.error)) fail(res.error) })
+      .then((res) => {
+        if (!res?.error || isQueued(res.error)) return
+        // Cut by a daemon restart: the step goes back to its agent when the
+        // daemon is up again, instead of waiting blocked for the owner.
+        const cur = requests.plans.step(step.requestId, step.idx)
+        if (cutByRestart(res.error, res.errorKind) && cur?.state === "active") {
+          requeueInterruptedStep(requests.store, requests.plans, cur, res.error, Date.now())
+          this.log(`[plans] ${r.id} step ${step.idx}: turn on ${agentId} cut by a restart; handed to it again after the restart`)
+          return
+        }
+        fail(res.error)
+      })
       .catch((e: any) => fail(e?.message ?? String(e)))
   }
 

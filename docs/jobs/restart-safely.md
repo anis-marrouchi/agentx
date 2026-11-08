@@ -186,6 +186,7 @@ Some work still gets cut off: a task that runs longer than the wait, a crash, or
 | A chat another node received and passed to this one (a GitLab event that arrives on your server, for an agent that lives on your Mac) | It's picked up again, and the note and the answer are posted through the node that received it. Both nodes need this version; if that node is down, you get the "didn't resume" message instead. |
 | A scheduled job | Nothing. The next scheduled run does the work. |
 | A workflow step | Reported. The workflow decides whether to retry. |
+| A step of a [request's plan](./tracked-plans.md) | The step is not blocked. Within a minute of the restart, the plan hands it to its agent again, as `agentx requests step <id> <step> --retry` would. You are not told. |
 | One agent asking another, when the run knows which agent asked | It's picked up again, and the answer is handed to the agent that asked, as a new turn, with a note saying the work was cut off and run again. That agent then decides what to do with it. |
 | Anything else (voice, webhooks, the API) | Reported, because nothing would deliver the answer. |
 | Anything older than 30 minutes | Reported. |
@@ -338,5 +339,6 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 - **Another tool got `503 daemon is restarting`:** it asked for new work during a restart. It can try again a little later.
 - **A chat task wasn't picked up:** the log line starting `[resume]` says why. The usual reasons are that it was older than 30 minutes, it was already a second attempt, or there were several restarts in a row.
 - **A helper's work isn't listed after a restart:** AgentX only finds folders the task named in its steps, such as `cd /tmp/app-12`. A folder the helper never named, or one that isn't tracked by git, can't be found. Look for it by hand, and ask agents to work in a folder they name in their commands.
+- **A plan step shows blocked with `killed by daemon restart`:** it was cut off by a version from before this change. Run `agentx requests step <id> <step> --retry`. Newer versions hand such a step back on their own; the daemon log says `cut by a restart; handed to it again after the restart`.
 - **A task that passed its time limit wasn't picked up again:** the log line `[resume] … not continued — …` says why: it was a scheduled job or a workflow step, it had already been picked up once, or the caller's own time limit left no time. Raise the agent's `maxExecutionMinutes` if the task always needs longer.
 - **You got a "didn't resume" message you didn't expect:** that task came from somewhere with no chat to answer in. Send the request again, or add its source to `directChannels`.

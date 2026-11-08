@@ -158,6 +158,8 @@ An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2
 
 ## If something is wrong
 
+- **A step was cut off by a restart of AgentX:** nothing to do. The step stays active and is handed to its agent again within a minute of the restart. See [Work that gets cut off anyway](./restart-safely.md#work-that-gets-cut-off-anyway).
+
 - **The agent says plans are off:** turn them on with `agentx requests settings --plans on`. When the agent's name is in the agents that may not make a plan, remove it with `--plans-off-for none`.
 - **`a plan needs 2 or more steps`:** for a single step, the agent takes the request on without a plan.
 - **The agent says `Not started: … needs a plan before it starts`:** the work is code work, or longer than your limit. The agent sends its steps and starts. To stop asking for a plan on that kind of work, remove it with `--plan-for` (or `--plan-for none`). To change the time limit, use `--plan-over`.
