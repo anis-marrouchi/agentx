@@ -104,16 +104,37 @@ describe("the workspace hook", () => {
     const server = http.createServer((req, res) => { seen.push(req.url ?? ""); res.end('{"hookSpecificOutput":{"additionalContext":"x"}}') })
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r))
     const port = String((server.address() as any).port)
-    const run = (env: Record<string, string>) => new Promise<string>((resolve) => {
-      execFile("/bin/sh", ["-c", midTurnHookCommand(port)], { env: { PATH: process.env.PATH ?? "", ...env } }, (_e, out) => resolve(out))
+    const run = (env: Record<string, string>, input = '{"hook_event_name":"PostToolUse","tool_name":"Bash"}', p = port) => new Promise<string>((resolve) => {
+      const child = execFile("/bin/sh", ["-c", midTurnHookCommand(p)], { env: { PATH: process.env.PATH ?? "", ...env } }, (e, out) => resolve(e ? "exit-error" : out))
+      child.stdin?.on("error", () => {}).end(input)
     })
-    const out = await run({ AGENTX_AGENT_ID: "coder", AGENTX_QUEUE_CHANNEL: "gitlab", AGENTX_QUEUE_CHAT: "team/app:issue:7 #a" })
+    const env = { AGENTX_AGENT_ID: "coder", AGENTX_QUEUE_CHANNEL: "gitlab", AGENTX_QUEUE_CHAT: "team/app:issue:7 #a" }
+    const out = await run(env)
     expect(out).toContain("additionalContext")
     const q = new URL(seen[0], "http://x")
     expect(q.pathname).toBe("/runs/inbox")
     expect(Object.fromEntries(q.searchParams)).toEqual({ agent: "coder", channel: "gitlab", chat: "team/app:issue:7 #a" })
     expect(await run({})).toBe("")
     server.close()
-    expect(await new Promise<string>((resolve) => execFile("/bin/sh", ["-c", midTurnHookCommand("1")], { env: { PATH: process.env.PATH ?? "", AGENTX_AGENT_ID: "c", AGENTX_QUEUE_CHAT: "x" } }, (e, out) => resolve(e ? "exit-error" : out)))).toBe("")
+    expect(await run({ AGENTX_AGENT_ID: "c", AGENTX_QUEUE_CHAT: "x" }, "{}", "1")).toBe("")
+  })
+
+  it("leaves the message for the main model when a Task subagent's tool call fires it", async () => {
+    const seen: string[] = []
+    const server = http.createServer((req, res) => { seen.push(req.url ?? ""); res.end('{"hookSpecificOutput":{"additionalContext":"x"}}') })
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r))
+    const port = String((server.address() as any).port)
+    const run = (input: string) => new Promise<string>((resolve) => {
+      const child = execFile("/bin/sh", ["-c", midTurnHookCommand(port)], { env: { PATH: process.env.PATH ?? "", AGENTX_AGENT_ID: "coder", AGENTX_QUEUE_CHANNEL: "a2a", AGENTX_QUEUE_CHAT: "lead" } }, (e, out) => resolve(e ? "exit-error" : out))
+      child.stdin?.on("error", () => {}).end(input)
+    })
+    // Subagent payloads (compact and spaced JSON): no daemon call, no output, exit 0.
+    expect(await run('{"session_id":"s","agent_id":"a6a2b6fb6f3bdd3bc","agent_type":"general-purpose","hook_event_name":"PostToolUse","tool_name":"Bash"}')).toBe("")
+    expect(await run('{ "agent_id": "a1", "tool_name": "Read" }')).toBe("")
+    expect(seen).toEqual([])
+    // Main thread whose tool input only mentions "agent_id" in a string: still asks.
+    expect(await run(JSON.stringify({ session_id: "s", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: 'jq ".agent_id" x.json' } }))).toContain("additionalContext")
+    expect(seen).toHaveLength(1)
+    server.close()
   })
 })
