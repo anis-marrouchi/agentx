@@ -275,10 +275,19 @@ function guardPreToolUseHooks(
 /** The PostToolUse hook that reads, after each tool call, messages that
  *  arrived for this run in its chat (agents/mid-turn.ts). One loopback
  *  call (~ms); silent and exit 0 when the daemon is away, outside an agent
- *  run, or when there is nothing. */
+ *  run, or when there is nothing.
+ *
+ *  PostToolUse also fires inside Task subagents, which inherit the run's
+ *  AGENTX_* env. Their hook input carries `agent_id`; the main thread's
+ *  does not. A subagent must not take the message: its additionalContext
+ *  would reach the subagent, not the main model, while the daemon marks it
+ *  delivered. So the hook drains stdin and skips the daemon call when the
+ *  payload names an `agent_id` key. Escaped quotes (`\"`) are stripped
+ *  first, so a tool input that merely mentions "agent_id" in a string does
+ *  not count; the message then waits for the next main-thread tool call. */
 export function midTurnHookCommand(daemonPort: string): string {
   const url = `http://127.0.0.1:${daemonPort}/runs/inbox`
-  return `[ -n "$AGENTX_AGENT_ID" ] && [ -n "$AGENTX_QUEUE_CHAT" ] && curl -sf --max-time 2 -G --data-urlencode "agent=$AGENTX_AGENT_ID" --data-urlencode "channel=$AGENTX_QUEUE_CHANNEL" --data-urlencode "chat=$AGENTX_QUEUE_CHAT" '${url}' 2>/dev/null; true`
+  return `[ -n "$AGENTX_AGENT_ID" ] && [ -n "$AGENTX_QUEUE_CHAT" ] && in=$(cat) && ! printf '%s' "$in" | sed 's/\\\\"//g' | grep -q '"agent_id"' && curl -sf --max-time 2 -G --data-urlencode "agent=$AGENTX_AGENT_ID" --data-urlencode "channel=$AGENTX_QUEUE_CHANNEL" --data-urlencode "chat=$AGENTX_QUEUE_CHAT" '${url}' 2>/dev/null; true`
 }
 
 const MID_TURN_HOOK_TIMEOUT_S = 5
