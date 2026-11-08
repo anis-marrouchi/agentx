@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.213.1](https://github.com/anis-marrouchi/agentx/compare/v0.213.0...v0.213.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **agents:** give each sender-less agent send its own turn ([#1801](https://github.com/anis-marrouchi/agentx/issues/1801)) ([9d5e07a](https://github.com/anis-marrouchi/agentx/commit/9d5e07a2b734792adff983987dda005d19bbf4ec))
+
 ## [0.213.0](https://github.com/anis-marrouchi/agentx/compare/v0.212.0...v0.213.0) (2026-11-08)
 
 
