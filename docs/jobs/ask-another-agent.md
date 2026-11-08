@@ -69,6 +69,22 @@ Channel and chat are accepted on purpose: an agent kept warm between turns has n
 
 Add `"async": false` to the request body to wait for the answer anyway. Add `"async": true` to get the callback from a turn no person started, such as a schedule. `"async": true` has no effect inside a delegation: a turn that is itself answering another agent, or a turn that carries a delegation result, always waits. This stops one callback from starting another.
 
+### Look it up instead of asking
+
+In an office, you check the board before you interrupt a colleague. Agents can do the same with the `agentx_lookup` tool. It answers from what AgentX already keeps, starts no run on the other agent's side, and uses no AI model.
+
+- **`agent`:** what that agent is working on now, its open requests from you, its hand-offs still running, and what it finished in the last 48 hours, with the start of each answer. An agent on another machine of the mesh is looked up on that machine.
+- **`work`:** everything about one piece of work: an issue or merge request link, a `group/project#12` or `group/project!12` ref, or a request id (`req-…`). It lists your requests about it (open, or closed in the last 7 days) and every run about it in the last 7 days, newest first. A short `!12` counts when the same message names the project. A bare `#12` never does.
+
+What it never shows:
+
+- The words of a run that came from a person's own chat (the phone app, chat apps, voice, email, the dashboard). Such a run shows only that it happened and what work it was about.
+- Anything older than those windows, or the full text of an answer. For the full text, read the chat with `agentx_recent`.
+
+The same answers are at `GET /lookup?agent=<id>` and `GET /lookup?work=<ref>` on the daemon. Another machine of the mesh needs the mesh token to read them.
+
+Agents are told to look things up first. They message a colleague only for work or a decision, and send information that needs no answer as a [notice](#a-notice-instead-of-a-run) (`notice: true` on `agentx_send_agent`).
+
 ### Sending with `agentx_send_agent`
 
 `agentx_send_agent` and `POST /send/agent` never wait for the other agent to finish. The daemon answers with status `202` at once.
@@ -169,6 +185,8 @@ Some requests are refused straight away with status `409`:
    curl -s http://127.0.0.1:18800/a2a/delegations
    ```
    The newest entry names both agents and shows `"status":"done"`.
+5. **Terminal:** run `curl -s "http://127.0.0.1:18800/lookup?agent=<agent-id>" | jq -r .text`. It prints what that agent is on now and what it finished in the last 48 hours.
+6. **Terminal:** run `curl -s "http://127.0.0.1:18800/lookup?work=group/project!12" | jq -r .text` with a merge request your agents worked on. It lists the runs about it, newest first.
 
 ## If something is wrong
 
@@ -180,6 +198,8 @@ Some requests are refused straight away with status `409`:
 - **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.
 - **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask. A dashboard log line starting `[app] warning:` means the dashboard passed over some updates: it was away too long, or too many arrived at once. Ask your agent for the answer again.
 - **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
+- **An agent still messages a colleague just to ask for a status:** check that `agentx_lookup` is not left out by the agent's `session.lean.agentxTools` list. A lean session keeps it while `session.lean.contextOnDemand` is on.
+- **`agentx_lookup` finds nothing about a piece of work:** the runs must name it as a link, a `group/project!12` ref, or the project name with `!12`. Work from more than 7 days ago is not searched.
 - **A notice never reached the agent:** search the daemon log for `[send/agent] notice` (kept) and `[notices]` (sent after an hour). Check that the daemon did not restart in between.
 - **An agent seems slow to start on an owner's request:** search the daemon log for the request ID. `another run of this agent is on it` means it waits for that run, for up to 15 minutes.
 - **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.

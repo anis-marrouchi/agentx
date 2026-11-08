@@ -1,3 +1,4 @@
+import { handleLookup } from "@/daemon/lookup-api"
 import { emitSignal, setSignalDb } from "@/improve/signals"
 import { openCodeProcessPool } from "@/agents/opencode-process"
 import { codexProcessPool } from "@/agents/codex-process"
@@ -8076,6 +8077,33 @@ export class AgentXDaemon {
         case "GET /a2a/delegations":
           this.json(res, 200, { delegations: this.delegations.list() })
           break
+
+        // agentx_lookup: what a colleague is on, or where a piece of work
+        // stands, from what this daemon keeps. Read-only, no model call.
+        case "GET /lookup": {
+          const q = new URL(req.url || "/", "http://_").searchParams
+          const store = this.requests?.store ?? null
+          const asRow = (r: any) => ({ id: r.id, agentId: r.agentId, state: r.state, text: r.text, headline: r.headline, need: r.need, home: r.home, updatedAt: r.updatedAt })
+          const a = await handleLookup(q, {
+            db: this.db,
+            hasAgent: (id) => !!this.registry.getAgent(id),
+            running: (id) => this.registry.list().find((x) => x.id === id)?.runningTasks ?? [],
+            openRequests: () => (store ? store.listOpen().map(asRow) : []),
+            closedRequests: (since) => (store ? store.listClosedSince(since, 200).map(asRow) : []),
+            handOffs: () => this.delegations.list(100),
+            nodeName: this.config.node.name,
+            forward: async (agentId) => {
+              const peer = this.mesh?.directory().find((p) => p.healthy && p.skills.some((s) => s.id === agentId))
+              if (!peer) return null
+              const r = await fetch(`${peer.peerUrl}/lookup?agent=${encodeURIComponent(agentId)}`, {
+                headers: this.mesh!.authHeaders(peer.peer), signal: AbortSignal.timeout(10_000),
+              })
+              return { status: r.status, body: (await r.json().catch(() => ({ error: `peer answered ${r.status}` }))) as Record<string, unknown> }
+            },
+          })
+          this.json(res, a.status, a.body)
+          break
+        }
 
         case "GET /services":
           this.json(res, 200, (this.router as any).serviceMatcher?.list() || [])

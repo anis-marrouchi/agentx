@@ -25,7 +25,7 @@ import { AGENTX_TOOL_NAMES } from "../src/mcp/tool-names"
 
 const agentx = { type: "stdio" as const, command: "node", args: ["cli.js", "serve", "--stdio"] }
 const CORE = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node"]
-const ON_DEMAND = ["agentx_agents", "agentx_recent", "agentx_wiki_query"]
+const ON_DEMAND = ["agentx_agents", "agentx_recent", "agentx_wiki_query", "agentx_lookup"]
 
 describe("leanAgentxTools", () => {
   it("is empty by default: every agentx tool", () => {

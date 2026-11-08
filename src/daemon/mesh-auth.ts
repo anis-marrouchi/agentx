@@ -109,7 +109,9 @@ export function isMeshGatedPath(path: string): boolean {
     // What the owner was told (#1126): the words of every notice.
     path === "/owner/told" ||
     // Where the owner is and was last seen (#1138 step B).
-    path === "/owner/presence"
+    path === "/owner/presence" ||
+    // What each agent is on and what it finished (agentx_lookup).
+    path === "/lookup"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
