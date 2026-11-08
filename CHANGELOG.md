@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.210.0](https://github.com/anis-marrouchi/agentx/compare/v0.209.2...v0.210.0) (2026-11-08)
+
+
+### Features
+
+* **improve:** count failure signals, no model calls ([#1783](https://github.com/anis-marrouchi/agentx/issues/1783) stage 1) ([#1784](https://github.com/anis-marrouchi/agentx/issues/1784)) ([9b77ce0](https://github.com/anis-marrouchi/agentx/commit/9b77ce07673d1795437d3deab7bde2f5d3e68bfe))
+
 ## [0.209.2](https://github.com/anis-marrouchi/agentx/compare/v0.209.1...v0.209.2) (2026-11-07)
 
 
