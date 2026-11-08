@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.212.0](https://github.com/anis-marrouchi/agentx/compare/v0.211.1...v0.212.0) (2026-11-08)
+
+
+### Features
+
+* **improve:** check that a picked fix lowered its problem ([#1796](https://github.com/anis-marrouchi/agentx/issues/1796)) ([042ee75](https://github.com/anis-marrouchi/agentx/commit/042ee75815a83bbf376efdec74d343015c82a51f))
+* **improve:** hand the worst recurring problem to the retro ([#1795](https://github.com/anis-marrouchi/agentx/issues/1795)) ([d1ac5e5](https://github.com/anis-marrouchi/agentx/commit/d1ac5e545d9d127f139ca76ee129a66e5571f259))
+* **improve:** rank recurring problems in the nightly sweep ([#1794](https://github.com/anis-marrouchi/agentx/issues/1794)) ([46ad59f](https://github.com/anis-marrouchi/agentx/commit/46ad59f43b08e965563b4db4d30195e328959081))
+
 ## [0.211.1](https://github.com/anis-marrouchi/agentx/compare/v0.211.0...v0.211.1) (2026-11-08)
 
 
