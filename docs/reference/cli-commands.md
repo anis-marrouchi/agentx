@@ -3466,6 +3466,16 @@ Count the failure signals: requests you reopened, closes that did not do what yo
 | `--kind <kind>` | — | List the lines of one kind instead of the counts. |
 | `--json` | — | Print as JSON. |
 
+### `agentx improve rank`
+
+Rank the problems that keep coming back, worst first: signals of the same kind, from the same agent, saying the same thing, seen in at least 3 separate requests, hand-offs or runs. The nightly `agentx retro sweep` runs it too. Without `--commit` nothing is saved and no AI model is used. See [Rank what keeps coming back](../jobs/failure-signals.md#rank-what-keeps-coming-back).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <when>` | `24h` | How far back: `24h`, `7d`, `30m` or a date. |
+| `--commit` | — | Save the day's ranking. When `improve.enabled` is on, also runs the one small AI call a day that merges problems worded differently. |
+| `--json` | — | Print as JSON. |
+
 ## retro (advanced)
 
 `agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).

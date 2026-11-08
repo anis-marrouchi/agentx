@@ -92,6 +92,12 @@ function detailFromStdout(out: string | Buffer | undefined): string {
 /** One tool-less `claude -p` call. `systemPrompt` defaults to the session
  *  review; the retro (src/retro) passes its own. */
 export async function reviewWithClaude(input: string, model: string, signal?: AbortSignal, systemPrompt: string = REVIEW_PROMPT): Promise<string> {
+  return (await reviewWithClaudeCost(input, model, signal, systemPrompt)).text
+}
+
+/** As reviewWithClaude, with the dollar cost the CLI reported (null when it
+ *  reported none). The self-improvement budget books it (src/improve/budget). */
+export async function reviewWithClaudeCost(input: string, model: string, signal?: AbortSignal, systemPrompt: string = REVIEW_PROMPT): Promise<{ text: string; usd: number | null }> {
   const cwd = mkdtempSync(join(tmpdir(), "agentx-review-"))
   try {
     // Force the CLI onto subscription auth. The daemon injects
@@ -124,7 +130,7 @@ export async function reviewWithClaude(input: string, model: string, signal?: Ab
     })
     const result = JSON.parse(String(stdout))
     if (result.is_error || typeof result.result !== "string") throw new Error("Reviewer returned no result")
-    return result.result
+    return { text: result.result, usd: typeof result.total_cost_usd === "number" ? result.total_cost_usd : null }
   } finally { rmSync(cwd, { recursive: true, force: true }) }
 }
 

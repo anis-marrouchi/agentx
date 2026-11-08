@@ -505,6 +505,18 @@ The weekly quality report posted on a GitHub issue every Monday, and the gates i
 | `qualityReport.gates[].since` | string `YYYY-MM-DD` | required | The day the gate went on. The verdict is due three weeks after the first gate's `since`. |
 | `qualityReport.gates[].until` | string `YYYY-MM-DD` | — | The day the gate went off. |
 
+## `improve`
+
+Self-improvement from failure signals. Counting the signals is always on and costs nothing. Everything that uses an AI model is off until `improve.enabled`, and then held to a daily limit in dollars and in cards. See [see what keeps going wrong](/jobs/failure-signals).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `improve.enabled` | boolean | `false` | Lets the nightly pass use an AI model. Off: it only ranks, at no cost. |
+| `improve.dailyUsd` | number (0–50) | `3` | Dollars the nightly pass may spend in any 24 hours. A call that would go past it is not started. A call whose cost is not reported is counted at a high estimate. |
+| `improve.maxCardsPerDay` | number (0–3) | `1` | Decision cards the self-improvement pass may raise in any 24 hours. The retro's own limit of three a day still holds. |
+| `improve.mergeModel` | string | `"haiku"` | The small model that merges problems worded differently, once a day. Empty: no merge. |
+| `improve.minRefs` | number (2–50) | `3` | A problem is ranked only once it came from this many separate requests, hand-offs or runs. |
+
 ## `shutdown`
 
 How a daemon stop treats tasks that are still running. See [restart without losing work](/jobs/restart-safely#change-how-long-it-waits).
