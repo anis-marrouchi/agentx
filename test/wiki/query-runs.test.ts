@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest"
-import { mkdtempSync, rmSync, readFileSync, existsSync, statSync } from "fs"
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, readFileSync, existsSync, statSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { queryFailed, recordQueryRun, summariseQueryRuns, timedQuery } from "../../src/wiki/query-runs"
@@ -32,7 +32,10 @@ describe("query runs", () => {
     const text = readFileSync(file, "utf-8") + "not json\n"
 
     expect(summariseQueryRuns(text)).toEqual({
-      total: 3, failed: 1, byStatus: { ok: 2, error: 1 }, bySource: { cli: 3 }, wallMsP50: 4000, wallMsP95: 9000,
+      total: 3, failed: 1, byStatus: { ok: 2, error: 1 }, bySource: { cli: 3 },
+      byAgent: { a: { total: 3, failed: 1 } },
+      byDay: { "2026-10-08": { total: 1, failed: 0 }, "2026-10-09": { total: 2, failed: 1 } },
+      wallMsP50: 4000, wallMsP95: 9000,
     })
     expect(summariseQueryRuns(text, "2026-10-09")).toMatchObject({ total: 2, failed: 1 })
   })
@@ -78,6 +81,7 @@ describe("query runs", () => {
 
   it("wiki query exits 1 and records the failure when no agent has a catalog", async () => {
     dir = mkdtempSync(join(tmpdir(), "query-runs-"))
+    mkdirSync(join(dir, "agents"))
     vi.spyOn(console, "log").mockImplementation(() => {})
     vi.spyOn(console, "error").mockImplementation(() => {})
 
@@ -87,5 +91,42 @@ describe("query runs", () => {
     const file = join(dir, "_query-runs.jsonl")
     expect(existsSync(file)).toBe(true)
     expect(summariseQueryRuns(readFileSync(file, "utf-8"))).toMatchObject({ total: 1, failed: 1, byStatus: { "no-catalog": 1 } })
+  })
+
+  it("wiki query on a folder with no wiki exits 1 and creates nothing there (#1820)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "query-runs-"))
+    writeFileSync(join(dir, "CLAUDE.md"), "an agent workspace\n")
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    vi.spyOn(console, "error").mockImplementation(() => {})
+
+    await wiki.parseAsync(["query", "anything", "--dir", dir], { from: "user" })
+
+    expect(process.exitCode).toBe(1)
+    expect(readdirSync(dir)).toEqual(["CLAUDE.md"])
+  })
+
+  it("wiki query on a file exits 1 instead of crashing (#1820)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "query-runs-"))
+    const file = join(dir, "not-a-folder")
+    writeFileSync(file, "")
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    vi.spyOn(console, "error").mockImplementation(() => {})
+
+    await expect(wiki.parseAsync(["query", "anything", "--dir", file], { from: "user" })).resolves.toBeDefined()
+    expect(process.exitCode).toBe(1)
+  })
+
+  it("wiki query given a node's folder reads the wiki inside it", async () => {
+    dir = mkdtempSync(join(tmpdir(), "query-runs-"))
+    mkdirSync(join(dir, ".agentx/wiki/agents"), { recursive: true })
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    vi.spyOn(console, "error").mockImplementation(() => {})
+
+    await wiki.parseAsync(["query", "anything", "--dir", dir, "--own-only"], { from: "user" })
+
+    expect(process.exitCode).toBe(1)
+    const file = join(dir, ".agentx/wiki/_query-runs.jsonl")
+    expect(summariseQueryRuns(readFileSync(file, "utf-8"))).toMatchObject({ total: 1, byStatus: { "no-catalog": 1 } })
+    expect(existsSync(join(dir, "agents"))).toBe(false)
   })
 })

@@ -1,10 +1,29 @@
 import { WikiStore } from "./store"
 import { resolve } from "path"
-import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "fs"
+import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync } from "fs"
 import type { WikiEntry } from "./types"
 import type { SharedWikiStore } from "./query"
 
 export type WikiMode = "flat" | "graph" | "unified"
+
+const isDir = (p: string) => {
+  try { return statSync(p).isDirectory() } catch { return false }
+}
+const holdsWiki = (dir: string) => isDir(dir) && isDir(resolve(dir, "agents"))
+
+/**
+ * The wiki a query should read for `dir`, without creating anything:
+ * `dir` itself when it holds a wiki, else `<dir>/.agentx/wiki` when that
+ * does (a node's folder given in place of its wiki). Null when neither
+ * does. Opening a WikiHub creates folders, so a query pointed at an
+ * agent's workspace used to leave an empty wiki there and answer "no
+ * catalog", or crash when the folder could not be written (#1820).
+ */
+export function existingWikiDir(dir: string): string | null {
+  if (holdsWiki(dir)) return dir
+  const nested = resolve(dir, ".agentx/wiki")
+  return holdsWiki(nested) ? nested : null
+}
 
 /**
  * WikiHub: manages per-agent wikis with a shared raw entry pool.
