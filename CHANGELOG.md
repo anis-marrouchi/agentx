@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.216.0](https://github.com/anis-marrouchi/agentx/compare/v0.215.0...v0.216.0) (2026-11-09)
+
+
+### Features
+
+* **numbers:** tracked numbers with readings, readers, goal check, CLI and MCP tool ([#1826](https://github.com/anis-marrouchi/agentx/issues/1826) N1) ([#1828](https://github.com/anis-marrouchi/agentx/issues/1828)) ([07cbf90](https://github.com/anis-marrouchi/agentx/commit/07cbf90d9150faece53fc682285a75630e33ea44))
+
+
+### Bug Fixes
+
+* **numbers:** mask header values and command text in the /numbers view ([#1832](https://github.com/anis-marrouchi/agentx/issues/1832)) ([462a113](https://github.com/anis-marrouchi/agentx/commit/462a1132878168e227b1efc1e1c81484c0b5f7fc)), closes [#1826](https://github.com/anis-marrouchi/agentx/issues/1826)
+
 ## [0.215.0](https://github.com/anis-marrouchi/agentx/compare/v0.214.0...v0.215.0) (2026-11-09)
 
 
