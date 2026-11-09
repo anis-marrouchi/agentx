@@ -1,6 +1,6 @@
 # Wiki query: reliability, usage, savings, first option (spike #1820)
 
-**Status:** proposal for review. This change ships the measurement (a report over the trace ledger, per-agent and per-day counts in `wiki query-runs`) and fixes the two reliability faults the code shows. The numbers that need a live node are marked **to measure**, each with the exact command. Build issues for the "first option" work are listed at the end, to be opened once this is agreed.
+**Status:** proposal for review. This change ships the measurement (a report over the trace ledger, per-agent and per-day counts in `wiki query-runs`) and fixes the two reliability faults the code shows. The numbers that need a live node were measured on the Mac node on 2026-11-09 (§3 "Measured", §4 "Graded sample: result"). Build issues for the "first option" work are listed at the end, to be opened once this is agreed.
 
 ## Summary
 
@@ -66,18 +66,25 @@ Definitions: a **turn** is a `task_traces` row. A **session** is its Claude Code
 
 ### Numbers (to measure)
 
-| Figure | Issue's first check (one node, 7 days) | Re-measure with |
-|---|---|---|
-| Sessions / turns in window | ~2,900 | report: `turns`, `sessions` |
-| With a wiki query | 48 (~1.6%) | report: `turnsWithQuery`, `sessionsWithQuery` |
-| `agentx_wiki_query` calls | 163 | report: `calls.tool`, and `query-runs` `from: tool` |
-| `wiki query` via Bash | not split out | report: `calls.cli` |
-| `agentx_lookup` / `agentx_wiki_patch` | 82 / 30 | report: `calls.lookup` / `calls.patch` |
-| Error share | ~8 of 46, crude | report: `failed` and `outcomes`; `query-runs` failed |
-| Median result | ~1.5k chars | report: `resultCharsP50` (capped by the 8 KB step clip) |
-| Seats using it | "PM, one coding seat, DevOps" | report: `byAgent` |
+| Figure | Issue's first check (one node, 7 days) | Measured: Mac node, 2026-11-02 20:42Z to 11-09 20:42Z | Re-measure with |
+|---|---|---|---|
+| Sessions / turns in window | ~2,900 | 22,526 ledger turns, of which 16,439 are workflow step rows; **6,087 agent turns** | report: `turns`, `sessions`, `byAgent` |
+| With a wiki query | 48 (~1.6%) | **103 agent turns (1.7%)** | report: `turnsWithQuery`, `sessionsWithQuery` |
+| `agentx_wiki_query` calls | 163 | **32** in the ledger, 28 in `query-runs` (`tool`) | report: `calls.tool`, and `query-runs` `from: tool` |
+| `wiki query` via Bash | not split out | **84** in the ledger, 71 in `query-runs` (`cli`) | report: `calls.cli` |
+| `agentx_lookup` / `agentx_wiki_patch` | 82 / 30 | 28 / 9 | report: `calls.lookup` / `calls.patch` |
+| Error share | ~8 of 46, crude | ledger: **11 failed of 115** paired results (4 timeout, 7 other error), plus 14 no answer. `query-runs`: 0 error, 9 `no-candidates` of 99 | report: `failed` and `outcomes`; `query-runs` failed |
+| Median result | ~1.5k chars | 1,655 chars | report: `resultCharsP50` (capped by the 8 KB step clip) |
+| Seats using it | "PM, one coding seat, DevOps" | 9 of 12 agent seats. DevOps 43, Coder 19, PM 17, Marketing 12, Secretary 11, COO 8, Sales 3, Accountant 2, CX 1. None from dev-session, tv-producer, agentx-studio | report: `byAgent` |
+| By day | 65 of 94 on 11-04 | 69 of 116 on 11-04; other days 0 to 19 | report: `byDay` |
+| Wall time (`query-runs`) | p50 22 s, p90 33 s | p50 22 s, p90 33 s, max 93 s | `query-runs` |
 
-This spike ran in a cloud session with no access to the node, so this column is not filled here. The owner fills it by running the two commands above on the node.
+### Measured: why the counts disagree
+
+- **163 vs 32 tool calls.** The issue's 163 came from grepping Claude Code transcripts in files changed in the last 7 days. A file changed this week holds its whole history, so older calls were counted too, along with sessions AgentX did not start. The ledger counts calls by time.
+- **Ledger 32 vs `query-runs` 28 tool queries.** 5 tool calls in the window came back `Error: question is required`: the agent passed `query` instead of `question`, or no arguments at all. The handler returns before anything is logged, and the result is not marked `isError`. That is the whole gap, give or take one call from a session outside the ledger.
+- **Ledger 84 vs `query-runs` 71 CLI queries.** The 13 that were not logged did not reach the end of the query. Causes seen: Bash's 120 s timeout cut the command off (4), a path to a release `dist/cli.js` that no longer existed, shell errors in the agent's own command, and a command that needed approval. At least one "query" was a grep over transcripts that only mentions `wiki_query`, so the report's text match overcounts by a little.
+- **No `error` lines in `query-runs`.** Every failure seen sits outside the logged span: argument checks, the Bash timeout and the agent's shell. Inside the query, the only non-answers were `no-candidates`.
 
 ## 4. Graded sample and savings
 
@@ -88,6 +95,20 @@ This spike ran in a cloud session with no access to the node, so this column is 
 3. For each question that is not marked wrong tool, write the facts a correct answer contains into `expect`. Then run `agentx wiki score --questions ~/wiki-grading.json --agent <agent> --out ~/wiki-score-now.json`, one agent's questions at a time. This scores today's wiki on the same questions and records the time and cost of each query.
 4. Hit rate = correct ÷ (graded − wrong tool). Report wrong answers separately: they cost more than a miss.
 
+### Graded sample: result (Mac node, 30 days to 2026-11-09)
+
+Steps 1 and 2 were run: 30 distinct questions, round-robin across 12 agents, graded against the answer each agent got at the time. The questions stay outside the repository. Step 3, re-scoring today's wiki with `wiki score`, was not run: it costs 2–3 model calls per question, and the expected facts were not written.
+
+| Grade | Count | Questions |
+|---|---|---|
+| Correct | 10 | figures, rules and decisions with the page cited (e.g. break-even basis, token-in-transcript procedure, CX deploy yes removed) |
+| Partial | 6 | the right page, but one part missing or the page stops short (e.g. "how" answered, "who" not) |
+| No answer | 6 | 2 `no-candidates`. 4 where the wiki says plainly that it has no page (CX dashboard, mailboxes, staging console, client values) |
+| Error | 3 | Bash timeout, approval required, the agent's own shell error |
+| Wrong | 0 | none seen. The facts were not re-checked at their sources |
+| Not gradable | 5 | the ledger's 8 KB result clip held another command's output, or the pairing was unsure. 1 of the 5 asked for live numbers (signups, followers): the wrong tool |
+
+**Hit rate 10 ÷ 25 = 40%. Correct or partial 16 ÷ 25 = 64%.** The misses are mostly missing pages, not wrong ones: the answers say what is missing instead of guessing. That is the right failure mode, and the fix is content, not code. Errors (3 of 25) all happened outside the query.
 ### Savings model
 
 What a query that answers replaces, with **assumed** costs until the sample replaces them:
@@ -108,6 +129,8 @@ Illustration only, with the issue's 163 queries and assumed shares (60% useful a
 - At 10% wrong: ~16 wrong answers × one rework turn each, plus owner time for the ones that reached a person.
 
 The measured proxy that keeps this honest is **"search or ask right after an answer"** from the report. If agents search anyway after a good answer, the query saved nothing.
+
+**Measured (7 days to 2026-11-09):** after 90 answers, the agent's next three calls held a search 63 times (70%) and an ask 8 times (9%). Only 5 answers were followed by nothing. So today the query mostly comes *before* a search, not instead of one, and the realised saving is well under the illustration. With a 40% hit rate, a search after a partial or missing answer is often right. The target in §6 (25% or less) only makes sense after the hit rate rises.
 
 ## 5. Making it the first option
 
@@ -151,6 +174,7 @@ Targets, all read from the report and `query-runs`:
 - **B. Lean hint (R2):** one line with page counts by type in the lean prompt, fresh sessions only.
 - **C. Pre-fetch (R3):** fact-question intent paths → parallel daemon-side query → `/runs/inbox` hand-in. Caps, data framing, and suppression when the agent already asked.
 - **D. Search nudge (R4):** only if C leaves a gap.
+- **F. Argument slips (from the 11-09 measurement):** `agentx_wiki_query` takes `query` as another name for `question`, and a missing question returns `isError: true` and is logged to `_query-runs.jsonl`. That was 5 of 32 tool calls in the week. In the CLI line of the `[Institutional Wiki]` block, give a timeout above Bash's 120 s default, or point at the tool (R1).
 - **E. Weekly wiki usage line:** the report's headline numbers on the Hub, so the targets in §6 are visible without a terminal.
 
 ## Check it worked
@@ -158,7 +182,7 @@ Targets, all read from the report and `query-runs`:
 - `agentx wiki query "anything" --dir <an agent workspace>` prints `No wiki at …`, exits 1 and leaves the workspace as it was.
 - `agentx wiki query-runs --by agent` lists each agent with its queries and failures.
 - `pnpm exec tsx scripts/wiki-query-report.ts --since 7d --path <node folder>/.agentx/db.sqlite` prints turns, the share with a query, calls by kind, outcomes, and the per-agent and per-day tables.
-- Each "Done when" item in #1820 maps to a section: numbers and method (§3), graded sample (§4, protocol; the run needs the node), savings (§4), ranked options (§5), note (this file).
+- Each "Done when" item in #1820 maps to a section: numbers and method (§3, measured 2026-11-09), graded sample (§4, result), savings (§4, with the measured proxy), ranked options (§5), note (this file).
 
 ## If something is wrong
 
