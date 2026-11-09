@@ -105,7 +105,7 @@ const STEP_BUDGET_MS: Record<string, number> = {
   "route-model": 5_000,
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
-import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
+import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, requestedPriorityOf, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
 import { ResourceSampler } from "@/native/resources"
 import { prepareOutbox } from "@/utils/app-outbox"
 
@@ -1838,6 +1838,9 @@ export class AgentRegistry {
         chatId: qChatId,
         person: person?.id ?? null,
         owner: person?.role === "owner",
+        // A message its sender marked time-critical (an alert, #1807): not
+        // held by swap or load. Never lowers an owner turn.
+        ...(requestedPriorityOf((task.context as any)?.admissionPriority) ? { atLeast: "critical" as const } : {}),
         // A hop whose caller waits on it; a callback turn has no waiting parent.
         delegated: isInsideDelegation(task.context as any) && !(task.context as any)?.delegation,
         // A chat message still waiting at shutdown is replayed by the router.

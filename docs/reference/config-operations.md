@@ -460,7 +460,7 @@ The session queue: every new agent session waits until the machine has room. Rea
 | `closeIdle.settleSeconds` | `30` | Seconds between rounds, so the next reading shows what the last round freed. |
 | `priority.ownerChannels` | `["voice", "app"]` | Channels whose work runs at owner priority. |
 | `priority.ownerPeople` | `[]` | People ids whose work runs at owner priority. |
-| `priority.criticalAgents` | `[]` | Agents whose work runs at critical priority. |
+| `priority.criticalAgents` | `[]` | Agents whose work runs at critical priority. Critical work (these agents, and messages sent with `"priority": "critical"`) is not held by the swap or load checks. |
 | `priority.backgroundChannels` | `["cron", "heartbeat", "routine"]` | Channels whose work runs last. |
 
 ## environment

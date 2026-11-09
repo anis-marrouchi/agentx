@@ -583,6 +583,11 @@ const TOOLS = [
           type: "boolean",
           description: "Information only, no answer needed (a status, an FYI). The agent gets it at the start of its next run instead of a run of its own. Its own machine only.",
         },
+        priority: {
+          type: "string",
+          enum: ["critical"],
+          description: "Optional. \"critical\" only for an alert that must not wait (a failing battery, a full disk): the target's machine starts it even while its swap or load is high. Low memory, low disk and the session limit still hold it. Leave out for normal work.",
+        },
       },
       required: ["agentId", "text"],
     },
@@ -1646,6 +1651,7 @@ async function handleToolCall(
       const taskType = typeof args.taskType === "string" && args.taskType.trim() ? args.taskType.trim() : undefined
       const home = typeof args.home === "string" && args.home.trim() ? args.home.trim() : undefined
       const notice = args.notice === true
+      const priority = args.priority === "critical" ? "critical" : undefined
       if (!agentId || !text) {
         return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
       }
@@ -1658,7 +1664,7 @@ async function handleToolCall(
         res = await daemonFetch(`${daemonUrl()}/send/agent`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...(taskType ? { taskType } : {}), ...(home ? { home } : {}), ...(notice ? { notice: true } : {}), ...callerFields() }),
+          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...(taskType ? { taskType } : {}), ...(home ? { home } : {}), ...(notice ? { notice: true } : {}), ...(priority ? { priority } : {}), ...callerFields() }),
           signal: AbortSignal.timeout(SEND_AGENT_TIMEOUT_MS),
         })
       } catch (e) {

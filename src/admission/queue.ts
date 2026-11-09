@@ -21,6 +21,10 @@
 //     when resources are short. The pressure is not ours.
 //   - owner turns skip the pace and may go ownerExtraSessions over the cap
 //     (never past resources).
+//   - critical runs (an alert, a /send/agent with priority "critical") are
+//     not held by swap or load (#1807). macOS keeps swap in use long after
+//     memory pressure ends, so a swap hold can last an hour. Short memory,
+//     short disk, the session cap and the pace still hold them.
 // A helper run started by a running session (a delegation) may go
 // delegationHeadroom over the cap: its parent holds a place while it
 // waits for the helper, so without headroom a full node deadlocks.
@@ -140,6 +144,10 @@ export interface AdmissionRequest {
   delegated?: boolean
   /** Set by the caller to override the computed priority. */
   priority?: AdmissionPriority
+  /** Raise the computed priority to at least this one, never lower it: a
+   *  /send/agent marked critical (#1807) still runs as owner when an owner
+   *  sent it. */
+  atLeast?: AdmissionPriority
   /** Set by the caller to override the class computed from config. */
   class?: string
   /** Short text for the queue view (never the full message). */
@@ -203,6 +211,12 @@ const baseChannel = (c: string) => (c || "").toLowerCase().split("@")[0]
 
 export function priorityOf(req: AdmissionRequest, s: AdmissionSettings): AdmissionPriority {
   if (req.priority) return req.priority
+  const computed = computedPriority(req, s)
+  if (req.atLeast && PRIORITY_ORDER.indexOf(req.atLeast) < PRIORITY_ORDER.indexOf(computed)) return req.atLeast
+  return computed
+}
+
+function computedPriority(req: AdmissionRequest, s: AdmissionSettings): AdmissionPriority {
   const ch = baseChannel(req.channel)
   if (req.owner || s.priority.ownerChannels.includes(ch)) return "owner"
   if (req.person && s.priority.ownerPeople.includes(req.person)) return "owner"
@@ -251,6 +265,31 @@ export function gateReasons(r: ResourceSample, s: AdmissionSettings): string[] {
   if (lim.minDiskFreeMB > 0 && r.diskFreeMB !== null && r.diskFreeMB < lim.minDiskFreeMB) out.push(`disk: ${r.diskFreeMB} MB free, needs ${lim.minDiskFreeMB} MB`)
   if (lim.maxLoad1 > 0 && r.load1 > lim.maxLoad1) out.push(`load: ${r.load1}, limit ${lim.maxLoad1}`)
   return out
+}
+
+/** Gate reasons a critical run is not held by (#1807): swap in use stays
+ *  high on macOS long after memory pressure ends, and load is not memory. */
+export const CRITICAL_SKIPS = ["swap:", "load:"]
+
+/** A gate reason that holds a run of this priority. */
+export function holdsPriority(reason: string, priority: AdmissionPriority): boolean {
+  return !(priority === "critical" && CRITICAL_SKIPS.some((p) => reason.startsWith(p)))
+}
+
+/** The priority a caller may ask for on a task (#1807): only "critical".
+ *  Anything else is ignored, so a caller can never lower a run's priority
+ *  or claim owner. */
+export function requestedPriorityOf(v: unknown): "critical" | undefined {
+  return v === "critical" ? "critical" : undefined
+}
+
+/** A /task body whose top-level `priority` (a mesh peer's /send/agent)
+ *  joins its context as `admissionPriority`, where the registry reads it. */
+export function contextWithAdmissionPriority(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  const ctx = body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : undefined
+  const top = requestedPriorityOf(body.priority)
+  if (!top) return ctx
+  return { ...(ctx ?? {}), admissionPriority: top }
 }
 
 export class AdmissionQueue {
@@ -425,7 +464,10 @@ export class AdmissionQueue {
       this.log(reasons.length ? `[admission] gate closed: ${reasons.join("; ")}` : `[admission] gate open`)
       this.lastReasons = reasons
     }
-    let holdAll = false
+    // What an earlier held run holds back the runs behind it with, so order
+    // is kept: "all" (pace, memory, disk), or "soft" when only swap or load
+    // held it, which a critical run behind it is not held by (#1807).
+    let holdAll = "none" as "none" | "soft" | "all"
     let heldByResources = false
     for (const e of this.ordered()) {
       const waitedMs = now - e.enqueuedAt
@@ -445,15 +487,20 @@ export class AdmissionQueue {
       // so order is kept; the session cap does not, since a run behind it
       // with more headroom (owner, delegated helper) may still fit.
       const node: string[] = []
-      if (holdAll) node.push("behind earlier work")
+      const skipsSoft = e.priority === "critical"
+      if (holdAll === "all" || (holdAll === "soft" && !skipsSoft)) node.push("behind earlier work")
       const extra = e.priority === "owner" ? s.ownerExtraSessions : 0
       const sessionCap = cap + Math.max(extra, e.delegated ? s.delegationHeadroom : 0)
       if (this.running.size >= sessionCap) node.push(`session cap: ${this.running.size}/${sessionCap} running`)
       const holds: string[] = []
-      if (reasons.length && !(s.allowOneWhenIdle && this.running.size === 0)) {
-        holds.push(...reasons)
+      const mine = reasons.filter((r) => holdsPriority(r, e.priority))
+      if (mine.length && !(s.allowOneWhenIdle && this.running.size === 0)) {
+        holds.push(...mine)
         if (!own.length) heldByResources = true
       }
+      // Gate reasons this run went past, for the start line.
+      const passed = mine.length === reasons.length || (s.allowOneWhenIdle && this.running.size === 0)
+        ? [] : reasons.filter((r) => !mine.includes(r))
       const pace = this.paceWait(e.priority, s, now)
       if (pace > 0) holds.push(`start pace: next start in ${Math.ceil(pace / 1000)}s`)
       node.push(...holds)
@@ -472,10 +519,13 @@ export class AdmissionQueue {
         e.blockedBy = [...node, ...own]
         if (node.length) e.nodeHeldSince ??= now
         else e.nodeHeldSince = null
-        if (holds.length) holdAll = true
+        if (holds.length) {
+          const soft = holds.every((h) => CRITICAL_SKIPS.some((p) => h.startsWith(p)))
+          holdAll = soft && holdAll !== "all" ? "soft" : "all"
+        }
         continue
       }
-      this.admitEntry(e, waitedMs)
+      this.admitEntry(e, waitedMs, passed)
     }
     this.closeIdleRound(s, heldByResources ? reasons : [], now)
   }
@@ -509,13 +559,14 @@ export class AdmissionQueue {
     else this.log(`[admission] gate shut (${memory.join("; ")}): closed ${keys.length} idle session(s), ${this.waiting.length} waiting`)
   }
 
-  private admitEntry(e: Entry, waitedMs: number): void {
+  private admitEntry(e: Entry, waitedMs: number, passed: string[] = []): void {
     this.drop(e)
     // Same step as the check: the agent's slot is taken before anything
     // else can look at it.
     try { e.req.onStart?.() } catch { /* the caller's bookkeeping must not stop the start */ }
     const ticket = this.start(e, waitedMs)
-    if (waitedMs >= 1000) this.log(`[admission] started ${e.agentId} (${e.priority}) after ${Math.round(waitedMs / 1000)}s in the queue`)
+    if (passed.length) this.log(`[admission] started ${e.agentId} (${e.priority}) past the gate (${passed.join("; ")})${waitedMs >= 1000 ? ` after ${Math.round(waitedMs / 1000)}s in the queue` : ""}`)
+    else if (waitedMs >= 1000) this.log(`[admission] started ${e.agentId} (${e.priority}) after ${Math.round(waitedMs / 1000)}s in the queue`)
     e.resolve({ ok: true, ticket })
   }
 

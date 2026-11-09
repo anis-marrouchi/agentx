@@ -104,6 +104,7 @@ import { attachRequests, fillLinkAgents, type AttachedRequests } from "@/request
 import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
 import { handleWatchersApi } from "@/watchers/daemon-api"
 import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
+import { contextWithAdmissionPriority, requestedPriorityOf } from "@/admission/queue"
 import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { homeChecker } from "@/requests/home-check"
@@ -4485,6 +4486,9 @@ export class AgentXDaemon {
     // The task's type picks the evidence its watcher's done needs
     // (#1049); it travels in the callee's context on every path.
     const taskType = taskTypeOf(body)
+    // priority: "critical" (#1807): an alert that must not wait behind a
+    // swap or load hold on the target's node. Any other value is ignored.
+    const priority = requestedPriorityOf(body.priority)
     const wait = body.async === false
     const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
     const seen = wait ? null : this.sendAgentDedupe.get(dedupeKey)
@@ -4517,7 +4521,7 @@ export class AgentXDaemon {
     }
     // #277 — same gate as /task: refuse a cycle, or call back when a
     // person started it. #1100 — or when an agent sent it.
-    const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType ? { calleeContext: { taskType } } : {}) }, { send: true })
+    const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType || priority ? { calleeContext: { ...(taskType ? { taskType } : {}), ...(priority ? { admissionPriority: priority } : {}) } } : {}) }, { send: true })
     if (!("track" in gate)) {
       const a = gateAnswer(gate)
       if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)
@@ -4537,6 +4541,7 @@ export class AgentXDaemon {
         const context = {
           channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}),
           ...(sendDepth ? { sendDepth } : {}),
+          ...(priority ? { admissionPriority: priority } : {}),
           // What the work is about (#1100): a second run on it is told.
           ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
         }
@@ -4600,7 +4605,7 @@ export class AgentXDaemon {
     }
     if (wait) {
       try {
-        const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
+        const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}), ...(priority ? { priority } : {}) })
         this.json(res, 200, { ok: true, messageId, peer: peer.peer })
       } catch (e: any) {
         this.json(res, 500, { error: e.message, peer: peer.peer })
@@ -4612,7 +4617,7 @@ export class AgentXDaemon {
       peer: peer.peer,
       log: (m) => this.log(m),
       run: async () => {
-        await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
+        await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}), ...(priority ? { priority } : {}) })
         return { ok: true }
       },
     })
@@ -8172,6 +8177,8 @@ export class AgentXDaemon {
           if (taskHome) body.context = { ...(body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : {}), home: taskHome }
           // So does a plain send's hop count (#1100).
           if (body.sendDepth !== undefined) body.context = contextWithSendDepth(body)
+          // So does a time-critical send's priority (#1807), for the gate.
+          if (requestedPriorityOf(body.priority)) body.context = contextWithAdmissionPriority(body)
           // #277 — an agent delegating from a turn a person started gets a
           // task id now and the answer later, as a new turn in its chat.
           // Streaming callers are watching the run, so they keep waiting.
