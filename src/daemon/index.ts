@@ -99,6 +99,7 @@ import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
+import { parseWorkActivity, type WorkActivity } from "@/workflows/wake"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, fillLinkAgents, type AttachedRequests } from "@/requests/attach"
 import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
@@ -3756,6 +3757,7 @@ export class AgentXDaemon {
       gitlab.setProjectRules(this.projectRules)
       this.gitlabReviewGate = this.buildReviewGate(gitlab)
       gitlab.onMergeRequestEvent((event) => { void this.gitlabReviewGate?.onPullRequest(event) })
+      gitlab.onWorkActivity((a) => { void this.wakeWorkflows(a) })
       this.router.addChannel(gitlab)
       this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)
     }
@@ -9487,6 +9489,30 @@ export class AgentXDaemon {
     })
   }
 
+  /** A note or label change seen by this node's GitLab channel: wake the
+   *  timer waits that watch it here, and tell every healthy peer, since the
+   *  run may live on another node. A peer applies it locally and never
+   *  passes it on. */
+  private async wakeWorkflows(a: WorkActivity): Promise<void> {
+    try { await this.workflowDispatcher?.wake(a) } catch (e: any) { this.log(`[workflows] wake failed: ${e.message}`) }
+    const peers = this.mesh?.directory().filter((p) => p.healthy) ?? []
+    await Promise.allSettled(peers.map(async (peer) => {
+      try {
+        // No `event` or `entityRef`: a peer without wake support answers
+        // 400 instead of dispatching it as a trigger.
+        const r = await fetch(`${peer.peerUrl}/workflow/event`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+          body: JSON.stringify({ kind: "wake", fromPeer: this.config.node.id, wake: a }),
+          signal: AbortSignal.timeout(5000),
+        })
+        if (!r.ok) this.log(`[workflows/mesh] wake ${peer.peer} -> ${r.status}`)
+      } catch (e: any) {
+        this.log(`[workflows/mesh] wake ${peer.peer} failed: ${e.message}`)
+      }
+    }))
+  }
+
   private async handleWorkflowEvent(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.workflowDispatcher) {
       this.json(res, 503, { error: "workflow engine not enabled on this node" })
@@ -9495,6 +9521,13 @@ export class AgentXDaemon {
     let body: any
     try { body = await readJsonBody(req) } catch (e: any) {
       this.json(res, 400, { error: "invalid JSON body", message: e.message }); return
+    }
+    if (body?.kind === "wake") {
+      const a = parseWorkActivity(body.wake)
+      if (!a) { this.json(res, 400, { error: "invalid wake" }); return }
+      const results = await this.workflowDispatcher.wake(a)
+      this.json(res, 202, { ok: true, mode: "wake", results })
+      return
     }
     const payload = body?.payload ?? body
     const event = payload?.event

@@ -2,6 +2,7 @@ import { evaluateBranch, getByPath } from "../engine"
 import { classifyHandler } from "./classify"
 import { renderParams, render } from "../template"
 import { nodeConcurrencyGate, nodeKey } from "../node-concurrency"
+import { wakeConfig } from "../wake"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
 import { FOLLOW_UP_HANDLERS, isSupervised, supervisedResult, supervisedSuffix } from "./follow-up"
 
@@ -603,12 +604,16 @@ const timerBoundaryHandler: NodeHandler = async (ctx) => {
   const rendered = renderParams(cfg as Record<string, unknown>, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
   const due = computeDueAt(rendered.after ?? cfg.after)
   if (!due) return { error: `timer.boundary "${ctx.node.id}" needs config.after (duration or minutes)` }
+  // Rendered on every pause: refs that appear later in the run (a merge
+  // request, a test issue) join the watch list on the next pause.
+  const wake = wakeConfig(rendered.wake)
   return {
     paused: true,
     pausedAt: {
       kind: "timerWait",
       nodeId: ctx.node.id,
       fireAt: due,
+      ...(wake ? { wake } : {}),
     },
   }
 }

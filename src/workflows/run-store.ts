@@ -285,13 +285,14 @@ export class RunStore {
 
   /** Merge into a run's meta and replace its pending queue (#858: a plan
    *  written or changed mid-run). Appends a snapshot; history is kept. */
-  patch(runId: string, patch: { meta?: Partial<RunMeta>; pending?: string[] }): WorkflowRun | null {
+  patch(runId: string, patch: { meta?: Partial<RunMeta>; pending?: string[]; pausedAt?: PausedAt }): WorkflowRun | null {
     const run = this.get(runId)
     if (!run) return null
     const updated: WorkflowRun = {
       ...run,
       ...(patch.meta ? { meta: { tags: [], followUp: false, approvedAtStart: false, ...run.meta, ...patch.meta } } : {}),
       ...(patch.pending ? { pending: patch.pending } : {}),
+      ...(patch.pausedAt ? { pausedAt: patch.pausedAt } : {}),
       updatedAt: new Date().toISOString(),
     }
     this.appendSnapshot(updated)

@@ -5,6 +5,7 @@ import type { HookRegistry } from "@/hooks"
 import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeBody, forgeSender, forgeAuthorLabel, mappedForgeUsernames } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
 import { isStatusComment } from "@/requests/status"
+import { WAKE_SELF_MARK, type WorkActivity } from "@/workflows/wake"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
 import { computeIssueTargets, describeIssueChange } from "./gitlab-issue-targets"
@@ -90,6 +91,8 @@ interface GitLabNoteEvent {
     note: string
     noteable_type: string  // "Issue", "MergeRequest", "Commit"
     url: string
+    /** "create" or "update" on current GitLab; absent on older ones. */
+    action?: string
   }
   issue?: { iid: number; title: string; state: string }
   merge_request?: { iid: number; title: string; state: string; source_branch: string; target_branch: string }
@@ -118,6 +121,7 @@ interface GitLabIssueEvent {
    *  not previous). */
   changes?: {
     assignees?: { previous?: Array<{ id: number; username: string }>; current?: Array<{ id: number; username: string }> }
+    labels?: { previous?: unknown[]; current?: unknown[] }
   }
 }
 
@@ -148,6 +152,7 @@ export interface GitLabMREvent {
   changes?: {
     assignees?: { previous?: Array<{ id: number; username: string }>; current?: Array<{ id: number; username: string }> }
     reviewers?: { previous?: Array<{ id: number; username: string }>; current?: Array<{ id: number; username: string }> }
+    labels?: { previous?: unknown[]; current?: unknown[] }
   }
 }
 
@@ -251,6 +256,7 @@ export class GitLabAdapter implements ChannelAdapter {
   private config: GitLabChannelConfig
   private handler?: (msg: IncomingMessage) => Promise<void>
   private mergeRequestListeners: Array<(event: MergeRequestEventInfo) => void> = []
+  private activityListeners: Array<(a: WorkActivity) => void> = []
   private server?: ReturnType<typeof createServer>
   private botUsername?: string  // resolved on first API call
   private botUsernames: Set<string> = new Set()  // all known bot users (to prevent cascading)
@@ -345,6 +351,19 @@ export class GitLabAdapter implements ChannelAdapter {
    *  #1292). Called before the bot and project-rule filters below. */
   onMergeRequestEvent(listener: (event: MergeRequestEventInfo) => void): void {
     this.mergeRequestListeners.push(listener)
+  }
+
+  /** Every new note and every label change on an issue or merge request,
+   *  for workflow timer wakes (src/workflows/wake.ts). Called before the
+   *  cascade filters, agent notes and bot events included. */
+  onWorkActivity(listener: (a: WorkActivity) => void): void {
+    this.activityListeners.push(listener)
+  }
+
+  private emitActivity(a: WorkActivity): void {
+    for (const l of this.activityListeners) {
+      try { l(a) } catch (e: any) { this.log(`work activity listener failed: ${e?.message || e}`) }
+    }
   }
 
   /** The agent routed to a project, for the review gate's author check. */
@@ -687,12 +706,13 @@ export class GitLabAdapter implements ChannelAdapter {
    * Routes @mention comments to the right agent.
    */
   private async handleNote(event: GitLabNoteEvent, res: ServerResponse): Promise<void> {
-    if (!this.handler) { res.writeHead(200); res.end("ok"); return }
-
     const note = event.object_attributes.note
     const project = event.project.path_with_namespace
     const user = event.user
     const noteId = String(event.object_attributes.id)
+    this.noteActivity(event)
+
+    if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
     // PRIMARY CASCADE PREVENTION: Check for AgentX signature.
     // Every comment posted by AgentX has <!-- agentx:AGENT_ID --> appended.
@@ -924,6 +944,7 @@ export class GitLabAdapter implements ChannelAdapter {
    * Only routes events from human users, not bot-triggered updates.
    */
   private async handleIssue(event: GitLabIssueEvent, res: ServerResponse): Promise<void> {
+    this.labelActivity(event.project.path_with_namespace, "#", event.object_attributes.iid, event.changes?.labels)
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
     const attrs = event.object_attributes
@@ -1278,10 +1299,37 @@ export class GitLabAdapter implements ChannelAdapter {
     }
   }
 
+  /** A new note on an issue or merge request, as work activity. Note edits
+   *  and AgentX status notes are left out; the no-wake mark counts only
+   *  from an account AgentX posts with. */
+  private noteActivity(event: GitLabNoteEvent): void {
+    if (!this.activityListeners.length) return
+    const attrs = event.object_attributes
+    if (attrs.action && attrs.action !== "create") return
+    const [sep, iid] = attrs.noteable_type === "Issue" ? ["#", event.issue?.iid]
+      : attrs.noteable_type === "MergeRequest" ? ["!", event.merge_request?.iid]
+      : [null, undefined]
+    if (!sep || !iid) return
+    const trusted = this.postsAs(event.user.username) || this.isBotUser(event.user.username)
+    if (trusted && isStatusComment(attrs.note)) return
+    this.emitActivity({
+      ref: `${event.project.path_with_namespace}${sep}${iid}`.toLowerCase(),
+      on: "note",
+      selfMarked: trusted && attrs.note.includes(WAKE_SELF_MARK),
+    })
+  }
+
+  /** A label change on an issue or merge request, as work activity. */
+  private labelActivity(project: string, sep: "#" | "!", iid: number, labels: unknown): void {
+    if (!this.activityListeners.length || !labels) return
+    this.emitActivity({ ref: `${project}${sep}${iid}`.toLowerCase(), on: "label", selfMarked: false })
+  }
+
   /**
    * Handle merge request events.
    */
   private async handleMR(event: GitLabMREvent, res: ServerResponse): Promise<void> {
+    this.labelActivity(event.project.path_with_namespace, "!", event.object_attributes.iid, event.changes?.labels)
     const info = this.mergeRequestListeners.length ? mergeRequestEventInfo(event) : null
     if (info) {
       for (const l of this.mergeRequestListeners) {

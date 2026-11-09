@@ -146,6 +146,19 @@ export class TimerService {
     return removed
   }
 
+  /** Move a pending timer to a new fireAt, in place: same file, same id.
+   *  Never creates a timer. Returns the updated record, or null when no
+   *  unfired timer with that cancelKey exists (it fired or was cancelled). */
+  retime(cancelKey: string, fireAt: string): TimerRecord | null {
+    const t = this.list().find((x) => x.cancelKey === cancelKey && !this.firedIds.has(x.id))
+    if (!t) return null
+    const path = this.pathFor(t.id)
+    if (!existsSync(path)) return null
+    const updated = { ...t, fireAt }
+    writeFileSync(path, JSON.stringify(updated, null, 2))
+    return updated
+  }
+
   list(): TimerRecord[] {
     if (!existsSync(this.baseDir)) return []
     const out: TimerRecord[] = []

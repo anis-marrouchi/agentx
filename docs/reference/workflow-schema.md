@@ -87,6 +87,23 @@ Each type's config is checked by its handler in `src/workflows/nodes/`.
 
 A `timer.boundary` wait is kept on disk, so it still fires after the daemon restarts. If its due time passed while the daemon was off, the run moves on within a second of startup. As a safety net, the daemon also checks every minute, and once at startup, for runs that are still waiting on a timer more than two seconds after it was due. It moves those runs on and notes `timer-recovered` on the step's history and in the daemon log.
 
+### Wake a timer early
+
+A `timer.boundary` can end early when someone writes on the work it waits for:
+
+```json
+{ "id": "wait_review", "type": "timer.boundary",
+  "config": { "after": "PT30M",
+              "wake": { "on": ["note", "label"], "refs": "{{check.watch}}", "minGapSec": 60 } } }
+```
+
+- `refs` lists GitLab issues (`group/project#12`) and merge requests (`group/project!3`), comma-separated or as a list. It is rendered each time the run pauses here, so refs an earlier step found later join on the next pause.
+- A new note, or a label change, on one of them moves the pending timer to now. The timer itself is kept, so nothing changes when no event comes.
+- Within `minGapSec` of the last wake (default 60), the timer moves to the end of that gap instead: many notes give one tick now and one more at most.
+- A note edit, an AgentX status note, or a note carrying `<!-- agentx:no-wake -->` posted from an account AgentX posts with does not wake.
+- The node that receives the GitLab webhook passes the wake to its mesh peers, so the run may live on another node. Upgrade the nodes holding the runs first: an older node answers the wake with 400 and its timers run as before.
+- Each wake logs `wake run=<id> node=<node> event=<note|label>:<ref> result=woke|debounced|self|stale`, or `result=no-run` when no run watches the ref.
+
 ## Follow-up steps
 
 These steps let a workflow work with you and with other people. How they are used: [Let a workflow follow a request](../jobs/follow-up-workflows.md).
