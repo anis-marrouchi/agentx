@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.214.0](https://github.com/anis-marrouchi/agentx/compare/v0.213.3...v0.214.0) (2026-11-09)
+
+
+### Features
+
+* **requests:** a step owner can pause nudges until a time ([#1814](https://github.com/anis-marrouchi/agentx/issues/1814)) ([50b1d00](https://github.com/anis-marrouchi/agentx/commit/50b1d0061df27ee3d1f9fd1306f0ea816da742df))
+
+
+### Bug Fixes
+
+* **gitlab:** assign, relate and react use the integrations token ([#1812](https://github.com/anis-marrouchi/agentx/issues/1812)) ([500f4fa](https://github.com/anis-marrouchi/agentx/commit/500f4fa3dcfaeec939c0d030231b35f9bd994e2d)), closes [#1774](https://github.com/anis-marrouchi/agentx/issues/1774)
+
 ## [0.213.3](https://github.com/anis-marrouchi/agentx/compare/v0.213.2...v0.213.3) (2026-11-09)
 
 
