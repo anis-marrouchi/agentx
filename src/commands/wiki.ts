@@ -945,8 +945,14 @@ wiki
   .description("count wiki queries by outcome, with timing")
   .option("--dir <path>", "wiki directory")
   .option("--since <date>", "only queries on or after this date or time (ISO)")
+  .option("--by <group>", "also count per agent or per day: agent or day")
   .option("--json", "print the summary as JSON")
   .action(async (opts) => {
+    if (opts.by !== undefined && opts.by !== "agent" && opts.by !== "day") {
+      console.log(chalk.red(`  --by takes agent or day, not "${opts.by}".`))
+      process.exitCode = 1
+      return
+    }
     const { QUERY_RUNS_FILE, summariseQueryRuns } = await import("@/wiki/query-runs")
     const file = resolve(wikiDir(opts.dir), QUERY_RUNS_FILE)
     if (!existsSync(file)) {
@@ -959,6 +965,13 @@ wiki
     console.log(chalk.bold(`  ${s.total} queries · ${s.failed} failed · p50 ${(s.wallMsP50 / 1000).toFixed(1)} s · p95 ${(s.wallMsP95 / 1000).toFixed(1)} s`))
     for (const [status, n] of Object.entries(s.byStatus).sort((a, b) => b[1] - a[1])) console.log(`  ${status.padEnd(14)} ${n}`)
     console.log(chalk.dim(`  from: ${Object.entries(s.bySource).map(([src, n]) => `${src} ${n}`).join(" · ")}`))
+    if (opts.by) {
+      const rows = Object.entries(opts.by === "agent" ? s.byAgent : s.byDay)
+        .sort((a, b) => (opts.by === "agent" ? b[1].total - a[1].total : a[0].localeCompare(b[0])))
+      console.log()
+      console.log(chalk.bold(`  ${opts.by.padEnd(24)} queries  failed`))
+      for (const [key, row] of rows) console.log(`  ${(key || "(unknown)").padEnd(24)} ${String(row.total).padStart(7)} ${String(row.failed).padStart(7)}`)
+    }
     console.log()
   })
 
@@ -3336,7 +3349,17 @@ wiki
     const { QUERY_RUNS_FILE, queryFailed, recordQueryRun, timedQuery } = await import("@/wiki/query-runs")
     const settings = await querySettingsFor(opts)
     if (!settings) return
-    const hub = getHub(opts.dir)
+    // A query only reads: open the wiki that is there, never make one. An
+    // agent's workspace given as --dir used to get an empty wiki of its
+    // own, or a crash where it could not be written (#1820).
+    const { existingWikiDir } = await import("@/wiki/hub")
+    const dir = existingWikiDir(wikiDir(opts.dir))
+    if (!dir) {
+      console.log(chalk.yellow(`  No wiki at ${wikiDir(opts.dir)}. Give --dir the wiki folder (<node folder>/.agentx/wiki), as the [Institutional Wiki] note shows, or run from the node's folder.`))
+      process.exitCode = 1
+      return
+    }
+    const hub = getHub(dir)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     // Every query leaves one line in _query-runs.jsonl, and one that could
     // not run exits 1, so a failure is counted and a caller can see it (#603).

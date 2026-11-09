@@ -2031,7 +2031,7 @@ Answer a question from the wiki. Once at least 80% of the agent's own pages have
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--dir <path>` | — | Wiki directory. |
+| `--dir <path>` | `.agentx/wiki` | Wiki directory. A node's folder also works: the query then reads the `.agentx/wiki` inside it. |
 | `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`), else the first one with a catalog | Which agent's wiki to search first. |
 | `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
 | `--no-live` | — | Skip the live read of the summaries method. |
@@ -2048,6 +2048,8 @@ Answer a question from the wiki. Once at least 80% of the agent's own pages have
 
 Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query. The half-of-`--max-articles` rule and the linking pages belong to the catalog method; the summaries method shows the picking model `wiki.query.sharedCandidates` of other agents' pages beside the agent's own. With `wiki.query.notes.enabled`, the summaries method also searches the agent's own notes; a note it used is cited with the type `note` and a `note:` path. See [Search the agent's own notes](/jobs/wiki-live-answers#search-the-agent-s-own-notes).
 
+A query only reads. When `--dir` holds no wiki (for example an agent's own workspace folder), the command prints `No wiki at …`, exits with code 1 and creates nothing there. The `agentx_wiki_query` tool does the same with a `wiki_dir` that holds no wiki, and marks a query that could not run (status `error` or `no-catalog`) as a tool error.
+
 When the query cannot run, the command exits with code 1: the model call failed (status `error`) or no agent has a catalog yet (status `no-catalog`). A question the wiki has no page for (status `no-candidates`) is not a failure and exits 0. Each query adds one line to `_query-runs.jsonl` in the wiki directory: the time, the agent, the status, how the pages were picked, where the query came from and how long it took. Queries an agent makes with the `agentx_wiki_query` tool are written to the same file, marked `tool`; queries from this command are marked `cli`. A query that stops with an unexpected error is written with status `error`. The file holds no question, answer or error text. Once it passes 1 MB, the oldest lines are removed so that about 500 KB of the newest remain. `agentx wiki query-runs` counts them.
 
 ### `agentx wiki query-runs`
@@ -2058,7 +2060,8 @@ Count the queries recorded in `_query-runs.jsonl`: how many ran, how many failed
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
 | `--since <date>` | — | Only queries on or after this date or time, for example `2026-10-09` or `2026-10-09T08:00:00Z`. |
-| `--json` | — | Print the counts as JSON. |
+| `--by <group>` | — | Also list the queries and failures per `agent` or per `day` (UTC). |
+| `--json` | — | Print the counts as JSON. The JSON always has the counts per agent (`byAgent`) and per day (`byDay`). |
 
 ### `agentx wiki summarize`
 
@@ -4496,6 +4499,7 @@ An agent's content calendar (`calendar.md` in its workspace).
 - **`wiki absorb` prints `note <id> deferred: patch refused: …`:** the model's patch broke a rule (it replaced most of a page, removed a contact or role value, or quoted text the article does not have). The note comes back on the next run. Read the reason with `agentx wiki notes list --status all`.
 - **`wiki absorb-runs` prints `no absorb runs recorded yet`:** no absorb has run since the run log was added, or `--dir` points at another wiki. Run `agentx wiki absorb` once, then try again.
 - **A schedule running `wiki absorb` as a command shows as failed:** absorb exits with code 1 when a model call fails. Run `agentx wiki absorb --dry-run` to check the setup, then `agentx wiki absorb-runs` to see how many calls failed. The entries stay queued, so the next good run catches up.
+- **`wiki query` prints `No wiki at …`:** `--dir` points at a folder with no wiki in it, often an agent's workspace. Give it the wiki folder (`<node folder>/.agentx/wiki`), or the node's folder, or run the command from the node's folder without `--dir`.
 - **`wiki query-runs` prints `no queries recorded yet`:** no query has run against this wiki since the query log was added, or `--dir` points at another wiki. Run `agentx wiki query "a question"` once, then try again.
 - **`wiki absorb-eval` prints `no articles … to score`:** nothing changed in the window you gave. Widen `--since` or `--changed-after`, or leave both out to sample every article.
 - **`unknown command`:** check the spelling and the command group. Advanced commands don't appear in `agentx --help`, but they still run.

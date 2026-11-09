@@ -1422,7 +1422,7 @@ const TOOLS = [
 async function handleToolCall(
   name: string,
   args: Record<string, unknown>
-): Promise<{ content: { type: string; text: string }[] }> {
+): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
   const cwd = (args.cwd as string) || process.cwd()
 
   switch (name) {
@@ -2161,7 +2161,14 @@ async function handleToolCall(
       const { agenticQuery, sharedQueryEnabled } = await import("@/wiki/query")
       const { loadQuerySettings, toolNoteSourceFor } = await import("@/wiki/query-settings")
       const { resolve } = await import("path")
-      const wikiDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
+      const { existingWikiDir } = await import("@/wiki/hub")
+      const askedDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
+      // Read only: a wiki_dir with no wiki in it gets an error, not a new
+      // empty wiki (#1820). A node's folder finds its .agentx/wiki.
+      const wikiDir = existingWikiDir(askedDir)
+      if (!wikiDir) {
+        return { content: [{ type: "text", text: `Error: no wiki at ${askedDir}. Leave wiki_dir out to use this node's wiki.` }], isError: true }
+      }
       const hub = new WikiHub(wikiDir, undefined, "graph")
       // The calling agent, when the runtime says who it is: its own wiki
       // first, then the shared wiki (#824).
@@ -2180,7 +2187,7 @@ async function handleToolCall(
       const runsFile = resolve(hub.getBaseDir(), QUERY_RUNS_FILE)
       if (!agentId) {
         recordQueryRun(runsFile, { at: new Date().toISOString(), agent: "", status: "no-catalog", source: "tool", wallMs: 0 })
-        return { content: [{ type: "text", text: "Error: no agent has a wiki catalog yet. Run `agentx wiki absorb` first." }] }
+        return { content: [{ type: "text", text: "Error: no agent has a wiki catalog yet. Run `agentx wiki absorb` first." }], isError: true }
       }
       const store = hub.getAgentWiki(agentId)
       const maxHops = typeof args.max_hops === "number" ? Math.min(3, Math.max(0, args.max_hops)) : 2
@@ -2208,7 +2215,13 @@ async function handleToolCall(
         notes: toolNoteSourceFor(settings, agentId),
       }))
       if (result.status !== "ok") {
-        return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
+        // A query that could not run is a tool error, so the trace ledger
+        // and the agent tell it apart from "the wiki has no page" (#1820).
+        const { queryFailed } = await import("@/wiki/query-runs")
+        return {
+          content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }],
+          ...(queryFailed(result.status) ? { isError: true } : {}),
+        }
       }
       const cites = result.citations.map(c => `  - ${c.title} [${c.type || "?"}] (${c.path})`).join("\n")
       const walkCount = result.walked.length

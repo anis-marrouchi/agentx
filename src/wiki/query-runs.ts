@@ -92,6 +92,10 @@ export interface QueryRunSummary {
   failed: number
   byStatus: Record<string, number>
   bySource: Record<string, number>
+  /** Queries and failures per asking agent ("" when none was known). */
+  byAgent: Record<string, { total: number; failed: number }>
+  /** Queries and failures per UTC day (YYYY-MM-DD). */
+  byDay: Record<string, { total: number; failed: number }>
   /** Over queries that ran: `no-catalog` lines are left out. */
   wallMsP50: number
   wallMsP95: number
@@ -107,7 +111,16 @@ export function summariseQueryRuns(text: string, since?: string): QueryRunSummar
   }).filter((r) => !since || r.at >= since)
   const byStatus: Record<string, number> = {}
   const bySource: Record<string, number> = {}
+  const byAgent: Record<string, { total: number; failed: number }> = {}
+  const byDay: Record<string, { total: number; failed: number }> = {}
+  const tally = (map: Record<string, { total: number; failed: number }>, key: string, failed: boolean) => {
+    const row = (map[key] ??= { total: 0, failed: 0 })
+    row.total++
+    if (failed) row.failed++
+  }
   for (const r of records) {
+    tally(byAgent, typeof r.agent === "string" ? r.agent : "", queryFailed(r.status))
+    tally(byDay, r.at.slice(0, 10), queryFailed(r.status))
     byStatus[r.status] = (byStatus[r.status] ?? 0) + 1
     const source = r.source ?? "cli"
     bySource[source] = (bySource[source] ?? 0) + 1
@@ -120,6 +133,8 @@ export function summariseQueryRuns(text: string, since?: string): QueryRunSummar
     failed: records.filter((r) => queryFailed(r.status)).length,
     byStatus,
     bySource,
+    byAgent,
+    byDay,
     wallMsP50: pick(0.5),
     wallMsP95: pick(0.95),
   }
