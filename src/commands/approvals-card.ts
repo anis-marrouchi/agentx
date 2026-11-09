@@ -3,6 +3,7 @@ import chalk from "chalk"
 import { readCard } from "@/approvals/cards"
 import { decide } from "@/approvals/inbox"
 import { showPopup } from "@/approvals/popup"
+import { cardAsText, popupCaller, popupCliMode, popupLogLine } from "@/approvals/popup-cli"
 import { sampleCard } from "@/approvals/sample-card"
 import { readApprovalSettings } from "@/approvals/settings"
 
@@ -13,32 +14,45 @@ const base = () => (process.env.AGENTX_DAEMON_URL || "http://127.0.0.1:18800").r
 export function registerCardCommands(approvals: Command): void {
   approvals
     .command("popup")
-    .description("show a card on this Mac now and record your answer (macOS)")
+    .description("show a card on this Mac now and record your answer (macOS); inside an agent's run it only prints the card")
     .argument("[key]", "card key from `agentx approvals list`, e.g. card:2026-01-05-new-meeting-date-ab12")
     .option("--sample", "show a sample card; nothing is recorded")
+    .option("--print", "print the card here; no window, nothing recorded")
+    .option("--dry-run", "show the window but record nothing")
     .option("--pick <n>", "start with option n picked (previews)")
     .option("--theme <system|light|dark>", "override approvals.popup.theme")
     .option("--capture <file.png>", "save a picture of the card window")
     .option("--timeout <seconds>", "override approvals.popup.timeoutSeconds")
-    .action(async (key: string | undefined, opts: { sample?: boolean; pick?: string; theme?: string; capture?: string; timeout?: string }) => {
-      if (process.platform !== "darwin") { console.error(chalk.red("  the popup needs macOS")); process.exitCode = 1; return }
+    .action(async (key: string | undefined, opts: { sample?: boolean; print?: boolean; dryRun?: boolean; pick?: string; theme?: string; capture?: string; timeout?: string }) => {
+      const { mode, agent } = popupCliMode(opts)
       const id = key?.startsWith("card:") ? key.slice(5) : key
-      const card = opts.sample ? sampleCard() : id ? readCard(process.cwd(), id) : null
+      const card = mode === "sample" ? sampleCard() : id ? readCard(process.cwd(), id) : null
       if (!card || card.status !== "pending") {
         console.error(chalk.red(key ? `  no card waiting for "${key}"` : "  give a card key, or --sample")); process.exitCode = 1; return
       }
+      const cardKey = `card:${card.id}`
+      const caller = popupCaller(agent)
+      if (mode === "print") {
+        console.log(cardAsText(card))
+        if (agent && !opts.print) console.log(chalk.dim(`  run inside ${agent}'s session: printed only. Only the operator answers a card (#1788); --dry-run shows the window without recording.`))
+        console.log(chalk.dim(`  ${popupLogLine(cardKey, caller, "printed")}`))
+        return
+      }
+      if (process.platform !== "darwin") { console.error(chalk.red("  the popup needs macOS")); process.exitCode = 1; return }
       const settings = { ...readApprovalSettings().popup! }
       if (opts.theme === "system" || opts.theme === "light" || opts.theme === "dark") settings.theme = opts.theme
       if (opts.timeout) settings.timeoutSeconds = Number(opts.timeout)
-      const answer = await showPopup(card, settings, { from: opts.sample ? "Assistant" : undefined, capture: opts.capture, pick: Number(opts.pick) || undefined })
+      console.log(chalk.dim(`  ${popupLogLine(cardKey, caller, "showing")}`))
+      const answer = await showPopup(card, settings, { from: mode === "sample" ? "Assistant" : undefined, capture: opts.capture, pick: Number(opts.pick) || undefined })
       if (opts.capture) console.log(chalk.dim(`  picture saved to ${opts.capture}`))
-      if (opts.sample) { console.log(`  answer (not recorded): ${JSON.stringify(answer)}`); return }
+      console.log(chalk.dim(`  ${popupLogLine(cardKey, caller, answer)}`))
+      if (mode !== "record") { console.log(`  answer (not recorded): ${JSON.stringify(answer)}`); return }
       if (answer.action === "dismiss") { console.log(chalk.dim(`  not answered${answer.why ? ` (${answer.why})` : ""}; the card is still waiting`)); return }
-      const r = await decide({ root: process.cwd() }, `card:${card.id}`, answer.action, {
-        by: "operator (popup)", ...(answer.action === "yes" ? { choice: answer.choice, text: answer.text } : {}),
+      const r = await decide({ root: process.cwd() }, cardKey, answer.action, {
+        by: "operator (popup, terminal)", ...(answer.action === "yes" ? { choice: answer.choice, text: answer.text } : {}),
       })
-      if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
-      console.log(chalk.green(`  ✓ ${r.message}`))
+      if (!r.ok) { console.error(chalk.red(`  ${popupLogLine(cardKey, caller, { notRecorded: r.error })}`)); process.exitCode = 1; return }
+      console.log(chalk.green(`  ✓ ${popupLogLine(cardKey, caller, { recorded: r.message })}`))
     })
 
   approvals

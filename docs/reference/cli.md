@@ -216,7 +216,7 @@ One list of every decision waiting for you: [Approvals](../dashboard/approvals.m
 | `agentx approvals reject <key> [--note]` | Say no |
 | `agentx approvals later <key> [--hours]` | Put an item off (default 24 hours) |
 | `agentx approvals request --agent … --title … --ask … --recommend … --if-silent … [--choice …] [--draft] [--say] [--context]` | Raise a decision card yourself, for example to test |
-| `agentx approvals popup <key>` | Show one card on the Mac now and record your answer (macOS) |
+| `agentx approvals popup <key> [--print] [--dry-run]` | Show one card on the Mac now and record your answer (macOS). Inside an agent's run it only prints the card; `--print` prints it, `--dry-run` shows it without recording |
 | `agentx approvals popup --sample [--theme] [--capture file.png]` | Show a sample card; nothing is recorded |
 | `agentx approvals checkin [--daily]` | Run a check-in now: waiting cards come back, open reminders get cards (daemon, macOS) |
 | `agentx approvals mirror-report [--start] [--days] [--json]` | Count, per day, cards raised, Reminders created and cards the [Reminders mirror](../jobs/reminders-mirror.md) missed |

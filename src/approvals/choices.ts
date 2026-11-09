@@ -139,6 +139,19 @@ export function resolveAnswer(
   return { ok: true, ...(choice ? { choice } : {}), ...(text ? { text } : {}), ...(suggested ? { suggested: true as const } : {}) }
 }
 
+/**
+ * An option that means no: "Don't send", "Do not book", "No", "Not now",
+ * "Skip", "Cancel". The card's Send button returns yes with whatever
+ * option is picked, so a yes with one of these is recorded as a no and
+ * never reaches the agent as "send exactly this" (#1788). It errs toward
+ * no: a label like "No changes, merge" also counts as no.
+ */
+const NO_CHOICE = /^(don['’]?t|do not|no|not|never|cancel|skip|decline|reject)\b/i
+
+export function isNoChoice(label: string | undefined): boolean {
+  return !!label && NO_CHOICE.test(label.trim())
+}
+
 /** Lines for the agent's result message. Empty for a plain card. */
 export function answerLines(card: { choice?: string; text?: string; choice_suggested?: boolean }): string[] {
   const lines: string[] = []
