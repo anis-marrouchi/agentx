@@ -1,28 +1,36 @@
 import { WikiStore } from "./store"
 import { resolve } from "path"
-import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync } from "fs"
+import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "fs"
 import type { WikiEntry } from "./types"
 import type { SharedWikiStore } from "./query"
 
 export type WikiMode = "flat" | "graph" | "unified"
 
-const isDir = (p: string) => {
-  try { return statSync(p).isDirectory() } catch { return false }
+const subdirs = (dir: string) => {
+  try { return readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name) } catch { return [] }
 }
-const holdsWiki = (dir: string) => isDir(dir) && isDir(resolve(dir, "agents"))
+/** A wiki with a catalog: some agents/<id>/<mode>/_index.md. A bare agents/ folder left by an old run is not one. */
+const holdsWiki = (dir: string) => {
+  const agentsDir = resolve(dir, "agents")
+  return subdirs(agentsDir).some((id) =>
+    subdirs(resolve(agentsDir, id)).some((mode) => existsSync(resolve(agentsDir, id, mode, "_index.md"))))
+}
 
 /**
  * The wiki a query should read for `dir`, without creating anything:
- * `dir` itself when it holds a wiki, else `<dir>/.agentx/wiki` when that
- * does (a node's folder given in place of its wiki). Null when neither
- * does. Opening a WikiHub creates folders, so a query pointed at an
- * agent's workspace used to leave an empty wiki there and answer "no
- * catalog", or crash when the folder could not be written (#1820).
+ * `dir` itself when it holds a wiki with a catalog, else
+ * `<dir>/.agentx/wiki` when that does (a node's folder given in place of
+ * its wiki). Null when neither does. Opening a WikiHub creates folders, so
+ * a query pointed at an agent's workspace used to leave an empty wiki
+ * there and answer "no catalog", or crash when the folder could not be
+ * written (#1820). Empty wikis those runs left behind (agents/ and nothing
+ * else) count as no wiki, so they fall through to the next candidate.
  */
 export function existingWikiDir(dir: string): string | null {
-  if (holdsWiki(dir)) return dir
-  const nested = resolve(dir, ".agentx/wiki")
-  return holdsWiki(nested) ? nested : null
+  for (const candidate of [dir, resolve(dir, ".agentx/wiki")]) {
+    if (holdsWiki(candidate)) return candidate
+  }
+  return null
 }
 
 /**
