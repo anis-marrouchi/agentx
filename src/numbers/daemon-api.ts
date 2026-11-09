@@ -33,11 +33,23 @@ const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 
 export const MASK = "***"
 
-/** The source as agents may see it: header values and command text come
- *  only from agentx.json and can hold tokens, so they are masked. Header
- *  names stay, so an agent can tell a header is set. */
+/** The url with each query value masked (`?api_key=***`); keys stay. Text
+ *  work, not URL(), so `{start}` and `{end}` stay as written. */
+export function maskQuery(url: string): string {
+  const m = url.match(/^([^?#]*)(?:\?([^#]*))?(#.*)?$/)
+  if (!m || m[2] === undefined) return url
+  const query = m[2].split("&").map((p) => (p.includes("=") ? `${p.slice(0, p.indexOf("="))}=${MASK}` : p)).join("&")
+  return `${m[1]}?${query}${m[3] ?? ""}`
+}
+
+/** The source as agents may see it: header values, query values and
+ *  command text can hold tokens, so they are masked. Header and query
+ *  names stay, so an agent can tell one is set. */
 export function sourceView(s: NumberSource): NumberSource {
-  if (s.kind === "http-json" && s.headers) return { ...s, headers: Object.fromEntries(Object.keys(s.headers).map((k) => [k, MASK])) }
+  if (s.kind === "http-json") {
+    const { headers, ...rest } = s
+    return { ...rest, url: maskQuery(s.url), ...(headers ? { headers: Object.fromEntries(Object.keys(headers).map((k) => [k, MASK])) } : {}) }
+  }
   if (s.kind === "command") return { ...s, command: MASK }
   return s
 }

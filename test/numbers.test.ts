@@ -9,7 +9,7 @@ import { parseNumberInput } from "../src/numbers/input"
 import { countUrl, parseSource, readSourceValue, valueAt, type CountSource } from "../src/numbers/sources"
 import { readDueNumbers, syncConfigNumbers } from "../src/numbers/sweep"
 import { checkNumber } from "../src/numbers/goal-check"
-import { handleNumbersApi } from "../src/numbers/daemon-api"
+import { handleNumbersApi, maskQuery } from "../src/numbers/daemon-api"
 import { runNumbersTool } from "../src/numbers/tool"
 import { GoalStore, checkGoals, describeGoalCheck, parseGoalCheck } from "../src/requests/goal-store"
 import { cronValueOf } from "../src/crons/value-line"
@@ -276,7 +276,7 @@ describe("/numbers and agentx_numbers", () => {
     const secret = "Bearer tok-SECRET-123"
     const cmd = "curl -H 'X-Key: cmd-SECRET-456' https://stats.test"
     expect(syncConfigNumbers(store, {
-      web: { name: "Web", ownerAgent: "coder", source: { kind: "http-json", url: "https://stats.test/v", path: "views", headers: { Authorization: secret } } },
+      web: { name: "Web", ownerAgent: "coder", source: { kind: "http-json", url: "https://stats.test/v?api_key=key-SECRET-789&from={start}", path: "views", headers: { Authorization: secret } } },
       cmd: { name: "Cmd", source: { kind: "command", command: cmd, path: "" } },
     }, NOW)).toEqual([])
     store.record({ numberId: "web", value: 5, readAt: NOW, periodStart: day("2026-11-09"), periodEnd: day("2026-11-10"), by: "reader", note: null })
@@ -287,7 +287,9 @@ describe("/numbers and agentx_numbers", () => {
       expect(text).not.toContain("SECRET")
       expect(text).not.toContain("curl")
     }
-    expect((get("/numbers/web").body as any).number.source.headers).toEqual({ Authorization: "***" })
+    expect((get("/numbers/web").body as any).number.source).toMatchObject({ url: "https://stats.test/v?api_key=***&from=***", headers: { Authorization: "***" } })
+    expect(maskQuery("https://s.test/v")).toBe("https://s.test/v")
+    expect(maskQuery("https://s.test/v?token=abc&flag#top")).toBe("https://s.test/v?token=***&flag#top")
     expect((get("/numbers/cmd").body as any).number.source.command).toBe("***")
     // the store keeps the real values, so the reader still works
     expect(store.get("web")!.source).toMatchObject({ headers: { Authorization: secret } })
