@@ -944,7 +944,7 @@ export class GitLabAdapter implements ChannelAdapter {
    * Only routes events from human users, not bot-triggered updates.
    */
   private async handleIssue(event: GitLabIssueEvent, res: ServerResponse): Promise<void> {
-    this.labelActivity(event.project.path_with_namespace, "#", event.object_attributes.iid, event.changes?.labels)
+    this.labelActivity(event.project.path_with_namespace, "#", event.object_attributes.iid, event.changes?.labels, event.user.username)
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
     const attrs = event.object_attributes
@@ -1319,17 +1319,25 @@ export class GitLabAdapter implements ChannelAdapter {
     })
   }
 
-  /** A label change on an issue or merge request, as work activity. */
-  private labelActivity(project: string, sep: "#" | "!", iid: number, labels: unknown): void {
+  /** A label change on an issue or merge request, as work activity, with
+   *  what changed and whether an account AgentX posts with made it, so a
+   *  run can tell its own recorded write from another agent's. */
+  private labelActivity(project: string, sep: "#" | "!", iid: number, labels: { previous?: unknown[]; current?: unknown[] } | undefined, username: string): void {
     if (!this.activityListeners.length || !labels) return
-    this.emitActivity({ ref: `${project}${sep}${iid}`.toLowerCase(), on: "label", selfMarked: false })
+    const titles = (l: unknown[] | undefined) => new Set((l ?? []).map((x) => (x as { title?: unknown })?.title).filter((t): t is string => typeof t === "string"))
+    const before = titles(labels.previous), after = titles(labels.current)
+    const changes = [...[...after].filter((t) => !before.has(t)).map((t) => `+${t}`), ...[...before].filter((t) => !after.has(t)).map((t) => `-${t}`)]
+    this.emitActivity({
+      ref: `${project}${sep}${iid}`.toLowerCase(), on: "label", selfMarked: false,
+      labels: changes, byAgentx: this.postsAs(username) || this.isBotUser(username),
+    })
   }
 
   /**
    * Handle merge request events.
    */
   private async handleMR(event: GitLabMREvent, res: ServerResponse): Promise<void> {
-    this.labelActivity(event.project.path_with_namespace, "!", event.object_attributes.iid, event.changes?.labels)
+    this.labelActivity(event.project.path_with_namespace, "!", event.object_attributes.iid, event.changes?.labels, event.user.username)
     const info = this.mergeRequestListeners.length ? mergeRequestEventInfo(event) : null
     if (info) {
       for (const l of this.mergeRequestListeners) {

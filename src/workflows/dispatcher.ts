@@ -8,7 +8,7 @@ import { stripSecrets } from "./strip-secrets"
 import type { WorkflowStore } from "./store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
-import { wakeMatches, wakeTarget, type WakeResult, type WorkActivity } from "./wake"
+import { consumeSelfLabels, wakeMatches, wakeTarget, type WakeResult, type WorkActivity } from "./wake"
 import type { EventBus } from "../daemon/event-bus"
 import { FOLLOW_UP_PORTS, type EntityRef, type NodeExecutionEntry, type PausedAt, type RunMeta, type Workflow, type WorkflowRun } from "./types"
 import { getLedgerMode } from "@/intent/mode"
@@ -326,7 +326,7 @@ export class WorkflowDispatcher {
       const run = this.runs.get(t.runId)
       const p = run?.pausedAt
       if (!run || p?.kind !== "timerWait" || p.nodeId !== t.nodeId || !wakeMatches(p.wake, a)) continue
-      const result: WakeResult = a.selfMarked ? "self" : await this.commit(run.id, () => this.applyWake(run.id, t.nodeId))
+      const result: WakeResult = a.selfMarked ? "self" : await this.commit(run.id, () => this.applyWake(run.id, t.nodeId, a))
       this.log(`[workflow:${run.workflowId}] wake run=${run.id} node=${t.nodeId} event=${a.on}:${a.ref} result=${result}`)
       out.push({ runId: run.id, nodeId: t.nodeId, result })
     }
@@ -335,11 +335,17 @@ export class WorkflowDispatcher {
   }
 
   /** Runs inside commit(runId). Moves the run's existing timer in place;
-   *  `stale` when the run left this wait or the timer already fired. */
-  private applyWake(runId: string, nodeId: string): WakeResult {
+   *  `stale` when the run left this wait or the timer already fired, `self`
+   *  when it is the run's own recorded label write (used up here). */
+  private applyWake(runId: string, nodeId: string, a: WorkActivity): WakeResult {
     const fresh = this.runs.get(runId)
     const p = fresh?.pausedAt
     if (!fresh || fresh.status !== "paused" || p?.kind !== "timerWait" || p.nodeId !== nodeId || !p.wake) return "stale"
+    const selfLeft = consumeSelfLabels(p.wake, a)
+    if (selfLeft) {
+      this.runs.patch(runId, { pausedAt: { ...p, wake: { ...p.wake, selfLabels: selfLeft } } })
+      return "self"
+    }
     const nowMs = Date.now()
     const target = wakeTarget({ nowMs, lastWakeAt: fresh.meta?.lastWakeAt, minGapSec: p.wake.minGapSec, fireAt: p.fireAt })
     if (!target) return "debounced"

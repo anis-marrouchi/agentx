@@ -94,13 +94,14 @@ A `timer.boundary` can end early when someone writes on the work it waits for:
 ```json
 { "id": "wait_review", "type": "timer.boundary",
   "config": { "after": "PT30M",
-              "wake": { "on": ["note", "label"], "refs": "{{check.watch}}", "minGapSec": 60 } } }
+              "wake": { "on": ["note", "label"], "refs": "{{check.watch}}", "self": "{{check.wroteLabels}}", "minGapSec": 60 } } }
 ```
 
 - `refs` lists GitLab issues (`group/project#12`) and merge requests (`group/project!3`), comma-separated or as a list. It is rendered each time the run pauses here, so refs an earlier step found later join on the next pause.
 - A new note, or a label change, on one of them moves the pending timer to now. The timer itself is kept, so nothing changes when no event comes.
 - Within `minGapSec` of the last wake (default 60), the timer moves to the end of that gap instead: many notes give one tick now and one more at most.
 - A note edit, an AgentX status note, or a note carrying `<!-- agentx:no-wake -->` posted from an account AgentX posts with does not wake.
+- Labels cannot carry that mark. A step that sets labels itself lists them in `self` (`"group/project#12 +Doing, group/project#12 -To Do"`, rendered like `refs`). When a label change from an account AgentX posts with is exactly a recorded one, it is the run's own write and does not wake (`result=self`); each record is used once. Any other label change wakes, even from the same bot account.
 - The node that receives the GitLab webhook passes the wake to its mesh peers, so the run may live on another node. Upgrade the nodes holding the runs first: an older node answers the wake with 400 and its timers run as before.
 - Each wake logs `wake run=<id> node=<node> event=<note|label>:<ref> result=woke|debounced|self|stale`, or `result=no-run` when no run watches the ref.
 

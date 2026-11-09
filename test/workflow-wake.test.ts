@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync } from "fs"
+import { mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { RunStore, WorkflowDispatcher, WorkflowStore, workflowSchema, type AgentExecuteResponse } from "../src/workflows"
 import { TimerService } from "../src/workflows/timers"
@@ -17,6 +17,7 @@ describe("wake config and timing", () => {
     expect(wakeConfig({ refs: "" })).toBeUndefined()
     expect(wakeConfig({ on: ["merge"], refs: "acme/web#1" })).toBeUndefined()
     expect(wakeConfig(undefined)).toBeUndefined()
+    expect(wakeConfig({ refs: "acme/web#1", self: "Acme/Web#1 +To Do, acme/web#1 -Doing, junk, acme/web#1 Review" })?.selfLabels).toEqual(["acme/web#1 +to do", "acme/web#1 -doing"])
   })
 
   it("moves to now, or to the end of the gap after the last wake, never later than the timer", () => {
@@ -32,6 +33,7 @@ describe("wake config and timing", () => {
     expect(parseWorkActivity({ ref: "Acme/Web!2", on: "note", selfMarked: true })).toEqual({ ref: "acme/web!2", on: "note", selfMarked: true })
     expect(parseWorkActivity({ ref: "acme/web", on: "note" })).toBeNull()
     expect(parseWorkActivity({ ref: "acme/web#1", on: "merge" })).toBeNull()
+    expect(parseWorkActivity({ ref: "acme/web#1", on: "label", labels: ["+Review", "x", 3], byAgentx: true })).toEqual({ ref: "acme/web#1", on: "label", selfMarked: false, labels: ["+Review"], byAgentx: true })
     expect(parseWorkActivity(null)).toBeNull()
   })
 })
@@ -42,14 +44,14 @@ describe("dispatcher.wake", () => {
 
   // trigger → wait ⇄ check. The wait watches the request issue from the
   // start and the merge request once `check` has run.
-  function setup(opts: { minGapSec?: number; tickMs?: number } = {}) {
+  function setup(opts: { minGapSec?: number; tickMs?: number; self?: string } = {}) {
     const store = new WorkflowStore({ baseDir: TEST_DIR })
     store.save(workflowSchema.parse({
       id: "wake-demo", version: 2, title: "wake", priority: 0, fanOut: false,
       envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
       nodes: [
         { id: "trigger", type: "trigger.channel", config: { source: "manual" } },
-        { id: "wait", type: "timer.boundary", config: { after: "PT1H", wake: { on: ["note", "label"], refs: "acme/web#1,{{check.watch}}", minGapSec: opts.minGapSec ?? 60 } } },
+        { id: "wait", type: "timer.boundary", config: { after: "PT1H", wake: { on: ["note", "label"], refs: "acme/web#1,{{check.watch}}", minGapSec: opts.minGapSec ?? 60, ...(opts.self ? { self: opts.self } : {}) } } },
         { id: "check", type: "transform", config: { template: { watch: "acme/web!2" } } },
         // Stands in for the check's child run: the wait is re-entered from
         // a new walk, as in a real loop.
@@ -124,6 +126,77 @@ describe("dispatcher.wake", () => {
     expect(await dispatcher.wake(note("acme/web#1", true))).toEqual([{ runId: run.id, nodeId: "wait", result: "self" }])
     expect(timerOf().fireAt).toBe(before)
     expect(wakeLines(logs)).toEqual([`[workflow:wake-demo] wake run=${run.id} node=wait event=note:acme/web#1 result=self`])
+  })
+
+  // Hakim's review of #1824 (noqta#655 n142331): the run's own label
+  // write must not wake it; another agent's label on the same ref must,
+  // even from the same bot account.
+  const label = (ref: string, labels: string[], byAgentx = true): WorkActivity => ({ ref, on: "label", selfMarked: false, labels, byAgentx })
+
+  it("self label: the run sets a label, then waits — its own webhook does not wake it", async () => {
+    const { runs, dispatcher, timerOf, logs } = setup({ self: "acme/web#1 +Doing, acme/web#1 -To Do" })
+    const run = await start(dispatcher, runs)
+    expect(run.pausedAt).toMatchObject({ wake: { selfLabels: ["acme/web#1 +doing", "acme/web#1 -to do"] } })
+    const before = timerOf().fireAt
+    expect(await dispatcher.wake(label("acme/web#1", ["+Doing", "-To Do"]))).toEqual([{ runId: run.id, nodeId: "wait", result: "self" }])
+    expect(timerOf().fireAt).toBe(before)
+    expect(wakeLines(logs)).toEqual([`[workflow:wake-demo] wake run=${run.id} node=wait event=label:acme/web#1 result=self`])
+    // Used once: the record is empty, the same change again wakes.
+    expect(runs.get(run.id)!.pausedAt).toMatchObject({ wake: { selfLabels: [] } })
+    expect((await dispatcher.wake(label("acme/web#1", ["+Doing"])))[0].result).toBe("woke")
+  })
+
+  it("other agent's label: another change on the same ref wakes the run, bot account or not", async () => {
+    const { runs, dispatcher, timerOf } = setup({ self: "acme/web#1 +Doing" })
+    const run = await start(dispatcher, runs)
+    // Coder sets Review (an AgentX account), not in the run's record.
+    expect((await dispatcher.wake(label("acme/web#1", ["+Review", "-Doing"])))[0].result).toBe("woke")
+    expect(Date.parse(timerOf().fireAt)).toBeLessThanOrEqual(Date.now())
+    // The record is kept for the run's own webhook, still to come.
+    expect(runs.get(run.id)!.pausedAt).toMatchObject({ wake: { selfLabels: ["acme/web#1 +doing"] } })
+  })
+
+  it("a recorded change made by a person (not an AgentX account) still wakes", async () => {
+    const { runs, dispatcher } = setup({ self: "acme/web#1 +Doing" })
+    await start(dispatcher, runs)
+    expect((await dispatcher.wake(label("acme/web#1", ["+Doing"], false)))[0].result).toBe("woke")
+  })
+
+  it("burst: 5 notes in 10 s give one wake and at most one trailing tick", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(Date.parse("2026-11-10T10:00:00Z"))
+      const { runs, dispatcher, timerOf } = setup()
+      await start(dispatcher, runs)
+      const results: string[] = []
+      const fireTimes = new Set<string>()
+      for (let i = 0; i < 5; i++) {
+        vi.setSystemTime(Date.parse("2026-11-10T10:00:00Z") + i * 2_500)
+        results.push(...(await dispatcher.wake(note("acme/web#1"))).map((r) => r.result))
+        fireTimes.add(timerOf().fireAt)
+      }
+      expect(results.filter((r) => r === "woke")).toHaveLength(1)
+      expect(results[0]).toBe("woke")
+      // The timer was moved once, to now; the rest are inside the gap and
+      // leave it there (it already fires before the gap ends).
+      expect([...fireTimes]).toEqual(["2026-11-10T10:00:00.000Z"])
+
+      // The run goes back to waiting after its tick, still inside the gap:
+      // the next notes give one trailing tick at the end of the gap, no more.
+      const run = runs.list()[0]
+      runs.patch(run.id, { pausedAt: { ...(run.pausedAt as any), fireAt: "2026-11-10T11:00:00.000Z" } })
+      const t = timerOf()
+      writeFileSync(resolve(TEST_DIR, "_timer-base", `${t.id}.json`), JSON.stringify({ ...t, fireAt: "2026-11-10T11:00:00.000Z" }))
+      const trailing = new Set<string>()
+      for (let i = 0; i < 3; i++) {
+        vi.setSystemTime(Date.parse("2026-11-10T10:00:12Z") + i * 1_000)
+        expect((await dispatcher.wake(note("acme/web#1")))[0].result).not.toBe("woke")
+        trailing.add(timerOf().fireAt)
+      }
+      expect([...trailing]).toEqual(["2026-11-10T10:01:00.000Z"])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("no-run: an event nobody watches, or of a kind the wait ignores, changes nothing", async () => {
@@ -242,8 +315,15 @@ describe("GitLab work activity", () => {
     await (gl as any).handleMR({ ...base, object_kind: "merge_request", object_attributes: { iid: 7, action: "update" }, changes: { labels } }, res())
     await (gl as any).handleMR({ ...base, object_kind: "merge_request", object_attributes: { iid: 7, action: "merge" } }, res())
     expect(seen).toEqual([
-      { ref: "acme/web#4", on: "label", selfMarked: false },
-      { ref: "acme/web!7", on: "label", selfMarked: false },
+      { ref: "acme/web#4", on: "label", selfMarked: false, labels: ["+Review", "-Doing"], byAgentx: true },
+      { ref: "acme/web!7", on: "label", selfMarked: false, labels: ["+Review", "-Doing"], byAgentx: true },
     ])
+  })
+
+  it("marks a label change from another account as not AgentX's", async () => {
+    const { gl, seen } = makeGitLab()
+    const labels = { previous: [], current: [{ title: "Review" }] }
+    await (gl as any).handleIssue({ user: { username: "sam", name: "Sam" }, project: { path_with_namespace: "acme/web" }, object_kind: "issue", object_attributes: { iid: 4, action: "update" }, changes: { labels } }, res())
+    expect(seen).toEqual([{ ref: "acme/web#4", on: "label", selfMarked: false, labels: ["+Review"], byAgentx: false }])
   })
 })

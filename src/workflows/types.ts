@@ -502,6 +502,7 @@ export const pausedAtSchema = z.discriminatedUnion("kind", [
       on: z.array(z.enum(["note", "label"])),
       refs: z.array(z.string()),
       minGapSec: z.number(),
+      selfLabels: z.array(z.string()).optional(),
     }).optional(),
   }),
   // Follow-up (#788): waiting on the owner's answer to a decision card.
