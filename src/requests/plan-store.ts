@@ -72,6 +72,9 @@ export interface PlanStep {
   updatedAt: number
   nudges: number
   lastNudgeAt: number | null
+  /** The step's owner said it waits until then (#1764): no nudge and no
+   *  block before it; after it, the stall time counts from it. */
+  waitUntil: number | null
   /** When the owner was told the step is blocked. */
   notifiedAt: number | null
 }
@@ -86,6 +89,12 @@ export interface PlanEvent {
 
 export type NewStep = Pick<PlanStep, "name" | "kind" | "agentId" | "doneWhen" | "needsApproval">
   & Partial<Pick<PlanStep, "message" | "toChannel" | "toChat" | "toAccount" | "checkUrl" | "checkContains" | "stallMinutes" | "checkCount">>
+
+/** " waits until <time>" for an active step whose owner put off its nudges (#1764). */
+export function waitsText(s: { state?: string; waitUntil?: number | null }, now = Date.now()): string {
+  return s.state === "active" && typeof s.waitUntil === "number" && s.waitUntil > now
+    ? ` waits until ${new Date(s.waitUntil).toISOString().slice(0, 16).replace("T", " ")}Z` : ""
+}
 
 const DETAIL_MAX = 1000
 
@@ -149,6 +158,8 @@ export function ensurePlanTables(db: Database.Database): void {
   `)
   // The count check (#1568), added after the first version.
   ensureColumns(db, "request_plan_steps", [["check_count", "TEXT"], ["last_count", "INTEGER"], ["last_count_at", "INTEGER"]])
+  // A step that waits until a time its owner gave (#1764).
+  ensureColumns(db, "request_plan_steps", [["wait_until", "INTEGER"]])
 }
 
 export function hasPlanTables(db: Database.Database): boolean {
@@ -171,6 +182,7 @@ function toStep(r: any): PlanStep {
     checkCount: r.check_count ?? null, lastCount: r.last_count ?? null, lastCountAt: r.last_count_at ?? null,
     evidence: r.evidence ?? null, note: r.note ?? null, dispatchedAt: r.dispatched_at ?? null, updatedAt: r.updated_at,
     nudges: r.nudges, lastNudgeAt: r.last_nudge_at ?? null, notifiedAt: r.notified_at ?? null,
+    waitUntil: r.wait_until ?? null,
   }
 }
 
@@ -178,11 +190,11 @@ function toStep(r: any): PlanStep {
 const STEP_COLUMNS: Record<string, string> = {
   state: "state", approval: "approval", cardId: "card_id", message: "message", evidence: "evidence", note: "note",
   dispatchedAt: "dispatched_at", updatedAt: "updated_at", nudges: "nudges", lastNudgeAt: "last_nudge_at", notifiedAt: "notified_at",
-  lastCount: "last_count", lastCountAt: "last_count_at",
+  lastCount: "last_count", lastCountAt: "last_count_at", waitUntil: "wait_until",
 }
 
 export type StepPatch = Partial<Pick<PlanStep,
-  "state" | "approval" | "cardId" | "message" | "evidence" | "note" | "dispatchedAt" | "updatedAt" | "nudges" | "lastNudgeAt" | "notifiedAt" | "lastCount" | "lastCountAt">>
+  "state" | "approval" | "cardId" | "message" | "evidence" | "note" | "dispatchedAt" | "updatedAt" | "nudges" | "lastNudgeAt" | "notifiedAt" | "lastCount" | "lastCountAt" | "waitUntil">>
 
 export class PlanStore {
   constructor(private db: Database.Database) {

@@ -167,7 +167,12 @@ export type StepStatus = "progress" | "done" | "blocked"
 export function reportStep(
   requests: RequestStore,
   plans: PlanStore,
-  input: { requestId: string; step: number; status: StepStatus; agentId: string; evidence?: string; note?: string },
+  input: {
+    requestId: string; step: number; status: StepStatus; agentId: string; evidence?: string; note?: string
+    /** progress only: the step waits until then (#1764). A progress report
+     *  without it ends an earlier wait. */
+    waitUntil?: number | null
+  },
   now: number,
 ): string | null {
   const plan = plans.get(input.requestId)
@@ -192,9 +197,11 @@ export function reportStep(
     blockStep(requests, plans, step, `${input.agentId}: ${note}`, now)
     return null
   }
+  const waitUntil = input.waitUntil ?? null
   let detail = `${input.agentId}: ${note || "under way"}`
   if (step.state === "blocked") restartStep(requests, plans, step, now, false)
-  else if (step.nudges > 0 && isNewProgress(plans, step, detail)) {
+  // A wait the owner of the step names is news even in the same words.
+  else if (step.nudges > 0 && (waitUntil !== null || isNewProgress(plans, step, detail))) {
     // Real progress: the step is moving, so the nudges so far no longer
     // count toward blocking it (#1568). A report that only
     // repeats the last one ("11 open" twice) keeps the count.
@@ -202,6 +209,8 @@ export function reportStep(
     // The log says why the next nudge counts from 1 again (#1572).
     detail = oneLine(detail).slice(0, REPORT_MAX) + resetNote(step.nudges)
   } else plans.updateStep(step.requestId, step.idx, { updatedAt: now })
+  if (waitUntil !== null || step.waitUntil !== null) plans.updateStep(step.requestId, step.idx, { waitUntil })
+  if (waitUntil !== null) detail = `${oneLine(detail).slice(0, REPORT_MAX)} (waits until ${new Date(waitUntil).toISOString()})`
   plans.event(step.requestId, step.idx, "progress", detail, now)
   requests.touch(step.requestId, now)
   return null
@@ -366,8 +375,11 @@ async function advance(deps: PlanSweepDeps, r: RequestRecord, steps: PlanStep[],
   // A request that waits (on the owner's answer, or on someone else until
   // its due time) is not quiet: no nudge, no block before then (#1661).
   if (waitsUntilDue(r, now)) return false
+  // A step whose owner said it waits until a time is not quiet before
+  // then; after it, the stall time counts from that time (#1764).
+  if (s.waitUntil !== null && now < s.waitUntil) return false
   const stallMinutes = s.stallMinutes ?? settings.stallMinutes
-  const quietSince = Math.max(s.updatedAt, s.dispatchedAt, s.lastNudgeAt ?? 0)
+  const quietSince = Math.max(s.updatedAt, s.dispatchedAt, s.lastNudgeAt ?? 0, s.waitUntil ?? 0)
   if (now - quietSince < stallMinutes * MINUTE) return false
   if (s.nudges >= settings.maxNudges) {
     blockStep(requests, plans, s, `no progress after ${s.nudges} nudge${s.nudges === 1 ? "" : "s"}`, now)

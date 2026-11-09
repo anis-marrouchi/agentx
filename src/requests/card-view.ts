@@ -68,7 +68,7 @@ export interface RequestCard extends RequestRecord {
   /** Its tracked plan (#788), step by step. Null: no plan. */
   plan: {
     state: PlanState
-    steps: Array<{ idx: number; name: string; kind: string; agentId: string; state: StepState; approval: string | null; evidence: string | null; note: string | null; nudges: number }>
+    steps: Array<{ idx: number; name: string; kind: string; agentId: string; state: StepState; approval: string | null; evidence: string | null; note: string | null; nudges: number; waitUntil: number | null }>
   } | null
 }
 
@@ -132,6 +132,7 @@ export function requestCard(
       steps: plans!.steps(r.id).map((s) => ({
         idx: s.idx, name: s.name, kind: s.kind, agentId: s.agentId, state: s.state,
         approval: s.needsApproval ? s.approval : null, evidence: s.evidence, note: s.note, nudges: s.nudges,
+        waitUntil: s.state === "active" ? s.waitUntil : null,
       })),
     } : null,
   }
