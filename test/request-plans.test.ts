@@ -5,7 +5,7 @@ import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
-import { PlanStore } from "../src/requests/plan-store"
+import { PlanStore, waitsText } from "../src/requests/plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, type PlanSettings } from "../src/requests/plans"
 import { cutByRestart, ownerStepAction, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
 import { runRequestsSweep } from "../src/requests/sweep"
@@ -446,6 +446,59 @@ describe("nudges", () => {
     expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 0 })
     clock += 2 * 60 * MIN
     expect((await sweep()).nudged).toBe(1)
+  })
+
+  it("does not nudge a step whose owner waits until a time, then counts the stall from it (#1764)", async () => {
+    await sweep()
+    const until = clock + 24 * 60 * MIN
+    const res = api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "24 h count", waitUntil: new Date(until).toISOString() })
+    expect(res.status).toBe(200)
+    expect(plans.step("req-1", 2)).toMatchObject({ waitUntil: until })
+    expect(plans.events("req-1").at(-1)?.detail).toContain("(waits until ")
+    for (let i = 0; i < 46; i++) { clock += 31 * MIN; await sweep() }
+    expect(turns).toHaveLength(1)
+    expect(plans.step("req-1", 2)).toMatchObject({ state: "active", nudges: 0 })
+    // Past the wait: the stall time counts from it, not from the report.
+    clock = until + 29 * MIN
+    expect((await sweep()).nudged).toBe(0)
+    clock = until + 31 * MIN
+    expect((await sweep()).nudged).toBe(1)
+  })
+
+  it("ends a wait when a later progress report gives none (#1764)", async () => {
+    await sweep()
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "waiting", waitUntil: new Date(clock + 10 * 60 * MIN).toISOString() })
+    clock += 60 * MIN
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "back on it" })
+    expect(plans.step("req-1", 2)).toMatchObject({ waitUntil: null })
+    clock += 31 * MIN
+    expect((await sweep()).nudged).toBe(1)
+  })
+
+  it("resets the nudges when a report names a wait, even in the same words (#1764)", async () => {
+    await sweep()
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "11 open" })
+    for (let i = 0; i < 2; i++) { clock += 31 * MIN; await sweep() }
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 2 })
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "11 open", waitUntil: new Date(clock + 60 * MIN).toISOString() })
+    expect(plans.step("req-1", 2)).toMatchObject({ nudges: 0, lastNudgeAt: null })
+  })
+
+  it("refuses a wait in the past, more than 7 days out, malformed, or on done (#1764)", () => {
+    const step = (over: Record<string, unknown>) => api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "x", ...over })
+    expect(step({ waitUntil: new Date(clock - MIN).toISOString() })).toMatchObject({ status: 400, body: { error: expect.stringMatching(/ahead/) } })
+    expect(step({ waitUntil: new Date(clock + 8 * 24 * 60 * MIN).toISOString() })).toMatchObject({ status: 400, body: { error: expect.stringMatching(/7 days/) } })
+    expect(step({ waitUntil: "tomorrow" })).toMatchObject({ status: 400, body: { error: expect.stringMatching(/^waitUntil must be an ISO/) } })
+    expect(step({ status: "done", evidence: "x", waitUntil: new Date(clock + MIN).toISOString() })).toMatchObject({ status: 400 })
+    expect(plans.step("req-1", 2)).toMatchObject({ waitUntil: null })
+  })
+
+  it("shows the wait on the step line while it lasts (#1764)", () => {
+    const now = Date.parse("2026-11-09T16:00:00Z")
+    expect(waitsText({ state: "active", waitUntil: Date.parse("2026-11-10T15:33:00Z") }, now)).toBe(" waits until 2026-11-10 15:33Z")
+    expect(waitsText({ state: "active", waitUntil: now - 1 }, now)).toBe("")
+    expect(waitsText({ state: "done", waitUntil: now + MIN }, now)).toBe("")
+    expect(waitsText({ state: "active", waitUntil: null }, now)).toBe("")
   })
 
   it("still nudges a step whose request waits on someone else with no due time", async () => {

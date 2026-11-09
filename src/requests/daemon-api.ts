@@ -121,6 +121,21 @@ export const MAX_OPEN_PROMISES = 200
 const OWED_TO_RE = /^[\w.@:+-]{1,200}$/
 const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa"]
 
+/** The furthest a step's owner may put off its nudges (#1764). */
+export const MAX_STEP_WAIT_MS = 7 * 24 * 60 * 60 * 1000
+
+/** The optional `waitUntil` of a progress report: a time ahead, at most a
+ *  week out. Returns the time, null when not given, or an error. */
+function parseWaitUntil(v: unknown, status: string, now: number): number | null | string {
+  const at = parseDue(v)
+  if (at === undefined) return null
+  if (typeof at === "string") return at.replace(/^due/, "waitUntil")
+  if (status !== "progress") return "waitUntil goes with status progress only"
+  if (at <= now) return "waitUntil must be a time ahead"
+  if (at - now > MAX_STEP_WAIT_MS) return "waitUntil can be at most 7 days ahead; report again then"
+  return at
+}
+
 /** The optional `due` and `closeWhen` of promise, accept and wait. */
 function parseLoop(input: Record<string, unknown>, deps: RequestsApiDeps, now: number): { dueAt?: number; closeWhen?: CloseWhen } | string {
   const due = parseDue(input.due)
@@ -408,8 +423,10 @@ export function handleRequestsApi(
       if (!["progress", "done", "blocked"].includes(status)) return { status: 400, body: { error: "step needs status: progress, done or blocked" } }
       const n = Number(input.step)
       if (!Number.isInteger(n) || n < 1) return { status: 400, body: { error: "step needs step: the step's number in the plan (1 is the first)" } }
+      const waitUntil = parseWaitUntil(input.waitUntil, status, now)
+      if (typeof waitUntil === "string") return { status: 400, body: { error: waitUntil } }
       const err = reportStep(store, deps.plans, {
-        requestId: request.id, step: n, status, agentId, evidence: str(input.evidence), note: str(input.note) || str(input.reason),
+        requestId: request.id, step: n, status, agentId, evidence: str(input.evidence), note: str(input.note) || str(input.reason), waitUntil,
       }, now)
       if (err) return { status: /belongs to/.test(err) ? 403 : /no plan|no step/.test(err) ? 404 : 409, body: { error: err } }
       deps.onPlanChange?.()

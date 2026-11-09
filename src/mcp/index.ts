@@ -1166,6 +1166,7 @@ const TOOLS = [
         step: { type: "number", description: "step: the step's number in the plan (1 is the first)." },
         status: { type: "string", enum: ["progress", "done", "blocked"], description: "step: progress (still under way), done (give evidence) or blocked (give note)." },
         note: { type: "string", description: "step: what is happening, or why it is blocked. qa: why, in a sentence; needed for block and risk." },
+        waitUntil: { type: "string", description: "step with status progress, optional: the step waits until then (ISO time, at most 7 days ahead), e.g. a 24 h measurement. No nudge before it; after it the stall time counts from it. A later progress report without it ends the wait." },
         question: { type: "string", description: "wait: what you are asking the owner." },
         evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
         proof: {

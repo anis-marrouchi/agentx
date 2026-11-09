@@ -9,7 +9,7 @@ import { DEFAULT_FLOW, describeFlow, FLOW_DAYS_MAX, flowReport } from "@/request
 import { DEFAULT_RESEND } from "@/requests/resend"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { findConfigPath } from "@/daemon/config-mutator"
-import { PlanStore, type PlanStep } from "@/requests/plan-store"
+import { PlanStore, waitsText, type PlanStep } from "@/requests/plan-store"
 import { ownerStepAction, type OwnerStepAction } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { CHECK_KINDS, DEFAULT_CHECKER_SETTINGS, describeCloseWhen, type CheckKind } from "@/requests/checkers"
@@ -56,7 +56,8 @@ function printSteps(steps: PlanStep[]): void {
     const colour = STEP_COLOUR[s.state] ?? chalk.dim
     const approval = s.needsApproval ? chalk.dim(` · approval ${s.approval}`) : ""
     const nudges = s.nudges ? chalk.dim(` · ${s.nudges} nudge${s.nudges === 1 ? "" : "s"}`) : ""
-    console.log(`    ${s.idx}. ${s.name} ${chalk.dim(`(${s.agentId}, ${s.kind})`)} ${colour(`[${s.state}]`)}${approval}${nudges}`)
+    const waits = waitsText(s) ? chalk.dim(` ·${waitsText(s)}`) : ""
+    console.log(`    ${s.idx}. ${s.name} ${chalk.dim(`(${s.agentId}, ${s.kind})`)} ${colour(`[${s.state}]`)}${approval}${nudges}${waits}`)
     console.log(chalk.dim(`       done when: ${s.doneWhen}`))
     if (s.evidence) console.log(chalk.green(`       ${s.evidence}`))
     if (s.note && (s.state === "blocked" || s.state === "skipped")) console.log(colour(`       ${s.note}`))

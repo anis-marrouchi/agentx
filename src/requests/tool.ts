@@ -4,6 +4,7 @@ import { awaitingQa, describeQa } from "./qa"
 import type { GoalSummary } from "./goals"
 import { describeGoalCheck, type GoalRecord } from "./goal-store"
 import { describeFlow } from "./flow"
+import { waitsText } from "./plan-store"
 
 // --- Agent-facing `agentx_request` tool (#356) ---
 //
@@ -140,7 +141,7 @@ async function goalTool(args: Record<string, unknown>, deps: RequestToolDeps, ba
 
 /** One line per plan step. */
 export function describeSteps(steps: any[]): string[] {
-  return (steps ?? []).map((s) => `${s.idx}. ${s.name} (${s.agentId}, ${s.kind}) [${s.state}]${s.needsApproval ? ` approval: ${s.approval}` : ""}`)
+  return (steps ?? []).map((s) => `${s.idx}. ${s.name} (${s.agentId}, ${s.kind}) [${s.state}]${s.needsApproval ? ` approval: ${s.approval}` : ""}${waitsText(s)}`)
 }
 
 /** Returns the text the agent sees. Every refusal is text, never a throw. */
@@ -193,7 +194,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       body: JSON.stringify({
         action, agentId: caller.agentId,
         id: args.id, question: args.question, evidence: args.evidence, proof: args.proof, reason: args.reason,
-        steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, home: args.home,
+        steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, waitUntil: args.waitUntil, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
         headline: args.headline, need: args.need, needsQa: args.needsQa, verdict: args.verdict, goal: args.goal,
       }),
