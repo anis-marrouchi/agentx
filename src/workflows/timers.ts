@@ -18,7 +18,11 @@ import { z } from "zod"
 //     trigger.cron at the workflow level for recurrence).
 //   - Best-effort delivery: a missed tick (daemon crash, clock skew) is
 //     honoured on next startup by scanning persisted timers with fireAt
-//     in the past.
+//     in the past. A timer's file is removed only after its callback has
+//     settled, so a daemon that stops mid-fire fires it again on boot.
+//   - Recovery sweep (#1816): an optional sweep callback runs at start and
+//     every `sweepIntervalMs`. The dispatcher uses it to resume paused runs
+//     whose timer is overdue but whose timer file is gone.
 
 export const timerRecordSchema = z.object({
   id: z.string(),
@@ -42,15 +46,20 @@ export interface TimerServiceOptions {
   baseDir?: string
   /** Tick interval, in ms. Default 1000. */
   tickIntervalMs?: number
+  /** Recovery sweep interval, in ms. Default 60000. */
+  sweepIntervalMs?: number
   log?: (msg: string) => void
 }
 
 export class TimerService {
   readonly baseDir: string
-  private readonly tickIntervalMs: number
+  readonly tickIntervalMs: number
+  readonly sweepIntervalMs: number
   private readonly log: (msg: string) => void
   private timer?: ReturnType<typeof setInterval>
+  private sweepTimer?: ReturnType<typeof setInterval>
   private callback?: TimerCallback
+  private sweeper?: () => void | Promise<unknown>
   private firedIds: Set<string> = new Set()
 
   constructor(opts: TimerServiceOptions = {}) {
@@ -58,6 +67,7 @@ export class TimerService {
     this.baseDir = resolve(root, "_timers")
     mkdirSync(this.baseDir, { recursive: true })
     this.tickIntervalMs = opts.tickIntervalMs ?? 1000
+    this.sweepIntervalMs = opts.sweepIntervalMs ?? 60_000
     this.log = opts.log ?? (() => {})
   }
 
@@ -65,6 +75,12 @@ export class TimerService {
    *  caller is the dispatcher's "resume on timer" path. */
   onFire(cb: TimerCallback): void {
     this.callback = cb
+  }
+
+  /** Register the recovery sweep, run at start and every sweepIntervalMs.
+   *  Overwrites any prior sweep. */
+  onSweep(cb: () => void | Promise<unknown>): void {
+    this.sweeper = cb
   }
 
   start(): void {
@@ -75,12 +91,27 @@ export class TimerService {
     this.timer = setInterval(() => this.tick(), this.tickIntervalMs)
     // Don't hold the event loop open on daemon shutdown.
     if (typeof this.timer.unref === "function") this.timer.unref()
+    // After the first tick, so timers still on disk resume the normal way
+    // first; the sweep then catches runs whose timer file is gone.
+    this.sweep()
+    this.sweepTimer = setInterval(() => this.sweep(), this.sweepIntervalMs)
+    if (typeof this.sweepTimer.unref === "function") this.sweepTimer.unref()
   }
 
   stop(): void {
+    if (this.sweepTimer) { clearInterval(this.sweepTimer); this.sweepTimer = undefined }
     if (!this.timer) return
     clearInterval(this.timer)
     this.timer = undefined
+  }
+
+  private sweep(): void {
+    if (!this.sweeper) return
+    try {
+      void Promise.resolve(this.sweeper()).catch((e: any) => this.log(`[timers] recovery sweep threw: ${e?.message ?? e}`))
+    } catch (e: any) {
+      this.log(`[timers] recovery sweep failed: ${e?.message ?? e}`)
+    }
   }
 
   schedule(args: {
@@ -143,12 +174,20 @@ export class TimerService {
       // Mark fired BEFORE calling the callback so a callback that loops
       // back into the walk (and re-schedules siblings) doesn't re-trigger.
       this.firedIds.add(t.id)
-      try { unlinkSync(this.pathFor(t.id)) } catch { /* may race with cancel */ }
+      // Remove the file only once the callback has settled: a daemon that
+      // stops between the fire and the run's resume fires it again on boot
+      // instead of losing it (#1816). Resume paths check the run is still
+      // paused on this timer, so a second fire is a no-op.
+      const remove = () => { try { unlinkSync(this.pathFor(t.id)) } catch { /* may race with cancel */ } }
+      let pending: Promise<void>
       try {
-        void Promise.resolve(this.callback(t)).catch((e: any) => this.log(`[timers] fire callback threw: ${e?.message ?? e}`))
+        pending = Promise.resolve(this.callback(t))
       } catch (e: any) {
-        this.log(`[timers] fire dispatch failed: ${e?.message ?? e}`)
+        pending = Promise.reject(e)
       }
+      void pending
+        .catch((e: any) => this.log(`[timers] fire callback threw: ${e?.message ?? e}`))
+        .finally(remove)
     }
   }
 }

@@ -147,6 +147,10 @@ export class WorkflowDispatcher {
   private readonly followUpDefaults: () => FollowUpDefaults
   private readonly onRunEnded?: DispatcherOptions["onRunEnded"]
   private readonly onBlocked?: DispatcherOptions["onBlocked"]
+  /** Runs paused on a timerWait, for the recovery sweep (#1816). Filled by
+   *  one full scan on the first sweep, then kept up as runs pause, so a
+   *  sweep reads only these run files, not every run on disk. */
+  private timerWaitRuns?: Set<string>
   /** Runs paused on person.wait, by channel. Read on every inbound
    *  message, so it is kept in memory: built from disk once, then kept up
    *  to date as runs pause. A stale entry costs one read; the run's own
@@ -190,6 +194,8 @@ export class WorkflowDispatcher {
     // singleton; re-registration would clobber prior instances, but the
     // dispatcher also is, so this is safe.
     this.timers.onFire((t) => this.resumeFromTimer(t))
+    // Resume paused timer runs whose timer was lost (#1816).
+    this.timers.onSweep(() => this.recoverOverdueTimers())
     // Resume any paused signalWait runs whose filter matches a published
     // signal. Running a full scan of paused runs per emission is cheap in
     // v1 (runs are fs-backed and typically numbered in the hundreds).
@@ -308,36 +314,109 @@ export class WorkflowDispatcher {
   /** Callback from the TimerService when a scheduled timer elapses. Reads
    *  the paused run, verifies the pause is still on this timer's node, and
    *  resumes by seeding the timer node's output with { firedAt } and
-   *  enqueueing successors. */
+   *  enqueueing successors. A fire that finds nothing to resume is logged
+   *  (#1816): the recovery sweep picks up a run whose timer was lost. */
   private async resumeFromTimer(t: TimerRecord): Promise<void> {
-    const wf = this.store.list().find((w) => w.id === (this.runs.get(t.runId)?.workflowId ?? ""))
-    if (!wf) return
+    const wfId = this.runs.get(t.runId)?.workflowId
+    const wf = wfId ? this.store.list().find((w) => w.id === wfId) : undefined
+    if (!wf) {
+      this.log(`[workflows] timer ${t.id} for run ${t.runId} dropped: ${wfId ? `workflow "${wfId}" not loaded` : "run not found"}`)
+      return
+    }
     const kind = this.runs.get(t.runId)?.pausedAt?.kind
     if (kind === "replyWait" || kind === "agentStep") { await this.followUpTimer(wf, t); return }
-    await this.commit(t.runId, () => {
-      const fresh = this.runs.get(t.runId)
-      if (!fresh || fresh.status !== "paused") return
-      if (!fresh.pausedAt || fresh.pausedAt.kind !== "timerWait" || fresh.pausedAt.nodeId !== t.nodeId) return
-      const node = findNode(wf, t.nodeId)
+    const resumed = await this.resumeTimerWait(wf, t.runId, t.nodeId, t.fireAt, {
+      key: `timer:${t.id}`,
+      note: `timer:${t.id}`,
+    })
+    if (resumed) {
+      void this.walk(wf, t.runId, `timer:${t.id}`)
+        .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer failed: ${e.message}`))
+    }
+  }
+
+  /** Resume a run paused on `nodeId`'s timerWait, due at `fireAt`. Runs
+   *  under the run's commit lock and checks the pause is still this one,
+   *  so the timer fire and the recovery sweep can race safely: only the
+   *  first resumes. Returns whether this call resumed the run. */
+  private async resumeTimerWait(
+    wf: Workflow, runId: string, nodeId: string, fireAt: string,
+    how: { key: string; note: string; recovered?: boolean },
+  ): Promise<boolean> {
+    return this.commit(runId, () => {
+      const fresh = this.runs.get(runId)
+      if (!fresh || fresh.status !== "paused") return false
+      const p = fresh.pausedAt
+      if (!p || p.kind !== "timerWait" || p.nodeId !== nodeId || p.fireAt !== fireAt) return false
+      const node = findNode(wf, nodeId)
       const successors = node ? wf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
       const firedAt = new Date().toISOString()
-      const output = { firedAt, scheduledFor: t.fireAt }
+      const output: Record<string, unknown> = { firedAt, scheduledFor: fireAt, ...(how.recovered ? { recovered: true } : {}) }
       this.runs.recordExecution({
         runId: fresh.id,
         entry: {
-          at: firedAt, nodeId: t.nodeId, inputKeys: [], status: "resumed", output,
-          idempotencyKey: idempotencyKey(fresh.id, t.nodeId, `timer:${t.id}`),
+          at: firedAt, nodeId, inputKeys: [], status: "resumed", output,
+          idempotencyKey: idempotencyKey(fresh.id, nodeId, how.key),
+          ...(how.recovered ? { note: "timer-recovered" } : {}),
         },
         nextPending: successors,
         status: "running",
         pausedAt: null,
-        context: { ...fresh.context, [t.nodeId]: output },
+        context: { ...fresh.context, [nodeId]: output },
       })
-      this.log(`[workflow:${wf.id}] run ${fresh.id} resumed from timer "${t.nodeId}" (fired ${firedAt})`)
-      this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: t.nodeId, phase: "resumed", status: "running", note: `timer:${t.id}`, rootId: fresh.eventRootId })
+      if (how.recovered) {
+        // The lost timer's file, if one is somehow still on disk.
+        this.timers.cancel({ cancelKey: `${fresh.id}:${nodeId}` })
+        const lateS = Math.round((Date.parse(firedAt) - Date.parse(fireAt)) / 1000)
+        this.log(`[workflow:${wf.id}] run ${fresh.id} timer-recovered on "${nodeId}" (due ${fireAt}, ${lateS}s overdue)`)
+      } else {
+        this.log(`[workflow:${wf.id}] run ${fresh.id} resumed from timer "${nodeId}" (fired ${firedAt})`)
+      }
+      this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId, phase: "resumed", status: "running", note: how.note, rootId: fresh.eventRootId })
+      return true
     })
-    void this.walk(wf, t.runId, `timer:${t.id}`)
-      .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer failed: ${e.message}`))
+  }
+
+  /** Recovery sweep (#1816): resume every paused timerWait run whose
+   *  fireAt is more than two timer ticks overdue. A healthy timer fires
+   *  within one tick, so such a run lost its timer (a dropped fire, a
+   *  missing timer file). Each one is resumed and logged as
+   *  `timer-recovered`. Runs from the TimerService at start and on its
+   *  sweep interval. Only the first call scans every run on disk; later
+   *  calls read just the runs in timerWaitRuns. Returns how many runs
+   *  were resumed. */
+  async recoverOverdueTimers(now: number = Date.now()): Promise<number> {
+    const graceMs = 2 * this.timers.tickIntervalMs
+    if (!this.timerWaitRuns) {
+      const ids = new Set<string>()
+      for (const run of this.runs.list({ active: true })) {
+        if (run.status === "paused" && run.pausedAt?.kind === "timerWait") ids.add(run.id)
+      }
+      this.timerWaitRuns = ids
+    }
+    let recovered = 0
+    for (const id of [...this.timerWaitRuns]) {
+      const run = this.runs.get(id)
+      const p = run?.pausedAt
+      if (!run || run.status !== "paused" || !p || p.kind !== "timerWait") { this.timerWaitRuns.delete(id); continue }
+      const dueMs = Date.parse(p.fireAt)
+      if (Number.isNaN(dueMs) || now - dueMs <= graceMs) continue
+      const wf = this.store.list().find((w) => w.id === run.workflowId)
+      if (!wf) {
+        this.log(`[workflows] run ${run.id} timer overdue on "${p.nodeId}" but workflow "${run.workflowId}" is not loaded — left paused`)
+        continue
+      }
+      const ok = await this.resumeTimerWait(wf, run.id, p.nodeId, p.fireAt, {
+        key: `timer-recovered:${p.fireAt}`,
+        note: "timer-recovered",
+        recovered: true,
+      })
+      if (!ok) continue
+      recovered++
+      void this.walk(wf, run.id, `timer-recovered:${p.nodeId}:${p.fireAt}`)
+        .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer-recovery failed: ${e.message}`))
+    }
+    return recovered
   }
 
   /** Fire a specific workflow by id, bypassing matchByTrigger. Used by
@@ -917,6 +996,7 @@ export class WorkflowDispatcher {
         if (result.blocked) this.markBlocked(runId, workflow, nodeId, result.blocked)
         if (spawnedChild) this.kickChildWalk(spawnedChild)
         if (pausedAt.kind === "timerWait") {
+          this.timerWaitRuns?.add(runId)
           try {
             this.timers.schedule({
               runId, workflowId: workflow.id, nodeId: pausedAt.nodeId,

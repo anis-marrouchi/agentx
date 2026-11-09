@@ -85,6 +85,8 @@ An `agent` node needs a registered `agentId`. It can also set `timeoutMinutes`. 
 
 Each type's config is checked by its handler in `src/workflows/nodes/`.
 
+A `timer.boundary` wait is kept on disk, so it still fires after the daemon restarts. If its due time passed while the daemon was off, the run moves on within a second of startup. As a safety net, the daemon also checks every minute, and once at startup, for runs that are still waiting on a timer more than two seconds after it was due. It moves those runs on and notes `timer-recovered` on the step's history and in the daemon log.
+
 ## Follow-up steps
 
 These steps let a workflow work with you and with other people. How they are used: [Let a workflow follow a request](../jobs/follow-up-workflows.md).
@@ -204,5 +206,6 @@ The script writes its local state file and prints `RESULT steps=…` followed by
 - **An `agent` step fails:** its `agentId` must match an agent in `agentx.json`.
 - **A poll trigger starts nothing:** look for `[workflows] <id> poll` in `agentx daemon logs`. `poll baseline` means the first poll recorded the existing items; `poll failed` shows the action's error; `poll skipped` means lines were not a JSON object with the `key` field.
 - **An event trigger doesn't fire:** look for `[workflows] <id> skipping` in `agentx daemon logs`; a filter or loop guard dropped the event.
+- **A run stays paused on a timer after its due time:** look for `timer-recovered` or `timer … dropped` in `agentx daemon logs`. `dropped` names the reason, such as a workflow that is not loaded. Such a run stays paused until its workflow loads again; the next check then moves it on.
 - **A run stops partway:** `agentx workflow trace <runId>` shows which step failed and why.
 - **A followed run stopped after `no`, `expired`, `declined` or `timeout`:** the step has no edge for that port. Add one with that `fromPort`.

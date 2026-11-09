@@ -1206,6 +1206,161 @@ describe("BPM Phase 2: timer service + signal bus", () => {
     expect(sends[1].text).toContain("after fired at")
   })
 
+  // #1816: a paused timer run must fire after a daemon restart, even when
+  // its timer was lost while the daemon was down.
+  describe("paused timer survives a daemon restart", () => {
+    const timerWf = () => workflowSchema.parse({
+      id: "timer-restart", version: 2, title: "timer restart", priority: 0, fanOut: false,
+      envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
+      nodes: [
+        { id: "trigger", type: "trigger.channel", config: { source: "manual" } },
+        { id: "wait",    type: "timer.boundary", config: { after: "PT1S" } },
+        { id: "after",   type: "action.send", config: { channel: "fake", chatId: "c", text: "fired" } },
+        { id: "done",    type: "end", config: {} },
+      ],
+      edges: [
+        { from: "trigger", to: "wait" },
+        { from: "wait",    to: "after" },
+        { from: "after",   to: "done" },
+      ],
+    })
+    /** One daemon "boot": fresh stores, timer service and dispatcher over
+     *  the same directory. The timer service is not started. */
+    const boot = async (sends: Array<{ text: string }>, logs: string[] = []) => {
+      const { TimerService } = await import("../src/workflows/timers")
+      const store = new WorkflowStore({ baseDir: TEST_DIR })
+      const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+      const channels = { fake: { send: async (m: { text: string }) => { sends.push(m); return "m" } } }
+      const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
+      const timers = new TimerService({ baseDir: resolve(TEST_DIR, "_timer-base"), tickIntervalMs: 50 })
+      const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels, agents, timers, log: (m) => logs.push(m) })
+      return { store, runs, timers, dispatcher }
+    }
+    const pauseOnTimer = async (sends: Array<{ text: string }>) => {
+      const first = await boot(sends)
+      first.store.save(timerWf())
+      await first.dispatcher.dispatch({
+        trigger: { source: "manual" },
+        entityRef: { backend: "manual", id: "e-restart" },
+        event: { id: "evt-1", payload: {} },
+      })
+      await new Promise((r) => setTimeout(r, 60))
+      const paused = first.runs.list()[0]
+      expect(paused.status).toBe("paused")
+      expect(paused.pausedAt?.kind).toBe("timerWait")
+      expect(first.timers.list()).toHaveLength(1)
+      return { first, runId: paused.id }
+    }
+    const until = async (cond: () => boolean, ms = 3000) => {
+      const end = Date.now() + ms
+      while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 25))
+    }
+
+    it("fires a persisted timer that came due while the daemon was down", async () => {
+      const sends: Array<{ text: string }> = []
+      const { runId } = await pauseOnTimer(sends)
+      // Daemon down past the due time, then a new boot.
+      await new Promise((r) => setTimeout(r, 1100))
+      const second = await boot(sends)
+      second.timers.start()
+      await until(() => second.runs.get(runId)?.status === "completed")
+      second.timers.stop()
+      expect(second.runs.get(runId)?.status).toBe("completed")
+      expect(sends.map((s) => s.text)).toEqual(["fired"])
+      expect(second.timers.list()).toHaveLength(0)
+    })
+
+    it("resumes an overdue paused run whose timer was lost, logged as timer-recovered", async () => {
+      const sends: Array<{ text: string }> = []
+      const { first, runId } = await pauseOnTimer(sends)
+      // The timer is dropped while the run stays paused.
+      first.timers.cancel({ runId })
+      const logs: string[] = []
+      const second = await boot(sends, logs)
+      // Not overdue yet: the sweep leaves it alone.
+      expect(await second.dispatcher.recoverOverdueTimers()).toBe(0)
+      expect(second.runs.get(runId)?.status).toBe("paused")
+      // Well past due: the sweep resumes it.
+      expect(await second.dispatcher.recoverOverdueTimers(Date.now() + 5000)).toBe(1)
+      await until(() => second.runs.get(runId)?.status === "completed")
+      const run = second.runs.get(runId)!
+      expect(run.status).toBe("completed")
+      expect(sends.map((s) => s.text)).toEqual(["fired"])
+      const entry = run.history.find((h) => h.nodeId === "wait" && h.status === "resumed")
+      expect(entry?.note).toBe("timer-recovered")
+      expect(logs.some((l) => l.includes("timer-recovered"))).toBe(true)
+      // A second sweep finds nothing left to resume.
+      expect(await second.dispatcher.recoverOverdueTimers(Date.now() + 5000)).toBe(0)
+      expect(sends).toHaveLength(1)
+    })
+
+    it("the started timer service runs the sweep on boot", async () => {
+      const sends: Array<{ text: string }> = []
+      const { first, runId } = await pauseOnTimer(sends)
+      first.timers.cancel({ runId })
+      await new Promise((r) => setTimeout(r, 1200))
+      const second = await boot(sends)
+      second.timers.start()
+      await until(() => second.runs.get(runId)?.status === "completed")
+      second.timers.stop()
+      expect(second.runs.get(runId)?.status).toBe("completed")
+      expect(sends).toHaveLength(1)
+    })
+
+    it("scans every run only on the first sweep, then reads just the timer-paused runs", async () => {
+      const sends: Array<{ text: string }> = []
+      const d = await boot(sends)
+      d.store.save(timerWf())
+      let listCalls = 0
+      const list = d.runs.list.bind(d.runs)
+      d.runs.list = (opts) => { listCalls++; return list(opts) }
+      expect(await d.dispatcher.recoverOverdueTimers()).toBe(0)
+      expect(listCalls).toBe(1)
+      // A run that pauses after the first sweep is still found.
+      await d.dispatcher.dispatch({
+        trigger: { source: "manual" },
+        entityRef: { backend: "manual", id: "e-index" },
+        event: { id: "evt-index", payload: {} },
+      })
+      await new Promise((r) => setTimeout(r, 60))
+      const runId = list()[0].id
+      expect(d.runs.get(runId)?.pausedAt?.kind).toBe("timerWait")
+      d.timers.cancel({ runId })
+      listCalls = 0
+      expect(await d.dispatcher.recoverOverdueTimers(Date.now() + 5000)).toBe(1)
+      await until(() => d.runs.get(runId)?.status === "completed")
+      expect(d.runs.get(runId)?.status).toBe("completed")
+      expect(await d.dispatcher.recoverOverdueTimers(Date.now() + 5000)).toBe(0)
+      expect(listCalls).toBe(0)
+    })
+  })
+
+  it("timer service keeps a timer file until its callback settles", async () => {
+    const { TimerService } = await import("../src/workflows/timers")
+    const baseDir = resolve(TEST_DIR, "_timer-settle")
+    const a = new TimerService({ baseDir, tickIntervalMs: 20 })
+    a.schedule({ runId: "r", workflowId: "w", nodeId: "n", fireAt: new Date(Date.now() - 1000).toISOString() })
+    let release!: () => void
+    let firesA = 0
+    a.onFire(() => { firesA++; return new Promise<void>((r) => { release = r }) })
+    a.start()
+    await new Promise((r) => setTimeout(r, 80))
+    a.stop()
+    // Fired once, still on disk while the callback runs ("daemon dies here").
+    expect(firesA).toBe(1)
+    expect(a.list()).toHaveLength(1)
+    // The next boot fires it again.
+    const b = new TimerService({ baseDir, tickIntervalMs: 20 })
+    let firesB = 0
+    b.onFire(() => { firesB++ })
+    b.start()
+    await new Promise((r) => setTimeout(r, 80))
+    b.stop()
+    expect(firesB).toBe(1)
+    expect(b.list()).toHaveLength(0)
+    release()
+  })
+
   it("signal.emit resumes a matching signal.wait in the same workflow", async () => {
     const store = new WorkflowStore({ baseDir: TEST_DIR })
     store.save(workflowSchema.parse({
