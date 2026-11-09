@@ -236,8 +236,8 @@ async function readCount(s: CountSource, period: Period, deps: ReaderDeps): Prom
     let res: Response
     try {
       res = await doFetch(url, { headers: forgeHeaders(s.provider, deps.connectors), signal: AbortSignal.timeout(TIMEOUT_MS) })
-    } catch (e: any) {
-      return { error: `${s.project} could not be reached: ${String(e?.message ?? e).slice(0, 200)}` }
+    } catch (e) {
+      return { error: `${s.project} could not be reached (${errorName(e)})` }
     }
     if (!res.ok) return { error: `${s.project}: ${res.status === 404 ? "not found (or not visible to the connector)" : `HTTP ${res.status}`}` }
     let n: number
@@ -261,8 +261,8 @@ async function readHttpJson(s: HttpJsonSource, period: Period, deps: ReaderDeps)
   let res: Response
   try {
     res = await doFetch(url, { headers: { Accept: "application/json", ...s.headers }, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: "follow" })
-  } catch (e: any) {
-    return { error: `${shown} could not be reached: ${String(e?.message ?? e).slice(0, 200)}` }
+  } catch (e) {
+    return { error: `${shown} could not be reached (${errorName(e)})` }
   }
   if (!res.ok) return { error: `${shown} answered HTTP ${res.status}` }
   const text = (await res.text()).slice(0, BODY_MAX)
@@ -276,12 +276,29 @@ async function readHttpJson(s: HttpJsonSource, period: Period, deps: ReaderDeps)
   return typeof v === "number" ? { value: v } : v
 }
 
+/** A failure's code or name only (ECONNREFUSED, TimeoutError). Its message
+ *  can quote the address, a header or the command, so it is never kept. */
+function errorName(e: unknown): string {
+  const err = e as { cause?: { code?: unknown }; code?: unknown; name?: unknown } | null
+  const name = [err?.cause?.code, err?.code, err?.name].find((v) => typeof v === "string" && /^[A-Za-z_][\w]{0,40}$/.test(v))
+  return (name as string | undefined) ?? "error"
+}
+
+/** Why the command gave no output, in words of our own: its message has
+ *  the full command, and its stderr can print a token. */
+export function commandError(err: { code?: unknown; signal?: unknown; killed?: boolean }, timeoutMs: number): string {
+  if (typeof err.code === "number") return `the command exited with code ${err.code}`
+  if (err.killed && err.code == null && err.signal === "SIGTERM") return `the command timed out after ${Math.round(timeoutMs / 1000)}s`
+  if (typeof err.signal === "string") return `the command was stopped by ${err.signal}`
+  return `the command could not run (${errorName(err)})`
+}
+
 /** The default runner: `sh -c`, the window in AGENTX_PERIOD_START and
  *  AGENTX_PERIOD_END. */
 export function shellRunner(cwd?: string): NonNullable<ReaderDeps["run"]> {
   return (command, env, timeoutMs) => new Promise((resolve) => {
-    execFile("sh", ["-c", command], { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: BODY_MAX }, (err, stdout, stderr) => {
-      if (err) resolve({ error: `the command failed: ${(String(stderr || "").trim() || err.message).slice(0, 200)}` })
+    execFile("sh", ["-c", command], { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: BODY_MAX }, (err, stdout) => {
+      if (err) resolve({ error: commandError(err, timeoutMs) })
       else resolve({ stdout: String(stdout) })
     })
   })
