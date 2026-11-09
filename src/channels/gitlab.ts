@@ -1948,7 +1948,7 @@ export class GitLabAdapter implements ChannelAdapter {
    * never the global token (which may belong to a different agent user,
    * causing the wrong identity to react). `name` is a gemoji shortcode.
    */
-  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number, agentToken?: string, node?: string, agentId?: string, name: string = "eyes"): Promise<void> {
+  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number, agentToken?: string, node?: string, agentId?: string, name: string = "eyes", source?: PostTarget["source"]): Promise<void> {
     // Agent lives on a remote mesh peer — forward the reaction request there
     if (!agentToken && node && agentId && this.reactForwarder) {
       this.log(`Forwarding "${name}" reaction for "${agentId}" to mesh peer "${node}"`)
@@ -1965,14 +1965,16 @@ export class GitLabAdapter implements ChannelAdapter {
     if (!endpoint) return
 
     try {
-      const res = await fetch(endpoint, {
+      // An integrations token GitLab refuses is retried once with the
+      // global token, like every other write (#1774).
+      const { res } = await this.writeWithFallback(`react "${name}"`, { token: agentToken, source }, agentId, project, (t) => fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "PRIVATE-TOKEN": agentToken,
+          "PRIVATE-TOKEN": t,
         },
         body: JSON.stringify({ name }),
-      })
+      }))
       if (!res.ok) {
         this.log(`Reaction "${name}" failed on note ${noteId}: ${res.status}`)
       }
@@ -2037,7 +2039,7 @@ export class GitLabAdapter implements ChannelAdapter {
     const target = this.resolvePostTarget(agentId)
     if (target.token || target.node) {
       try {
-        await this.reactToNote(project, noteableType, iid, noteId, target.token, target.node, agentId, name)
+        await this.reactToNote(project, noteableType, iid, noteId, target.token, target.node, agentId, name, target.source)
         return
       } catch (e: any) {
         this.log(`React "${emoji}" as "${agentId}" failed (${e.message}) — falling back to global token`)
@@ -2310,7 +2312,10 @@ export class GitLabAdapter implements ChannelAdapter {
   }): Promise<number[] | null> {
     const { project, kind = "issue", iid, assignees, agentId } = args
     const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
-    const agentToken = this.getAgentToken(agentId)
+    // Same order as every other writer (#1774): agentMappings token, node,
+    // the agent's integrations token, mesh, then global.
+    const target = this.resolvePostTarget(agentId)
+    const agentToken = target.token
 
     // Mesh-forward when the agent lives on a peer. We piggyback on the
     // setLabelsForwarder shape via a separate slot below to keep the same
@@ -2327,16 +2332,19 @@ export class GitLabAdapter implements ChannelAdapter {
       this.log(`[gitlab/identity] setAssignees on ${project} ${kind}/${iid} from "${agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — assignment will appear under the global bot`)
     }
 
-    // Resolve usernames → numeric ids (GitLab's API quirk).
+    // Resolve usernames → numeric ids (GitLab's API quirk). A lookup is a
+    // read: with an integrations token it uses the global token when there
+    // is one, so a token scoped to a few projects still finds the users.
+    const lookupToken = target.source === "integrations" ? (this.config.token || token) : token
     const ids: number[] = []
     for (const username of assignees) {
       try {
         const r = await fetch(`${this.config.host}/api/v4/users?username=${encodeURIComponent(username)}`, {
-          headers: { "PRIVATE-TOKEN": token },
+          headers: { "PRIVATE-TOKEN": lookupToken },
         })
         // A rejected token fails every lookup; say so rather than
         // reporting "no such user" for each name.
-        if (r.status === 401) throw await this.writeFailure("assignee change", r, agentToken, agentId)
+        if (r.status === 401) throw await this.writeFailure("assignee change", r, lookupToken === token ? agentToken : undefined, agentId)
         if (!r.ok) {
           this.log(`setAssignees: lookup "${username}" returned ${r.status}`)
           continue
@@ -2365,19 +2373,22 @@ export class GitLabAdapter implements ChannelAdapter {
     for (const id of ids) body.append("assignee_ids[]", String(id))
     if (ids.length === 0) body.append("assignee_ids[]", "0")  // GitLab convention to clear
 
+    let usedToken = agentToken
     try {
-      const res = await fetch(endpoint, {
+      const sent = await this.writeWithFallback("setAssignees", target, agentId, project, (t) => fetch(endpoint, {
         method: "PUT",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "PRIVATE-TOKEN": token },
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "PRIVATE-TOKEN": t },
         body: body.toString(),
-      })
-      if (!res.ok) throw await this.writeFailure("assignee change", res, agentToken, agentId)
-      this.markTokenOk(agentToken, agentId)
+      }))
+      const res = sent.res
+      usedToken = sent.agentToken
+      if (!res.ok) throw await this.writeFailure("assignee change", res, usedToken, agentId)
+      this.markTokenOk(usedToken, agentId)
       const node = mapping?.node ? `via ${mapping.node}` : (agentId || "global")
       this.log(`Assignees updated on ${project} ${kind}/${iid} (${node}): [${assignees.join(", ")}] → ids [${ids.join(", ")}]`)
       return ids
     } catch (e: any) {
-      throw this.networkFailure("assignee change", e, agentToken, agentId)
+      throw this.networkFailure("assignee change", e, usedToken, agentId)
     }
   }
 
@@ -2388,7 +2399,8 @@ export class GitLabAdapter implements ChannelAdapter {
    *  different API shape and aren't part of this fast path. */
   async relateIssue(args: { project: string; sourceIid: string; targetIid: string; agentId?: string }): Promise<boolean> {
     const { project, sourceIid, targetIid, agentId } = args
-    const token = this.getAgentToken(agentId) || this.config.token
+    const target = this.resolvePostTarget(agentId)
+    const token = target.token || this.config.token
     if (!token) {
       this.log(`relateIssue failed: no token for "${agentId || "global"}"`)
       return false
@@ -2396,10 +2408,10 @@ export class GitLabAdapter implements ChannelAdapter {
     const encoded = encodeURIComponent(project)
     const endpoint = `${this.config.host}/api/v4/projects/${encoded}/issues/${sourceIid}/links?target_project_id=${encoded}&target_issue_iid=${targetIid}`
     try {
-      const res = await fetch(endpoint, {
+      const { res } = await this.writeWithFallback("relateIssue", target, agentId, project, (t) => fetch(endpoint, {
         method: "POST",
-        headers: { "PRIVATE-TOKEN": token },
-      })
+        headers: { "PRIVATE-TOKEN": t },
+      }))
       if (!res.ok) {
         const text = await res.text()
         this.log(`relateIssue ${project}#${sourceIid}↔${targetIid} failed (${res.status}): ${text.slice(0, 200)}`)
