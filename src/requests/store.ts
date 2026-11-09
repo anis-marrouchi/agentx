@@ -1,4 +1,5 @@
 import { recordSignal, type SignalKind } from "@/improve/signals"
+import { extractUiDirective } from "@/channels/ui-directive"
 import type Database from "better-sqlite3"
 import { ensureColumns, PERSON_COLUMNS } from "@/storage/sqlite"
 import { readCloseWhen, type CloseWhen } from "./checkers"
@@ -747,6 +748,29 @@ export class RequestStore {
    *  it, however long ago (#1214). */
   cameBack(id: string): boolean {
     return !!this.db.prepare(`SELECT 1 FROM requests r WHERE r.id = ? AND ${CAME_BACK}`).get(id)
+  }
+
+  /** What the request still asks the owner, in words, or null (retro
+   *  01M6VAK5): its last own reply asks the owner with tap answers (quick
+   *  replies, reply buttons, a poll) and none of them came back in that
+   *  chat since. Any later message does not count: one chat carries many
+   *  topics (req-01M6VAK5's chat had three unrelated ones before it
+   *  settled). A typed answer is not matched either: the request stays
+   *  held, goes quiet and comes back to the owner, which is the safe side.
+   *  The waiting_owner state itself never settles (settle). */
+  ownerWait(id: string): string | null {
+    const answer = this.lastAnswer(id)
+    if (!answer) return null
+    const ui = extractUiDirective(answer.text).ui
+    if (!ui?.quickReplies?.length && !ui?.replies?.length && !ui?.poll) return null
+    const r = this.get(id)
+    if (!r) return null
+    const norm = (s: string) => s.trim().toLowerCase()
+    const offered = new Set([...(ui.quickReplies ?? []), ...(ui.replies ?? []).map((b) => b.reply)].map(norm))
+    const later = this.db.prepare(
+      "SELECT text FROM requests WHERE agent_id = ? AND channel = ? AND chat_id = ? AND created_at > ? AND id != ? ORDER BY created_at LIMIT 200",
+    ).all(r.agentId, r.channel, r.chatId, answer.at, id) as Array<{ text: string }>
+    return later.some((m) => offered.has(norm(m.text))) ? null : "its last reply asks the owner and no answer came in that chat"
   }
 
   /** The newest proof link the request's delegations brought back since

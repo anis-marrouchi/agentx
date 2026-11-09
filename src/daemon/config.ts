@@ -1646,6 +1646,11 @@ export const requestsConfigSchema = z.object({
    *  for staleAfterHours, closes as done with its delegate's link (or
    *  marked unproven) instead of coming back to the owner (#1138). */
   settleHandedBack: z.boolean().default(true),
+  /** A request whose last reply asks the owner with tap answers, and no
+   *  answer came, is not settled (retro 01M6VAK5). "warn" leaves it open
+   *  and logs it; moving it to waiting_owner comes later. Requests in
+   *  waiting_owner never settle. */
+  settleOwnerWait: z.enum(["off", "warn"]).default("warn"),
   /** An open request with no closeWhen whose home is a GitHub or GitLab
    *  issue, pull or merge request closes as done once that home is merged
    *  or closed as completed (#1522). Requests waiting on the owner are

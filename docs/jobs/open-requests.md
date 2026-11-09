@@ -123,6 +123,9 @@ Agents often forget to close a request after the work they handed on comes back.
 - A request already sent to you as "Past its due time" is closed the same way, once its handed-on work has been back for `staleAfterHours`.
 - It does **not** apply to promises, to requests with a check, to tracked plans, to requests with a follow-up workflow, or when any handed-on work failed or is still out. Those still come back to you as before.
 - Any other request that already needs attention is left as it is.
+- It does **not** apply while the request still waits on you. A request marked as waiting on you is never closed this way. Once you answer, it goes back to work and can close after another `staleAfterHours` of quiet. The same goes for a request whose last reply asked you something with tap answers (quick replies, reply buttons or a poll), when none of those answers came back in that chat: it stays open and comes back to you once quiet.
+
+The last rule is set by `requests.settleOwnerWait` in `agentx.json`. With `warn`, the default, such a request is left open and the daemon log notes it. `off` turns the check off.
 
 To keep the old behaviour, run `agentx requests settings --settle off`.
 
