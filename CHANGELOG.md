@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.213.2](https://github.com/anis-marrouchi/agentx/compare/v0.213.1...v0.213.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **admission:** critical fast lane past swap and load holds ([#1807](https://github.com/anis-marrouchi/agentx/issues/1807)) ([#1808](https://github.com/anis-marrouchi/agentx/issues/1808)) ([6b4be11](https://github.com/anis-marrouchi/agentx/commit/6b4be115fa1b716d5357a42c55940fb47b861dcf))
+* **requests:** do not settle a request whose last reply asks the owner ([#1804](https://github.com/anis-marrouchi/agentx/issues/1804)) ([54d2714](https://github.com/anis-marrouchi/agentx/commit/54d27143893cb98b9b42f43a9803730a41961697))
+
 ## [0.213.1](https://github.com/anis-marrouchi/agentx/compare/v0.213.0...v0.213.1) (2026-11-08)
 
 
