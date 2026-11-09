@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.215.0](https://github.com/anis-marrouchi/agentx/compare/v0.214.0...v0.215.0) (2026-11-09)
+
+
+### Features
+
+* **workflows:** wake a timer wait early on a GitLab note or label ([#1824](https://github.com/anis-marrouchi/agentx/issues/1824)) ([2c76dda](https://github.com/anis-marrouchi/agentx/commit/2c76ddab3a039adfa705bbaa25f2b4f6b38905ff))
+
+
+### Bug Fixes
+
+* **hooks:** config reload keeps the workflow engine's hook handlers ([#1827](https://github.com/anis-marrouchi/agentx/issues/1827)) ([beba916](https://github.com/anis-marrouchi/agentx/commit/beba916bb5ffaa0c39ea40df5cc311f8ffd80771))
+* **wiki:** decisions list shows only pages the agent's block reads ([#1819](https://github.com/anis-marrouchi/agentx/issues/1819)) ([1ab9604](https://github.com/anis-marrouchi/agentx/commit/1ab9604bb607edc9843cfed0ad74cd56c5241aa0)), closes [#1782](https://github.com/anis-marrouchi/agentx/issues/1782)
+* **wiki:** query needs a wiki with a real catalog, not a bare agents/ folder ([#1825](https://github.com/anis-marrouchi/agentx/issues/1825)) ([87eb5ae](https://github.com/anis-marrouchi/agentx/commit/87eb5ae9f3efe8699f7693c430923689df9ce999)), closes [#1820](https://github.com/anis-marrouchi/agentx/issues/1820)
+* **workflows:** a paused timer run is never left waiting past its due time ([#1816](https://github.com/anis-marrouchi/agentx/issues/1816)) ([#1823](https://github.com/anis-marrouchi/agentx/issues/1823)) ([08dc7b9](https://github.com/anis-marrouchi/agentx/commit/08dc7b98901443defb9dff2f4248fe6db2df9e3d))
+
 ## [0.214.0](https://github.com/anis-marrouchi/agentx/compare/v0.213.3...v0.214.0) (2026-11-09)
 
 
