@@ -157,3 +157,73 @@ describe("shared GitLab token resolution", () => {
     expect(resolveGitlabTokenForAgent(config(undefined), undefined)).toEqual({ token: "global-token", source: "global" })
   })
 })
+
+// #1774: assign, relate and react skipped the integrations token, and a
+// refused one on a reaction was not retried with the global token.
+describe("assign, relate and react with an agent's integrations token", () => {
+  function fetchWith(statusFor: (token: string, method: string, url: string) => number) {
+    const calls: Call[] = []
+    const fn = vi.fn(async (url: string, init: any) => {
+      const token = init?.headers?.["PRIVATE-TOKEN"]
+      const method = init?.method || "GET"
+      calls.push({ url, method, token })
+      const status = statusFor(token, method, url)
+      const ok = status >= 200 && status < 300
+      const body = url.includes("/users?username=") ? [{ id: 9, username: "dana" }] : ok ? { id: 1 } : { message: `${status} Forbidden` }
+      return { ok, status, json: async () => body, text: async () => JSON.stringify(body) }
+    })
+    return { fn, calls }
+  }
+  const writes = (calls: Call[]) => calls.filter((c) => c.method !== "GET")
+
+  it("assigns and relates under the agent's own token", async () => {
+    const { fn, calls } = fetchWith(() => 200)
+    vi.stubGlobal("fetch", fn)
+    const { gl, logs } = adapter({ integrationTokens: { "helper-agent": "helper-token" } })
+    expect(await gl.setAssignees({ project: "acme/widgets", iid: "7", assignees: ["dana"], agentId: "helper-agent" })).toEqual([9])
+    expect(await gl.relateIssue({ project: "acme/widgets", sourceIid: "7", targetIid: "8", agentId: "helper-agent" })).toBe(true)
+    expect(writes(calls).map((c) => c.token)).toEqual(["helper-token", "helper-token"])
+    expect(logs.some((l) => l.includes("GLOBAL token"))).toBe(false)
+  })
+
+  it("retries a refused integrations token once with the global token on assign, relate and react, and logs it", async () => {
+    const { fn, calls } = fetchWith((token, method) => (method !== "GET" && token === "helper-token" ? 403 : 200))
+    vi.stubGlobal("fetch", fn)
+    const { gl, logs } = adapter({ integrationTokens: { "helper-agent": "helper-token" } })
+    expect(await gl.setAssignees({ project: "acme/widgets", iid: "7", assignees: ["dana"], agentId: "helper-agent" })).toEqual([9])
+    expect(await gl.relateIssue({ project: "acme/widgets", sourceIid: "7", targetIid: "8", agentId: "helper-agent" })).toBe(true)
+    await gl.react(CHAT, "123", "✅", "helper-agent")
+    expect(writes(calls).map((c) => c.token)).toEqual([
+      "helper-token", "global-token", // assign
+      "helper-token", "global-token", // relate
+      "helper-token", "global-token", // react
+    ])
+    const identity = logs.filter((l) => l.startsWith("[gitlab/identity]") && l.includes("retrying once with GLOBAL token"))
+    expect(identity).toHaveLength(3)
+    expect(identity.map((l) => l.split(" from ")[0])).toEqual(["[gitlab/identity] setAssignees", "[gitlab/identity] relateIssue", '[gitlab/identity] react "white_check_mark"'])
+  })
+
+  it("looks assignees up with the global token when the agent has an integrations token", async () => {
+    const { fn, calls } = fetchWith(() => 200)
+    vi.stubGlobal("fetch", fn)
+    const { gl } = adapter({ integrationTokens: { "helper-agent": "helper-token" } })
+    await gl.setAssignees({ project: "acme/widgets", iid: "7", assignees: ["dana"], agentId: "helper-agent" })
+    expect(calls.filter((c) => c.method === "GET").map((c) => c.token)).toEqual(["global-token"])
+  })
+
+  it("leaves agentMappings tokens and callers without an agent id as before", async () => {
+    const { fn, calls } = fetchWith((token, method) => (method !== "GET" && token === "mapping-token" ? 403 : 200))
+    vi.stubGlobal("fetch", fn)
+    const { gl } = adapter({
+      mappings: [{ agentId: "helper-agent", gitlabUsernames: [], keywords: [], token: "mapping-token" }],
+      integrationTokens: { "helper-agent": "helper-token" },
+    })
+    await expect(gl.setAssignees({ project: "acme/widgets", iid: "7", assignees: ["dana"], agentId: "helper-agent" })).rejects.toBeInstanceOf(GitLabWriteError)
+    expect(await gl.relateIssue({ project: "acme/widgets", sourceIid: "7", targetIid: "8", agentId: "helper-agent" })).toBe(false)
+    expect(calls.map((c) => c.token)).toEqual(["mapping-token", "mapping-token", "mapping-token"])
+    calls.length = 0
+    expect(await gl.relateIssue({ project: "acme/widgets", sourceIid: "7", targetIid: "8" })).toBe(true)
+    expect(await gl.setAssignees({ project: "acme/widgets", iid: "7", assignees: ["dana"] })).toEqual([9])
+    expect(calls.map((c) => c.token)).toEqual(["global-token", "global-token", "global-token"])
+  })
+})
