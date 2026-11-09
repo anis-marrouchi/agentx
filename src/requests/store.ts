@@ -750,20 +750,15 @@ export class RequestStore {
     return !!this.db.prepare(`SELECT 1 FROM requests r WHERE r.id = ? AND ${CAME_BACK}`).get(id)
   }
 
-  /** What the request still waits on from the owner, in words, or null
-   *  (#1783 retro): a decision card linked to it and not yet decided (or
-   *  linked before endings were kept), or its last own reply asks the owner
-   *  with tap answers (quick replies, reply buttons, a poll) and none of
-   *  them came back in that chat since. Any later message does not count:
-   *  one chat carries many topics (req-01M6VAK5's chat had three unrelated
-   *  ones before it settled). A typed answer is not matched either: the
-   *  request stays held, goes quiet and comes back to the owner, which is
-   *  the safe side. The waiting_owner state itself never settles (settle). */
+  /** What the request still asks the owner, in words, or null (retro
+   *  01M6VAK5): its last own reply asks the owner with tap answers (quick
+   *  replies, reply buttons, a poll) and none of them came back in that
+   *  chat since. Any later message does not count: one chat carries many
+   *  topics (req-01M6VAK5's chat had three unrelated ones before it
+   *  settled). A typed answer is not matched either: the request stays
+   *  held, goes quiet and comes back to the owner, which is the safe side.
+   *  The waiting_owner state itself never settles (settle). */
   ownerWait(id: string): string | null {
-    const card = this.db.prepare(
-      "SELECT ref FROM request_links WHERE request_id = ? AND kind = 'card' AND ended IS NULL ORDER BY at DESC LIMIT 1",
-    ).get(id) as { ref: string } | undefined
-    if (card) return `decision card ${card.ref} is not decided yet`
     const answer = this.lastAnswer(id)
     if (!answer) return null
     const ui = extractUiDirective(answer.text).ui

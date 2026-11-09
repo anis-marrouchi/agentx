@@ -267,17 +267,20 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     log(`[requests] pick-ups failed: ${e?.message ?? e}`)
   }
 
+  // Its last reply still asks the owner (retro 01M6VAK5): not closed as
+  // done, only logged; it stays open and comes back once quiet or overdue.
+  // Moving it to waiting_owner (enforce) comes later.
+  const asksOwner = (id: string) => settings.settleOwnerWait === "off" ? null : store.ownerWait(id)
+
   if (settings.settleHandedBack !== false) {
     try {
       for (const r of store.handedBack(now - settings.staleAfterHours * HOUR)) {
         // A tracked plan follows its own steps and tells the owner itself.
         if (deps.inPlan?.(r.id)) continue
-        // Still waiting on the owner (#1783 retro): held in enforce, only logged in warn.
-        const ownerMode = settings.settleOwnerWait ?? "warn"
-        const waits = ownerMode === "off" ? null : store.ownerWait(r.id)
+        const waits = asksOwner(r.id)
         if (waits) {
-          log(`[requests] ${r.id} ${ownerMode === "enforce" ? "not settled" : "would not settle (warn mode)"}: ${waits}`)
-          if (ownerMode === "enforce") continue
+          log(`[requests] retro:01M6VAK5YD0QYR720EDQ8XSGEN ${r.id} not settled (warn mode): ${waits}; it would wait on the owner`)
+          continue
         }
         const back = store.handBackProof(r.id)
         const detail = back
@@ -304,7 +307,8 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     const settling = settings.settleHandedBack !== false
     for (const r of store.overdue(now, now - hours * HOUR)) {
       // Back done, and settled once quiet: no "Not finished" before that (#1214).
-      if (settling && r.state === "in_progress" && !deps.inPlan?.(r.id) && store.cameBack(r.id)) continue
+      // One whose last reply asks the owner is not settled, so it is raised.
+      if (settling && r.state === "in_progress" && !deps.inPlan?.(r.id) && store.cameBack(r.id) && !asksOwner(r.id)) continue
       if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) result.quiet++
     }
   } catch (e: any) {

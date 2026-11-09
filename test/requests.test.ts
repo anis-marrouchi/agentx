@@ -564,25 +564,13 @@ describe("the minute check", () => {
         expect((await sweep()).result.settled).toBe(1)
       })
 
-      it("enforce: holds it while a linked decision card is undecided, settles once it is decided", async () => {
-        settings.settleOwnerWait = "enforce"
-        handed()
-        store.link("req-t1", "card", "card-1", clock)
-        clock += 25 * HOUR
-        expect((await sweep()).result.settled).toBe(0)
-        expect(logs.join("\n")).toContain("req-t1 not settled: decision card card-1 is not decided yet")
-        store.endLink("card", "card-1", "decided", null, clock)
-        db.prepare("UPDATE requests SET state = 'in_progress', attention_reason = NULL, updated_at = 0 WHERE id = 'req-t1'").run()
-        expect((await sweep()).result.settled).toBe(1)
-      })
-
-      it("enforce: holds it while its last reply asks the owner, settles once the owner tapped an answer", async () => {
-        settings.settleOwnerWait = "enforce"
+      it("warn (the default): does not close it as done while its last reply asks the owner, logs it with the retro tag, settles once the owner tapped an answer", async () => {
         handed()
         reply(asks)
         clock += 25 * HOUR
         expect((await sweep()).result.settled).toBe(0)
-        expect(logs.join("\n")).toContain("req-t1 not settled: its last reply asks the owner")
+        expect(store.get("req-t1")?.state).not.toBe("done")
+        expect(logs.join("\n")).toContain("retro:01M6VAK5YD0QYR720EDQ8XSGEN req-t1 not settled (warn mode): its last reply asks the owner")
         // Another topic in the same chat is not the answer.
         start("t2", { fullMessage: "also, what is on my calendar today?" })
         db.prepare("UPDATE requests SET state = 'in_progress', attention_reason = NULL, updated_at = 0 WHERE id = 'req-t1'").run()
@@ -594,19 +582,19 @@ describe("the minute check", () => {
       })
 
       it("a last reply with no tap answers does not hold it", async () => {
-        settings.settleOwnerWait = "enforce"
         handed()
         reply("Deployed, all done.")
         clock += 25 * HOUR
         expect((await sweep()).result.settled).toBe(1)
+        expect(logs.join("\n")).not.toContain("retro:01M6VAK5")
       })
 
-      it("warn (the default): settles but logs that it would have held it", async () => {
+      it("off: settles as before", async () => {
+        settings.settleOwnerWait = "off"
         handed()
         reply(asks)
         clock += 25 * HOUR
         expect((await sweep()).result.settled).toBe(1)
-        expect(logs.join("\n")).toContain("req-t1 would not settle (warn mode): its last reply asks the owner")
       })
     })
 
@@ -652,6 +640,16 @@ describe("the minute check", () => {
         clock += 2 * HOUR
         expect((await sweep()).result.settled).toBe(1)
         expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/deploys/7" })
+      })
+
+      it("is raised as overdue when its last reply asks the owner, not left in progress (retro 01M6VAK5)", async () => {
+        handed()
+        db.exec("CREATE TABLE IF NOT EXISTS task_traces (task_id TEXT PRIMARY KEY, agent_id TEXT, final_response TEXT, started_at INTEGER, finished_at INTEGER)")
+        db.prepare("INSERT OR REPLACE INTO task_traces VALUES ('t1', 'coder', ?, ?, ?)").run('Deploy it now?\n\n```agentx:ui\n{"quickReplies": ["Yes", "Not yet"]}\n```', clock, clock)
+        due(clock + HOUR)
+        clock += 2 * HOUR
+        expect((await sweep()).result).toMatchObject({ settled: 0, quiet: 1 })
+        expect(store.get("req-t1")?.attentionReason).toMatch(/^Past its due time/)
       })
 
       it("is still raised as overdue while work is out", async () => {
