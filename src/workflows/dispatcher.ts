@@ -147,6 +147,10 @@ export class WorkflowDispatcher {
   private readonly followUpDefaults: () => FollowUpDefaults
   private readonly onRunEnded?: DispatcherOptions["onRunEnded"]
   private readonly onBlocked?: DispatcherOptions["onBlocked"]
+  /** Runs paused on a timerWait, for the recovery sweep (#1816). Filled by
+   *  one full scan on the first sweep, then kept up as runs pause, so a
+   *  sweep reads only these run files, not every run on disk. */
+  private timerWaitRuns?: Set<string>
   /** Runs paused on person.wait, by channel. Read on every inbound
    *  message, so it is kept in memory: built from disk once, then kept up
    *  to date as runs pause. A stale entry costs one read; the run's own
@@ -378,13 +382,23 @@ export class WorkflowDispatcher {
    *  within one tick, so such a run lost its timer (a dropped fire, a
    *  missing timer file). Each one is resumed and logged as
    *  `timer-recovered`. Runs from the TimerService at start and on its
-   *  sweep interval. Returns how many runs were resumed. */
+   *  sweep interval. Only the first call scans every run on disk; later
+   *  calls read just the runs in timerWaitRuns. Returns how many runs
+   *  were resumed. */
   async recoverOverdueTimers(now: number = Date.now()): Promise<number> {
     const graceMs = 2 * this.timers.tickIntervalMs
+    if (!this.timerWaitRuns) {
+      const ids = new Set<string>()
+      for (const run of this.runs.list({ active: true })) {
+        if (run.status === "paused" && run.pausedAt?.kind === "timerWait") ids.add(run.id)
+      }
+      this.timerWaitRuns = ids
+    }
     let recovered = 0
-    for (const run of this.runs.list({ active: true })) {
-      const p = run.pausedAt
-      if (run.status !== "paused" || !p || p.kind !== "timerWait") continue
+    for (const id of [...this.timerWaitRuns]) {
+      const run = this.runs.get(id)
+      const p = run?.pausedAt
+      if (!run || run.status !== "paused" || !p || p.kind !== "timerWait") { this.timerWaitRuns.delete(id); continue }
       const dueMs = Date.parse(p.fireAt)
       if (Number.isNaN(dueMs) || now - dueMs <= graceMs) continue
       const wf = this.store.list().find((w) => w.id === run.workflowId)
@@ -982,6 +996,7 @@ export class WorkflowDispatcher {
         if (result.blocked) this.markBlocked(runId, workflow, nodeId, result.blocked)
         if (spawnedChild) this.kickChildWalk(spawnedChild)
         if (pausedAt.kind === "timerWait") {
+          this.timerWaitRuns?.add(runId)
           try {
             this.timers.schedule({
               runId, workflowId: workflow.id, nodeId: pausedAt.nodeId,

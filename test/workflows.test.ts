@@ -1306,6 +1306,33 @@ describe("BPM Phase 2: timer service + signal bus", () => {
       expect(second.runs.get(runId)?.status).toBe("completed")
       expect(sends).toHaveLength(1)
     })
+
+    it("scans every run only on the first sweep, then reads just the timer-paused runs", async () => {
+      const sends: Array<{ text: string }> = []
+      const d = await boot(sends)
+      d.store.save(timerWf())
+      let listCalls = 0
+      const list = d.runs.list.bind(d.runs)
+      d.runs.list = (opts) => { listCalls++; return list(opts) }
+      expect(await d.dispatcher.recoverOverdueTimers()).toBe(0)
+      expect(listCalls).toBe(1)
+      // A run that pauses after the first sweep is still found.
+      await d.dispatcher.dispatch({
+        trigger: { source: "manual" },
+        entityRef: { backend: "manual", id: "e-index" },
+        event: { id: "evt-index", payload: {} },
+      })
+      await new Promise((r) => setTimeout(r, 60))
+      const runId = list()[0].id
+      expect(d.runs.get(runId)?.pausedAt?.kind).toBe("timerWait")
+      d.timers.cancel({ runId })
+      listCalls = 0
+      expect(await d.dispatcher.recoverOverdueTimers(Date.now() + 5000)).toBe(1)
+      await until(() => d.runs.get(runId)?.status === "completed")
+      expect(d.runs.get(runId)?.status).toBe("completed")
+      expect(await d.dispatcher.recoverOverdueTimers(Date.now() + 5000)).toBe(0)
+      expect(listCalls).toBe(0)
+    })
   })
 
   it("timer service keeps a timer file until its callback settles", async () => {
