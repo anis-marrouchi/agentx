@@ -43,6 +43,10 @@ export interface RequestSettings {
   /** A quiet request whose handed work all came back done is settled,
    *  not raised to the owner (#1138). Unset: on. */
   settleHandedBack?: boolean
+  /** A request that still waits on the owner (an undecided card, or a
+   *  last reply that asks them) is not settled: "enforce" holds it,
+   *  "warn" settles it but logs that it would have held it. Unset: warn. */
+  settleOwnerWait?: "off" | "warn" | "enforce"
   /** An open request whose issue or merge request home is merged or
    *  closed as completed closes as done (#1522). Unset: on. */
   homeCloses?: boolean

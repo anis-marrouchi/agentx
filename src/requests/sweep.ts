@@ -272,6 +272,13 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       for (const r of store.handedBack(now - settings.staleAfterHours * HOUR)) {
         // A tracked plan follows its own steps and tells the owner itself.
         if (deps.inPlan?.(r.id)) continue
+        // Still waiting on the owner (#1783 retro): held in enforce, only logged in warn.
+        const ownerMode = settings.settleOwnerWait ?? "warn"
+        const waits = ownerMode === "off" ? null : store.ownerWait(r.id)
+        if (waits) {
+          log(`[requests] ${r.id} ${ownerMode === "enforce" ? "not settled" : "would not settle (warn mode)"}: ${waits}`)
+          if (ownerMode === "enforce") continue
+        }
         const back = store.handBackProof(r.id)
         const detail = back
           ? `The work it handed on came back done with ${back.proof}; nobody closed it in ${settings.staleAfterHours} h.`

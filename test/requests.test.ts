@@ -59,7 +59,7 @@ const dlg = (id: string) => ({ id, caller: "coder", callee: "devops", origin: { 
 
 describe("settings", () => {
   it("is off by default, with a 24 hour quiet time and 90 day retention", () => {
-    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, homeCloses: true, releaseOnOwnerTurn: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30, continue: { enabled: false, only: [], maxTurnsPerDay: 10, maxCostUsdPerDay: 5 } }, sprints: { enabled: true, idleMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false }, catchPromises: { enabled: false, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, autoResend: { enabled: true, afterMinutes: 5, holdMaxHours: 12 }, ownerCheck: { enabled: false, provider: "claude-code", model: "claude-sonnet-5-5", perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60 }, flow: { timeZone: "Africa/Tunis", days: 7 } })
+    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, settleOwnerWait: "warn", homeCloses: true, releaseOnOwnerTurn: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30, continue: { enabled: false, only: [], maxTurnsPerDay: 10, maxCostUsdPerDay: 5 } }, sprints: { enabled: true, idleMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false }, catchPromises: { enabled: false, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, autoResend: { enabled: true, afterMinutes: 5, holdMaxHours: 12 }, ownerCheck: { enabled: false, provider: "claude-code", model: "claude-sonnet-5-5", perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60 }, flow: { timeZone: "Africa/Tunis", days: 7 } })
   })
 
   it("records nothing while it is off", () => {
@@ -544,6 +544,70 @@ describe("the minute check", () => {
       expect(store.requestPickup("req-t1", clock)).toBe(false)
       clock += 25 * HOUR
       expect((await sweep()).result.settled).toBe(1)
+    })
+
+    describe("while the request still waits on the owner (#1783 retro)", () => {
+      const reply = (text: string) => {
+        db.exec("CREATE TABLE IF NOT EXISTS task_traces (task_id TEXT PRIMARY KEY, agent_id TEXT, final_response TEXT, started_at INTEGER, finished_at INTEGER)")
+        db.prepare("INSERT OR REPLACE INTO task_traces VALUES ('t1', 'coder', ?, ?, ?)").run(text, clock, clock)
+      }
+      const asks = 'Deploy it now?\n\n```agentx:ui\n{"quickReplies": ["Yes", "Not yet"]}\n```'
+
+      it("never settles in waiting_owner, and settles once the wait ended and it is quiet again", async () => {
+        handed()
+        store.waitOnOwner("req-t1", "Deploy it now?", clock)
+        clock += 25 * HOUR
+        expect((await sweep()).result.settled).toBe(0)
+        expect(store.get("req-t1")?.state).toBe("waiting_owner")
+        store.progress("req-t1", clock)
+        clock += 25 * HOUR
+        expect((await sweep()).result.settled).toBe(1)
+      })
+
+      it("enforce: holds it while a linked decision card is undecided, settles once it is decided", async () => {
+        settings.settleOwnerWait = "enforce"
+        handed()
+        store.link("req-t1", "card", "card-1", clock)
+        clock += 25 * HOUR
+        expect((await sweep()).result.settled).toBe(0)
+        expect(logs.join("\n")).toContain("req-t1 not settled: decision card card-1 is not decided yet")
+        store.endLink("card", "card-1", "decided", null, clock)
+        db.prepare("UPDATE requests SET state = 'in_progress', attention_reason = NULL, updated_at = 0 WHERE id = 'req-t1'").run()
+        expect((await sweep()).result.settled).toBe(1)
+      })
+
+      it("enforce: holds it while its last reply asks the owner, settles once the owner tapped an answer", async () => {
+        settings.settleOwnerWait = "enforce"
+        handed()
+        reply(asks)
+        clock += 25 * HOUR
+        expect((await sweep()).result.settled).toBe(0)
+        expect(logs.join("\n")).toContain("req-t1 not settled: its last reply asks the owner")
+        // Another topic in the same chat is not the answer.
+        start("t2", { fullMessage: "also, what is on my calendar today?" })
+        db.prepare("UPDATE requests SET state = 'in_progress', attention_reason = NULL, updated_at = 0 WHERE id = 'req-t1'").run()
+        expect((await sweep()).result.settled).toBe(0)
+        clock += 1000
+        start("t3", { fullMessage: "Yes " })
+        db.prepare("UPDATE requests SET state = 'in_progress', attention_reason = NULL, updated_at = 0 WHERE id = 'req-t1'").run()
+        expect((await sweep()).result.settled).toBe(1)
+      })
+
+      it("a last reply with no tap answers does not hold it", async () => {
+        settings.settleOwnerWait = "enforce"
+        handed()
+        reply("Deployed, all done.")
+        clock += 25 * HOUR
+        expect((await sweep()).result.settled).toBe(1)
+      })
+
+      it("warn (the default): settles but logs that it would have held it", async () => {
+        handed()
+        reply(asks)
+        clock += 25 * HOUR
+        expect((await sweep()).result.settled).toBe(1)
+        expect(logs.join("\n")).toContain("req-t1 would not settle (warn mode): its last reply asks the owner")
+      })
     })
 
     it("takes the proof of the delegation that answered last", async () => {
