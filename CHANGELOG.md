@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.213.3](https://github.com/anis-marrouchi/agentx/compare/v0.213.2...v0.213.3) (2026-11-09)
+
+
+### Bug Fixes
+
+* **approvals:** a no-option is a no; popup from an agent only prints ([#1811](https://github.com/anis-marrouchi/agentx/issues/1811)) ([3d51a25](https://github.com/anis-marrouchi/agentx/commit/3d51a252b1842cb0d9addb24e45c20ff7fc2dc8b)), closes [#1788](https://github.com/anis-marrouchi/agentx/issues/1788)
+
 ## [0.213.2](https://github.com/anis-marrouchi/agentx/compare/v0.213.1...v0.213.2) (2026-11-09)
 
 
