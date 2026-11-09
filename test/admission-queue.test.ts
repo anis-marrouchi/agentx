@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, gateReasons, priorityOf, type AdmissionSettings, type AdmissionTicket } from "../src/admission/queue"
+import { AdmissionQueue, contextWithAdmissionPriority, DEFAULT_ADMISSION_SETTINGS, gateReasons, priorityOf, requestedPriorityOf, type AdmissionSettings, type AdmissionTicket } from "../src/admission/queue"
 import { parseMeminfo, parseSwapUsage, parseVmStat, ResourceSampler, type ResourceSample } from "../src/native/resources"
 import { formatQueue } from "../src/admission/format"
 import type { CloseIdleRequest, ProcessKey } from "../src/agents/process-registry"
@@ -279,6 +279,110 @@ describe("review fixes (#1526)", () => {
     await q.pump()
     expect(out).toMatchObject({ ok: false, reason: "timeout" })
     expect(out.blockedBy.join()).toMatch(/session cap/)
+  })
+})
+
+describe("critical fast lane (#1807)", () => {
+  // The node in the report: 8 GB, swap far over its automatic limit (6144 MB),
+  // memory half free.
+  const swapped = { swapTotalMB: 8192, swapUsedMB: 6785, memAvailableMB: 4000 }
+
+  /** One run already going, so allowOneWhenIdle does not let the next one past. */
+  async function busy(over: Partial<AdmissionSettings> = {}, sample: Partial<ResourceSample> = swapped) {
+    const t = setup(over, sample)
+    const first = ask(t.q, "first")
+    await tick(); await tick()
+    expect(first.ticket).toBeTruthy()
+    return t
+  }
+
+  it("starts a critical run past a swap hold while a normal run waits on swap", async () => {
+    const { q, logs } = await busy()
+    const normal = ask(q, "normal")
+    const alert = ask(q, "alert", { channel: "a2a", atLeast: "critical" })
+    await tick(); await tick()
+    expect(alert.ticket).toBeTruthy()
+    expect(normal.ticket).toBeUndefined()
+    expect(q.snapshot().waiting[0].blockedBy.join()).toMatch(/swap: 6785 MB used, limit 6144 MB/)
+    expect(logs.some((l) => /started alert \(critical\) past the gate \(swap: 6785 MB used/.test(l))).toBe(true)
+  })
+
+  it("is not held by load either", async () => {
+    const { q } = await busy({}, { load1: 40 })
+    const alert = ask(q, "alert", { atLeast: "critical" })
+    await tick(); await tick()
+    expect(alert.ticket).toBeTruthy()
+  })
+
+  it("passes a run ahead of it that only swap holds", async () => {
+    const { q } = await busy()
+    const owner = ask(q, "owner", { channel: "voice" })
+    const alert = ask(q, "alert", { atLeast: "critical" })
+    await tick(); await tick()
+    expect(owner.ticket).toBeUndefined()
+    expect(alert.ticket).toBeTruthy()
+  })
+
+  it("still waits while memory is short", async () => {
+    const { q } = await busy({}, { ...swapped, memAvailableMB: 300 })
+    const alert = ask(q, "alert", { atLeast: "critical" })
+    await tick(); await tick()
+    expect(alert.ticket).toBeUndefined()
+    expect(q.snapshot().waiting[0].blockedBy.join()).toMatch(/memory: 300 MB available/)
+  })
+
+  it("still waits on short disk and the session cap", async () => {
+    const disk = await busy({}, { ...swapped, diskFreeMB: 100 })
+    const a = ask(disk.q, "alert", { atLeast: "critical" })
+    await tick(); await tick()
+    expect(a.ticket).toBeUndefined()
+    const cap = await busy({ maxSessions: 1, ownerExtraSessions: 0 })
+    const b = ask(cap.q, "alert", { atLeast: "critical" })
+    await tick(); await tick()
+    expect(b.ticket).toBeUndefined()
+    expect(cap.q.snapshot().waiting[0].blockedBy.join()).toMatch(/session cap/)
+  })
+
+  it("still keeps to the start pace", async () => {
+    const { q } = await busy({ minStartGapSeconds: 10 })
+    const alert = ask(q, "alert", { atLeast: "critical" })
+    await tick(); await tick()
+    expect(alert.ticket).toBeUndefined()
+    expect(q.snapshot().waiting[0].blockedBy.join()).toMatch(/start pace/)
+  })
+
+  it("is never refused at maxWaitMinutes for swap; a normal run is", async () => {
+    const { q, advance, res } = await busy({ maxWaitMinutes: 1 })
+    let normal: any
+    void q.admit({ agentId: "normal", channel: "api" }).then((o) => { normal = o })
+    // Agent busy: only its own slot holds it, so the swap clock never runs.
+    let free = false
+    let alert: any
+    void q.admit({ agentId: "alert", channel: "a2a", atLeast: "critical", canStart: () => free }).then((o) => { alert = o })
+    await tick(); await tick()
+    advance(61_000)
+    await q.pump()
+    expect(normal).toMatchObject({ ok: false, reason: "timeout" })
+    expect(alert).toBeUndefined()
+    free = true
+    res.current = { ...res.current }
+    await q.pump()
+    expect(alert?.ok).toBe(true)
+  })
+
+  it("never lowers an owner turn, and a plain priority setting is unchanged", () => {
+    const s = DEFAULT_ADMISSION_SETTINGS
+    expect(priorityOf({ agentId: "a", channel: "voice", atLeast: "critical" }, s)).toBe("owner")
+    expect(priorityOf({ agentId: "a", channel: "cron", atLeast: "critical" }, s)).toBe("critical")
+    expect(priorityOf({ agentId: "a", channel: "a2a" }, s)).toBe("normal")
+  })
+
+  it("accepts only \"critical\" from a caller, and moves a mesh body's priority into its context", () => {
+    expect(requestedPriorityOf("critical")).toBe("critical")
+    expect(requestedPriorityOf("owner")).toBeUndefined()
+    expect(requestedPriorityOf(undefined)).toBeUndefined()
+    expect(contextWithAdmissionPriority({ priority: "critical", context: { channel: "a2a" } })).toEqual({ channel: "a2a", admissionPriority: "critical" })
+    expect(contextWithAdmissionPriority({ priority: "owner" })).toBeUndefined()
   })
 })
 

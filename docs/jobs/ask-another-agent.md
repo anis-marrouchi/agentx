@@ -161,7 +161,11 @@ The answer is `202` with `"status": "notice"` and how many notices wait for that
 - Up to 20 notices wait per agent. When there are more, the oldest are dropped.
 - Notices are kept in memory: a daemon restart loses the ones not yet passed on.
 - Notices work for agents on this machine only. For an agent on another machine, the message is sent as usual.
-- Send anything urgent as a plain message, without `notice`.
+- Send anything urgent as a plain message, without `notice`. For an alert, add `"priority": "critical"`: see below.
+
+### An alert that must not wait
+
+A message that must start soon, such as a battery or disk alert, can be sent with `"priority": "critical"` on `/send/agent` (or `priority: "critical"` on `agentx_send_agent`). The machine running the other agent then starts it even while its swap or load is high. Low memory, low disk and the session limit still hold it. Details: [Alerts that must not wait](/jobs/session-queue#alerts-that-must-not-wait).
 
 ### When the helper's run ends before the work does
 
@@ -201,6 +205,7 @@ Some requests are refused straight away with status `409`:
 - **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
 - **An agent still messages a colleague just to ask for a status:** check that `agentx_lookup` is not left out by the agent's `session.lean.agentxTools` list. A lean session keeps it while `session.lean.contextOnDemand` is on.
 - **`agentx_lookup` finds nothing about a piece of work:** the runs must name it as a link, a `group/project!12` ref, or the project name with `!12`. Work from more than 7 days ago is not searched.
+- **An alert sent with `"priority": "critical"` still waited:** search the other machine's daemon log for `[admission]`. `started … (critical) past the gate` means it went past a swap or load hold. A wait on `memory:`, `disk:` or `session cap` is on purpose.
 - **A notice never reached the agent:** search the daemon log for `[send/agent] notice` (kept) and `[notices]` (sent after an hour). Check that the daemon did not restart in between.
 - **An agent seems slow to start on an owner's request:** search the daemon log for the request ID. `another run of this agent is on it` means it waits for that run, for up to 15 minutes.
 - **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.

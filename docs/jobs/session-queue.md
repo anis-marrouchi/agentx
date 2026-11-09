@@ -22,6 +22,7 @@ Two things can start while these checks say no, on purpose:
 
 - If nothing of AgentX's is running, one session still starts even when memory is short (`admission.allowOneWhenIdle`). The pressure then comes from other programs, and a machine that never answers is worse than one slow answer. Set it to `false` to hold everything.
 - Owner work skips the start pace (below) and may go one session over the limit.
+- Critical work, such as an alert, is not held by the swap or load checks. See [Alerts that must not wait](#alerts-that-must-not-wait).
 
 When a running agent hands part of its work to a helper agent, the helper may go two sessions over the limit (`admission.delegationHeadroom`). The first agent keeps its place while it waits for the helper, so without this room a full machine would wait on itself.
 
@@ -30,9 +31,31 @@ When a running agent hands part of its work to a helper agent, the helper may go
 The queue is ordered by priority, then by age:
 
 1. **owner**: you, on voice or the phone app, or anyone with the owner role in `people`. Owner work may go one session over the limit (`admission.ownerExtraSessions`) but never past the memory, swap, disk or load checks.
-2. **critical**: agents listed in `admission.priority.criticalAgents`.
+2. **critical**: agents listed in `admission.priority.criticalAgents`, and messages sent with `"priority": "critical"` (see below).
 3. **normal**: everything else, such as chat messages and messages from other agents.
 4. **background**: scheduled jobs and heartbeats (`admission.priority.backgroundChannels`).
+
+## Alerts that must not wait
+
+On macOS, swap stays in use long after the machine has free memory again. Work held only by the swap check can then wait up to an hour, and an alert (a battery warning, a full disk) arrives too late.
+
+Critical work is therefore not held by the swap check or the load check. It still waits when:
+
+- free memory is below its limit,
+- free disk is below its limit,
+- the machine already runs as many sessions as it may, or
+- the start pace (below) says wait.
+
+Only the time held by these checks counts toward `admission.maxWaitMinutes`, so critical work is never refused because swap stayed high.
+
+To send a message as critical, add `"priority": "critical"` to a `POST /send/agent` request, or `priority: "critical"` to the `agentx_send_agent` tool. It works for an agent on another machine too. For example (terminal):
+
+```sh
+curl -s -X POST http://127.0.0.1:18800/send/agent -H 'Content-Type: application/json' \
+  -d '{"agentId":"helper","senderAgentId":"watcher","priority":"critical","text":"Battery at 10%, not charging."}'
+```
+
+Use it for alerts only. Any other value of `priority` is ignored, and a message from the owner keeps its owner priority.
 
 ## After a restart
 
@@ -95,10 +118,12 @@ In an emergency, start the daemon with the environment variable `AGENTX_ADMISSIO
 2. Read the output. It shows when the machine was checked, its memory, swap, disk and load, whether the gate is open, the limits, what is running, what is waiting in order and why, and what runs next.
 3. For the same data as JSON, run `agentx queue --json`, or open `/api/queue` on the daemon (by default `http://localhost:18800/api/queue`).
 4. To see idle sessions making room, look in the daemon log for `[process-registry] closed idle`. There is one line for each session closed, with the reason.
+5. To see a critical message go past a swap hold, look in the daemon log for `[admission] started <agent> (critical) past the gate (swap: …)`.
 
 ## If something is wrong
 
 - **Work waits a long time.** Run `agentx queue` and read the "held by" line under each waiting item. If swap stays high long after the machine is quiet, raise `admission.maxSwapUsedMB`.
+- **An alert still waits.** Check that the sender adds `"priority": "critical"`. If `agentx queue` shows it held by `memory:`, `disk:` or `session cap`, that is on purpose: the machine is really short.
 - **The log says `no idle session to close` and work keeps waiting.** Every open session is in use, or the memory is held by other programs. Stop those programs or wait for the running work to finish.
 - **Chats often start slower while the machine is busy.** Idle sessions are being closed to make room. Raise `admission.closeIdle.minQuietSeconds` to keep them open longer.
 - **The machine still runs out of memory.** Lower `admission.maxSessions`, or raise `admission.minAvailableMemoryPercent`.

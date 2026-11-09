@@ -334,6 +334,9 @@ export class A2AMesh {
       /** Callback hops behind this send (#1100), so the peer's callee
        *  stays under MAX_SEND_DEPTH. Top level, like taskType. */
       sendDepth?: number
+      /** "critical" (#1807): the peer's admission gate does not hold the
+       *  run on swap or load. Top level, like taskType. */
+      priority?: "critical"
     } = {},
   ): Promise<string> {
     const state = this.peers.get(peerName)
@@ -393,6 +396,7 @@ export class A2AMesh {
           // shape on the receiver; it moves into the run's context there.
           ...(opts.taskType ? { taskType: opts.taskType } : {}),
           ...(opts.sendDepth ? { sendDepth: opts.sendDepth } : {}),
+          ...(opts.priority ? { priority: opts.priority } : {}),
           ...(opts.replyVia ? { replyVia: { node: this.config.node.name, ...opts.replyVia } } : {}),
           ...root,
         }),
