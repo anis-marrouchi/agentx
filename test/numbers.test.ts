@@ -304,6 +304,37 @@ describe("/numbers and agentx_numbers", () => {
     }
   })
 
+  it("keeps a failed read's secret out of every reply, the reading and the log", async () => {
+    const items = {
+      silent: { name: "Silent", source: { kind: "command", command: "T=SECRET-a; exit 4", path: "" } },
+      loud: { name: "Loud", source: { kind: "command", command: "echo SECRET-b >&2; exit 3", path: "" } },
+      slow: { name: "Slow", source: { kind: "command", command: "T=SECRET-c exec sleep 5", path: "", timeoutSeconds: 1 } },
+      web: { name: "Web", source: { kind: "http-json", url: "https://stats.test/v?key=SECRET-d", path: "v", headers: { Authorization: "SECRET-e" } } },
+    }
+    expect(syncConfigNumbers(store, items, NOW)).toEqual([])
+    const f = (async (u: string) => {
+      throw Object.assign(new Error(`fetch failed for ${u} with SECRET-e`), { cause: { code: "ECONNREFUSED", message: "SECRET-d" } })
+    }) as unknown as typeof fetch
+    const lines: string[] = []
+    expect((await readDueNumbers(store, { connectors: {}, fetch: f }, { retryMinutes: 60 }, NOW, (m) => lines.push(m))).sort()).toEqual(["loud", "silent", "slow", "web"])
+    const errors = Object.fromEntries(Object.keys(items).map((id) => [id, store.readings(id)[0].error]))
+    expect(errors).toEqual({
+      silent: "the command exited with code 4",
+      loud: "the command exited with code 3",
+      slow: "the command timed out after 1s",
+      web: "https://stats.test/v could not be reached (ECONNREFUSED)",
+    })
+    const seen = [JSON.stringify(get("/numbers").body), ...lines]
+    for (const id of Object.keys(items)) {
+      const one = (get(`/numbers/${id}`).body as any).number
+      expect(one.latest.error).toBe(errors[id])
+      expect(one.lastError).toBe(errors[id])
+      seen.push(JSON.stringify(one))
+    }
+    expect(lines).toHaveLength(4)
+    for (const text of seen) expect(text).not.toContain("SECRET")
+  }, 10_000)
+
   it("the tool reads the endpoints as text", async () => {
     post({ action: "create", id: "yt-views", name: "YouTube views", unit: "views", target: 1000, tags: ["channel:youtube"] })
     post({ action: "record", id: "yt-views", value: 800, from: "2026-11-02", to: "2026-11-08" })
