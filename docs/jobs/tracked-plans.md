@@ -75,7 +75,7 @@ In the terminal:
 
 1. **Terminal:** go to the folder that holds `agentx.json`.
 2. **Terminal:** run `agentx requests` to list the open requests and find the id.
-3. **Terminal:** run `agentx requests show <id>`. You see the request, then the plan: each step with its owner, kind, state, done check, proof and number of nudges. Below that is the plan's log, which records when each step started, every nudge, each approval and each message sent.
+3. **Terminal:** run `agentx requests show <id>`. You see the request, then the plan: each step with its owner, kind, state, done check, proof and number of nudges, and `waits until <time>Z` while its agent has paused the nudges. Below that is the plan's log, which records when each step started, every nudge, each approval and each message sent.
 
 ## Move a blocked step on
 
@@ -146,6 +146,8 @@ Agents make a plan with their `agentx_request` tool, when they take the request 
 
 An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2, "status": "progress" | "done" | "blocked"}`. A `done` report needs `evidence`, and a `blocked` report needs a `note`. Only the step's owner, or the agent that made the plan, can report on a step.
 
+A `progress` report can also carry `waitUntil`, an ISO time up to 7 days ahead, for a step that waits on something with a known time (a 24-hour soak, a release window). Until that time the step gets no nudges and is not marked blocked, and the nudge count goes back to zero. After it, the usual minutes before a nudge count from `waitUntil`. A later `progress` report without `waitUntil` ends the wait. While the wait lasts, the step's line shows `waits until <time>Z`.
+
 ## Check it worked
 
 1. **Terminal:** run `agentx requests settings`. It says `Requests on` and `Plans on`.
@@ -167,6 +169,6 @@ An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2
 - **The agent says ``accept needs `work` ``:** the agent took the request on without saying what kind of work it is. It accepts again with `work`. To stop asking, turn both settings off: `--plan-for none --plan-over 0`.
 - **A message step stays at "not started" after the steps before it are done:** its card is still waiting for you. Answer it in the Approvals inbox. If the card expired, the step is blocked; run `agentx requests step <id> <step> --retry` to send it.
 - **The message was not sent and the step is blocked:** the daemon tried three times and the channel refused it. Check the channel is connected (`agentx doctor`), then run `--retry`.
-- **Nudges come while the work is simply slow:** the agent can report `progress` to reset the clock. To wait longer for every step, raise `--stall-minutes`. For one step, the agent sets `stallMinutes` on it.
+- **Nudges come while the work is simply slow:** the agent can report `progress` to reset the clock. To wait longer for every step, raise `--stall-minutes`. For one step, the agent sets `stallMinutes` on it. When the step waits for a known time, the agent reports `progress` with `waitUntil`.
 - **A step with a check is never marked done:** the address did not answer, or did not show the expected text. Open the address in a browser. The agent can still report the step done with its proof.
 - **A plan stopped and its request is gone from the list:** someone closed or dropped the request. The plan stops with it, and the log says `closed`.
