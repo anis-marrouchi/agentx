@@ -4,6 +4,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { queryFailed, recordQueryRun, summariseQueryRuns, timedQuery } from "../../src/wiki/query-runs"
 import { wiki } from "../../src/commands/wiki"
+import { existingWikiDir } from "../../src/wiki/hub"
 
 // #603: a failed `wiki query` is counted, not only printed.
 
@@ -79,13 +80,13 @@ describe("query runs", () => {
     expect(() => recordQueryRun("/nonexistent-dir/x/_query-runs.jsonl", { at: "", agent: "a", status: "ok", wallMs: 0 })).not.toThrow()
   })
 
-  it("wiki query exits 1 and records the failure when no agent has a catalog", async () => {
+  it("wiki query exits 1 and records the failure when the agent has no catalog", async () => {
     dir = mkdtempSync(join(tmpdir(), "query-runs-"))
-    mkdirSync(join(dir, "agents"))
+    withCatalog(dir, "other-agent")
     vi.spyOn(console, "log").mockImplementation(() => {})
     vi.spyOn(console, "error").mockImplementation(() => {})
 
-    await wiki.parseAsync(["query", "anything", "--dir", dir, "--own-only"], { from: "user" })
+    await wiki.parseAsync(["query", "anything", "--dir", dir, "--agent", "a", "--own-only"], { from: "user" })
 
     expect(process.exitCode).toBe(1)
     const file = join(dir, "_query-runs.jsonl")
@@ -118,15 +119,43 @@ describe("query runs", () => {
 
   it("wiki query given a node's folder reads the wiki inside it", async () => {
     dir = mkdtempSync(join(tmpdir(), "query-runs-"))
-    mkdirSync(join(dir, ".agentx/wiki/agents"), { recursive: true })
+    withCatalog(join(dir, ".agentx/wiki"), "other-agent")
     vi.spyOn(console, "log").mockImplementation(() => {})
     vi.spyOn(console, "error").mockImplementation(() => {})
 
-    await wiki.parseAsync(["query", "anything", "--dir", dir, "--own-only"], { from: "user" })
+    await wiki.parseAsync(["query", "anything", "--dir", dir, "--agent", "a", "--own-only"], { from: "user" })
 
     expect(process.exitCode).toBe(1)
     const file = join(dir, ".agentx/wiki/_query-runs.jsonl")
     expect(summariseQueryRuns(readFileSync(file, "utf-8"))).toMatchObject({ total: 1, byStatus: { "no-catalog": 1 } })
     expect(existsSync(join(dir, "agents"))).toBe(false)
   })
+
+  it("an empty wiki left behind (agents/ only) is no wiki: the query falls through to the next one", async () => {
+    dir = mkdtempSync(join(tmpdir(), "query-runs-"))
+    mkdirSync(join(dir, "agents/coder-agent"), { recursive: true })
+    expect(existingWikiDir(dir)).toBeNull()
+
+    withCatalog(join(dir, ".agentx/wiki"), "other-agent")
+    expect(existingWikiDir(dir)).toBe(join(dir, ".agentx/wiki"))
+    expect(existingWikiDir(join(dir, ".agentx/wiki"))).toBe(join(dir, ".agentx/wiki"))
+  })
+
+  it("wiki query on an empty agents/-only wiki says no wiki and records nothing there", async () => {
+    dir = mkdtempSync(join(tmpdir(), "query-runs-"))
+    mkdirSync(join(dir, "agents"))
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    vi.spyOn(console, "error").mockImplementation(() => {})
+
+    await wiki.parseAsync(["query", "anything", "--dir", dir, "--own-only"], { from: "user" })
+
+    expect(process.exitCode).toBe(1)
+    expect(log.mock.calls.flat().join(" ")).toContain("No wiki at")
+    expect(readdirSync(dir)).toEqual(["agents"])
+  })
 })
+
+function withCatalog(wikiDir: string, agent: string): void {
+  mkdirSync(join(wikiDir, "agents", agent, "graph"), { recursive: true })
+  writeFileSync(join(wikiDir, "agents", agent, "graph", "_index.md"), "# Catalog\n")
+}
