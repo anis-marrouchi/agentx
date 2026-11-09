@@ -90,6 +90,14 @@ export function decisionsForBlock(articles: WikiArticle[], wikiBaseDir: string, 
   return required ? approvedDecisionsOnly(articles, readApprovals(wikiBaseDir)) : articles
 }
 
+/** The decision pages an agent's owner-decisions block considers: the pages
+ *  that agent may read (the wiki's access filter), old versions left out.
+ *  `wiki decisions list` and the block both read this set, so the list
+ *  never offers a page for approval that would not reach the agent (#1782). */
+export function decisionPagesFor(store: { listArticles(agentId: string): WikiArticle[] }, agentId: string): WikiArticle[] {
+  return store.listArticles(agentId).filter((a) => a.meta.type === "decision" && !a.path.includes("/_versions/"))
+}
+
 /** Why the current process may not approve: inside an agent's run. */
 export function approvalRefusal(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.AGENTX_AGENT_ID?.trim() || env.AGENTX_TASK_ID?.trim()) {

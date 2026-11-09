@@ -70,7 +70,9 @@ Approvals are off by default: every recent decision page reaches new conversatio
 
 Once on, a decision page reaches new conversations only after you approve it. Approve the current pages first, or the block stays empty until you do.
 
-Your approval covers the page's title and text as they are when you approve. If anyone changes the text afterwards, the page stops reaching new conversations until you approve it again. A change to the date alone does not need a new approval.
+Your approval covers the page's title and text as they are when you approve. If anyone changes the text afterwards, the page stops reaching new conversations until you approve it again. A change to the date alone does not need a new approval. The approval is kept under the page's file path, so renaming or moving the page also needs a new approval, even if its text is the same.
+
+`agentx wiki decisions list` shows only the pages each agent can read, the same pages that reach its new conversations.
 
 Run these commands from the AgentX folder (the one that holds `.agentx/wiki`), or add `--dir` with the path of the wiki. On the Mac that is `--dir ~/Developer/noqta/agentx/.agentx/wiki`. From any other folder the commands find no pages.
 
@@ -367,7 +369,7 @@ The **Edit** dialog on an agent's card in **Settings** has the same switch, **In
 
 - **An agent repeats an old status or asks for an approval you removed:** check that your decision is on a wiki page of type `decision`, updated in the last 7 days, with the current rule in a **Rule** or **Update** section. With approvals on, also check that `agentx wiki decisions list` shows it as `approved`. A decision said in one chat only reaches other conversations from that page.
 - **`agentx wiki decisions list` says there are no decision pages:** you ran it outside the AgentX folder. Run it from there, or add `--dir ~/Developer/noqta/agentx/.agentx/wiki` (the path on the Mac).
-- **With approvals on, a decision page you approved stopped reaching new conversations:** someone changed its text after you approved it, so `agentx wiki decisions list` shows `changed since approval`. Read what changed, then approve it again.
+- **With approvals on, a decision page you approved stopped reaching new conversations:** someone changed its text after you approved it, so `agentx wiki decisions list` shows `changed since approval`. Read what changed, then approve it again. If the list shows it as `waiting for approval` instead, the page was renamed or moved: approve it under its new path.
 - **`agentx wiki decisions approve` says it must run from a terminal:** you ran it inside an agent's work. Run it from your own terminal instead.
 - **Another machine's wiki shows no agents or no articles, and `agentx wiki sync` finds nothing there:** update AgentX on that machine. Versions up to 0.120.0 took longer than the 5-second limit to list a large wiki (about 25 seconds for 30 agents and 10,000 entries), so the other machines gave up and showed it as empty.
 - **`approve` says the article changed since this proposal:** someone edited it after the suggestion was made. Read both, then approve with `--force` or reject.
