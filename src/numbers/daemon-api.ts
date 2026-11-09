@@ -1,6 +1,7 @@
 import type { CallerProof } from "@/requests/daemon-api"
 import { READING_NOTE_MAX, lastPeriod, parsePeriod, parseTags, statusOf, STATUS_WORDS } from "./model"
 import { parseNumberInput } from "./input"
+import type { NumberSource } from "./sources"
 import type { NumberRecord, NumberStore } from "./store"
 
 // --- The daemon's /numbers endpoints (#1826) ---
@@ -30,11 +31,22 @@ export interface NumbersReply { status: number; body: unknown }
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 
+export const MASK = "***"
+
+/** The source as agents may see it: header values and command text come
+ *  only from agentx.json and can hold tokens, so they are masked. Header
+ *  names stay, so an agent can tell a header is set. */
+export function sourceView(s: NumberSource): NumberSource {
+  if (s.kind === "http-json" && s.headers) return { ...s, headers: Object.fromEntries(Object.keys(s.headers).map((k) => [k, MASK])) }
+  if (s.kind === "command") return { ...s, command: MASK }
+  return s
+}
+
 /** A number with where it stands: for lists and the tool. */
 export function numberView(store: NumberStore, n: NumberRecord, now: number, readings = 2) {
   const recent = store.readings(n.id, Math.max(2, readings))
   const status = statusOf(n, recent, now)
-  return { ...n, status, statusWords: STATUS_WORDS[status], latest: recent[0] ?? null, ...(readings > 2 ? { readings: recent } : {}) }
+  return { ...n, source: sourceView(n.source), status, statusWords: STATUS_WORDS[status], latest: recent[0] ?? null, ...(readings > 2 ? { readings: recent } : {}) }
 }
 
 export function handleNumbersApi(

@@ -272,6 +272,36 @@ describe("/numbers and agentx_numbers", () => {
     expect(handleNumbersApi("POST", "/numbers", new URLSearchParams(), { action: "record", id: "a", value: 1, agentId: "coder" }, deps(), {})).toMatchObject({ status: 403 })
   })
 
+  it("never shows agentx.json header values or command text", async () => {
+    const secret = "Bearer tok-SECRET-123"
+    const cmd = "curl -H 'X-Key: cmd-SECRET-456' https://stats.test"
+    expect(syncConfigNumbers(store, {
+      web: { name: "Web", ownerAgent: "coder", source: { kind: "http-json", url: "https://stats.test/v", path: "views", headers: { Authorization: secret } } },
+      cmd: { name: "Cmd", source: { kind: "command", command: cmd, path: "" } },
+    }, NOW)).toEqual([])
+    store.record({ numberId: "web", value: 5, readAt: NOW, periodStart: day("2026-11-09"), periodEnd: day("2026-11-10"), by: "reader", note: null })
+    const replies = [get("/numbers"), get("/numbers/web"), get("/numbers/cmd"), post({ action: "record", id: "web", value: 6 })]
+    for (const r of replies) {
+      expect(r.status).toBe(200)
+      const text = JSON.stringify(r.body)
+      expect(text).not.toContain("SECRET")
+      expect(text).not.toContain("curl")
+    }
+    expect((get("/numbers/web").body as any).number.source.headers).toEqual({ Authorization: "***" })
+    expect((get("/numbers/cmd").body as any).number.source.command).toBe("***")
+    // the store keeps the real values, so the reader still works
+    expect(store.get("web")!.source).toMatchObject({ headers: { Authorization: secret } })
+    expect(store.get("cmd")!.source).toMatchObject({ command: cmd })
+    const f = (async (u: string) => {
+      const url = new URL(u)
+      const r = handleNumbersApi("GET", url.pathname, url.searchParams, undefined, deps())
+      return new Response(JSON.stringify(r.body), { status: r.status })
+    }) as unknown as typeof fetch
+    for (const args of [{ action: "list" }, { action: "show", id: "web" }, { action: "show", id: "cmd" }]) {
+      expect(await runNumbersTool(args, { daemonUrl: "http://d", fetch: f, env: {} })).not.toMatch(/SECRET|curl/)
+    }
+  })
+
   it("the tool reads the endpoints as text", async () => {
     post({ action: "create", id: "yt-views", name: "YouTube views", unit: "views", target: 1000, tags: ["channel:youtube"] })
     post({ action: "record", id: "yt-views", value: 800, from: "2026-11-02", to: "2026-11-08" })
