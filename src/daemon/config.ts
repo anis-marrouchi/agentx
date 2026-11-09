@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { cronValueSchema } from "@/crons/value-line"
+import { parseNumberInput } from "@/numbers/input"
 import { GOAL_ID_MAX } from "@/requests/goals"
 import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
@@ -2045,6 +2046,24 @@ export const approvalsConfigSchema = z.object({
 /** The Wall (#1180). `reportedIssues` (#1186): open issues a reporting job
  *  opened on a forge, found by their label and grouped by the reporter's
  *  dedupe signature on the Failures tab. Unset: not read, nothing shown. */
+/** Numbers (src/numbers, #1826): tracked numbers with a history of
+ *  readings. Agents make their own with the agentx_numbers tool; the
+ *  owner sets numbers up here, and only here can a number read a shell
+ *  command. Empty by default: nothing changes until a number exists. */
+export const numbersConfigSchema = z.object({
+  /** Numbers by id: name, owner, unit, target, direction (up or down),
+   *  rhythm (daily, weekly, monthly), tags, source. */
+  items: z.record(z.string(), z.record(z.string(), z.unknown())).default({}).superRefine((items, ctx) => {
+    for (const [id, raw] of Object.entries(items)) {
+      const parsed = parseNumberInput({ ...raw, id }, "config")
+      if ("error" in parsed) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [id], message: parsed.error })
+      else if (!parsed.name) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [id, "name"], message: "name is needed: what the number counts, in a few plain words" })
+    }
+  }),
+  /** Minutes before a failed read is tried again. */
+  retryMinutes: z.number().int().min(5).max(24 * 60).default(60),
+}).default({})
+
 export const wallConfigSchema = z.object({
   reportedIssues: z.object({
     label: z.string().min(1).max(100),
@@ -2447,6 +2466,7 @@ export const daemonConfigSchema = z.object({
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */
   requests: requestsConfigSchema,
+  numbers: numbersConfigSchema,
   /** Task watchers (src/watchers, #1030): every task start decides whether
    *  the task needs a watcher and attaches one. Off by default. */
   watchers: watchersConfigSchema,

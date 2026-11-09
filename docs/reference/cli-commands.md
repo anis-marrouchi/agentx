@@ -3115,6 +3115,54 @@ Remove a contactMap entry by matching field(s).
 | `--username <handle>` | — | Only remove entries with this username. |
 | `--sender-id <id>` | — | Only remove entries with this sender id. |
 
+## numbers (advanced)
+
+`agentx numbers`: tracked numbers, each with an owner, a target, tags and a history of readings. Without a subcommand, lists them with their status and newest reading. **Advanced.** See [Track numbers over time](/jobs/numbers).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--tag <tags>` | — | Only numbers with every tag (comma-separated, such as `channel:video,product:shop`). |
+| `--archived` | — | Numbers no longer tracked too. |
+
+### `agentx numbers show <id>`
+
+One number and its readings, newest first.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--limit <n>` | `20` | Readings shown. |
+
+### `agentx numbers add <id>`
+
+Make a number, or change one: the options given replace the old ones. A number set up in `agentx.json` is changed there.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--name <name>` | required for a new number | What it counts, in a few plain words. |
+| `--owner <agent>` | — | The agent that owns it. |
+| `--unit <unit>` | — | `views`, `clients`, `%`… |
+| `--target <n>` | — | The value it should reach. |
+| `--direction <up\|down>` | `up` | `up`: higher is better. `down`: lower is better. |
+| `--rhythm <rhythm>` | `weekly` | `daily`, `weekly` or `monthly`. |
+| `--tags <tags>` | — | Comma-separated, such as `channel:video,product:shop`. |
+| `--source <json>` | manual | Where readings come from, as JSON: `count` or `http-json`. A `command` source is only set in `agentx.json`. |
+
+### `agentx numbers record <id> <value>`
+
+Keep a reading for a window. Recording the same window again replaces it.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--from <day>` | the last whole period | First day of the window (`YYYY-MM-DD`). |
+| `--to <day>` | `--from` | Last day of the window, included. |
+| `--note <text>` | — | Where the value was read. |
+
+### `agentx numbers archive <id>`
+
+Stop tracking a number. Its readings stay.
+
+No flags.
+
 ## plan (advanced)
 
 `agentx plan`: Set / read / list day-week-month plans that drive the standup-tick. **Advanced.**

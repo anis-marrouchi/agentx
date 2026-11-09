@@ -118,6 +118,10 @@ import { blockStep, cutByRestart, planNotice, requeueCrashedStep, requeueInterru
 import { continueOnTurnEnd } from "@/requests/plan-continue"
 import { checkCount, forgeCounter } from "@/requests/checkers/count"
 import { checkGoals, goalBrief } from "@/requests/goal-store"
+import { checkNumber } from "@/numbers/goal-check"
+import { DEFAULT_NUMBER_SETTINGS, readDueNumbers, syncConfigNumbers } from "@/numbers/sweep"
+import { shellRunner } from "@/numbers/sources"
+import { handleNumbersApi } from "@/numbers/daemon-api"
 import {
   DEFAULT_SPRINT_SETTINGS, itemEnded, laneChatId, laneContext, parseLaneChat, requeueItem, runSprintSweep, SPRINT_CHANNEL,
   type DispatchRef, type ItemEnd,
@@ -3044,9 +3048,30 @@ export class AgentXDaemon {
   private async checkGoalRecords(requests: AttachedRequests): Promise<void> {
     const settings = this.config.requests.checkers ?? DEFAULT_CHECKER_SETTINGS
     const counter = forgeCounter(forgeConnectorsOf(this.config))
-    await checkGoals(requests.goals, (check) => check.kind === "count"
+    await checkGoals(requests.goals, async (check) => check.kind === "count"
       ? checkCount(check, counter)
+      : check.kind === "number" ? checkNumber(check, requests.numbers)
       : runCheck(check, this.requestCheckContext(requests)), settings.checkEveryMinutes, Date.now(), this.log)
+  }
+
+  private numberConfigErrors = ""
+  private numbersReading = false
+
+  /** Numbers (#1826): the ones of agentx.json written to the store, then
+   *  every number whose last whole period has no reading yet is read. */
+  private async readNumbers(requests: AttachedRequests): Promise<void> {
+    const settings = this.config.numbers ?? DEFAULT_NUMBER_SETTINGS
+    const now = Date.now()
+    const errors = syncConfigNumbers(requests.numbers, settings.items, now)
+    // Said once per change, not at every check.
+    if (errors.join("\n") !== this.numberConfigErrors) {
+      this.numberConfigErrors = errors.join("\n")
+      for (const e of errors) this.log(`[numbers] ${e}`)
+    }
+    await readDueNumbers(requests.numbers, {
+      connectors: forgeConnectorsOf(this.config),
+      run: shellRunner(process.cwd()),
+    }, settings, now, this.log)
   }
 
   /** What the loop checkers read (#1039): the forges through the
@@ -3152,6 +3177,14 @@ export class AgentXDaemon {
   private async sweepRequests(requests: AttachedRequests): Promise<void> {
     await this.sweepPlans(requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
     await this.sweepSprints(requests).catch((e: any) => this.log(`[sprints] check failed: ${e?.message ?? e}`))
+    // Beside the check, never inside it: a slow source (a command may take
+    // minutes) must not hold the requests check. One read at a time.
+    if (!this.numbersReading) {
+      this.numbersReading = true
+      void this.readNumbers(requests)
+        .catch((e: any) => this.log(`[numbers] read failed: ${e?.message ?? e}`))
+        .finally(() => { this.numbersReading = false })
+    }
     await this.checkGoalRecords(requests).catch((e: any) => this.log(`[goals] check failed: ${e?.message ?? e}`))
     const headlines = this.headlineWriter(requests)
     // Fire and forget, like every model call here: a close it reopens is
@@ -5652,6 +5685,19 @@ export class AgentXDaemon {
           promiseSettings: promiseSettingsOf(this.config.requests),
           flow: this.config.requests.flow,
           check: loopChecker(() => this.requestCheckContext(requests)),
+        }, this.callerProof(req))
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // Numbers, agent side (#1826): agentx_numbers reads and posts here.
+      if (path === "/numbers" || path.startsWith("/numbers/")) {
+        if (!this.requests) { this.json(res, 503, { error: "numbers need the database" }); return }
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleNumbersApi(req.method || "GET", path, url.searchParams, body as Record<string, unknown> | undefined, {
+          store: this.requests.numbers,
+          hasAgent: (id) => !!this.registry.getAgent(id),
+          runningTurn: (id, p) => this.provenTurn(id, p),
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return

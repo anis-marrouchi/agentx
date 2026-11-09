@@ -4,6 +4,7 @@ import { getEventBus } from "@/events/bus"
 import { RequestStore } from "./store"
 import { PlanStore } from "./plan-store"
 import { GoalStore } from "./goal-store"
+import { NumberStore } from "@/numbers/store"
 import { SprintStore } from "./sprint-store"
 import { RequestTracker, type RequestSettings } from "./tracker"
 import { traceInbound, type InboundLog } from "./checkers/reply"
@@ -17,6 +18,8 @@ export interface AttachedRequests {
   plans: PlanStore
   /** Goal records (#1568). */
   goals: GoalStore
+  /** Tracked numbers and their readings (#1826). */
+  numbers: NumberStore
   /** Sprint lanes (#1241). */
   sprints: SprintStore
   /** Inbound turns, for the reply checker (#1039). */
@@ -92,6 +95,7 @@ export function attachRequests(
     tracker,
     plans,
     goals: new GoalStore(db),
+    numbers: new NumberStore(db),
     sprints: new SprintStore(db),
     inbound: traceInbound(db),
     drift: new DriftStore(db),

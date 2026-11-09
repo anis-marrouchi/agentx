@@ -71,7 +71,7 @@ describe("the goal store", () => {
     expect(parseGoalCheck(COUNT)).toEqual(COUNT)
     expect(parseGoalCheck({ kind: "url", url: "https://example.com/v" })).toEqual({ kind: "url", url: "https://example.com/v" })
     expect(parseGoalCheck({ kind: "count", provider: "github", project: "nope" })).toMatch(/owner\/repo/)
-    expect(parseGoalCheck({ kind: "smell" })).toMatch(/url, issue, git-ancestor, reply or count/)
+    expect(parseGoalCheck({ kind: "smell" })).toMatch(/url, issue, git-ancestor, reply, count or number/)
   })
 })
 

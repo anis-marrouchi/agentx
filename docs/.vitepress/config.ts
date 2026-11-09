@@ -76,6 +76,7 @@ const groups = [
     { text: "Try a cheaper workflow beside a live one", link: "/jobs/workflow-pilot" },
     { text: "Follow a request of several steps", link: "/jobs/tracked-plans" },
     { text: "Run a sprint in lanes", link: "/jobs/sprint-lanes" },
+    { text: "Track numbers over time", link: "/jobs/numbers" },
     { text: "Pause a task and resume it later", link: "/jobs/pause-and-resume" },
     { text: "Keep a small machine from running out of memory", link: "/jobs/session-queue" },
     { text: "Ask the node about its machine and account", link: "/jobs/node-facts" },

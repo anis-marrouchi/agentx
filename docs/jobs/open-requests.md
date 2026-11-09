@@ -340,7 +340,7 @@ A goal is also a record of its own, so it can end, and so crons can point at it.
 
 A record has a state: **active**, **done** or **dropped**.
 
-- With a `check`, the daemon runs it at the pace of the loop checks (every 10 minutes by default) and closes the goal as done when it is met. `check` is any `closeWhen` (`url`, `issue`, `git-ancestor`, `reply`) or a `count`, as on a plan step.
+- With a `check`, the daemon runs it at the pace of the loop checks (every 10 minutes by default) and closes the goal as done when it is met. `check` is any `closeWhen` (`url`, `issue`, `git-ancestor`, `reply`), a `count`, as on a plan step, or a `number`: the newest reading of a [tracked number](./numbers.md#close-a-goal-on-a-number) crossing a threshold.
 - Its owner closes it by hand with `{action:"goal", goalAction:"close", id:"zero-issues", evidence:"<link>"}`, or gives it up with `goalAction:"drop"` and a `reason`. Only the owner closes or drops it.
 - `{action:"goal", id:"zero-issues"}` shows the record and its requests. `{action:"goals"}` gives each goal's state next to its counts.
 
