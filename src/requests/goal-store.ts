@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, readCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { describeCount, parseCountSpec, readCountSpec, type CountSpec } from "./checkers/count"
 import type { RequestGoal } from "./goals"
+import { describeNumberCheck, parseNumberCheck, readNumberCheck, type NumberCheck } from "@/numbers/goal-check"
 
 // --- A goal as its own record (#1568 part 3) ---
 //
@@ -20,8 +21,9 @@ export type GoalState = (typeof GOAL_STATES)[number]
 export const DONE_WHEN_MAX = 300
 export const GOAL_EVIDENCE_MAX = 500
 
-/** What closes a goal: a loop checker, or an open count (#1568). */
-export type GoalCheck = CloseWhen | ({ kind: "count" } & CountSpec)
+/** What closes a goal: a loop checker, an open count (#1568), or the
+ *  newest reading of a number crossing a threshold (#1826). */
+export type GoalCheck = CloseWhen | ({ kind: "count" } & CountSpec) | NumberCheck
 
 export interface GoalRecord {
   id: string
@@ -47,18 +49,23 @@ export function parseGoalCheck(v: unknown, settings: CheckerSettings = DEFAULT_C
     const spec = parseCountSpec(v as Record<string, unknown>)
     return typeof spec === "string" ? spec : { kind: "count", ...spec }
   }
+  if (v && typeof v === "object" && !Array.isArray(v) && String((v as any).kind).trim().toLowerCase() === "number") {
+    return parseNumberCheck(v as Record<string, unknown>)
+  }
   const spec = parseCloseWhen(v, settings, now)
   if (typeof spec !== "string") return spec
-  return /^closeWhen(\.kind)? must be/.test(spec) ? "check must be an object with a kind: url, issue, git-ancestor, reply or count" : spec.replace(/^closeWhen/, "check")
+  return /^closeWhen(\.kind)? must be/.test(spec) ? "check must be an object with a kind: url, issue, git-ancestor, reply, count or number" : spec.replace(/^closeWhen/, "check")
 }
 
 function readGoalCheck(json: string | null): GoalCheck | null {
   if (!json) return null
   try {
-    if (JSON.parse(json)?.kind === "count") {
+    const raw = JSON.parse(json)
+    if (raw?.kind === "count") {
       const spec = readCountSpec(json)
       return spec ? { kind: "count", ...spec } : null
     }
+    if (raw?.kind === "number") return readNumberCheck(raw)
   } catch {
     return null
   }
@@ -66,7 +73,7 @@ function readGoalCheck(json: string | null): GoalCheck | null {
 }
 
 export function describeGoalCheck(check: GoalCheck): string {
-  return check.kind === "count" ? describeCount(check) : describeCloseWhen(check)
+  return check.kind === "count" ? describeCount(check) : check.kind === "number" ? describeNumberCheck(check) : describeCloseWhen(check)
 }
 
 function toGoal(r: any): GoalRecord {

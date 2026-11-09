@@ -55,6 +55,7 @@ import { workflow } from "@/commands/workflow"
 import { webhook } from "@/commands/webhook"
 import { business } from "@/commands/business"
 import { plan } from "@/commands/plan"
+import { numbers } from "@/commands/numbers"
 import { notifications } from "@/commands/notifications"
 import { mail } from "@/commands/mail"
 import { retention } from "@/commands/retention"
@@ -176,6 +177,8 @@ const ADVANCED = [
   wiki, graph, memoryCmd, procedure, references, ragCmd,
   // Workflow / BPM
   workflow, webhook, board, backlog, business, plan,
+  // Tracked numbers and their readings
+  numbers,
   // Observability + forensics
   ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, signalCmd, reviewGateCmd, cloudSessionsCmd, watch, eventsCmd, dbCmd, quality,
   // Fleet + extension

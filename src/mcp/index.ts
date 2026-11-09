@@ -1109,7 +1109,7 @@ const TOOLS = [
       "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
       "flow gives the daily flow rate (requests closed, done or dropped, out of those asked), today first then one line per day, with the stuck, waiting and dropped counts: use it when the owner asks how the requests are flowing or what the rate is. " +
       "When the request serves a larger goal (a launch, a client project, a quarter's target), name it on accept with goal {id, title}; goals lists every goal with its open and done requests, how far along it is and what it cost. " +
-      "A goal is also a record of its own: goal with goalAction create (goal {id, title}, doneWhen, optional check: a closeWhen or {kind:'count', provider, project, what, max}) makes it, with you as its owner; show reads it; close (evidence) or drop (reason) ends it. A goal with a check closes by itself when the check is met, and crons that name the goal (crons.<id>.goal) stop running. " +
+      "A goal is also a record of its own: goal with goalAction create (goal {id, title}, doneWhen, optional check: a closeWhen, {kind:'count', provider, project, what, max} or {kind:'number', number:'<id>', atLeast or atMost: n}) makes it, with you as its owner; show reads it; close (evidence) or drop (reason) ends it. A goal with a check closes by itself when the check is met, and crons that name the goal (crons.<id>.goal) stop running. " +
       "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
       "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
       "The daemon hands each step to its agent in order, nudges a step that goes quiet, sends an owner-approved message itself, and tells the owner at the end or when a step is blocked. " +
@@ -1130,7 +1130,7 @@ const TOOLS = [
         action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals", "goal", "flow"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa, goals, goal (one goal record: see goalAction) or flow (the daily flow rate: requests closed out of those asked, per day)." },
         goalAction: { type: "string", enum: ["show", "create", "close", "drop"], description: "goal: show (default; give id), create (give goal {id, title}, doneWhen, optional check), close (give id and evidence) or drop (give id and reason). Only the goal's owner closes or drops it." },
         doneWhen: { type: "string", description: "goal create: what done means, in words (at most 300 characters)." },
-        check: { type: "object", description: "goal create, optional: what the daemon checks to close the goal by itself: a closeWhen spec, or {kind:'count', provider:'github'|'gitlab', project:'owner/repo', what:'issues'|'prs'|'all', max:0}." },
+        check: { type: "object", description: "goal create, optional: what the daemon checks to close the goal by itself: a closeWhen spec, or {kind:'count', provider:'github'|'gitlab', project:'owner/repo', what:'issues'|'prs'|'all', max:0}, or {kind:'number', number:'<number id>', atLeast:1000} (or atMost): the newest reading of a tracked number (agentx_numbers) crosses it." },
         days: { type: "integer", minimum: 1, maximum: 90, description: "flow, optional: how many days, today last (default 7)." },
         goal: {
           type: "object",
@@ -1230,6 +1230,41 @@ const TOOLS = [
         lane: { type: "string", description: "block, retry, skip, hold, release: the lane's name." },
         item: { type: "number", description: "retry, skip, hold, release, optional: the item's number in its lane (1 is the first). Default: the lane's current item." },
         note: { type: "string", description: "block: why the lane cannot go on. Others, optional: why." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
+    name: "agentx_numbers",
+    description:
+      "Track a number over time: content reach per channel or product, a step of the client journey, a CX or growth measure. " +
+      "A number has an id, a name, an owner agent, a unit, an optional target with a direction (up: higher is better, down: lower is better), a rhythm (daily, weekly or monthly), tags such as channel:youtube or product:shop, and a source. " +
+      "Each reading has a value and the window it covers (from, to: whole days, both included). " +
+      "Its status is on target, missed, missed twice, no reading (none yet, the newest read failed, or the last period has none) or no target. A failed read is never 0. " +
+      "list: tracked numbers with status and newest reading (tags narrows to numbers with every tag). show: one number and its readings (id). " +
+      "create: make or change a number you own (id, name, unit, target, direction, rhythm, tags, source). " +
+      "source: {kind:'manual'} (default: you record readings), {kind:'count', provider:'github'|'gitlab', project, what:'issues'|'prs'|'all', state:'open'|'closed'|'all', labels:[…], window:'none'|'created'|'closed'}, or {kind:'http-json', url, path} (url may hold {start} and {end}). The daemon reads count and http-json once per period. " +
+      "record: a reading (id, value, from, to, note); without from it is the last whole period of the number's rhythm. archive: stop tracking it (its readings stay). " +
+      "A goal can close on a number: agentx_request goal check {kind:'number', number:'<id>', atLeast:<n>} or atMost. " +
+      "Example: {action:'create', id:'yt-views', name:'YouTube views', unit:'views', target:1000, rhythm:'weekly', tags:['channel:youtube','product:shop']}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["list", "show", "create", "record", "archive"], description: "list (default), show, create, record or archive." },
+        id: { type: "string", description: "The number's id: letters, digits, dashes, dots or colons." },
+        name: { type: "string", description: "create: what it counts, in a few plain words." },
+        unit: { type: "string", description: "create, optional: views, clients, %, h…" },
+        target: { type: "number", description: "create, optional: the value it should reach." },
+        direction: { type: "string", enum: ["up", "down"], description: "create, optional: up (default, higher is better) or down (lower is better)." },
+        rhythm: { type: "string", enum: ["daily", "weekly", "monthly"], description: "create, optional: how often it gets a reading (default weekly; weeks start on Monday, UTC)." },
+        tags: { type: "array", items: { type: "string" }, description: "create: tags such as channel:youtube. list: only numbers with every tag." },
+        source: { type: "object", description: "create, optional: where readings come from (see the description). Default manual." },
+        owner: { type: "string", description: "create, optional: the owner agent (default: you)." },
+        value: { type: "number", description: "record: the value read." },
+        from: { type: "string", description: "record, optional: first day of the window (YYYY-MM-DD)." },
+        to: { type: "string", description: "record, optional: last day of the window (YYYY-MM-DD, included). Default: from." },
+        note: { type: "string", description: "record, optional: where the value was read." },
+        archived: { type: "boolean", description: "list: include numbers no longer tracked." },
         callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
       },
     },
@@ -2143,6 +2178,12 @@ async function handleToolCall(
     case "agentx_sprint": {
       const { runSprintTool } = await import("@/requests/sprint-tool")
       const text = await runSprintTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_numbers": {
+      const { runNumbersTool } = await import("@/numbers/tool")
+      const text = await runNumbersTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 

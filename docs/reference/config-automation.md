@@ -26,6 +26,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `value` | object | — | The job's value line: why it runs and the number that proves it. Shown as written on the Hub's **Jobs** tab and in Settings › Schedules. A job without one shows **no value line**. |
 | `value.why` | string (1–200 characters) | required | Why the job runs, for example `Keeps the support queue answered overnight`. |
 | `value.metric` | string (1–200 characters) | required | The number that proves it, for example `Tickets older than 12 h each morning: 0`. AgentX does not measure it. |
+| `value.number` | string (number id) | — | The tracked number that measures it, for example `video-views`. See [Track numbers over time](/jobs/numbers#link-a-job-s-value-line-to-a-number). |
 | `goal` | string (goal id) | — | The goal record the job serves, for example `zero-issues`. Each run's prompt starts with the goal's state: its title, what done means, its check and what the check saw last, and how many of its requests are open and done. Once the goal is done or dropped the job no longer runs, including a run it missed while the node was off; its settings are left as they are, and the Hub's **Jobs** tab shows **goal … done, disable?**. A prompt job without one shows **no goal** beside its value line. See [A goal's own record](/jobs/open-requests#a-goal-s-own-record). |
 | `onError` | `"log"` \| `"notify"` \| `"disable"`, or a list of them | `"log"` | What happens when a run fails: log it, send a message, or turn the job off after 3 failures in a row. From the second failure in a row a message is sent anyway. |
 | `notify` | object | — | Where this job's messages go: the answer from each successful run, and failure messages. |
@@ -424,6 +425,23 @@ To turn it on by hand:
 | `requests.headlines.provider` | string | `"claude-code"` | Engine for the call. `claude-code` uses the sign-in this computer already has (subscription or API key); no new paid account is used. |
 | `requests.headlines.model` | string | `"claude-haiku-4-5-20251001"` | Model for the call. A small, fast model is enough. |
 | `requests.headlines.timeoutSeconds` | whole number (5 to 120) | `30` | Longest wait for one headline. A request whose headline could not be written keeps your words as its title and is not asked about again. |
+
+## `numbers`
+
+Tracked numbers and their readings. See [Track numbers over time](/jobs/numbers). Empty by default: nothing changes until a number exists.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `numbers.items` | object | `{}` | Numbers you set up, by id. Agents cannot change or archive them. |
+| `numbers.items.<id>.name` | string (up to 120 characters) | required | What the number counts, in plain words. |
+| `numbers.items.<id>.owner` | string (agent id) | — | The agent that looks after it. |
+| `numbers.items.<id>.unit` | string (up to 30 characters) | — | `views`, `clients`, `%`… |
+| `numbers.items.<id>.target` | number | — | The value it should reach. |
+| `numbers.items.<id>.direction` | `up` or `down` | `up` | `up`: higher is better. `down`: lower is better. Needs `target`. |
+| `numbers.items.<id>.rhythm` | `daily`, `weekly` or `monthly` | `weekly` | How often it gets a reading. UTC; weeks start on Monday. |
+| `numbers.items.<id>.tags` | list of strings | `[]` | Such as `channel:video`. One word each, up to 20. |
+| `numbers.items.<id>.source` | object | `{"kind": "manual"}` | Where readings come from: `manual`, `count`, `http-json` (with `headers` allowed here) or `command`. See [Where the values come from](/jobs/numbers#where-the-values-come-from). |
+| `numbers.retryMinutes` | whole number (5 to 1440) | `60` | Minutes before a failed read is tried again. |
 
 ## `watchers`
 
