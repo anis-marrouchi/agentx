@@ -497,6 +497,13 @@ export const pausedAtSchema = z.discriminatedUnion("kind", [
     nodeId: z.string(),
     /** ISO-8601 instant when the timer should fire. */
     fireAt: z.string(),
+    /** The node's `wake` config, rendered at this pause (src/workflows/wake.ts). */
+    wake: z.object({
+      on: z.array(z.enum(["note", "label"])),
+      refs: z.array(z.string()),
+      minGapSec: z.number(),
+      selfLabels: z.array(z.string()).optional(),
+    }).optional(),
   }),
   // Follow-up (#788): waiting on the owner's answer to a decision card.
   // `ask` is an owner.ask step, `send` a person.message waiting for its
@@ -627,6 +634,8 @@ export const runMetaSchema = z.object({
   /** The run this one continues (#870): a wrapped task that was stopped,
    *  then resumed, gets a new run that names the one the stop closed. */
   continues: z.string().optional(),
+  /** When a work-item event last moved this run's timer to now. */
+  lastWakeAt: z.string().optional(),
 })
 export type RunMeta = z.infer<typeof runMetaSchema>
 

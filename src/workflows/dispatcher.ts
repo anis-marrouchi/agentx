@@ -8,6 +8,7 @@ import { stripSecrets } from "./strip-secrets"
 import type { WorkflowStore } from "./store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
+import { consumeSelfLabels, wakeMatches, wakeTarget, type WakeResult, type WorkActivity } from "./wake"
 import type { EventBus } from "../daemon/event-bus"
 import { FOLLOW_UP_PORTS, type EntityRef, type NodeExecutionEntry, type PausedAt, type RunMeta, type Workflow, type WorkflowRun } from "./types"
 import { getLedgerMode } from "@/intent/mode"
@@ -309,6 +310,51 @@ export class WorkflowDispatcher {
       void this.walk(wf, run.id, `signal:${emission.name}`)
         .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-signal failed: ${e.message}`))
     }
+  }
+
+  /** A note or label change landed on a work item (src/workflows/wake.ts).
+   *  Every run paused on a timer whose `wake` watches that item gets its
+   *  timer moved to now, or to the end of its gap after the last wake.
+   *  Only pending timers are looked at, so this never reads idle runs. */
+  async wake(a: WorkActivity): Promise<Array<{ runId: string; nodeId: string; result: WakeResult }>> {
+    const out: Array<{ runId: string; nodeId: string; result: WakeResult }> = []
+    const seen = new Set<string>()
+    for (const t of this.timers.list()) {
+      const key = `${t.runId}:${t.nodeId}`
+      if (t.cancelKey !== key || seen.has(key)) continue
+      seen.add(key)
+      const run = this.runs.get(t.runId)
+      const p = run?.pausedAt
+      if (!run || p?.kind !== "timerWait" || p.nodeId !== t.nodeId || !wakeMatches(p.wake, a)) continue
+      const result: WakeResult = a.selfMarked ? "self" : await this.commit(run.id, () => this.applyWake(run.id, t.nodeId, a))
+      this.log(`[workflow:${run.workflowId}] wake run=${run.id} node=${t.nodeId} event=${a.on}:${a.ref} result=${result}`)
+      out.push({ runId: run.id, nodeId: t.nodeId, result })
+    }
+    if (!out.length) this.log(`[workflows] wake event=${a.on}:${a.ref} result=no-run`)
+    return out
+  }
+
+  /** Runs inside commit(runId). Moves the run's existing timer in place;
+   *  `stale` when the run left this wait or the timer already fired, `self`
+   *  when it is the run's own recorded label write (used up here). */
+  private applyWake(runId: string, nodeId: string, a: WorkActivity): WakeResult {
+    const fresh = this.runs.get(runId)
+    const p = fresh?.pausedAt
+    if (!fresh || fresh.status !== "paused" || p?.kind !== "timerWait" || p.nodeId !== nodeId || !p.wake) return "stale"
+    const selfLeft = consumeSelfLabels(p.wake, a)
+    if (selfLeft) {
+      this.runs.patch(runId, { pausedAt: { ...p, wake: { ...p.wake, selfLabels: selfLeft } } })
+      return "self"
+    }
+    const nowMs = Date.now()
+    const target = wakeTarget({ nowMs, lastWakeAt: fresh.meta?.lastWakeAt, minGapSec: p.wake.minGapSec, fireAt: p.fireAt })
+    if (!target) return "debounced"
+    if (!this.timers.retime(`${runId}:${nodeId}`, target.fireAt)) return "stale"
+    this.runs.patch(runId, {
+      pausedAt: { ...p, fireAt: target.fireAt },
+      ...(target.result === "woke" ? { meta: { lastWakeAt: new Date(nowMs).toISOString() } } : {}),
+    })
+    return target.result
   }
 
   /** Callback from the TimerService when a scheduled timer elapses. Reads
