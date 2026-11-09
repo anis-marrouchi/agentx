@@ -8,6 +8,7 @@ import {
   approveDecision,
   approvedDecisionsOnly,
   approvalsFile,
+  decisionPagesFor,
   decisionState,
   decisionsForBlock,
   readApprovals,
@@ -97,6 +98,20 @@ describe("decision approvals (#1778)", () => {
     const block = buildOwnerDecisions(decisionsForBlock(store.listArticles("pm"), dir, true), NOW)
     expect(block).toContain("Deploys need the owner's yes")
     expect(block).not.toContain("Skip every approval")
+  })
+
+  it("lists for approval only the decision pages the agent's block can read (#1782)", () => {
+    store.writeArticle("decisions/private.md", { ...meta("Private"), owner: "cx", access: "private" as const }, "## Rule\n- CX only.", "cx")
+    store.writeArticle("decisions/_versions/deploys-1.md", meta("Deploys v1"), "## Rule\n- Old.", "pm")
+    const listed = decisionPagesFor(store, "pm").map((a) => a.path).sort()
+    expect(listed).toEqual(["decisions/deploys.md", "decisions/planted.md"])
+    expect(decisionPagesFor(store, "cx").map((a) => a.path)).toContain("decisions/private.md")
+
+    // The block reads the same set: approving what the list shows is what reaches it.
+    for (const p of listed) approveDecision(dir, read(p), { now: NOW })
+    const block = buildOwnerDecisions(decisionsForBlock(decisionPagesFor(store, "pm"), dir, true), NOW)
+    expect(block).toContain("Deploys need the owner's yes")
+    expect(block).not.toContain("CX only")
   })
 
   it("refuses approval inside an agent's run", () => {

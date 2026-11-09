@@ -1268,7 +1268,7 @@ decisions
   .option("--all", "every decision page, whatever its date")
   .option("--dir <path>", "wiki directory")
   .action(async (opts: { agent?: string; all?: boolean; dir?: string }) => {
-    const { readApprovals, decisionState } = await import("@/wiki/decision-approvals")
+    const { readApprovals, decisionState, decisionPagesFor } = await import("@/wiki/decision-approvals")
     const { DECISION_DAYS } = await import("@/agents/owner-decisions")
     const hub = getHub(opts.dir)
     const agents = opts.agent ? [opts.agent] : hub.sharedScope("").filter((s) => s.id !== "shared").map((s) => s.id)
@@ -1277,8 +1277,9 @@ decisions
     for (const agentId of agents) {
       const store = hub.getAgentWiki(agentId)
       const approvals = readApprovals(store.baseDir)
-      const pages = store.listAllArticles()
-        .filter((a) => a.meta.type === "decision")
+      // The pages this agent's session block reads: a page the agent cannot
+      // read never reaches it, so approving it would change nothing (#1782).
+      const pages = decisionPagesFor(store, agentId)
         .filter((a) => opts.all || Date.parse(a.meta.lastUpdated || a.meta.created || "") >= since)
         .sort((x, y) => String(y.meta.lastUpdated).localeCompare(String(x.meta.lastUpdated)))
       for (const a of pages) {
