@@ -1,7 +1,7 @@
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { recordAnswered } from "./answered"
-import { answerLines, buildChoices, draftFor, resolveAnswer, type CardChoices } from "./choices"
+import { answerLines, buildChoices, draftFor, isNoChoice, resolveAnswer, type CardChoices } from "./choices"
 import { isRetroOrigin, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
 import { cardRuleBreak, FOLLOWUP_KINDS, followupBudgetRefusal, type FollowupKind } from "./screen-gate"
 
@@ -379,18 +379,23 @@ export function decideCard(
   if (card.popup_only && verdict === "yes" && !opts.popup) return { ok: false, error: POPUP_ONLY }
   const answer = resolveAnswer(card, verdict, opts)
   if (!answer.ok) return answer
+  // A yes with an option that means no ("Don't send") is a no (#1788): the
+  // pick is kept, the text is dropped, so nothing reads as "send this".
+  // Retro cards keep their own rule for their none-option (origin.ts).
+  const saysNo = verdict === "yes" && isNoChoice(answer.choice) && !isRetroOrigin(card.origin)
+  const final: Verdict = saysNo ? "no" : verdict
   const note = oneLine(opts.note).slice(0, CARD_LIMITS.note)
   const decided: DecisionCard = {
     ...card,
     status: "decided",
-    verdict,
+    verdict: final,
     decided_by: opts.by ?? "operator",
     ...(opts.popup ? { decided_from: "popup" as const } : {}),
     decided_at: new Date(opts.now ?? Date.now()).toISOString(),
     ...(note ? { note } : {}),
     ...(answer.choice ? { choice: answer.choice } : {}),
     ...(answer.suggested ? { choice_suggested: true } : {}),
-    ...(answer.text ? { text: answer.text } : {}),
+    ...(answer.text && !saysNo ? { text: answer.text } : {}),
   }
   saveCard(root, decided)
   return { ok: true, card: decided }
@@ -493,6 +498,7 @@ export function verdictMessage(card: DecisionCard): string {
   // reviewer's proposal: never "Approved text (send exactly this)".
   const check = card.origin?.kind === "retro-check" ? card.origin : undefined
   if (card.status === "decided" && card.verdict === "yes" && !retro && !check) lines.push(...answerLines(card))
+  if (card.status === "decided" && card.verdict === "no" && card.choice && !retro && !check) lines.push(`Chosen: ${card.choice} (this option means no; do not send or do it)`)
   if (card.note) lines.push(`Operator note: ${card.note}`)
   // A late no on something the owner already approved in chat must not
   // quietly undo work that is done (#909).

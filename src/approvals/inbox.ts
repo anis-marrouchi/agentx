@@ -604,7 +604,9 @@ export interface DecideOptions {
   popup?: boolean
 }
 
-export type DecideResult = { ok: true; message: string } | { ok: false; error: string }
+/** `verdict`: what was recorded, when it differs from the action asked
+ *  (a yes with a no-option is a no, #1788). */
+export type DecideResult = { ok: true; message: string; verdict?: "yes" | "no" } | { ok: false; error: string }
 
 export function parseKey(key: string): { kind: ApprovalKind; ref: string } | null {
   const i = key.indexOf(":")
@@ -649,7 +651,7 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
     const choice = typeof opts.choice === "number" ? item?.choices?.[opts.choice - 1] : opts.choice
     recordAnswered(ctx.root, {
       key, kind: parsed.kind, title: item?.title ?? key, raised_by: item?.raised_by ?? "",
-      answer: action, ...(choice ? { choice } : {}), ...(opts.text ? { text: opts.text } : {}),
+      answer: r.verdict ?? action, ...(choice ? { choice } : {}), ...(opts.text && r.verdict !== "no" ? { text: opts.text } : {}),
       by: opts.by ?? "operator", at: new Date(ctx.now ?? Date.now()).toISOString(),
     })
   }
@@ -676,7 +678,9 @@ async function decideItem(ctx: InboxContext, key: string, action: InboxAction, o
     case "card": {
       const r = decideCard(ctx.root, ref, yes ? "yes" : "no", { by, note: opts.note, now, choice: opts.choice, text: opts.text, popup: opts.popup })
       if (!r.ok) return r
-      return { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}${r.card.choice ? ` (${r.card.choice}${r.card.choice_suggested ? ", the suggested option" : ""})` : ""}` }
+      const v = r.card.verdict ?? (yes ? "yes" : "no")
+      const flipped = yes && v === "no" ? ", an option that means no" : ""
+      return { ok: true, verdict: v, message: `${key}: ${r.card.raised_by} will be told ${v}${r.card.choice ? ` (${r.card.choice}${r.card.choice_suggested ? ", the suggested option" : ""}${flipped})` : ""}` }
     }
     case "schedule": {
       const r = await (yes ? approveSchedule : rejectSchedule)(ref, { configPath: configPathFor(ctx), reload: ctx.reload })

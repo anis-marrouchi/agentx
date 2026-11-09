@@ -135,6 +135,10 @@ To show one real card now:
 
 1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
 
+Run inside an agent's session (`AGENTX_AGENT_ID` set), the command never records an answer: it prints the card in the terminal. Add `--dry-run` to show the window without recording, or `--print` (anyone) to print the card and open nothing. Each run prints a line starting `[approvals] popup (<who> (terminal))` saying who ran it and what happened; an answer recorded this way is marked `operator (popup, terminal)`.
+
+An option that means no counts as a no whichever button sent it. An option whose label starts with Don't, Do not, No, Not, Never, Cancel, Skip, Decline or Reject is recorded as **no**, with the option kept and the message dropped, and the agent is told NO, never "send exactly this".
+
 You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. A plain `agentx approvals approve <key>` (no `--choice`) takes the agent's suggested choice, the one its recommendation starts with, and the agent is told it was a plain yes. When the recommendation names no choice, a plain yes is refused with the list of choices. A plain yes means yes to the advice, so on a card whose choices are Yes and No and whose recommendation starts with "No: …", a plain yes records the choice No. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer on the Hub](#answer-on-the-hub) and [the phone app](./mobile-fleet.md#answer-a-decision).
 
 ## Agents on another machine
