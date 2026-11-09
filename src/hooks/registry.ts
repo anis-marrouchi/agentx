@@ -11,6 +11,8 @@ interface RegisteredHook {
   event: HookEvent
   definition: HookDefinition
   handler: HookHandler
+  /** Registered in code (registerHandler), not loaded from disk. */
+  inProcess?: boolean
 }
 
 export class HookRegistry {
@@ -91,11 +93,25 @@ export class HookRegistry {
    */
   registerHandler(event: HookEvent, name: string, handler: HookHandler, priority: number = 100): void {
     const definition: HookDefinition = { name, type: "script", priority, enabled: true }
-    const entry: RegisteredHook = { event, definition, handler }
+    const entry: RegisteredHook = { event, definition, handler, inProcess: true }
     const existing = this.hooks.get(event) || []
     existing.push(entry)
     existing.sort((a, b) => a.definition.priority - b.definition.priority)
     this.hooks.set(event, existing)
+  }
+
+  /**
+   * Remove the hooks loaded from disk and keep the in-process handlers.
+   * The config reload uses this before loading the disk hooks again: the
+   * workflow engine registers its handlers once, at start, so clearing them
+   * would stop every workflow trigger until the next restart.
+   */
+  clearLoaded(): void {
+    for (const [event, list] of this.hooks) {
+      const kept = list.filter((h) => h.inProcess)
+      if (kept.length) this.hooks.set(event, kept)
+      else this.hooks.delete(event)
+    }
   }
 
   /**

@@ -2236,10 +2236,11 @@ export class AgentXDaemon {
     }
 
     // 6. Hooks — clear + reload from disk. Registry is just a Map<event, defs>
-    //    so the swap is atomic between events.
+    //    so the swap is atomic between events. Only the disk hooks are
+    //    cleared: the workflow engine's in-process handlers stay registered.
     try {
       const beforeSize = this.hooks.size?.() ?? 0
-      this.hooks.clear()
+      this.hooks.clearLoaded()
       loadHooks(process.cwd(), this.hooks)
       const afterSize = this.hooks.size?.() ?? 0
       if (beforeSize !== afterSize) applied.push(`hooks(${afterSize})`)
