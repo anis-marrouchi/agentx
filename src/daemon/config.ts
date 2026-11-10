@@ -1687,10 +1687,12 @@ export const requestsConfigSchema = z.object({
    *  reads it. A firm promise (the agent will do a named thing later, no
    *  condition) becomes a promise owned by that agent, owed to whoever
    *  asked; a reply that asks the owner leaves its request waiting on
-   *  them, with the question. Off by default: it spends a model call on
-   *  most owner-facing replies. Needs `enabled` above. */
+   *  them, with the question. On by default since #1806: without it a reply
+   *  that asks the owner leaves its request in progress and the settle step
+   *  closes it. One small model call per owner-facing reply, bounded by
+   *  `dailyCap`. Needs `enabled` above (requests are off by default). */
   catchPromises: z.object({
-    enabled: z.boolean().default(false),
+    enabled: z.boolean().default(true),
     /** Model calls a day (UTC), across all agents. Past it, replies are
      *  not read until the next day. */
     dailyCap: z.number().int().min(1).max(10_000).default(300),

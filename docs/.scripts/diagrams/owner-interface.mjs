@@ -53,7 +53,7 @@ d.list(d.x0, y + ROW + 64, {
   columns: 2,
   items: [
     ["Urgent ladder is off", "Your switch: notifications.reach.enabled."],
-    ["Promise catch is off", "Your switch: requests.catchPromises.enabled."],
+    ["Promise catch is on", "Default since #1806; switch: requests.catchPromises."],
     ["Due work: fix not proven", "Fixed in #1218, not yet proven live."],
     ["Steps C, D and F shipped", "See the table below for each step."],
   ],

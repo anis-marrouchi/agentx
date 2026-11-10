@@ -149,13 +149,14 @@ The epic [#1138](https://github.com/anis-marrouchi/agentx/issues/1138) had seven
 | B. Reach | seen and answered marks, an urgent ladder, channels that are down in `/health` | `src/notify/reach.ts` | Partly met. Marks and `/health` work. The ladder is off by default, so escalation was not seen live. |
 | C. One Desk | one list and one count of what waits on the owner, routed by three settings | `src/desk/owner-list.ts`, `src/desk/route.ts` | Met. |
 | D. Promise → Fact | one promise path; closing with a proof writes a fact | `src/requests/promise.ts` | Met, with tests. |
-| E. Catch "I'll do X" | reads a firm promise from a reply | `src/requests/catch.ts` | Precision met (1.00 on a held-out set, see `bench/README.md`). Off by default, so not measured live. |
+| E. Catch "I'll do X" | reads a firm promise from a reply | `src/requests/catch.ts` | Precision met (1.00 on a held-out set, see `bench/README.md`). On by default since #1806, after a day live on one node. |
 | F. Status follows the work | tells when an issue's status label is behind the work | `src/requests/status-board.ts` | Met. |
 
-Two switches are the owner's choice, not open work:
+One switch is the owner's choice, not open work:
 
 - `notifications.reach.enabled` turns on the urgent ladder. See [Get notified › Did it land](/jobs/notifications#_7-did-it-land-seen-answered-and-urgent-messages).
-- `requests.catchPromises.enabled` turns on the promise catch. It spends one short model call on most of your turns. See [Promises caught in a reply](/jobs/open-requests#promises-caught-in-a-reply).
+
+The promise catch (`requests.catchPromises.enabled`) is on by default wherever requests are on. Turn it off with `agentx requests settings --catch off`. See [Promises caught in a reply](/jobs/open-requests#promises-caught-in-a-reply).
 
 ## Adding or changing a pattern
 

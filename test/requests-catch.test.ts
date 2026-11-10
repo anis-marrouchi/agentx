@@ -219,9 +219,10 @@ describe("cost bounds", () => {
     expect(promisesOf("coder")).toHaveLength(0)
   })
 
-  it("is off when the settings never mention it", () => {
-    expect(requestsConfigSchema.parse({}).catchPromises).toMatchObject({ enabled: false, dailyCap: 300, waitingOwner: true })
-    expect(catchSettingsOf({}).enabled).toBe(false)
+  it("is on when the settings never mention it, and can be turned off (#1806)", () => {
+    expect(requestsConfigSchema.parse({}).catchPromises).toMatchObject({ enabled: true, dailyCap: 300, waitingOwner: true })
+    expect(catchSettingsOf({}).enabled).toBe(true)
+    expect(catchSettingsOf({ catchPromises: { enabled: false } }).enabled).toBe(false)
   })
 
   it("stops calling at the daily cap, and starts again the next day", async () => {
