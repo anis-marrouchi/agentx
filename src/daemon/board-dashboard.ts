@@ -877,9 +877,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   // The Hub's Numbers page (#1826 N2): this machine's tracked numbers, with
-  // sources masked. After the token gate above; peers come through the proxy.
+  // sources masked, and its funnels (N4). After the token gate above; peers come through the proxy.
   if (method === "GET" && path === NUMBERS_HUB_PATH) {
-    sendJson(res, 200, numbersHubReply(dashboardDb(), Date.now()))
+    // Funnels (#1826 N4) come from agentx.json as it is now: an edit shows
+    // without a restart; a file that does not load keeps the started config.
+    let funnels = ctx.config.numbers?.funnels
+    try { funnels = loadDaemonConfig().numbers?.funnels } catch { /* keep the started config */ }
+    sendJson(res, 200, numbersHubReply(dashboardDb(), Date.now(), funnels))
     return
   }
   if (method === "GET" && path.startsWith("/api/admin/ledger/")) {

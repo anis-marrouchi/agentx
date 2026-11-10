@@ -67,7 +67,8 @@ import { WALL_SETTINGS_SCRIPT } from "./wall-settings.client"
 import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
 import { WALL_BUILD_SCRIPT } from "./wall-build.client"
 import { WALL_NUMBERS_SCRIPT } from "./wall-numbers.client"
-import { numPeriodText, numTargetText, numFmt, numCounts, numDeptCardsHtml, numDeptOf, numEsc, numFilter, numGroups, numJobHtml, numMerge, numRank, numRowHtml, numSourceText, numSparkSvg, numStatusHtml, numTagKinds, numTagsOf, numbersPageHtml } from "./wall-numbers"
+import { numPeriodText, numTargetText, numFmt, numCounts, numDeptCardsHtml, numDeptOf, numEsc, numFilter, numGroups, numJobHtml, numMerge, numRank, numRowHtml, numSourceText, numSparkSvg, numStatusHtml, numTagKinds, numTagsOf, numbersPageHtml, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml } from "./wall-numbers"
+import { computeFunnel, formatShare, funnelGroupValues, funnelSteps } from "@/numbers/funnel"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange } from "./wall-cost"
 import { WALL_COST_SCRIPT } from "./wall-cost.client"
@@ -94,7 +95,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
-  ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml })}
+  ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}

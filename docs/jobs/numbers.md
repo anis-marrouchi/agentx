@@ -258,6 +258,55 @@ When a job's value line names a number (see [Link a job's value line to a number
 
 ![A job on the Jobs page with its number's newest reading](/screenshots/numbers/hub-jobs-number.png)
 
+## Follow a funnel
+
+A **funnel** lists numbers in order, such as visits, then sign-ups, then orders. For each step it shows the **conversion**: the step's value as a share of the step before. The step with the lowest conversion is the **biggest drop**: that is where most people stop.
+
+You set funnels up in `agentx.json`, next to your numbers.
+
+1. **Editor:** open `agentx.json`. In the `numbers` section, add `funnels`:
+
+   ```json
+   "numbers": {
+     "funnels": {
+       "shop-journey": {
+         "name": "Shop journey",
+         "steps": [
+           { "name": "Visits", "tag": "step:visit" },
+           { "name": "Sign-ups", "tag": "step:signup" },
+           { "name": "Orders", "tag": "step:order" }
+         ]
+       }
+     }
+   }
+   ```
+
+   Each step, first to last, is one of:
+
+   - a number's id, such as `"video-views"`;
+   - `{ "name": "Views", "number": "video-views" }`, the same with a name of its own;
+   - `{ "name": "Visits", "tag": "step:visit" }`: every number with that tag, added up. Give each channel or product its own number with the step tag, such as `visits-video` with the tags `step:visit` and `channel:video`. The funnel can then be cut by channel.
+
+   A funnel has 2 to 12 steps.
+
+2. **Terminal:** run `agentx daemon restart` to check the file. A funnel that is not valid stops the start with a message that names it.
+3. **Browser:** open the Hub, select **Numbers**, then the **Funnels** tab. The tab shows once a funnel is set up. You do not need to restart anything for the Hub to see a change to a funnel: select **Refresh**.
+
+![The Funnels tab: the biggest drop is marked in red](/screenshots/numbers/hub-funnel-desktop.png)
+
+Each step shows its value (its numbers' newest readings), a bar, and its conversion from the step before. The biggest drop is marked **biggest drop**. Under the funnel's name, a line gives the share that went from the first step to the last.
+
+To cut a funnel:
+
+1. **Browser:** select a tag, such as `channel:video`. Each step only counts its numbers with that tag.
+2. **Browser:** in **Group by**, choose a kind of tag, such as **tag channel**. The funnel is drawn once per channel, so you can see which channel loses most people, and where.
+
+![The funnel on a phone, one per channel](/screenshots/numbers/hub-funnel-phone.png)
+
+A step with no reading (its read failed, or no number is left after the tags you picked) shows **no reading**. It gets no conversion, and neither does the step after it: a missing value is never counted as 0. When the steps' newest readings cover different weeks, the funnel says so.
+
+A funnel uses the numbers of the machine whose `agentx.json` sets it up.
+
 ## Check it worked
 
 1. **Terminal:** run `agentx numbers add test-number --name "Test number" --target 10`.
@@ -267,7 +316,9 @@ When a job's value line names a number (see [Link a job's value line to a number
 5. **Terminal:** run `agentx numbers review`. **Test number** shows **missed twice**.
 6. **Browser:** within a few minutes, open the Approvals page on the Hub. A card **Test number missed its target twice** waits there, when the number has an owner agent (`--owner`) or `numbers.reviewer` is set. Answer **No**.
 7. **Browser:** open the Hub and select **Numbers**. **Test number** is listed with `4`, **missed twice**, and its trend shows the three readings.
-8. **Terminal:** run `agentx numbers archive test-number` to remove it from the list.
+8. **Editor:** in `agentx.json`, add a funnel with two steps under `numbers.funnels`: `"test-funnel": { "name": "Test funnel", "steps": ["test-number", "test-number"] }`.
+9. **Browser:** in the Hub, on **Numbers**, select **Refresh**, then the **Funnels** tab. **Test funnel** shows two steps of `4`, the second at **100% of the step before**.
+10. **Terminal:** run `agentx numbers archive test-number` to remove it from the list, and take `test-funnel` out of `agentx.json`.
 
 ## If something is wrong
 
@@ -279,6 +330,8 @@ When a job's value line names a number (see [Link a job's value line to a number
 - **The Hub has no Numbers entry:** no machine the Hub reads has a number yet. Add one, then select **Refresh** in the Hub.
 - **The Numbers page says `Not read:` and a machine:** that machine did not answer. Its numbers are missing from the page until it answers again; the others still show.
 - **A job shows `Number: <id> not found`:** no machine the Hub reads has a number with that id. Check the id in the job's value line with `agentx numbers`.
+- **The Funnels tab is missing:** no machine the Hub reads has a funnel in `numbers.funnels`, or its funnel is not valid. Run `agentx daemon restart`: a bad funnel is named.
+- **A funnel step shows no reading:** none of its numbers has a reading, or none has every tag picked. Open the **Numbers** tab to see each number's readings.
 - **The daemon log says `numbers.items.<id>: …`:** that number in `agentx.json` is not valid; the message says which field to fix.
 - **A number missed twice and no card came:** run `agentx numbers review`. The line under the number says why: it has no owner agent on this computer and `numbers.reviewer` is not set, or the card was refused (an agent can have at most 25 cards waiting). Check also that `numbers.missedTwiceCard` is not `false`. The same run of misses is not tried again: the next card comes after the number meets its target and misses twice again.
 - **A number missed three times and only one card came:** that is on purpose. One run of misses raises one card.

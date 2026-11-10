@@ -75,6 +75,12 @@ cfg.graph = { enabled: false, baseDir: ".agentx/graph" }
 // The weekly review's value line names a tracked number (#1826), so the
 // Jobs page shows that number's newest reading beside it.
 cfg.crons["weekly-review"].value = { why: "Grows the demo shop's video audience", metric: "Weekly video views at least 1,000", number: "video-views" }
+// A funnel over the demo numbers below (#1826 N4): visits, sign-ups and
+// orders, each step the sum of the numbers with its step tag, so the Hub
+// can cut it by channel.
+cfg.numbers = { ...(cfg.numbers || {}), funnels: { "shop-journey": { name: "Demo shop journey", steps: [
+  { name: "Visits", tag: "step:visit" }, { name: "Sign-ups", tag: "step:signup" }, { name: "Orders", tag: "step:order" },
+] } } }
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
 
 // Two places with reminders for the /places shot (place reminders, #676).
@@ -142,13 +148,20 @@ for (const [change, source, date] of [
 ]) {
   execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "wiki", "notes", "add", "--from", "cx", "--to", "cx", "--dir", resolve(root, ".agentx/wiki"), "--change", change, "--source", source, "--date", date], { cwd: root, stdio: "pipe" })
 }
-// Four tracked numbers for the Hub's Numbers page (#1826): made with the
+// Tracked numbers for the Hub's Numbers page and its funnel (#1826): made with the
 // real CLI; their weekly readings are written below, once the db is open.
 const DEMO_NUMBERS = [
   ["video-views", "Video views", "views", "1000", "up", "channel:video,product:shop"],
   ["newsletter-readers", "Newsletter readers", "readers", "500", "up", "channel:newsletter,product:shop"],
-  ["shop-signups", "Shop sign-ups", "sign-ups", "40", "up", "product:shop,step:signup"],
+  ["shop-signups", "Shop sign-ups", "sign-ups", "40", "up", "product:shop"],
   ["first-reply-hours", "First reply time", "h", "4", "down", "product:office"],
+  // The funnel's steps, one number per step and channel.
+  ["visits-video", "Shop visits from video", "visits", "3000", "up", "step:visit,channel:video"],
+  ["visits-newsletter", "Shop visits from the newsletter", "visits", "1500", "up", "step:visit,channel:newsletter"],
+  ["signups-video", "Sign-ups from video", "sign-ups", "100", "up", "step:signup,channel:video"],
+  ["signups-newsletter", "Sign-ups from the newsletter", "sign-ups", "100", "up", "step:signup,channel:newsletter"],
+  ["orders-video", "Orders from video", "orders", "30", "up", "step:order,channel:video"],
+  ["orders-newsletter", "Orders from the newsletter", "orders", "30", "up", "step:order,channel:newsletter"],
 ]
 for (const [id, name, unit, target, direction, tags] of DEMO_NUMBERS) {
   execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "numbers", "add", id, "--name", name, "--unit", unit, "--target", target,
@@ -202,6 +215,12 @@ const db = new Database(resolve(root, ".agentx/db.sqlite"))
     "newsletter-readers": [530, 520, 515, 498, 505, 490, 470, 455],
     "shop-signups": [22, 25, 31, 28, 36, 41, null, null],
     "first-reply-hours": [6.5, 5.8, 5.1, 4.6, 4.2, 3.9, 3.6, 3.4],
+    "visits-video": [3100, 3300, 3500, 3600, 3800, 3900, 4100, 4200],
+    "visits-newsletter": [1500, 1550, 1600, 1650, 1700, 1720, 1760, 1800],
+    "signups-video": [80, 82, 85, 84, 88, 86, 89, 90],
+    "signups-newsletter": [120, 125, 130, 138, 140, 144, 148, 150],
+    "orders-video": [28, 29, 31, 30, 33, 32, 31, 30],
+    "orders-newsletter": [30, 33, 35, 37, 40, 41, 43, 45],
   }
   const put = db.prepare(`INSERT OR REPLACE INTO number_readings (number_id, value, error, read_at, period_start, period_end, by, note)
     VALUES (?, ?, ?, ?, ?, ?, 'cx', NULL)`)
