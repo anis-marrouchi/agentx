@@ -136,9 +136,9 @@ describe("GET /api/admin/numbers", () => {
   afterEach(() => { db.close(); rmSync(tmp, { recursive: true, force: true }) })
 
   it("is empty and writes nothing on a machine with no numbers", () => {
-    expect(numbersHubReply(db, NOW)).toEqual({ count: 0, numbers: [] })
+    expect(numbersHubReply(db, NOW)).toEqual({ count: 0, numbers: [], funnels: [] })
     expect(hasNumbersTable(db)).toBe(false)
-    expect(numbersHubReply(null, NOW)).toEqual({ count: 0, numbers: [] })
+    expect(numbersHubReply(null, NOW)).toEqual({ count: 0, numbers: [], funnels: [] })
   })
 
   it("sends each number's recent readings, a failed read as no reading, and masks sources", () => {
@@ -268,6 +268,21 @@ describe("the Hub's Numbers page", () => {
     await w.settle()
     expect(w.el("wall-numbers").innerHTML).toContain("No numbers yet.")
     expect(w.el("nav-n-numbers").textContent).toBe("0")
+  })
+
+  it("has a Funnels tab once a machine sets a funnel up, kept in the link (#1826 N4)", async () => {
+    const plain = openWall("#page=numbers", REPLY)
+    await plain.settle()
+    expect(plain.el("wall-numbers").innerHTML).not.toContain("data-nview")
+    const w = openWall("#page=numbers", { ...REPLY, funnels: [{ id: "shop", name: "Shop journey", steps: ["views", "signups"] }] })
+    await w.settle()
+    expect(w.el("wall-numbers").innerHTML).toContain('data-nview="funnels"')
+    await w.click({ "data-nview": "funnels" })
+    expect(w.loc.hash).toContain("n-view=funnels")
+    const html = w.el("wall-numbers").innerHTML as string
+    expect(html).toContain('aria-label="Funnel: Shop journey"')
+    expect(html).toContain('<span class="wfn__name">Video views</span><b>1,240 views</b>')
+    expect(html).toContain("no conversion: a step has no reading")
   })
 
   it("shows a job's number and its newest reading on Jobs", async () => {

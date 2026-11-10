@@ -12,9 +12,14 @@
 //
 // Reads GET /api/admin/numbers (numbersHubReply, src/numbers/hub-api.ts),
 // whose sources are already masked the way the agents' /numbers masks them.
+// The Funnels view (N4) draws the funnels of agentx.json (numbers.funnels)
+// with src/numbers/funnel.ts.
+//
 // Shipped to the browser through injectFns, so each function is
 // self-contained: the only calls between them are to other injected
 // functions of this file (numEsc, numFmt, numTargetText, numPeriodText).
+
+import type { computeFunnel as ComputeFunnel, formatShare as FormatShare, funnelGroupValues as FunnelGroupValues, funnelSteps as FunnelSteps } from "@/numbers/funnel"
 
 /** A reading as the API sends it. */
 export interface HubReading { value: number | null; error?: string | null; readAt: number; periodStart: number; periodEnd: number; by?: string; note?: string | null }
@@ -279,3 +284,91 @@ export function numJobHtml(id: string, n: HubNumber | null, loaded: boolean): st
   return ' <span class="ax-cron-value wnm__job">· Number: ' + link + " <b>" + numEsc(v) + "</b> " + numStatusHtml(n.status, n.statusWords) + "</span>"
 }
 
+
+// --- Funnels (#1826 N4): numbers in order, conversion at each step ---
+//
+// The math is src/numbers/funnel.ts (computeFunnel, funnelGroupValues,
+// funnelSteps, formatShare), injected beside these as globals: an import
+// would be rewritten by the bundler or test runner into a name the browser
+// does not have. A funnel uses the numbers of the machine whose agentx.json
+// sets it up.
+declare const computeFunnel: typeof ComputeFunnel
+declare const formatShare: typeof FormatShare
+declare const funnelGroupValues: typeof FunnelGroupValues
+declare const funnelSteps: typeof FunnelSteps
+
+/** A funnel as the API sends it, with the machine that sets it up. */
+export interface HubFunnel { id: string; name: string; steps: Array<string | { name?: string; number?: string; tag?: string }>; node?: string }
+
+/** One funnel as a card: each step's value, a bar, the conversion from the
+ *  step before, the biggest drop marked. `label`: a group's name. */
+export function numFunnelHtml(f: HubFunnel, numbers: HubNumber[], tags: string[], label: string, showNode: boolean): string {
+  const r = computeFunnel(f, numbers, tags)
+  const max = Math.max.apply(null, [0].concat(r.steps.map((s) => (s.value === null ? 0 : s.value))))
+  const head = numEsc(label || f.name) + (label ? " <small>" + numEsc(f.name) + "</small>" : "")
+  const sub = [showNode && f.node ? f.node : "", r.overall !== null ? formatShare(r.overall) + " from first to last step" : ""].filter(Boolean)
+  const steps = r.steps.map((s, i) => {
+    const v = s.value === null ? "no reading" : numFmt(s.value, s.unit)
+    const pct = s.value === null || max <= 0 ? 0 : Math.max(1, Math.round((s.value / max) * 100))
+    const win = s.windows.length === 1 ? numPeriodText({ start: s.windows[0][0], end: s.windows[0][1] }) : s.windows.length > 1 ? "several windows" : ""
+    const conv = i === 0 ? "first step" : s.conversion === null ? "no conversion: a step has no reading" : formatShare(s.conversion) + " of the step before"
+    const missing = s.missing.length ? " · no reading for " + s.missing.join(", ") : ""
+    return '<li class="wfn__step' + (s.biggestDrop ? " is-drop" : "") + (s.value === null ? " is-none" : "") + '">' +
+      '<div class="wfn__row"><span class="wfn__name">' + numEsc(s.name) + '</span><b>' + numEsc(v) + "</b></div>" +
+      '<div class="wfn__bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div>' +
+      '<small class="wfn__conv">' + numEsc(conv) + (s.biggestDrop ? ' <span class="wfn__drop">biggest drop</span>' : "") + (win ? " · " + numEsc(win) : "") + numEsc(missing) + "</small></li>"
+  }).join("")
+  return '<section class="wfn" aria-label="' + numEsc("Funnel: " + (label ? label + ", " : "") + f.name) + '"><h3 class="wfn__h">' + head + "</h3>" +
+    (sub.length ? '<p class="wfn__sub">' + numEsc(sub.join(" · ")) + "</p>" : "") +
+    (r.mixedWindows ? '<p class="wfn__warn">The steps\' newest readings cover different windows, so a conversion compares different days.</p>' : "") +
+    '<ol class="wfn__steps">' + steps + "</ol></section>"
+}
+
+export interface FunnelsPageModel {
+  list: HubNumber[] | null
+  funnels: HubFunnel[]
+  tags: string[]
+  /** Group by a tag kind: "" or "channel". */
+  by: string
+  missed: Array<{ name: string; why: string }>
+}
+
+/** The Funnels view: tag chips, group by a tag kind, a card per funnel (per group). */
+export function numFunnelsPageHtml(m: FunnelsPageModel): string {
+  const missed = m.missed.length ? '<p class="wnm__warn">Not read: ' + m.missed.map((x) => numEsc(x.name + " " + x.why)).join("; ") + ".</p>" : ""
+  if (!m.list) return '<p class="ax-wall__empty">Loading…</p>'
+  if (!m.funnels.length) {
+    return '<div class="wnm__none"><p><b>No funnel yet.</b> A funnel lists numbers in order, such as visits, sign-ups and paying clients, and shows how many go on from each step to the next.</p>' +
+      "<p>Set one up in <code>agentx.json</code> under <code>numbers.funnels</code>.</p></div>" + missed
+  }
+  const nodes: Record<string, true> = {}
+  for (const f of m.funnels) if (f.node) nodes[f.node] = true
+  const showNode = Object.keys(nodes).length > 1
+  const mine = (f: HubFunnel) => m.list!.filter((n) => !f.node || n.node === f.node)
+  const used = m.list.filter((n) => m.funnels.some((f) => (!f.node || n.node === f.node) &&
+    funnelSteps(f).some((s) => (s.tag ? (n.tags || []).indexOf(s.tag) >= 0 : n.id === s.number))))
+  const tags = numTagsOf(used)
+  const picked = m.tags.filter((t) => tags.indexOf(t) >= 0)
+  const chips = tags.length ? '<div class="wnm__chips" role="group" aria-label="Only numbers with these tags">' + tags.map((t) =>
+    '<button type="button" data-ntag="' + numEsc(t) + '" aria-pressed="' + (picked.indexOf(t) >= 0 ? "true" : "false") + '">' + numEsc(t) + "</button>").join("") +
+    (picked.length ? '<button type="button" data-nclear class="is-clear">All tags</button>' : "") + "</div>" : ""
+  const kinds = numTagKinds(used)
+  const by = kinds.indexOf(m.by) >= 0 ? m.by : ""
+  const tools = '<div class="wnm__tools">' + chips + '<label class="wnm__by">Group by <select id="n-fby"><option value="">nothing</option>' +
+    kinds.map((k) => '<option value="' + numEsc(k) + '"' + (k === by ? " selected" : "") + ">tag " + numEsc(k) + "</option>").join("") + "</select></label></div>"
+  const cards = m.funnels.map((f) => {
+    const nums = mine(f)
+    if (!by) return numFunnelHtml(f, nums, picked, "", showNode)
+    const vals = funnelGroupValues(f, nums, by).filter((v) => picked.indexOf(by + ":" + v) >= 0 || !picked.some((t) => t.indexOf(by + ":") === 0))
+    return vals.length ? vals.map((v) => numFunnelHtml(f, nums, picked.concat([by + ":" + v]), by + ": " + v, showNode)).join("")
+      : numFunnelHtml(f, nums, picked, "", showNode)
+  }).join("")
+  return tools + missed + '<div class="wfn__list">' + cards + "</div>" +
+    '<p class="ax-wall__count wnm__foot">Each step is its numbers\' newest reading. Conversion is a step over the step before; the biggest drop is marked. A step with no reading has no conversion, never 0.</p>'
+}
+
+/** Numbers or Funnels, as tabs over the page. */
+export function numSwitchHtml(view: string): string {
+  const tab = (v: string, label: string) => '<button type="button" role="tab" data-nview="' + v + '" aria-selected="' + (view === v ? "true" : "false") + '"' + (view === v ? ' class="is-on"' : "") + ">" + label + "</button>"
+  return '<div class="wnm__switch" role="tablist" aria-label="Show">' + tab("list", "Numbers") + tab("funnels", "Funnels") + "</div>"
+}

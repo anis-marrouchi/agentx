@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { cronValueSchema } from "@/crons/value-line"
 import { parseNumberInput } from "@/numbers/input"
+import { parseFunnel } from "@/numbers/funnel"
 import { GOAL_ID_MAX } from "@/requests/goals"
 import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
@@ -2070,6 +2071,16 @@ export const numbersConfigSchema = z.object({
    *  told when the operator says yes. It gets the card itself when the
    *  number has no owner agent on this node. Unset: the owner alone. */
   reviewer: z.string().min(1).max(100).optional(),
+  /** Funnels (#1826 N4) by id: a name and the steps in order, first to last.
+   *  A step is a number's id, {number, name?} or {tag, name}: the sum of the
+   *  numbers with that tag (src/numbers/funnel.ts). The Hub draws them.
+   *  Unset by default: nothing changes until one is set up. */
+  funnels: z.record(z.string().regex(/^[a-z0-9][\w.:-]*$/i, "a funnel id is letters, digits, dashes, dots or colons").max(80), z.unknown()).optional().superRefine((funnels, ctx) => {
+    for (const [id, raw] of Object.entries(funnels ?? {})) {
+      const parsed = parseFunnel(raw)
+      if ("error" in parsed) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [id], message: parsed.error })
+    }
+  }),
 }).default({})
 
 export const wallConfigSchema = z.object({

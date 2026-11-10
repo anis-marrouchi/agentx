@@ -14,18 +14,26 @@
 // The nav entry shows once any machine has a number, so a Hub with no
 // numbers set up looks as it did. The Jobs page shows a value line's
 // number (crons.<id>.value.number) through numJob(). It only reads.
+//
+// Funnels (N4, n-view=funnels): each machine's numbers.funnels, drawn over
+// that machine's numbers (numFunnelsPageHtml). The tags picked are shared
+// with the list; the funnel's group by is n-fby.
 
 export const WALL_NUMBERS_SCRIPT = String.raw`
-  var NUM = { key: '', loading: '', list: null, byNode: {}, failed: [], tags: [], by: '', open: '' };
+  var NUM = { key: '', loading: '', list: null, byNode: {}, funnels: [], failed: [], tags: [], by: '', open: '', view: 'list', fby: '' };
   function numRead(q) {
     NUM.tags = (q.get('n-tags') || '').split(',').filter(Boolean);
     NUM.by = q.get('n-by') || '';
+    NUM.view = q.get('n-view') === 'funnels' ? 'funnels' : 'list';
+    NUM.fby = q.get('n-fby') || '';
     NUM.open = q.get('num') || '';
     NUM.scrolled = false;
   }
   function numWrite(q) {
     if (NUM.tags.length) q.set('n-tags', NUM.tags.join(','));
     if (NUM.by) q.set('n-by', NUM.by);
+    if (NUM.view === 'funnels') q.set('n-view', 'funnels');
+    if (NUM.fby) q.set('n-fby', NUM.fby);
     if (NUM.open) q.set('num', NUM.open);
   }
   function numKey() { return costMachines().read.map(function (m) { return m.name; }).join(','); }
@@ -44,6 +52,8 @@ export const WALL_NUMBERS_SCRIPT = String.raw`
     NUM.loading = ''; NUM.key = key;
     var ok = replies.filter(function (r) { return r.d; });
     NUM.list = numMerge(ok.map(function (r) { return { node: r.m.name, numbers: r.d.numbers }; }));
+    NUM.funnels = [];
+    ok.forEach(function (r) { (r.d.funnels || []).forEach(function (f) { NUM.funnels.push(Object.assign({}, f, { node: r.m.name })); }); });
     NUM.byNode = {};
     NUM.list.forEach(function (n) { (NUM.byNode[n.node] = NUM.byNode[n.node] || {})[n.id] = n; });
     NUM.failed = replies.filter(function (r) { return !r.d; }).map(function (r) { return { name: r.m.name, why: r.err }; });
@@ -88,17 +98,23 @@ export const WALL_NUMBERS_SCRIPT = String.raw`
     if (!on) return;
     // A select in use keeps its value: no repaint under it.
     var a = document.activeElement;
-    if (a && a.id === 'n-by') return;
-    $('wall-numbers').innerHTML = numbersPageHtml({ list: NUM.list, tags: NUM.tags, by: NUM.by, open: NUM.open, deptOf: numDepts(),
-      missed: costMachines().missed.concat(NUM.failed), error: NUM.error });
+    if (a && (a.id === 'n-by' || a.id === 'n-fby')) return;
+    var missed = costMachines().missed.concat(NUM.failed);
+    // The Funnels tab (N4) shows once a machine sets a funnel up, or when its link is opened.
+    var tabs = NUM.funnels.length || NUM.view === 'funnels' ? numSwitchHtml(NUM.view) : '';
+    $('wall-numbers').innerHTML = tabs + (NUM.view === 'funnels'
+      ? (NUM.error ? '<p class="ax-wall__empty" role="alert">Could not read the numbers: ' + esc(NUM.error) + '. Select Refresh to try again.</p>'
+        : numFunnelsPageHtml({ list: NUM.list, funnels: NUM.funnels, tags: NUM.tags, by: NUM.fby, missed: missed }))
+      : numbersPageHtml({ list: NUM.list, tags: NUM.tags, by: NUM.by, open: NUM.open, deptOf: numDepts(), missed: missed, error: NUM.error }));
     if (NUM.open && !NUM.scrolled) {
       var el = document.getElementById('num-' + NUM.open);
       if (el) { NUM.scrolled = true; if (el.scrollIntoView) el.scrollIntoView({ block: 'center' }); var s = el.querySelector('summary'); if (s && s.focus) s.focus(); }
     }
   }
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-ntag],[data-nclear]');
+    var t = ev.target.closest('[data-ntag],[data-nclear],[data-nview]');
     if (!t) return;
+    if (t.hasAttribute('data-nview')) { NUM.view = t.getAttribute('data-nview') === 'funnels' ? 'funnels' : 'list'; writeHash(); render(); return; }
     if (t.hasAttribute('data-nclear')) NUM.tags = [];
     else {
       var tag = t.getAttribute('data-ntag'), i = NUM.tags.indexOf(tag);
@@ -109,8 +125,8 @@ export const WALL_NUMBERS_SCRIPT = String.raw`
     if (again && again.focus) again.focus();
   });
   document.addEventListener('change', function (ev) {
-    if (!ev.target || ev.target.id !== 'n-by') return;
-    NUM.by = ev.target.value;
+    if (!ev.target || (ev.target.id !== 'n-by' && ev.target.id !== 'n-fby')) return;
+    if (ev.target.id === 'n-fby') NUM.fby = ev.target.value; else NUM.by = ev.target.value;
     if (ev.target.blur) ev.target.blur();
     writeHash(); render();
   });
@@ -187,6 +203,30 @@ export const WALL_NUMBERS_CSS = `
 .wnm__none { margin: 16px; padding: 16px; border: 1px dashed var(--ax-border-2); border-radius: var(--ax-radius); font-size: var(--ax-fs-sm); }
 .wnm__none p { margin: 0 0 6px; }
 .wnm__foot { padding: 10px 16px; }
+.wnm__switch { display: flex; margin: 10px 16px 0; border-bottom: 1px solid var(--ax-border); }
+.wnm__switch button { font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ax-muted); padding: 8px 14px 7px; cursor: pointer; min-height: 40px; }
+.wnm__switch button.is-on { color: var(--ax-text); border-bottom-color: var(--ax-accent); }
+.wnm__switch button:focus-visible, .wfn__list a:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.wnm__switch + .wnm__sum, .wnm__switch + .wnm__tools, .wnm__switch + .wnm__none { margin-top: 12px; }
+.wfn__list { display: grid; gap: 12px; margin: 0 16px; }
+.wfn { background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); padding: 10px 14px; min-width: 0; }
+.wfn__h { font-size: var(--ax-fs); margin: 0; overflow-wrap: anywhere; }
+.wfn__h small { color: var(--ax-muted); font-weight: 400; font-size: var(--ax-fs-xs); }
+.wfn__sub { margin: 2px 0 6px; color: var(--ax-text-2); font-size: var(--ax-fs-xs); }
+.wfn__warn { margin: 4px 0 6px; padding: 4px 8px; border-radius: var(--ax-radius-sm); background: color-mix(in oklch, var(--ax-amber) 14%, transparent); font-size: var(--ax-fs-xs); }
+.wfn__steps { list-style: none; counter-reset: wfn; margin: 6px 0 0; padding: 0; }
+.wfn__step { counter-increment: wfn; padding: 6px 8px; border-radius: var(--ax-radius-sm); border-left: 3px solid transparent; }
+.wfn__step.is-drop { background: color-mix(in oklch, var(--ax-red) 9%, transparent); border-left-color: var(--ax-red); }
+.wfn__row { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; font-size: var(--ax-fs-sm); }
+.wfn__name { min-width: 0; overflow-wrap: anywhere; }
+.wfn__name::before { content: counter(wfn) ". "; color: var(--ax-muted); }
+.wfn__row b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wfn__step.is-none .wfn__row b { color: var(--ax-muted); font-style: italic; font-weight: 500; }
+.wfn__bar { height: 8px; border-radius: 4px; background: var(--ax-surface); margin: 4px 0 3px; overflow: hidden; }
+.wfn__bar i { display: block; height: 100%; background: var(--ax-accent); border-radius: 4px; }
+.wfn__step.is-drop .wfn__bar i { background: var(--ax-red); }
+.wfn__conv { display: block; color: var(--ax-text-2); font-size: var(--ax-fs-xs); overflow-wrap: anywhere; }
+.wfn__drop { display: inline-block; font-weight: 700; color: var(--ax-red-ink); background: color-mix(in oklch, var(--ax-red) 16%, transparent); border-radius: var(--ax-radius-pill); padding: 0 8px; }
 .wnm__job .wnm__st, .wjb__n .wnm__job .wnm__st { display: inline-block; padding: 0 7px; vertical-align: 1px; }
 .wnm__rd td:nth-child(2) { white-space: nowrap; }
 /* Dark redefines the ink tokens; the green one stays dark, so lift it. */
