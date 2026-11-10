@@ -16,9 +16,13 @@ export interface NumberSettings {
   items: Record<string, Record<string, unknown>>
   /** Minutes before a failed read is tried again. */
   retryMinutes: number
+  /** Raise a decision card when a number misses twice (review.ts). */
+  missedTwiceCard: boolean
+  /** The agent that reviews the owner's follow-up on that card. */
+  reviewer?: string
 }
 
-export const DEFAULT_NUMBER_SETTINGS: NumberSettings = { items: {}, retryMinutes: 60 }
+export const DEFAULT_NUMBER_SETTINGS: NumberSettings = { items: {}, retryMinutes: 60, missedTwiceCard: true }
 
 /** Write the numbers of agentx.json to the store; archive the ones taken
  *  out of it. Returns the errors of items that are refused. */

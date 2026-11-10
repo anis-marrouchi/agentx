@@ -204,7 +204,7 @@ describe("the daemon's read", () => {
   it("never touches a node with no numbers", async () => {
     expect(syncConfigNumbers(store, {}, NOW)).toEqual([])
     expect(await readDueNumbers(store, { connectors: {} }, { retryMinutes: 60 }, NOW)).toEqual([])
-    expect(daemonConfigSchema.parse({ node: { id: "n", name: "n" } }).numbers).toEqual({ items: {}, retryMinutes: 60 })
+    expect(daemonConfigSchema.parse({ node: { id: "n", name: "n" } }).numbers).toEqual({ items: {}, retryMinutes: 60, missedTwiceCard: true })
   })
 
   it("refuses a bad number in agentx.json", () => {

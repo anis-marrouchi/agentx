@@ -2,11 +2,13 @@ import { resolveScheduleCaller } from "@/crons/schedule-tool"
 import { callerHeaders } from "@/calls/service"
 import { describePeriod, describeTarget, formatValue, STATUS_WORDS, type NumberStatus, type Reading } from "./model"
 import { describeSource } from "./sources"
-import type { NumberRecord } from "./store"
+import type { NumberAlert, NumberRecord } from "./store"
 
 // --- Agent-facing `agentx_numbers` tool (#1826) ---
 //
 //   list     tracked numbers with status and newest reading (tags narrows)
+//   review   the numbers that are missed, missed twice or have no reading,
+//            worst first, with their missed-twice card
 //   show     one number and its readings
 //   create   make or change a number the agent owns
 //   record   a reading for a window (from, to), default the last whole
@@ -39,6 +41,14 @@ export function describeNumber(n: View): string {
   return `- ${n.id} "${n.name}" [${STATUS_WORDS[n.status]}]: ${latest}. ${parts.join("; ")}.${n.archivedAt ? " Archived." : ""}`
 }
 
+/** The missed-twice card of a number, in one line. */
+export function describeCard(a: NumberAlert): string {
+  const when = new Date(a.raisedAt).toISOString().slice(0, 10)
+  return a.cardId
+    ? `Missed-twice card ${a.cardId}, raised ${when} for ${a.raisedFor}${a.reviewer ? `, reviewer ${a.reviewer}` : ""}.`
+    : `Missed-twice card not raised (${when}): ${a.error ?? "unknown reason"}.`
+}
+
 export function describeReadings(n: View): string[] {
   return (n.readings ?? []).map((r) =>
     `  ${describePeriod({ start: r.periodStart, end: r.periodEnd })}: ${formatValue(r.value, n.unit)}${r.value === null && r.error ? ` (${r.error})` : ""}, by ${r.by}${r.note ? ` (${r.note})` : ""}`)
@@ -59,6 +69,16 @@ export async function runNumbersTool(args: Record<string, unknown>, deps: Number
       const list: View[] = data.numbers ?? []
       return list.length ? `${list.length} number${list.length === 1 ? "" : "s"}:\n${list.map(describeNumber).join("\n")}` : "No numbers are tracked on this node."
     }
+    if (action === "review") {
+      const tags = Array.isArray(args.tags) ? args.tags.join(",") : str(args.tags)
+      const q = new URLSearchParams({ review: "1", ...(tags ? { tags } : {}) })
+      const res = await doFetch(`${base}/numbers?${q}`, { signal: AbortSignal.timeout(10_000) })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
+      const list: (View & { card?: NumberAlert | null })[] = data.numbers ?? []
+      if (!list.length) return "Nothing to review: every tracked number is on target, or has no target."
+      return `${list.length} number${list.length === 1 ? "" : "s"} to review, worst first:\n${list.map((n) => [describeNumber(n), ...(n.card ? [`  ${describeCard(n.card)}`] : [])].join("\n")).join("\n")}`
+    }
     if (action === "show") {
       const id = str(args.id)
       if (!id) return "Error: show needs id: the number's id (list shows them)."
@@ -68,7 +88,7 @@ export async function runNumbersTool(args: Record<string, unknown>, deps: Number
       const n = data.number as View
       return [describeNumber(n), ...(n.readings?.length ? ["Readings, newest first:", ...describeReadings(n)] : [])].join("\n")
     }
-    if (!["create", "record", "archive"].includes(action)) return `Error: unknown action "${action}": use list, show, create, record or archive.`
+    if (!["create", "record", "archive"].includes(action)) return `Error: unknown action "${action}": use list, review, show, create, record or archive.`
     const env = deps.env ?? process.env
     const caller = resolveScheduleCaller(args, env)
     if (!caller) return "Error: couldn't tell which agent you are. Pass callerAgentId."

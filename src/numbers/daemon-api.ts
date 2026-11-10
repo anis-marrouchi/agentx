@@ -1,6 +1,7 @@
 import type { CallerProof } from "@/requests/daemon-api"
 import { READING_NOTE_MAX, lastPeriod, parsePeriod, parseTags, statusOf, STATUS_WORDS } from "./model"
 import { parseNumberInput } from "./input"
+import { reviewList } from "./review"
 import type { NumberSource } from "./sources"
 import type { NumberRecord, NumberStore } from "./store"
 
@@ -10,7 +11,9 @@ import type { NumberRecord, NumberStore } from "./store"
 //   GET  /numbers          tracked numbers, each with its status and newest
 //                          reading. ?tags=channel:youtube,product:x narrows
 //                          to numbers with every tag; ?archived=1 adds the
-//                          ones no longer tracked
+//                          ones no longer tracked; ?review=1 keeps only
+//                          the missed, missed-twice and no-reading ones,
+//                          worst first, each with its missed-twice card
 //   GET  /numbers/:id      one number and its readings, newest first
 //   POST /numbers          an agent's statement: create (make or change a
 //                          number it owns), record (a reading of a number
@@ -82,6 +85,10 @@ export function handleNumbersApi(
     }
     const tags = parseTags(query.get("tags") ?? "")
     if (!Array.isArray(tags)) return { status: 400, body: { error: tags.error } }
+    if (query.get("review") === "1") {
+      const items = reviewList(store, now, { tags })
+      return { status: 200, body: { count: items.length, numbers: items.map((i) => ({ ...numberView(store, i.number, now), card: i.card })) } }
+    }
     const list = store.list({ archived: query.get("archived") === "1", tags })
     return { status: 200, body: { count: list.length, numbers: list.map((n) => numberView(store, n, now)) } }
   }

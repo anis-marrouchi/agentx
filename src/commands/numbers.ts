@@ -7,6 +7,9 @@ import { NumberStore, type NumberRecord } from "@/numbers/store"
 import { describePeriod, describeTarget, formatValue, lastPeriod, parsePeriod, parseTags, statusOf, STATUS_WORDS, type NumberStatus } from "@/numbers/model"
 import { parseNumberInput } from "@/numbers/input"
 import { describeSource } from "@/numbers/sources"
+import { reviewList } from "@/numbers/review"
+import { describeCard } from "@/numbers/tool"
+import { installTemplate, NUMBER_TEMPLATES } from "@/numbers/templates"
 
 // --- agentx numbers — tracked numbers and their readings (#1826) ---
 //
@@ -60,6 +63,44 @@ export const numbers = new Command("numbers")
     if (!list.length) { console.log(chalk.dim(tags.length ? "  no number has those tags" : "  no numbers yet: add one with agentx numbers add <id> --name \"…\"")); return }
     const now = Date.now()
     for (const n of list) printNumber(st, n, now)
+  })
+
+numbers.command("review")
+  .description("the numbers that need a look: missed twice, missed or no reading, worst first")
+  .option("--tag <tags>", "only numbers with every tag (comma-separated)")
+  .action((opts: { tag?: string }) => {
+    const st = store()
+    if (!st) return
+    const tags = parseTags(opts.tag ?? "")
+    if (!Array.isArray(tags)) return fail(tags.error)
+    const now = Date.now()
+    const items = reviewList(st, now, { tags })
+    if (!items.length) { console.log(chalk.green("  nothing to review: every tracked number is on target, or has no target")); return }
+    for (const i of items) {
+      printNumber(st, i.number, now)
+      if (i.card) console.log((i.card.cardId ? chalk.dim : chalk.red)(`    ${describeCard(i.card)}`))
+    }
+  })
+
+numbers.command("template")
+  .description("add a sample set of numbers to start from (recorded by hand; existing ids are kept)")
+  .argument("[name]", Object.keys(NUMBER_TEMPLATES).join(" or "))
+  .option("--owner <agent>", "the agent that owns the numbers")
+  .action((name: string | undefined, opts: { owner?: string }) => {
+    if (!name) {
+      for (const [id, t] of Object.entries(NUMBER_TEMPLATES)) {
+        console.log(`  ${chalk.cyan(id)}  ${t.name}: ${t.description}`)
+        console.log(chalk.dim(`    ${t.numbers.map((n) => n.id).join(", ")}`))
+      }
+      return
+    }
+    if (!NUMBER_TEMPLATES[name]) return fail(`no template "${name}": use ${Object.keys(NUMBER_TEMPLATES).join(" or ")}`)
+    const st = store()
+    if (!st) return
+    const res = installTemplate(st, name, opts.owner?.trim() || null, Date.now())
+    if ("error" in res) return fail(res.error)
+    if (res.added.length) console.log(chalk.green(`  added ${res.added.join(", ")}`))
+    if (res.kept.length) console.log(chalk.dim(`  already there, left as they are: ${res.kept.join(", ")}`))
   })
 
 numbers.command("show")

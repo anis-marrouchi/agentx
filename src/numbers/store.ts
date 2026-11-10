@@ -4,11 +4,13 @@ import { readSource, type NumberSource } from "./sources"
 
 // --- The numbers and their readings, in .agentx/db.sqlite (#1826) ---
 //
-// Two tables. `numbers` holds the record; its tags are a JSON list in a
+// Three tables. `numbers` holds the record; its tags are a JSON list in a
 // TEXT column. `number_readings` holds one row per number and window: a
 // new read of the same window replaces the old one, except that a failed
-// read never wipes a value already there. Both tables are made on open,
-// empty: a node with no numbers set up sees no change.
+// read never wipes a value already there. `number_alerts` keeps the
+// missed-twice card of each run of misses (review.ts), so one run raises
+// one card. All are made on open, empty: a node with no numbers set up
+// sees no change.
 
 /** Where the record was set up: agentx.json, an agent, or the CLI. */
 export type NumberOrigin = "config" | "agent" | "cli"
@@ -59,6 +61,28 @@ function toNumber(r: any): NumberRecord {
   }
 }
 
+/** One missed-twice card (review.ts): raised once per run of misses. */
+export interface NumberAlert {
+  numberId: string
+  /** Start of the window of the first miss of the run. */
+  streakStart: number
+  raisedAt: number
+  /** The card, or null when it could not be raised (see error). */
+  cardId: string | null
+  /** The agent the card was raised for. */
+  raisedFor: string | null
+  /** The agent told to review the follow-up, if any. */
+  reviewer: string | null
+  error: string | null
+}
+
+function toAlert(r: any): NumberAlert {
+  return {
+    numberId: r.number_id, streakStart: r.streak_start, raisedAt: r.raised_at, cardId: r.card_id ?? null,
+    raisedFor: r.raised_for ?? null, reviewer: r.reviewer ?? null, error: r.error ?? null,
+  }
+}
+
 function toReading(r: any): Reading {
   return {
     numberId: r.number_id, value: r.value ?? null, error: r.error ?? null, readAt: r.read_at,
@@ -98,6 +122,16 @@ export class NumberStore {
         PRIMARY KEY (number_id, period_start, period_end)
       );
       CREATE INDEX IF NOT EXISTS idx_number_readings_end ON number_readings(number_id, period_end);
+      CREATE TABLE IF NOT EXISTS number_alerts (
+        number_id TEXT NOT NULL,
+        streak_start INTEGER NOT NULL,
+        raised_at INTEGER NOT NULL,
+        card_id TEXT,
+        raised_for TEXT,
+        reviewer TEXT,
+        error TEXT,
+        PRIMARY KEY (number_id, streak_start)
+      );
     `)
   }
 
@@ -180,6 +214,27 @@ export class NumberStore {
   latestValue(id: string): Reading | null {
     const row = this.db.prepare("SELECT * FROM number_readings WHERE number_id = ? AND value IS NOT NULL ORDER BY period_end DESC, period_start DESC LIMIT 1").get(id)
     return row ? toReading(row) : null
+  }
+
+  /** The missed-twice card of one run of misses (review.ts), if any. */
+  alertOf(id: string, streakStart: number): NumberAlert | null {
+    const row = this.db.prepare("SELECT * FROM number_alerts WHERE number_id = ? AND streak_start = ?").get(id, streakStart)
+    return row ? toAlert(row) : null
+  }
+
+  /** The newest missed-twice card of a number, if any. */
+  lastAlert(id: string): NumberAlert | null {
+    const row = this.db.prepare("SELECT * FROM number_alerts WHERE number_id = ? ORDER BY streak_start DESC LIMIT 1").get(id)
+    return row ? toAlert(row) : null
+  }
+
+  /** Keep that a run of misses had its card, or why it could not. Once
+   *  per run: a second call for the same run changes nothing. */
+  recordAlert(a: NumberAlert): void {
+    this.db.prepare(`
+      INSERT OR IGNORE INTO number_alerts (number_id, streak_start, raised_at, card_id, raised_for, reviewer, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(a.numberId, a.streakStart, a.raisedAt, a.cardId, a.raisedFor, a.reviewer, a.error ? a.error.slice(0, READING_NOTE_MAX) : null)
   }
 
   status(n: NumberRecord, now: number): NumberStatus {
