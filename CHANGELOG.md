@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.217.0](https://github.com/anis-marrouchi/agentx/compare/v0.216.0...v0.217.0) (2026-11-10)
+
+
+### Features
+
+* **numbers:** funnel view with conversion, biggest drop and tag grouping ([#1826](https://github.com/anis-marrouchi/agentx/issues/1826) N4) ([#1839](https://github.com/anis-marrouchi/agentx/issues/1839)) ([b491e6c](https://github.com/anis-marrouchi/agentx/commit/b491e6cf6b1a647ecdf72f6eb0bc84358e42e3a4))
+* **numbers:** Hub Numbers page, department card and Jobs reading ([#1826](https://github.com/anis-marrouchi/agentx/issues/1826) N2) ([#1838](https://github.com/anis-marrouchi/agentx/issues/1838)) ([6eaee73](https://github.com/anis-marrouchi/agentx/commit/6eaee7336096f29def0a47e307a4e2eb98c57e79))
+* **numbers:** review list, missed-twice card and starter templates ([#1826](https://github.com/anis-marrouchi/agentx/issues/1826) N3) ([#1837](https://github.com/anis-marrouchi/agentx/issues/1837)) ([4efd42f](https://github.com/anis-marrouchi/agentx/commit/4efd42f06bfbe7d1ec4c6feb6512ab11946037f9))
+
+
+### Bug Fixes
+
+* **numbers:** mask user:pass@ in a source url everywhere agents see it ([#1833](https://github.com/anis-marrouchi/agentx/issues/1833)) ([#1834](https://github.com/anis-marrouchi/agentx/issues/1834)) ([2fe1f17](https://github.com/anis-marrouchi/agentx/commit/2fe1f17d40dcc3f00a2cea5e8f763b1906bfe163))
+
 ## [0.216.0](https://github.com/anis-marrouchi/agentx/compare/v0.215.0...v0.216.0) (2026-11-09)
 
 
