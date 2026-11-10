@@ -1,6 +1,6 @@
 import { execFile } from "child_process"
 import { forgeHeaders, type ForgeConnectors } from "@/requests/checkers/issue"
-import { isoDay, type Period } from "./model"
+import { isoDay, maskUserinfo, type Period } from "./model"
 
 // --- Where a number's readings come from (#1826) ---
 //
@@ -155,7 +155,7 @@ export function describeSource(s: NumberSource): string {
       const window = s.window === "none" ? "" : ` ${s.window} in the window`
       return `${state}${what} in ${s.provider} ${s.project}${labels}${window}`
     }
-    case "http-json": return `${s.url.replace(/[?#].*$/, "")}${s.path ? ` → ${s.path}` : ""}`
+    case "http-json": return `${maskUserinfo(s.url).replace(/[?#].*$/, "")}${s.path ? ` → ${s.path}` : ""}`
     case "command": return "a command on this machine"
   }
 }
@@ -257,7 +257,7 @@ async function readCount(s: CountSource, period: Period, deps: ReaderDeps): Prom
 async function readHttpJson(s: HttpJsonSource, period: Period, deps: ReaderDeps): Promise<ReadResult> {
   const doFetch = deps.fetch ?? fetch
   const url = fill(s.url, period)
-  const shown = url.replace(/[?#].*$/, "")
+  const shown = maskUserinfo(url).replace(/[?#].*$/, "")
   let res: Response
   try {
     res = await doFetch(url, { headers: { Accept: "application/json", ...s.headers }, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: "follow" })
