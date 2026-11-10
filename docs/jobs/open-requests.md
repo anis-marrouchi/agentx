@@ -207,9 +207,10 @@ Agents often end a turn with "I'll tell you when it is live" and never open a pr
 
 A word match is not enough: about half of all replies contain "I'll" or "will", and most of them are offers or conditions. So the model decides, and a promise also needs the reply's own sentence that makes it, in the first person and the future, with no "if". The word check only skips replies with no future and no question, without a call.
 
-It is off by default, because it spends one model call on most of your turns. `dailyCap` (300 by default) bounds the calls a day. Turn it on with:
+It is on by default wherever requests are on (`requests.enabled: true`). Without it, a reply that asks you a question leaves its request in progress, and the settle step can later close it as done. It spends one short model call on most of your turns; `dailyCap` (300 by default) bounds the calls a day. On one node, a day of real use took about 80 calls. To turn it off, or back on:
 
 ```bash
+agentx requests settings --catch off
 agentx requests settings --catch on
 ```
 

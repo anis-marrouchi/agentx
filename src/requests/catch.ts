@@ -50,7 +50,7 @@ export interface CatchSettings {
   timeoutSeconds: number
 }
 
-export const DEFAULT_CATCH_SETTINGS: CatchSettings = { enabled: false, dailyCap: 300, waitingOwner: true, timeoutSeconds: 30 }
+export const DEFAULT_CATCH_SETTINGS: CatchSettings = { enabled: true, dailyCap: 300, waitingOwner: true, timeoutSeconds: 30 }
 
 export const catchSettingsOf = (s: { catchPromises?: Partial<CatchSettings> } | undefined): CatchSettings => ({ ...DEFAULT_CATCH_SETTINGS, ...s?.catchPromises })
 
