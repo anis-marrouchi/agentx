@@ -2062,6 +2062,14 @@ export const numbersConfigSchema = z.object({
   }),
   /** Minutes before a failed read is tried again. */
   retryMinutes: z.number().int().min(5).max(24 * 60).default(60),
+  /** A number that misses its target twice in a row raises one decision
+   *  card, raised for its owner agent (src/numbers/review.ts). Off: no card;
+   *  the review list still shows it. */
+  missedTwiceCard: z.boolean().default(true),
+  /** An agent that reviews the owner's follow-up on a missed-twice card:
+   *  told when the operator says yes. It gets the card itself when the
+   *  number has no owner agent on this node. Unset: the owner alone. */
+  reviewer: z.string().min(1).max(100).optional(),
 }).default({})
 
 export const wallConfigSchema = z.object({

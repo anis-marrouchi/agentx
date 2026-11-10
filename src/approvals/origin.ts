@@ -100,7 +100,49 @@ export interface McpWriteOrigin {
   tool: string
 }
 
-export type CardOrigin = McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
+/** A tracked number missed its target twice in a row (src/numbers/
+ *  review.ts, #1826). Raised for the number's owner agent, which is told
+ *  the answer; a reviewer set in `numbers.reviewer` is told a yes too. */
+export interface NumberOrigin {
+  kind: "number"
+  numberId: string
+  /** Start of the window of the first miss of the run (UTC ms). */
+  streakStart: number
+  /** The agent that checks the owner's follow-up, when set. */
+  reviewer?: string
+}
+
+/** Lines for the owner agent told the result of a missed-twice card. */
+export function numberLines(origin: NumberOrigin, card: { status: string; verdict?: string; raised_by: string }): string[] {
+  const lines = [`This card was about the tracked number \`${origin.numberId}\`, which missed its target twice in a row.`]
+  if (card.status === "decided" && card.verdict === "yes") {
+    lines.push(
+      "The question above gives both readings and the target. Find out why it misses, and change what you do, or propose a new target or source if those are wrong.",
+      "Say in one short message what you changed and when the next reading will show it.",
+    )
+    if (origin.reviewer && origin.reviewer !== card.raised_by) lines.push(`${origin.reviewer} reviews your follow-up.`)
+  } else {
+    lines.push("Change nothing for now. No new card comes until the number meets its target and then misses twice again.")
+  }
+  return lines
+}
+
+/** The turn told to a number's reviewer when the operator said yes on its
+ *  missed-twice card. Null when there is nothing to review. */
+export function numberReviewerMessage(card: { id: string; title: string; status: string; verdict?: string; raised_by: string; note?: string; origin?: CardOrigin }): { agentId: string; text: string } | null {
+  const origin = card.origin?.kind === "number" ? card.origin : undefined
+  if (!origin?.reviewer || origin.reviewer === card.raised_by) return null
+  if (card.status !== "decided" || card.verdict !== "yes") return null
+  const lines = [
+    `[Number review] The operator said YES on "${card.title}" (${card.id}): ${card.raised_by} looks into why the tracked number \`${origin.numberId}\` missed its target twice.`,
+    `You are the reviewer for numbers. Check that ${card.raised_by} says what it changed, and look at the next reading of \`${origin.numberId}\`.`,
+  ]
+  if (card.note) lines.push(`Operator note: ${card.note}`)
+  lines.push("Do not change the number yourself; ask its owner.")
+  return { agentId: origin.reviewer, text: lines.join("\n") }
+}
+
+export type CardOrigin = NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

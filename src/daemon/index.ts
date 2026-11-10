@@ -122,6 +122,8 @@ import { checkNumber } from "@/numbers/goal-check"
 import { DEFAULT_NUMBER_SETTINGS, readDueNumbers, syncConfigNumbers } from "@/numbers/sweep"
 import { shellRunner } from "@/numbers/sources"
 import { handleNumbersApi } from "@/numbers/daemon-api"
+import { raiseMissedTwiceCards } from "@/numbers/review"
+import { numberReviewerMessage } from "@/approvals/origin"
 import {
   DEFAULT_SPRINT_SETTINGS, itemEnded, laneChatId, laneContext, parseLaneChat, requeueItem, runSprintSweep, SPRINT_CHANNEL,
   type DispatchRef, type ItemEnd,
@@ -2576,9 +2578,17 @@ export class AgentXDaemon {
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
           // An org proposal's message says what the daemon did with it (#1678).
-          tellAgent: async (_agentId, text, card) => this.tellAgentCardResult(card, card.origin?.kind === "org-proposal"
-            ? [text, ...orgProposalLines(readOrgProposal(process.cwd(), card.id))].join("\n")
-            : text),
+          tellAgent: async (_agentId, text, card) => {
+            this.tellAgentCardResult(card, card.origin?.kind === "org-proposal"
+              ? [text, ...orgProposalLines(readOrgProposal(process.cwd(), card.id))].join("\n")
+              : text)
+            // A number's reviewer is told a yes too (#1826).
+            const review = numberReviewerMessage(card)
+            if (review && this.registry.getAgent(review.agentId)) {
+              void this.registry.execute({ agentId: review.agentId, message: review.text, context: { channel: "approvals", chatId: card.id, sender: "operator" } })
+                .catch((e: any) => this.log(`[numbers] ${card.id}: turn on reviewer ${review.agentId} failed: ${e?.message ?? e}`))
+            }
+          },
           // A card from an agent on another node goes back there with its
           // result; that node runs the turn (#668).
           tellPeer: async (node, card) => {
@@ -3072,6 +3082,15 @@ export class AgentXDaemon {
       connectors: forgeConnectorsOf(this.config),
       run: shellRunner(process.cwd()),
     }, settings, now, this.log)
+    // Two misses in a row raise one card, for the owner agent (N3).
+    if (settings.missedTwiceCard ?? true) {
+      raiseMissedTwiceCards(requests.numbers, {
+        hasAgent: (id) => !!this.registry.getAgent(id),
+        raise: (input, origin) => createCard(process.cwd(), input, { settings: this.config.approvals, origin }),
+        reviewer: settings.reviewer,
+        log: this.log,
+      }, Date.now())
+    }
   }
 
   /** What the loop checkers read (#1039): the forges through the

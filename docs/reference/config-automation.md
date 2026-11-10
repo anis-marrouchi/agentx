@@ -442,6 +442,8 @@ Tracked numbers and their readings. See [Track numbers over time](/jobs/numbers)
 | `numbers.items.<id>.tags` | list of strings | `[]` | Such as `channel:video`. One word each, up to 20. |
 | `numbers.items.<id>.source` | object | `{"kind": "manual"}` | Where readings come from: `manual`, `count`, `http-json` (with `headers` allowed here) or `command`. See [Where the values come from](/jobs/numbers#where-the-values-come-from). |
 | `numbers.retryMinutes` | whole number (5 to 1440) | `60` | Minutes before a failed read is tried again. |
+| `numbers.missedTwiceCard` | boolean | `true` | A number that misses its target twice in a row raises one decision card for its owner agent. `false`: no card; `agentx numbers review` still lists it. See [When a number misses twice](/jobs/numbers#when-a-number-misses-twice). |
+| `numbers.reviewer` | string (agent id) | unset | An agent that checks the owner's follow-up on a missed-twice card. It is told when you say yes, and gets the card itself when the number has no owner agent on this computer. |
 
 ## `watchers`
 

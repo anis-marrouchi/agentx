@@ -130,11 +130,65 @@ Agents never see the secret parts of a source. In the Hub, the CLI, the agent to
 
 A command runs from the folder that holds `agentx.json`. It gets the window in two variables, `AGENTX_PERIOD_START` and `AGENTX_PERIOD_END` (first and last day). It prints the value as its last line, or prints JSON and the source names the value with `path`. Taking a number out of `agentx.json` archives it: it is no longer read, and its readings stay.
 
+## See the numbers that need a look
+
+1. **Terminal:** run `agentx numbers review`.
+2. Read the list. It holds only the numbers that are **missed twice**, **missed** or have **no reading**, worst first. Numbers on target, and numbers without a target, are left out. Add `--tag channel:video` to see one channel only.
+3. Under a number that missed twice, a line says which card it raised and for which agent, or why no card was raised.
+
+When nothing needs a look, the command says so.
+
+## When a number misses twice
+
+When the two newest readings of a number both miss its target, AgentX raises one **decision card** (see [Approvals](../dashboard/approvals.md)). It is raised for the number's **owner** agent:
+
+1. The card shows on the Approvals page, like any other card. Its title is `<name> missed its target twice`. It says both values, their dates and the target, and asks whether the owner agent should find out why and change the plan.
+2. You answer **Yes** or **No**.
+3. The owner agent is told your answer. On **Yes**, it reads the readings, looks for the cause and says what it changes. On **No**, or when nobody answers before the card expires, nothing changes.
+
+One run of misses raises one card. A third or fourth miss in a row raises no new card. A new card comes only after a reading meets the target and the number then misses twice again. A failed read in between does not count as meeting the target.
+
+### Add a reviewer
+
+A **reviewer** is a second agent that checks the owner's follow-up, for example an agent that runs your operations.
+
+1. **Editor:** open `agentx.json` and add `reviewer` to the `numbers` section, with the reviewer agent's id:
+
+   ```json
+   "numbers": {
+     "reviewer": "operations"
+   }
+   ```
+
+2. **Terminal:** run `agentx daemon restart`.
+
+From then on, each missed-twice card names the reviewer. When you say **Yes**, the reviewer is told too, and checks that the owner says what it changed. A number with no owner agent on this computer sends its card to the reviewer.
+
+### Turn the card off
+
+Set `"missedTwiceCard": false` in the `numbers` section of `agentx.json`. No card is raised; `agentx numbers review` still lists the number.
+
+## Start from a template
+
+A template is a sample set of numbers you can add in one step. Each number is recorded by hand: record readings, or give it a source afterwards.
+
+| Template | What it follows |
+|---|---|
+| `client-journey` | Each step a client takes: new enquiries, first calls, proposals sent, clients signed, and the hours to answer an enquiry. Every step has the tag `journey:client`. |
+| `content-distribution` | How far what you publish travels: posts published, video views, social reach, newsletter opens, visits from content. Each has a `channel:` tag. |
+
+1. **Terminal:** run `agentx numbers template` to see the templates and the numbers in each.
+2. **Terminal:** run `agentx numbers template client-journey --owner marketer`. Use your own agent's id after `--owner`.
+3. **Terminal:** run `agentx numbers --tag journey:client`. The new numbers are listed with the status **no reading**.
+
+A number whose id is already taken is left as it is, so running the template again changes nothing. Change each number with `agentx numbers add <id> …`, or archive the ones you do not need.
+
 ## Let agents keep numbers
 
 Agents use the `agentx_numbers` tool:
 
 - `{"action": "list", "tags": ["channel:video"]}` lists numbers with every tag given.
+- `{"action": "review"}` lists the numbers that are missed, missed twice or have no reading, worst first, with their missed-twice card.
 - `{"action": "show", "id": "video-views"}` shows one number and its readings.
 - `{"action": "create", "id": "video-views", "name": "Video views", "unit": "views", "target": 1000, "tags": ["channel:video"]}` makes a number. The agent becomes its owner unless it names another with `owner`.
 - `{"action": "record", "id": "video-views", "value": 1240, "from": "2026-11-02", "to": "2026-11-08"}` keeps a reading.
@@ -159,7 +213,10 @@ A scheduled job's value line (`crons.<id>.value`) says why the job runs and the 
 1. **Terminal:** run `agentx numbers add test-number --name "Test number" --target 10`.
 2. **Terminal:** run `agentx numbers record test-number 12`.
 3. **Terminal:** run `agentx numbers`. **Test number** shows **on target** and `12` with last week's dates.
-4. **Terminal:** run `agentx numbers archive test-number` to remove it from the list.
+4. **Terminal:** record two misses for the two last whole weeks (Monday to Sunday) before today. For example, on 10 November 2026, run `agentx numbers record test-number 3 --from 2026-10-26 --to 2026-11-01`, then `agentx numbers record test-number 4 --from 2026-11-02 --to 2026-11-08`.
+5. **Terminal:** run `agentx numbers review`. **Test number** shows **missed twice**.
+6. **Browser:** within a few minutes, open the Approvals page on the Hub. A card **Test number missed its target twice** waits there, when the number has an owner agent (`--owner`) or `numbers.reviewer` is set. Answer **No**.
+7. **Terminal:** run `agentx numbers archive test-number` to remove it from the list.
 
 ## If something is wrong
 
@@ -169,3 +226,6 @@ A scheduled job's value line (`crons.<id>.value`) says why the job runs and the 
 - **`a command source can only be set in agentx.json`:** put the number under `numbers.items` in `agentx.json`.
 - **An agent's record is refused with `belongs to`:** only the number's owner records readings. Ask the owner agent, or change the owner with `agentx numbers add <id> --owner <agent>`.
 - **The daemon log says `numbers.items.<id>: …`:** that number in `agentx.json` is not valid; the message says which field to fix.
+- **A number missed twice and no card came:** run `agentx numbers review`. The line under the number says why: it has no owner agent on this computer and `numbers.reviewer` is not set, or the card was refused (an agent can have at most 25 cards waiting). Check also that `numbers.missedTwiceCard` is not `false`. The same run of misses is not tried again: the next card comes after the number meets its target and misses twice again.
+- **A number missed three times and only one card came:** that is on purpose. One run of misses raises one card.
+- **`no template "…"`:** run `agentx numbers template` to see the names.

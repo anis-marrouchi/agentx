@@ -3124,6 +3124,22 @@ Remove a contactMap entry by matching field(s).
 | `--tag <tags>` | — | Only numbers with every tag (comma-separated, such as `channel:video,product:shop`). |
 | `--archived` | — | Numbers no longer tracked too. |
 
+### `agentx numbers review`
+
+The numbers that need a look: missed twice, missed or no reading, worst first. Under a number that missed twice, the card it raised, or why none was. See [See the numbers that need a look](/jobs/numbers#see-the-numbers-that-need-a-look).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--tag <tags>` | — | Only numbers with every tag (comma-separated). |
+
+### `agentx numbers template [name]`
+
+Add a sample set of numbers, recorded by hand: `client-journey` or `content-distribution`. Without a name, lists the templates. A number whose id is taken is left as it is. See [Start from a template](/jobs/numbers#start-from-a-template).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--owner <agent>` | — | The agent that owns the new numbers. |
+
 ### `agentx numbers show <id>`
 
 One number and its readings, newest first.

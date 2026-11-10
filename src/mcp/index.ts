@@ -1241,7 +1241,8 @@ const TOOLS = [
       "A number has an id, a name, an owner agent, a unit, an optional target with a direction (up: higher is better, down: lower is better), a rhythm (daily, weekly or monthly), tags such as channel:youtube or product:shop, and a source. " +
       "Each reading has a value and the window it covers (from, to: whole days, both included). " +
       "Its status is on target, missed, missed twice, no reading (none yet, the newest read failed, or the last period has none) or no target. A failed read is never 0. " +
-      "list: tracked numbers with status and newest reading (tags narrows to numbers with every tag). show: one number and its readings (id). " +
+      "list: tracked numbers with status and newest reading (tags narrows to numbers with every tag). review: only the numbers that are missed, missed twice or have no reading, worst first, with their missed-twice card. show: one number and its readings (id). " +
+      "A number that misses its target twice in a row raises one decision card for its owner agent; none again until it meets the target and misses twice again. " +
       "create: make or change a number you own (id, name, unit, target, direction, rhythm, tags, source). " +
       "source: {kind:'manual'} (default: you record readings), {kind:'count', provider:'github'|'gitlab', project, what:'issues'|'prs'|'all', state:'open'|'closed'|'all', labels:[…], window:'none'|'created'|'closed'}, or {kind:'http-json', url, path} (url may hold {start} and {end}). The daemon reads count and http-json once per period. " +
       "record: a reading (id, value, from, to, note); without from it is the last whole period of the number's rhythm. archive: stop tracking it (its readings stay). " +
@@ -1250,14 +1251,14 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["list", "show", "create", "record", "archive"], description: "list (default), show, create, record or archive." },
+        action: { type: "string", enum: ["list", "review", "show", "create", "record", "archive"], description: "list (default), review, show, create, record or archive." },
         id: { type: "string", description: "The number's id: letters, digits, dashes, dots or colons." },
         name: { type: "string", description: "create: what it counts, in a few plain words." },
         unit: { type: "string", description: "create, optional: views, clients, %, h…" },
         target: { type: "number", description: "create, optional: the value it should reach." },
         direction: { type: "string", enum: ["up", "down"], description: "create, optional: up (default, higher is better) or down (lower is better)." },
         rhythm: { type: "string", enum: ["daily", "weekly", "monthly"], description: "create, optional: how often it gets a reading (default weekly; weeks start on Monday, UTC)." },
-        tags: { type: "array", items: { type: "string" }, description: "create: tags such as channel:youtube. list: only numbers with every tag." },
+        tags: { type: "array", items: { type: "string" }, description: "create: tags such as channel:youtube. list, review: only numbers with every tag." },
         source: { type: "object", description: "create, optional: where readings come from (see the description). Default manual." },
         owner: { type: "string", description: "create, optional: the owner agent (default: you)." },
         value: { type: "number", description: "record: the value read." },

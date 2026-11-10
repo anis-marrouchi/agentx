@@ -2,7 +2,7 @@ import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync,
 import { resolve } from "path"
 import { recordAnswered } from "./answered"
 import { answerLines, buildChoices, draftFor, isNoChoice, resolveAnswer, type CardChoices } from "./choices"
-import { isRetroOrigin, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
+import { isRetroOrigin, numberLines, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
 import { cardRuleBreak, FOLLOWUP_KINDS, followupBudgetRefusal, type FollowupKind } from "./screen-gate"
 
 // --- Decision cards: what an agent asks the operator ---
@@ -505,6 +505,7 @@ export function verdictMessage(card: DecisionCard): string {
   if (card.status === "decided" && card.verdict === "no" && !retro && !check) lines.push(NO_UNDO_LINE)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
+  if (card.origin?.kind === "number") lines.push(...numberLines(card.origin, card))
   if (retro || check) {
     // Compare ignoring whitespace so a dashboard that only reflows the draft
     // does not resend the whole draft as the operator's note.
