@@ -12,6 +12,7 @@
     { "name": "org", "path": "/hub#page=org", "ready": "#wall-org > *" },
     { "name": "org-page", "path": "/org", "ready": ".org-card" },
     { "name": "cost", "path": "/hub#status=open&view=cost", "ready": "#wall-cost > *" },
+    { "name": "numbers", "path": "/hub#page=numbers", "ready": "#wall-numbers > *" },
     { "name": "settings", "path": "/hub#page=settings", "ready": "#wall-settings .wst__sec" },
     { "name": "settings-agents", "path": "/hub#page=settings&section=agents", "ready": "#wall-settings .wsa" },
     { "name": "settings-agent", "path": "/hub#page=settings&section=agents&agent=cx", "ready": "#wall-settings #st-e-name" },

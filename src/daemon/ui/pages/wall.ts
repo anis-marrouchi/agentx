@@ -46,6 +46,7 @@ import { WALL_TASK_CSS } from "./wall-task.client"
 import { WALL_SETTINGS_CSS } from "./wall-settings.client"
 import { WALL_ACTIVITY_CSS } from "./wall-activity.client"
 import { WALL_BUILD_CSS } from "./wall-build.client"
+import { WALL_NUMBERS_CSS } from "./wall-numbers.client"
 import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml, wallChatQuickHtml } from "./wall-chat.client"
 
@@ -101,13 +102,16 @@ const NAV_ICON = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   space: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  numbers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
 }
 
 type NavIcon = keyof typeof NAV_ICON
 
 /** One nav destination: data-nav key, label, link, icon, count id, tooltip. */
-interface NavItem { key: string; label: string; href: string; icon: NavIcon; count?: string; title?: string }
+/** hidden: drawn hidden; the page script shows it once it has something
+ *  to show (Numbers, #1826: only once a machine has a number). */
+interface NavItem { key: string; label: string; href: string; icon: NavIcon; count?: string; title?: string; hidden?: boolean }
 
 /**
  * The nav, grouped (#1451 frame 0): one list for the left nav and the
@@ -124,6 +128,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     { key: "running", label: "Running now", href: "#page=running", icon: "live", count: "nav-n-running" },
     { key: "projects", label: "Projects", href: "#status=open&amp;view=projects", icon: "projects", count: "nav-n-projects" },
     { key: "activity", label: "Activity", href: "#page=activity", icon: "activity", title: "Activity: every run, newest first" },
+    { key: "numbers", label: "Numbers", href: "#page=numbers", icon: "numbers", count: "nav-n-numbers", title: "Numbers: tracked measures, their newest reading and trend", hidden: true },
   ] },
   { label: "Automation", items: [
     { key: "jobs", label: "Jobs", href: "#status=open&amp;view=jobs", icon: "jobs", count: "nav-n-jobs" },
@@ -157,7 +162,7 @@ export const WALL_BAR_KEYS = ["wall", "needs", "running", "projects"]
 function navItemHtml(i: NavItem): string {
   const bar = WALL_BAR_KEYS.includes(i.key) ? " data-bar" : ""
   const n = i.count ? `<b class="ax-wall__n" id="${i.count}"></b>` : ""
-  return `<a class="ax-wall__item${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${bar} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${i.label}</span>${n}</a>`
+  return `<a class="ax-wall__item${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${bar}${i.hidden ? " hidden" : ""} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${i.label}</span>${n}</a>`
 }
 
 /** The phone's More sheet: every page not in the bar, in the same groups. */
@@ -165,7 +170,7 @@ function moreSheetHtml(navGroups: typeof WALL_NAV_GROUPS, owner: boolean): strin
   const groups = navGroups.filter((g) => g.label && g.label !== "Owner").map((g) => {
     const items = g.items.filter((i) => !WALL_BAR_KEYS.includes(i.key))
     return `<h2 class="ax-wall__navlbl">${g.label}</h2><div class="ax-wall__moregrid">${items.map((i) =>
-      `<a class="ax-wall__moreitem" data-nav="${i.key}" href="${i.href}">${i.label}${i.count ? `<b class="ax-wall__moren" data-n-for="${i.count}" hidden></b>` : ""}</a>`).join("")}</div>`
+      `<a class="ax-wall__moreitem" data-nav="${i.key}" href="${i.href}"${i.hidden ? " hidden" : ""}>${i.label}${i.count ? `<b class="ax-wall__moren" data-n-for="${i.count}" hidden></b>` : ""}</a>`).join("")}</div>`
   }).join("")
   return `<div class="ax-wall__more" id="wall-more" hidden>
     <button type="button" class="ax-wall__morescrim" data-more-close aria-label="Close More"></button>
@@ -274,6 +279,7 @@ ${navItems}
     <section id="wall-task" aria-label="A run: its request, conversation and steer box" hidden></section>
     <section id="wall-settings" aria-label="Settings" hidden></section>
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
+    <section id="wall-numbers" class="ax-wall__numbers" aria-label="Numbers: tracked measures and their readings" hidden></section>
   </div>
   <aside class="ax-wall__aside" id="wall-aside">
     ${wallChatQuickHtml(chat)}
@@ -305,7 +311,7 @@ ${navItems}
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }
