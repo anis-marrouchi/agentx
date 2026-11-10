@@ -98,6 +98,7 @@ import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-or
 import { getTopbarFeatures, headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
 import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
 import { handleAgentChatApi } from "./agent-chat-api"
+import { NUMBERS_HUB_PATH, numbersHubReply } from "@/numbers/hub-api"
 
 // --- Kanban Board Dashboard ---
 //
@@ -873,6 +874,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     } catch (e: any) {
       sendJson(res, 500, { error: e?.message || String(e) })
     }
+    return
+  }
+  // The Hub's Numbers page (#1826 N2): this machine's tracked numbers, with
+  // sources masked. After the token gate above; peers come through the proxy.
+  if (method === "GET" && path === NUMBERS_HUB_PATH) {
+    sendJson(res, 200, numbersHubReply(dashboardDb(), Date.now()))
     return
   }
   if (method === "GET" && path.startsWith("/api/admin/ledger/")) {

@@ -72,6 +72,9 @@ cfg.budget = { monthlyUsd: 20 }
 // The intent graph's files, for the Wall's review queue (#1182). The graph
 // stays off, so nothing classifies; the queue only reads these files.
 cfg.graph = { enabled: false, baseDir: ".agentx/graph" }
+// The weekly review's value line names a tracked number (#1826), so the
+// Jobs page shows that number's newest reading beside it.
+cfg.crons["weekly-review"].value = { why: "Grows the demo shop's video audience", metric: "Weekly video views at least 1,000", number: "video-views" }
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
 
 // Two places with reminders for the /places shot (place reminders, #676).
@@ -139,6 +142,18 @@ for (const [change, source, date] of [
 ]) {
   execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "wiki", "notes", "add", "--from", "cx", "--to", "cx", "--dir", resolve(root, ".agentx/wiki"), "--change", change, "--source", source, "--date", date], { cwd: root, stdio: "pipe" })
 }
+// Four tracked numbers for the Hub's Numbers page (#1826): made with the
+// real CLI; their weekly readings are written below, once the db is open.
+const DEMO_NUMBERS = [
+  ["video-views", "Video views", "views", "1000", "up", "channel:video,product:shop"],
+  ["newsletter-readers", "Newsletter readers", "readers", "500", "up", "channel:newsletter,product:shop"],
+  ["shop-signups", "Shop sign-ups", "sign-ups", "40", "up", "product:shop,step:signup"],
+  ["first-reply-hours", "First reply time", "h", "4", "down", "product:office"],
+]
+for (const [id, name, unit, target, direction, tags] of DEMO_NUMBERS) {
+  execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "numbers", "add", id, "--name", name, "--unit", unit, "--target", target,
+    "--direction", direction, "--rhythm", "weekly", "--tags", tags, "--owner", "cx"], { cwd: root, stdio: "pipe" })
+}
 await post("/reload")
 for (const [channel, chatId] of [["gitlab", "demo/shop:issue:47"], ["telegram", "demo-office"]]) {
   const result = await post("/task", { agent: "cx", message: "Prepare the demo shop report.", context: { channel, chatId, sender: "Demo operator" } })
@@ -176,6 +191,25 @@ for (const card of [
 }
 
 const db = new Database(resolve(root, ".agentx/db.sqlite"))
+// Eight weeks of readings per number, up to last week (weeks start on
+// Monday, UTC). null is a failed read: the page shows "no reading".
+{
+  const WEEK = 7 * 86400000
+  const today = new Date(); const d0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+  const lastWeek = d0 - ((new Date(d0).getUTCDay() + 6) % 7) * 86400000 - WEEK
+  const series = {
+    "video-views": [620, 700, 760, 810, 905, 980, 1120, 1240],
+    "newsletter-readers": [530, 520, 515, 498, 505, 490, 470, 455],
+    "shop-signups": [22, 25, 31, 28, 36, 41, null, null],
+    "first-reply-hours": [6.5, 5.8, 5.1, 4.6, 4.2, 3.9, 3.6, 3.4],
+  }
+  const put = db.prepare(`INSERT OR REPLACE INTO number_readings (number_id, value, error, read_at, period_start, period_end, by, note)
+    VALUES (?, ?, ?, ?, ?, ?, 'cx', NULL)`)
+  for (const [id, values] of Object.entries(series)) values.forEach((v, i) => {
+    const start = lastWeek - (values.length - 1 - i) * WEEK
+    put.run(id, v, v === null ? "https://stats.example.com/signups could not be reached (ECONNREFUSED)" : null, start + WEEK + 3600000, start, start + WEEK)
+  })
+}
 const insert = db.prepare(`INSERT OR REPLACE INTO session_reviews
   (id,session_id,agent,source,status,updated_at,model,input,result,error)
   VALUES (?,?,?,'docs-fixture','ready',?,'scripted-demo','',?,NULL)`)

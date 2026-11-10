@@ -162,7 +162,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
         var last = (n.cronRuns || []).filter(function (x) { return x.jobId === j.id; })[0];
         var summary = r && r.lastRun ? (r.lastRun.summary || (last && (last.errorSummary || last.responseSummary)) || '') : '';
         return '<details class="wjb' + (stale.length ? ' is-stale' : '') + '"><summary>' +
-          '<span class="wjb__n"><b>' + esc(j.id) + '</b> <small>@' + esc(j.agent) + '</small><span>' + axCronValueHtml(j.value, esc) + axCronGoalHtml(j, esc) + '</span></span>' +
+          '<span class="wjb__n"><b>' + esc(j.id) + '</b> <small>@' + esc(j.agent) + '</small><span>' + axCronValueHtml(j.value, esc) + numJob(j.value, n.name) + axCronGoalHtml(j, esc) + '</span></span>' +
           '<span class="wjb__w"><code>' + esc(j.schedule) + '</code><small>' + (j.enabled ? (j.nextRun ? 'next ' + until(Date.parse(j.nextRun)) : '') : 'off') + '</small></span>' +
           squares(r) +
           '<span class="wjb__st">' + (stale.length ? '<span class="chip chip--warn" title="' + esc(stale.join('; ')) + '">look stale</span>' : j.enabled ? '<span class="chip chip--done">on</span>' : '<span class="chip chip--ghost">off</span>') + '</span>' +

@@ -208,6 +208,56 @@ A scheduled job's value line (`crons.<id>.value`) says why the job runs and the 
 "value": { "why": "Grows the video audience", "metric": "Weekly views at least 1000", "number": "video-views" }
 ```
 
+## See numbers in the Hub
+
+The Hub has a **Numbers** page. It lists every number on every machine the Hub reads. The page shows up in the Hub's menu once one machine has a number. Before that, the Hub looks as it always did.
+
+1. **Browser:** open the Hub.
+2. **Browser:** in the menu on the left, under **Work**, select **Numbers**. On a phone, tap **More** at the bottom, then **Numbers**.
+
+![The Numbers page on a computer](/screenshots/numbers/hub-numbers-desktop.png)
+
+At the top, four boxes count the numbers that are **on target**, **missed**, **missed twice** and with **no reading**. The count next to **Numbers** in the menu is how many are missed, missed twice or have no reading.
+
+Under them, one card per **department** says how its numbers stand and names the ones that need a look. A number belongs to the department of its owner agent, as set on the Org page. When no owner is in a department, there is one card per owner instead.
+
+Each row is one number:
+
+- its name, its owner, its rhythm, its target and the machine that keeps it;
+- its tags;
+- its newest reading and the window that reading covers;
+- a small line, the **trend**, of its last twelve readings, oldest on the left. A failed read leaves a gap in the line. It never drops to 0;
+- its status in words.
+
+A failed read shows **no reading**, never 0.
+
+### Look at one number's readings
+
+1. **Browser:** select the number's row. It opens.
+2. **Browser:** read the table: each reading's window, its value, who gave it and its note. A failed read shows **no reading** and, in red, why it failed.
+3. **Browser:** copy the page's address to share it: the link opens with that number open.
+
+![A number opened on its readings, two of them failed](/screenshots/numbers/hub-numbers-reading.png)
+
+The row also shows the number's id and its source. Keys and passwords in a source are hidden as `***`, as they are for agents.
+
+### Pick numbers by tag, or group them
+
+1. **Browser:** select a tag, such as `product:shop`. Only numbers with that tag stay. Select more tags to keep only numbers with all of them. Select **All tags** to see every number again.
+2. **Browser:** in **Group by**, choose **department**, **owner**, or a kind of tag, such as **tag channel**. Numbers are listed under one heading per department, owner or channel. A number with two channel tags shows under both.
+
+The address keeps what you picked, so you can share the view.
+
+On a phone, each row stacks: the name and the reading first, then the trend and the status.
+
+![The Numbers page on a phone, in dark mode, grouped by channel](/screenshots/numbers/hub-numbers-phone-dark.png)
+
+### See a job's number on the Jobs page
+
+When a job's value line names a number (see [Link a job's value line to a number](#link-a-job-s-value-line-to-a-number)), the Hub's **Jobs** page shows that number's newest reading and status under the value line. Select the number's name to open it on the Numbers page.
+
+![A job on the Jobs page with its number's newest reading](/screenshots/numbers/hub-jobs-number.png)
+
 ## Check it worked
 
 1. **Terminal:** run `agentx numbers add test-number --name "Test number" --target 10`.
@@ -216,7 +266,8 @@ A scheduled job's value line (`crons.<id>.value`) says why the job runs and the 
 4. **Terminal:** record two misses for the two last whole weeks (Monday to Sunday) before today. For example, on 10 November 2026, run `agentx numbers record test-number 3 --from 2026-10-26 --to 2026-11-01`, then `agentx numbers record test-number 4 --from 2026-11-02 --to 2026-11-08`.
 5. **Terminal:** run `agentx numbers review`. **Test number** shows **missed twice**.
 6. **Browser:** within a few minutes, open the Approvals page on the Hub. A card **Test number missed its target twice** waits there, when the number has an owner agent (`--owner`) or `numbers.reviewer` is set. Answer **No**.
-7. **Terminal:** run `agentx numbers archive test-number` to remove it from the list.
+7. **Browser:** open the Hub and select **Numbers**. **Test number** is listed with `4`, **missed twice**, and its trend shows the three readings.
+8. **Terminal:** run `agentx numbers archive test-number` to remove it from the list.
 
 ## If something is wrong
 
@@ -225,6 +276,9 @@ A scheduled job's value line (`crons.<id>.value`) says why the job runs and the 
 - **`is set up in agentx.json`:** that number is changed in `agentx.json`, not with the command or by an agent.
 - **`a command source can only be set in agentx.json`:** put the number under `numbers.items` in `agentx.json`.
 - **An agent's record is refused with `belongs to`:** only the number's owner records readings. Ask the owner agent, or change the owner with `agentx numbers add <id> --owner <agent>`.
+- **The Hub has no Numbers entry:** no machine the Hub reads has a number yet. Add one, then select **Refresh** in the Hub.
+- **The Numbers page says `Not read:` and a machine:** that machine did not answer. Its numbers are missing from the page until it answers again; the others still show.
+- **A job shows `Number: <id> not found`:** no machine the Hub reads has a number with that id. Check the id in the job's value line with `agentx numbers`.
 - **The daemon log says `numbers.items.<id>: …`:** that number in `agentx.json` is not valid; the message says which field to fix.
 - **A number missed twice and no card came:** run `agentx numbers review`. The line under the number says why: it has no owner agent on this computer and `numbers.reviewer` is not set, or the card was refused (an agent can have at most 25 cards waiting). Check also that `numbers.missedTwiceCard` is not `false`. The same run of misses is not tried again: the next card comes after the number meets its target and misses twice again.
 - **A number missed three times and only one card came:** that is on purpose. One run of misses raises one card.
