@@ -245,7 +245,7 @@ export function numbersPageHtml(m: NumbersPageModel): string {
   if (!m.list) return '<p class="ax-wall__empty">Loading…</p>'
   if (!m.list.length) {
     return '<div class="wnm__none"><p><b>No numbers yet.</b> A number is a measure your team follows over time, such as views per channel or sign-ups per product.</p>' +
-      "<p>Add one in a terminal with <code>agentx numbers add</code>, in <code>agentx.json</code> under <code>numbers.items</code>, or let an agent make one with its <code>agentx_numbers</code> tool.</p></div>" + missed
+      "<p>Add one in a terminal with <code>agentx numbers add</code>, in <code>agentx.json</code> under <code>numbers.items</code>, or let an agent make one with its numbers tool.</p></div>" + missed
   }
   const tags = numTagsOf(m.list)
   const picked = m.tags.filter((t) => tags.indexOf(t) >= 0)
