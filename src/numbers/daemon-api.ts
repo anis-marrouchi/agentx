@@ -1,5 +1,5 @@
 import type { CallerProof } from "@/requests/daemon-api"
-import { READING_NOTE_MAX, lastPeriod, parsePeriod, parseTags, statusOf, STATUS_WORDS } from "./model"
+import { READING_NOTE_MAX, lastPeriod, maskUserinfo, parsePeriod, parseTags, statusOf, STATUS_WORDS } from "./model"
 import { parseNumberInput } from "./input"
 import type { NumberSource } from "./sources"
 import type { NumberRecord, NumberStore } from "./store"
@@ -48,7 +48,7 @@ export function maskQuery(url: string): string {
 export function sourceView(s: NumberSource): NumberSource {
   if (s.kind === "http-json") {
     const { headers, ...rest } = s
-    return { ...rest, url: maskQuery(s.url), ...(headers ? { headers: Object.fromEntries(Object.keys(headers).map((k) => [k, MASK])) } : {}) }
+    return { ...rest, url: maskQuery(maskUserinfo(s.url)), ...(headers ? { headers: Object.fromEntries(Object.keys(headers).map((k) => [k, MASK])) } : {}) }
   }
   if (s.kind === "command") return { ...s, command: MASK }
   return s

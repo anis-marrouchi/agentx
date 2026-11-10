@@ -178,3 +178,9 @@ export function formatValue(value: number | null, unit?: string | null): string 
 export function describeTarget(t: NumberTarget, unit?: string | null): string {
   return `${t.direction === "down" ? "≤" : "≥"} ${formatValue(t.value, unit)}`
 }
+
+/** The url with any `user:pass@` before the host masked (`https://***@host/x`).
+ *  Text work, not URL(), so `{start}` and `{end}` stay as written. */
+export function maskUserinfo(url: string): string {
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#]*@/i, "$1***@")
+}

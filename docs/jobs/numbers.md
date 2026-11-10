@@ -105,6 +105,8 @@ agentx numbers add signups --name "Sign-ups" --source '{"kind":"http-json","url"
 
 Numbers you set up in `agentx.json` are yours: agents cannot change or archive them. Only here can a number run a command, or send request headers.
 
+Agents never see the secret parts of a source. In the Hub, the CLI, the agent tool and read errors, header values, values after `?` in an address, a name and password written in an address (`https://name:password@host`) and command text all show as `***`.
+
 1. **Editor:** open `agentx.json` and add a `numbers` section:
 
    ```json

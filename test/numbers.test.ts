@@ -4,9 +4,9 @@ import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { NumberStore } from "../src/numbers/store"
-import { DAY_MS, describePeriod, lastPeriod, parsePeriod, parseTags, periodAt, statusOf, type Reading } from "../src/numbers/model"
+import { DAY_MS, describePeriod, lastPeriod, maskUserinfo, parsePeriod, parseTags, periodAt, statusOf, type Reading } from "../src/numbers/model"
 import { parseNumberInput } from "../src/numbers/input"
-import { countUrl, parseSource, readSourceValue, valueAt, type CountSource } from "../src/numbers/sources"
+import { countUrl, describeSource, parseSource, readSourceValue, valueAt, type CountSource } from "../src/numbers/sources"
 import { readDueNumbers, syncConfigNumbers } from "../src/numbers/sweep"
 import { checkNumber } from "../src/numbers/goal-check"
 import { handleNumbersApi, maskQuery } from "../src/numbers/daemon-api"
@@ -334,6 +334,24 @@ describe("/numbers and agentx_numbers", () => {
     expect(lines).toHaveLength(4)
     for (const text of seen) expect(text).not.toContain("SECRET")
   }, 10_000)
+
+  it("masks user:pass@ in a url everywhere agents see it (#1833)", async () => {
+    expect(maskUserinfo("https://stats.test/v?from={start}")).toBe("https://stats.test/v?from={start}")
+    expect(maskUserinfo("https://u:SECRET@stats.test/v/{end}")).toBe("https://***@stats.test/v/{end}")
+    expect(maskUserinfo("https://stats.test/v?next=a@b")).toBe("https://stats.test/v?next=a@b")
+    const items = { web: { name: "Web", source: { kind: "http-json", url: "https://user:SECRET@stats.test/x?k=v", path: "v" } } }
+    expect(syncConfigNumbers(store, items, NOW)).toEqual([])
+    expect(describeSource(store.get("web")!.source)).toBe("https://***@stats.test/x → v")
+    const f = (async (u: string) => { throw new Error(`fetch failed for ${u}`) }) as unknown as typeof fetch
+    const lines: string[] = []
+    expect(await readDueNumbers(store, { connectors: {}, fetch: f }, { retryMinutes: 60 }, NOW, (m) => lines.push(m))).toEqual(["web"])
+    const one = (get("/numbers/web").body as any).number
+    expect(one.source.url).toBe("https://***@stats.test/x?k=***")
+    expect(one.latest.error).toBe("https://***@stats.test/x could not be reached (Error)")
+    expect(one.lastError).toBe(one.latest.error)
+    for (const text of [JSON.stringify(get("/numbers").body), JSON.stringify(one), ...lines]) expect(text).not.toContain("SECRET")
+    expect(store.get("web")!.source).toMatchObject({ url: "https://user:SECRET@stats.test/x?k=v" })
+  })
 
   it("the tool reads the endpoints as text", async () => {
     post({ action: "create", id: "yt-views", name: "YouTube views", unit: "views", target: 1000, tags: ["channel:youtube"] })
