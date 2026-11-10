@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.218.0](https://github.com/anis-marrouchi/agentx/compare/v0.217.0...v0.218.0) (2026-11-10)
+
+
+### Features
+
+* **requests:** read replies for promises and owner questions by default ([#1806](https://github.com/anis-marrouchi/agentx/issues/1806)) ([#1836](https://github.com/anis-marrouchi/agentx/issues/1836)) ([14cea29](https://github.com/anis-marrouchi/agentx/commit/14cea290aa91d324122f0c45508f6519638b498d))
+
 ## [0.217.0](https://github.com/anis-marrouchi/agentx/compare/v0.216.0...v0.217.0) (2026-11-10)
 
 
