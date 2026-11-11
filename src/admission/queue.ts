@@ -83,6 +83,11 @@ export interface AdmissionSettings {
   allowOneWhenIdle: boolean
   /** A run still waiting after this long is refused in plain words; 0 = never. */
   maxWaitMinutes: number
+  /** One written line to the person whose chat message has waited this
+   *  long (admission/wait-notice.ts). afterSeconds 0 = off; only the
+   *  listed channels get it. Separate from any later "join the waiting
+   *  run" setting, so either can be off alone. */
+  waitNotice?: { afterSeconds: number; channels: string[] }
   /** Seconds between resource re-reads while work is waiting. */
   sampleSeconds: number
   classes: Record<string, AdmissionClass>
@@ -121,6 +126,7 @@ export const DEFAULT_ADMISSION_SETTINGS: AdmissionSettings = {
   boot: { windowSeconds: 300, startsPerInterval: 2, intervalSeconds: 30 },
   allowOneWhenIdle: true,
   maxWaitMinutes: 60,
+  waitNotice: { afterSeconds: 120, channels: ["gitlab"] },
   sampleSeconds: 5,
   classes: {},
   closeIdle: { enabled: true, maxPerRound: 3, minQuietSeconds: 60, settleSeconds: 30 },
@@ -161,6 +167,11 @@ export interface AdmissionRequest {
   /** On close, leave this run unanswered (a chat message the router
    *  replays on boot) instead of answering "closed". */
   keepOnClose?: boolean
+  /** Called once when the run has been held this long. Never awaited and
+   *  never retried: a slow or failing caller cannot hold up the queue.
+   *  No timer of its own: the re-check every sampleSeconds while work
+   *  waits is what sees the time pass. */
+  longWait?: { afterMs: number; notify: (w: { waitedMs: number; blockedBy: string[] }) => void }
   signal?: AbortSignal
 }
 
@@ -190,6 +201,8 @@ interface Entry {
   nodeHeldSince: number | null
   /** Why it is still waiting, from the last pass. */
   blockedBy: string[]
+  /** longWait.notify was called (at most once per entry). */
+  noticed: boolean
   req: AdmissionRequest
   resolve: (o: AdmissionOutcome) => void
   onAbort?: () => void
@@ -341,7 +354,7 @@ export class AdmissionQueue {
     }
     return new Promise((resolve) => {
       const entry: Entry = {
-        ...base, seq: this.seq, delegated: !!req.delegated, enqueuedAt: this.now(), nodeHeldSince: null, blockedBy: [], req, resolve,
+        ...base, seq: this.seq, delegated: !!req.delegated, enqueuedAt: this.now(), nodeHeldSince: null, blockedBy: [], noticed: false, req, resolve,
       }
       if (req.signal) {
         entry.onAbort = () => {
@@ -523,11 +536,25 @@ export class AdmissionQueue {
           const soft = holds.every((h) => CRITICAL_SKIPS.some((p) => h.startsWith(p)))
           holdAll = soft && holdAll !== "all" ? "soft" : "all"
         }
+        this.noticeLongWait(e, waitedMs)
         continue
       }
       this.admitEntry(e, waitedMs, passed)
     }
     this.closeIdleRound(s, heldByResources ? reasons : [], now)
+  }
+
+  /** Tells the caller once that its run has waited long (longWait). The
+   *  mark is set before the call, so a throwing caller is not called again. */
+  private noticeLongWait(e: Entry, waitedMs: number): void {
+    const lw = e.req.longWait
+    if (!lw || e.noticed || lw.afterMs <= 0 || waitedMs < lw.afterMs) return
+    e.noticed = true
+    try {
+      lw.notify({ waitedMs, blockedBy: [...e.blockedBy] })
+    } catch (err) {
+      this.log(`[admission] ${e.agentId} long-wait notice failed: ${(err as Error)?.message ?? err}`)
+    }
   }
 
   /** One round of closing idle sessions, when memory or swap holds a run. */

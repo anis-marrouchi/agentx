@@ -145,6 +145,10 @@ export interface AgentTask {
   /** Called with `runningTaskId` as soon as the run starts. Never fires for
    *  a message that was queued or dropped instead of run. */
   onStart?: (runningTaskId: string) => void
+  /** Called at most once when the run has waited in the admission queue
+   *  for admission.waitNotice.afterSeconds, with the queue's reasons.
+   *  Never awaited. Set by the router for chat messages. */
+  onHeld?: (w: { waitedMs: number; blockedBy: string[] }) => void
   /** Aborted when the HTTP caller waiting on this run has gone (timeout,
    *  disconnect). A run still waiting for a busy agent's slot is then
    *  dropped instead of started: nobody is left to read its answer, and a
@@ -280,6 +284,8 @@ export interface AgentResponse {
    *  full FriendlyError taxonomy is in error-map.ts; common ones to
    *  branch on: `out_of_credits`, `rate_limit`, `auth`, `timeout`. */
   errorKind?: FriendlyError["kind"]
+  /** dispatch_hold only: when a cold dispatch can go again (ms), when known. */
+  retryAt?: number
   tokensUsed?: number
   duration?: number
   claudeSessionId?: string
