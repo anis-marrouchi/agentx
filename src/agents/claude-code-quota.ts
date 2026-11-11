@@ -337,6 +337,15 @@ export interface QuotaGateAbort {
   reason: "provider_rate_limit" | "hourly_cap" | "five_hour_cap"
   message: string
   usage: ClaudeCodeUsage
+  /** When a cold dispatch can go again (ms), when known: the plan window's
+   *  reset, or when the oldest counted dispatch leaves the local window. */
+  retryAt?: number
+}
+
+/** When the dispatch `max` places back leaves a window of `windowMs`. */
+function capFreesAt(max: number, windowMs: number): number | undefined {
+  const t = timestamps[timestamps.length - max]
+  return t === undefined ? undefined : t + windowMs
 }
 
 function windowLabel(window: string): string {
@@ -372,6 +381,7 @@ export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.n
         `Cold dispatches are held until it resets ${resetLabel(hold.resetsAt, now)}; open conversations still go through. ` +
         `To try again now, run: agentx usage plan --lift`,
       usage,
+      retryAt: hold.resetsAt,
     }
   }
   if (usage.maxPerHour && usage.lastHour >= usage.maxPerHour) {
@@ -383,6 +393,7 @@ export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.n
         `Cold dispatches are held; open conversations still go through. ` +
         `Raise or remove session.maxClaudeCodeDispatchesPerHour in agentx.json (applies on save).`,
       usage,
+      retryAt: capFreesAt(usage.maxPerHour, ONE_H_MS),
     }
   }
   if (usage.maxPer5h && usage.last5h >= usage.maxPer5h) {
@@ -394,6 +405,7 @@ export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.n
         `Cold dispatches are held; open conversations still go through. ` +
         `Raise or remove session.maxClaudeCodeDispatchesPer5h in agentx.json (applies on save).`,
       usage,
+      retryAt: capFreesAt(usage.maxPer5h, FIVE_H_MS),
     }
   }
   return null

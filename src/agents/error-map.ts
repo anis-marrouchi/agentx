@@ -26,6 +26,9 @@ export interface FriendlyError {
     /** Every slot of the agent stayed busy for the whole slot wait; the
      *  message did not run. An event wake retries it (#1596). */
     | "agent_busy"
+    /** The node had no room to start the run for admission.maxWaitMinutes;
+     *  the run was refused and is not queued. */
+    | "no_room"
     | "auth"
     | "permission"
     | "rate_limit"

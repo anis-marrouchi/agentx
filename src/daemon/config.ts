@@ -2433,6 +2433,13 @@ export const daemonConfigSchema = z.object({
     /** A run still waiting after this many minutes is refused in plain
      *  words; 0 = wait as long as it takes. */
     maxWaitMinutes: z.number().int().min(0).default(60),
+    /** One written line, on the thread, to a person whose chat message has
+     *  waited afterSeconds in this queue; 0 = off. Only these channels.
+     *  The text has no numbers, host names or client detail. */
+    waitNotice: z.object({
+      afterSeconds: z.number().int().min(0).default(120),
+      channels: z.array(z.string()).default(["gitlab"]),
+    }).default({}),
     /** Seconds between resource re-reads while work waits. */
     sampleSeconds: z.number().int().min(1).max(60).default(5),
     /** Named caps, e.g. { "browser": { "max": 1, "agents": ["web-tester"] } }. */

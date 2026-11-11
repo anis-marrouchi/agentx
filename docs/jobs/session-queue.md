@@ -63,6 +63,17 @@ For the first five minutes after AgentX starts, at most two sessions start every
 
 When AgentX stops, chat messages still waiting are not lost: they run again after the restart, through the queue. Other waiting work (a scheduled job, a message from another agent) is answered as interrupted, so the job's run is recorded and the other agent hears back.
 
+## Tell the person their message is waiting
+
+A chat message that has waited 2 minutes (`admission.waitNotice.afterSeconds`, default `120`; `0` turns it off) gets one written line on its thread. The line says the message arrived, why it has not started yet, and that the answer will come there. Only channels in `admission.waitNotice.channels` get it (default `["gitlab"]`).
+
+The line is sent once per message, also across restarts. On GitLab it is a top-level note that everyone on the project can read, so it holds a plain reason only ("short of free disk space", "working on another request"), never numbers or machine names. The full reason is in the log, on the line that starts with `[wait-notice]`.
+
+On the same channels, the two ends without a start are also told in plain words:
+
+- **Refused after `admission.maxWaitMinutes`:** the line says the message could not start and is no longer queued, and asks for it again.
+- **Plan limit reached:** the message is not kept, so the line asks for it again after a time in UTC, when that time is known. It is posted once per thread. It is posted again after that time has passed, or after a run on the thread has answered.
+
 ## Idle sessions make room
 
 A session that has finished its reply stays open for a while (`processPool.maxIdleSeconds`), so the next message in that chat starts faster. An open session still holds memory. When work is waiting only because memory or swap is short, AgentX closes some idle sessions early:

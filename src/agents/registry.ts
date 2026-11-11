@@ -106,6 +106,7 @@ const STEP_BUDGET_MS: Record<string, number> = {
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
 import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, requestedPriorityOf, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
+import { waitRefusalText } from "@/admission/wait-notice"
 import { ResourceSampler } from "@/native/resources"
 import { prepareOutbox } from "@/utils/app-outbox"
 
@@ -1845,6 +1846,11 @@ export class AgentRegistry {
         delegated: isInsideDelegation(task.context as any) && !(task.context as any)?.delegation,
         // A chat message still waiting at shutdown is replayed by the router.
         keepOnClose: task.origin?.kind === "router",
+        // One written line to the person once the run has waited a while
+        // (admission.waitNotice); the router decides which channels ask.
+        ...(task.onHeld && (admissionSettings.waitNotice?.afterSeconds ?? 0) > 0
+          ? { longWait: { afterMs: admissionSettings.waitNotice!.afterSeconds * 1000, notify: task.onHeld } }
+          : {}),
         // One question at a time per voice chat: the claim is taken at
         // admission, before any other entry of the same pass is checked,
         // and held until this run marks the chat running.
@@ -1862,11 +1868,9 @@ export class AgentRegistry {
         if (outcome.reason === "closed") {
           return { content: "", error: `Agent "${task.agentId}" not started: the daemon is restarting`, errorKind: "interrupted" }
         }
-        const minutes = Math.round(outcome.waitedMs / 60_000)
-        return {
-          content: "",
-          error: `This machine had no room to start agent "${task.agentId}" for ${minutes} min (${outcome.blockedBy.join("; ") || "busy"}). Please send it again later.`,
-        }
+        // Plain words only: this text can reach a thread everyone reads.
+        // The queue has already logged the full reason with its numbers.
+        return { content: "", error: waitRefusalText(outcome.blockedBy), errorKind: "no_room" }
       }
       this.admissionTickets.set(task, outcome.ticket)
     } else {
@@ -3427,6 +3431,7 @@ export class AgentRegistry {
             content: "",
             error: abort.message,
             errorKind: "dispatch_hold",
+            ...("retryAt" in abort && typeof abort.retryAt === "number" ? { retryAt: abort.retryAt } : {}),
             duration: 0,
           }
           if (!onDelta) {

@@ -33,6 +33,8 @@ import { splitTitle, type OwnerGate } from "@/notify/told"
 import { unwrapMeshError } from "@/a2a/mesh-errors"
 import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from "./ui-directive"
 import type { Resumer } from "@/agents/resume/coordinator"
+import { DEFAULT_ADMISSION_SETTINGS } from "@/admission/queue"
+import { planHoldText, waitNoticeText } from "@/admission/wait-notice"
 
 /** A send refused because its channel is down (#1138 step B). */
 export class ChannelDownError extends Error {
@@ -85,10 +87,13 @@ interface InflightStart {
   timestamp: string
   resolvedAgent?: string
   preferNode?: string
+  /** When the wait line went out for this message (admission.waitNotice),
+   *  so a replay after a restart does not post it again. */
+  waitNoticeAt?: string
   ts: number
 }
 
-class InflightLog {
+export class InflightLog {
   private filePath: string
 
   constructor(baseDir: string) {
@@ -109,6 +114,13 @@ class InflightLog {
     } catch { /* */ }
   }
 
+  /** The wait line for this unfinished message went out at `at`. */
+  noticed(id: string, at: string): void {
+    try {
+      appendFileSync(this.filePath, JSON.stringify({ type: "notice", id, at, ts: Date.now() }) + "\n")
+    } catch { /* best-effort: worst case is a second line after a restart */ }
+  }
+
   /** Scan the log and return all `start` entries without a matching `done`. */
   loadUnfinished(): InflightStart[] {
     if (!existsSync(this.filePath)) return []
@@ -118,9 +130,15 @@ class InflightLog {
       for (const line of raw.split("\n")) {
         if (!line.trim()) continue
         try {
-          const entry = JSON.parse(line) as { type: string; id: string } & InflightStart
-          if (entry.type === "start") byId.set(entry.id, entry as InflightStart)
-          else if (entry.type === "done") byId.delete(entry.id)
+          const entry = JSON.parse(line) as { type: string; id: string; at?: string } & InflightStart
+          if (entry.type === "start") {
+            // A replay writes a new start for the same id: keep the notice.
+            const prev = byId.get(entry.id)?.waitNoticeAt
+            byId.set(entry.id, prev && !entry.waitNoticeAt ? { ...entry, waitNoticeAt: prev } : entry as InflightStart)
+          } else if (entry.type === "notice") {
+            const e = byId.get(entry.id)
+            if (e && entry.at) e.waitNoticeAt = entry.at
+          } else if (entry.type === "done") byId.delete(entry.id)
         } catch { /* skip corrupt line */ }
       }
       return [...byId.values()]
@@ -258,6 +276,14 @@ export class MessageRouter {
 
   /** Crash-safe inflight log (see InflightLog class above). */
   private inflight: InflightLog
+  /** Message id -> when its wait line went out (admission.waitNotice).
+   *  Filled from the inflight log on replay, so a restart does not post
+   *  a second line for the same message. Dropped when the run starts. */
+  private waitNoticed = new Map<string, string>()
+  /** `channel:chatId` -> when the plan-limit line on that thread stops
+   *  counting (its retry time). Cleared by that time passing or by a run
+   *  on the thread answering. Memory only: a restart may post it again. */
+  private planHoldNotified = new Map<string, number>()
 
   /** In-flight mesh forwards (this node is awaiting a peer's response).
    *  Counted so the daemon's shutdown drain can wait for these in addition
@@ -639,6 +665,7 @@ export class MessageRouter {
         resolvedAgent: entry.resolvedAgent,
         preferNode: entry.preferNode,
       }
+      if (entry.waitNoticeAt) this.waitNoticed.set(entry.id, entry.waitNoticeAt)
       this.log(`Inflight replay: ${entry.channel}/${entry.id} (agent=${entry.resolvedAgent || "resolve"})`)
       this.handleMessage(adapter, msg, { replay: true })
         .catch((e) => this.log(`Inflight replay failed for ${entry.id}: ${e.message}`))
@@ -928,12 +955,14 @@ export class MessageRouter {
       timestamp: (msg.timestamp instanceof Date ? msg.timestamp : new Date()).toISOString(),
       resolvedAgent: agentId,
       preferNode: msg.preferNode,
+      waitNoticeAt: this.waitNoticed.get(msg.id),
     })
 
     try { return await this.processResolvedMessage(adapter, msg, agentId, chatId) }
     finally {
       if (activeKey) this.activeMessageKeys.delete(activeKey)
       this.inflight.done(msg.id)
+      this.waitNoticed.delete(msg.id)
     }
   }
 
@@ -1089,7 +1118,11 @@ export class MessageRouter {
         origin: { kind: "router", adapter: msg.channel, message: serializeIncoming(msg) },
         resumeAttempt: msg.resume?.attempt,
         resumedFrom: msg.resume?.resumedFrom,
-        onStart: () => this.inflight.done(msg.id),
+        onStart: () => { this.inflight.done(msg.id); this.waitNoticed.delete(msg.id) },
+        // One written line once it has waited in the node queue a while.
+        ...(this.waitNoticeOn(msg.channel)
+          ? { onHeld: (w: { blockedBy: string[] }) => this.postWaitNotice(adapter, msg, chatId, agentId, w.blockedBy, replyAccountId) }
+          : {}),
         // Phase 1 / 6 — propagate the intent-ledger reference so the
         // registry can record a resolution on completion. Set by
         // gitlab/router shadow-mode wiring; absent under mode=off.
@@ -1153,6 +1186,20 @@ export class MessageRouter {
         return
       }
 
+      // Lines for the person on a wait-notice channel: plain words, no
+      // operator detail (the thread is readable by everyone on it).
+      if (this.waitNoticeOn(msg.channel) && (response.errorKind === "dispatch_hold" || response.errorKind === "no_room")) {
+        this.log(`Agent error: ${response.error}`)
+        if (response.errorKind === "dispatch_hold" && !this.takePlanHoldMark(msg.channel, chatId, response.retryAt)) {
+          this.log(`[wait-notice] plan-limit line already posted on ${msg.channel}:${chatId}; not repeated`)
+          return
+        }
+        const text = response.errorKind === "no_room" ? response.error : planHoldText(response.retryAt)
+        await this.adapterSend(adapter, { channel: msg.channel, chatId, text, replyTo: msg.id, parseMode: "plain", accountId: replyAccountId, agentId })
+          .catch((e: any) => this.log(`[wait-notice] post failed on ${msg.channel}:${chatId}: ${e?.message ?? e}`))
+        return
+      }
+
       this.log(`Agent error: ${response.error}`)
       const errorText = `Error: ${response.error}`
       if (streaming?.primaryId) {
@@ -1182,6 +1229,9 @@ export class MessageRouter {
       }
       return
     }
+
+    // A run on this thread answered: a later plan-limit hold may say so again.
+    this.planHoldNotified.delete(`${msg.channel}:${chatId}`)
 
     // Post-hook
     let responseText = response.content
@@ -1598,6 +1648,57 @@ export class MessageRouter {
    * fresh outage notifies again but a burst inside one outage does not.
    */
   private meshFailureNotified = new Set<string>()
+
+  /** Channels whose chat messages get the wait line (admission.waitNotice). */
+  private waitNoticeOn(channel: string): boolean {
+    const wn = (this.config as any)?.admission?.waitNotice ?? DEFAULT_ADMISSION_SETTINGS.waitNotice
+    if (!wn || !(wn.afterSeconds > 0)) return false
+    return (wn.channels ?? []).includes((channel || "").toLowerCase().split("@")[0])
+  }
+
+  /** Posts the one wait line for a message held in the node queue. Never
+   *  retried: a failed post is logged once and the run is untouched. On
+   *  GitLab the line is a top-level note (send ignores replyTo), visible
+   *  to everyone on the project, so its text has no numbers or names. */
+  private postWaitNotice(
+    adapter: ChannelAdapter,
+    msg: IncomingMessage,
+    chatId: string,
+    agentId: string,
+    blockedBy: string[],
+    replyAccountId?: string,
+  ): void {
+    const where = `${msg.channel}:${chatId}`
+    if (this.waitNoticed.has(msg.id)) {
+      this.log(`[wait-notice] ${where} message ${msg.id} already told (${this.waitNoticed.get(msg.id)}); not repeated`)
+      return
+    }
+    const at = new Date().toISOString()
+    this.waitNoticed.set(msg.id, at)
+    this.inflight.noticed(msg.id, at)
+    this.log(`[wait-notice] ${where} message ${msg.id} held: ${blockedBy.join("; ") || "no reason given"}`)
+    this.adapterSend(adapter, {
+      channel: msg.channel,
+      chatId,
+      text: waitNoticeText(blockedBy),
+      replyTo: msg.id,
+      parseMode: "plain",
+      accountId: replyAccountId,
+      agentId,
+    }).catch((e: any) => this.log(`[wait-notice] post failed on ${where}: ${e?.message ?? e}`))
+  }
+
+  /** True when the plan-limit line may be posted on this thread now, and
+   *  marks it. The mark lasts until the retry time it named (an hour when
+   *  unknown), or until a run on the thread answers. */
+  private takePlanHoldMark(channel: string, chatId: string, retryAt?: number): boolean {
+    const key = `${channel}:${chatId}`
+    const now = Date.now()
+    for (const [k, until] of this.planHoldNotified) if (until <= now) this.planHoldNotified.delete(k)
+    if (this.planHoldNotified.has(key)) return false
+    this.planHoldNotified.set(key, retryAt && retryAt > now ? retryAt : now + 60 * 60_000)
+    return true
+  }
 
   /**
    * A mesh-routed task failed. React ❌ (as the agent, where the channel
