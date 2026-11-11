@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.219.0](https://github.com/anis-marrouchi/agentx/compare/v0.218.0...v0.219.0) (2026-11-11)
+
+
+### Features
+
+* **requests:** proof per deliverable before a close by check, and reopen once ([#1844](https://github.com/anis-marrouchi/agentx/issues/1844)) ([49561a5](https://github.com/anis-marrouchi/agentx/commit/49561a569585e54db9adaeb927f6217bf1e397b5))
+
 ## [0.218.0](https://github.com/anis-marrouchi/agentx/compare/v0.217.0...v0.218.0) (2026-11-10)
 
 
