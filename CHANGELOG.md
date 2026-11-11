@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.220.0](https://github.com/anis-marrouchi/agentx/compare/v0.219.0...v0.220.0) (2026-11-11)
+
+
+### Features
+
+* **admission:** tell the person once when their chat message waits ([#1846](https://github.com/anis-marrouchi/agentx/issues/1846)) ([f545411](https://github.com/anis-marrouchi/agentx/commit/f545411b0fa30131556e7261074f7906d915202f))
+
 ## [0.219.0](https://github.com/anis-marrouchi/agentx/compare/v0.218.0...v0.219.0) (2026-11-11)
 
 
