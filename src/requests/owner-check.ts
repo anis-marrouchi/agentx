@@ -19,6 +19,7 @@
 // close is marked unclear. Closes older than `maxAgeHours` are left alone.
 
 import type { RequestRecord, RequestStore } from "./store"
+import { deliverablesOf, proofBlock, type Deliverables } from "./close-proof"
 
 export interface OwnerCheckSettings {
   enabled: boolean
@@ -41,7 +42,9 @@ const TEXT_CLIP = 2000
 const MAX_TRIES = 3
 export const MISMATCH_PREFIX = "Closed without doing what you asked"
 
-export function ownerCheckPrompt(r: RequestRecord): string {
+/** `d`: what the owner's words ask for and the links given (#692 B4).
+ *  Default: the list and proofs kept on the request. */
+export function ownerCheckPrompt(r: RequestRecord, d: Deliverables | null = deliverablesOf(r, null)): string {
   const how = r.state === "done"
     ? `Closed as DONE by ${r.closedBy}. Evidence given: ${clip(r.evidence ?? "(none)")}`
     : `Closed as ${r.state.toUpperCase()} by ${r.closedBy}. Reason given: ${clip(r.closeReason ?? "(none)")}`
@@ -51,6 +54,7 @@ export function ownerCheckPrompt(r: RequestRecord): string {
     ...(r.ownerNote ? ["", "The owner's latest note on it:", clip(r.ownerNote)] : []),
     "",
     how,
+    ...proofBlock(d),
     "",
     "Answer \"mismatch\" when the close does not deliver what the owner asked, for example:",
     "- it did a smaller or different task than the one asked, or only part of it;",
@@ -84,6 +88,8 @@ export interface OwnerCheckDeps {
   generate: (prompt: string, signal: AbortSignal) => Promise<string>
   log?: (line: string) => void
   now?: () => number
+  /** The request's tracked plan as deliverables (#692 B6). */
+  plan?: (requestId: string) => Deliverables | null
 }
 
 export class OwnerWordsCheck {
@@ -136,7 +142,7 @@ export class OwnerWordsCheck {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), s.timeoutSeconds * 1000)
     try {
-      return readVerdict(await this.deps.generate(ownerCheckPrompt(r), ac.signal))
+      return readVerdict(await this.deps.generate(ownerCheckPrompt(r, deliverablesOf(r, this.deps.plan?.(r.id) ?? null)), ac.signal))
     } catch (e: any) {
       this.deps.log?.(`[requests] ${r.id}: owner-words check call failed: ${e?.message ?? e}`)
       return null

@@ -624,7 +624,7 @@ ${WALL_NUMBERS_SCRIPT}
     return '<section class="wtk__sec"><h2>Result</h2><div class="wp__result ax-md">' + md(r.text) + '</div><div class="wp__from">' + from + '</div></section>';
   }
   /** What a loop's check last said (requests/loops.ts verifyState). */
-  var LOOP_CHECK = { verified: 'check met', unverified: 'check could not say', failed: 'check not met' };
+  var LOOP_CHECK = { verified: 'check met', unverified: 'check could not say', failed: 'check not met', held: 'check met, held after a mismatch', proof_missing: 'check met, waits for proof links' };
   /** Who asked, where, the clock and its open loop, as a short list of facts. */
   function factsHtml(p) {
     var rows = [

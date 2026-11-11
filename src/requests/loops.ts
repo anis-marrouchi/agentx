@@ -1,5 +1,6 @@
 import { OPEN_STATES, OWED_TO_OWNER, type RequestRecord, type RequestStore } from "./store"
 import { runCheck, type CheckContext, type CheckResult, type CloseWhen } from "./checkers"
+import { closeByCheck, PROOF_OFF, type CloseProofCtx } from "./close-proof"
 
 // --- Open loops: who each one waits on, and when it is stalled (#1039) ---
 //
@@ -109,8 +110,9 @@ const CHECK_BATCH = 10
 export async function checkLoops(
   store: RequestStore,
   check: LoopChecker,
-  opts: { everyMinutes: number; now: number; log: (msg: string) => void },
+  opts: { everyMinutes: number; now: number; log: (msg: string) => void; proof?: CloseProofCtx },
 ): Promise<{ checked: number; closed: number }> {
+  const proof = opts.proof ?? PROOF_OFF
   const due = store.dueForCheck(opts.now - opts.everyMinutes * 60_000, CHECK_BATCH)
   let closed = 0
   await Promise.all(due.map(async (r) => {
@@ -119,7 +121,8 @@ export async function checkLoops(
     store.markChecked(r.id, r.verifyState, r.verifyDetail ?? "", opts.now)
     const res = await check(r.closeWhen!, r).catch((e: any): CheckResult => ({ verdict: "unverifiable", detail: String(e?.message ?? e) }))
     if (res.verdict === "met") {
-      if (store.closeVerified(r.id, res.detail, opts.now)) {
+      // Proof per deliverable and reopen once (close-proof.ts, #692).
+      if ((await closeByCheck(store, r, res.detail, res.detail, opts.now, proof)).outcome === "closed") {
         closed++
         opts.log(`[requests] ${r.id} closed by its check: ${res.detail}`)
       }

@@ -147,6 +147,38 @@ It is off by default. To turn it on, add this to `agentx.json` under `requests`,
 
 The other settings are listed in [requests settings](/reference/config-automation#requests).
 
+**Reopened once, not every check.** When the owner-words check reopens a request that a check closed (a `closeWhen` or its issue home), the same check result does not close it again. It can close again only when one of these happens:
+
+- the agent gives a new proof link after the reopen (and after your last reply on it);
+- the check itself says something different;
+- you close it yourself.
+
+Your reply alone gives the work back to the agent. It does not let the check close the request. Until one of the three happens, `agentx requests show <id>` shows the check as **held**, and you are told only once.
+
+### Proof for each thing you asked for
+
+A check on an issue's state ("closes when the issue is closed") says nothing about what you asked for. When you asked for several things ("confirm each stage: build, review, merge"), a check like that could close your request with no proof for any of them.
+
+With `requests.closeProof.mode` set, a close by check needs one proof link for each thing you asked for:
+
+1. AgentX reads your words once, with the owner-words check's model, and keeps a short numbered list of what you asked for. The agent sees it with `agentx_request list`. A request with a plan of steps needs no reading: its steps are the list, and each step's own link is its proof.
+2. The agent gives one link per item as it goes: a note, a comment, a commit or a deploy that shows that item done. The request's own issue does not count.
+3. When the check is met, AgentX looks for a link for each item. One item, or words it could not read, closes as before.
+
+The mode decides what happens when items have no link:
+
+| Mode | What happens |
+|---|---|
+| `off` (default) | Nothing changes. Links are still kept. |
+| `warn` | The request closes. One log line and one `close_proof_missing` signal name the items with no link. |
+| `block` | The request stays open. `agentx requests show <id>` says `proof_missing` and lists the items. The agent is told once. |
+
+When the mode is not `off`, your words go to the model before any close, not only after one. To try it, add this to `agentx.json` under `requests`, then restart AgentX:
+
+```json
+"closeProof": { "mode": "warn" }
+```
+
 ## Promises an agent makes
 
 An agent often promises something to someone: "I will send the file by Friday", "I will deploy once the review is in". A **promise** is a request the agent opens itself, so the promise stays on your list until it is kept. It is the same kind of record as your own requests, and it shows in the same list.
@@ -528,6 +560,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 21. **Terminal:** run `agentx requests flow`. The first line gives today's date, the time zone, and how many of today's requests are closed. The table below it has one line per day.
 22. **Terminal:** with the owner-words check on, ask an agent for something specific, then ask it to decline the request for an unrelated reason. Within two minutes, `agentx requests` lists it again as needing attention, with a reason starting `Closed without doing what you asked`.
 23. **Terminal:** run `agentx requests settings`. The line `Resend once` says `on: after a usage limit resets or a restart, 5 minute(s) on; …`. After an agent stops on its usage limit, the daemon log has a `resent once` line for the request once the limit resets, and you are told nothing unless it stops again.
+24. **Terminal:** with `requests.closeProof.mode` set to `"warn"`, ask an agent for three separate things on one issue, and give the request a check on the issue's state. Close the issue with no notes on it. The request closes, and `agentx improve signals` lists one `close_proof_missing` signal that names the three items.
+25. **Terminal:** with the owner-words check on and the request above reopened, wait 30 minutes. The daemon log has one `owner-words check reopened it` line for the request and no second `closed by its check` line.
 
 ## If something is wrong
 
@@ -537,6 +571,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **You were told about a limit or a restart failure at once:** auto-resend is off (`agentx requests settings`), the agent is not on this computer, the request had already been resent once, or AgentX chose not to pick the work up again after the restart. The reason in brackets after `not picked up again` says which.
 
 - **A request reopened with `Closed without doing what you asked`, but the close was right:** the owner-words check read it as a mismatch. Close it yourself (`agentx requests done <id> --reason "…"`); your own closes are never checked. If it happens often, set a stronger `requests.ownerCheck.model`.
+- **A request with several items stays open with `proof_missing`:** `requests.closeProof.mode` is `"block"`. Ask the agent to give a link for each item it lists, or close the request yourself.
+- **A request shows its check as `held`:** the owner-words check found that result did not match your words. Reply with what is missing, and the agent gives the proof links, or close it yourself.
 - **The owner-words check never reopens anything:** check that `requests.ownerCheck.enabled` is `true` in `agentx.json` and that AgentX was restarted. Search the daemon log for `owner-words check`: a `call failed` line means the provider or model could not be reached.
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 

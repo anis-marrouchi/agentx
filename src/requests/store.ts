@@ -51,7 +51,14 @@ export interface RequestHome { kind: HomeKind; link: string }
 export const HOME_LINK_MAX = 500
 
 /** What the last run of a loop's checker said (#1039). */
-export type VerifyState = "verified" | "unverified" | "failed"
+/** `held`: met, but the owner-words check already judged this same detail
+ *  a mismatch (close-proof.ts, Part B). `proof_missing`: met, but the
+ *  deliverables named in the owner's words have no proof link yet, and
+ *  `requests.closeProof.mode` is `block`. */
+export type VerifyState = "verified" | "unverified" | "failed" | "held" | "proof_missing"
+
+/** One proof link the agent gave for one deliverable (close-proof.ts). */
+export interface DeliverableProof { deliverable: string; link: string; at: number }
 
 /** Who a loop is owed to: the owner, an agent id, or a known person id. */
 export const OWED_TO_OWNER = "owner"
@@ -158,6 +165,20 @@ export interface RequestRecord {
   /** When the requests check sent it back to its agent on its own, after
    *  a usage limit or a restart stopped it (#1542). Once per request. */
   resentAt: number | null
+  // --- Proof per deliverable (close-proof.ts). Unset on hand-built rows. ---
+  /** When the owner-words check last gave its verdict. */
+  ownerCheckAt?: number | null
+  /** When the owner (or the resend) last sent it back to its agent. */
+  sentBackAt?: number | null
+  /** What the owner's words ask for, read once by the model. Null: not
+   *  read yet. "unreadable": three reads failed; it counts as one. */
+  deliverables?: string[] | "unreadable" | null
+  /** The proof links the agent gave, oldest first. */
+  deliverableProofs?: DeliverableProof[]
+  /** When the agent was told which deliverables need a link. Once. */
+  proofAskedAt?: number | null
+  /** When the close_proof_missing signal was written. Once. */
+  proofSignalledAt?: number | null
 }
 
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
@@ -254,7 +275,8 @@ export function ensureRequestTables(db: Database.Database): void {
     ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"], ["headline_tried_at", "INTEGER"],
     ["owed_by", "TEXT"], ["proof", "TEXT"], ["fact_id", "TEXT"],
     ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"],
-    ["goal_id", "TEXT"], ["goal_title", "TEXT"]]) {
+    ["goal_id", "TEXT"], ["goal_title", "TEXT"],
+    ["deliverables", "TEXT"], ["deliverable_proofs", "TEXT"], ["proof_asked_at", "INTEGER"], ["proof_signalled_at", "INTEGER"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -292,8 +314,32 @@ function toRecord(r: any): RequestRecord {
     qa: r.qa_verdict && r.qa_by && typeof r.qa_at === "number" ? { verdict: r.qa_verdict, by: r.qa_by, at: r.qa_at, note: r.qa_note ?? null } : null,
     goal: r.goal_id && r.goal_title ? { id: r.goal_id, title: r.goal_title } : null,
     resentAt: r.resent_at ?? null,
+    ownerCheckAt: r.owner_check_at ?? null, sentBackAt: r.sent_back_at ?? null,
+    deliverables: readDeliverables(r.deliverables), deliverableProofs: readProofs(r.deliverable_proofs),
+    proofAskedAt: r.proof_asked_at ?? null, proofSignalledAt: r.proof_signalled_at ?? null,
   }
 }
+
+function readDeliverables(raw: unknown): string[] | "unreadable" | null {
+  if (raw === "unreadable") return "unreadable"
+  if (typeof raw !== "string") return null
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) && v.every((x) => typeof x === "string") ? v : null
+  } catch { return null }
+}
+
+function readProofs(raw: unknown): DeliverableProof[] {
+  if (typeof raw !== "string") return []
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.filter((p) => typeof p?.deliverable === "string" && typeof p?.link === "string" && typeof p?.at === "number") : []
+  } catch { return [] }
+}
+
+/** A new owner note asks again (#692 B7): what was read from the old words,
+ *  and the proofs given for it, no longer apply. */
+const PROOF_RESET = "deliverables = NULL, deliverable_proofs = NULL, proof_asked_at = NULL, proof_signalled_at = NULL"
 
 /** Goals shown, and requests read for them (#1168). */
 export const GOALS_MAX = 50
@@ -856,6 +902,57 @@ export class RequestStore {
     return res.changes > 0
   }
 
+  // --- Proof per deliverable (close-proof.ts, #692) ---
+
+  /** Runs `fn` in one transaction. */
+  tx<T>(fn: () => T): T {
+    return this.db.transaction(fn)()
+  }
+
+  /** What the owner's words ask for, as read by the model, or
+   *  "unreadable". Only while the list is still unread. */
+  setDeliverables(id: string, list: string[] | "unreadable"): boolean {
+    const v = list === "unreadable" ? list : JSON.stringify(list)
+    return this.db.prepare("UPDATE requests SET deliverables = ? WHERE id = ? AND deliverables IS NULL").run(v, id).changes > 0
+  }
+
+  /** Adds proof links. One already kept (same deliverable, same link) is
+   *  not added again. Returns how many were new. */
+  addProofs(id: string, proofs: Array<{ deliverable: string; link: string }>, now: number): number {
+    return this.tx(() => {
+      const kept = this.get(id)?.deliverableProofs ?? []
+      const key = (p: { deliverable: string; link: string }) => `${p.deliverable.toLowerCase()}\u0000${p.link}`
+      const seen = new Set(kept.map(key))
+      const fresh = proofs.filter((p) => !seen.has(key(p)) && seen.add(key(p)))
+      if (!fresh.length) return 0
+      this.db.prepare("UPDATE requests SET deliverable_proofs = ? WHERE id = ?")
+        .run(JSON.stringify([...kept, ...fresh.map((p) => ({ deliverable: p.deliverable, link: p.link, at: now }))]), id)
+      return fresh.length
+    })
+  }
+
+  /** The agent was told which deliverables need a link (at), or the
+   *  telling failed (null). */
+  markProofAsked(id: string, at: number | null): void {
+    this.db.prepare("UPDATE requests SET proof_asked_at = ? WHERE id = ?").run(at, id)
+  }
+
+  /** Writes the close_proof_missing signal once per request. */
+  signalProofMissing(id: string, detail: string, now: number): boolean {
+    const first = this.db.prepare("UPDATE requests SET proof_signalled_at = ? WHERE id = ? AND proof_signalled_at IS NULL").run(now, id).changes > 0
+    if (first) this.signal("close_proof_missing", id, detail, now)
+    return first
+  }
+
+  /** Open requests whose words are not read yet and that can close on
+   *  their own (a checker or an issue home), oldest first. */
+  deliverablesDue(limit: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND deliverables IS NULL
+         AND (close_when IS NOT NULL OR (home_kind = 'issue' AND home_link IS NOT NULL)) ORDER BY created_at, rowid LIMIT ?`,
+    ).all(...OPEN_STATES, limit).map(toRecord)
+  }
+
   /** A failure signal about this request (src/improve/signals.ts). */
   private signal(kind: SignalKind, id: string, detail: string | null, now: number): void {
     const agentId = (this.db.prepare("SELECT agent_id FROM requests WHERE id = ?").get(id) as { agent_id?: string } | undefined)?.agent_id ?? null
@@ -1015,7 +1112,7 @@ export class RequestStore {
     return this.db.transaction(() => {
       const moved = this.db.prepare(
         `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
-           question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)
+           question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id), ${PROOF_RESET}
          WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
       ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
       if (moved) this.supersedeHandBacks(id)
@@ -1029,7 +1126,7 @@ export class RequestStore {
   reopen(id: string, note: string, now: number): boolean {
     const reopened = this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'in_progress', closed_at = NULL, updated_at = ?, attention_reason = NULL, notified_at = NULL,
-         question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL
+         question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, ${PROOF_RESET}
        WHERE id = ? AND state IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("in_progress", now, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...CLOSED_STATES).changes > 0
     // The owner sending a closed request back is the clearest sign the

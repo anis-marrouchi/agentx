@@ -372,6 +372,9 @@ To turn it on by hand:
 | `requests.ownerCheck.perCheck` | number (1 to 20) | `2` | Closes read per requests check, once a minute. |
 | `requests.ownerCheck.maxAgeHours` | number | `48` | Closes older than this are not read. |
 | `requests.ownerCheck.timeoutSeconds` | number (5 to 300) | `60` | How long one call may take before it is tried again at the next check. |
+| `requests.closeProof.mode` | `"off"`, `"warn"` or `"block"` | `"off"` | Proof for each thing you asked for, before a check closes the request (retro:01M70Z38BBZYRBBCZW2T1S3T3K). When it is not `"off"`, the words of open requests that can close on their own go to the `ownerCheck` model once, before any close, to list what they ask for. `"warn"` closes and records one signal; `"block"` keeps the request open and tells the agent once. See [Proof for each thing you asked for](/jobs/open-requests#proof-for-each-thing-you-asked-for). |
+| `requests.closeProof.perCheck` | number (1 to 20) | `2` | Requests whose words are read per requests check, once a minute. |
+| `requests.closeProof.askPerCheck` | number (1 to 20) | `3` | Agents told per requests check which items need a link. |
 | `requests.flow.timeZone` | string | `"Africa/Tunis"` | The time zone whose day the daily [flow rate](/jobs/open-requests#how-many-requests-get-closed-the-flow-rate) counts by (`agentx requests flow`). |
 | `requests.flow.days` | whole number (1 to 90) | `7` | Days the flow rate shows when none are asked for. |
 | `requests.promises` | object | `{}` | One record for everything someone owes: proof on close, a fact when it closes. See [A promise closes with proof](/jobs/open-requests#a-promise-closes-with-proof-and-leaves-a-fact). |

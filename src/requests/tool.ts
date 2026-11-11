@@ -59,6 +59,22 @@ const STATE_WORDS: Record<string, string> = {
   needs_attention: "needs attention",
 }
 
+/** A loop check's state in words; the two "met but open" ones (#692). */
+const VERIFY_WORDS: Record<string, string> = {
+  held: "met, held: the owner found this result does not match their words",
+  proof_missing: "met, waits for a proof link per item",
+}
+
+/** What the owner's words ask for, numbered, and the items with a link
+ *  (close-proof.ts, #692). Empty when not read or only one. */
+export function describeDeliverables(r: any): string {
+  const list: unknown = r?.deliverables
+  if (!Array.isArray(list) || list.length < 2) return ""
+  const proofs: Array<{ deliverable: string }> = Array.isArray(r.deliverableProofs) ? r.deliverableProofs : []
+  const has = (name: string, i: number) => proofs.some((p) => p.deliverable.toLowerCase() === name.toLowerCase() || p.deliverable === String(i + 1))
+  return ` Deliverables: ${list.map((n: string, i: number) => `${i + 1}. ${n}${has(n, i) ? " (linked)" : ""}`).join("; ")}.`
+}
+
 /** One line per open request, oldest first. */
 export function describeOpen(items: any[]): string {
   if (!items.length) return "No open requests."
@@ -70,7 +86,8 @@ export function describeOpen(items: any[]): string {
     const loop = [
       r.promise && r.owedTo ? ` Promised to ${r.owedTo}.` : "",
       r.dueAt ? ` Due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC.` : "",
-      r.closeWhen ? ` Closes on its check (${r.closeWhen.kind})${r.verifyState ? `: ${r.verifyState}` : ""}.` : "",
+      r.closeWhen ? ` Closes on its check (${r.closeWhen.kind})${r.verifyState ? `: ${VERIFY_WORDS[r.verifyState] ?? r.verifyState}` : ""}.` : "",
+      describeDeliverables(r),
       awaitingQa(r) ? " Awaiting QA." : r.qa ? ` QA: ${describeQa(r.qa)}.` : "",
       r.goal ? ` Goal: ${r.goal.title} (${r.goal.id}).` : "",
     ].join("")
@@ -193,7 +210,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       headers: { "Content-Type": "application/json", ...callerHeaders(env) },
       body: JSON.stringify({
         action, agentId: caller.agentId,
-        id: args.id, question: args.question, evidence: args.evidence, proof: args.proof, reason: args.reason,
+        id: args.id, question: args.question, evidence: args.evidence, proof: args.proof, proofs: args.proofs, reason: args.reason,
         steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, waitUntil: args.waitUntil, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
         headline: args.headline, need: args.need, needsQa: args.needsQa, verdict: args.verdict, goal: args.goal,
@@ -211,6 +228,9 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         `Steps the owner approves get a decision card now; an approved message is sent by the daemon itself. Report your own steps with {action:"step", id:"${r.id}", step:<n>, status:"progress"|"done"|"blocked"}.`,
       ].join("\n")
     }
+    if (action === "step" && typeof data.proofsAdded === "number") {
+      return `${data.proofsAdded} proof link${data.proofsAdded === 1 ? "" : "s"} kept on ${r.id}.${describeDeliverables(r)}`
+    }
     if (action === "step") return [`Step reported. Plan of ${r.id}:`, ...describeSteps(data.steps)].join("\n")
     if (action === "qa") return `Verdict recorded on ${r.id}: ${describeQa(r.qa)}. It shows on the request's card; nobody is told.`
     if (action === "describe") return `Request ${r.id} now reads "${r.headline ?? "(no headline)"}" on the owner's cards. Needed from them: ${r.need ?? "what follows from where it stands"}.`
@@ -219,6 +239,9 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     if (action === "promise") {
       return `Promise ${r.id} is open, owed to ${r.owedTo}${r.dueAt ? `, due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}. ` +
         (r.closeWhen ? "The daemon checks its evidence and closes it once the check is met." : `Close it with {action:"done", id:"${r.id}", evidence:"<link>"} when it is kept.`)
+    }
+    if (action === "done" && data.verify === "reading") {
+      return `Request ${r.id} stays open: ${data.detail}. Say done again in a minute.`
     }
     if (action === "done" && data.verify === "unverified") {
       return `Request ${r.id} stays open: its check could not say whether it is finished (${data.detail}). It is marked unverified; the daemon checks again, and the owner can close it by hand.`

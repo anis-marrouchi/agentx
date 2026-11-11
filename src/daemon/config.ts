@@ -1720,6 +1720,20 @@ export const requestsConfigSchema = z.object({
     maxAgeHours: z.number().positive().max(24 * 30).default(48),
     timeoutSeconds: z.number().int().min(5).max(300).default(60),
   }).default({}),
+  /** Proof per deliverable before a close by check (src/requests/close-proof.ts),
+   *  retro:01M70Z38BBZYRBBCZW2T1S3T3K. When the mode is not "off", the
+   *  words of open requests that can close on their own (a checker or an
+   *  issue home) go to the model of `ownerCheck` once, before any close,
+   *  to list what they ask for. A close by check then needs one proof
+   *  link per item: "warn" closes and records one signal, "block" keeps
+   *  it open and tells the agent once. Off by default. */
+  closeProof: z.object({
+    mode: z.enum(["off", "warn", "block"]).default("off"),
+    /** Requests whose words are read per requests check (once a minute). */
+    perCheck: z.number().int().min(1).max(20).default(2),
+    /** Agents told per requests check which items need a link. */
+    askPerCheck: z.number().int().min(1).max(20).default(3),
+  }).default({}),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
   /** Resend once (src/requests/resend.ts, #1542): a request that needs

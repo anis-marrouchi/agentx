@@ -3,6 +3,7 @@ import { OVERDUE_REASON, WALL_CHANNEL, type RequestRecord, type RequestStore } f
 import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
 import { checkHomes, type HomeChecker, type PlanStepLeft } from "./home-check"
+import { DEFAULT_CLOSE_PROOF, type CloseProofCtx } from "./close-proof"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
 import { goalLine } from "./goals"
@@ -78,6 +79,10 @@ export interface RequestSweepDeps {
    *  owns keeps the request open when its home closes; the rest are named
    *  in the close, so it says what the plan stopped with. */
   planLeft?: (requestId: string) => PlanStepLeft[]
+  /** Proof per deliverable and reopen once (close-proof.ts, #692): the
+   *  plan lookup and the reader. The mode, the telling and its cap come
+   *  from the settings and the deps here. Unset: as before. */
+  closeProof?: Pick<CloseProofCtx, "plan" | "read">
   /** Gives a request its headline when it has none (#1126), so the owner
    *  is told what it is. Returns it as it is when none could be written. */
   describe?: (r: RequestRecord) => Promise<RequestRecord>
@@ -177,6 +182,8 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
     `What happened: ${r.attentionReason ?? "unknown"}`,
     `Waiting on: ${waitsOnWords(on.group, on.who)}`,
     ...(r.verifyState === "unverified" && r.verifyDetail ? [`Its check could not say: ${r.verifyDetail}`] : []),
+    // Met but not closed (#692 S3): held after a mismatch, or refused for proof.
+    ...((r.verifyState === "held" || r.verifyState === "proof_missing") && r.verifyDetail ? [`Its check is met, but it stays open: ${r.verifyDetail}`] : []),
     r.resentAt !== null ? `Resent once at ${new Date(r.resentAt).toISOString().slice(0, 16).replace("T", " ")} UTC, stopped again.` : "Nothing is retrying it.",
     r.closeWhen
       ? `Needed from you: hand it back to ${r.agentId}, close it by hand with a reason, or drop it.`
@@ -192,10 +199,18 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0 }
   if (!settings.enabled) return result
 
+  const proofSettings = { ...DEFAULT_CLOSE_PROOF, ...settings.closeProof }
+  const proof: CloseProofCtx = {
+    mode: proofSettings.mode,
+    ownerCheckOn: !!settings.ownerCheck?.enabled,
+    ...deps.closeProof,
+    tell: deps.tellAgent, hasAgent: deps.hasAgent, askBudget: { left: proofSettings.askPerCheck }, log,
+  }
+
   if (deps.check) {
     try {
       const every = (settings.checkers ?? DEFAULT_CHECKER_SETTINGS).checkEveryMinutes
-      const r = await checkLoops(store, deps.check, { everyMinutes: every, now, log })
+      const r = await checkLoops(store, deps.check, { everyMinutes: every, now, log, proof })
       result.checked = r.checked
       result.verified = r.closed
     } catch (e: any) {
@@ -206,7 +221,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   if (deps.checkHome && settings.homeCloses !== false) {
     try {
       const every = (settings.checkers ?? DEFAULT_CHECKER_SETTINGS).checkEveryMinutes
-      const r = await checkHomes(store, deps.checkHome, { everyMinutes: every, now, log, planLeft: deps.planLeft })
+      const r = await checkHomes(store, deps.checkHome, { everyMinutes: every, now, log, planLeft: deps.planLeft, proof })
       result.checked += r.checked
       result.homesClosed = r.closed
     } catch (e: any) {

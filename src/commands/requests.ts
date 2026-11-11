@@ -99,7 +99,7 @@ function printRequest(r: RequestRecord): void {
   if (r.dueAt) console.log((r.closedAt === null && Date.now() > r.dueAt ? chalk.red : chalk.dim)(`    Due ${when(r.dueAt)}`))
   if (r.closeWhen) {
     const v = r.verifyState ? ` [${r.verifyState}${r.verifyDetail ? `: ${r.verifyDetail}` : ""}]` : ""
-    console.log((r.verifyState === "failed" || r.verifyState === "unverified" ? chalk.yellow : chalk.dim)(`    Closes when ${describeCloseWhen(r.closeWhen)}${v}`))
+    console.log((r.verifyState && r.verifyState !== "verified" ? chalk.yellow : chalk.dim)(`    Closes when ${describeCloseWhen(r.closeWhen)}${v}`))
   }
   // QA sign-off (#1188): the latest verdict, or that one is awaited.
   if (awaitingQa(r)) console.log(chalk.yellow(`    Awaiting QA${r.qa ? ` (last: ${describeQa(r.qa)})` : ""}`))

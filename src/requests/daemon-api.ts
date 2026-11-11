@@ -1,6 +1,7 @@
 import { CLOSED_STATES, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
+import { closeByCheckNow, isRefusedLink, PROOF_OFF, type CloseProofCtx } from "./close-proof"
 import type { RequestTracker } from "./tracker"
 import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
@@ -93,7 +94,46 @@ export interface RequestsApiDeps {
   /** What the checker said about this request's closeWhen: the second
    *  pass of a done (handleRequestsCall). */
   verdict?: { requestId: string; result: CheckResult }
+  /** Proof per deliverable and reopen once (close-proof.ts, #692).
+   *  Unset: as before. */
+  closeProof?: CloseProofCtx
   now?: number
+}
+
+const PROOFS_MAX = 50
+const DELIVERABLE_NAME_MAX = 80
+
+/** `proofs` of step and done (#692): one link per deliverable, as
+ *  [{deliverable: number or name, link}]. A string when malformed. */
+export function parseProofs(v: unknown, r: RequestRecord, hasPlan: boolean): Array<{ deliverable: string; link: string }> | string {
+  if (v === undefined || v === null) return []
+  if (!Array.isArray(v)) return "proofs must be a list of {deliverable, link}"
+  if (!v.length) return []
+  if (hasPlan) return "this request has a tracked plan: its steps are its deliverables. Report each step done with its link as the evidence"
+  if (v.length > PROOFS_MAX) return `proofs takes at most ${PROOFS_MAX} entries`
+  const list = Array.isArray(r.deliverables) ? r.deliverables : null
+  const out: Array<{ deliverable: string; link: string }> = []
+  for (const [i, e] of v.entries()) {
+    const at = `proofs[${i}]`
+    const raw = (e as any)?.deliverable
+    const link = str((e as any)?.link)
+    let deliverable: string
+    if (typeof raw === "number") {
+      if (!Number.isInteger(raw) || raw < 1) return `${at}.deliverable must be the item's number (1 is the first) or its name`
+      if (list && raw > list.length) return `${at}.deliverable: there are ${list.length} deliverables: ${list.map((n, j) => `${j + 1}. ${n}`).join("; ")}`
+      deliverable = String(raw)
+    } else {
+      deliverable = str(raw)
+      if (!deliverable || deliverable.length > DELIVERABLE_NAME_MAX) return `${at}.deliverable must be the item's number (1 is the first) or its name`
+      if (list && !list.some((n, j) => n.toLowerCase() === deliverable.toLowerCase() || String(j + 1) === deliverable)) {
+        return `${at}.deliverable "${deliverable}" is not one of: ${list.map((n, j) => `${j + 1}. ${n}`).join("; ")}`
+      }
+    }
+    if (!/^https?:\/\/\S+$/i.test(link) || link.length > HOME_LINK_MAX) return `${at}.link must be an http(s) address of at most ${HOME_LINK_MAX} characters`
+    if (isRefusedLink(r, link)) return `${at}.link is the request's own issue or check, which proves nothing asked. Give the note or comment that shows this item done`
+    out.push({ deliverable, link })
+  }
+  return out
 }
 
 /** The optional `home` of accept, wait and done: {kind, link}. Undefined
@@ -164,6 +204,11 @@ export async function handleRequestsCall(
   const result: CheckResult = deps.check
     ? await deps.check(first.verify.spec, request).catch((e: any) => ({ verdict: "unverifiable" as const, detail: String(e?.message ?? e) }))
     : { verdict: "unverifiable", detail: "this node runs no checkers" }
+  // An unread list is read before the gate (#692 B5).
+  const proof = deps.closeProof
+  if (result.verdict === "met" && proof?.read && proof.mode !== "off" && request.deliverables == null && !proof.plan?.(request.id)) {
+    await proof.read(request).catch((e: any) => proof.log?.(`[requests] ${request.id}: reading its deliverables failed: ${e?.message ?? e}`))
+  }
   const second = handleRequestsApi(method, path, body, { ...deps, verdict: { requestId: request.id, result } }, caller)
   return { status: second.status, body: second.body }
 }
@@ -412,6 +457,15 @@ export function handleRequestsApi(
       return { status: 409, body: { error: `request "${request.id}" is already closed (${request.state})` } }
     }
 
+    // Proof links per deliverable (close-proof.ts, #692), in every mode.
+    const proofs = action === "step" || action === "done" ? parseProofs(input.proofs, request, !!deps.plans?.get(request.id)) : []
+    if (typeof proofs === "string") return { status: 400, body: { error: proofs } }
+    if (action === "step" && (input.step === undefined || input.step === null) && proofs.length) {
+      if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
+      const added = store.addProofs(request.id, proofs, now)
+      return { status: 200, body: { request: store.get(request.id), proofsAdded: added } }
+    }
+
     // A step report comes from the agent that owns the step, which is
     // often not the agent the request was asked of.
     if (action === "step") {
@@ -434,6 +488,9 @@ export function handleRequestsApi(
     }
 
     if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
+    // Kept before the check runs: the gate reads them. The same link
+    // twice is not added again, so the second pass adds nothing.
+    if (action === "done" && proofs.length) store.addProofs(request.id, proofs, now)
 
     // The headline is written before the action runs, so an accept the
     // plan gate refuses still leaves the request described. The need only
@@ -476,7 +533,17 @@ export function handleRequestsApi(
       if (!v) return { status: 202, body: { checking: describeCloseWhen(request.closeWhen) }, verify: { requestId: request.id, spec: request.closeWhen } }
       if (v.verdict === "met") {
         const said = str(input.evidence)
-        store.closeVerified(request.id, said && said !== v.detail ? `${v.detail} (agent: ${said})` : v.detail, now)
+        const out = closeByCheckNow(store, request.id, v.detail, said && said !== v.detail ? `${v.detail} (agent: ${said})` : v.detail, now, deps.closeProof ?? PROOF_OFF)
+        if (out.outcome === "held") return { status: 409, body: { error: `Not closed: its check gives the same result the owner already found does not match their words (${out.detail}).`, held: true } }
+        if (out.outcome === "blocked") {
+          // The refusal is the telling (#692 S5): the sweep does not ask again.
+          store.markProofAsked(request.id, now)
+          return {
+            status: 409,
+            body: { error: `Not closed: its check is met, but ${out.detail}. Give one link per item with proofs: [{deliverable, link}] on step or done.`, proofRequired: true, missing: out.missing },
+          }
+        }
+        if (out.outcome === "reading") return { status: 202, body: { request: store.get(request.id), verify: "reading", detail: out.detail } }
         if (home) store.setHome(request.id, home, now)
         return { status: 200, body: { request: store.get(request.id), verified: true } }
       }
