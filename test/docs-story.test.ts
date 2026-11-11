@@ -40,12 +40,14 @@ describe("result-first story", () => {
     expect(state).toBeGreaterThan(readme.indexOf("\n## See it without an account\n"))
   })
 
-  it("gives the Arabic README the business-outcomes layout (#1334)", () => {
+  it("gives the Arabic README the same layout as the English one", () => {
     const order = [
-      "\n## ماذا تحصل عليه\n",
-      "\n## المهامّ التي يقوم بها AgentX\n",
-      "\n## أسئلتك وإجاباتها\n",
+      "\n## لماذا يوجد AgentX\n",
       "\n## جرّبه دون حساب\n",
+      "\n## ما قسناه\n",
+      "\n## المهامّ التي يقوم بها AgentX\n",
+      "\n## هل AgentX مناسب لك؟\n",
+      "\n## التثبيت\n",
       "\n## كيف يعمل\n",
       "\n### حالة الإصدار\n",
     ].map((heading) => arabic.indexOf(heading))
