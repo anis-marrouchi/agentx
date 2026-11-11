@@ -1,4 +1,4 @@
-# AI staff for a small company: they find sales, answer clients, write your posts and watch the money, on a machine you own. You approve what matters
+# Put the coding agent you already use on call: it answers in chat and on issues, runs on a schedule, and asks you before anything that matters, on a machine you own
 
 <a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
 
