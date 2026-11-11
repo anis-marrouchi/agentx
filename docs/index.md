@@ -1,6 +1,6 @@
 # Put the coding agent you already use on call: it answers in chat and on issues, runs on a schedule, and asks you before anything that matters, on a machine you own
 
-<a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
+<a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - Put the coding agent you already use on call | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
 
 1. **Give each agent a job.** Answer clients, send the daily report, or work on an issue.
 2. **It works in your team's tools.** WhatsApp, Telegram, GitLab, GitHub and schedules, on a machine you own.
