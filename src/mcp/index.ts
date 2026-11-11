@@ -1174,6 +1174,12 @@ const TOOLS = [
           description: "done, optional: the typed proof it is finished. One of {kind:'link', url}, {kind:'test', passed:<n>, failed:0, command}, {kind:'output', text}, {kind:'check', value:<the check that ran and what it found>, ranAt?}. " +
             "A promise closed with a proof leaves a dated fact in the wiki, so 'is it done?' has an answer. A link given as evidence counts as a link proof.",
         },
+        proofs: {
+          type: "array",
+          items: { type: "object" },
+          description: "step or done, optional, for a request with no plan: one proof link per thing the owner asked for, as [{deliverable:<number in the request's deliverables list, or its name>, link:'<url of the note, comment, commit or deploy that shows it done>'}]. " +
+            "When the owner named several things, a close by check waits for a link for each. The request's own issue is no proof. Give them on step (no step number) as you go.",
+        },
         reason: { type: "string", description: "decline: why you will not do it." },
         owedTo: { type: "string", description: "promise: who you owe it to: \"owner\", an agent id, or a person id." },
         text: { type: "string", description: "promise: what you promised, in one sentence." },

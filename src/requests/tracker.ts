@@ -7,6 +7,7 @@ import type { ResendSettings } from "./resend"
 import type { FlowSettings } from "./flow"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
 import type { OwnerCheckSettings } from "./owner-check"
+import type { CloseProofSettings } from "./close-proof"
 import { firstLink, HANDOFF_REASON, OPEN_STATES, OWED_TO_OWNER, OWNER_BY, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
@@ -69,6 +70,9 @@ export interface RequestSettings {
   flow?: FlowSettings
   /** The owner-words check (owner-check.ts). Unset: off. */
   ownerCheck?: Partial<OwnerCheckSettings>
+  /** Proof per deliverable before a close by check (close-proof.ts,
+   *  #692). Unset: off. */
+  closeProof?: Partial<CloseProofSettings>
 }
 
 /** The chat of a card's promise when no turn names one: the card itself. */

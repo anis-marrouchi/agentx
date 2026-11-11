@@ -21,6 +21,7 @@ export const SIGNAL_KINDS = [
   "delegation_failed",
   "callback_repeat_skipped",
   "same_work_waited",
+  "close_proof_missing",
 ] as const
 export type SignalKind = (typeof SIGNAL_KINDS)[number]
 
@@ -33,6 +34,7 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   delegation_failed: "a hand-off ended in error, timeout or lost",
   callback_repeat_skipped: "a helper's end repeated what it had already written",
   same_work_waited: "a run waited for another run of the same agent on the same request",
+  close_proof_missing: "a close by check went through with deliverables that have no proof link (closeProof warn)",
 }
 
 export const DEDUPE_MS = 10 * 60_000

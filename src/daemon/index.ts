@@ -23,7 +23,9 @@ import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbou
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { isRestricted } from "@/guard/autonomy"
 import { writeGuardCliLink } from "@/guard/hook-command"
-import { OPEN_STATES, type OpenState, type RequestRecord } from "@/requests/store"
+import { firstLink, OPEN_STATES, type OpenState, type RequestRecord } from "@/requests/store"
+import { DEFAULT_CLOSE_PROOF, planDeliverables, type CloseProofCtx } from "@/requests/close-proof"
+import { DELIVERABLES_SYSTEM, DeliverablesReader } from "@/requests/deliverables-reader"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
 import { configureDecisions } from "@/decisions/seat"
@@ -3109,6 +3111,41 @@ export class AgentXDaemon {
 
   private headlines?: HeadlineWriter
   private ownerCheck?: OwnerWordsCheck
+  private deliverables?: DeliverablesReader
+
+  /** Proof per deliverable (src/requests/close-proof.ts, #692): a tracked
+   *  plan's steps are the list; otherwise one small call reads it from the
+   *  owner's words, through the provider and model of `ownerCheck`. */
+  private closeProofDeps(requests: AttachedRequests): Pick<CloseProofCtx, "plan" | "read"> {
+    const plan = (id: string) => requests.plans.get(id) ? planDeliverables(requests.plans.steps(id), firstLink) : null
+    return { plan, read: (r) => this.deliverablesReader(requests).read(r) }
+  }
+
+  private deliverablesReader(requests: AttachedRequests): DeliverablesReader {
+    if (this.deliverables) return this.deliverables
+    let provider: AgentProvider | undefined
+    let providerName: string | undefined
+    const settings = () => ({ ...DEFAULT_OWNER_CHECK, ...this.config.requests.ownerCheck })
+    return this.deliverables = new DeliverablesReader({
+      store: requests.store,
+      perCheck: () => ({ ...DEFAULT_CLOSE_PROOF, ...this.config.requests.closeProof }).perCheck,
+      hasPlan: (id) => !!requests.plans.get(id),
+      timeoutSeconds: settings().timeoutSeconds,
+      generate: async (prompt, signal) => {
+        const s = settings()
+        if (!provider || providerName !== s.provider) {
+          providerName = s.provider
+          provider = createProvider((s.provider ?? "claude-code") as ProviderName)
+        }
+        const res = await provider.generate(
+          [{ role: "system", content: DELIVERABLES_SYSTEM }, { role: "user", content: prompt }],
+          { model: s.model ?? "claude-sonnet-5-5", maxTokens: 400, abortSignal: signal, bare: true, noThinking: true },
+        )
+        return res.content || ""
+      },
+      log: this.log,
+    })
+  }
 
   /** Reads closes not made by the owner against the owner's words
    *  (src/requests/owner-check.ts): one small call each, through the
@@ -3118,9 +3155,11 @@ export class AgentXDaemon {
     let provider: AgentProvider | undefined
     let providerName: string | undefined
     const settings = () => ({ ...DEFAULT_OWNER_CHECK, ...this.config.requests.ownerCheck })
+    const plan = this.closeProofDeps(requests).plan
     return this.ownerCheck = new OwnerWordsCheck({
       store: requests.store,
       settings,
+      plan,
       generate: async (prompt, signal) => {
         const s = settings()
         if (!provider || providerName !== s.provider) {
@@ -3209,6 +3248,9 @@ export class AgentXDaemon {
     // Fire and forget, like every model call here: a close it reopens is
     // told by the next check, a minute later. One run at a time.
     void this.ownerWordsCheck(requests).run()
+    // Only when the mode is not off do the owner's words go to the model
+    // before a close (#692 S8). One run at a time per request.
+    if ((this.config.requests.closeProof?.mode ?? "off") !== "off") void this.deliverablesReader(requests).run()
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
@@ -3217,6 +3259,7 @@ export class AgentXDaemon {
         const connectors = forgeConnectorsOf(this.config)
         return { forge: forgeReader(connectors), gitlabUrl: connectors.gitlab?.url ?? null, github: !!connectors.github?.token }
       }),
+      closeProof: this.closeProofDeps(requests),
       planLeft: (id) => requests.plans.get(id)?.state !== "active" ? []
         : requests.plans.steps(id).filter((s) => !FINISHED_STEP_STATES.includes(s.state)).map((s) => ({ step: `${s.idx}. ${s.name}`, agent: s.kind !== MESSAGE_KIND })),
       describe: (r) => headlines.ensure(r),
@@ -5704,6 +5747,12 @@ export class AgentXDaemon {
           promiseSettings: promiseSettingsOf(this.config.requests),
           flow: this.config.requests.flow,
           check: loopChecker(() => this.requestCheckContext(requests)),
+          closeProof: {
+            mode: this.config.requests.closeProof?.mode ?? "off",
+            ownerCheckOn: !!this.config.requests.ownerCheck?.enabled,
+            ...this.closeProofDeps(requests),
+            log: this.log,
+          },
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return

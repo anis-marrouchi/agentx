@@ -15,6 +15,7 @@ AgentX now records each of them as a **failure signal**: one line with what happ
 | `delegation_failed` | A hand-off ended in an error, ran out of time, or was lost in a restart. |
 | `callback_repeat_skipped` | A helper agent wrote its answer, then ended its run with the same answer again. The repeat was not passed on. |
 | `same_work_waited` | The same request reached an agent twice while one of its runs was already on it, so the second waited. |
+| `close_proof_missing` | A check closed a request while some of the things you asked for had no proof link (`requests.closeProof.mode` is `"warn"`). See [Proof for each thing you asked for](./open-requests.md#proof-for-each-thing-you-asked-for). |
 
 The same signal about the same request or hand-off within 10 minutes is counted once. Signals are kept for 90 days.
 

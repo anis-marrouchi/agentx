@@ -29,6 +29,8 @@ export const KIND_WEIGHT: Record<SignalKind, number> = {
   handoff_refused: 1,
   same_work_waited: 1,
   callback_repeat_skipped: 1,
+  // A close the owner never saw proof for: their words, unanswered.
+  close_proof_missing: 2,
 }
 
 /** Kinds whose detail is the owner's or a checker's own words: never the

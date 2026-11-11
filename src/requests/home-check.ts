@@ -1,5 +1,6 @@
 import type { RequestRecord, RequestStore } from "./store"
 import { parseRef, type ForgeReader, type ParsedRef } from "./checkers/issue"
+import { closeByCheck, PROOF_OFF, type CloseProofCtx } from "./close-proof"
 
 // --- The home closes the request (#1522) ---
 //
@@ -103,7 +104,7 @@ const HOME_BATCH = 10
 export async function checkHomes(
   store: RequestStore,
   check: HomeChecker,
-  opts: { everyMinutes: number; now: number; log: (msg: string) => void; planLeft?: (requestId: string) => PlanStepLeft[] },
+  opts: { everyMinutes: number; now: number; log: (msg: string) => void; planLeft?: (requestId: string) => PlanStepLeft[]; proof?: CloseProofCtx },
 ): Promise<{ checked: number; closed: number }> {
   const due = store.homesDue(opts.now - opts.everyMinutes * 60_000, HOME_BATCH)
   let closed = 0
@@ -125,7 +126,8 @@ export async function checkHomes(
       return
     }
     const detail = left.length ? `${res.detail}; its plan stopped with steps left: ${left.map((s) => s.step).join("; ")}` : res.detail
-    if (store.closeVerified(r.id, detail, opts.now)) {
+    // Proof per deliverable and reopen once (close-proof.ts, #692).
+    if ((await closeByCheck(store, r, res.detail, detail, opts.now, opts.proof ?? PROOF_OFF)).outcome === "closed") {
       closed++
       opts.log(`[requests] ${r.id} closed: ${detail}`)
     }
