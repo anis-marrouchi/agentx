@@ -7,7 +7,8 @@ import { StepProofs, stepProofMinter, provenStep, STEP_PROOF_GRACE_MS } from "..
 import { runAction, isLoopbackUrl } from "../src/actions/runner"
 import { actionSchema, type Action } from "../src/actions/types"
 import { createCard, readCard, saveCard, DEFAULT_CARD_SETTINGS } from "../src/approvals/cards"
-import { handleApprovalsApi } from "../src/approvals/daemon-api"
+import { closeForwardedCard, handleApprovalsApi } from "../src/approvals/daemon-api"
+import { forwardCard } from "../src/approvals/forward"
 import { RunStore, WorkflowStore, WorkflowDispatcher, workflowSchema } from "../src/workflows"
 
 // A workflow action.run step closes its own agent's card (#1849).
@@ -199,6 +200,61 @@ describe("closing a card with a step proof", () => {
     const r = handleApprovalsApi("POST", `/approvals/${c.id}`, { verdict: "yes" }, new URLSearchParams(), deps(proofs, { "x-agentx-step": token }))
     expect(r.status).toBe(403)
     expect(readCard(root, c.id)?.status).toBe("pending")
+  })
+})
+
+describe("closing a forwarded card with a step proof (approvals.forwardTo)", () => {
+  // The card lives on the operator's node (opRoot); this node (root) only
+  // forwarded it. The daemon runs the local handler first (404: not here),
+  // then closeForwardedCard with the same proof deps.
+  let opRoot: string
+  beforeEach(() => { opRoot = mkdtempSync(join(tmpdir(), "step-proof-op-")) })
+  afterEach(() => rmSync(opRoot, { recursive: true, force: true }))
+
+  const operator = (async (url: string, init: RequestInit) => {
+    const r = handleApprovalsApi(init.method ?? "GET", new URL(url).pathname, JSON.parse(String(init.body)), new URLSearchParams(), {
+      ctx: { root: opRoot }, settings: DEFAULT_CARD_SETTINGS,
+      hasAgent: () => false, hasPeer: (n: string) => n === "worker", tokenPeerIs: (n: string) => n === "worker",
+    })
+    return new Response(JSON.stringify(r.body), { status: r.status })
+  }) as unknown as typeof fetch
+  const forward = { self: "worker", peer: { name: "hq", url: "http://10.0.0.2:18800", token: "t" }, fetch: operator }
+  const forwarded = async (proofs: StepProofs, headers: Record<string, string>, body: Record<string, unknown>, fromLoopback = true) => {
+    const d = deps(proofs, headers, fromLoopback)
+    const id = (await forwardCard({ title: "Ship the fix", ask: "Ship it?", recommend: "Yes: tested", if_silent: "discard", raised_by: "alpha" }, forward)).body as { card: { id: string } }
+    const local = close(id.card.id, body, d)
+    if (local.status !== 404) return { local, remote: null, id: id.card.id }
+    return { local, remote: await closeForwardedCard(id.card.id, body, d, forward), id: id.card.id }
+  }
+
+  it("the owner agent's step closes its forwarded card on the operator's node", async () => {
+    const proofs = new StepProofs()
+    const { token } = proofs.mint({ runId: "run-1", nodeId: "prodok", workflowId: "w", agentId: "alpha" }, 60_000)
+    const { remote, id } = await forwarded(proofs, { "x-agentx-step": token }, { reason: "answered on the CX page, shipped" })
+    expect(remote?.status).toBe(200)
+    expect(remote?.via).toEqual({ kind: "workflow-step", runId: "run-1", nodeId: "prodok" })
+    expect(readCard(opRoot, id)).toMatchObject({ status: "resolved", decided_by: "alpha", node: "worker" })
+    expect(JSON.stringify(readCard(opRoot, id))).not.toContain(token)
+  })
+
+  it("refuses what a local close refuses: no proof, another agent's step, a remote call, a body naming someone else", async () => {
+    const proofs = new StepProofs()
+    const alpha = proofs.mint({ runId: "r", nodeId: "n", workflowId: "w", agentId: "alpha" }, 60_000)
+    const beta = proofs.mint({ runId: "r", nodeId: "n", workflowId: "w", agentId: "beta" }, 60_000)
+    const refused = [
+      await forwarded(proofs, {}, { raised_by: "alpha", reason: "done" }),
+      await forwarded(proofs, { "x-agentx-step": "guessed" }, { reason: "done" }),
+      await forwarded(proofs, { "x-agentx-step": alpha.token }, { reason: "done" }, false),
+      await forwarded(proofs, { "x-agentx-step": alpha.token }, { raised_by: "beta", reason: "done" }),
+    ]
+    for (const r of refused) {
+      expect(r.local.status).toBe(403)
+      expect(readCard(opRoot, r.id)?.status).toBe("pending")
+    }
+    // beta's step names beta: the operator's node refuses alpha's card for it.
+    const other = await forwarded(proofs, { "x-agentx-step": beta.token }, { reason: "done" })
+    expect(other.remote?.status).toBe(403)
+    expect(readCard(opRoot, other.id)?.status).toBe("pending")
   })
 })
 

@@ -87,7 +87,7 @@ import { timeLimitContinuations } from "@/agents/resume/time-limit"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
-import { handleApprovalsApi } from "@/approvals/daemon-api"
+import { closeForwardedCard, handleApprovalsApi } from "@/approvals/daemon-api"
 import { applyOrgProposal, handleOrgApi, isOwnerContext, orgProposalLines, readOrgProposal } from "@/business/org-proposals"
 import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
@@ -103,7 +103,7 @@ import type { OwnerPort } from "@/workflows/nodes/types"
 import { StepProofs, stepProofMinter, provenStep } from "@/workflows/step-proof"
 import type { WorkflowRun } from "@/workflows/types"
 import { parseWorkActivity, type WorkActivity } from "@/workflows/wake"
-import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
+import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, fillLinkAgents, type AttachedRequests } from "@/requests/attach"
 import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
 import { handleWatchersApi } from "@/watchers/daemon-api"
@@ -5665,14 +5665,19 @@ export class AgentXDaemon {
           this.json(res, reply.status, reply.body)
           return
         }
+        // Who the call proves it acts for: the same rule for local and
+        // forwarded closes.
+        const closers = {
+          provenAgent: (claimed: string | undefined) => this.provenAgent(this.callerProof(req), claimed),
+          // A running workflow step's proof (#1849): from this machine only.
+          provenStep: () => provenStep(this.stepProofs, { headers: req.headers, fromLoopback: isLoopback(req.socket?.remoteAddress || "") }),
+        }
         const reply = handleApprovalsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, url.searchParams, {
           ctx: { root: process.cwd() },
           settings: this.config.approvals,
           hasAgent,
           hasPeer: (node) => !!this.approvalsPeer(node),
-          provenAgent: (claimed) => this.provenAgent(this.callerProof(req), claimed),
-          // A running workflow step's proof (#1849): from this machine only.
-          provenStep: () => provenStep(this.stepProofs, { headers: req.headers, fromLoopback: isLoopback(req.socket?.remoteAddress || "") }),
+          ...closers,
           tokenPeerIs: (node) => {
             const auth = req.headers.authorization
             const peer = peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN)
@@ -5693,16 +5698,14 @@ export class AgentXDaemon {
         }
         // Closing a forwarded card (#909) is done there too.
         const closing = /^\/approvals\/([^/]+)\/resolve$/.exec(path)
-        // The local handler has already proven the calling agent (a 404
-        // comes only after that check); the card is sent in its name.
+        // The local handler has already proven the calling agent or step
+        // (a 404 comes only after that check); the card is sent in its name.
         if (forward && closing && req.method === "POST" && reply.status === 404) {
-          const input = (body ?? {}) as Record<string, unknown>
-          const by = this.provenAgent(this.callerProof(req), typeof input.raised_by === "string" ? input.raised_by.trim() : undefined)
-          if (!by) { this.json(res, 403, { error: "only the agent that raised the card can close it" }); return }
-          const remote = await resolveForwardedCard(decodeURIComponent(closing[1]), { raised_by: by, reason: input.reason }, forward)
+          const remote = await closeForwardedCard(decodeURIComponent(closing[1]), body as Record<string, unknown> | undefined, closers, forward)
           if (remote.status === 200) {
             const card = (remote.body as { card: DecisionCard }).card
-            this.log(`[approvals] ${card.id} closed on ${forward.peer.name} by ${card.raised_by}`)
+            const step = remote.via ? ` (workflow step ${remote.via.nodeId} of run ${remote.via.runId})` : ""
+            this.log(`[approvals] ${card.id} closed on ${forward.peer.name} by ${card.raised_by}${step}`)
             this.requests?.tracker.cardResolved(card)
             this.status?.board.cardResolved(card)
           }

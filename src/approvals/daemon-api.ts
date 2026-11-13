@@ -1,4 +1,5 @@
-import { createCard, isValidCardId, readCard, resolveCard, type CardSettings } from "./cards"
+import { createCard, isValidCardId, readCard, resolveCard, type CardSettings, type DecisionCard } from "./cards"
+import { resolveForwardedCard, type ForwardDeps } from "./forward"
 import { listInbox, type InboxContext } from "./inbox"
 
 // --- The daemon's /approvals endpoints ---
@@ -128,16 +129,8 @@ export function handleApprovalsApi(
     const from = typeof body?.node === "string" && body.node.trim() ? body.node.trim() : undefined
     let by: string
     let node: string | undefined
-    let via: { kind: "workflow-step"; runId: string; nodeId: string } | undefined
-    const step = from ? null : deps.provenStep?.() ?? null
-    if (step) {
-      // A workflow step closes a card of the agent it acts for (#1849).
-      if (claimed && claimed !== step.agentId) {
-        return { status: 403, body: { error: `the calling workflow step acts for ${step.agentId}, not ${claimed}` } }
-      }
-      by = step.agentId
-      via = { kind: "workflow-step", runId: step.runId, nodeId: step.nodeId }
-    } else if (from) {
+    let via: DecisionCard["closed_via"]
+    if (from) {
       // A card forwarded here from another node (forward.ts): that node
       // checked its agent's turn; here the request must come from it. Its
       // own token proves that best. Most meshes share one MESH_TOKEN, so a
@@ -151,14 +144,10 @@ export function handleApprovalsApi(
       by = claimed
       node = from
     } else {
-      const proven = deps.provenAgent?.(claimed) ?? null
-      if (!proven) {
-        return { status: 403, body: { error: "only the agent that raised the card can close it, from one of its running turns (X-AgentX-Task, or X-AgentX-Channel and X-AgentX-Chat) or a running step of its workflow (X-AgentX-Step)" } }
-      }
-      if (claimed && claimed !== proven) {
-        return { status: 403, body: { error: `the calling turn is ${proven}'s, not ${claimed}'s` } }
-      }
-      by = proven
+      const closer = provenCloser(claimed, deps)
+      if (!closer.ok) return { status: 403, body: { error: closer.error } }
+      by = closer.by
+      via = closer.via
     }
     if (typeof body?.reason !== "string" || !body.reason.trim()) {
       return { status: 400, body: { error: "reason is required: say where the owner answered and what you did" } }
@@ -178,4 +167,40 @@ export function handleApprovalsApi(
   // POST /approvals/:id {yes|no|later} and anything else that would decide.
   if (m !== "GET" && m !== "HEAD") return { status: 403, body: { error: OPERATOR_ONLY } }
   return { status: 404, body: { error: "Not found" } }
+}
+
+/** Who closes a card on this node's say-so: a running workflow step of the
+ *  agent (X-AgentX-Step, #1849), else one of the agent's running turns.
+ *  A body `raised_by` must match; it never proves anything by itself.
+ *  Local closes and forwarded closes use this one rule. */
+export function provenCloser(
+  claimed: string | undefined,
+  deps: Pick<ApprovalsApiDeps, "provenAgent" | "provenStep">,
+): { ok: true; by: string; via?: DecisionCard["closed_via"] } | { ok: false; error: string } {
+  const step = deps.provenStep?.() ?? null
+  if (step) {
+    if (claimed && claimed !== step.agentId) return { ok: false, error: `the calling workflow step acts for ${step.agentId}, not ${claimed}` }
+    return { ok: true, by: step.agentId, via: { kind: "workflow-step", runId: step.runId, nodeId: step.nodeId } }
+  }
+  const proven = deps.provenAgent?.(claimed) ?? null
+  if (!proven) {
+    return { ok: false, error: "only the agent that raised the card can close it, from one of its running turns (X-AgentX-Task, or X-AgentX-Channel and X-AgentX-Chat) or a running step of its workflow (X-AgentX-Step)" }
+  }
+  if (claimed && claimed !== proven) return { ok: false, error: `the calling turn is ${proven}'s, not ${claimed}'s` }
+  return { ok: true, by: proven }
+}
+
+/** Raising node: close a card it forwarded (#909), on the operator's node,
+ *  in the name of the agent provenCloser finds here. */
+export async function closeForwardedCard(
+  id: string,
+  body: Record<string, unknown> | undefined,
+  deps: Pick<ApprovalsApiDeps, "provenAgent" | "provenStep">,
+  forward: ForwardDeps,
+): Promise<ApiReply & { via?: DecisionCard["closed_via"] }> {
+  const claimed = typeof body?.raised_by === "string" && body.raised_by.trim() ? body.raised_by.trim() : undefined
+  const closer = provenCloser(claimed, deps)
+  if (!closer.ok) return { status: 403, body: { error: closer.error } }
+  const reply = await resolveForwardedCard(id, { raised_by: closer.by, reason: body?.reason }, forward)
+  return { ...reply, ...(closer.via ? { via: closer.via } : {}) }
 }
