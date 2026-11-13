@@ -88,6 +88,8 @@ export interface DecisionCard extends CardChoices {
   agent_notified_at?: string
   /** Why the raising agent closed it (status "resolved"). */
   resolution?: string
+  /** Set when a running workflow step of that agent closed it (#1849). */
+  closed_via?: { kind: "workflow-step"; runId: string; nodeId: string }
   /** What the card is about, when the daemon raised it (origin.ts). */
   origin?: CardOrigin
   /** A follow-up card (#394): counted in the daily screen budget. */
@@ -415,7 +417,7 @@ const AGENT_RESOLVABLE_ORIGINS = new Set<string | undefined>([undefined, "remind
 export function resolveCard(
   root: string,
   id: string,
-  opts: { by: string; reason?: unknown; node?: string; now?: number },
+  opts: { by: string; reason?: unknown; node?: string; now?: number; via?: DecisionCard["closed_via"] },
 ): { ok: true; card: DecisionCard } | { ok: false; status: 400 | 403 | 404 | 409; error: string } {
   const card = readCard(root, id)
   if (!card) return { ok: false, status: 404, error: `no card "${id}"` }
@@ -439,12 +441,14 @@ export function resolveCard(
     decided_at: at,
     resolution: reason.slice(0, CARD_LIMITS.resolution),
     agent_notified_at: at,
+    ...(opts.via ? { closed_via: opts.via } : {}),
   }
   saveCard(root, resolved)
   // On the Wall's Answered tab too, whichever way the close came (#1440).
   recordAnswered(root, {
     key: `card:${id}`, kind: "card", title: card.title, raised_by: card.raised_by, answer: "closed",
-    text: resolved.resolution, by: opts.node ? `${opts.by} on ${opts.node}` : opts.by, at,
+    text: resolved.resolution, at,
+    by: opts.node ? `${opts.by} on ${opts.node}` : opts.via ? `${opts.by} (workflow step ${opts.via.nodeId})` : opts.by,
   })
   return { ok: true, card: resolved }
 }

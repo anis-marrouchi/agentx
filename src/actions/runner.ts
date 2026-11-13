@@ -1,5 +1,6 @@
 import { exec } from "child_process"
 import type { Action, ActionRunResult, ActionInput } from "./types"
+import { STEP_PROOF_ENV, STEP_PROOF_TEMPLATE } from "../workflows/step-proof"
 
 // --- Action runner ---
 //
@@ -48,20 +49,30 @@ export function resolveInputs(action: Action, raw: Record<string, unknown>): Rec
   return out
 }
 
-export async function runAction(action: Action, rawInputs: Record<string, unknown> = {}): Promise<ActionRunResult> {
+export interface RunActionOptions {
+  /** A workflow step's proof (#1849): the env var AGENTX_STEP_PROOF of a
+   *  shell action, `{{agentx_step_proof}}` in an http action's headers.
+   *  Never put into the command, url, body or output. */
+  stepProof?: string
+}
+
+export async function runAction(action: Action, rawInputs: Record<string, unknown> = {}, opts: RunActionOptions = {}): Promise<ActionRunResult> {
   const start = Date.now()
   const values = resolveInputs(action, rawInputs)
-  if (action.kind === "shell") return runShell(action, values, start)
-  if (action.kind === "http") return runHttp(action, values, start)
+  if (action.kind === "shell") return runShell(action, values, start, opts.stepProof)
+  if (action.kind === "http") return runHttp(action, values, start, opts.stepProof)
   throw new Error(`unsupported action kind: ${(action as Action).kind}`)
 }
 
-function runShell(action: Extract<Action, { kind: "shell" }>, values: Record<string, unknown>, start: number): Promise<ActionRunResult> {
+function runShell(action: Extract<Action, { kind: "shell" }>, values: Record<string, unknown>, start: number, stepProof?: string): Promise<ActionRunResult> {
   const cmd = template(action.command, values)
   const env: NodeJS.ProcessEnv = { ...process.env }
   if (action.env) {
     for (const [k, v] of Object.entries(action.env)) env[k] = template(v, values)
   }
+  // Set last, so the action's own env cannot stand in for the daemon's.
+  delete env[STEP_PROOF_ENV]
+  if (stepProof) env[STEP_PROOF_ENV] = stepProof
   const cwd = action.cwd ? template(action.cwd, values) : process.cwd()
 
   return new Promise<ActionRunResult>((resolve) => {
@@ -82,10 +93,13 @@ function runShell(action: Extract<Action, { kind: "shell" }>, values: Record<str
   })
 }
 
-async function runHttp(action: Extract<Action, { kind: "http" }>, values: Record<string, unknown>, start: number): Promise<ActionRunResult> {
+async function runHttp(action: Extract<Action, { kind: "http" }>, values: Record<string, unknown>, start: number, stepProof?: string): Promise<ActionRunResult> {
   const url = template(action.url, values)
   const headers: Record<string, string> = {}
-  if (action.headers) for (const [k, v] of Object.entries(action.headers)) headers[k] = template(v, values)
+  // The proof is offered to headers only, so it never lands in a url or
+  // body that may be logged; an input of the same name cannot fake it.
+  const headerValues = { ...values, [STEP_PROOF_TEMPLATE]: stepProof ?? "" }
+  if (action.headers) for (const [k, v] of Object.entries(action.headers)) headers[k] = template(v, headerValues)
   const body = action.method === "GET" || action.method === "DELETE" ? undefined : (action.body ? template(action.body, values) : undefined)
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), action.timeoutMs)

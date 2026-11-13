@@ -46,6 +46,9 @@ export interface ApprovalsApiDeps {
    *  or channel + chat for `claimed`). Null or unset: none, and an agent
    *  may not close a card. */
   provenAgent?: (claimed: string | undefined) => string | null
+  /** The running workflow step the call proves with X-AgentX-Step, from
+   *  this machine (#1849). Accepted on /approvals/:id/resolve only. */
+  provenStep?: () => { agentId: string; runId: string; nodeId: string } | null
   /** True when the request carries the own mesh token of the peer that
    *  `node` names, so it may close a card forwarded from there. Unset:
    *  never. */
@@ -125,7 +128,16 @@ export function handleApprovalsApi(
     const from = typeof body?.node === "string" && body.node.trim() ? body.node.trim() : undefined
     let by: string
     let node: string | undefined
-    if (from) {
+    let via: { kind: "workflow-step"; runId: string; nodeId: string } | undefined
+    const step = from ? null : deps.provenStep?.() ?? null
+    if (step) {
+      // A workflow step closes a card of the agent it acts for (#1849).
+      if (claimed && claimed !== step.agentId) {
+        return { status: 403, body: { error: `the calling workflow step acts for ${step.agentId}, not ${claimed}` } }
+      }
+      by = step.agentId
+      via = { kind: "workflow-step", runId: step.runId, nodeId: step.nodeId }
+    } else if (from) {
       // A card forwarded here from another node (forward.ts): that node
       // checked its agent's turn; here the request must come from it. Its
       // own token proves that best. Most meshes share one MESH_TOKEN, so a
@@ -141,7 +153,7 @@ export function handleApprovalsApi(
     } else {
       const proven = deps.provenAgent?.(claimed) ?? null
       if (!proven) {
-        return { status: 403, body: { error: "only the agent that raised the card can close it, from one of its running turns (X-AgentX-Task, or X-AgentX-Channel and X-AgentX-Chat)" } }
+        return { status: 403, body: { error: "only the agent that raised the card can close it, from one of its running turns (X-AgentX-Task, or X-AgentX-Channel and X-AgentX-Chat) or a running step of its workflow (X-AgentX-Step)" } }
       }
       if (claimed && claimed !== proven) {
         return { status: 403, body: { error: `the calling turn is ${proven}'s, not ${claimed}'s` } }
@@ -151,7 +163,7 @@ export function handleApprovalsApi(
     if (typeof body?.reason !== "string" || !body.reason.trim()) {
       return { status: 400, body: { error: "reason is required: say where the owner answered and what you did" } }
     }
-    const r = resolveCard(deps.ctx.root, id, { by, reason: body.reason, node, now: deps.ctx.now })
+    const r = resolveCard(deps.ctx.root, id, { by, reason: body.reason, node, now: deps.ctx.now, via })
     if (!r.ok) return { status: r.status, body: { error: r.error } }
     return { status: 200, body: { card: r.card } }
   }

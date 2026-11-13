@@ -2,7 +2,7 @@ import { randomUUID } from "crypto"
 import { evaluateBranch, findNode, initialPendingFromTrigger, nextNodes } from "./engine"
 import { parseResultToken, resolveHandler } from "./nodes/handlers"
 import { deliver, messageKey, nextWakeAt, nudgeText, renderPersonMessage, stepVerdict } from "./nodes/follow-up"
-import { DEFAULT_FOLLOW_UP, type AgentExecuteRequest, type AgentExecuteResponse, type FollowUpDefaults, type NodeResult, type OwnerPort } from "./nodes/types"
+import { DEFAULT_FOLLOW_UP, type AgentExecuteRequest, type AgentExecuteResponse, type FollowUpDefaults, type NodeResult, type OwnerPort, type StepProofMinter } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
 import { stripSecrets } from "./strip-secrets"
 import type { WorkflowStore } from "./store"
@@ -98,6 +98,8 @@ export interface DispatcherOptions {
   onRunEnded?: (run: WorkflowRun, workflow: Workflow | null) => void | Promise<void>
   /** A follow-up step is blocked and needs the owner. Called once per block. */
   onBlocked?: (run: WorkflowRun, workflow: Workflow, nodeId: string, reason: string) => void | Promise<void>
+  /** Mints an action.run step's proof (#1849). Absent: steps get none. */
+  stepProof?: StepProofMinter
 }
 
 /** An inbound message a `person.wait` step may be waiting for. */
@@ -148,6 +150,7 @@ export class WorkflowDispatcher {
   private readonly followUpDefaults: () => FollowUpDefaults
   private readonly onRunEnded?: DispatcherOptions["onRunEnded"]
   private readonly onBlocked?: DispatcherOptions["onBlocked"]
+  private readonly stepProof?: StepProofMinter
   /** Runs paused on a timerWait, for the recovery sweep (#1816). Filled by
    *  one full scan on the first sweep, then kept up as runs pause, so a
    *  sweep reads only these run files, not every run on disk. */
@@ -190,6 +193,7 @@ export class WorkflowDispatcher {
     this.followUpDefaults = opts.followUp ?? (() => DEFAULT_FOLLOW_UP)
     this.onRunEnded = opts.onRunEnded
     this.onBlocked = opts.onBlocked
+    this.stepProof = opts.stepProof
 
     // Register the timer-fire callback once. TimerService is a per-node
     // singleton; re-registration would clobber prior instances, but the
@@ -935,6 +939,9 @@ export class WorkflowDispatcher {
           log: this.log,
           owner: this.owner,
           followUp: this.followUpDefaults(),
+          ...(this.stepProof && node.type === "action.run"
+            ? { stepProof: (ttlMs: number) => this.stepProof!({ workflow, run, node }, ttlMs) }
+            : {}),
         })
       } catch (e: any) {
         this.log(`[workflow:${workflow.id}] handler "${node.type}" threw: ${e.message}`)

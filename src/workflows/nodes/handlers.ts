@@ -405,8 +405,12 @@ const actionRunHandler: NodeHandler = async (ctx) => {
   const { runAction } = await import("../../actions/runner")
   const action = new ActionStore().get(actionId)
   if (!action) return { error: `action.run "${ctx.node.id}": no action "${actionId}" in registry` }
+  // The step's proof (#1849) lives while the action runs, and not past
+  // its timeout. It is handed to the action only, never to the output.
+  const { STEP_PROOF_GRACE_MS } = await import("../step-proof")
+  const proof = ctx.stepProof?.(action.timeoutMs + STEP_PROOF_GRACE_MS) ?? null
   try {
-    const result = await runAction(action, inputs)
+    const result = await runAction(action, inputs, proof ? { stepProof: proof.token } : {})
     const output: Record<string, unknown> = {
       ok: result.ok,
       output: result.output,
@@ -419,6 +423,8 @@ const actionRunHandler: NodeHandler = async (ctx) => {
       : { output, error: `action "${actionId}" failed (status=${result.status})` }
   } catch (e: any) {
     return { error: `action.run failed: ${e.message}` }
+  } finally {
+    proof?.revoke()
   }
 }
 

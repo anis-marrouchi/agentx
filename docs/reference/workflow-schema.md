@@ -85,6 +85,8 @@ An `agent` node needs a registered `agentId`. It can also set `timeoutMinutes`. 
 
 Each type's config is checked by its handler in `src/workflows/nodes/`.
 
+While an `action.run` step runs, its action gets a proof that it acts for the run's agent (the agent that started the run, or else `ownerAgent`): the environment variable `AGENTX_STEP_PROOF` for a shell action, `{{agentx_step_proof}}` in a header for an http action. The proof is not in the run's context, output or log, and it ends with the step. Its one use is closing that agent's own card ([Approvals](../dashboard/approvals.md#when-you-answer-in-chat-instead)). In a shell command, read it from the environment inside the script: `$AGENTX_STEP_PROOF` written in the command text is filled in from the daemon's environment before the command runs, so it comes out empty there.
+
 A `timer.boundary` wait is kept on disk, so it still fires after the daemon restarts. If its due time passed while the daemon was off, the run moves on within a second of startup. As a safety net, the daemon also checks every minute, and once at startup, for runs that are still waiting on a timer more than two seconds after it was due. It moves those runs on and notes `timer-recovered` on the step's history and in the daemon log.
 
 ### Wake a timer early
