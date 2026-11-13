@@ -5,8 +5,11 @@ import { createHash, randomBytes } from "crypto"
 // A workflow `action.run` step has no task and no turn, so it cannot prove
 // which agent it acts for when it calls the daemon back. The daemon mints a
 // token for the step while it runs: random, held only in this process (by
-// its SHA-256), never written to the run context, log, output or disk, and
-// revoked when the step ends. The step carries it as the `X-AgentX-Step`
+// its SHA-256), never written to the run context, log, output or disk
+// (masked in what the step prints, #1852), and revoked when the step ends.
+// A shell action gets it in its environment, which other processes of the
+// same OS user can read while the step runs: a limit the docs state, since
+// that user can read the daemon's own files and memory anyway. The step carries it as the `X-AgentX-Step`
 // header. Only `POST /approvals/:id/resolve` accepts it, and only from
 // loopback: it proves that agent closes its own card, nothing else.
 
@@ -18,6 +21,21 @@ export const STEP_PROOF_ENV = "AGENTX_STEP_PROOF"
 export const STEP_PROOF_TEMPLATE = "agentx_step_proof"
 /** Slack past the action's own timeout before a token expires anyway. */
 export const STEP_PROOF_GRACE_MS = 30_000
+
+/** What stands in for the token in captured step output. */
+export const STEP_PROOF_MASK = "[step proof hidden]"
+
+/** Captured step output with the token taken out (#1852): a script that
+ *  prints its environment must not write the proof into the run log. A
+ *  token the output cap cut short at the very end goes too. */
+export function maskStepProof(text: string, token: string | undefined | null): string {
+  if (!token || !text) return text
+  let out = text.includes(token) ? text.split(token).join(STEP_PROOF_MASK) : text
+  for (let k = token.length - 1; k >= Math.min(8, token.length - 1) && k > 0; k--) {
+    if (out.endsWith(token.slice(0, k))) { out = out.slice(0, -k) + STEP_PROOF_MASK; break }
+  }
+  return out
+}
 
 export interface StepProofEntry {
   runId: string

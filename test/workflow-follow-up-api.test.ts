@@ -144,11 +144,18 @@ describe("building a workflow from the owner's words", () => {
     expect(wf.state).toBe("disabled")
     expect(wf.tags).toContain("built-on-demand")
 
+    // Another agent may not keep it: the run is not one it started (#1852).
+    const stolen = await t.post({ action: "propose", fromRun: body.run.runId, title: "Mine now" }, "builder")
+    expect(stolen.status).toBe(403)
+    expect((stolen.body as any).error).toMatch(/not a run builder started/)
+    expect(t.proposals).toEqual([])
+
     const p = await t.post({ action: "propose", fromRun: body.run.runId, title: "Ask a client about a design" })
     expect(p.status).toBe(200)
     const kept = t.store.get((p.body as any).workflowId)!
     expect(kept).toMatchObject({ status: "review", state: "disabled", title: "Ask a client about a design" })
     expect(kept.tags).not.toContain("built-on-demand")
+    expect(kept.ownerAgent).toBe("lead")
     expect(t.proposals).toEqual([kept.id])
   })
 

@@ -1,6 +1,6 @@
 import { exec } from "child_process"
 import type { Action, ActionRunResult, ActionInput } from "./types"
-import { STEP_PROOF_ENV, STEP_PROOF_TEMPLATE } from "../workflows/step-proof"
+import { STEP_PROOF_ENV, STEP_PROOF_TEMPLATE, maskStepProof } from "../workflows/step-proof"
 
 // --- Action runner ---
 //
@@ -52,7 +52,8 @@ export function resolveInputs(action: Action, raw: Record<string, unknown>): Rec
 export interface RunActionOptions {
   /** A workflow step's proof (#1849): the env var AGENTX_STEP_PROOF of a
    *  shell action, `{{agentx_step_proof}}` in an http action's headers.
-   *  Never put into the command, url, body or output. */
+   *  Never put into the command, url or body, and masked in the output
+   *  the action returns (#1852). */
   stepProof?: string
 }
 
@@ -79,13 +80,14 @@ function runShell(action: Extract<Action, { kind: "shell" }>, values: Record<str
     let settled = false
     const finish = (r: ActionRunResult) => { if (settled) return; settled = true; resolve(r) }
     exec(cmd, { cwd, env, timeout: action.timeoutMs, maxBuffer: MAX_OUTPUT }, (err, stdout, stderr) => {
-      const out = String(stdout || "").slice(0, MAX_OUTPUT)
-      const errs = String(stderr || "").slice(0, MAX_OUTPUT)
+      // Masked before the cut; a token the buffer cut short is masked too.
+      const out = maskStepProof(String(stdout || ""), stepProof).slice(0, MAX_OUTPUT)
+      const errs = maskStepProof(String(stderr || ""), stepProof).slice(0, MAX_OUTPUT)
       const status = err ? (err as NodeJS.ErrnoException & { code?: number }).code ?? 1 : 0
       finish({
         ok: !err,
         output: out,
-        errors: errs || (err ? err.message : undefined),
+        errors: errs || (err ? maskStepProof(err.message, stepProof) : undefined),
         status: typeof status === "number" ? status : 1,
         durationMs: Date.now() - start,
       })
@@ -108,7 +110,7 @@ async function runHttp(action: Extract<Action, { kind: "http" }>, values: Record
   const timer = setTimeout(() => ac.abort(), action.timeoutMs)
   try {
     const res = await fetch(url, { method: action.method, headers, body, signal: ac.signal, ...(proof ? { redirect: "manual" as const } : {}) })
-    const text = (await res.text()).slice(0, MAX_OUTPUT)
+    const text = maskStepProof(await res.text(), proof).slice(0, MAX_OUTPUT)
     return {
       ok: res.ok,
       output: text,
@@ -119,7 +121,7 @@ async function runHttp(action: Extract<Action, { kind: "http" }>, values: Record
     return {
       ok: false,
       output: "",
-      errors: e?.message || String(e),
+      errors: maskStepProof(e?.message || String(e), proof),
       status: 0,
       durationMs: Date.now() - start,
     }

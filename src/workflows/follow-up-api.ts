@@ -179,8 +179,11 @@ export async function handleFollowUpApi(
       const run = deps.runs.get(fromRun)
       const built = run ? deps.store.get(run.workflowId) : null
       if (!run || !built) return { status: 404, body: { error: `no run "${fromRun}"` } }
+      // Only the agent that started the run may keep its workflow, and
+      // the copy is its own: never another agent's name on it (#1852).
+      if (run.meta?.startedBy !== agentId) return { status: 403, body: { error: `run ${fromRun} is not a run ${agentId} started: propose from a run of your own` } }
       const title = str(input.title) || built.title
-      wf = { ...built, id: workflowIdFor(title), title, tags: built.tags.filter((t) => t !== "built-on-demand") }
+      wf = { ...built, id: workflowIdFor(title), title, ownerAgent: agentId, tags: built.tags.filter((t) => t !== "built-on-demand") }
     } else {
       const title = str(input.title)
       if (!title) return { status: 400, body: { error: "propose needs a title (and steps, or fromRun)" } }
