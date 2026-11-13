@@ -1424,7 +1424,6 @@ export class WorkflowDispatcher {
     return { ok: true, nodeId }
   }
 
-  /** The owner stops a run (CLI, dashboard). */
   /** A step's proof, tracked under its run until it is revoked (#1849). */
   private mintStepProof(workflow: Workflow, run: WorkflowRun, node: WorkflowNode, ttlMs: number) {
     const m = this.stepProof?.({ workflow, run, node }, ttlMs) ?? null
@@ -1440,6 +1439,7 @@ export class WorkflowDispatcher {
     return { token: m.token, revoke }
   }
 
+  /** The owner stops a run (CLI, dashboard). */
   async cancelRun(runId: string, reason = "canceled by the owner"): Promise<boolean> {
     // A step still running loses its proof with the run.
     for (const revoke of [...(this.liveProofs.get(runId) ?? [])]) revoke()

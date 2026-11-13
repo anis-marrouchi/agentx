@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "fs"
 import { createServer, type IncomingMessage, type Server } from "http"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
-import { StepProofs, stepProofMinter, provenStep, STEP_PROOF_GRACE_MS } from "../src/workflows/step-proof"
+import { StepProofs, stepProofMinter, provenStep, maskStepProof, STEP_PROOF_GRACE_MS, STEP_PROOF_MASK } from "../src/workflows/step-proof"
 import { runAction, isLoopbackUrl } from "../src/actions/runner"
 import { actionSchema, type Action } from "../src/actions/types"
 import { createCard, readCard, saveCard, DEFAULT_CARD_SETTINGS } from "../src/approvals/cards"
@@ -89,18 +89,46 @@ describe("the step proof store", () => {
 })
 
 describe("the action runner hands the proof to the action only", () => {
+  // Printed backwards: the token itself is masked in captured output.
+  const REVERSED = "node -e 'process.stdout.write((process.env.AGENTX_STEP_PROOF || \"\").split(\"\").reverse().join(\"\"))'"
   const shell = (extra: Record<string, unknown> = {}): Action =>
     // The script reads the env var itself, as the CX scripts do: a
     // `$AGENTX_STEP_PROOF` written in the command is filled from the
     // daemon's own env (empty), so the token never shows on a command line.
-    actionSchema.parse({ id: "probe", title: "Probe", kind: "shell", command: "node -e 'process.stdout.write(process.env.AGENTX_STEP_PROOF || \"\")'", ...extra })
+    actionSchema.parse({ id: "probe", title: "Probe", kind: "shell", command: REVERSED, ...extra })
 
   it("shell: in AGENTX_STEP_PROOF, which the action's own env cannot replace", async () => {
     expect((await runAction(actionSchema.parse({ id: "probe", title: "Probe", kind: "shell", command: "printf %s \"$AGENTX_STEP_PROOF\"" }), {}, { stepProof: "tok-1" })).output).toBe("")
-    expect((await runAction(shell(), {}, { stepProof: "tok-1" })).output).toBe("tok-1")
-    expect((await runAction(shell({ env: { AGENTX_STEP_PROOF: "fake" } }), {}, { stepProof: "tok-1" })).output).toBe("tok-1")
+    expect((await runAction(shell(), {}, { stepProof: "tok-1" })).output).toBe("1-kot")
+    expect((await runAction(shell({ env: { AGENTX_STEP_PROOF: "fake" } }), {}, { stepProof: "tok-1" })).output).toBe("1-kot")
     expect((await runAction(shell({ env: { AGENTX_STEP_PROOF: "fake" } }), {})).output).toBe("")
     expect((await runAction(shell(), {})).output).toBe("")
+  })
+
+  it("masks the proof in what the step prints or the daemon answers (#1852)", async () => {
+    const token = "tok-secret-0123456789"
+    const echo = actionSchema.parse({ id: "echo", title: "Echo", kind: "shell", command: "env | grep AGENTX_STEP_PROOF; node -e 'console.error(process.env.AGENTX_STEP_PROOF); process.exit(3)'" })
+    const r = await runAction(echo, {}, { stepProof: token })
+    expect(r.ok).toBe(false)
+    expect(r.output).toBe(`AGENTX_STEP_PROOF=${STEP_PROOF_MASK}\n`)
+    expect(r.errors).toBe(`${STEP_PROOF_MASK}\n`)
+    expect(JSON.stringify(r)).not.toContain(token)
+    // Filling the buffer does not leave half a token at the cut.
+    const flood = actionSchema.parse({ id: "flood", title: "Flood", kind: "shell", command: "node -e 'const t = process.env.AGENTX_STEP_PROOF; process.stdout.write(\"x\".repeat(32 * 1024 - 10) + t)'" })
+    const cut = await runAction(flood, {}, { stepProof: token })
+    expect(cut.output).not.toContain(token.slice(0, 6))
+    // An http answer that echoes the header back is masked too.
+    const server: Server = createServer((req, res) => { res.end(`you sent ${req.headers["x-agentx-step"]}`) })
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r))
+    try {
+      const port = (server.address() as { port: number }).port
+      const http = actionSchema.parse({ id: "h", title: "H", kind: "http", method: "POST", url: `http://127.0.0.1:${port}/`, headers: { "X-AgentX-Step": "{{agentx_step_proof}}" } })
+      expect((await runAction(http, {}, { stepProof: token })).output).toBe(`you sent ${STEP_PROOF_MASK}`)
+    } finally {
+      server.close()
+    }
+    expect(maskStepProof("a tok b tok", "tok")).toBe(`a ${STEP_PROOF_MASK} b ${STEP_PROOF_MASK}`)
+    expect(maskStepProof("plain", undefined)).toBe("plain")
   })
 
   it("http: in a header that names {{agentx_step_proof}}, never in the url or body", async () => {

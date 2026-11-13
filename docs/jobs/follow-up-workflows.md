@@ -185,7 +185,7 @@ A workflow an agent built for you runs once. To keep it:
 2. A decision card asks you whether to keep it. The workflow is saved switched off until you answer.
 3. **Browser:** on the Hub, select **Needs you**, then **Yes** on the card and **Confirm**. The workflow is switched on and agents can pick it next time.
 
-A no, or a card that expires, leaves it switched off. An agent can also propose a new workflow from scratch the same way.
+A no, or a card that expires, leaves it switched off. An agent can also propose a new workflow from scratch the same way. An agent can only propose from a run it started itself, and the saved workflow is in that agent's name.
 
 ## Use the release template
 
