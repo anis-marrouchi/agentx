@@ -100,6 +100,7 @@ import { blockedText, runEvidence, runSummary, slimRun } from "@/workflows/follo
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
+import { StepProofs, stepProofMinter, provenStep } from "@/workflows/step-proof"
 import type { WorkflowRun } from "@/workflows/types"
 import { parseWorkActivity, type WorkActivity } from "@/workflows/wake"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
@@ -319,6 +320,8 @@ export class AgentXDaemon {
     return loadNativeAdapter(this.config)
   }
   private registry: AgentRegistry
+  /** Live proofs of running action.run steps (#1849). Memory only. */
+  private readonly stepProofs = new StepProofs()
   /** What the node reports about its own environment (#1531). */
   private nodeEnv!: NodeEnvironment
   private router: MessageRouter
@@ -4306,6 +4309,9 @@ export class AgentXDaemon {
       log: (m) => this.log(m),
       owner,
       followUp: () => this.config.workflows.followUp,
+      // An action.run step acts for the run's agent, the same one a card
+      // from the run is raised in the name of (owner.ask above, #1849).
+      stepProof: stepProofMinter(this.stepProofs, (id) => !!this.registry.getAgent(id)),
       onRunEnded: async (run, wf) => {
         const { title, message } = runSummary(run, wf)
         await this.notifyOwner(title, message, run.meta?.startedBy ?? "workflow", run.status === "completed" ? 3 : 4)
@@ -5665,6 +5671,8 @@ export class AgentXDaemon {
           hasAgent,
           hasPeer: (node) => !!this.approvalsPeer(node),
           provenAgent: (claimed) => this.provenAgent(this.callerProof(req), claimed),
+          // A running workflow step's proof (#1849): from this machine only.
+          provenStep: () => provenStep(this.stepProofs, { headers: req.headers, fromLoopback: isLoopback(req.socket?.remoteAddress || "") }),
           tokenPeerIs: (node) => {
             const auth = req.headers.authorization
             const peer = peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN)

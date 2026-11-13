@@ -1,4 +1,5 @@
 import type { PausedAt, Workflow, WorkflowNode, WorkflowRun } from "../types"
+import type { MintedStepProof } from "../step-proof"
 
 // --- Node handler interface ---
 //
@@ -66,7 +67,14 @@ export interface NodeContext {
   owner?: OwnerPort
   /** Stall time, nudges and approval mode for follow-up steps. */
   followUp?: FollowUpDefaults
+  /** Mints this step's proof (#1849) for `ttlMs`: the agent it acts for
+   *  may close its own card while the step runs. Null when the run names
+   *  no agent of this node. Absent in tests and setups without a daemon. */
+  stepProof?: (ttlMs: number) => MintedStepProof | null
 }
+
+/** How the daemon mints a step's proof (#1849). */
+export type StepProofMinter = (step: { workflow: Workflow; run: WorkflowRun; node: WorkflowNode }, ttlMs: number) => MintedStepProof | null
 
 /** How the engine reaches the owner. The daemon implements it with its
  *  notify path and decision cards (src/approvals). */

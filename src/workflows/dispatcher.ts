@@ -2,7 +2,7 @@ import { randomUUID } from "crypto"
 import { evaluateBranch, findNode, initialPendingFromTrigger, nextNodes } from "./engine"
 import { parseResultToken, resolveHandler } from "./nodes/handlers"
 import { deliver, messageKey, nextWakeAt, nudgeText, renderPersonMessage, stepVerdict } from "./nodes/follow-up"
-import { DEFAULT_FOLLOW_UP, type AgentExecuteRequest, type AgentExecuteResponse, type FollowUpDefaults, type NodeResult, type OwnerPort } from "./nodes/types"
+import { DEFAULT_FOLLOW_UP, type AgentExecuteRequest, type AgentExecuteResponse, type FollowUpDefaults, type NodeResult, type OwnerPort, type StepProofMinter } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
 import { stripSecrets } from "./strip-secrets"
 import type { WorkflowStore } from "./store"
@@ -10,7 +10,7 @@ import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
 import { consumeSelfLabels, wakeMatches, wakeTarget, type WakeResult, type WorkActivity } from "./wake"
 import type { EventBus } from "../daemon/event-bus"
-import { FOLLOW_UP_PORTS, type EntityRef, type NodeExecutionEntry, type PausedAt, type RunMeta, type Workflow, type WorkflowRun } from "./types"
+import { FOLLOW_UP_PORTS, type EntityRef, type NodeExecutionEntry, type PausedAt, type RunMeta, type Workflow, type WorkflowNode, type WorkflowRun } from "./types"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordWorkflowDispatch } from "@/intent/sources/workflow"
@@ -98,6 +98,8 @@ export interface DispatcherOptions {
   onRunEnded?: (run: WorkflowRun, workflow: Workflow | null) => void | Promise<void>
   /** A follow-up step is blocked and needs the owner. Called once per block. */
   onBlocked?: (run: WorkflowRun, workflow: Workflow, nodeId: string, reason: string) => void | Promise<void>
+  /** Mints an action.run step's proof (#1849). Absent: steps get none. */
+  stepProof?: StepProofMinter
 }
 
 /** An inbound message a `person.wait` step may be waiting for. */
@@ -148,6 +150,10 @@ export class WorkflowDispatcher {
   private readonly followUpDefaults: () => FollowUpDefaults
   private readonly onRunEnded?: DispatcherOptions["onRunEnded"]
   private readonly onBlocked?: DispatcherOptions["onBlocked"]
+  private readonly stepProof?: StepProofMinter
+  /** Revokers of the step proofs live per run, so cancelling a run ends
+   *  the proof of a step still running (#1849). */
+  private readonly liveProofs = new Map<string, Set<() => void>>()
   /** Runs paused on a timerWait, for the recovery sweep (#1816). Filled by
    *  one full scan on the first sweep, then kept up as runs pause, so a
    *  sweep reads only these run files, not every run on disk. */
@@ -190,6 +196,7 @@ export class WorkflowDispatcher {
     this.followUpDefaults = opts.followUp ?? (() => DEFAULT_FOLLOW_UP)
     this.onRunEnded = opts.onRunEnded
     this.onBlocked = opts.onBlocked
+    this.stepProof = opts.stepProof
 
     // Register the timer-fire callback once. TimerService is a per-node
     // singleton; re-registration would clobber prior instances, but the
@@ -935,6 +942,9 @@ export class WorkflowDispatcher {
           log: this.log,
           owner: this.owner,
           followUp: this.followUpDefaults(),
+          ...(this.stepProof && node.type === "action.run"
+            ? { stepProof: (ttlMs: number) => this.mintStepProof(workflow, run, node, ttlMs) }
+            : {}),
         })
       } catch (e: any) {
         this.log(`[workflow:${workflow.id}] handler "${node.type}" threw: ${e.message}`)
@@ -1415,7 +1425,24 @@ export class WorkflowDispatcher {
   }
 
   /** The owner stops a run (CLI, dashboard). */
+  /** A step's proof, tracked under its run until it is revoked (#1849). */
+  private mintStepProof(workflow: Workflow, run: WorkflowRun, node: WorkflowNode, ttlMs: number) {
+    const m = this.stepProof?.({ workflow, run, node }, ttlMs) ?? null
+    if (!m) return null
+    const set = this.liveProofs.get(run.id) ?? new Set<() => void>()
+    this.liveProofs.set(run.id, set)
+    const revoke = () => {
+      m.revoke()
+      set.delete(revoke)
+      if (!set.size && this.liveProofs.get(run.id) === set) this.liveProofs.delete(run.id)
+    }
+    set.add(revoke)
+    return { token: m.token, revoke }
+  }
+
   async cancelRun(runId: string, reason = "canceled by the owner"): Promise<boolean> {
+    // A step still running loses its proof with the run.
+    for (const revoke of [...(this.liveProofs.get(runId) ?? [])]) revoke()
     let done = false
     await this.commit(runId, () => {
       const fresh = this.runs.get(runId)
