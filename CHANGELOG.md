@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.221.1](https://github.com/anis-marrouchi/agentx/compare/v0.221.0...v0.221.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **approvals:** accept a step proof when closing a forwarded card ([#1853](https://github.com/anis-marrouchi/agentx/issues/1853)) ([b2b1628](https://github.com/anis-marrouchi/agentx/commit/b2b1628f232882dee758a584c6af18a77306cd1d)), closes [#1849](https://github.com/anis-marrouchi/agentx/issues/1849)
+* **workflows:** tighten the step proof and propose-from-run ([#1852](https://github.com/anis-marrouchi/agentx/issues/1852)) ([#1854](https://github.com/anis-marrouchi/agentx/issues/1854)) ([04b57db](https://github.com/anis-marrouchi/agentx/commit/04b57db6681839b855926d8aceb0716d35c69456))
+
 ## [0.221.0](https://github.com/anis-marrouchi/agentx/compare/v0.220.0...v0.221.0) (2026-11-13)
 
 
