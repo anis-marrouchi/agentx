@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server } from "http"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 import { StepProofs, stepProofMinter, provenStep, STEP_PROOF_GRACE_MS } from "../src/workflows/step-proof"
-import { runAction } from "../src/actions/runner"
+import { runAction, isLoopbackUrl } from "../src/actions/runner"
 import { actionSchema, type Action } from "../src/actions/types"
 import { createCard, readCard, saveCard, DEFAULT_CARD_SETTINGS } from "../src/approvals/cards"
 import { handleApprovalsApi } from "../src/approvals/daemon-api"
@@ -106,9 +106,15 @@ describe("the action runner hands the proof to the action only", () => {
   it("http: in a header that names {{agentx_step_proof}}, never in the url or body", async () => {
     const seen: IncomingMessage[] = []
     const bodies: string[] = []
+    let redirectTo = ""
     const server: Server = createServer((req, res) => {
       seen.push(req); let b = ""
-      req.on("data", (c) => { b += c }); req.on("end", () => { bodies.push(b); res.end("ok") })
+      req.on("data", (c) => { b += c })
+      req.on("end", () => {
+        bodies.push(b)
+        if (req.url === "/redirect") { res.statusCode = 302; res.setHeader("Location", redirectTo); res.end(); return }
+        res.end("ok")
+      })
     })
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r))
     const port = (server.address() as { port: number }).port
@@ -126,9 +132,25 @@ describe("the action runner hands the proof to the action only", () => {
       expect(bodies[0]).not.toContain("tok-2")
       await runAction(action, { q: "1" })
       expect(seen[1].headers["x-agentx-step"] ?? "").toBe("")
+      // A redirect does not carry it on: the action sees the 3xx itself.
+      const hop = actionSchema.parse({ ...action, id: "hop", url: `http://127.0.0.1:${port}/redirect`, body: undefined, inputs: [] })
+      const before = seen.length
+      redirectTo = `http://127.0.0.1:${port}/elsewhere`
+      expect((await runAction(hop, {}, { stepProof: "tok-3" })).status).toBe(302)
+      expect(seen.length).toBe(before + 1)
     } finally {
       server.close()
     }
+  })
+
+  it("http: only to this machine's loopback address", () => {
+    expect(isLoopbackUrl("http://127.0.0.1:18800/approvals/x/resolve")).toBe(true)
+    expect(isLoopbackUrl("http://localhost:18800/")).toBe(true)
+    expect(isLoopbackUrl("http://[::1]:18800/")).toBe(true)
+    expect(isLoopbackUrl("https://example.com/")).toBe(false)
+    expect(isLoopbackUrl("http://127.0.0.1.example.com/")).toBe(false)
+    expect(isLoopbackUrl("http://100.64.0.1:18800/")).toBe(false)
+    expect(isLoopbackUrl("not a url")).toBe(false)
   })
 })
 
@@ -274,5 +296,28 @@ describe("a workflow action.run step, end to end", () => {
     expect(ttls).toHaveLength(1)
     expect(replies).toEqual([403])
     expect(readCard(root, c.id)?.status).toBe("pending")
+  })
+})
+
+describe("cancelling a run ends the proof of its running step", () => {
+  it("revokes it at once, not at the action's timeout", async () => {
+    const proofs = new StepProofs()
+    const dir = join(root, "wf-cancel")
+    const dispatcher = new WorkflowDispatcher({
+      store: new WorkflowStore({ baseDir: dir }), runs: new RunStore({ baseDir: dir, nodeId: "node-a" }), nodeId: "node-a", channels: {},
+      agents: { execute: async () => ({ content: "" }) },
+      stepProof: stepProofMinter(proofs, (id) => id === "alpha"),
+    })
+    const mint = (runId: string) => (dispatcher as any).mintStepProof(
+      { id: "w", ownerAgent: "alpha" }, { id: runId, meta: {} }, { id: "n", type: "action.run" }, 60_000)
+    const a = mint("run-a")
+    const b = mint("run-b")
+    expect(proofs.check(a.token)).not.toBeNull()
+    await dispatcher.cancelRun("run-a")
+    expect(proofs.check(a.token)).toBeNull()
+    expect(proofs.check(b.token)).not.toBeNull()
+    b.revoke()
+    expect(proofs.size).toBe(0)
+    expect((dispatcher as any).liveProofs.size).toBe(0)
   })
 })

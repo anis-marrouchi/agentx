@@ -10,7 +10,7 @@ import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
 import { consumeSelfLabels, wakeMatches, wakeTarget, type WakeResult, type WorkActivity } from "./wake"
 import type { EventBus } from "../daemon/event-bus"
-import { FOLLOW_UP_PORTS, type EntityRef, type NodeExecutionEntry, type PausedAt, type RunMeta, type Workflow, type WorkflowRun } from "./types"
+import { FOLLOW_UP_PORTS, type EntityRef, type NodeExecutionEntry, type PausedAt, type RunMeta, type Workflow, type WorkflowNode, type WorkflowRun } from "./types"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordWorkflowDispatch } from "@/intent/sources/workflow"
@@ -151,6 +151,9 @@ export class WorkflowDispatcher {
   private readonly onRunEnded?: DispatcherOptions["onRunEnded"]
   private readonly onBlocked?: DispatcherOptions["onBlocked"]
   private readonly stepProof?: StepProofMinter
+  /** Revokers of the step proofs live per run, so cancelling a run ends
+   *  the proof of a step still running (#1849). */
+  private readonly liveProofs = new Map<string, Set<() => void>>()
   /** Runs paused on a timerWait, for the recovery sweep (#1816). Filled by
    *  one full scan on the first sweep, then kept up as runs pause, so a
    *  sweep reads only these run files, not every run on disk. */
@@ -940,7 +943,7 @@ export class WorkflowDispatcher {
           owner: this.owner,
           followUp: this.followUpDefaults(),
           ...(this.stepProof && node.type === "action.run"
-            ? { stepProof: (ttlMs: number) => this.stepProof!({ workflow, run, node }, ttlMs) }
+            ? { stepProof: (ttlMs: number) => this.mintStepProof(workflow, run, node, ttlMs) }
             : {}),
         })
       } catch (e: any) {
@@ -1422,7 +1425,24 @@ export class WorkflowDispatcher {
   }
 
   /** The owner stops a run (CLI, dashboard). */
+  /** A step's proof, tracked under its run until it is revoked (#1849). */
+  private mintStepProof(workflow: Workflow, run: WorkflowRun, node: WorkflowNode, ttlMs: number) {
+    const m = this.stepProof?.({ workflow, run, node }, ttlMs) ?? null
+    if (!m) return null
+    const set = this.liveProofs.get(run.id) ?? new Set<() => void>()
+    this.liveProofs.set(run.id, set)
+    const revoke = () => {
+      m.revoke()
+      set.delete(revoke)
+      if (!set.size && this.liveProofs.get(run.id) === set) this.liveProofs.delete(run.id)
+    }
+    set.add(revoke)
+    return { token: m.token, revoke }
+  }
+
   async cancelRun(runId: string, reason = "canceled by the owner"): Promise<boolean> {
+    // A step still running loses its proof with the run.
+    for (const revoke of [...(this.liveProofs.get(runId) ?? [])]) revoke()
     let done = false
     await this.commit(runId, () => {
       const fresh = this.runs.get(runId)

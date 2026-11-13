@@ -98,13 +98,16 @@ async function runHttp(action: Extract<Action, { kind: "http" }>, values: Record
   const headers: Record<string, string> = {}
   // The proof is offered to headers only, so it never lands in a url or
   // body that may be logged; an input of the same name cannot fake it.
-  const headerValues = { ...values, [STEP_PROOF_TEMPLATE]: stepProof ?? "" }
+  // Only to this machine, so it cannot be sent off to a host a run input
+  // names; and no redirect may carry it elsewhere.
+  const proof = stepProof && isLoopbackUrl(url) ? stepProof : ""
+  const headerValues = { ...values, [STEP_PROOF_TEMPLATE]: proof }
   if (action.headers) for (const [k, v] of Object.entries(action.headers)) headers[k] = template(v, headerValues)
   const body = action.method === "GET" || action.method === "DELETE" ? undefined : (action.body ? template(action.body, values) : undefined)
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), action.timeoutMs)
   try {
-    const res = await fetch(url, { method: action.method, headers, body, signal: ac.signal })
+    const res = await fetch(url, { method: action.method, headers, body, signal: ac.signal, ...(proof ? { redirect: "manual" as const } : {}) })
     const text = (await res.text()).slice(0, MAX_OUTPUT)
     return {
       ok: res.ok,
@@ -122,5 +125,15 @@ async function runHttp(action: Extract<Action, { kind: "http" }>, values: Record
     }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+/** True for an http(s) url on this machine's loopback address. */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.replace(/^\[|\]$/g, "")
+    return h === "127.0.0.1" || h === "localhost" || h === "::1"
+  } catch {
+    return false
   }
 }
