@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.221.0](https://github.com/anis-marrouchi/agentx/compare/v0.220.0...v0.221.0) (2026-11-13)
+
+
+### Features
+
+* **workflows:** let an action.run step close its own agent's card ([#1849](https://github.com/anis-marrouchi/agentx/issues/1849)) ([#1850](https://github.com/anis-marrouchi/agentx/issues/1850)) ([8bef6e4](https://github.com/anis-marrouchi/agentx/commit/8bef6e48a28c21f229212f2ae418b3fd8eaddb90))
+
 ## [0.220.0](https://github.com/anis-marrouchi/agentx/compare/v0.219.0...v0.220.0) (2026-11-11)
 
 
