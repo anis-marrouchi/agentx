@@ -32,6 +32,10 @@ import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
+import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, stateOnAnswer, withoutStateLines, type JobState } from "./run-state"
+import { isQuietAnswer } from "@/crons/quiet"
+import { withoutExitMarker } from "@/crons/exit-check"
+import { emitSignal } from "@/improve/signals"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
@@ -750,6 +754,11 @@ export class AgentRegistry {
   private interruptedRuns: Map<string, string> = new Map()
   /** Runs a stop signal ended, with the reason each one reports (#857). */
   private stoppedRuns: Map<string, string> = new Map()
+  /** The job's state a running run stated with agentx_job_state or
+   *  agentx_waiting (run-state.ts), read when it ends. */
+  private jobStates: Map<string, JobState> = new Map()
+  /** See setJobStateListener. */
+  private jobStateListener?: (runIds: Array<string | undefined>, ev: import("@/jobs/run-state-ledger").RunStateEvent) => void
   /** Callers waiting for a run to let go of its slot (whenRunEnds). */
   private runEndWaiters: Map<string, Array<() => void>> = new Map()
   /** Claude cloud sessions this node launched (#622), by issue. Created on
@@ -888,6 +897,33 @@ export class AgentRegistry {
    *  attach; unset, no note is added. */
   setRunNote(note: ((started: AgentXEvents["task:started"]) => string | undefined) | undefined): void {
     this.runNote = note
+  }
+
+  /** A running run states its job's state (agentx_job_state,
+   *  agentx_waiting). False when no run with this id is going. */
+  recordJobState(runningTaskId: string, state: JobState): boolean {
+    if (!this.runningTaskOwner(runningTaskId)) return false
+    this.jobStates.set(runningTaskId, state)
+    return true
+  }
+
+  /** Told what each checked run said about its job: the daemon writes it
+   *  on the job (jobs/run-state-ledger.ts). `runIds`: the run's trace id
+   *  and running id, and the ask turn's when there was one. */
+  setJobStateListener(fn: AgentRegistry["jobStateListener"]): void {
+    this.jobStateListener = fn
+  }
+
+  private tellJobState(runIds: Array<string | undefined>, ev: import("@/jobs/run-state-ledger").RunStateEvent): void {
+    try { this.jobStateListener?.(runIds, ev) } catch (e: any) { this.log(`[job-state] ledger write failed: ${e?.message ?? e}`) }
+  }
+
+  /** The state a run stated: with a tool while it ran, else on its last lines. */
+  private takeJobState(task: AgentTask, response: AgentResponse): JobState | null {
+    const id = task.runningTaskId
+    const told = id ? this.jobStates.get(id) : undefined
+    if (id) this.jobStates.delete(id)
+    return told ?? jobStateInText(response.content)
   }
 
   /** Wire the trace lookup a time-limit continuation lists the stopped
@@ -1414,6 +1450,9 @@ export class AgentRegistry {
       const notes = this.notices.take(task.agentId)
       if (notes) task = { ...task, message: notes + task.message }
     }
+    if (needsJobState(this.config.jobState, channel) && !task.jobStateAsk) {
+      task = { ...task, message: JOB_STATE_RULE + task.message }
+    }
     if (!key) return this.runWithRecovery(task, onDelta, onThinking, onEvent)
     const entry = await this.workLanes.enter(task.agentId, key, currentRoot()?.rootId, task.callerSignal)
     let response: AgentResponse = { content: "", error: "run did not end" }
@@ -1513,6 +1552,7 @@ export class AgentRegistry {
       this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${task.taskId ?? "-"}: stopped at its ${limit.minutes}m time limit; not continued — ${limit.reason}`)
       response = { ...response, error: reportedTimeLimitError(response.error!, limit.reason) }
     }
+    if (!task.jobStateAsk) response = await this.checkJobState(task, response)
     if (task.intentRef) {
       try {
         // A queued answer is an accepted message, not a failure (#282).
@@ -1540,6 +1580,78 @@ export class AgentRegistry {
       }
     }
     return response
+  }
+
+  /**
+   * A run of agent work that ended cleanly states its job's state (#1861
+   * phase 2). One that stated nothing is asked once, in the same session;
+   * the caller still gets the run's own answer. Still nothing: the answer
+   * carries a line saying the job is stalled, so whoever asked is told.
+   */
+  private async checkJobState(task: AgentTask, response: AgentResponse): Promise<AgentResponse> {
+    const channel = task.context?.channel as string | undefined
+    const runId = task.runningTaskId
+    if (!needsJobState(this.config.jobState, channel) || response.error || response.viaMesh || response.midTurnDelivered) {
+      if (runId) this.jobStates.delete(runId)
+      return response
+    }
+    const where = `${task.agentId} ${channel ?? "-"} ${task.taskId ?? "-"}`
+    // A state the answer does not already show goes on its last line, so
+    // whoever asked reads it with the answer (not a schedule's answer).
+    const onAnswer = stateOnAnswer(channel)
+    const withState = (state: JobState): AgentResponse => {
+      // An answer that goes to a person loses the run's own State line too.
+      if (!onAnswer) {
+        const content = jobStateInText(response.content) ? withoutStateLines(response.content ?? "") : response.content
+        return { ...response, content, jobState: state }
+      }
+      if (jobStateInText(response.content)) return { ...response, jobState: state }
+      const line = `[Job state] ${describeJobState(state)}`
+      return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: state }
+    }
+    const runIds = [task.taskId, runId]
+    // A schedule's quiet word (#1289) is sent nowhere only when it is the
+    // whole answer, so it gets no ask and no added line: it means done.
+    const bare = withoutStateLines(response.content ?? "")
+    if (isQuietAnswer(withoutExitMarker(bare))) {
+      const state = this.takeJobState(task, response) ?? { state: "done", proof: "nothing to report" }
+      this.log(`[job-state] ${where}: ${describeJobState(state)} (quiet answer)`)
+      this.tellJobState(runIds, { kind: "stated", state })
+      return { ...response, content: bare, jobState: state }
+    }
+    const stated = this.takeJobState(task, response)
+    if (stated) {
+      this.log(`[job-state] ${where}: ${describeJobState(stated)}`)
+      this.tellJobState(runIds, { kind: "stated", state: stated })
+      return withState(stated)
+    }
+    this.log(`[job-state] ${where}: ended with no state; asking once`)
+    this.tellJobState(runIds, { kind: "asked" })
+    // The question is a turn of its own, not the work again: it does not
+    // settle the run's intent (the run does, below in runWithRecovery),
+    // and it is not a time-limit continuation of the request.
+    const { intentRef: _intent, timeLimitRequest: _request, timeLimitContinuation: _continuation, timeLimitStartedAt: _started, ...rest } = task
+    const ask: AgentTask = { ...rest, message: JOB_STATE_ASK, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
+    let asked: AgentResponse
+    try {
+      // Not streamed: the caller reads the run's answer, not this question's.
+      asked = await this.runWithRecovery(ask)
+    } catch (e: any) {
+      asked = { content: "", error: e?.message ?? String(e) }
+    }
+    const answer = asked.error ? null : this.takeJobState(ask, asked)
+    if (ask.runningTaskId) this.jobStates.delete(ask.runningTaskId)
+    if (answer) {
+      this.log(`[job-state] ${where}: ${describeJobState(answer)} (when asked)`)
+      this.tellJobState([...runIds, ask.taskId, ask.runningTaskId], { kind: "stated", state: answer })
+      return withState(answer)
+    }
+    this.log(`[job-state] ${where}: no state when asked${asked.error ? ` (${asked.error.slice(0, 120)})` : ""}; stalled`)
+    this.tellJobState([...runIds, ask.taskId, ask.runningTaskId], { kind: "stalled", reason: "run ended with no state, and gave none when asked" })
+    emitSignal({ kind: "job_stalled", agentId: task.agentId, ref: task.taskId ?? runId ?? "-", detail: `${channel ?? "-"}: run ended with no job state, none when asked` })
+    if (!onAnswer) return { ...response, jobState: { state: "stalled" } }
+    const line = stalledLine(task.agentId)
+    return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: { state: "stalled" } }
   }
 
   /**
@@ -2369,6 +2481,7 @@ export class AgentRegistry {
       }),
       resumeAttempt: task.resumeAttempt ?? 0,
       resumedFrom: task.resumedFrom,
+      ...(task.jobStateAsk ? { jobStateAsk: true } : {}),
       sender: senderOf(task.context),
       ...(person ? { person } : {}),
       humanRoot: isHumanFacingTurn(task.context as any),

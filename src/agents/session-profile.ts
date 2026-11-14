@@ -91,12 +91,13 @@ export const AGENTX_MCP_TOOLS_ENV = "AGENTX_MCP_TOOLS"
  *  than done (agentx_waiting, #1100), drafting posts for approval
  *  from the content team's weekly schedule (agentx_content, #1291),
  *  and sprint lane turns stopping their lane (agentx_sprint, #1241),
- *  and the node-facts rule in every prompt (agentx_node, #1531).
+ *  and the node-facts rule in every prompt (agentx_node, #1531),
+ *  and the job's state an agent-channel run ends with (agentx_job_state, #1861).
  *  A tool left off the list is
  *  not even findable through ToolSearch, so a prompt naming it would
  *  send the agent after a tool it cannot call. The test scans src/ for
  *  prompts naming any other tool. */
-export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node"]
+export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node", "agentx_job_state"]
 
 /** The tools the `[Context on demand]` line names; kept whenever a lean
  *  start relies on that line. */

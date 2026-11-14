@@ -22,6 +22,7 @@ export const SIGNAL_KINDS = [
   "callback_repeat_skipped",
   "same_work_waited",
   "close_proof_missing",
+  "job_stalled",
 ] as const
 export type SignalKind = (typeof SIGNAL_KINDS)[number]
 
@@ -35,6 +36,7 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   callback_repeat_skipped: "a helper's end repeated what it had already written",
   same_work_waited: "a run waited for another run of the same agent on the same request",
   close_proof_missing: "a close by check went through with deliverables that have no proof link (closeProof warn)",
+  job_stalled: "a run of agent work ended without stating its job's state, even when asked once (jobState)",
 }
 
 export const DEDUPE_MS = 10 * 60_000

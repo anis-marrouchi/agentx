@@ -27,6 +27,7 @@ import { HUMAN_CHANNELS, isHumanFacingTurn, isInsideDelegation, rootInitiatorOf,
 import { isQueued } from "@/agents/queued"
 import { taskTypeOf } from "@/watchers/due"
 import { normalizeHome } from "./home"
+import { describeJobState, endStateInAnswer, stalledLine, type EndState } from "@/agents/run-state"
 
 /** "waiting": the callee answered, but said its run ends to wait for
  *  something (a build, another agent, a time) before the work is done
@@ -88,6 +89,62 @@ export interface DelegationResult {
   text: string
   /** With status "waiting": what for, and until when. */
   waiting?: Waiting
+  /** The job's state the callee's run ended with (agents/run-state.ts),
+   *  when it gave one or was asked for one. The status follows it:
+   *  continue is "waiting" (not finished), blocked and stalled are
+   *  "error" (the caller decides what happens next). */
+  state?: EndState
+}
+
+/** What a callee's run returned. */
+export interface CalleeRun {
+  content: string
+  error?: string
+  /** Set by the registry on a run it checked (local runs only). */
+  jobState?: EndState
+}
+
+const dueOf = (v: string | undefined): number | undefined => {
+  const t = v ? Date.parse(v.trim()) : NaN
+  return Number.isFinite(t) && t > 0 ? t : undefined
+}
+
+/** The state line the registry put on the end of an answer. */
+const STATE_TRAILER = /(?:^|\n+)[ \t]*\[job (?:state|stalled)\][^\n]*$/i
+
+/** The answer with its state on the first line, where no clip cuts it. */
+function stateFirst(text: string, callee: string, state: EndState): string {
+  const line = state.state === "stalled" ? stalledLine(callee) : `[Job state] ${describeJobState(state)}`
+  const body = text.trimEnd().replace(STATE_TRAILER, "").trim()
+  return body && body !== "(empty answer)" ? `${line}\n\n${body}` : line
+}
+
+/**
+ * The outcome of a delegation from how the callee's run ended. A run that
+ * stated its job continues, waits or is blocked, or stated nothing even
+ * when asked (stalled), is not "done" (#1861). `said`: what the run said
+ * it waits for with agentx_waiting (markWaiting). `peer`: the answer came
+ * back as text from another node, so its state is read from its last lines.
+ */
+export function resultOfRun(r: CalleeRun, o: { callee: string; said?: Waiting; peer?: boolean }): DelegationResult {
+  if (r.error) return { status: "error", text: r.error }
+  const text = r.content || "(empty answer)"
+  const state = r.jobState ?? (o.peer ? endStateInAnswer(r.content) : null) ?? undefined
+  if (o.said) return { status: "waiting", text, waiting: o.said, ...(state?.state === "waiting" ? { state } : {}) }
+  if (!state) return { status: "done", text }
+  switch (state.state) {
+    // A long answer is clipped on its way back: keep the proof in sight.
+    case "done": return { status: "done", text: text.length > FALLBACK_CLIP ? stateFirst(text, o.callee, state) : text, state }
+    case "waiting": {
+      const dueAt = dueOf(state.until)
+      return { status: "waiting", text: stateFirst(text, o.callee, state), waiting: { on: clip(state.on, 300), ...(dueAt ? { dueAt } : {}) }, state }
+    }
+    case "continue": {
+      const dueAt = dueOf(state.when)
+      return { status: "waiting", text: stateFirst(text, o.callee, state), waiting: { on: clip(`${o.callee} to carry on: ${state.left}`, 300), ...(dueAt ? { dueAt } : {}) }, state }
+    }
+    default: return { status: "error", text: stateFirst(text, o.callee, state), state }
+  }
 }
 
 const whenText = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
@@ -112,7 +169,7 @@ export interface DelegationDeps {
        *  last run on the same home (#1100), instead of a fresh one. */
       resumeFrom?: Array<{ channel: string; chatId: string }>
     },
-  ): Promise<{ content: string; error?: string }>
+  ): Promise<CalleeRun>
   /** Run the callee on a mesh peer and return its answer text. */
   runPeer(
     peer: string,
@@ -227,6 +284,8 @@ export function delegationIdOfChat(chatId: string | undefined | null): string | 
 
 const REQUEST_CLIP = 500
 const RESULT_CLIP = 12_000
+/** The answer as a person reads it when the caller wrote no summary. */
+const FALLBACK_CLIP = 3500
 /** Finished task ids remembered for duplicate suppression, in memory and
  *  in the compacted log alike. */
 export const MAX_DONE_IDS = 2000
@@ -261,10 +320,17 @@ export function buildCallbackMessage(rec: DelegationRecord, result: DelegationRe
   const who = rec.peer ? `${rec.callee} on ${rec.peer}` : rec.callee
   const w = result.waiting
   const waitWords = w ? `${w.on}${w.dueAt ? `, expected by ${whenText(w.dueAt)}` : ""}` : ""
+  const st = result.state
   const outcome = opts.reply ? `answered (${rec.callee} sent this to you itself)` : {
     done: "finished",
-    waiting: `is NOT finished: ${rec.callee} ended its run to wait for ${waitWords || "something"}`,
-    error: "failed",
+    waiting: st?.state === "continue"
+      ? `is NOT finished: ${rec.callee} ended its run with work left${w?.dueAt ? `, to carry on by ${whenText(w.dueAt)}` : ""}`
+      : `is NOT finished: ${rec.callee} ended its run to wait for ${waitWords || "something"}`,
+    error: st?.state === "blocked"
+      ? `is NOT finished: ${rec.callee} says it is blocked`
+      : st?.state === "stalled"
+        ? `is NOT finished: ${rec.callee} ended its run without saying whether it is done, and gave no state when asked`
+        : "failed",
     timeout: "did not answer in time",
     lost: "was lost (this machine restarted before the answer came back)",
   }[result.status]
@@ -314,8 +380,11 @@ export function buildCallbackMessage(rec: DelegationRecord, result: DelegationRe
 /** What the person sees when the caller could not write its own summary. */
 export function fallbackReply(rec: DelegationRecord, result: DelegationResult): string {
   const who = rec.peer ? `${rec.callee} on ${rec.peer}` : rec.callee
-  if (result.status === "done") return `${who} finished:\n\n${clip(result.text, 3500)}`
-  if (result.status === "waiting") return `${who} is not finished yet; it is waiting for ${result.waiting?.on ?? "something"}:\n\n${clip(result.text, 3500)}`
+  if (result.status === "done") return `${who} finished:\n\n${clip(result.text, FALLBACK_CLIP)}`
+  if (result.state?.state === "continue") return `${who} is not finished yet; it has work left:\n\n${clip(result.text, FALLBACK_CLIP)}`
+  if (result.status === "waiting") return `${who} is not finished yet; it is waiting for ${result.waiting?.on ?? "something"}:\n\n${clip(result.text, FALLBACK_CLIP)}`
+  if (result.state?.state === "blocked") return `${who} is not finished; it says it is blocked:\n\n${clip(result.text, FALLBACK_CLIP)}`
+  if (result.state?.state === "stalled") return `${who} did not say whether the work is done. Treat it as stalled:\n\n${clip(result.text, FALLBACK_CLIP)}`
   return `The request to ${who} did not complete (${result.status}): ${clip(result.text, 500)}`
 }
 
@@ -566,7 +635,7 @@ export class DelegationManager {
     }
 
     const timeoutMs = opts.timeoutMs ?? this.deps.timeoutMs
-    const launch = (): Promise<{ content: string; error?: string }> => {
+    const launch = (): Promise<CalleeRun> => {
       // Gone already (a restart reported it lost while it waited).
       if (!this.pendingById.has(id)) return Promise.resolve({ content: "", error: "no longer pending" })
       // The clock starts when the work does, not while it waits its turn.
@@ -581,7 +650,7 @@ export class DelegationManager {
       this.timers.set(id, timer)
       if (record.peer) {
         return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
-          .then((text) => ({ content: text } as { content: string; error?: string }))
+          .then((text) => ({ content: text } as CalleeRun))
       }
       const resumeFrom = resumable()
       const mine = chatKeyOf(calleeChat)
@@ -609,14 +678,12 @@ export class DelegationManager {
     }
     run
       .then((r) => {
-        // A run that said it ends to wait (markWaiting) is not done (#1100).
-        const waiting = this.waiting.get(id)
+        // A run that said it ends to wait (markWaiting) is not done
+        // (#1100), nor is one whose job continues, is blocked or stalled
+        // (#1861).
+        const said = this.waiting.get(id)
         this.waiting.delete(id)
-        return this.complete(id, r.error
-          ? { status: "error", text: r.error }
-          : waiting
-            ? { status: "waiting", text: r.content || "(empty answer)", waiting }
-            : { status: "done", text: r.content || "(empty answer)" })
+        return this.complete(id, resultOfRun(r, { callee: record.callee, said, peer: !!record.peer }))
       })
       .catch((e: any) => this.complete(id, { status: "error", text: e?.message ?? String(e) }))
 
@@ -648,7 +715,9 @@ export class DelegationManager {
     if (entry) { entry.status = result.status; entry.endedAt = this.now() }
     this.deps.log(`[delegation ${id}] ${rec.callee} ${result.status} after ${Math.round((this.now() - rec.startedAt) / 1000)}s`)
     try { this.deps.onDone?.(rec, result) } catch { /* a listener never stops a callback */ }
-    if (result.status === "error" || result.status === "timeout" || result.status === "lost") {
+    // A callee that said it is blocked did not fail, and a stalled one
+    // already left its own signal (job_stalled).
+    if (!result.state && (result.status === "error" || result.status === "timeout" || result.status === "lost")) {
       emitSignal({ kind: "delegation_failed", agentId: rec.caller, ref: id, detail: `${rec.callee}${rec.peer ? `@${rec.peer}` : ""} ${result.status}: ${result.text.slice(0, 160)}` })
     }
 
@@ -939,7 +1008,8 @@ export class DelegationManager {
   }
 
   private holdRelay(h: HeldRelay): void {
-    const held: HeldRelay = { record: h.record, result: { status: h.result.status, text: clip(h.result.text, RESULT_CLIP) }, attempt: h.attempt, ...(h.reply ? { reply: true } : {}) }
+    // Keep waiting and state: the re-run must end the hand-off the same way.
+    const held: HeldRelay = { record: h.record, result: { ...h.result, text: clip(h.result.text, RESULT_CLIP) }, attempt: h.attempt, ...(h.reply ? { reply: true } : {}) }
     this.heldRelays.set(h.record.id, held)
     this.append({ type: "relay", id: h.record.id, ts: this.now(), ...held })
   }

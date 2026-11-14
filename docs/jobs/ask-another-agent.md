@@ -173,6 +173,8 @@ Sometimes a helper ends its run to wait: for a build, a deploy, a monitor, or an
 
 The tool works only from inside the helper's own run (`POST /runs/waiting` on its own machine).
 
+Every helper run now ends by stating its job's state: done, continue, waiting or blocked. A helper that states nothing is asked once; still nothing, the answer says the job is stalled. Only a helper that states `done` is reported as finished: `continue` and `waiting` come back with status `waiting`, and `blocked` or stalled come back with status `error`, each saying the work is not finished. See [Say where the work stands when a run ends](./end-of-run-state.md).
+
 A `/mesh/task` request whose own `context` names a chat (`channel` and `chatId`) keeps its older behaviour. With `"async": true`, the helper's plain answer is posted to that chat, and no callback turn runs.
 
 Some requests are refused straight away with status `409`:

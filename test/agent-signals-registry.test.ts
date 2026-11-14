@@ -38,6 +38,8 @@ afterEach(() => {
 
 function registry(): AgentRegistry {
   const config = daemonConfigSchema.parse({
+    // Not about the end-of-run job state (run-state.test.ts): its reminder and ask turn are off here.
+    jobState: { enabled: false },
     node: { id: "test", name: "test" },
     agents: { coder: { name: "Coder", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
   })
