@@ -1,7 +1,7 @@
 import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
-import { edgeModelForEngine, edgePlanFor, edgeSeatOn, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
+import { edgeModelForEngine, edgePlanFor, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
 import { askSeat } from "@/decisions/seat"
@@ -3332,12 +3332,16 @@ export class AgentRegistry {
 
     // A confident "needs the edge model" wins over a downgrade: the two
     // seats disagree only when one of them is wrong, and the cheaper
-    // mistake is the stronger model.
+    // mistake is the stronger model. That holds when the agent is already
+    // configured on the edge model too (#1864): the downgrade is dropped.
     if (!edgeRouteSettled) traceStep("route-edge")
     const edgeRoute = await edgeRoutePending
     const edgePlan = edgePlanFor(edgeRoute, { tier: state.def.tier, claudeArgs })
-    if (edgeRoute && (edgeRoute.upgraded || edgeRoute.subagents)) this.log(`[${task.agentId}] ${edgeRoute.reason}`)
-    const jobModel = edgePlan.model ?? routedModel
+    const jobModel = jobModelFor(edgeRoute, routedModel)
+    const downgradeDropped = Boolean(routedModel) && jobModel !== routedModel
+    if (edgeRoute && (edgeRoute.upgraded || edgeRoute.subagents || downgradeDropped)) {
+      this.log(`[${task.agentId}] ${edgeRoute.reason}${downgradeDropped ? ` — downgrade to ${routedModel} dropped` : ""}`)
+    }
 
     const taskWithSystemPrompt: AgentTask = {
       ...task, systemPromptAppend,
