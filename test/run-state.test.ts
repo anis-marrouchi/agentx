@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { describeJobState, JOB_STATE_ASK, jobStateFrom, jobStateInText, needsJobState } from "../src/agents/run-state"
+import { describeJobState, endStateInAnswer, JOB_STATE_ASK, jobStateFrom, jobStateInText, needsJobState, stalledLine } from "../src/agents/run-state"
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import type { AgentResponse, AgentTask } from "../src/agents/runtime"
@@ -38,13 +38,38 @@ describe("the four states", () => {
   })
   it("reads a state from one of the last lines of a reply", () => {
     expect(jobStateInText("Merged.\n\nState: done — https://x/pr/9")).toEqual({ state: "done", proof: "https://x/pr/9" })
-    expect(jobStateInText("ok\n**State:** waiting: devops review, until 18:00")).toEqual({ state: "waiting", on: "devops review, until 18:00" })
+    expect(jobStateInText("ok\n**State:** waiting: devops review, until 18:00")).toEqual({ state: "waiting", on: "devops review", until: "18:00" })
     expect(jobStateInText("Job state: blocked - no token")).toEqual({ state: "blocked", why: "no token" })
     expect(jobStateInText("state: continue — tests, tonight")).toEqual({ state: "continue", left: "tests, tonight" })
     expect(jobStateInText("State: done")).toBeNull()
     expect(jobStateInText("The state: done is reached")).toBeNull()
     expect(jobStateInText("State: done — x\n1\n2\n3\n4\n5")).toBeNull()
     expect(jobStateInText("")).toBeNull()
+  })
+  it("reads the format as a model copies it: backticks, a bullet, a quote", () => {
+    expect(jobStateInText("Merged.\n`State: done — https://x/1`")).toEqual({ state: "done", proof: "https://x/1" })
+    expect(jobStateInText("- State: blocked — no token")).toEqual({ state: "blocked", why: "no token" })
+    expect(jobStateInText("* `State: done — PR #9`")).toEqual({ state: "done", proof: "PR #9" })
+    expect(jobStateInText("> **State: done** — PR #9")).toEqual({ state: "done", proof: "PR #9" })
+    expect(jobStateInText("`State: done`")).toBeNull()
+    expect(jobStateInText("- the state: done is reached")).toBeNull()
+  })
+  it("reads until when a wait lasts and when a continue carries on", () => {
+    expect(jobStateInText("State: waiting — devops review, until 2030-01-31T17:00:00Z")).toEqual({ state: "waiting", on: "devops review", until: "2030-01-31T17:00:00Z" })
+    expect(jobStateInText("State: waiting — the build")).toEqual({ state: "waiting", on: "the build" })
+    expect(jobStateInText("State: continue — docs (tomorrow)")).toEqual({ state: "continue", left: "docs", when: "tomorrow" })
+    expect(jobStateInText("State: continue — docs, 2030-01-31T17:00:00Z")).toEqual({ state: "continue", left: "docs", when: "2030-01-31T17:00:00Z" })
+    expect(jobStateInText("State: continue — docs, tonight")).toEqual({ state: "continue", left: "docs, tonight" })
+  })
+  it("reads back the line the registry adds to an answer", () => {
+    for (const s of [
+      { state: "done", proof: "PR #9" }, { state: "blocked", why: "no token" },
+      { state: "waiting", on: "devops", until: "18:00" }, { state: "continue", left: "docs", when: "tomorrow" },
+    ] as const) {
+      expect(endStateInAnswer(`Answer.\n\n[Job state] ${describeJobState(s)}`)).toEqual(s)
+    }
+    expect(endStateInAnswer(`Answer.\n\n${stalledLine("ops")}`)).toEqual({ state: "stalled" })
+    expect(endStateInAnswer("Answer.")).toBeNull()
   })
   it("says each in one line", () => {
     expect(describeJobState({ state: "waiting", on: "devops", until: "18:00" })).toBe("waiting on devops until 18:00")
@@ -108,6 +133,19 @@ describe("registry.execute on an agent channel", () => {
     expect(res.content).toBe("Built it.\n\n[Job state] continue — docs, tonight")
     expect(res.jobState).toEqual({ state: "continue", left: "docs, tonight" })
     expect(logs.some((l) => /ended with no state; asking once/.test(l))).toBe(true)
+  })
+
+  it("the question is not the work again: no intent to settle, no time limit to continue", async () => {
+    const { r, seen } = registry([{ content: "Built it." }, { content: "`State: done — PR #9`" }])
+    const res = await r.execute({
+      agentId: "ops", message: "build", context: { channel: "cron", chatId: "nightly" },
+      intentRef: { eventId: "ev-1", decidedBy: "cron" }, timeLimitRequest: "build", timeLimitContinuation: 1, timeLimitStartedAt: 5,
+    })
+    expect(seen).toHaveLength(2)
+    expect(seen[0].intentRef).toEqual({ eventId: "ev-1", decidedBy: "cron" })
+    expect(seen[1]).toMatchObject({ jobStateAsk: true, message: JOB_STATE_ASK })
+    for (const k of ["intentRef", "timeLimitRequest", "timeLimitContinuation", "timeLimitStartedAt"] as const) expect(seen[1][k]).toBeUndefined()
+    expect(res.jobState).toEqual({ state: "done", proof: "PR #9" })
   })
 
   it("marks the job stalled and says so in the answer when still nothing", async () => {

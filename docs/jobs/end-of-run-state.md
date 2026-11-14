@@ -27,6 +27,10 @@ Or it can end its reply with one line:
 State: done — https://github.com/acme/app/pull/9
 ```
 
+The line may sit in backticks, behind a list bullet or behind a quote mark (`>`): it is read the same way.
+
+On a `waiting` line, what comes after `until` is read as the time: `State: waiting — devops review, until 2026-11-14T21:00:00Z`. On a `continue` line, a time in brackets at the end, or an ISO date after the last comma, is read as when the work carries on: `State: continue — the docs (tomorrow)`.
+
 `agentx_waiting` also counts: a run that called it ends `waiting`.
 
 Every run on these channels starts with one line that reminds the agent of the rule.
@@ -37,6 +41,22 @@ Every run on these channels starts with one line that reminds the agent of the r
 2. If the agent still gives no state, or the question fails, the job is **stalled**. A line is added to the answer: `[Job stalled] <agent> ended its run without saying whether the work is done, continuing, waiting or blocked…`. The agent that asked reads it with the answer. One `job_stalled` [failure signal](./failure-signals.md) is recorded.
 
 A state given with the tool, or when asked, is added to the end of the answer as `[Job state] …`, so the agent that asked sees it too. A state already on the answer's last line is not repeated.
+
+## What the asking agent is told
+
+When one agent handed the work to another, the state decides how the answer comes back. Only `done` is reported as finished.
+
+| State | Status on the answer | What the asking agent reads |
+|---|---|---|
+| `done` | `done` | The work finished. |
+| `continue` | `waiting` | The work is not finished: the helper has work left. |
+| `waiting` | `waiting` | The work is not finished, what it waits for, and until when if the time is an ISO date. |
+| `blocked` | `error` | The work is not finished: the helper says it is blocked, and why. |
+| stalled | `error` | The work is not finished: the helper did not say whether it is done. |
+
+For every state except `done`, the state line is moved to the top of the answer. A very long answer is cut at the end on its way back, and the state must not be cut with it. A long `done` answer gets the same treatment, so its proof stays in sight.
+
+The question for a state is a turn of its own. It does not change the result recorded for the run, and the ask stays marked on the job until a run takes the work up again.
 
 ## On the job
 
@@ -60,7 +80,7 @@ The time the run was asked for a state is also stored on the job.
 
 ## Check it worked
 
-1. **Terminal:** send an agent a task from another agent, with `agentx daemon send` or `agentx_send_agent`. Ask it to end with `State: done — <a link>`. The answer that comes back ends with that line, and the daemon log shows `[job-state] <agent> a2a …: done — <the link>`.
+1. **Terminal:** send an agent a task from another agent, with `agentx daemon send` or `agentx_send_agent`. Ask it to end with `State: done — <a link>`. The answer that comes back ends with that line, and the daemon log shows `[job-state] <agent> a2a …: done — <the link>`. Then ask it to end with `State: blocked — <a reason>`: the log line for the hand-off ends with `error`, and the answer the asking agent gets says the work is not finished and starts with `[Job state] blocked`.
 2. **Terminal:** send a task and ask the agent not to state anything, twice. The log shows `ended with no state; asking once`, then `stalled`. The answer ends with `[Job stalled]`, and `agentx improve signals --kind job_stalled` lists one row.
 3. **Terminal:** send a person's chat message on Telegram. Its run gets no reminder line and no question.
 
@@ -68,5 +88,6 @@ The time the run was asked for a state is also stored on the job.
 
 - **Every agent-to-agent answer ends with `[Job stalled]`:** the agents do not state a state yet. Check that `agentx_job_state` is in their tool list (`session.lean.agentxTools` keeps it), and that the daemon was restarted after the update.
 - **An answer has an extra turn you did not expect:** that is the one question for a state. Ask the agent to end with a `State:` line, or turn the check off for that channel by removing it from `jobState.channels`.
+- **An answer comes back as failed, but the helper ran without an error:** the helper stated `blocked`, or stated nothing when asked. Read the first line of the answer: it starts with `[Job state] blocked` or `[Job stalled]`.
 - **The job in the ledger did not change:** the run belongs to no job. Only runs a door opened a job for are written; the answer still carries the state.
 - **`no running turn matches this call`:** `agentx_job_state` works only from inside the agent's own run, on its own machine.

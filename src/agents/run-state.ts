@@ -73,7 +73,31 @@ export function jobStateFrom(body: Record<string, unknown>): JobState | string {
 }
 
 // "State: done — https://…", "Job state: waiting: devops review, until 18:00".
-const STATE_LINE = /^\s*(?:\*\*)?(?:job\s+)?state(?:\*\*)?\s*:\s*(?:\*\*)?\s*(done|continue|waiting|blocked)(?:\*\*)?\b\s*(?:[—–:\-]\s*)?(.*)$/i
+// Also as a model copies it from the rule: in backticks, as a bullet or a
+// quote ("- `State: done — …`"), and as the line the registry adds to an
+// answer ("[Job state] waiting on devops until 18:00").
+const STATE_LINE = /^[\s>`*_•-]*(?:\[job state\][\s`*_]*|(?:job\s+)?state[`*_]*\s*:[\s`*_]*)(done|continue|waiting|blocked)\b[`*_]*\s*(?:[—–:\-]\s*)?(.*)$/i
+
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}\S*)?$/
+
+/** "devops review, until 18:00" → on whom, and until when. */
+function waitingFrom(rest: string): JobState | null {
+  const m = rest.replace(/^on\s+/i, "").match(/^(.*?)[,;]?\s+until\s+(.+)$/i)
+  const on = (m ? m[1] : rest.replace(/^on\s+/i, "")).trim()
+  if (!on) return null
+  return { state: "waiting", on, ...(m ? { until: m[2].trim() } : {}) }
+}
+
+/** "docs (tomorrow)" or "docs, 2030-01-31T17:00:00Z" → what is left, and
+ *  when. Any other wording stays whole in what is left. */
+function continueFrom(rest: string): JobState {
+  const paren = rest.match(/^(.+?)\s*\(([^()]+)\)$/)
+  if (paren) return { state: "continue", left: paren[1].trim(), when: paren[2].trim() }
+  const cut = rest.lastIndexOf(",")
+  const tail = cut > 0 ? rest.slice(cut + 1).trim().replace(/^(?:at|on|when)\s+/i, "") : ""
+  if (tail && ISO_TIME.test(tail) && Number.isFinite(Date.parse(tail))) return { state: "continue", left: rest.slice(0, cut).trim(), when: tail }
+  return { state: "continue", left: rest }
+}
 
 /** The state a reply gives on one of its last lines, or null. */
 export function jobStateInText(reply: string | undefined): JobState | null {
@@ -83,16 +107,33 @@ export function jobStateInText(reply: string | undefined): JobState | null {
     const m = line.match(STATE_LINE)
     if (!m) continue
     const state = m[1].toLowerCase() as JobStateName
-    const rest = m[2].trim()
+    const rest = m[2].replace(/[\s`*]+$/, "").trim()
     if (!rest) return null
     switch (state) {
       case "done": return { state, proof: rest }
-      case "continue": return { state, left: rest }
-      case "waiting": return { state, on: rest }
+      case "continue": return continueFrom(rest)
+      case "waiting": return waitingFrom(rest)
       case "blocked": return { state, why: rest }
     }
   }
   return null
+}
+
+/** What a run's job ended as: a state it gave, or none even when asked. */
+export type EndState = JobState | { state: "stalled" }
+
+/** The end state an answer carries on its last lines: the line the
+ *  registry added ([Job state], [Job stalled]) or the run's own State
+ *  line. For an answer that comes back as text only, from another node. */
+export function endStateInAnswer(answer: string | undefined): EndState | null {
+  if (!answer) return null
+  if (answer.trimEnd().split("\n").slice(-5).some((l) => /^\s*\[job stalled\]/i.test(l))) return { state: "stalled" }
+  return jobStateInText(answer)
+}
+
+/** One line, for logs and the answer. */
+export function describeEndState(s: EndState): string {
+  return s.state === "stalled" ? "stalled — it ended without saying whether the work is done, and gave no state when asked" : describeJobState(s)
 }
 
 /** One line, for logs and the answer. */

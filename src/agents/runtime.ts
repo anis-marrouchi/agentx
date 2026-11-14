@@ -288,7 +288,7 @@ export interface AgentResponse {
   /** The job's state the run stated when it ended, or "stalled" when it
    *  stated none, even asked once (run-state.ts, #1861). Unset: not an
    *  agent channel, or the run failed. */
-  jobState?: import("./run-state").JobState | { state: "stalled" }
+  jobState?: import("./run-state").EndState
   error?: string
   /** Typed discriminator on `error`. Lets dispatchers and workflow nodes
    *  branch on the failure cause without string-matching the friendly

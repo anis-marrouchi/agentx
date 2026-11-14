@@ -4,7 +4,7 @@ import { readSignals, setSignalDb } from "../src/improve/signals"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { DelegationManager, repeatsWritten, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
+import { DelegationManager, buildCallbackMessage, fallbackReply, resultOfRun, repeatsWritten, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
 
 // A person on a chat channel asked "front"; front delegates to "worker".
 const HUMAN_TURN: CallerTurn = {
@@ -34,7 +34,7 @@ function deferred<T>() {
 }
 
 function harness(over: Partial<DelegationDeps> = {}) {
-  const local = deferred<{ content: string; error?: string }>()
+  const local = deferred<import("../src/a2a/delegation").CalleeRun>()
   const peer = deferred<string>()
   const injected: InjectedTurn[] = []
   const delivered: Array<{ channel: string; chatId: string; text: string; agentId: string; record: boolean }> = []
@@ -986,5 +986,71 @@ describe("repeatsWritten", () => {
   })
   it("does not count a real result after a progress note", () => {
     expect(repeatsWritten("Box posting-1 is live at 10.0.0.5, noVNC on :6080, Chrome 131 signed in.", ["On it, building the box now."])).toBe(false)
+  })
+})
+
+describe("the job's state a callee's run ended with (#1861)", () => {
+  const rec = { id: "dlg-1", caller: "front", callee: "worker", request: "Ship it", kind: "ask" } as any
+
+  it("only a run that said done, or was not checked, is done", () => {
+    expect(resultOfRun({ content: "ok" }, { callee: "worker" })).toEqual({ status: "done", text: "ok" })
+    expect(resultOfRun({ content: "ok", jobState: { state: "done", proof: "PR #9" } }, { callee: "worker" })).toMatchObject({ status: "done", text: "ok" })
+    expect(resultOfRun({ content: "", error: "boom", jobState: { state: "done", proof: "x" } }, { callee: "worker" })).toEqual({ status: "error", text: "boom" })
+  })
+
+  it("continue and waiting are not finished, with the time when it reads as one", () => {
+    const w = resultOfRun({ content: "PR open.\n\n[Job state] waiting on devops until 2030-01-31T17:00:00Z", jobState: { state: "waiting", on: "devops", until: "2030-01-31T17:00:00Z" } }, { callee: "worker" })
+    expect(w).toMatchObject({ status: "waiting", waiting: { on: "devops", dueAt: Date.UTC(2030, 0, 31, 17) } })
+    expect(w.text).toBe("[Job state] waiting on devops until 2030-01-31T17:00:00Z\n\nPR open.")
+    const c = resultOfRun({ content: "Half done.", jobState: { state: "continue", left: "docs", when: "tonight" } }, { callee: "worker" })
+    expect(c).toMatchObject({ status: "waiting", waiting: { on: "worker to carry on: docs" }, state: { state: "continue" } })
+    expect(c.waiting?.dueAt).toBeUndefined()
+    expect(buildCallbackMessage(rec, c)).toMatch(/status=waiting\][\s\S]*is NOT finished: worker ended its run with work left/)
+    expect(fallbackReply(rec, c)).toMatch(/^worker is not finished yet; it has work left:/)
+  })
+
+  it("blocked and stalled come back as not finished, for the caller to decide", () => {
+    const b = resultOfRun({ content: "Tried.", jobState: { state: "blocked", why: "no token" } }, { callee: "worker" })
+    expect(b).toMatchObject({ status: "error", text: "[Job state] blocked — no token\n\nTried." })
+    expect(buildCallbackMessage(rec, b)).toMatch(/status=error\][\s\S]*is NOT finished: worker says it is blocked[\s\S]*\[Job state\] blocked — no token/)
+    expect(fallbackReply(rec, b)).toMatch(/^worker is not finished; it says it is blocked:\n\n\[Job state\] blocked — no token/)
+    const s = resultOfRun({ content: "Built it.", jobState: { state: "stalled" } }, { callee: "worker" })
+    expect(s.status).toBe("error")
+    expect(s.text).toMatch(/^\[Job stalled\] worker ended its run[\s\S]*\n\nBuilt it\.$/)
+    expect(fallbackReply(rec, s)).toMatch(/^worker did not say whether the work is done/)
+  })
+
+  it("keeps the state in sight when a long answer is clipped", () => {
+    const long = "x".repeat(20_000)
+    const b = resultOfRun({ content: `${long}\n\n[Job state] blocked — no token`, jobState: { state: "blocked", why: "no token" } }, { callee: "worker" })
+    expect(buildCallbackMessage(rec, b)).toContain("[Job state] blocked — no token")
+    expect(fallbackReply(rec, b)).toContain("[Job state] blocked — no token")
+    expect(b.text.match(/\[Job state\]/g)).toHaveLength(1)
+    const d = resultOfRun({ content: `${long}\n\n[Job state] done — PR #9`, jobState: { state: "done", proof: "PR #9" } }, { callee: "worker" })
+    expect(fallbackReply(rec, d)).toContain("[Job state] done — PR #9")
+  })
+
+  it("what the run said with agentx_waiting stands", () => {
+    const r = resultOfRun({ content: "ok", jobState: { state: "waiting", on: "the build" } }, { callee: "worker", said: { on: "the S07 build", dueAt: 5 } })
+    expect(r).toMatchObject({ status: "waiting", text: "ok", waiting: { on: "the S07 build", dueAt: 5 } })
+  })
+
+  it("reads the state of an answer from another node on its last lines", () => {
+    expect(resultOfRun({ content: "Tried.\n\n[Job state] blocked — no token" }, { callee: "worker", peer: true })).toMatchObject({ status: "error", state: { state: "blocked", why: "no token" } })
+    expect(resultOfRun({ content: "Tried.\n\n[Job state] blocked — no token" }, { callee: "worker" }).status).toBe("done")
+  })
+
+  it("a local callee that says it is blocked is not reported done, and is not a failure signal", async () => {
+    const db = new Database(":memory:")
+    setSignalDb(db)
+    onTestFinished(() => { setSignalDb(null); db.close() })
+    const h = harness()
+    const { taskId } = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Ship it" })
+    h.local.resolve({ content: "Tried.\n\n[Job state] blocked — no token", jobState: { state: "blocked", why: "no token" } })
+    await flush()
+    expect(h.injected[0].message).toContain("status=error]")
+    expect(h.injected[0].message).toContain("worker says it is blocked")
+    expect(h.injected[0].context).toMatchObject({ delegation: { taskId, status: "error" } })
+    expect(readSignals(db, 0)).toEqual([])
   })
 })

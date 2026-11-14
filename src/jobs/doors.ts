@@ -119,7 +119,9 @@ export class JobDoors {
       const earlier = p.resumedFrom ? jobs.byRun(p.resumedFrom) : null
       if (earlier) {
         jobs.linkRun(earlier.id, runId, now)
-        if (!earlier.ownerRequest) jobs.working(earlier.id, now)
+        // The turn that asks for the job's state is not the work starting
+        // again: the job keeps its ask mark (state_asked_at).
+        if (!earlier.ownerRequest && !p.jobStateAsk) jobs.working(earlier.id, now)
         on(earlier.id)
         return
       }
