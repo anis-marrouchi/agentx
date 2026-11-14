@@ -4,6 +4,8 @@ Work reaches an agent in several ways: you ask, another agent hands it over, som
 
 **Jobs** is a page of the [Hub](./hub.md), the dashboard's home. It only reads. Nothing on it changes a job.
 
+![The Jobs page in a demo: the state chips with their counts, the Door filter, and seven open jobs, each with its status line, one blocked in amber and one stalled in red](/screenshots/wall/job-ledger.png)
+
 The page that lists your recurring jobs and their value line is now called **Schedules** (it was called Jobs before). See [See recurring jobs and their value line](./hub.md#see-recurring-jobs-and-their-value-line).
 
 ## What a job is
@@ -74,6 +76,8 @@ The list shows the 100 most recently active jobs that match. A line under the li
 3. **Part of** names the job this one came from, when an agent handed it out while working on another job. Select it to open that job.
 4. **Handed out from this job** lists the jobs this one started. Select one to open it.
 5. Select the row again to close it.
+
+![A job opened in place: what was asked, the two jobs handed out from it with their status lines, and its three runs with status, start, duration and cost](/screenshots/wall/job-ledger-open.png)
 
 Parent and children are the job's tree. Start at your own request and follow it down to see which agent has each part now, and which part is stalled.
 
