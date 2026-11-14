@@ -248,6 +248,10 @@ export interface ProcessRegistryConfig {
    *  `staleTimeoutMs`: a build left running is not cut at 45 minutes
    *  (#1861). Default 3 hours. */
   backgroundMaxMs?: number
+  /** Asked at each sweep: does `backgroundMaxMs` apply? False: a process
+   *  with background work open ends at `staleTimeoutMs`, as before #1861.
+   *  Unset: it applies. */
+  keepBackground?: () => boolean
   /** Sweep interval. Default 5_000 (5s). */
   sweepIntervalMs?: number
   factory: ProcessFactory
@@ -287,7 +291,8 @@ export class ProcessRegistry {
   private handleWorkspace = new Map<ProcessKeyString, string>()
   /** Who gets the replies no question asked for (#1861). */
   private unaskedReplyHandler?: (r: UnaskedReply) => void
-  private readonly cfg: Required<Omit<ProcessRegistryConfig, "factory" | "log" | "currentWorkspaceHash">> & {
+  private readonly cfg: Required<Omit<ProcessRegistryConfig, "factory" | "log" | "currentWorkspaceHash" | "keepBackground">> & {
+    keepBackground?: () => boolean
     factory: ProcessFactory
     log: (msg: string) => void
     currentWorkspaceHash?: (key: ProcessKey, workspace: string) => string | null
@@ -302,6 +307,7 @@ export class ProcessRegistry {
       backgroundMaxMs: cfg.backgroundMaxMs ?? 3 * 60 * 60 * 1000,
       sweepIntervalMs: cfg.sweepIntervalMs ?? 5_000,
       factory: cfg.factory,
+      keepBackground: cfg.keepBackground,
       log: cfg.log ?? (() => {}),
       currentWorkspaceHash: cfg.currentWorkspaceHash,
     }
@@ -542,7 +548,8 @@ export class ProcessRegistry {
       const idleFor = now - snap.lastTurnAt
       const openTasks = snap.backgroundTasks ?? 0
       const working = openTasks > 0 || !!snap.unaskedTurn
-      if (idleFor >= (working ? this.cfg.backgroundMaxMs : this.cfg.staleTimeoutMs)) {
+      const longer = working && (this.cfg.keepBackground?.() ?? true)
+      if (idleFor >= (longer ? this.cfg.backgroundMaxMs : this.cfg.staleTimeoutMs)) {
         this.handles.delete(ks)
         this.handleWorkspace.delete(ks)
         const why = working

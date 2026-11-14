@@ -149,7 +149,7 @@ import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/re
 import { handleJobsApi, type JobView } from "@/jobs/api"
 import { JobMesh } from "@/jobs/mesh"
 import { dbFacts } from "@/jobs/facts"
-import { DEFAULT_WAKE_SETTINGS, JobWake, wakeContext } from "@/jobs/wake"
+import { DEFAULT_WAKE_SETTINGS, JobWake, markWake, wakeContext } from "@/jobs/wake"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
 import { runDriftSweep } from "@/requests/drift/sweep"
@@ -794,8 +794,10 @@ export class AgentXDaemon {
             facts: dbFacts(db),
             // An owner's request is woken as a pick-up, in its own chat,
             // so the tracker links the run; a job in the chat it runs in.
+            // Both carry the wake mark: the run waits for a slot, never
+            // in a chat's queue.
             start: (job, text) => this.registry.execute({
-              agentId: job.assignee, message: text, context: job.ownerRequest ? pickupContext(job.id) : wakeContext(job),
+              agentId: job.assignee, message: text, context: job.ownerRequest ? markWake(pickupContext(job.id), job.id) : wakeContext(job),
             }).then((res) => ({ error: res.error })),
             hasAgent: (id) => !!this.registry.getAgent(id),
             // A hand-off still out answers for its job.
@@ -942,6 +944,9 @@ export class AgentXDaemon {
           idleTimeoutMs: (poolCfg.maxIdleSeconds ?? 30) * 1000,
           staleTimeoutMs: (poolCfg.maxAgeSeconds ?? 2700) * 1000,
           backgroundMaxMs: (poolCfg.maxBackgroundSeconds ?? 10800) * 1000,
+          // The longer limit is part of the job wake: with the wake off,
+          // nothing waits on the work, and the process ends as before.
+          keepBackground: () => this.config.requests.enabled && this.config.requests.jobs.enabled && this.config.requests.jobs.wake.enabled,
           sweepIntervalMs: (poolCfg.sweepIntervalSeconds ?? 5) * 1000,
           // Drift detection: re-read each handle's workspace CLAUDE.md
           // hash on every sweep. When the hash changes (user edited
@@ -952,7 +957,7 @@ export class AgentXDaemon {
         })
         // Background work belongs to its job (#1861): the closing reply of
         // a turn nobody asked for wakes the job of that chat.
-        procReg.setUnaskedReplyHandler((r) => { this.jobWake?.backgroundEnded(r.key, r.text) })
+        procReg.setUnaskedReplyHandler((r) => { this.jobWake?.backgroundEnded(r.key, r.text, r.costUsd) })
         procReg.start()
         setProcessRegistry(procReg)
         this.processRegistry = procReg
