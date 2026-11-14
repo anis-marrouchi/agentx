@@ -571,6 +571,13 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.timeLimit.enabled` | boolean | `true` | Picks the work up again in the same conversation, with a note that it hit its time limit. Scheduled jobs and workflow steps never are. |
 | `resume.timeLimit.maxContinuations` | number (0–3) | `1` | How many times one request is picked up again after its time limit. |
 
+## `jobState`
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `jobState.enabled` | boolean | `true` | A run of agent work ends by stating its job's state: done, continue, waiting or blocked. See [Say where the work stands when a run ends](/jobs/end-of-run-state). |
+| `jobState.channels` | list of strings | `["a2a", "cron", "reminder", "events"]` | Channels whose runs must state it. Chat with a person is never checked. |
+
 ## `quality`
 
 Release quality gates. Each one has its own switch and is off unless you turn it on.

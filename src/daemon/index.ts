@@ -15,6 +15,7 @@ import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
 import { describeJobState, jobStateFrom } from "@/agents/run-state"
+import { recordRunState } from "@/jobs/run-state-ledger"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { activeProviderHolds, setDispatchBudget } from "@/agents/claude-code-quota"
@@ -814,6 +815,11 @@ export class AgentXDaemon {
         // A run continued after its time limit lists the tool calls the
         // stopped run made (#1257).
         this.registry.setTraceToolCalls((traceId) => traceToolCalls(db, traceId))
+        // The job's state a run of agent work ends with goes on its job
+        // (#1861 phase 2).
+        this.registry.setJobStateListener((runIds, ev) => {
+          if (this.requests) recordRunState(this.requests.jobs, runIds, ev, Date.now())
+        })
         // Task watchers (#1030). Attached whatever the setting says, like
         // requests: the checkpoint reads `watchers.enabled` on every event.
         try {

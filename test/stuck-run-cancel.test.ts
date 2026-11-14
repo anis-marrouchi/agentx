@@ -81,6 +81,8 @@ afterEach(() => {
 
 function registry(extra: Record<string, unknown> = {}): AgentRegistry {
   const config = daemonConfigSchema.parse({
+    // Not about the end-of-run job state (run-state.test.ts): its reminder and ask turn are off here.
+    jobState: { enabled: false },
     node: { id: "test", name: "test" },
     agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
     ...extra,
@@ -196,6 +198,8 @@ describe("the pre-spawn deadline (#183)", () => {
    *  floor is 10 s; tests set the definition directly to stay fast. */
   function withPreSpawn(sec: number, logs: string[] = []): AgentRegistry {
     const config = daemonConfigSchema.parse({
+      // Not about the end-of-run job state (run-state.test.ts): its reminder and ask turn are off here.
+      jobState: { enabled: false },
       node: { id: "test", name: "test" },
       agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
     })

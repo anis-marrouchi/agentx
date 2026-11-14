@@ -43,6 +43,8 @@ afterEach(() => {
 describe("queued wake", () => {
   it("runs each wake as its own turn under its own root", async () => {
     const config = daemonConfigSchema.parse({
+      // Not about the end-of-run job state (run-state.test.ts): its reminder and ask turn are off here.
+      jobState: { enabled: false },
       node: { id: "test", name: "test" },
       agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1, queueMode: "collect" } },
     })
