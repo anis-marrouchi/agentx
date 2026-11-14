@@ -541,8 +541,9 @@ describe("other paths wake the job (#1861 box 4)", () => {
     live.delete("job-1"); held.add("job-1")
     expect(wake.wakeFor("job-1", "x")).toBe(false)
     held.delete("job-1")
-    // A wake started, its run still waiting for a slot.
+    // A wake started, its run still queued behind a busy agent.
     jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "n" }, { now: clock })
+    startError = "__queued__:collect:2"
     wake.tick()
     await flush()
     expect(wake.wakeFor("job-1", "x")).toBe(false)
