@@ -409,6 +409,21 @@ export class JobStore {
     ).all(limit).map(toJob)
   }
 
+  /** Open jobs whose agent runs on another node, most recently active
+   *  first: the ones this node asks that node about (phase 4). */
+  openOnPeers(limit = 30): JobRecord[] {
+    return this.db.prepare(
+      `${SELECT} WHERE state = ? AND peer IS NOT NULL AND ${OPEN_ROW} ORDER BY updated_at DESC, rowid DESC LIMIT ?`,
+    ).all(JOB_ROW_STATE, limit).map(toJob)
+  }
+
+  /** What the other node says about a job handed to it: its id there and
+   *  its status line, kept as the note. Not a touch: reading is not progress. */
+  setRemote(id: string, remoteId: string, note: string): boolean {
+    return this.db.prepare(`UPDATE requests SET remote_id = ?, job_note = ? WHERE id = ? AND peer IS NOT NULL AND ${OPEN_ROW}`)
+      .run(remoteId, clip(note, JOB_NOTE_MAX), id).changes > 0
+  }
+
   /** Every open job, oldest first: what the minute check walks. */
   listOpen(limit = 2000): JobRecord[] {
     return this.db.prepare(

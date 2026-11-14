@@ -68,7 +68,9 @@ export function statusLine(job: JobRecord, facts: JobFacts, now: number): string
     return `sleeping until ${clock(job.wakeAt, now)}${job.note ? ` for ${job.note}` : ""}`
   }
   if (job.state === "waiting" && job.waitingOn) {
-    return `waiting on ${job.waitingOn}${job.until !== null ? ` until ${clock(job.until, now)}` : ""}`
+    // A job on another node quotes what that node says about it (mesh.ts).
+    const there = job.peer && job.note?.startsWith("there: ") ? ` (${job.note})` : ""
+    return `waiting on ${job.waitingOn}${job.until !== null ? ` until ${clock(job.until, now)}` : ""}${there}`
   }
   // Open, and nothing holds it: what the minute check marks as stalled.
   return `nobody on it, ${stallReason(job, facts, now)}`

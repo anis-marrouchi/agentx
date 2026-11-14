@@ -27,13 +27,22 @@ export interface HubJob {
   updatedAt: number
   createdAt?: number
   ownerRequest?: boolean
+  /** The machine its agent runs on, when not the one that keeps this row. */
+  peer?: string | null
+  /** Its id on that machine, once read from there. */
+  remoteId?: string | null
   /** "" for this machine, else the peer's name. */
   node?: string
   /** The machine's name, shown when more than one is read. */
   nodeName?: string
 }
 export interface HubJobRun { runId: string; status: string | null; startedAt: number | null; finishedAt: number | null; costUsd: number | null; error?: string | null }
-export interface HubJobDetail { job: HubJob; runs: HubJobRun[]; parent: HubJob | null; children: HubJob[] }
+export interface HubJobDetail {
+  job: HubJob; runs: HubJobRun[]; parent: HubJob | null; children: HubJob[]
+  /** A job handed to another machine: the same job as that machine keeps
+   *  it, read from there (the tree across machines). */
+  remote?: { peer: string; detail: HubJobDetail | null; err: string } | null
+}
 export interface JobLedgerModel {
   /** null while the first read is out. */
   list: HubJob[] | null
@@ -133,11 +142,21 @@ export function jlDetailHtml(d: HubJobDetail | null, err: string, node: string, 
       "<td>" + took + "</td><td>" + (r.costUsd == null ? "—" : "$" + Number(r.costUsd).toFixed(2)) + "</td></tr>"
   }).join("")
   const kids = d.children || []
+  // The same job on the machine it was handed to: its line there, and
+  // what it handed out there. Those open on that machine.
+  const far = d.remote
+  const farKids = far && far.detail ? far.detail.children || [] : []
+  const farHtml = !far ? "" : '<div class="wjl__far"><p class="k">On ' + jlEsc(far.peer) + "</p>" +
+    (far.detail
+      ? "<p>" + jlLinkHtml(far.detail.job, far.peer) + "</p>" +
+        (farKids.length ? '<p class="k">Handed out there (' + farKids.length + ')</p><ul class="wjl__kids">' + farKids.map((c) => "<li>" + jlLinkHtml(c, far.peer) + "</li>").join("") + "</ul>" : "")
+      : "<p>Not read from " + jlEsc(far.peer) + ": " + jlEsc(far.err || "no answer") + ".</p>") + "</div>"
   return '<div class="wjl__d">' +
     '<p class="wjl__text">' + jlEsc(d.job.text) + "</p>" +
     (d.parent ? '<p><span class="k">Part of</span> ' + jlLinkHtml(d.parent, node) + "</p>" : "") +
     (kids.length ? '<p class="k">Handed out from this job (' + kids.length + ')</p><ul class="wjl__kids">' + kids.map((c) => "<li>" + jlLinkHtml(c, node) + "</li>").join("") + "</ul>" : "") +
-    (runs ? '<div class="wjl__scroll"><table class="wjl__runs"><thead><tr><th>Run</th><th>Status</th><th>Started</th><th>Took</th><th>Cost</th></tr></thead><tbody>' + runs + "</tbody></table></div>"
+    farHtml +
+    (runs ?'<div class="wjl__scroll"><table class="wjl__runs"><thead><tr><th>Run</th><th>Status</th><th>Started</th><th>Took</th><th>Cost</th></tr></thead><tbody>' + runs + "</tbody></table></div>"
       : '<p class="k">No run is linked to this job yet.</p>') +
     '<p class="k">Job <code>' + jlEsc(d.job.id) + "</code></p></div>"
 }

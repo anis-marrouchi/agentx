@@ -88,6 +88,8 @@ The list shows the 100 most recently active jobs that match. A line under the li
 
 ![A job opened in place: what was asked, the two jobs handed out from it with their status lines, and its three runs with status, start, duration and cost](/screenshots/wall/job-ledger-open.png)
 
+**A job handed to another machine.** When an agent hands work to an agent on another machine, the job is kept on both: here it waits on that machine, there the agent works on it. The two rows have the same id. Opened here, the job shows **On** and the machine's name, with the job's status line as that machine gives it now and the jobs it **handed out there**. Select one to open it on that machine. In the list, the row here quotes the other machine's line, for example `waiting on devops@clawd (there: working, last tool call 40 s ago)`; the daemon reads it again every minute. If the Hub does not read that machine, or it runs an older AgentX, the details say so and the row keeps its own line.
+
 Parent and children are the job's tree. Start at your own request and follow it down to see which agent has each part now, and which part is stalled.
 
 ## How a job keeps going
@@ -119,7 +121,7 @@ To turn the wake and the check off, set `requests.jobs.wake.enabled` to `false` 
 | `roots=1` | Jobs with no parent |
 | `limit=`, `offset=` | A page of the list. `limit` is 1 to 500. |
 
-The reply has `jobs` (each with its `status` line), `total` and `counts` (jobs per state). `GET /jobs/<id>` gives one job with its `runs`, its `parent` and its `children`. Both only read.
+The reply has `jobs` (each with its `status` line), `total` and `counts` (jobs per state). `GET /jobs/<id>` gives one job with its `runs`, its `parent` and its `children`. Add `?tree=1` and a job handed to another machine also comes with `remote`: that machine's own `job`, `runs` and `children`, or an `error` saying why it could not be read. Both only read.
 
 ## Check it worked
 

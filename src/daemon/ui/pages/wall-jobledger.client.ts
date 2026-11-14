@@ -79,6 +79,17 @@ export const WALL_JOBLEDGER_SCRIPT = String.raw`
       try { d = await getJson('/api/admin/job-ledger/' + encodeURIComponent(id), peer); }
       catch (e) { err = /HTTP 404/.test(String(e && e.message)) ? 'it is no longer in the ledger' : (node || 'this machine') + ' ' + costWhy(e && e.message); }
     }
+    // Handed to another machine: read the same job there too, for the
+    // tree across machines. That machine may not be read by this Hub.
+    if (d && d.job && d.job.peer) {
+      var far = jlPeer(d.job.peer), fd = null, ferr = '';
+      if (far === undefined || far === null) ferr = 'this Hub does not read that machine';
+      else {
+        try { fd = await getJson('/api/admin/job-ledger/' + encodeURIComponent(d.job.remoteId || id), far); }
+        catch (e) { ferr = /HTTP 404/.test(String(e && e.message)) ? 'it has no such job yet' : costWhy(e && e.message); }
+      }
+      d.remote = { peer: d.job.peer, detail: fd && fd.job ? fd : null, err: fd && fd.job ? '' : ferr || 'the reply had no job' };
+    }
     if (JL.detailLoading !== mark) return;
     JL.detailLoading = '';
     if (JL.open !== id || JL.node !== node) return;
@@ -178,6 +189,7 @@ export const WALL_JOBLEDGER_CSS = `
 .wjl__text { white-space: pre-wrap; background: var(--ax-surface); border-radius: var(--ax-radius-sm); padding: 8px 10px; max-height: 320px; overflow-y: auto; }
 .wjl__kids { list-style: none; margin: 0 0 8px; padding: 0 0 0 12px; border-left: 2px solid var(--ax-border-2); }
 .wjl__kids li { padding: 2px 0; }
+.wjl__far { margin: 0 0 8px; padding: 6px 0 0 12px; border-left: 2px solid var(--ax-border-2); }
 .wjl__link { font: inherit; font-weight: 600; color: var(--ax-accent); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
 .wjl__link:hover { text-decoration: underline; }
 .wjl__scroll { overflow-x: auto; }
