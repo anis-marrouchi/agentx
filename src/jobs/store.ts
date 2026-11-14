@@ -169,6 +169,8 @@ const clip = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n)
 
 /** WHERE clause of a row that is not closed, as a job or as a request. */
 const OPEN_ROW = "state NOT IN ('done', 'declined', 'dropped') AND COALESCE(job_state, '') != 'done'"
+/** A blocked or stalled job: its note is the reason, never written over. */
+const NOT_FAILED = "COALESCE(job_state, '') NOT IN ('blocked', 'stalled')"
 
 export interface JobQuery {
   /** Only these states. Unset: every state. */
@@ -407,6 +409,25 @@ export class JobStore {
          AND (state = '${JOB_ROW_STATE}' OR declared_at IS NOT NULL)
        ORDER BY updated_at, rowid LIMIT ?`,
     ).all(limit).map(toJob)
+  }
+
+  /** Open jobs whose agent runs on another node, most recently active
+   *  first: the ones this node asks that node about (phase 4). Not a
+   *  blocked or stalled job: its note is why, and the other node's line
+   *  must not write over it. */
+  openOnPeers(limit = 30): JobRecord[] {
+    return this.db.prepare(
+      `${SELECT} WHERE state = ? AND peer IS NOT NULL AND ${OPEN_ROW} AND ${NOT_FAILED}
+       ORDER BY updated_at DESC, rowid DESC LIMIT ?`,
+    ).all(JOB_ROW_STATE, limit).map(toJob)
+  }
+
+  /** What the other node says about a job handed to it: its id there and
+   *  its status line, kept as the note. Not a touch: reading is not progress.
+   *  A job blocked or stalled meanwhile keeps its reason. */
+  setRemote(id: string, remoteId: string, note: string): boolean {
+    return this.db.prepare(`UPDATE requests SET remote_id = ?, job_note = ? WHERE id = ? AND peer IS NOT NULL AND ${OPEN_ROW} AND ${NOT_FAILED}`)
+      .run(remoteId, clip(note, JOB_NOTE_MAX), id).changes > 0
   }
 
   /** Every open job, oldest first: what the minute check walks. */

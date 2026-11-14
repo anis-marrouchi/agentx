@@ -144,7 +144,8 @@ import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
 import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
-import { handleJobsApi } from "@/jobs/api"
+import { handleJobsApi, type JobView } from "@/jobs/api"
+import { JobMesh } from "@/jobs/mesh"
 import { dbFacts } from "@/jobs/facts"
 import { DEFAULT_WAKE_SETTINGS, JobWake, wakeContext } from "@/jobs/wake"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
@@ -799,6 +800,20 @@ export class AgentXDaemon {
             log: this.log,
           })
           this.jobWake = jobWake
+          // The tree across nodes (phase 4): a job handed to another node
+          // is read from that node, with this node's mesh token.
+          this.jobMesh = new JobMesh({
+            jobs: requests.jobs,
+            fetchJob: async (peerName, id) => {
+              const peer = this.mesh?.directory().find((p) => p.peer === peerName)
+              if (!peer || !this.mesh) throw new Error(`no peer named ${peerName}`)
+              const r = await fetch(`${peer.peerUrl}/jobs/${encodeURIComponent(id)}`, {
+                headers: this.mesh.authHeaders(peer.peer), signal: AbortSignal.timeout(5_000),
+              })
+              return { status: r.status, body: await r.json().catch(() => null) }
+            },
+            log: this.log,
+          })
           requests.doors.setLeftBackground((job, end) => jobWake.runLeftBackground(
             job, this.processRegistry?.backgroundOpen({ agentId: end.agentId, channel: end.channel, chatId: end.chatId }) ?? 0, end.taskId,
           ))
@@ -2465,6 +2480,8 @@ export class AgentXDaemon {
   private requestsSweeping = false
   /** The daemon-owned wake of jobs (src/jobs/wake.ts, #1861). */
   private jobWake: JobWake | null = null
+  /** Jobs handed to other nodes, read from those nodes (src/jobs/mesh.ts). */
+  private jobMesh: JobMesh | null = null
   /** Status drift (#1138 step F): its last check, and one at a time. */
   private driftAt = 0
   private driftSweeping = false
@@ -2674,6 +2691,8 @@ export class AgentXDaemon {
         }
         // Jobs (#1861): start the wakes that are due, mark what nobody holds.
         try { this.jobWake?.tick() } catch (e: any) { this.log(`[jobs] check failed: ${e?.message ?? e}`) }
+        // Beside the tick, never inside it: a peer may take seconds to answer.
+        if (this.config.requests.enabled && this.config.requests.jobs.enabled) void this.jobMesh?.refresh()
         this.statusDriftTick()
         this.status?.board.sweep()
         // The Reminders mirror (#1062): beside the sweep, because the OS
@@ -5822,6 +5841,10 @@ export class AgentXDaemon {
         const reply = handleJobsApi(req.method || "GET", path, {
           store: this.requests.jobs, query: url.searchParams, ...(this.db ? { facts: dbFacts(this.db) } : {}),
         })
+        // ?tree=1 on one job: a job handed to another node comes with
+        // that node's own row, runs and children (phase 4).
+        const one = reply.status === 200 && url.searchParams.get("tree") === "1" ? (reply.body as { job?: JobView }).job : undefined
+        if (one?.peer && this.jobMesh) (reply.body as Record<string, unknown>).remote = await this.jobMesh.remoteOf(one)
         this.json(res, reply.status, reply.body)
         return
       }
