@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { ToldLedger } from "../src/notify/told"
+import { JobStore } from "../src/jobs/store"
 import { isStatusPull, measureContract, outputsOf, parseSpan, type ContractOptions } from "../src/requests/contract"
 
 const HOUR = 3_600_000
@@ -114,6 +115,23 @@ describe("measureContract (#1509 step 0)", () => {
     expect(r.quiet.open).toBe(0)
     const producer = r.agents.find((a) => a.agent === "producer-agent")!
     expect(producer).toMatchObject({ a2aTurns: 1, linkedTurns: 1, chainTurns: 1, outputs: 1, pathOnlyOutputs: 1, told: 0 })
+  })
+
+  it("ignores the links of job rows (#1861): no extra linked hop, no cron owner turn", () => {
+    const jobs = new JobStore(db)
+    // A hand-off with its own job row, linked to its run and delegation.
+    trace("t-j1", "coder-agent", "a2a", "a2a:other-agent:coder-agent:dlg-j", T0 + 5 * HOUR, T0 + 5 * HOUR + 60_000)
+    jobs.open({ id: "job-a2a", door: "a2a", requester: "other-agent", assignee: "coder-agent", channel: "a2a",
+      chatId: "a2a:other-agent:coder-agent:dlg-j", text: "fix it", runId: "t-j1", now: T0 + 5 * HOUR })
+    jobs.linkDelegation("job-a2a", "dlg-j", T0 + 5 * HOUR)
+    // A cron run with its job row: not an owner turn, even when it asks a status-like question.
+    trace("t-cron", "desk-agent", "cron", "cron:morning", T0 + 6 * HOUR, T0 + 6 * HOUR + 60_000, { message: "any update on the render?" })
+    jobs.open({ id: "job-cron", door: "cron", requester: "cron:morning", assignee: "desk-agent", channel: "cron",
+      chatId: "cron:morning", text: "morning sweep", runId: "t-cron", now: T0 + 6 * HOUR })
+    const r = measureContract(db, OPTS)
+    expect(r.chain.turns).toEqual({ n: 1, of: 5 })
+    expect(r.chain.chats).toEqual({ n: 1, of: 4 })
+    expect(r.pulls).toMatchObject({ ownerTurns: 2, pulls: 1 })
   })
 
   it("narrows to one agent, and reads a store with no requests", () => {
