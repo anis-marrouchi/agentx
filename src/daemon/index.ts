@@ -3718,6 +3718,7 @@ export class AgentXDaemon {
           sessionDir: this.config.channels.whatsapp.sessionDir,
           defaultAgent: this.config.channels.whatsapp.defaultAgent,
           allowFrom: this.config.channels.whatsapp.allowFrom,
+          selfChatSkipPrefixes: this.config.channels.whatsapp.selfChatSkipPrefixes,
           routes: this.config.channels.whatsapp.routes,
           // Throttle for live Baileys reads (ingestor). Defaults in the
           // adapter are conservative; operators can tighten/loosen via
