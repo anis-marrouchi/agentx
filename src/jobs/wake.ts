@@ -151,6 +151,7 @@ export class JobWake {
       }
       if (!jobs.takeWake(job.id, now)) continue
       this.startedAt.set(job.id, now)
+      const runsBefore = jobs.runCount(job.id)
       result.woken++
       log(`[jobs] waking ${job.id} for ${job.assignee} (wake ${job.wakeCount + 1})`)
       void Promise.resolve()
@@ -160,10 +161,19 @@ export class JobWake {
           // Queued behind a busy agent: the run will start, nothing to arm.
           if (!error || isQueued(error)) return
           this.startedAt.delete(job.id)
-          // The run did not start (the agent is busy, a limit holds): try
-          // again in a few minutes. Each try counts toward the cap.
+          // A run began on the job since the wake was taken (the doors link
+          // it as it starts) and ended with an error: stopped by a person,
+          // failed, timed out or cut by a restart. Its end already put the
+          // job's state (blocked), or the resumed run decides: that stands.
+          if (jobs.runCount(job.id) > runsBefore) {
+            log(`[jobs] ${job.id}: its wake run ended with an error (${clip(error, 120)}), not armed again`)
+            return
+          }
+          // No run began (the agent is busy, a limit holds): try again in a
+          // few minutes, only while the job is as takeWake left it. Each try
+          // counts toward the cap.
           const at = this.now()
-          if (jobs.armWake(job.id, at + 5 * MIN, job.note ?? "the wake could not start", at)) log(`[jobs] ${job.id}: wake could not start (${clip(error, 120)}), armed again`)
+          if (jobs.rearmWake(job.id, at + 5 * MIN, job.note ?? "the wake could not start", at)) log(`[jobs] ${job.id}: wake could not start (${clip(error, 120)}), armed again`)
         })
         .catch((e: any) => log(`[jobs] ${job.id}: wake failed: ${e?.message ?? e}`))
     }

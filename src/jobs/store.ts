@@ -368,6 +368,21 @@ export class JobStore {
     ).run(at, clip(note, JOB_NOTE_MAX), now, id).changes > 0
   }
 
+  /** Arm again a wake that was taken and whose run never began. Only
+   *  while the job is as `takeWake` left it (continue, no wake set):
+   *  whatever moved it since (a stop, a declaration) stands. */
+  rearmWake(id: string, at: number, note: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET wake_at = ?, job_note = ?, updated_at = ?
+       WHERE id = ? AND job_state = 'continue' AND wake_at IS NULL AND ${OPEN_ROW}`,
+    ).run(at, clip(note, JOB_NOTE_MAX), now, id).changes > 0
+  }
+
+  /** How many runs began on the job so far. */
+  runCount(id: string): number {
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM request_links WHERE request_id = ? AND kind = 'run'").get(id) as { n: number }).n
+  }
+
   /** The newest open job of this agent in this chat: the one background
    *  work left by a turn there belongs to. */
   latestInChat(assignee: string, channel: string, chatId: string): JobRecord | null {

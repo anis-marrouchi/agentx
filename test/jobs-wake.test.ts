@@ -128,6 +128,36 @@ describe("the wake", () => {
     expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: clock + 5 * MIN, wakeCount: 1 })
   })
 
+  it("a wake run that began and was stopped, failed or was cut is not armed again", async () => {
+    for (const id of ["job-stop", "job-fail", "job-cut"]) {
+      open(id)
+      jobs.declare(id, { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
+    }
+    // The wake run begins (the doors link it), then ends with an error
+    // before execute() resolves, as on the live bus.
+    wake = new JobWake({
+      jobs, settings: () => settings, log: (m) => logs.push(m), now: () => clock,
+      facts: (): JobFacts => ({ lastRunEndedAt: clock - HOUR }),
+      start: async (job) => {
+        const runId = `wake-${job.id}`
+        jobs.linkRun(job.id, runId, clock)
+        const end = job.id === "job-stop" ? { stopped: true, error: "stopped by owner" }
+          : job.id === "job-fail" ? { error: "model error" } : { interrupted: true, error: "daemon shutdown" }
+        doors.taskCompleted({ taskId: runId, agentId: job.assignee, channel: job.channel, chatId: job.chatId, ...end } as any)
+        return { error: end.error }
+      },
+      hasAgent: () => true,
+    })
+    expect(wake.tick().woken).toBe(3)
+    await flush()
+    expect(jobs.get("job-stop")).toMatchObject({ state: "blocked", wakeAt: null, wakeCount: 1 })
+    expect(jobs.get("job-fail")).toMatchObject({ state: "blocked", wakeAt: null, wakeCount: 1 })
+    expect(jobs.get("job-cut")).toMatchObject({ wakeAt: null, wakeCount: 1 })
+    expect(logs.filter((l) => l.includes("not armed again"))).toHaveLength(3)
+    clock += 10 * MIN
+    expect(wake.tick().woken).toBe(0)
+  })
+
   it("a wake queued behind a busy agent is not armed a second time, and its job is not stalled while it waits", async () => {
     open()
     jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
