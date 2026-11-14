@@ -121,6 +121,7 @@ export function ensureJobColumns(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_requests_job_state ON requests(job_state) WHERE job_state IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_requests_parent ON requests(parent_id) WHERE parent_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_requests_wake ON requests(wake_at) WHERE wake_at IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_requests_job_home ON requests(agent_id, home_link) WHERE state = 'job' AND home_link IS NOT NULL;
   `)
 }
 
@@ -417,9 +418,13 @@ export class JobStore {
     })
   }
 
-  /** Delete finished job rows older than `before`. Owner requests age out
-   *  with the request store's own pruning. */
+  /** Delete job rows older than `before`: finished ones by their close,
+   *  blocked and stalled ones by their last move (nothing reopens a failed
+   *  cron or workflow run's job). Owner requests age out with the request
+   *  store's own pruning. */
   pruneDone(before: number): number {
-    return this.db.prepare(`DELETE FROM requests WHERE state = ? AND job_state = 'done' AND closed_at < ?`).run(JOB_ROW_STATE, before).changes
+    return this.db.prepare(
+      `DELETE FROM requests WHERE state = ? AND ((job_state = 'done' AND closed_at < ?) OR (job_state IN ('blocked', 'stalled') AND updated_at < ?))`,
+    ).run(JOB_ROW_STATE, before, before).changes
   }
 }

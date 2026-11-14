@@ -117,6 +117,17 @@ describe("the rows", () => {
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
   })
 
+  it("opens only the row on the machine it was opened on when two machines keep the same id", () => {
+    const row = (node: string): any => ({ id: "job-dlg-1", door: "a2a", state: "working", status: "working", requester: "coder", assignee: "devops", text: "deploy", headline: null, home: null, parentId: null, updatedAt: NOW, node, nodeName: node || "here" })
+    const model = { list: [row(""), row("clawd")], counts: null, total: 2, state: "open", door: "", open: "job-dlg-1", detail: null, detailErr: "", missed: [], error: "", multi: true, now: NOW }
+    const here = jobLedgerPageHtml({ ...model, node: "" })
+    expect(here).toContain('data-jlopen="job-dlg-1" data-jlnode="" aria-expanded="true"')
+    expect(here).toContain('data-jlopen="job-dlg-1" data-jlnode="clawd" aria-expanded="false"')
+    const there = jobLedgerPageHtml({ ...model, node: "clawd" })
+    expect(there).toContain('data-jlopen="job-dlg-1" data-jlnode="" aria-expanded="false"')
+    expect(there).toContain('data-jlopen="job-dlg-1" data-jlnode="clawd" aria-expanded="true"')
+  })
+
   it("counts the chips from the counts, and says so in one sentence when there is nothing", () => {
     const base = { list: [], counts: { working: 2, continue: 1, waiting: 0, blocked: 1, stalled: 1, done: 7, dropped: 1 }, total: 0, state: "open", door: "", open: "", detail: null, detailErr: "", missed: [], error: "", multi: false, now: NOW }
     const html = jobLedgerPageHtml(base)

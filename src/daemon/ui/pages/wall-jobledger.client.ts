@@ -114,7 +114,7 @@ export const WALL_JOBLEDGER_SCRIPT = String.raw`
     if (a && a.id === 'jl-door') return;
     var shown = JL.open && JL.detailFor === mark;
     $('wall-jobledger').innerHTML = jobLedgerPageHtml({
-      list: JL.list, counts: JL.counts, total: JL.total, state: JL.state, door: JL.door, open: JL.open,
+      list: JL.list, counts: JL.counts, total: JL.total, state: JL.state, door: JL.door, open: JL.open, node: JL.node,
       detail: shown ? JL.detail : null, detailErr: shown ? JL.detailErr : '',
       missed: costMachines().missed.concat(JL.failed), error: JL.error, multi: costMachines().read.length > 1, now: Date.now(),
     });

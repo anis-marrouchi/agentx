@@ -70,6 +70,9 @@ export interface JobDoorsDeps {
    *  true when handled; unset or false: the job is closed as "the run
    *  ended" (what the daemon did before jobs). */
   onUndeclared?: (job: JobRecord, end: AgentXEvents["task:completed"]) => boolean
+  /** Is this delegation one this node started and still waits on? Asked
+   *  after a restart, when the doors no longer remember it themselves. */
+  pendingDelegation?: (delegationId: string) => boolean
 }
 
 export class JobDoors {
@@ -87,6 +90,10 @@ export class JobDoors {
 
   setOnUndeclared(fn: JobDoorsDeps["onUndeclared"]): void {
     this.deps.onUndeclared = fn
+  }
+
+  setPendingDelegation(fn: JobDoorsDeps["pendingDelegation"]): void {
+    this.deps.pendingDelegation = fn
   }
 
   private guard(what: string, fn: () => void): void {
@@ -130,8 +137,11 @@ export class JobDoors {
 
       // A hand-off this node started already has its job.
       const dlg = from.door === "a2a" ? delegationIdOfChat(p.chatId) : null
-      if (dlg) {
-        const handed = jobs.get(`job-${dlg}`)
+      // Only for a hand-off this node knows it started: the chat id alone
+      // proves nothing, any caller of /task can write one.
+      const taken = dlg ? jobs.get(`job-${dlg}`) : null
+      if (dlg && taken) {
+        const handed = this.handed.has(dlg) || this.deps.pendingDelegation?.(dlg) ? taken : null
         if (handed) {
           jobs.linkRun(handed.id, runId, now)
           jobs.working(handed.id, now)
@@ -141,15 +151,17 @@ export class JobDoors {
       }
       const homeRef = from.door === "mention" ? homeOfForgeChat(p.chatId) : normalizeHome(p.home) ?? null
       const home: RequestHome | null = homeRef ? { kind: "issue", link: homeRef } : null
-      // A new message on the same issue to the same agent continues its job.
-      const same = home && (from.door === "mention" || from.door === "a2a") ? jobs.openAtHome(p.agentId, home.link) : null
+      // A new comment on the same issue to the same agent continues its
+      // job. Only at the mention door: a hand-off naming the issue runs in
+      // its own chat and would close the job under the mention's work.
+      const same = home && from.door === "mention" ? jobs.openAtHome(p.agentId, home.link) : null
       if (same) {
         jobs.linkRun(same.id, runId, now)
         jobs.working(same.id, now)
         on(same.id)
         return
       }
-      const id = dlg ? `job-${dlg}` : `job-${runId}`
+      const id = dlg && !taken ? `job-${dlg}` : `job-${runId}`
       // A workflow step serves the request its workflow run is linked to.
       const wfRun = from.door === "workflow" && p.chatId.startsWith("workflow:") ? p.chatId.slice("workflow:".length) : null
       const parentId = wfRun ? this.deps.requests.byLink("workflow", wfRun)?.id ?? null : null
@@ -185,7 +197,7 @@ export class JobDoors {
       if (job.state !== "working" || job.declaredRun === p.taskId) return
       // A hand-off this node started ends with its delegation.
       const dlg = job.id.startsWith("job-dlg-") ? job.id.slice("job-".length) : null
-      if (dlg && this.handed.has(dlg)) return
+      if (dlg && (this.handed.has(dlg) || this.deps.pendingDelegation?.(dlg))) return
       if (this.deps.onUndeclared?.(job, p)) return
       this.deps.jobs.declare(job.id, { state: "done", proof: firstLink(p.finalResponse ?? "") ?? RUN_ENDED_PROOF }, { runId: p.taskId, now })
     })

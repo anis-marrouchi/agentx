@@ -611,7 +611,7 @@ export class RequestStore {
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?, proof = ?,
          closed_by = 'check', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run(now, now, now, text, now, now, text, JSON.stringify(proof), id, ...CLOSED_STATES).changes > 0
     if (closed) this.done(id)
     return closed
@@ -878,7 +878,7 @@ export class RequestStore {
     this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = ?, updated_at = ?, attention_reason = NULL, notified_at = NULL, question = NULL,
          need = CASE WHEN state IN ('waiting_owner', 'needs_attention') THEN NULL ELSE need END
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run(state, now, state, now, id, ...CLOSED_STATES)
   }
 
@@ -888,7 +888,7 @@ export class RequestStore {
   waitOnOwner(id: string, question: string, now: number, need: string | null = null): void {
     this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, need = ?, attention_reason = NULL, notified_at = NULL
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("waiting_owner", now, now, question.slice(0, TEXT_MAX), need, id, ...CLOSED_STATES)
   }
 
@@ -898,7 +898,7 @@ export class RequestStore {
   needsAttention(id: string, reason: string, now: number): boolean {
     const res = this.db.prepare(
       `UPDATE requests SET state = 'needs_attention', updated_at = ?, state_changed_at = ?, attention_reason = ?, notified_at = NULL
-       WHERE id = ? AND state NOT IN ('needs_attention', ${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state NOT IN ('needs_attention', 'job', ${placeholders(CLOSED_STATES.length)})`,
     ).run(now, now, reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX), id, ...CLOSED_STATES)
     if (res.changes > 0) this.signal("request_stalled", id, reason, now)
     return res.changes > 0
@@ -972,7 +972,7 @@ export class RequestStore {
     const res = this.db.prepare(
       `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?, proof = ?,
          closed_by = ?, owner_check = ?, owner_check_at = NULL, owner_check_note = NULL
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept,
       by, check, id, ...CLOSED_STATES)
     const closed = res.changes > 0

@@ -159,9 +159,10 @@ describe("a run that is not the owner's turn", () => {
     // Closed: the next mention is a new job.
     start("m3", mention)
     expect(jobs.byRun("m3")!.id).toBe("job-m3")
-    // An a2a message naming the same home lands on the open job there.
+    // A hand-off naming the same home is its own job, with that home.
     start("a1", { home: "https://github.com/org/repo/issues/12" })
-    expect(jobs.byRun("a1")!.id).toBe("job-m3")
+    expect(jobs.byRun("a1")).toMatchObject({ id: "job-a1", home: { kind: "issue", link: "org/repo#12" } })
+    expect(jobs.get("job-m3")!.state).toBe("working")
   })
 
   it("leaves a chat answer to another person, and a plan step's pick-up, alone", () => {
@@ -252,6 +253,25 @@ describe("a hand-off this node started", () => {
     expect(jobs.get("job-dlg-abc-12")).toMatchObject({ state: "waiting", waitingOn: "devops@clawd", peer: "clawd" })
     doors.delegationDone({ ...dlg, peer: "clawd" }, "done", "ok")
     expect(jobs.get("job-dlg-abc-12")!.state).toBe("done")
+  })
+
+  it("a chat id naming someone else's hand-off does not take its job", () => {
+    start("d1", calleeRun)
+    end("d1", calleeRun)
+    // A later run that writes the same chat id gets a job of its own.
+    start("x1", calleeRun)
+    expect(jobs.byRun("x1")!.id).toBe("job-x1")
+    expect(jobs.runs("job-dlg-abc-12").map((r) => r.runId)).toEqual(["d1"])
+  })
+
+  it("after a restart, a hand-off still out is known from the delegations", () => {
+    doors.delegationStarted(dlg)
+    const fresh = new JobDoors({ jobs, requests, settings: () => ({ enabled: true }), log: () => {}, now: () => clock, pendingDelegation: (id) => id === "dlg-abc-12" })
+    const p = { ...calleeRun, taskId: "d9", messagePreview: "x", at: "" } as any
+    fresh.taskStarted(p)
+    expect(jobs.byRun("d9")!.id).toBe("job-dlg-abc-12")
+    fresh.taskCompleted({ ...calleeRun, taskId: "d9", durationMs: 1, at: "" } as any)
+    expect(jobs.get("job-dlg-abc-12")!.state).toBe("working")
   })
 
   it("a hand-off that came from another node closes with its run", () => {

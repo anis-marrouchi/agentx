@@ -776,6 +776,8 @@ export class AgentXDaemon {
         try {
           this.requests = attachRequests(db, () => this.config.requests, this.log)
           fillLinkAgents(this.requests.store, db, resolve(process.cwd(), ".agentx/a2a/delegations.jsonl"), this.log)
+          // Jobs (#1861): a hand-off still out ends with its delegation.
+          this.requests.doors.setPendingDelegation((id) => !!this.delegations?.isPending(id))
           // A promise closed with a proof leaves a checked fact in the
           // wiki's fact ledger (#1138 D): `agentx wiki facts list`.
           let ledger: FactLedger | null = null

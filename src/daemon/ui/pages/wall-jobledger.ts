@@ -43,6 +43,8 @@ export interface JobLedgerModel {
   door: string
   /** The job opened, and what was read for it. */
   open: string
+  /** The machine the opened job is on: "" for this one. */
+  node?: string
   detail: HubJobDetail | null
   detailErr: string
   missed: Array<{ name: string; why: string }>
@@ -175,9 +177,12 @@ export function jobLedgerPageHtml(m: JobLedgerModel): string {
   const warn = m.missed.length ? '<p class="wjl__warn" role="status">Not read: ' + m.missed.map((x) => jlEsc(x.name) + " " + jlEsc(x.why)).join("; ") + ".</p>" : ""
   if (m.error) return tools + '<p class="ax-wall__empty" role="alert">Could not read the jobs: ' + jlEsc(m.error) + ". Select Refresh to try again.</p>"
   if (!m.list) return tools + warn + '<p class="ax-wall__empty">Loading…</p>'
-  const opts = (j: HubJob) => ({ open: m.open === j.id, detail: m.detail, detailErr: m.detailErr, multi: m.multi, now: m.now })
+  // A job handed to another machine has the same id on both: the row
+  // that is open is the one on the machine it was opened on.
+  const isOpen = (j: HubJob) => m.open === j.id && (j.node || "") === (m.node || "")
+  const opts = (j: HubJob) => ({ open: isOpen(j), detail: m.detail, detailErr: m.detailErr, multi: m.multi, now: m.now })
   // A parent or child opened from a row may not be in this list: it shows on top.
-  const away = m.open && !m.list.some((j) => j.id === m.open)
+  const away = m.open && !m.list.some(isOpen)
   const top = !away ? "" : m.detail ? jlRowHtml(m.detail.job, opts(m.detail.job))
     : '<article class="wjl is-open">' + jlDetailHtml(null, m.detailErr, "", m.now) + "</article>"
   const empty = m.state === "open" && !m.door ? "No open jobs: no assigned work is unfinished." : "No jobs match this state and door."
