@@ -17,6 +17,8 @@
 //
 // Pure: the registry carries it out.
 
+import { NOTHING_TO_REPORT } from "../crons/quiet"
+
 export type JobState =
   | { state: "done"; proof: string }
   | { state: "continue"; left: string; when?: string }
@@ -41,6 +43,13 @@ const base = (channel: string | undefined) => (channel ?? "").toLowerCase().spli
 /** Does a run on this channel have to state its job's state? */
 export function needsJobState(settings: JobStateSettings | undefined, channel: string | undefined): boolean {
   return !!settings?.enabled && settings.channels.includes(base(channel))
+}
+
+/** Does the state go on the answer too? Not on a schedule's: its answer is
+ *  posted as is and read by the quiet and exit checks, so the state stays
+ *  on the job's row only. */
+export function stateOnAnswer(channel: string | undefined): boolean {
+  return base(channel) !== "cron"
 }
 
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "")
@@ -156,7 +165,8 @@ export function describeJobState(s: JobState): string {
 export const JOB_STATE_RULE =
   "[Job state] Before you end this run, state the job's state with the agentx_job_state tool, " +
   "or as your last line: `State: done — <proof>`, `State: continue — <what is left, when>`, " +
-  "`State: waiting — <on whom, until when>` or `State: blocked — <why>`.\n"
+  "`State: waiting — <on whom, until when>` or `State: blocked — <why>`. " +
+  `A schedule's answer of exactly ${NOTHING_TO_REPORT} already means done: write it alone.\n`
 
 /** The one question a run that stated nothing gets, in the same session. */
 export const JOB_STATE_ASK =

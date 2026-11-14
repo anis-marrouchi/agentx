@@ -187,11 +187,22 @@ describe("registry.execute on an agent channel", () => {
     expect(exit.content).toBe(`${NOTHING_TO_REPORT}\nEXIT=0`)
   })
 
-  it("a schedule with something to say is still asked for its state", async () => {
-    const { r, seen } = registry([{ content: "Disk is 95% full." }, { content: "State: blocked — needs cleanup" }])
-    const res = await r.execute({ agentId: "ops", message: "check", context: { channel: "cron", chatId: "nightly" } })
+  it("a schedule with something to say is still asked, but its answer is posted as it is", async () => {
+    const cron = { channel: "cron", chatId: "nightly" }
+    const { r, seen } = registry([{ content: "Disk is 95% full.\nEXIT=0" }, { content: "State: blocked — needs cleanup" }])
+    const res = await r.execute({ agentId: "ops", message: "check", context: cron })
     expect(seen).toHaveLength(2)
-    expect(res.content).toBe("Disk is 95% full.\n\n[Job state] blocked — needs cleanup")
+    // The state is on the job's row only; the exit marker stays last.
+    expect(res.content).toBe("Disk is 95% full.\nEXIT=0")
+    expect(res.jobState).toEqual({ state: "blocked", why: "needs cleanup" })
+    const tool = registry([(task, reg) => {
+      reg.recordJobState(task.runningTaskId!, { state: "done", proof: "checked" })
+      return { content: "Disk is 80% full." }
+    }])
+    expect((await tool.r.execute({ agentId: "ops", message: "check", context: cron })).content).toBe("Disk is 80% full.")
+    const stalled = registry([{ content: "Disk is 95% full." }, { content: "no idea" }])
+    const s = await stalled.r.execute({ agentId: "ops", message: "check", context: cron })
+    expect(s).toMatchObject({ content: "Disk is 95% full.", jobState: { state: "stalled" } })
   })
 
   it("an ask that fails counts as no state", async () => {

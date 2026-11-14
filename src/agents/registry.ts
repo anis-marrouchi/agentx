@@ -32,7 +32,7 @@ import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
-import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, withoutStateLines, type JobState } from "./run-state"
+import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, stateOnAnswer, withoutStateLines, type JobState } from "./run-state"
 import { isQuietAnswer } from "@/crons/quiet"
 import { withoutExitMarker } from "@/crons/exit-check"
 import { emitSignal } from "@/improve/signals"
@@ -1597,9 +1597,10 @@ export class AgentRegistry {
     }
     const where = `${task.agentId} ${channel ?? "-"} ${task.taskId ?? "-"}`
     // A state the answer does not already show goes on its last line, so
-    // whoever asked reads it with the answer.
+    // whoever asked reads it with the answer (not a schedule's answer).
+    const onAnswer = stateOnAnswer(channel)
     const withState = (state: JobState): AgentResponse => {
-      if (jobStateInText(response.content)) return { ...response, jobState: state }
+      if (!onAnswer || jobStateInText(response.content)) return { ...response, jobState: state }
       const line = `[Job state] ${describeJobState(state)}`
       return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: state }
     }
@@ -1643,6 +1644,7 @@ export class AgentRegistry {
     this.log(`[job-state] ${where}: no state when asked${asked.error ? ` (${asked.error.slice(0, 120)})` : ""}; stalled`)
     this.tellJobState([...runIds, ask.taskId, ask.runningTaskId], { kind: "stalled", reason: "run ended with no state, and gave none when asked" })
     emitSignal({ kind: "job_stalled", agentId: task.agentId, ref: task.taskId ?? runId ?? "-", detail: `${channel ?? "-"}: run ended with no job state, none when asked` })
+    if (!onAnswer) return { ...response, jobState: { state: "stalled" } }
     const line = stalledLine(task.agentId)
     return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: { state: "stalled" } }
   }
