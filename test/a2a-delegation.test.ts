@@ -523,6 +523,23 @@ describe("a callback turn stopped by a restart (#846)", () => {
     })
   })
 
+  it("keeps the callee's stated state on a held relay (#1861)", async () => {
+    await withLog(async (logPath) => {
+      const before = harness({ logPath, injectTurn: async (turn) => { before.injected.push(turn); return STOPPED } })
+      before.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Ship it" })
+      before.local.resolve({ content: "Tried.", jobState: { state: "blocked", why: "no token" } })
+      await flush()
+      before.mgr.stop()
+      const held = readFileSync(logPath, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.type === "relay")
+      expect(held[0].result).toMatchObject({ status: "error", state: { state: "blocked", why: "no token" } })
+
+      const after = harness({ logPath })
+      await after.mgr.recover()
+      expect(after.injected).toHaveLength(1)
+      expect(after.injected[0].message).toBe(before.injected[0].message)
+    })
+  })
+
   it("sends the notice and notes the request when the re-run fails too", async () => {
     await withLog(async (logPath) => {
       const { taskId } = await stoppedRelay(logPath)

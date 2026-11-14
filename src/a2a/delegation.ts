@@ -1008,7 +1008,8 @@ export class DelegationManager {
   }
 
   private holdRelay(h: HeldRelay): void {
-    const held: HeldRelay = { record: h.record, result: { status: h.result.status, text: clip(h.result.text, RESULT_CLIP) }, attempt: h.attempt, ...(h.reply ? { reply: true } : {}) }
+    // Keep waiting and state: the re-run must end the hand-off the same way.
+    const held: HeldRelay = { record: h.record, result: { ...h.result, text: clip(h.result.text, RESULT_CLIP) }, attempt: h.attempt, ...(h.reply ? { reply: true } : {}) }
     this.heldRelays.set(h.record.id, held)
     this.append({ type: "relay", id: h.record.id, ts: this.now(), ...held })
   }
