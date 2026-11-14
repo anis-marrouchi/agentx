@@ -57,8 +57,15 @@ The time the run was asked for a state is also stored on the job.
 | `jobState.enabled` | `true` | Turns the check on or off. |
 | `jobState.channels` | `["a2a", "cron", "reminder", "events"]` | Channels whose runs must state a job's state. Workflow steps are not on the list: the workflow engine already asks each step for done or failed. |
 
-## Check it
+## Check it worked
 
 1. **Terminal:** send an agent a task from another agent, with `agentx daemon send` or `agentx_send_agent`. Ask it to end with `State: done — <a link>`. The answer that comes back ends with that line, and the daemon log shows `[job-state] <agent> a2a …: done — <the link>`.
 2. **Terminal:** send a task and ask the agent not to state anything, twice. The log shows `ended with no state; asking once`, then `stalled`. The answer ends with `[Job stalled]`, and `agentx improve signals --kind job_stalled` lists one row.
 3. **Terminal:** send a person's chat message on Telegram. Its run gets no reminder line and no question.
+
+## If something is wrong
+
+- **Every agent-to-agent answer ends with `[Job stalled]`:** the agents do not state a state yet. Check that `agentx_job_state` is in their tool list (`session.lean.agentxTools` keeps it), and that the daemon was restarted after the update.
+- **An answer has an extra turn you did not expect:** that is the one question for a state. Ask the agent to end with a `State:` line, or turn the check off for that channel by removing it from `jobState.channels`.
+- **The job in the ledger did not change:** the run belongs to no job. Only runs a door opened a job for are written; the answer still carries the state.
+- **`no running turn matches this call`:** `agentx_job_state` works only from inside the agent's own run, on its own machine.
