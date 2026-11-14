@@ -53,6 +53,7 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `session-continuity` | Does this turn need the earlier conversation, or can the session start fresh early? |
 | `intent-path` | Which intent-graph category, then which verb within it, does this message belong to? Replaces the model call the classifier makes on a cache miss. |
 | `task-tier` | Does this task need the strongest model, or would a cheaper one do? Steers model routing when `active` and `decisions.routing` names a cheap model. |
+| `task-edge` | Is this task harder than the agent's own model does reliably, and would sub-agents help? When `active`, a sure "yes" runs that one task on the model in `decisions.routing.edgeModels` and can ask the agent to use sub-agents. See [Edge model and sub-agents](#edge-model-and-sub-agents). |
 | `task-watch` | Does a task that is starting carry a deadline, a promise to the owner, or a hand-off, so something should watch it? Asked at every task start while `watchers.enabled` is on. Only an `active` seat's confident "no" skips the watcher; see [Watch tasks that must finish](/automations/task-watchers). |
 | `wake-gate` | Does this event need an agent run at all? Not yet asked on the live path; replayed on recorded runs by the [backtest](./jev-backtest.md). |
 | `tool-set` | Which set of built-in tools does a new Claude Code session need: read-only, change code, or everything? Shadow only: it records, the session still gets every tool. See [Tool set](#tool-set). |
@@ -185,6 +186,51 @@ To try it:
    It prints how many new sessions would have started with fewer tools, and how many of those would have been missing a tool the run used (a "miss"). The daemon log also has one `tool-set shadow:` line per graded run, ending in `MISS` for a miss.
 
 A wrong choice in a future active mode would stop an agent in the middle of its task, so the miss rate decides whether this ever goes further than shadow.
+
+## Edge model and sub-agents
+
+An agent runs every day on one model. A few tasks are harder than that model does reliably: a change to how a system is built, a fault that earlier attempts did not find, a long build with many steps that depend on each other. The `task-edge` seat finds those tasks, and AgentX runs each of them on a stronger model that you name, called the **edge model**. Only that one task moves. The next task runs on the agent's own model again, and you do not switch anything back.
+
+The seat answers two questions about each task, in one call:
+
+| Question | What a sure "yes" does when the seat is `active` |
+|---|---|
+| Does this task need the most capable model? (0.70 or higher) | The task runs on the edge model. For a Claude Code agent, the sub-agents it starts run on the edge model too. |
+| Would separate workers help, because the task has parts that do not depend on each other? (0.70 or higher) | For a Claude Code agent, the task gets one extra line that asks it to start **sub-agents** (helpers that Claude Code runs at the same time, each on one part). |
+
+The two answers are separate. A task can move to the edge model, get the sub-agent line, both, or neither.
+
+Everything else leaves the task as it is: the seat is `off` or in `shadow`, the decision service does not answer, or the answer is under the number above. A wrong "yes" costs money and uses your subscription's limit, so only a sure answer changes a task.
+
+Some tasks are never moved:
+
+- A task that already names its model, such as a scheduled job with its own `model`.
+- A task that the triage rule sent to a cheaper model ([A cheaper model for triage events](../reference/config-agents.md#a-cheaper-model-for-triage-events)).
+- A request on the `voice`, `desktop` or `opencode` channel, where a person chose the model.
+- A task whose agent already runs on the edge model.
+
+The sub-agent line is left out when the session's tool list (`session.lean.tools`) does not include the `Agent` tool. If both this seat and `task-tier` are sure about the same task, the edge model wins.
+
+There are two costs to know. When a task in a running conversation moves to the edge model, that model reads the whole conversation once at the full price, because the saved copy of a conversation belongs to one model. An agent with `persistentProcess` on is also restarted for the task and again for the next one.
+
+To turn it on:
+
+1. Merge this into `agentx.json`. Start with `shadow`: the seat records what it would do and changes nothing.
+   ```json
+   {
+     "decisions": {
+       "enabled": true,
+       "seats": { "task-edge": { "mode": "shadow", "backend": "typesafe" } },
+       "routing": { "edgeModels": { "claude-code": "claude-fable-5-2" } }
+     }
+   }
+   ```
+2. **Terminal:** restart the daemon with `agentx daemon stop`, then `agentx daemon start --detach`.
+3. After a few days, **Terminal:** run `agentx decisions stats --since 7d` and read the `task-edge` row. The daemon log has no line for it in shadow mode; the answers are in the decisions database.
+4. When the answers look right, change `"mode": "shadow"` to `"mode": "active"` and restart the daemon again.
+5. In the daemon log, a moved task prints one line, for example `hard task → claude-fable-5-2 for this job, sub-agents advised (edge 0.91, sub-agents 0.84)`.
+
+To get only the sub-agent line and never a model change, leave `edgeModels` out.
 
 ## Check it worked
 

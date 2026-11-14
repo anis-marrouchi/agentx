@@ -1312,6 +1312,13 @@ const decisionsConfigSchema = z.object({
       "claude-code": z.string().optional(),
       "codex-cli": z.string().optional(),
     }).optional(),
+    /** The most capable model per CLI engine. A job the task-edge seat is
+     *  sure needs it runs on this model; the next job is back on the
+     *  agent's own. Unset for an engine: no job moves up. */
+    edgeModels: z.object({
+      "claude-code": z.string().optional(),
+      "codex-cli": z.string().optional(),
+    }).optional(),
   }).default({}),
 }).default({})
 

@@ -30,7 +30,7 @@ import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
 import type { SeededMessage } from "@/channels/types"
 import { getProcessRegistry } from "./process-registry-instance"
-import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
+import { RegistryCapExceeded, SUBAGENT_MODEL_ENV, type ProcessKey } from "./process-registry"
 import { TurnDeadlineExceeded, TurnInterrupted } from "./claude-process-factory"
 import { effectiveMcpConfig } from "./codegraph-bootstrap"
 import { resolveHttpHeaders, type McpPolicyFields } from "@/agent/mcp-policy"
@@ -96,6 +96,12 @@ export interface AgentTask {
   workflowRunId?: string
   /** Per-invocation model override (e.g. cron model). Falls back to agent.model. */
   model?: string
+  /** Model for the sub-agents this run starts, when the run was moved to
+   *  the edge model (agents/edge-routing.ts). Claude Code only. */
+  subagentModel?: string
+  /** One line for this turn only, placed just before the message (the
+   *  sub-agent hint from agents/edge-routing.ts). */
+  turnNote?: string
   /** What the person typed, when `message` wraps it in a prompt of the
    *  caller's own. The requests record keeps this text (#401). */
   requestText?: string
@@ -421,6 +427,11 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
     parts.push(historyContext)
   }
 
+  if (task.turnNote) {
+    parts.push("")
+    parts.push(task.turnNote)
+  }
+
   parts.push("")
   parts.push(task.message)
 
@@ -598,6 +609,8 @@ export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.P
  *  (MEMORY.md) would otherwise load into the run whatever the flags say. */
 export function withIsolationEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.ProcessEnv {
   if (task.isolated) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1"
+  // A run on the edge model keeps its sub-agents on it (edge-routing.ts).
+  if (task.subagentModel) env[SUBAGENT_MODEL_ENV] = task.subagentModel
   return env
 }
 
@@ -2083,6 +2096,7 @@ async function executeClaudeCodePersistent(
       systemPromptAppend: task.systemPromptAppend,
       resumeSessionId,
       extraArgs: task.claudeArgs,
+      subagentModel: task.subagentModel,
     })
     wasFreshSpawn = registry.list().length > before
   } catch (e: any) {

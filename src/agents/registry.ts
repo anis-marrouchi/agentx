@@ -1,6 +1,7 @@
 import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
+import { edgeModelForEngine, edgePlanFor, edgeSeatOn, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
 import { askSeat } from "@/decisions/seat"
@@ -103,6 +104,7 @@ const STEP_BUDGET_MS: Record<string, number> = {
   "plan-context": 12_000,
   "select-context": 5_000,
   "route-model": 5_000,
+  "route-edge": 5_000,
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
 import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, requestedPriorityOf, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
@@ -3203,6 +3205,37 @@ export class AgentRegistry {
     let routedModelSettled = false
     routedModelPending.then(() => { routedModelSettled = true })
 
+    // The other direction: a job the task-edge seat is sure about moves UP
+    // to the edge model for this job only, and may be told to use
+    // sub-agents (agents/edge-routing.ts). Asked alongside the downgrade
+    // above, with the same exclusions: a model named on the task (a cron
+    // override), a triage run and an isolated run are left alone.
+    const edgeRoutePending: Promise<EdgeRouteResult | undefined> =
+      !task.model && !triage?.downgraded && !isolated
+      && (state.def.tier === "claude-code" || state.def.tier === "codex-cli")
+      && edgeSeatOn()
+      && (!requestGate.active || requestGate.preprocess)
+        ? (async () => {
+            try {
+              return await step("route-edge", () => routeTaskEdge({
+                message: task.message,
+                agent: task.agentId,
+                channel,
+                tier: state.def.tier,
+                isFollowUp: Boolean(resumeSessionId),
+                agentPrompt: state.def.systemPrompt ?? null,
+                edgeModel: edgeModelForEngine(state.def.tier, this.config.decisions.routing),
+                currentModel: state.def.model ?? null,
+              }))
+            } catch {
+              /* never let this decision stop a task */
+              return undefined
+            }
+          })()
+        : Promise.resolve(undefined)
+    let edgeRouteSettled = false
+    edgeRoutePending.then(() => { edgeRouteSettled = true })
+
     const selectedContext = requestGate.active && requestGate.preprocess
       ? await budgeted("select-context", () => selectRequestContext(contextInput), () => ({ input: contextInput, excluded: [] as string[] }))
       : { input: contextInput, excluded: [] }
@@ -3297,10 +3330,21 @@ export class AgentRegistry {
         }, (m) => this.log(m))
       : undefined
 
+    // A confident "needs the edge model" wins over a downgrade: the two
+    // seats disagree only when one of them is wrong, and the cheaper
+    // mistake is the stronger model.
+    if (!edgeRouteSettled) traceStep("route-edge")
+    const edgeRoute = await edgeRoutePending
+    const edgePlan = edgePlanFor(edgeRoute, { tier: state.def.tier, claudeArgs })
+    if (edgeRoute && (edgeRoute.upgraded || edgeRoute.subagents)) this.log(`[${task.agentId}] ${edgeRoute.reason}`)
+    const jobModel = edgePlan.model ?? routedModel
+
     const taskWithSystemPrompt: AgentTask = {
       ...task, systemPromptAppend,
       ...(claudeArgs ? { claudeArgs } : {}),
-      ...(routedModel ? { model: routedModel } : {}),
+      ...(jobModel ? { model: jobModel } : {}),
+      ...(edgePlan.subagentModel ? { subagentModel: edgePlan.subagentModel } : {}),
+      ...(edgePlan.turnNote ? { turnNote: edgePlan.turnNote } : {}),
     }
 
     let finalResponse: AgentResponse | undefined

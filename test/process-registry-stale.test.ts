@@ -57,6 +57,14 @@ const opts = (extra: Partial<SpawnOptions> = {}): SpawnOptions => ({
 })
 
 describe("staleHandleReason", () => {
+  it("respawns when the sub-agent model differs, in both directions", () => {
+    const plain = new FakeHandle(KEY, opts())
+    expect(staleHandleReason(plain, opts({ subagentModel: "edge" }))).toMatch(/sub-agent model changed \(default -> edge\)/)
+    const edge = new FakeHandle(KEY, opts({ subagentModel: "edge" }))
+    expect(staleHandleReason(edge, opts())).toMatch(/sub-agent model changed \(edge -> default\)/)
+    expect(staleHandleReason(edge, opts({ subagentModel: "edge" }))).toBeNull()
+  })
+
   it("keeps a cold process that has not started a conversation", () => {
     const h = new FakeHandle(KEY, opts())
     expect(staleHandleReason(h, opts())).toBeNull()
