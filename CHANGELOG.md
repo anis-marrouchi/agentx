@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.225.0](https://github.com/anis-marrouchi/agentx/compare/v0.224.0...v0.225.0) (2026-11-14)
+
+
+### Features
+
+* **jobs:** a run of agent work ends by stating its job's state ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861) phase 2) ([#1869](https://github.com/anis-marrouchi/agentx/issues/1869)) ([60d29e5](https://github.com/anis-marrouchi/agentx/commit/60d29e51e605834a71b20b7bd4193628ea376267))
+* **jobs:** daemon-owned wake and background work on the job ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861) phase 3) ([#1870](https://github.com/anis-marrouchi/agentx/issues/1870)) ([b239657](https://github.com/anis-marrouchi/agentx/commit/b2396573a232e82cb605027742e9fb16c4e77bd8))
+* **jobs:** job ledger opened at every door and the Jobs page ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861) phase 1) ([#1868](https://github.com/anis-marrouchi/agentx/issues/1868)) ([cce7aa9](https://github.com/anis-marrouchi/agentx/commit/cce7aa9883939aa258fc49b5c9a2b88afef47df4))
+* **jobs:** job tree across nodes ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861) phase 4) ([#1871](https://github.com/anis-marrouchi/agentx/issues/1871)) ([96f2181](https://github.com/anis-marrouchi/agentx/commit/96f2181101ec07325329745d56c2810cf921ed9e))
+
+
+### Bug Fixes
+
+* **jobs:** second review of the wake ([#1870](https://github.com/anis-marrouchi/agentx/issues/1870)) ([#1875](https://github.com/anis-marrouchi/agentx/issues/1875)) ([7088ea2](https://github.com/anis-marrouchi/agentx/commit/7088ea271840adc1a3dc9b0ac8e0f093f96d3cdc)), closes [#1861](https://github.com/anis-marrouchi/agentx/issues/1861)
+
 ## [0.224.0](https://github.com/anis-marrouchi/agentx/compare/v0.223.0...v0.224.0) (2026-11-14)
 
 
