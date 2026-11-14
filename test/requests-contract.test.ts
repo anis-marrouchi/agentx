@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
+import { JobStore } from "../src/jobs/store"
 import { ToldLedger } from "../src/notify/told"
 import { isStatusPull, measureContract, outputsOf, parseSpan, type ContractOptions } from "../src/requests/contract"
 
@@ -82,6 +83,27 @@ describe("measureContract (#1509 step 0)", () => {
     expect(r.chain.chats).toEqual({ n: 1, of: 3 })
     expect(r.chain.inherited.turns).toEqual({ n: 3, of: 4 })
     expect(r.chain.inherited.chats).toEqual({ n: 2, of: 3 })
+  })
+
+  it("leaves job rows and their links out (#1861)", () => {
+    const before = measureContract(db, { ...OPTS, sample: 10 })
+    // The ledger opens a job for each hand-off and for a cron run, and links their runs.
+    const jobs = new JobStore(db)
+    jobs.open({ id: "job-dlg-b", door: "a2a", requester: "producer-agent", assignee: "director-agent", channel: "a2a",
+      chatId: "a2a:producer-agent:director-agent:dlg-b", text: "render it", runId: "t-d1", now: T0 + HOUR })
+    jobs.linkRun("job-dlg-b", "t-d2", T0 + 3 * HOUR)
+    jobs.linkDelegation("job-dlg-b", "dlg-b", T0 + HOUR)
+    jobs.open({ id: "job-dlg-c", door: "a2a", requester: "other-agent", assignee: "director-agent", channel: "a2a",
+      chatId: "a2a:other-agent:director-agent:dlg-c", text: "check it", runId: "t-x", now: T0 + 4 * HOUR })
+    trace("t-cron", "desk-agent", "cron", "cron:daily", T0 + 5 * HOUR, T0 + 5 * HOUR + 60_000, { response: "Report at https://example.com/report/1" })
+    jobs.open({ id: "job-cron", door: "cron", requester: "cron:daily", assignee: "desk-agent", channel: "cron", chatId: "cron:daily",
+      text: "daily report", runId: "t-cron", now: T0 + 5 * HOUR })
+    const after = measureContract(db, { ...OPTS, sample: 10 })
+    expect(after.chain).toEqual(before.chain)
+    expect(after.delivery).toEqual(before.delivery)
+    expect(after.quiet).toEqual(before.quiet)
+    expect(after.pulls).toEqual(before.pulls)
+    expect(after.dryRun.hops).toEqual(before.dryRun.hops)
   })
 
   it("puts outputs on the root request and says which reached the owner", () => {

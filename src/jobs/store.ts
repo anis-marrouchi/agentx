@@ -419,12 +419,14 @@ export class JobStore {
   }
 
   /** Delete job rows older than `before`: finished ones by their close,
-   *  blocked and stalled ones by their last move (nothing reopens a failed
-   *  cron or workflow run's job). Owner requests age out with the request
-   *  store's own pruning. */
+   *  and working, blocked and stalled ones by their last move. Nothing
+   *  reopens a failed cron or workflow run's job, and a job still "working"
+   *  that long after its last move lost its run to a restart. A job with a
+   *  wake set or a named waiter is kept: its own clock ends it. Owner
+   *  requests age out with the request store's own pruning. */
   pruneDone(before: number): number {
     return this.db.prepare(
-      `DELETE FROM requests WHERE state = ? AND ((job_state = 'done' AND closed_at < ?) OR (job_state IN ('blocked', 'stalled') AND updated_at < ?))`,
+      `DELETE FROM requests WHERE state = ? AND ((job_state = 'done' AND closed_at < ?) OR (job_state IN ('working', 'blocked', 'stalled') AND updated_at < ?))`,
     ).run(JOB_ROW_STATE, before, before).changes
   }
 }

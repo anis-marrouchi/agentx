@@ -149,7 +149,13 @@ export function measureContract(db: Database.Database, opts: ContractOptions): C
   const dlgOf = new Map<string, string>()
   const reqs = new Map<string, any>()
   if (withRequests) {
-    for (const l of db.prepare("SELECT request_id, kind, ref FROM request_links WHERE kind IN ('run', 'step_run', 'delegation')").all() as any[]) {
+    // A job row (#1861) is not an owner's request: its links stay out, or
+    // every hand-off, cron and mention run would count as linked to one.
+    const links = db.prepare(
+      `SELECT request_id, kind, ref FROM request_links
+        WHERE kind IN ('run', 'step_run', 'delegation') AND request_id NOT IN (SELECT id FROM requests WHERE state = 'job')`,
+    ).all() as any[]
+    for (const l of links) {
       if (l.kind === "delegation") dlgOf.set(l.ref, l.request_id)
       else runOf.set(l.ref, l.request_id)
     }

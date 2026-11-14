@@ -61,6 +61,15 @@ A line that starts with `nobody on it` is an open job that nothing holds right n
 
 Every open job is meant to have one of three things: a live run, a set wake, or a named person or agent it waits on with a due time. A job with none of them is stalled, and that is what the page is for: to make such a job visible instead of quiet.
 
+## How long a job is kept
+
+Jobs leave the list by themselves after the number of days set in **Keep closed requests for (days)** (`requests.retentionDays`, 90 by default; see [open requests](../jobs/open-requests.md)).
+
+- A finished job leaves that many days after it finished.
+- A working, blocked or stalled job leaves that many days after it last moved. This clears the jobs of a schedule that keeps failing, and jobs whose run was cut by a restart.
+- A sleeping or waiting job is kept: its wake or its due time decides what happens to it.
+- Your own requests follow the rules of [open requests](../jobs/open-requests.md): an open request is never removed.
+
 ## Filter by state or door
 
 1. Select a chip to list one state: **Open** (every state that is not finished), **Working**, **Sleeping**, **Waiting**, **Blocked**, **Stalled**, **Done** or **All**. Each chip shows how many jobs it holds.
