@@ -107,6 +107,19 @@ describe("a job handed to another node", () => {
     expect(jobs.get("job-dlg-abc-12")!.note).toBe("there: done: https://x.test/deploy/1")
   })
 
+  it("is not read while blocked or stalled here, so the reason is never written over", async () => {
+    handOff()
+    jobs.declare("job-dlg-abc-12", { state: "blocked", why: "the hand-off failed: peer refused" }, { now: NOW })
+    expect(jobs.openOnPeers()).toEqual([])
+    expect(await mesh.refresh()).toBe(0)
+    expect(jobs.setRemote("job-dlg-abc-12", "job-dlg-abc-12", "there: working")).toBe(false)
+    expect(jobs.get("job-dlg-abc-12")).toMatchObject({ state: "blocked", note: "the hand-off failed: peer refused" })
+    jobs.markStalled("job-dlg-abc-12", "no answer for 2 hours", NOW + 1)
+    expect(jobs.openOnPeers()).toEqual([])
+    expect(await mesh.refresh()).toBe(0)
+    expect(jobs.get("job-dlg-abc-12")!.note).toBe("no answer for 2 hours")
+  })
+
   it("stops being read once it is closed here", async () => {
     handOff()
     jobs.declare("job-dlg-abc-12", { state: "done", proof: "p" }, { now: NOW })
