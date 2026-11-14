@@ -3,6 +3,7 @@ import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
 import { isStatusComment } from "@/requests/status"
+import { noWakeLabelIn } from "./no-wake"
 import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf, stripAgentxMarkers } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
@@ -28,6 +29,7 @@ import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEc
 //   pullRequestActions: [opened, reopened, ready_for_review]
 //   ignoreOwnChanges: true     # AgentX's own labels/assignments start nothing
 //   debounceSeconds: 30        # events on one issue in this window = one run
+//   noWakeLabel: "agent:no-wake"  # an issue/PR carrying it starts nothing
 
 export interface GitHubRoute {
   repo: string   // "owner/repo" or "*" for default
@@ -72,6 +74,10 @@ export interface GitHubChannelConfig {
   /** Adding this label to an issue or PR starts a run, whoever adds it and
    *  whatever the action lists say (#1719). */
   triggerLabel?: string
+  /** An issue or PR carrying this label starts no run at all, with or
+   *  without a project rule (noqta/noqta#800). Default "agent:no-wake";
+   *  "" turns it off. */
+  noWakeLabel?: string
 }
 
 /** Defaults for the event gate (#612). `channels.github` in agentx.json
@@ -155,6 +161,7 @@ interface GitHubIssueCommentEvent {
     state: string
     html_url: string
     pull_request?: unknown  // present if this is a PR
+    labels?: Array<{ name: string }>
   }
   repository: GitHubRepo
 }
@@ -194,6 +201,7 @@ interface GitHubPRReviewEvent {
     number: number
     title: string
     html_url: string
+    labels?: Array<{ name: string }>
   }
   repository: GitHubRepo
 }
@@ -212,6 +220,7 @@ interface GitHubPRReviewCommentEvent {
     number: number
     title: string
     html_url: string
+    labels?: Array<{ name: string }>
   }
   repository: GitHubRepo
 }
@@ -715,6 +724,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const isPR = !!event.issue.pull_request
     const type = isPR ? "pull" : "issue"
     const chatId = `${repo}:${type}:${event.issue.number}`
+    if (this.noWakeSkip(event.issue.labels, `comment ${commentId} on ${chatId}`)) return
     const agentId = this.resolveAgent(repo)
     if (!this.mentionGate(agentId, comment.body, `comment ${commentId} on ${chatId}`)) return
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
@@ -785,6 +795,8 @@ export class GitHubAdapter implements ChannelAdapter {
       ruleActions: rule?.actions,
       defaultActions: this.config.pullRequestActions ?? GITHUB_EVENT_DEFAULTS.pullRequestActions,
       settingName: "pullRequestActions",
+      labels,
+      pendingKey: `${repo}:pull:${pr.number}`,
       decision: this.rules?.shouldFireGithubPR(repo, {
         action: event.action,
         state: pr.state,
@@ -851,6 +863,7 @@ export class GitHubAdapter implements ChannelAdapter {
     if (review.state === "commented" && !review.body) return
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
+    if (this.noWakeSkip(event.pull_request.labels, `review ${review.id} on ${chatId}`)) return
     const agentId = this.resolveAgent(repo)
     if (!this.mentionGate(agentId, review.body, `review ${review.id} on ${chatId}`)) return
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
@@ -884,6 +897,7 @@ export class GitHubAdapter implements ChannelAdapter {
     if (isUnattributedEcho(comment.body, commentTrusted)) return
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
+    if (this.noWakeSkip(event.pull_request.labels, `review comment ${comment.id} on ${chatId}`)) return
     const agentId = this.resolveAgent(repo)
     if (!this.mentionGate(agentId, comment.body, `review comment ${comment.id} on ${chatId}`)) return
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
@@ -920,6 +934,8 @@ export class GitHubAdapter implements ChannelAdapter {
       ruleActions: rule?.actions,
       defaultActions: this.config.issueActions ?? GITHUB_EVENT_DEFAULTS.issueActions,
       settingName: "issueActions",
+      labels,
+      pendingKey: `${repo}:issue:${issue.number}`,
       decision: this.rules?.shouldFireGithubIssue(repo, {
         action: event.action,
         state: issue.state,
@@ -956,6 +972,14 @@ export class GitHubAdapter implements ChannelAdapter {
     }))
   }
 
+  /** True (and logged) when a comment's thread carries the no-wake
+   *  label: no run, even with an @-mention (noqta/noqta#800). */
+  private noWakeSkip(labels: unknown[] | undefined, what: string): boolean {
+    const noWake = noWakeLabelIn(labels, this.config.noWakeLabel)
+    if (noWake) this.log(`${what} skipped: the thread is labelled "${noWake}" (channels.github.noWakeLabel)`)
+    return !!noWake
+  }
+
   /**
    * The event gate for issues and pull requests (#612). In order:
    *   1. The project rule's own filter (labels, state, author, and its
@@ -966,6 +990,8 @@ export class GitHubAdapter implements ChannelAdapter {
    *   3. A change one of AgentX's own accounts made starts nothing, unless
    *      it opened or reopened the thread.
    * Adding `triggerLabel` skips steps 2 and 3 (#1719).
+   * Before all of them: a thread carrying the no-wake label starts
+   * nothing (noqta/noqta#800).
    * True when the event may start a run; every drop is logged with why.
    */
   private gateEvent(what: string, input: {
@@ -977,7 +1003,22 @@ export class GitHubAdapter implements ChannelAdapter {
     defaultActions: readonly string[]
     settingName: "issueActions" | "pullRequestActions"
     decision?: import("@/projects/rules").FilterDecision
+    /** The issue's or PR's labels, for the no-wake label. */
+    labels?: string[]
+    /** The debounce key: a run held for it is dropped on no-wake. */
+    pendingKey?: string
   }): boolean {
+    const noWake = noWakeLabelIn(input.labels, this.config.noWakeLabel)
+    if (noWake) {
+      const key = input.pendingKey ?? ""
+      const held = this.pending.get(key)
+      if (held) {
+        clearTimeout(held.timer)
+        this.pending.delete(key)
+      }
+      this.log(`${what} skipped: "${input.action}" on a thread labelled "${noWake}" (channels.github.noWakeLabel)${held ? `; held ${held.actions.join(", ")} dropped` : ""}`)
+      return false
+    }
     if (input.decision && !input.decision.allow) {
       this.log(`${what} dropped by rule: ${input.decision.reason}`)
       return false
