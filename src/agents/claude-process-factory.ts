@@ -111,6 +111,15 @@ export function persistentCallerEnv(env: NodeJS.ProcessEnv, key: ProcessKey): No
   return env
 }
 
+/** Events held between asked turns, at most. Past it the oldest go. */
+const MAX_PENDING_BETWEEN_TURNS = 200
+
+/** What the next asked turn reads of the events written before it: the
+ *  init that may be its own, and the replies nobody asked for. */
+function keptBetweenTurns(evt: ParsedEvent): boolean {
+  return evt.type === "result" || (evt.type === "system" && evt.subtype === "init")
+}
+
 /** A process serving an edge-model job keeps its sub-agents on that model
  *  (agents/edge-routing.ts). */
 export function withSubagentModel(env: NodeJS.ProcessEnv, model: string | undefined): NodeJS.ProcessEnv {
@@ -376,8 +385,11 @@ class ClaudeProcessHandle implements ProcessHandle {
       if (this.waiters.length > 0) {
         const w = this.waiters.shift()!
         w(evt)
-      } else {
+      } else if (this.snap.state === "busy" || keptBetweenTurns(evt)) {
+        // Between asked turns only what the next turn reads is kept: a
+        // process with background work can write for hours (#1861).
         this.pendingEvents.push(evt)
+        if (this.snap.state !== "busy" && this.pendingEvents.length > MAX_PENDING_BETWEEN_TURNS) this.pendingEvents.shift()
       }
     }
   }

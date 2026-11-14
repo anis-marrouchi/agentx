@@ -100,6 +100,8 @@ describe("the wake", () => {
     for (let i = 0; i < 2; i++) {
       jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "more" }, { now: clock })
       expect(wake.tick().woken).toBe(1)
+      // The next wake waits for this start to come back.
+      await flush()
     }
     jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "still more" }, { now: clock })
     expect(wake.tick()).toEqual({ woken: 0, capped: 1, stalled: 0 })
@@ -168,8 +170,92 @@ describe("the wake", () => {
     clock += 20 * MIN
     expect(wake.tick()).toEqual({ woken: 0, capped: 0, stalled: 0 })
     // Past the wait for a slot, nobody holds it.
-    clock += 15 * MIN
+    clock += 30 * MIN
     expect(wake.tick().stalled).toBe(1)
+  })
+
+  it("a wake run that began and failed is not armed again: the state its end left stands", async () => {
+    open()
+    jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
+    // The run starts, hits its time limit, and the registry answers with the error.
+    const ctx = { agentId: "coder", channel: "a2a", chatId: "pm" }
+    const w = new JobWake({
+      jobs, settings: () => settings, log: (m) => logs.push(m), now: () => clock, hasAgent: () => true,
+      start: async () => {
+        doors.taskStarted({ ...ctx, taskId: "w1", messagePreview: "wake", at: "", jobId: "job-1" } as any)
+        clock += 30 * MIN
+        doors.taskCompleted({ ...ctx, taskId: "w1", durationMs: 5, at: "", error: "timed out after 30m" } as any)
+        return { error: "timed out after 30m" }
+      },
+    })
+    expect(w.tick().woken).toBe(1)
+    await flush()
+    expect(jobs.get("job-1")).toMatchObject({ state: "blocked", wakeAt: null, wakeCount: 1 })
+    expect(jobs.get("job-1")!.note).toMatch(/coder timed out/)
+    expect(logs.some((l) => l.includes("not armed again"))).toBe(true)
+    clock += HOUR
+    expect(w.tick()).toEqual({ woken: 0, capped: 0, stalled: 0 })
+  })
+
+  it("a run that declared waiting and then failed keeps what it declared", async () => {
+    open()
+    jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
+    const w = new JobWake({
+      jobs, settings: () => settings, log: (m) => logs.push(m), now: () => clock, hasAgent: () => true,
+      start: async () => {
+        jobs.linkRun("job-1", "w1", clock)
+        jobs.working("job-1", clock)
+        jobs.declare("job-1", { state: "waiting", on: "devops", until: clock + HOUR }, { runId: "w1", now: clock })
+        return { error: "the model failed" }
+      },
+    })
+    w.tick()
+    await flush()
+    expect(jobs.get("job-1")).toMatchObject({ state: "waiting", waitingOn: "devops", wakeAt: null })
+  })
+
+  it("holds the job while its wake waits for a slot, and wakes it once, even when a reply arms it meanwhile", async () => {
+    open()
+    jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
+    let release!: (r: { error?: string }) => void
+    let starts = 0
+    const w = new JobWake({
+      jobs, settings: () => settings, log: (m) => logs.push(m), now: () => clock, hasAgent: () => true,
+      start: () => { starts++; return new Promise((r) => { release = r }) },
+    })
+    expect(w.tick().woken).toBe(1)
+    await flush()
+    // 25 minutes for a slot, with no run and no wake set: not stalled.
+    clock += 25 * MIN
+    expect(w.tick()).toEqual({ woken: 0, capped: 0, stalled: 0 })
+    // A closing reply meanwhile: the waiting run will see the work itself.
+    expect(w.backgroundEnded({ agentId: "coder", channel: "a2a", chatId: "pm" }, "done")).toBe(false)
+    // And a wake set some other way is not taken beside the one waiting.
+    jobs.armWake("job-1", clock, "again", clock)
+    expect(w.tick().woken).toBe(0)
+    expect(starts).toBe(1)
+    // The slot never came: armed again, and the hold is gone.
+    jobs.takeWake("job-1", clock)
+    release({ error: 'Agent "coder" busy — slot wait timed out after 25m' })
+    await flush()
+    expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: clock + 5 * MIN })
+    clock += 5 * MIN
+    expect(w.tick().woken).toBe(1)
+  })
+
+  it("a start that did not take does not arm a job something else moved meanwhile", async () => {
+    open()
+    jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
+    const w = new JobWake({
+      jobs, settings: () => settings, log: (m) => logs.push(m), now: () => clock, hasAgent: () => true,
+      start: async () => {
+        jobs.declare("job-1", { state: "blocked", why: "stopped by the operator" }, { now: clock })
+        return { error: "agent busy" }
+      },
+    })
+    w.tick()
+    await flush()
+    expect(jobs.get("job-1")).toMatchObject({ state: "blocked", wakeAt: null })
   })
 
   it("a schedule's job is never woken", async () => {
@@ -312,6 +398,50 @@ describe("background work belongs to the job", () => {
     jobs.declare("job-2", { state: "waiting", on: "devops", until: clock + HOUR }, { now: clock })
     expect(wake.backgroundEnded(run, "done")).toBe(false)
     expect(jobs.get("job-2")!.state).toBe("waiting")
+  })
+
+  it("wakes the job that waits on the work, not a newer job of the same chat", async () => {
+    doors.taskStarted({ ...run, taskId: "t1", messagePreview: "build", at: "", sender: { name: "agent:pm" } } as any)
+    background = 1
+    doors.taskCompleted({ ...run, taskId: "t1", durationMs: 5, at: "" } as any)
+    // A newer job in the same chat, working, and another waiting on a person.
+    clock += MIN
+    open("job-new")
+    live.add("job-new")
+    clock += MIN
+    open("job-other")
+    jobs.declare("job-other", { state: "waiting", on: "devops", until: clock + HOUR }, { now: clock })
+    expect(jobs.latestInChat("coder", "a2a", "pm")!.id).toBe("job-other")
+    clock += MIN
+    expect(wake.backgroundEnded(run, "built")).toBe(true)
+    expect(jobs.get("job-t1")).toMatchObject({ state: "continue", wakeAt: clock })
+    expect(jobs.get("job-new")).toMatchObject({ state: "working", wakeAt: null })
+    expect(jobs.get("job-other")).toMatchObject({ state: "waiting", waitingOn: "devops", wakeAt: null })
+  })
+
+  it("with several jobs waiting on background work in a chat, each reply wakes the one that waited longest", () => {
+    for (const id of ["t1", "t2"]) {
+      doors.taskStarted({ ...run, taskId: id, messagePreview: "build", at: "", sender: { name: "agent:pm" } } as any)
+      background = 1
+      doors.taskCompleted({ ...run, taskId: id, durationMs: 5, at: "" } as any)
+      clock += MIN
+    }
+    expect(wake.backgroundEnded(run, "first")).toBe(true)
+    expect(jobs.get("job-t1")!.state).toBe("continue")
+    expect(jobs.get("job-t2")!.state).toBe("waiting")
+    expect(wake.backgroundEnded(run, "second")).toBe(true)
+    expect(jobs.get("job-t2")!.state).toBe("continue")
+  })
+
+  it("counts what the turn nobody asked for cost toward the job's cost cap", () => {
+    settings.maxCostUsd = 1
+    doors.taskStarted({ ...run, taskId: "t1", messagePreview: "build", at: "", sender: { name: "agent:pm" } } as any)
+    background = 1
+    doors.taskCompleted({ ...run, taskId: "t1", durationMs: 5, at: "" } as any)
+    expect(wake.backgroundEnded(run, "built", 1.25)).toBe(true)
+    expect(jobs.costUsd("job-t1")).toBeCloseTo(1.25)
+    expect(wake.tick()).toEqual({ woken: 0, capped: 1, stalled: 0 })
+    expect(jobs.get("job-t1")!.note).toMatch(/cost \$1\.25/)
   })
 
   it("a job marked stalled while its run was still on it closes when that run ends", () => {

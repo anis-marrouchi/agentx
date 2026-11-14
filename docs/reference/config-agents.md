@@ -552,7 +552,7 @@ How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and 
 |---|---|---|---|
 | `processPool.maxIdleSeconds` | number (5–86400) | `30` | Seconds a process may stay quiet before it is stopped, or stopped to make room when the pool is full. The count starts at its last output, not only at the last question it was asked. A process with background tasks open, or writing a reply nobody asked for, is never idle. |
 | `processPool.maxAgeSeconds` | number (60–86400) | `2700` | Seconds after the last question it was asked when a process with no work of its own is always stopped. |
-| `processPool.maxBackgroundSeconds` | number (60–86400) | `10800` | The same limit for a process that still has background work open. |
+| `processPool.maxBackgroundSeconds` | number (60–86400) | `10800` | The same limit for a process that still has background work open. Used only while `requests.jobs.wake.enabled` is on; with it off, `maxAgeSeconds` applies to every process. |
 | `processPool.sweepIntervalSeconds` | number (1–300) | `5` | How often the pool is checked. |
 
 A warm process answers only the question it was asked. When a background task of the agent ends, Claude Code writes a reply nobody asked for; that reply is never sent as the answer to your next question. When the chat has an open [job](../dashboard/jobs.md#how-a-job-keeps-going), the reply wakes that job and the daemon log notes it as `passed to its job a reply no question asked for`; with no open job it is dropped, and the log says `dropped a reply no question asked for`.

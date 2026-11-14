@@ -21,6 +21,7 @@ import { attachRequests, type AttachedRequests } from "../src/requests/attach"
 import { PICKUP_CHANNEL, pickupContext, type RequestSettings } from "../src/requests/tracker"
 import { isQueued } from "../src/agents/queued"
 import { operatorContext } from "../src/requests/operator"
+import { markWake } from "../src/jobs/wake"
 
 const settings: RequestSettings = { enabled: true, channels: [], from: [], staleAfterHours: 24, retentionDays: 90 }
 
@@ -104,6 +105,29 @@ describe("the pick-up turn, through the registry", () => {
     expect((await first).error).toBeUndefined()
     // The flush re-runs it with the daemon's own context, mark included.
     await until(() => runLinks() === 3)
+  }, 15_000)
+})
+
+describe("the run that wakes a job, through the registry (#1861)", () => {
+  it("waits for a slot behind a running turn instead of joining the chat's queue, for an owner's request too", async () => {
+    let finish!: () => void
+    run.impl = () => new Promise((resolve) => { finish = () => resolve({ content: "ok", duration: 1 }) })
+    const first = registry.execute({ agentId: "coder", message: "pick it up again", context: pickupContext("req-1") })
+    await until(() => runLinks() === 2)
+    run.impl = () => Promise.resolve({ content: "ok", duration: 1 })
+    let answered: { error?: string } | undefined
+    const woken = registry.execute({ agentId: "coder", message: "continue", context: markWake(pickupContext("req-1"), "req-1") })
+      .then((r) => { answered = r; return r })
+    await new Promise((r) => setTimeout(r, 700))
+    // Not answered as queued: it is still waiting, and nothing ran.
+    expect(answered).toBeUndefined()
+    expect(runLinks()).toBe(2)
+    finish()
+    await first
+    const res = await woken
+    expect(res.error).toBeUndefined()
+    expect(isQueued(res.error)).toBe(false)
+    expect(runLinks()).toBe(3)
   }, 15_000)
 })
 

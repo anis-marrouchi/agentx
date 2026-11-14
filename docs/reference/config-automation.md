@@ -367,9 +367,9 @@ To turn it on by hand:
 | `requests.autoResend.afterMinutes` | number (0 to 1440) | `5` | Minutes after it stopped before it is resent. A usage limit also waits until it has reset. |
 | `requests.autoResend.holdMaxHours` | number (up to 168) | `12` | Hours your notice waits for the resend. Past it, you are told as before. |
 | `requests.jobs.enabled` | boolean | `true` | Keep one job for every run that is not your own turn too: hand-offs between agents, issue mentions, schedules, workflow steps. Needs `requests.enabled`. Off: only your own requests leave a record. See [Jobs](/dashboard/jobs). |
-| `requests.jobs.wake.enabled` | boolean | `true` | The daemon starts the next run of a job that said it would continue, and marks an open job that nothing holds as stalled. See [How a job keeps going](/dashboard/jobs#how-a-job-keeps-going). |
+| `requests.jobs.wake.enabled` | boolean | `true` | The daemon starts the next run of a job that said it would continue, and marks an open job that nothing holds as stalled. Off: `processPool.maxBackgroundSeconds` is not used either. See [How a job keeps going](/dashboard/jobs#how-a-job-keeps-going). |
 | `requests.jobs.wake.maxWakes` | whole number (1 to 500) | `20` | How many times the daemon wakes one job. Past it the job is stalled, not woken. |
-| `requests.jobs.wake.maxCostUsd` | number (up to 1000) | `10` | What the runs of one job may cost, in US dollars, before the daemon stops waking it. |
+| `requests.jobs.wake.maxCostUsd` | number (up to 1000) | `10` | What one job may cost, in US dollars, before the daemon stops waking it: its runs, and the replies the agent writes on its own when background work ends. |
 | `requests.jobs.wake.graceMinutes` | number (1 to 1440) | `10` | Minutes an open job may sit with no run, no wake and nobody it waits on before it is marked stalled. |
 | `requests.jobs.wake.maxBackgroundMinutes` | number (1 to 1440) | `180` | Minutes a job waits on background work its run left (a script, a build) before it is marked stalled. |
 | `requests.ownerCheck.enabled` | boolean | `false` | Read every request close you did not make yourself against your own words. A close that does not deliver what you asked opens again as needing attention, and you are told once. See [the owner-words check](/jobs/open-requests#when-someone-else-closes-your-request-the-owner-words-check). |

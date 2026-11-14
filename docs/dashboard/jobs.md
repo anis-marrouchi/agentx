@@ -99,15 +99,16 @@ Parent and children are the job's tree. Start at your own request and follow it 
 Work often takes more than one run. The daemon, not the agent, keeps a job going between runs.
 
 - **Continue:** a run that ends with work left says when to go on and what is left. At that time the daemon starts the next run, in the same chat, and gives it the job's note. The job shows `sleeping until …` in between.
-- **A cap on every job:** the daemon wakes one job at most 20 times, and stops once its runs have cost 10 US dollars. A job at its cap is marked stalled, and its line says which cap. Change the caps with `requests.jobs.wake.maxWakes` and `requests.jobs.wake.maxCostUsd`.
-- **Background work:** when a run ends but left a script or a build running, the job waits on it (`waiting on its background work until …`) instead of closing. When that work ends, the daemon wakes the job and gives it the work's closing reply. Before, that reply was dropped. The agent's process is kept for up to 3 hours while such work is open (`processPool.maxBackgroundSeconds`); before, it was stopped after 45 minutes.
+- **A cap on every job:** the daemon wakes one job at most 20 times, and stops once its runs have cost 10 US dollars. The reply an agent writes on its own when background work ends counts toward that cost too. A job at its cap is marked stalled, and its line says which cap. Change the caps with `requests.jobs.wake.maxWakes` and `requests.jobs.wake.maxCostUsd`.
+- **A wake that cannot start:** when the agent is busy, the woken run waits for a free slot; it is never put in the chat's message queue, so its reply is not posted in a chat where nobody asked for it. If no run could start at all, the daemon tries again 5 minutes later. If the run started and then failed (a time limit, a model error), the daemon does not try again: the job shows `blocked` with the reason.
+- **Background work:** when a run ends but left a script or a build running, the job waits on it (`waiting on its background work until …`) instead of closing. When that work ends, the daemon wakes the job that waits on it and gives it the work's closing reply; another job in the same chat is left as it is. Before, that reply was dropped. The agent's process is kept for up to 3 hours while such work is open (`processPool.maxBackgroundSeconds`); before, it was stopped after 45 minutes.
 - **The check each minute:** an open job must have a live run, a set wake, or someone named it waits on with a due time. The daemon checks this every minute. A job with none of the three for 10 minutes (`requests.jobs.wake.graceMinutes`) is marked stalled, with the reason on its status line.
 
 Your own requests keep their own checks (quiet time, resend, pick-up). The check each minute holds one of them only after a run has stated a job state on it.
 
 Time-limit continuation, resend, pick-up and watchers still work as before. A run they start stays on the same job.
 
-To turn the wake and the check off, set `requests.jobs.wake.enabled` to `false` in `agentx.json`. The settings are listed under [`requests`](../reference/config-automation.md#requests).
+To turn the wake and the check off, set `requests.jobs.wake.enabled` to `false` in `agentx.json`. An agent's process with background work open is then stopped after 45 minutes again, not 3 hours. The settings are listed under [`requests`](../reference/config-automation.md#requests).
 
 ## Read the jobs from a script
 

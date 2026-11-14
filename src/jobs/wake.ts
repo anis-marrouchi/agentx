@@ -46,7 +46,14 @@ const WAKE_MARK = Symbol("jobs.wake")
 
 /** The context of the run that wakes `job`: its own chat. */
 export function wakeContext(job: Pick<JobRecord, "id" | "channel" | "chatId">): { channel: string; chatId: string; sender: string } {
-  return Object.assign({ channel: job.channel, chatId: job.chatId, sender: "system:job-wake" }, { [WAKE_MARK]: job.id })
+  return markWake({ channel: job.channel, chatId: job.chatId, sender: "system:job-wake" }, job.id)
+}
+
+/** Marks `ctx` as the context of the run that wakes job `jobId`. For a
+ *  wake that runs in a context of its own (an owner's request is woken as
+ *  a pick-up): the mark makes it wait for a slot instead of being queued. */
+export function markWake<T extends object>(ctx: T, jobId: string): T {
+  return Object.assign(ctx, { [WAKE_MARK]: jobId })
 }
 
 /** The job this run was started to wake, when the daemon started it. */
@@ -80,8 +87,9 @@ export interface JobWakeDeps {
   settings: () => JobWakeSettings
   /** What the daemon knows about a job's runs now. Unset: the ledger alone. */
   facts?: (job: JobRecord, runs: () => JobRun[]) => JobFacts
-  /** Start the run. Fire and forget: resolves with an error text when the
-   *  run could not start, so the wake is armed again. */
+  /** Start the run. Resolves when the run has ended, or could not start,
+   *  with its error text. The wake is armed again only when no run began:
+   *  a run that began and failed has said what its job's state is. */
   start: (job: JobRecord, text: string) => Promise<{ error?: string } | void>
   hasAgent: (agentId: string) => boolean
   /** Something else answers for the job right now (a hand-off still out). */
@@ -92,9 +100,11 @@ export interface JobWakeDeps {
 
 export interface WakeTickResult { woken: number; capped: number; stalled: number }
 
-/** How long a wake that was started may wait for its run to begin (a
- *  slot, a busy agent) before the job counts as held by nobody. */
-const START_WAIT_MS = 30 * MIN
+/** How long a wake that was started may wait for its run to begin before
+ *  the job counts as held by nobody. Longer than the registry's waits put
+ *  together: 25 minutes for a slot, 5 for the rate limit, then room on
+ *  the node. */
+const START_WAIT_MS = 45 * MIN
 
 /** A schedule's job is not woken: the wake run would not carry the
  *  schedule's own model, autonomy or limits. Its next firing goes on. */
@@ -102,7 +112,9 @@ const noWake = (job: Pick<JobRecord, "door">) => job.door === "cron"
 
 export class JobWake {
   private now: () => number
-  /** Wakes started and when: their run may still be waiting for a slot. */
+  /** Wakes whose start has not come back yet, and when they were taken:
+   *  the run may still be waiting for a slot. Removed when the start
+   *  resolves, so it never outlives the run. */
   private startedAt = new Map<string, number>()
 
   constructor(private deps: JobWakeDeps) {
@@ -137,8 +149,9 @@ export class JobWake {
         if (jobs.markStalled(job.id, `a schedule's job is not woken by the daemon; its next firing continues it. What was left: ${job.note ?? "not said"}`, now)) result.stalled++
         continue
       }
-      // A run is on it already: it will say what comes next.
-      if (this.factsOf(job).liveRun || this.deps.held?.(job)) continue
+      // A run is on it already, or an earlier wake of it is still waiting
+      // for its slot: that run will say what comes next. The wake stays set.
+      if (this.startedAt.has(job.id) || this.factsOf(job).liveRun || this.deps.held?.(job)) continue
       const cost = jobs.costUsd(job.id)
       const over = job.wakeCount >= settings.maxWakes ? `it was woken ${job.wakeCount} times, the most a job may be (requests.jobs.wake.maxWakes)`
         : cost >= settings.maxCostUsd ? `its runs cost $${cost.toFixed(2)}, the most a job may spend (requests.jobs.wake.maxCostUsd)` : null
@@ -159,23 +172,27 @@ export class JobWake {
         .then((res) => {
           const error = res && typeof res === "object" ? res.error : undefined
           // Queued behind a busy agent: the run will start, nothing to arm.
-          if (!error || isQueued(error)) return
-          this.startedAt.delete(job.id)
+          // The job stays held until the wait below runs out.
+          if (error && isQueued(error)) return
+          if (this.startedAt.get(job.id) === now) this.startedAt.delete(job.id)
+          if (!error) return
           // A run began on the job since the wake was taken (the doors link
-          // it as it starts) and ended with an error: stopped by a person,
-          // failed, timed out or cut by a restart. Its end already put the
-          // job's state (blocked), or the resumed run decides: that stands.
+          // it as it starts). It ran and failed: a time limit, the model, a
+          // restart. Its end already put a state on the job (blocked, or
+          // what the run declared), and that state stands.
           if (jobs.runCount(job.id) > runsBefore) {
             log(`[jobs] ${job.id}: its wake run ended with an error (${clip(error, 120)}), not armed again`)
             return
           }
-          // No run began (the agent is busy, a limit holds): try again in a
-          // few minutes, only while the job is as takeWake left it. Each try
-          // counts toward the cap.
+          // No run began (the agent stayed busy, a limit holds): try again
+          // in a few minutes. Each try counts toward the cap.
           const at = this.now()
           if (jobs.rearmWake(job.id, at + 5 * MIN, job.note ?? "the wake could not start", at)) log(`[jobs] ${job.id}: wake could not start (${clip(error, 120)}), armed again`)
         })
-        .catch((e: any) => log(`[jobs] ${job.id}: wake failed: ${e?.message ?? e}`))
+        .catch((e: any) => {
+          if (this.startedAt.get(job.id) === now) this.startedAt.delete(job.id)
+          log(`[jobs] ${job.id}: wake failed: ${e?.message ?? e}`)
+        })
     }
   }
 
@@ -214,21 +231,30 @@ export class JobWake {
   }
 
   /** Background work a turn left in this chat ended, with Claude's closing
-   *  reply: the job of that chat is woken with it. False when no open job
-   *  is there to take it (the reply is dropped, as before jobs). */
-  backgroundEnded(key: { agentId: string; channel: string; chatId: string }, reply: string): boolean {
+   *  reply: the job that waits on that work is woken with it. When several
+   *  wait in the chat, the one that has waited longest; the next reply
+   *  wakes the next. With none waiting, the chat's newest open job takes
+   *  it if it is still working. False when no job takes it (the reply is
+   *  dropped, as before jobs). What the turn cost counts toward the job's
+   *  cost cap either way. */
+  backgroundEnded(key: { agentId: string; channel: string; chatId: string }, reply: string, costUsd?: number): boolean {
     if (!this.deps.settings().enabled) return false
     try {
-      const job = this.deps.jobs.latestInChat(key.agentId, key.channel, key.chatId)
+      const { jobs } = this.deps
+      const job = jobs.waitingInChat(key.agentId, key.channel, key.chatId, BACKGROUND_WAITER)
+        ?? jobs.latestInChat(key.agentId, key.channel, key.chatId)
       if (!job) return false
+      // The turn nobody asked for has no trace of its own to carry its cost.
+      if (costUsd && costUsd > 0) jobs.addCost(job.id, costUsd)
       // The owner's request is woken only once a run put a job state on it
       // or it waits on this work: its own checks hold it otherwise.
       if (job.ownerRequest && job.declaredAt === null) return false
       // Only a job that waits on this work, or is still working: a job
       // someone blocked or stopped is not started again by a stray reply.
       if (noWake(job) || !(job.waitingOn === BACKGROUND_WAITER || job.state === "working")) return false
-      // A run is on it now: it sees the work's result itself.
-      if (this.factsOf(job).liveRun || this.deps.held?.(job)) return false
+      // A run is on it now, or its wake is waiting for a slot: that run
+      // sees the work's result itself.
+      if (this.startedAt.has(job.id) || this.factsOf(job).liveRun || this.deps.held?.(job)) return false
       const now = this.now()
       const said = reply.replace(/\s+/g, " ").trim()
       const note = `background work you left running has ended.${said ? ` Its closing reply: ${clip(said, REPLY_MAX)}` : ""}`

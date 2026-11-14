@@ -433,6 +433,22 @@ describe("ProcessRegistry — idle/stale sweep", () => {
       expect(reg.list()).toHaveLength(0)
     })
 
+    it("ends at the stale limit, background work or not, when the longer limit is turned off", async () => {
+      const factory = new FakeFactory()
+      let keep = false
+      const reg = new ProcessRegistry({ factory, staleTimeoutMs: 60_000, backgroundMaxMs: 600_000, sweepIntervalMs: 100, keepBackground: () => keep })
+      reg.start()
+      const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+      h.setIdle(Date.now() - 61_000)
+      h.setWork({ backgroundTasks: 1 })
+      keep = true
+      vi.advanceTimersByTime(150)
+      expect(h.killReasons).toHaveLength(0)
+      keep = false
+      vi.advanceTimersByTime(150)
+      expect(h.killReasons).toHaveLength(1)
+    })
+
     it("gives background work 3 hours by default", async () => {
       const factory = new FakeFactory()
       const reg = new ProcessRegistry({ factory, sweepIntervalMs: 100 })

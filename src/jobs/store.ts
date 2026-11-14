@@ -109,7 +109,7 @@ export const JOB_COLUMNS: Array<[string, string]> = [
   ["wake_at", "INTEGER"], ["wake_count", "INTEGER"], ["waiting_on", "TEXT"], ["job_note", "TEXT"],
   ["declared_at", "INTEGER"], ["declared_run", "TEXT"], ["state_asked_at", "INTEGER"],
   ["stalled_at", "INTEGER"], ["requester_told_at", "INTEGER"],
-  ["peer", "TEXT"], ["remote_id", "TEXT"],
+  ["peer", "TEXT"], ["remote_id", "TEXT"], ["extra_cost_usd", "REAL"],
 ]
 
 /** Adds the job columns to `requests`. By name, so it cannot clash with
@@ -385,8 +385,18 @@ export class JobStore {
     return (this.db.prepare("SELECT COUNT(*) AS n FROM request_links WHERE request_id = ? AND kind = 'run'").get(id) as { n: number }).n
   }
 
-  /** The newest open job of this agent in this chat: the one background
-   *  work left by a turn there belongs to. */
+  /** The open job of this agent in this chat that waits on `waiter`, the
+   *  one that has waited longest first. */
+  waitingInChat(assignee: string, channel: string, chatId: string, waiter: string): JobRecord | null {
+    const row = this.db.prepare(
+      `${SELECT} WHERE agent_id = ? AND channel = ? AND chat_id = ? AND job_state = 'waiting' AND waiting_on = ? AND ${OPEN_ROW}
+       ORDER BY COALESCE(declared_at, updated_at), rowid LIMIT 1`,
+    ).get(assignee, channel, chatId, waiter)
+    return row ? toJob(row) : null
+  }
+
+  /** The newest open job of this agent in this chat: what takes a closing
+   *  reply when no job there waits on its background work. */
   latestInChat(assignee: string, channel: string, chatId: string): JobRecord | null {
     const row = this.db.prepare(
       `${SELECT} WHERE agent_id = ? AND channel = ? AND chat_id = ? AND state != 'candidate' AND ${OPEN_ROW}
@@ -395,9 +405,18 @@ export class JobStore {
     return row ? toJob(row) : null
   }
 
-  /** What the job's runs cost so far, where the traces priced them. */
+  /** Count a cost no run's trace carries: a turn nobody asked for, run
+   *  when the job's background work ended. */
+  addCost(id: string, usd: number): void {
+    if (!(usd > 0)) return
+    this.db.prepare("UPDATE requests SET extra_cost_usd = COALESCE(extra_cost_usd, 0) + ? WHERE id = ?").run(usd, id)
+  }
+
+  /** What the job cost so far: its runs, where the traces priced them,
+   *  and the turns nobody asked for. */
   costUsd(id: string): number {
-    return this.runs(id).reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
+    const extra = (this.db.prepare("SELECT extra_cost_usd AS usd FROM requests WHERE id = ?").get(id) as { usd: number | null } | undefined)?.usd ?? 0
+    return this.runs(id).reduce((sum, r) => sum + (r.costUsd ?? 0), extra)
   }
 
   /** The open jobs the minute check may stall, least recently moved

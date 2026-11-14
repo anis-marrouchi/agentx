@@ -1768,7 +1768,10 @@ export class AgentRegistry {
       const ctxChannel = task.context?.channel
       const ctxChat = task.context?.chatId
       const overBudget = preflightBudgetGate(task.agentId, undefined, budgetProjectOf(task.agentId, ctxChat))
-      if (overBudget && ctxChannel && ctxChat && getMessageRouter()?.getChannel(ctxChannel)) {
+      // Not a run the daemon starts to wake a job (#1861): released later,
+      // its reply would be posted to the job's chat. The gate inside the
+      // run refuses it, and its job says why.
+      if (overBudget && ctxChannel && ctxChat && !wokenJobId(task.context) && getMessageRouter()?.getChannel(ctxChannel)) {
         const held = this.budgetHolds.hold(task.agentId, {
           text: task.message,
           channel: ctxChannel,
