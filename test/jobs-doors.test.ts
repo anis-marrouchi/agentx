@@ -119,6 +119,21 @@ describe("a run that is not the owner's turn", () => {
     expect(jobs.runs("job-t1").map((r) => r.runId)).toEqual(["t1", "t2"])
   })
 
+  it("the turn that asks for the job's state keeps the ask on the job", () => {
+    doors = new JobDoors({ jobs, requests, settings: () => ({ enabled }), log: (m) => logs.push(m), now: () => clock, onUndeclared: () => true })
+    start("t1"); end("t1")
+    expect(jobs.get("job-t1")!.state).toBe("working")
+    jobs.markStateAsked("job-t1", clock)
+    start("t2", { resumedFrom: "t1", jobStateAsk: true })
+    expect(jobs.byRun("t2")!.id).toBe("job-t1")
+    expect(jobs.get("job-t1")).toMatchObject({ state: "working", stateAskedAt: clock })
+    end("t2")
+    expect(jobs.get("job-t1")).toMatchObject({ state: "working", stateAskedAt: clock })
+    // A run that takes the work up again clears it.
+    start("t3", { resumedFrom: "t1" })
+    expect(jobs.get("job-t1")!.stateAskedAt).toBeNull()
+  })
+
   it("a state the run declared itself stands at its end", () => {
     start("t1")
     jobs.declare("job-t1", { state: "continue", wakeAt: clock + 60_000, note: "the build" }, { runId: "t1", now: clock })

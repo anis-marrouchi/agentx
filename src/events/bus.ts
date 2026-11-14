@@ -147,6 +147,9 @@ export interface AgentXEvents {
     resumeOrigin?: string | null
     resumeAttempt?: number
     resumedFrom?: string
+    /** The one turn that asks an ended run for its job's state
+     *  (agents/run-state.ts): a question, not the work starting again. */
+    jobStateAsk?: boolean
     /** Who sent the message, when the channel knows (requests, #356). */
     sender?: { name?: string; id?: string; username?: string }
     /** The known person who started this chain (people, #384). Absent for

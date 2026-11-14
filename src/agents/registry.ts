@@ -1610,7 +1610,11 @@ export class AgentRegistry {
     }
     this.log(`[job-state] ${where}: ended with no state; asking once`)
     this.tellJobState(runIds, { kind: "asked" })
-    const ask: AgentTask = { ...task, message: JOB_STATE_ASK, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
+    // The question is a turn of its own, not the work again: it does not
+    // settle the run's intent (the run does, below in runWithRecovery),
+    // and it is not a time-limit continuation of the request.
+    const { intentRef: _intent, timeLimitRequest: _request, timeLimitContinuation: _continuation, timeLimitStartedAt: _started, ...rest } = task
+    const ask: AgentTask = { ...rest, message: JOB_STATE_ASK, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
     let asked: AgentResponse
     try {
       // Not streamed: the caller reads the run's answer, not this question's.
@@ -2459,6 +2463,7 @@ export class AgentRegistry {
       }),
       resumeAttempt: task.resumeAttempt ?? 0,
       resumedFrom: task.resumedFrom,
+      ...(task.jobStateAsk ? { jobStateAsk: true } : {}),
       sender: senderOf(task.context),
       ...(person ? { person } : {}),
       humanRoot: isHumanFacingTurn(task.context as any),
