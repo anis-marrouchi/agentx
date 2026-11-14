@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.226.0](https://github.com/anis-marrouchi/agentx/compare/v0.225.0...v0.226.0) (2026-11-14)
+
+
+### Features
+
+* **jobs:** watchers and resend wake the job ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861) box 4) ([#1874](https://github.com/anis-marrouchi/agentx/issues/1874)) ([47b7d3a](https://github.com/anis-marrouchi/agentx/commit/47b7d3a17cf7f5972b640132e286f0ae00c8a610))
+
 ## [0.225.0](https://github.com/anis-marrouchi/agentx/compare/v0.224.0...v0.225.0) (2026-11-14)
 
 
