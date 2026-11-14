@@ -9,6 +9,7 @@ import { SprintStore } from "./sprint-store"
 import { RequestTracker, type RequestSettings } from "./tracker"
 import { traceInbound, type InboundLog } from "./checkers/reply"
 import { DriftStore } from "./drift/store"
+import { JobStore } from "@/jobs/store"
 
 // --- Hook the request tracker to the daemon's event bus (#356) ---
 
@@ -26,6 +27,8 @@ export interface AttachedRequests {
   inbound: InboundLog
   /** What status drift has told and written (#1138 step F). */
   drift: DriftStore
+  /** The job ledger over the same table (#1861). */
+  jobs: JobStore
   detach: () => void
 }
 
@@ -99,6 +102,7 @@ export function attachRequests(
     sprints: new SprintStore(db),
     inbound: traceInbound(db),
     drift: new DriftStore(db),
+    jobs: new JobStore(db),
     detach: () => {
       bus.off("task:started", started)
       bus.off("task:completed", completed)

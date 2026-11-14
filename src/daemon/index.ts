@@ -144,6 +144,7 @@ import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
 import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
+import { handleJobsApi } from "@/jobs/api"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
 import { runDriftSweep } from "@/requests/drift/sweep"
@@ -5768,6 +5769,14 @@ export class AgentXDaemon {
             log: this.log,
           },
         }, this.callerProof(req))
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // The job ledger (#1861): every piece of assigned work, read only.
+      if (path === "/jobs" || path.startsWith("/jobs/")) {
+        if (!this.requests) { this.json(res, 503, { error: "jobs need the database" }); return }
+        const reply = handleJobsApi(req.method || "GET", path, { store: this.requests.jobs, query: url.searchParams })
         this.json(res, reply.status, reply.body)
         return
       }

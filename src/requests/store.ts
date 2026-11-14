@@ -1152,12 +1152,13 @@ export class RequestStore {
       .sort((a, b) => a.createdAt - b.createdAt)
   }
 
-  /** Every request asked since `since` (candidates left out), for the
+  /** Every request asked since `since` (candidates and job rows of other
+   *  doors, #1861, left out), for the
    *  daily flow (#1542): only what the count needs. */
   flowRows(since: number): Array<{ state: RequestState; createdAt: number; closeReason: string | null; resentAt: number | null }> {
     return this.db.prepare(
       `SELECT state, created_at AS createdAt, close_reason AS closeReason, resent_at AS resentAt
-       FROM requests WHERE created_at >= ? AND state != 'candidate' ORDER BY created_at, rowid`,
+       FROM requests WHERE created_at >= ? AND state NOT IN ('candidate', 'job') ORDER BY created_at, rowid`,
     ).all(since) as any
   }
 
