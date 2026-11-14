@@ -14,6 +14,7 @@ import { watchConfigFile } from "./config-watch"
 import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
+import { describeJobState, jobStateFrom } from "@/agents/run-state"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { activeProviderHolds, setDispatchBudget } from "@/agents/claude-code-quota"
@@ -8131,9 +8132,34 @@ export class AgentXDaemon {
           const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
           if (!turn?.taskId) { this.json(res, 403, { error: "no running turn matches this call: use the agentx_waiting tool from inside your run" }); break }
           const rec = this.delegations.markWaiting(turn.taskId, { on, ...(due ? { dueAt: due } : {}) })
+          this.registry.recordJobState(turn.taskId, { state: "waiting", on, ...(due ? { until: new Date(due).toISOString() } : {}) })
           const traceId = this.registry.runningTraceId(turn.agentId, turn.taskId)
           const watcher = traceId && this.config.watchers.enabled ? this.watchers?.checkpoint.markWaiting(traceId, due) ?? null : null
           this.json(res, 200, waitingBody({ delegation: rec?.id ?? null, asker: rec?.caller ?? null, watcher, on, dueAt: due }))
+          break
+        }
+
+        case "POST /runs/state": {
+          // #1861 phase 2 — a run of agent work states its job's state
+          // before it ends: done, continue, waiting or blocked. Only from
+          // the run itself. "waiting" also does what /runs/waiting does.
+          const body = await readBody(req)
+          const state = jobStateFrom(body)
+          if (typeof state === "string") { this.json(res, 400, { error: state }); break }
+          let dueAt: number | undefined
+          if (state.state === "waiting" && state.until) {
+            const due = parseDue(state.until)
+            if (typeof due === "number") dueAt = due
+          }
+          const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+          if (!turn?.taskId) { this.json(res, 403, { error: "no running turn matches this call: use the agentx_job_state tool from inside your run" }); break }
+          this.registry.recordJobState(turn.taskId, state)
+          if (state.state === "waiting") {
+            this.delegations.markWaiting(turn.taskId, { on: state.on, ...(dueAt ? { dueAt } : {}) })
+            const traceId = this.registry.runningTraceId(turn.agentId, turn.taskId)
+            if (traceId && this.config.watchers.enabled) this.watchers?.checkpoint.markWaiting(traceId, dueAt)
+          }
+          this.json(res, 200, { ok: true, state, note: `Recorded: this run ends with the job ${describeJobState(state)}. Whoever asked hears it with your answer.` })
           break
         }
 

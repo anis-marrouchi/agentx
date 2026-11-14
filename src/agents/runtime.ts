@@ -185,6 +185,8 @@ export interface AgentTask {
   timeLimitStartedAt?: number
   /** The request as first sent, without the continuation note. */
   timeLimitRequest?: string
+  /** Set on the one turn that asks a run for its job's state (run-state.ts). */
+  jobStateAsk?: boolean
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and
@@ -283,6 +285,10 @@ export interface AgentResponse {
    *  answers it; no turn of its own ran (mid-turn.ts). */
   midTurnDelivered?: boolean
   content: string
+  /** The job's state the run stated when it ended, or "stalled" when it
+   *  stated none, even asked once (run-state.ts, #1861). Unset: not an
+   *  agent channel, or the run failed. */
+  jobState?: import("./run-state").JobState | { state: "stalled" }
   error?: string
   /** Typed discriminator on `error`. Lets dispatchers and workflow nodes
    *  branch on the failure cause without string-matching the friendly

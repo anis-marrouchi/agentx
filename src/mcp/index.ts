@@ -694,6 +694,28 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_job_state",
+    description:
+      "State the job's state before you end a run of agent work (a hand-off from another agent, a scheduled job, a reminder, an event). " +
+      "One of: done (with its proof: a link, an id, what you checked), continue (what is left and when it carries on), " +
+      "waiting (on whom or what, until when) or blocked (why). The agent that asked you hears it with your answer. " +
+      "A run that states nothing is asked once; still nothing, the job is reported stalled. " +
+      "Instead of the tool you may end your reply with one line: 'State: done — <proof>'.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        state: { type: "string", enum: ["done", "continue", "waiting", "blocked"], description: "The job's state as this run ends." },
+        proof: { type: "string", description: "done: the proof (a link, an id, what you checked)." },
+        left: { type: "string", description: "continue: what is left." },
+        when: { type: "string", description: "continue: when it carries on." },
+        on: { type: "string", description: "waiting: on whom or what." },
+        until: { type: "string", description: "waiting: until when (an ISO time if you know it). Past it, the one who asked is told." },
+        why: { type: "string", description: "blocked: why." },
+      },
+      required: ["state"],
+    },
+  },
+  {
     name: "agentx_send_contact",
     description:
       "Send a message to a HUMAN CONTACT by name. Resolves through .agentx/contacts.json (id → exact alias → fuzzy substring). Refuses fuzzy matches without confirmed:true so the agent must ask the user to disambiguate before sending. Refuses when the name also matches a registered agent (use agentx_send_agent for those). Use this when the target is a person, not a bot.",
@@ -2051,6 +2073,18 @@ async function handleToolCall(
         method: "POST",
         headers: { "Content-Type": "application/json", ...callerHeaders() },
         body: JSON.stringify({ on, ...(due ? { due } : {}), senderAgentId: process.env.AGENTX_AGENT_ID, ...callerFields() }),
+        signal: AbortSignal.timeout(10_000),
+      }).catch((e: any) => ({ ok: false, status: 0, json: async () => ({ error: e?.message ?? String(e) }) }) as any)
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || `HTTP ${res.status}`}` }] }
+      return { content: [{ type: "text", text: String(data.note ?? "Recorded.") }] }
+    }
+
+    case "agentx_job_state": {
+      const res = await daemonFetch(`${daemonUrl()}/runs/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({ ...args, senderAgentId: process.env.AGENTX_AGENT_ID, ...callerFields() }),
         signal: AbortSignal.timeout(10_000),
       }).catch((e: any) => ({ ok: false, status: 0, json: async () => ({ error: e?.message ?? String(e) }) }) as any)
       const data = await res.json().catch(() => ({})) as any

@@ -32,6 +32,8 @@ import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
+import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, type JobState } from "./run-state"
+import { emitSignal } from "@/improve/signals"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
@@ -750,6 +752,9 @@ export class AgentRegistry {
   private interruptedRuns: Map<string, string> = new Map()
   /** Runs a stop signal ended, with the reason each one reports (#857). */
   private stoppedRuns: Map<string, string> = new Map()
+  /** The job's state a running run stated with agentx_job_state or
+   *  agentx_waiting (run-state.ts), read when it ends. */
+  private jobStates: Map<string, JobState> = new Map()
   /** Callers waiting for a run to let go of its slot (whenRunEnds). */
   private runEndWaiters: Map<string, Array<() => void>> = new Map()
   /** Claude cloud sessions this node launched (#622), by issue. Created on
@@ -888,6 +893,22 @@ export class AgentRegistry {
    *  attach; unset, no note is added. */
   setRunNote(note: ((started: AgentXEvents["task:started"]) => string | undefined) | undefined): void {
     this.runNote = note
+  }
+
+  /** A running run states its job's state (agentx_job_state,
+   *  agentx_waiting). False when no run with this id is going. */
+  recordJobState(runningTaskId: string, state: JobState): boolean {
+    if (!this.runningTaskOwner(runningTaskId)) return false
+    this.jobStates.set(runningTaskId, state)
+    return true
+  }
+
+  /** The state a run stated: with a tool while it ran, else on its last lines. */
+  private takeJobState(task: AgentTask, response: AgentResponse): JobState | null {
+    const id = task.runningTaskId
+    const told = id ? this.jobStates.get(id) : undefined
+    if (id) this.jobStates.delete(id)
+    return told ?? jobStateInText(response.content)
   }
 
   /** Wire the trace lookup a time-limit continuation lists the stopped
@@ -1414,6 +1435,9 @@ export class AgentRegistry {
       const notes = this.notices.take(task.agentId)
       if (notes) task = { ...task, message: notes + task.message }
     }
+    if (needsJobState(this.config.jobState, channel) && !task.jobStateAsk) {
+      task = { ...task, message: JOB_STATE_RULE + task.message }
+    }
     if (!key) return this.runWithRecovery(task, onDelta, onThinking, onEvent)
     const entry = await this.workLanes.enter(task.agentId, key, currentRoot()?.rootId, task.callerSignal)
     let response: AgentResponse = { content: "", error: "run did not end" }
@@ -1513,6 +1537,7 @@ export class AgentRegistry {
       this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${task.taskId ?? "-"}: stopped at its ${limit.minutes}m time limit; not continued — ${limit.reason}`)
       response = { ...response, error: reportedTimeLimitError(response.error!, limit.reason) }
     }
+    if (!task.jobStateAsk) response = await this.checkJobState(task, response)
     if (task.intentRef) {
       try {
         // A queued answer is an accepted message, not a failure (#282).
@@ -1540,6 +1565,53 @@ export class AgentRegistry {
       }
     }
     return response
+  }
+
+  /**
+   * A run of agent work that ended cleanly states its job's state (#1861
+   * phase 2). One that stated nothing is asked once, in the same session;
+   * the caller still gets the run's own answer. Still nothing: the answer
+   * carries a line saying the job is stalled, so whoever asked is told.
+   */
+  private async checkJobState(task: AgentTask, response: AgentResponse): Promise<AgentResponse> {
+    const channel = task.context?.channel as string | undefined
+    const runId = task.runningTaskId
+    if (!needsJobState(this.config.jobState, channel) || response.error || response.viaMesh || response.midTurnDelivered) {
+      if (runId) this.jobStates.delete(runId)
+      return response
+    }
+    const where = `${task.agentId} ${channel ?? "-"} ${task.taskId ?? "-"}`
+    // A state the answer does not already show goes on its last line, so
+    // whoever asked reads it with the answer.
+    const withState = (state: JobState): AgentResponse => {
+      if (jobStateInText(response.content)) return { ...response, jobState: state }
+      const line = `[Job state] ${describeJobState(state)}`
+      return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: state }
+    }
+    const stated = this.takeJobState(task, response)
+    if (stated) {
+      this.log(`[job-state] ${where}: ${describeJobState(stated)}`)
+      return withState(stated)
+    }
+    this.log(`[job-state] ${where}: ended with no state; asking once`)
+    const ask: AgentTask = { ...task, message: JOB_STATE_ASK, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
+    let asked: AgentResponse
+    try {
+      // Not streamed: the caller reads the run's answer, not this question's.
+      asked = await this.runWithRecovery(ask)
+    } catch (e: any) {
+      asked = { content: "", error: e?.message ?? String(e) }
+    }
+    const answer = asked.error ? null : this.takeJobState(ask, asked)
+    if (ask.runningTaskId) this.jobStates.delete(ask.runningTaskId)
+    if (answer) {
+      this.log(`[job-state] ${where}: ${describeJobState(answer)} (when asked)`)
+      return withState(answer)
+    }
+    this.log(`[job-state] ${where}: no state when asked${asked.error ? ` (${asked.error.slice(0, 120)})` : ""}; stalled`)
+    emitSignal({ kind: "job_stalled", agentId: task.agentId, ref: task.taskId ?? runId ?? "-", detail: `${channel ?? "-"}: run ended with no job state, none when asked` })
+    const line = stalledLine(task.agentId)
+    return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: { state: "stalled" } }
   }
 
   /**
