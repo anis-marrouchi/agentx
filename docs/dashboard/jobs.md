@@ -106,7 +106,12 @@ Work often takes more than one run. The daemon, not the agent, keeps a job going
 
 Your own requests keep their own checks (quiet time, resend, pick-up). The check each minute holds one of them only after a run has stated a job state on it.
 
-Time-limit continuation, resend, pick-up and watchers still work as before. A run they start stays on the same job.
+Two older paths now go through the job's wake:
+
+- **Watchers:** when a watcher fires on work a job handed to another agent, the daemon wakes the job that handed it out, with the watcher's alert as its note. Before, the alert started a run of its own. With no such job (jobs turned off, or work handed out from a person's chat), the alert run starts as before.
+- **Resend once:** a request that a usage limit or a restart stopped is sent back once by waking its job, with the reason as its note. If the wake does not take it, the pick-up turn sends it, as before.
+
+Both count toward the job's caps. Time-limit continuation and pick-up still work as before, and a run they start stays on the same job. They and the older delegation log and watcher table are due to be removed on Monday 16 November 2026 at 12:00 UTC, unless Anis decides otherwise.
 
 To turn the wake and the check off, set `requests.jobs.wake.enabled` to `false` in `agentx.json`. An agent's process with background work open is then stopped after 45 minutes again, not 3 hours. The settings are listed under [`requests`](../reference/config-automation.md#requests).
 

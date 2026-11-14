@@ -218,6 +218,42 @@ export class JobWake {
     }
   }
 
+  /** Another part of the daemon has a reason to start a job's next run:
+   *  a watcher fired on work the job handed out, a request a limit or a
+   *  restart stopped is due its one resend (#1861 box 4). Instead of a
+   *  run of its own, it arms the job's wake: the run starts in the job's
+   *  chat, under the job's caps, linked to the same job. False when the
+   *  wake is off, the job is closed, missing or a schedule's: the caller
+   *  keeps its old path. */
+  wakeFor(jobId: string, note: string): boolean {
+    if (!this.deps.settings().enabled) return false
+    try {
+      const job = this.deps.jobs.get(jobId)
+      if (!job || noWake(job) || job.peer || !this.deps.hasAgent(job.assignee)) return false
+      if (job.state === "done" || job.state === "dropped") return false
+      const now = this.now()
+      const armed = this.deps.jobs.armWake(job.id, now, note, now)
+      if (armed) this.deps.log(`[jobs] ${job.id}: wake armed (${clip(note.replace(/\s+/g, " "), 120)})`)
+      return armed
+    } catch (e: any) {
+      this.deps.log(`[jobs] wake for ${jobId} failed: ${e?.message ?? e}`)
+      return false
+    }
+  }
+
+  /** The job of the agent that handed out a delegation: the parent of
+   *  the job the hand-off opened, when that agent is `delegator`. */
+  delegatorJob(delegationId: string, delegator: string): string | null {
+    try {
+      const child = this.deps.jobs.byDelegation(delegationId) ?? this.deps.jobs.get(`job-${delegationId}`)
+      if (!child?.parentId) return null
+      const parent = this.deps.jobs.get(child.parentId)
+      return parent && parent.assignee === delegator ? parent.id : null
+    } catch {
+      return null
+    }
+  }
+
   /** A run ended cleanly with background work still open in its process:
    *  the job waits on that work instead of closing. True when it does. */
   runLeftBackground(job: JobRecord, open: number, runId?: string): boolean {

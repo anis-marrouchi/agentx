@@ -476,3 +476,53 @@ describe("store", () => {
     expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: clock + MIN, note: "try again" })
   })
 })
+
+describe("other paths wake the job (#1861 box 4)", () => {
+  it("wakeFor arms the job's wake, and the next tick starts the run with the note", async () => {
+    open()
+    expect(wake.wakeFor("job-1", "watcher w-1 fired: the hand-off is overdue")).toBe(true)
+    expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: clock })
+    wake.tick()
+    await flush()
+    expect(started).toHaveLength(1)
+    expect(started[0].text).toContain("watcher w-1 fired")
+    expect(jobs.get("job-1")!.wakeCount).toBe(1)
+  })
+
+  it("wakeFor counts toward the job's cap", async () => {
+    open()
+    settings.maxWakes = 1
+    wake.wakeFor("job-1", "first"); wake.tick()
+    jobs.declare("job-1", { state: "waiting", on: "pm", until: clock + HOUR }, { now: clock })
+    wake.wakeFor("job-1", "second"); wake.tick()
+    await flush()
+    expect(started).toHaveLength(1)
+    expect(jobs.get("job-1")!.state).toBe("stalled")
+  })
+
+  it("wakeFor leaves the caller its old path: wake off, closed, missing, a schedule's or another node's job", () => {
+    open()
+    settings.enabled = false
+    expect(wake.wakeFor("job-1", "x")).toBe(false)
+    settings.enabled = true
+    expect(wake.wakeFor("nope", "x")).toBe(false)
+    open("job-cron", { door: "cron", requester: "cron:daily" })
+    expect(wake.wakeFor("job-cron", "x")).toBe(false)
+    open("job-peer", { peer: "clawd", remoteId: "r1", state: "waiting", waitingOn: "clawd" })
+    expect(wake.wakeFor("job-peer", "x")).toBe(false)
+    open("job-ghost", { assignee: "ghost" })
+    expect(wake.wakeFor("job-ghost", "x")).toBe(false)
+    jobs.declare("job-1", { state: "done", proof: "PR 1" }, { now: clock })
+    expect(wake.wakeFor("job-1", "x")).toBe(false)
+  })
+
+  it("delegatorJob finds the job that handed the work out, only for that agent", () => {
+    open("job-parent", { assignee: "pm", requester: "owner" })
+    open("job-dlg-1", { assignee: "coder", requester: "pm", parentId: "job-parent" })
+    expect(wake.delegatorJob("dlg-1", "pm")).toBe("job-parent")
+    expect(wake.delegatorJob("dlg-1", "someone-else")).toBeNull()
+    expect(wake.delegatorJob("dlg-none", "pm")).toBeNull()
+    open("job-dlg-2", { assignee: "coder", requester: "pm" })
+    expect(wake.delegatorJob("dlg-2", "pm")).toBeNull()
+  })
+})

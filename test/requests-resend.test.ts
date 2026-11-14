@@ -223,3 +223,40 @@ describe("resend once", () => {
     expect(attentionText(store.get("req-t1")!)).toContain("Nothing is retrying it.")
   })
 })
+
+describe("resend through the job's wake (#1861 box 4)", () => {
+  function stopped() {
+    start("t1")
+    interrupt("t1")
+    tracker.resumeOutcome({ taskId: "t1", decision: "reported", reason: "no record of how to resume it" })
+  }
+
+  it("arms the job's wake instead of a pick-up turn, once", async () => {
+    stopped()
+    const woken: Array<{ id: string; note: string }> = []
+    const wakeJob = (id: string, note: string) => { woken.push({ id, note }); return true }
+    await sweep({ wakeJob })
+    clock += 5 * MIN
+    const res = await sweep({ wakeJob })
+    expect(res).toMatchObject({ resent: 1, pickedUp: 0 })
+    expect(sent).toHaveLength(0)
+    expect(woken).toHaveLength(1)
+    expect(woken[0].note).toContain("stopped by a restart")
+    const r = store.get(woken[0].id)!
+    expect(r.state).toBe("in_progress")
+    expect(r.resentAt).toBe(clock)
+    // No pick-up mark left for a later check to start a second turn.
+    clock += MIN
+    await sweep({ wakeJob })
+    expect(sent).toHaveLength(0)
+    expect(woken).toHaveLength(1)
+  })
+
+  it("keeps the pick-up turn when the wake does not take it", async () => {
+    stopped()
+    clock += 5 * MIN
+    const res = await sweep({ wakeJob: () => false })
+    expect(res).toMatchObject({ resent: 1, pickedUp: 1 })
+    expect(sent[0].text).toContain("stopped by a restart")
+  })
+})

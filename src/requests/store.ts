@@ -1106,6 +1106,12 @@ export class RequestStore {
     })()
   }
 
+  /** Takes back a pick-up mark another path took over (the job's wake,
+   *  #1861): the request stays in progress, no pick-up turn starts. */
+  dropPickup(id: string): boolean {
+    return this.db.prepare("UPDATE requests SET pickup_at = NULL WHERE id = ? AND pickup_at IS NOT NULL").run(id).changes > 0
+  }
+
   /** The owner replied, or handed it to an agent (the same or another):
    *  that agent has it, in progress, and is told at the next check. Any
    *  open request, not only one that needs attention. The agent it was
