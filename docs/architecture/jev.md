@@ -232,6 +232,46 @@ To turn it on:
 
 To get only the sub-agent line and never a model change, leave `edgeModels` out.
 
+### Messages that describe a problem and ask for nothing
+
+A person often writes about a problem without saying what to do: "we cannot see whether an agent is still working on its job". Read as a sentence it is a remark, so the first question above gives it a low number, even when fixing the problem is a large piece of work.
+
+The setting `decisions.routing.impliedWork` makes the `task-edge` seat ask two more questions in the same call:
+
+| Question | What a sure "yes" does when the setting is `active` |
+|---|---|
+| Does the message describe a problem and ask for nothing, so work is implied? (0.80 or higher) | The task gets one extra line: the agent starts its reply with one sentence that states the job as it understands it, then does that job. If the message could mean two different jobs, or the work cannot be undone, the agent asks one question first. |
+| Does fixing the problem need a change to how the system is designed, not one small fix? (0.70 or higher, and work is implied) | The task also runs on the edge model. |
+
+Your message is never rewritten. The agent states the job in its reply, where you can see it and correct it.
+
+The setting has three values:
+
+| Value | What it does |
+|---|---|
+| `off` (default) | The two questions are not asked. |
+| `shadow` | The answers are recorded, and the daemon log says what would have happened. Nothing changes. |
+| `active` | The line is added and the task can move to the edge model. The `task-edge` seat must be `active` too. |
+
+Only a message that a person wrote is read this way. A scheduled job, a webhook and a message from another agent are left alone.
+
+To turn it on:
+
+1. Turn on the `task-edge` seat with the steps above.
+2. Merge this into `agentx.json`:
+   ```json
+   {
+     "decisions": {
+       "routing": { "impliedWork": "shadow" }
+     }
+   }
+   ```
+3. **Terminal:** restart the daemon with `agentx daemon stop`, then `agentx daemon start --detach`.
+4. For a few days, read the daemon log for lines that contain `implied work (shadow)`, for example `the agent's model is enough (edge 0.31, sub-agents 0.20, implied 0.98, design 0.85) — implied work (shadow): would state the job and move up`.
+5. When those lines match messages where you did want work, change `"shadow"` to `"active"` and restart the daemon again. A task read this way then prints a line that contains `implied work: the agent states the job`.
+
+The cost to know: more tasks reach the edge model, and a remark you meant only as a comment can start work. Set the value back to `off` if that happens too often.
+
 ## Check it worked
 
 1. **Terminal:** run `agentx decisions stats --since 1d`.

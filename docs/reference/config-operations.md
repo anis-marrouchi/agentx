@@ -368,6 +368,7 @@ Typed decisions ("seats") let a small, fast model answer fixed-choice questions 
 | `decisions.routing.edgeModels` | object | — | Most capable model per engine. A task the `task-edge` decision is sure needs it runs on this model; the next task is back on the agent's own model. See [Edge model and sub-agents](../architecture/jev.md#edge-model-and-sub-agents). |
 | `decisions.routing.edgeModels.claude-code` | string | — | Most capable model for `claude-code` agents, such as a `claude-` model or `fable`. |
 | `decisions.routing.edgeModels.codex-cli` | string | — | Most capable model for `codex-cli` agents, such as a `gpt-` model. |
+| `decisions.routing.impliedWork` | `off` \| `shadow` \| `active` | `off` | How a message that describes a problem and asks for nothing is handled, when a person wrote it and the `task-edge` seat is on. `shadow` records and logs what it would do. `active` asks the agent to state the job before doing it, and moves the task to the edge model when the problem needs a design change. See [Messages that describe a problem and ask for nothing](../architecture/jev.md#messages-that-describe-a-problem-and-ask-for-nothing). |
 
 **Local backend** (asks a model through an agent engine):
 

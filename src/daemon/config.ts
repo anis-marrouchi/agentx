@@ -1319,6 +1319,13 @@ const decisionsConfigSchema = z.object({
       "claude-code": z.string().optional(),
       "codex-cli": z.string().optional(),
     }).optional(),
+    /** How a message that describes a problem and asks for nothing is
+     *  handled, when a person wrote it and the task-edge seat is on.
+     *  "shadow" records the reading and logs what it would do. "active"
+     *  adds one line asking the agent to state the job before doing it,
+     *  and moves the job to the edge model when the problem needs a
+     *  design change. */
+    impliedWork: z.enum(["off", "shadow", "active"]).default("off"),
   }).default({}),
 }).default({})
 

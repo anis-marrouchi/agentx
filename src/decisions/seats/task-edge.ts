@@ -1,5 +1,5 @@
-import { noul } from "../questions"
-import type { AnswersFor, NoulAnswer, StateValue } from "../types"
+import { choice, noul } from "../questions"
+import type { AnswersFor, ChoiceAnswer, NoulAnswer, StateValue } from "../types"
 
 // Whether one job needs more than the agent's own model, and whether it
 // is worth splitting among sub-agents.
@@ -70,7 +70,65 @@ export const taskEdgeQuestions = {
   ),
 }
 
+// Implied work (`decisions.routing.impliedWork`).
+//
+// A person often describes a problem and asks for nothing: "we cannot see
+// whether an agent is still working on its job". Read as a sentence it is
+// a remark, and needsEdge scores it as one (0.25 to 0.37 on live Jev,
+// 2026-11-14, with or without "asked or implied" in the question). The
+// work it leads to can still be large. Two more questions on the same
+// state, in the same call, read that:
+//
+//   workAsked     asked outright, implied by a problem, or no work wanted
+//   designChange  the problem needs a change to the design, not one fix
+//
+// Live Jev, same day (workAsked=implied / designChange):
+//
+//   the visibility remark above                            0.98 / 0.85
+//   "the staging login page shows a typo in the footer"    0.99 / 0.10
+//   "invoices sometimes show the wrong currency and
+//    nobody knows when it happens"                            - / 0.86
+//   "the cron for backups failed last night, disk full"      - / 0.30
+//   "thanks, the deploy looks good now"                    none / -
+//
+// The words of the request are never rewritten: the seat returns typed
+// answers and the agent is the one that states the job back.
+export const impliedWorkQuestions = {
+  workAsked: choice(
+    {
+      asked: "The message asks outright for something to be done or answered.",
+      implied:
+        "The message describes a problem, a complaint or something that does not work, and asks for nothing. Work to find the cause or fix it is implied.",
+      none: "The message only informs, thanks, agrees or chats. No work is wanted.",
+    },
+    "What does the sender of this message want from the agent?",
+  ),
+  designChange: noul(
+    "Fixing the problem this message describes needs a change to how the system is designed, not one local fix.",
+    {
+      true:
+        "The problem comes from how parts of the system work together, shows up in many places or over time, and its cause is not stated, so someone must investigate and design a change.",
+      false:
+        "The cause and the place are clear and one small change fixes it, or the message describes no problem.",
+    },
+  ),
+}
+
+/** The questions of one call: the two base ones, plus the implied-work
+ *  pair when that reading is switched on. */
+export function taskEdgeQuestionsFor(impliedWork: boolean) {
+  return impliedWork ? { ...taskEdgeQuestions, ...impliedWorkQuestions } : taskEdgeQuestions
+}
+
 export type TaskEdgeAnswers = AnswersFor<typeof taskEdgeQuestions>
+export type ImpliedWorkAnswers = AnswersFor<typeof impliedWorkQuestions>
+
+/** P(the message implies work it does not ask for), or null when the
+ *  answer is missing or malformed. */
+export function impliedWork(answers: Record<string, unknown> | null | undefined): number | null {
+  const p = ((answers?.workAsked as ChoiceAnswer | undefined)?.probabilities as Record<string, unknown> | undefined)?.implied
+  return typeof p === "number" && Number.isFinite(p) ? p : null
+}
 
 export function needsEdge(answers: TaskEdgeAnswers): number {
   return (answers.needsEdge as NoulAnswer).noul
