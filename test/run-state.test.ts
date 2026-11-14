@@ -6,6 +6,8 @@ import { describeJobState, endStateInAnswer, JOB_STATE_ASK, jobStateFrom, jobSta
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import type { AgentResponse, AgentTask } from "../src/agents/runtime"
+import { isQuietRun, NOTHING_TO_REPORT, withQuietRule } from "../src/crons/quiet"
+import { withoutExitMarker } from "../src/crons/exit-check"
 
 describe("which runs state their job's state", () => {
   const on = { enabled: true, channels: ["a2a", "cron", "reminder", "events"] }
@@ -154,6 +156,42 @@ describe("registry.execute on an agent channel", () => {
     expect(seen).toHaveLength(2)
     expect(res.content).toMatch(/^Built it\.\n\n\[Job stalled\] ops ended its run without saying/)
     expect(res.jobState).toEqual({ state: "stalled" })
+  })
+
+  it("a quiet schedule stays quiet: no ask, no added line, nothing to post (#1289)", async () => {
+    const cron = { channel: "cron", chatId: "nightly" }
+    const quiet = async (result: Parameters<typeof registry>[0][number], report: "exceptions" = "exceptions") => {
+      const { r, seen } = registry([result, { content: "State: done — checked" }])
+      const res = await r.execute({ agentId: "ops", message: withQuietRule("check", report), context: cron })
+      expect(seen).toHaveLength(1)
+      // As the scheduler reads it (an exit-code schedule without its marker).
+      expect(isQuietRun(report, withoutExitMarker(res.content))).toBe(true)
+      return res
+    }
+    // The quiet word alone: done, nothing sent.
+    const bare = await quiet({ content: NOTHING_TO_REPORT })
+    expect(bare.content).toBe(NOTHING_TO_REPORT)
+    expect(bare.jobState).toEqual({ state: "done", proof: "nothing to report" })
+    // The run followed the state rule as well: the state is kept, the line is not posted.
+    const withLine = await quiet({ content: `${NOTHING_TO_REPORT}\nState: done — all 4 checks green` })
+    expect(withLine.content).toBe(NOTHING_TO_REPORT)
+    expect(withLine.jobState).toEqual({ state: "done", proof: "all 4 checks green" })
+    // Stated with the tool: no "[Job state]" line goes on the quiet word.
+    const tool = await quiet((task, reg) => {
+      reg.recordJobState(task.runningTaskId!, { state: "done", proof: "checked" })
+      return { content: NOTHING_TO_REPORT }
+    })
+    expect(tool.content).toBe(NOTHING_TO_REPORT)
+    // An exit-code schedule keeps its marker last.
+    const exit = await quiet({ content: `${NOTHING_TO_REPORT}\nState: done — ran it\nEXIT=0` })
+    expect(exit.content).toBe(`${NOTHING_TO_REPORT}\nEXIT=0`)
+  })
+
+  it("a schedule with something to say is still asked for its state", async () => {
+    const { r, seen } = registry([{ content: "Disk is 95% full." }, { content: "State: blocked — needs cleanup" }])
+    const res = await r.execute({ agentId: "ops", message: "check", context: { channel: "cron", chatId: "nightly" } })
+    expect(seen).toHaveLength(2)
+    expect(res.content).toBe("Disk is 95% full.\n\n[Job state] blocked — needs cleanup")
   })
 
   it("an ask that fails counts as no state", async () => {

@@ -32,7 +32,9 @@ import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
-import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, type JobState } from "./run-state"
+import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, withoutStateLines, type JobState } from "./run-state"
+import { isQuietAnswer } from "@/crons/quiet"
+import { withoutExitMarker } from "@/crons/exit-check"
 import { emitSignal } from "@/improve/signals"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
@@ -1602,6 +1604,15 @@ export class AgentRegistry {
       return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: state }
     }
     const runIds = [task.taskId, runId]
+    // A schedule's quiet word (#1289) is sent nowhere only when it is the
+    // whole answer, so it gets no ask and no added line: it means done.
+    const bare = withoutStateLines(response.content ?? "")
+    if (isQuietAnswer(withoutExitMarker(bare))) {
+      const state = this.takeJobState(task, response) ?? { state: "done", proof: "nothing to report" }
+      this.log(`[job-state] ${where}: ${describeJobState(state)} (quiet answer)`)
+      this.tellJobState(runIds, { kind: "stated", state })
+      return { ...response, content: bare, jobState: state }
+    }
     const stated = this.takeJobState(task, response)
     if (stated) {
       this.log(`[job-state] ${where}: ${describeJobState(stated)}`)

@@ -119,6 +119,12 @@ export function jobStateInText(reply: string | undefined): JobState | null {
   return null
 }
 
+/** The reply without state lines, for checks that read the bare answer
+ *  (a schedule's quiet word, #1289). */
+export function withoutStateLines(reply: string): string {
+  return reply.split("\n").filter((line) => !STATE_LINE.test(line)).join("\n").trimEnd()
+}
+
 /** What a run's job ended as: a state it gave, or none even when asked. */
 export type EndState = JobState | { state: "stalled" }
 

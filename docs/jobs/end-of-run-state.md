@@ -42,6 +42,8 @@ Every run on these channels starts with one line that reminds the agent of the r
 
 A state given with the tool, or when asked, is added to the end of the answer as `[Job state] …`, so the agent that asked sees it too. A state already on the answer's last line is not repeated.
 
+A schedule that [reports only exceptions](./daily-report.md#report-only-when-something-is-wrong) stays quiet. If its answer is `NOTHING_TO_REPORT`, the job is **done** and AgentX asks nothing. Any `State:` line is taken off the answer, and no `[Job state]` line is added, so nothing is posted.
+
 ## What the asking agent is told
 
 When one agent handed the work to another, the state decides how the answer comes back. Only `done` is reported as finished.
