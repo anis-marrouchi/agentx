@@ -12,8 +12,8 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 1. **Browser:** open the dashboard. The Hub is the first page you see. Its address is `/hub`. From a classic dashboard page, select **Hub** to come back.
 2. The nav on the left starts with **Hub** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
-   - **Work:** **Live**, **Running now**, **Projects** and **Activity**.
-   - **Automation:** **Jobs**, **Workflows**, **Reviews**, **Events** and **Failures**.
+   - **Work:** **Jobs** (see [Jobs](./jobs.md)), **Live**, **Running now**, **Projects** and **Activity**.
+   - **Automation:** **Schedules**, **Workflows**, **Reviews**, **Events** and **Failures**.
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
    - **Owner:** **Settings**, for the owner only (see [Change settings](#change-settings)).
 
@@ -522,7 +522,7 @@ The **Activity** page lists every run of every agent on your machines, newest fi
    - **Stopped**: someone stopped it.
 3. Under the name, the row says what it worked on: the task's title when the run belongs to a post on the Hub, otherwise the first line of what it was asked.
 4. The last line says what started it (**from a job**, **from a workflow**, **from a post on the Hub**, or **from a message on** its channel, with who sent it when that is known), how long it took, what it cost and its project. A run with no recorded cost shows **–**, not $0.00.
-5. Select a row to open it in place. It shows the result, everything it was asked, where it ran, and the review findings for the run. **Open the run** opens its [Task page](#watch-and-steer-a-run), where the full conversation is; a job's run also links to **Jobs**. Select the row again to close it. Selecting the title opens the Task page straight away.
+5. Select a row to open it in place. It shows the result, everything it was asked, where it ran, and the review findings for the run. **Open the run** opens its [Task page](#watch-and-steer-a-run), where the full conversation is; a job's run also links to **Schedules**. Select the row again to close it. Selecting the title opens the Task page straight away.
 6. To narrow the list:
    - The tabs under the title pick the result: **All**, **Done**, **Failed** (with how many failed), **Running** or **Stopped**.
    - **All agents**, **All projects** and **Any source** filter the runs. **Any source** picks what started them: **Jobs**, **Workflows**, **Hub posts** or **Messages**. They work together: for example one agent's failed jobs on one project. **Other (no project)** shows runs with no project.
@@ -729,7 +729,7 @@ The Hub reads with this machine's own GitHub or GitLab connection, the same one 
 
 ## See recurring jobs and their value line
 
-1. Select **Jobs** in the nav. At the top are today's totals across every machine: runs that **ran**, **worked**, **failed**, were **quiet** (a report-only job with nothing to report), and the jobs that **look stale**.
+1. Select **Schedules** in the nav. At the top are today's totals across every machine: runs that **ran**, **worked**, **failed**, were **quiet** (a report-only job with nothing to report), and the jobs that **look stale**.
 2. Jobs are grouped by machine. Each row has the job's name and agent, its value line, its schedule and next run, its last seven runs as squares (green worked, red failed, an empty square for no run; the newest is on the right), and its state: **on**, **off** or **look stale**.
 3. The value line says why the job runs and the number that proves it, from [`crons.<id>.value`](/reference/config-automation#crons). A job without one says **no value line** in amber, so the gap shows.
 4. A job **looks stale** when it has been off for 14 days or more, failed 3 times in a row, or has no value line. Point at the label to see which.
@@ -740,7 +740,7 @@ A machine that does not answer keeps its jobs from its last answer, marked **as 
 
 Settings › Schedules shows the same line under each job.
 
-![The Jobs page: today's totals, then one machine's four jobs, each off, with no value line and marked look stale, in the isolated demo](/screenshots/wall/jobs.png)
+![The Schedules page: today's totals, then one machine's four jobs, each off, with no value line and marked look stale, in the isolated demo](/screenshots/wall/jobs.png)
 
 ## Review classifications
 
@@ -950,7 +950,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 18. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Hub's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
 19. Post a task: type `@` and an agent's name and a small task in the box at the top of the feed, then select **Post**. The box says who has it. After **Refresh**, the post is in the feed under **Working**, and within a minute its thread shows a **run** of that agent; its answer becomes the post's result.
 20. Select the **Done** tab: only finished posts are listed. Select the search button: the search box and the filters open.
-21. Select **Jobs**. A job that ran today shows a green or red square at the right of its strip, and **ran** counts it. Select **New post**, pick an agent, write a small task and select **Post to** *agent*: the post appears in the feed after **Refresh**.
+21. Select **Schedules**. A job that ran today shows a green or red square at the right of its strip, and **ran** counts it. Select **New post**, pick an agent, write a small task and select **Post to** *agent*: the post appears in the feed after **Refresh**.
 22. Open a post that is done and comment on it with `@` and another agent's name. The post shows **in progress** again after **Refresh**, and the other agent has a new post that quotes your comment.
 23. Select **Live**. Start a Space with two agents: it is listed first under **Spaces and lessons**, and its transcript fills in under the list. Select **Agents**, then **Call** on an agent: your voice widget rings.
 24. Open a post whose request has a plan. Under its title, **Working** is marked while it runs, and **Plan** lists the steps the agent wrote, each with its owner and done check (see [Follow a request of several steps](../jobs/tracked-plans.md)).

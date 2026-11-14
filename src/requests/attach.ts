@@ -9,6 +9,8 @@ import { SprintStore } from "./sprint-store"
 import { RequestTracker, type RequestSettings } from "./tracker"
 import { traceInbound, type InboundLog } from "./checkers/reply"
 import { DriftStore } from "./drift/store"
+import { JobStore } from "@/jobs/store"
+import { DEFAULT_JOB_SETTINGS, JobDoors } from "@/jobs/doors"
 
 // --- Hook the request tracker to the daemon's event bus (#356) ---
 
@@ -26,6 +28,10 @@ export interface AttachedRequests {
   inbound: InboundLog
   /** What status drift has told and written (#1138 step F). */
   drift: DriftStore
+  /** The job ledger over the same table (#1861). */
+  jobs: JobStore
+  /** Opens a job for every run that is not the owner's turn (#1861). */
+  doors: JobDoors
   detach: () => void
 }
 
@@ -90,6 +96,13 @@ export function attachRequests(
   const completed = tracker.taskCompleted.bind(tracker)
   bus.on("task:started", started)
   bus.on("task:completed", completed)
+  // After the tracker, on purpose: a run it linked is the owner's already.
+  const jobs = new JobStore(db)
+  const doors = new JobDoors({ jobs, requests: store, settings: () => (settings().enabled ? settings().jobs ?? DEFAULT_JOB_SETTINGS : { enabled: false }), log })
+  const jobStarted = doors.taskStarted.bind(doors)
+  const jobCompleted = doors.taskCompleted.bind(doors)
+  bus.on("task:started", jobStarted)
+  bus.on("task:completed", jobCompleted)
   return {
     store,
     tracker,
@@ -99,9 +112,13 @@ export function attachRequests(
     sprints: new SprintStore(db),
     inbound: traceInbound(db),
     drift: new DriftStore(db),
+    jobs,
+    doors,
     detach: () => {
       bus.off("task:started", started)
       bus.off("task:completed", completed)
+      bus.off("task:started", jobStarted)
+      bus.off("task:completed", jobCompleted)
     },
   }
 }

@@ -8,11 +8,12 @@ The dashboard opens on the [Hub](../dashboard/hub.md). Every view below is a pag
 |---|---|---|
 | Every task as a post, with its thread | **Hub** | `/hub` |
 | What waits on you: decisions, drafts, requests ([Needs you](../dashboard/hub.md#see-what-waits-on-you)) | **Needs you** | `/hub#status=open&view=decide` |
+| Every piece of assigned work and what it is doing now ([Jobs](../dashboard/jobs.md)) | **Jobs** | `/hub#page=jobledger` |
 | Live sessions, paused tasks, each machine, restart when idle ([Live](../dashboard/live.md)) | **Live** | `/hub#page=live` |
 | What each machine runs at this moment ([Running now](../dashboard/hub.md#running-now)) | **Running now** | `/hub#page=running` |
 | Every project with its open work ([Projects](../dashboard/hub.md#see-every-project-at-once)) | **Projects** | `/hub#status=open&view=projects` |
 | What the agents ran, newest first ([Activity](../dashboard/activity.md)) | **Activity** | `/hub#page=activity` |
-| Recurring jobs and their value line ([Jobs](../dashboard/hub.md#see-recurring-jobs-and-their-value-line)) | **Jobs** | `/hub#status=open&view=jobs` |
+| Recurring jobs and their value line ([Schedules](../dashboard/hub.md#see-recurring-jobs-and-their-value-line)) | **Schedules** | `/hub#status=open&view=jobs` |
 | Workflows and their runs; start one, turn one on or off ([Workflows](../dashboard/workflows.md)) | **Workflows** | `/hub#page=workflows` |
 | Edit a workflow on the canvas ([workflow editor](../dashboard/workflows.md#edit-a-workflow)) | **Workflows**, then **Open in the editor** | `/hub#page=editor&e-wf=<id>` |
 | Classifications waiting for review ([Reviews](../dashboard/hub.md#review-classifications)) | **Reviews** | `/hub#status=open&view=reviews` |
@@ -67,7 +68,7 @@ These pages were removed because nobody opened them. Their old addresses still w
 | Kanban boards | `/boards` | Hub, **Projects** |
 | Words used on screen | `/glossary` | Hub. The words are explained in the [glossary](./glossary.md). |
 | Procedures (actions, templates and skills) | `/procedures` | Hub, **Agents** |
-| Workflow runs | `/processes` | Hub, **Jobs** |
+| Workflow runs | `/processes` | Hub, **Schedules** |
 | Places for the phone's place reminders | `/places` | Hub. Add places in the [phone app](../dashboard/mobile-places.md). |
 
 The browser call page, `/call`, is served by the daemon (default `http://127.0.0.1:18800/call`), not the dashboard.

@@ -1,6 +1,6 @@
 // --- Value line on a recurring job, in the browser (#1183) ---
 //
-// One renderer for the Wall's Jobs page and Settings › Schedules,
+// One renderer for the Wall's Schedules page (nav key jobs) and Settings › Schedules,
 // so both say the same thing. `esc` is the page's own HTML escaper.
 
 export const NO_VALUE_LINE = "no value line"

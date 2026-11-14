@@ -168,6 +168,9 @@ export interface AgentXEvents {
     /** The task's type, when the caller gave one in the run's context as
      *  `taskType`: it picks the evidence a done needs (watchers, #1049). */
     taskType?: string
+    /** The issue or merge request the caller said the work is about, as
+     *  given in the run's context as `home` (jobs, #1861). */
+    home?: string
   }
 
   /** A single step inside an in-flight task — typically a tool call or

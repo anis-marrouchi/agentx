@@ -26,7 +26,7 @@ AgentX has two parts that run side by side:
   2. [Create your first agent](./first-agent.md).
   3. [Connect Telegram](./connect-telegram.md).
 
-The dashboard opens on the [Hub](./dashboard/hub.md): every task as a post, with its thread. Its nav on the left (a bar at the bottom on a phone) starts with **Hub** and **Needs you** (what waits on you), then **Live**, **Running now**, **Projects**, **Activity**, **Jobs**, **Workflows**, **Reviews**, **Failures**, **Agents**, **People**, **Org** and **Cost**. Start with **Needs you** to see what still needs a person. [The dashboard](./dashboard/index.md) says where each thing is.
+The dashboard opens on the [Hub](./dashboard/hub.md): every task as a post, with its thread. Its nav on the left (a bar at the bottom on a phone) starts with **Hub** and **Needs you** (what waits on you), then **Jobs**, **Live**, **Running now**, **Projects**, **Activity**, **Schedules**, **Workflows**, **Reviews**, **Failures**, **Agents**, **People**, **Org** and **Cost**. Start with **Needs you** to see what still needs a person. [The dashboard](./dashboard/index.md) says where each thing is.
 
 New words, such as *node*, *mesh* or *schedule*, are explained in plain terms in the [glossary](reference/glossary.md).
 

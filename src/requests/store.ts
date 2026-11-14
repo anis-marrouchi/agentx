@@ -611,7 +611,7 @@ export class RequestStore {
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?, proof = ?,
          closed_by = 'check', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run(now, now, now, text, now, now, text, JSON.stringify(proof), id, ...CLOSED_STATES).changes > 0
     if (closed) this.done(id)
     return closed
@@ -699,15 +699,17 @@ export class RequestStore {
     ).all(now, quietBefore).map(toRecord)
   }
 
+  /** A row that is only a job (state 'job', #1861) is not a request: the
+   *  job store reads those. */
   get(id: string): RequestRecord | null {
-    const row = this.db.prepare("SELECT * FROM requests WHERE id = ?").get(id)
+    const row = this.db.prepare("SELECT * FROM requests WHERE id = ? AND state != 'job'").get(id)
     return row ? toRecord(row) : null
   }
 
-  /** The request a run, delegation or card belongs to. */
+  /** The request a run, delegation or card belongs to. Never a job row. */
   byLink(kind: LinkKind, ref: string): RequestRecord | null {
     const row = this.db.prepare(
-      "SELECT r.* FROM requests r JOIN request_links l ON l.request_id = r.id WHERE l.kind = ? AND l.ref = ?",
+      "SELECT r.* FROM requests r JOIN request_links l ON l.request_id = r.id WHERE l.kind = ? AND l.ref = ? AND r.state != 'job'",
     ).get(kind, ref)
     return row ? toRecord(row) : null
   }
@@ -876,7 +878,7 @@ export class RequestStore {
     this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = ?, updated_at = ?, attention_reason = NULL, notified_at = NULL, question = NULL,
          need = CASE WHEN state IN ('waiting_owner', 'needs_attention') THEN NULL ELSE need END
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run(state, now, state, now, id, ...CLOSED_STATES)
   }
 
@@ -886,7 +888,7 @@ export class RequestStore {
   waitOnOwner(id: string, question: string, now: number, need: string | null = null): void {
     this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, need = ?, attention_reason = NULL, notified_at = NULL
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("waiting_owner", now, now, question.slice(0, TEXT_MAX), need, id, ...CLOSED_STATES)
   }
 
@@ -896,7 +898,7 @@ export class RequestStore {
   needsAttention(id: string, reason: string, now: number): boolean {
     const res = this.db.prepare(
       `UPDATE requests SET state = 'needs_attention', updated_at = ?, state_changed_at = ?, attention_reason = ?, notified_at = NULL
-       WHERE id = ? AND state NOT IN ('needs_attention', ${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state NOT IN ('needs_attention', 'job', ${placeholders(CLOSED_STATES.length)})`,
     ).run(now, now, reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX), id, ...CLOSED_STATES)
     if (res.changes > 0) this.signal("request_stalled", id, reason, now)
     return res.changes > 0
@@ -970,7 +972,7 @@ export class RequestStore {
     const res = this.db.prepare(
       `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?, proof = ?,
          closed_by = ?, owner_check = ?, owner_check_at = NULL, owner_check_note = NULL
-       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept,
       by, check, id, ...CLOSED_STATES)
     const closed = res.changes > 0
@@ -1152,12 +1154,13 @@ export class RequestStore {
       .sort((a, b) => a.createdAt - b.createdAt)
   }
 
-  /** Every request asked since `since` (candidates left out), for the
+  /** Every request asked since `since` (candidates and job rows of other
+   *  doors, #1861, left out), for the
    *  daily flow (#1542): only what the count needs. */
   flowRows(since: number): Array<{ state: RequestState; createdAt: number; closeReason: string | null; resentAt: number | null }> {
     return this.db.prepare(
       `SELECT state, created_at AS createdAt, close_reason AS closeReason, resent_at AS resentAt
-       FROM requests WHERE created_at >= ? AND state != 'candidate' ORDER BY created_at, rowid`,
+       FROM requests WHERE created_at >= ? AND state NOT IN ('candidate', 'job') ORDER BY created_at, rowid`,
     ).all(since) as any
   }
 

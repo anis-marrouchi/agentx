@@ -47,6 +47,7 @@ import { WALL_SETTINGS_CSS } from "./wall-settings.client"
 import { WALL_ACTIVITY_CSS } from "./wall-activity.client"
 import { WALL_BUILD_CSS } from "./wall-build.client"
 import { WALL_NUMBERS_CSS } from "./wall-numbers.client"
+import { WALL_JOBLEDGER_CSS } from "./wall-jobledger.client"
 import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml, wallChatQuickHtml } from "./wall-chat.client"
 
@@ -103,6 +104,7 @@ const NAV_ICON = {
   space: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   numbers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/></svg>',
+  jobledger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17M11 6h10M11 12h10M11 18h10"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
 }
 
@@ -124,6 +126,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     { key: "needs", label: "Needs you", href: "#status=open&amp;view=decide", icon: "needs", count: "nav-n-needs" },
   ] },
   { label: "Work", items: [
+    { key: "jobledger", label: "Jobs", href: "#page=jobledger", icon: "jobledger", count: "nav-n-jobledger", title: "Jobs: every piece of assigned work and what it is doing now" },
     { key: "live", label: "Live", href: "#page=live", icon: "space", count: "nav-n-live" },
     { key: "running", label: "Running now", href: "#page=running", icon: "live", count: "nav-n-running" },
     { key: "projects", label: "Projects", href: "#status=open&amp;view=projects", icon: "projects", count: "nav-n-projects" },
@@ -131,7 +134,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     { key: "numbers", label: "Numbers", href: "#page=numbers", icon: "numbers", count: "nav-n-numbers", title: "Numbers: tracked measures, their newest reading and trend", hidden: true },
   ] },
   { label: "Automation", items: [
-    { key: "jobs", label: "Jobs", href: "#status=open&amp;view=jobs", icon: "jobs", count: "nav-n-jobs" },
+    { key: "jobs", label: "Schedules", href: "#status=open&amp;view=jobs", icon: "jobs", count: "nav-n-jobs" },
     { key: "workflows", label: "Workflows", href: "#page=workflows", icon: "workflows", count: "nav-n-workflows" },
     { key: "reviews", label: "Reviews", href: "#status=open&amp;view=reviews", icon: "reviews", count: "wall-rev-n" },
     { key: "events", label: "Events", href: "#status=open&amp;view=events", icon: "events", count: "wall-ev-n", title: "Events: broadcasts, who was woken and who replied" },
@@ -280,6 +283,7 @@ ${navItems}
     <section id="wall-settings" aria-label="Settings" hidden></section>
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
     <section id="wall-numbers" class="ax-wall__numbers" aria-label="Numbers: tracked measures and their readings" hidden></section>
+    <section id="wall-jobledger" class="ax-wall__jobledger" aria-label="Jobs: assigned work and its status" hidden></section>
   </div>
   <aside class="ax-wall__aside" id="wall-aside">
     ${wallChatQuickHtml(chat)}
@@ -311,7 +315,7 @@ ${navItems}
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }

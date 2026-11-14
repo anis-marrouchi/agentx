@@ -2373,6 +2373,8 @@ export class AgentRegistry {
       operator: isOperatorTurn(task.context),
       dueAt: dueAtOf(task.context as Record<string, unknown> | undefined),
       taskType: taskTypeOf(task.context as Record<string, unknown> | undefined),
+      ...(typeof (task.context as Record<string, unknown> | undefined)?.home === "string"
+        ? { home: ((task.context as Record<string, unknown>).home as string).slice(0, 500) } : {}),
     }
     getEventBus().emit("task:started", started)
     traceOpened = true

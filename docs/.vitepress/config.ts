@@ -23,6 +23,7 @@ const groups = [
     { text: "Wiki", link: "/dashboard/wiki" },
     { text: "Live", link: "/dashboard/live" },
     { text: "Operations", link: "/dashboard/operations" },
+    { text: "Jobs", link: "/dashboard/jobs" },
     { text: "Activity", link: "/dashboard/activity" },
     { text: "Workflows", link: "/dashboard/workflows" },
     { text: "Settings", link: "/dashboard/settings" },

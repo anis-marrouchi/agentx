@@ -128,7 +128,7 @@ describe("the value line on the page", () => {
     expect(html({ why: "a" }, esc)).toContain(NO_VALUE_LINE)
   })
 
-  it("is on the Wall's Jobs page and on Settings › Schedules", () => {
+  it("is on the Wall's Schedules page and on Settings › Schedules", () => {
     const wall = renderWallPage()
     expect(wall).toContain('data-nav="jobs"')
     expect(wall).toContain('id="wall-jobs"')

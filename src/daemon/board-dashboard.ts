@@ -99,6 +99,7 @@ import { getTopbarFeatures, headerBuild, setTopbarFeatures, type TopbarPeer } fr
 import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
 import { handleAgentChatApi } from "./agent-chat-api"
 import { NUMBERS_HUB_PATH, numbersHubReply } from "@/numbers/hub-api"
+import { isJobsHubPath, jobsHubReply } from "@/jobs/hub-api"
 
 // --- Kanban Board Dashboard ---
 //
@@ -884,6 +885,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     let funnels = ctx.config.numbers?.funnels
     try { funnels = loadDaemonConfig().numbers?.funnels } catch { /* keep the started config */ }
     sendJson(res, 200, numbersHubReply(dashboardDb(), Date.now(), funnels))
+    return
+  }
+  // The Hub's Jobs page (#1861): this machine's job ledger, each job with
+  // its status line. After the token gate above; peers come through the proxy.
+  if (method === "GET" && isJobsHubPath(path)) {
+    const reply = jobsHubReply(dashboardDb(), path, url.searchParams, Date.now())
+    sendJson(res, reply.status, reply.body)
     return
   }
   if (method === "GET" && path.startsWith("/api/admin/ledger/")) {
