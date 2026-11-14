@@ -1717,7 +1717,9 @@ export class AgentRegistry {
       // too, and has no adapter to flush a queued reply to. A sprint lane's
       // turn ("sprint", #1241) is awaited by the daemon, whose end hands
       // the lane its next item: queued, it would end at once, unrun.
-      if (qChannel === "api" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted) {
+      // A run the daemon starts to wake a job (#1861) waits too: queued,
+      // its reply would be posted to the job's chat when the queue flushes.
+      if (qChannel === "api" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted || !!wokenJobId(task.context)) {
         const start = Date.now()
         const maxWaitMs = task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
         const pollIntervalMs = 500

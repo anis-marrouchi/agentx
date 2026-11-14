@@ -128,6 +128,31 @@ describe("the wake", () => {
     expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: clock + 5 * MIN, wakeCount: 1 })
   })
 
+  it("a wake queued behind a busy agent is not armed a second time, and its job is not stalled while it waits", async () => {
+    open()
+    jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
+    startError = "__queued__:collect:2"
+    expect(wake.tick().woken).toBe(1)
+    await flush()
+    expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: null, wakeCount: 1 })
+    clock += 20 * MIN
+    expect(wake.tick()).toEqual({ woken: 0, capped: 0, stalled: 0 })
+    // Past the wait for a slot, nobody holds it.
+    clock += 15 * MIN
+    expect(wake.tick().stalled).toBe(1)
+  })
+
+  it("a schedule's job is never woken", async () => {
+    open("job-1", { door: "cron", requester: "cron:nightly", channel: "cron", chatId: "cron:nightly" })
+    expect(wake.runLeftBackground(jobs.get("job-1")!, 2)).toBe(false)
+    expect(wake.backgroundEnded({ agentId: "coder", channel: "cron", chatId: "cron:nightly" }, "done")).toBe(false)
+    jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "the rest" }, { now: clock })
+    expect(wake.tick()).toEqual({ woken: 0, capped: 0, stalled: 1 })
+    await flush()
+    expect(started).toEqual([])
+    expect(jobs.get("job-1")!.note).toMatch(/schedule's job is not woken.*What was left: the rest/)
+  })
+
   it("a job whose agent is not here is stalled, not woken", () => {
     open("job-1", { assignee: "ghost" })
     jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
@@ -246,6 +271,26 @@ describe("background work belongs to the job", () => {
     requests.progress("req-1", clock)
     expect(wake.backgroundEnded({ agentId: "coder", channel: "telegram", chatId: "c1" }, "done")).toBe(false)
     expect(started).toEqual([])
+  })
+
+  it("a stray closing reply does not start a blocked, stalled or otherwise waiting job again", () => {
+    open("job-1")
+    jobs.declare("job-1", { state: "blocked", why: "stopped by the operator" }, { now: clock })
+    expect(wake.backgroundEnded(run, "done")).toBe(false)
+    expect(jobs.get("job-1")!.state).toBe("blocked")
+    open("job-2"); clock += MIN
+    jobs.declare("job-2", { state: "waiting", on: "devops", until: clock + HOUR }, { now: clock })
+    expect(wake.backgroundEnded(run, "done")).toBe(false)
+    expect(jobs.get("job-2")!.state).toBe("waiting")
+  })
+
+  it("a job marked stalled while its run was still on it closes when that run ends", () => {
+    doors.taskStarted({ ...run, taskId: "t1", messagePreview: "build", at: "", sender: { name: "agent:pm" } } as any)
+    expect(doors.hasLiveRun("job-t1")).toBe(true)
+    jobs.markStalled("job-t1", "run ended 60 min ago with no state", clock)
+    doors.taskCompleted({ ...run, taskId: "t1", durationMs: 5, at: "" } as any)
+    expect(jobs.get("job-t1")!.state).toBe("done")
+    expect(doors.hasLiveRun("job-t1")).toBe(false)
   })
 
   it("with no background work open, the run ends as before", () => {

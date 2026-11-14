@@ -112,6 +112,13 @@ export class JobDoors {
     return this.live.get(chatKey(agentId, channel, chatId))?.jobId ?? null
   }
 
+  /** Is a run of this job going on right now, as this process saw it
+   *  start and not yet end? The traces say the same; this needs none. */
+  hasLiveRun(jobId: string): boolean {
+    for (const turn of this.live.values()) if (turn.jobId === jobId) return true
+    return false
+  }
+
   taskStarted(p: AgentXEvents["task:started"]): void {
     if (!p.taskId) return
     this.guard("open", () => {
@@ -209,7 +216,9 @@ export class JobDoors {
         return
       }
       // The run said what the job's state is: nothing more to do.
-      if (job.state !== "working" || job.declaredRun === p.taskId) return
+      // (A job the minute check marked stalled while this run was still
+      // on it ends like a working one.)
+      if ((job.state !== "working" && job.state !== "stalled") || job.declaredRun === p.taskId) return
       // Background work the run left open holds the job: it waits on it.
       if (this.deps.leftBackground?.(job, p)) return
       // A hand-off this node started ends with its delegation.

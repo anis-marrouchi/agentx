@@ -1,3 +1,4 @@
+import { isQueued } from "@/agents/queued"
 import { ledgerFacts } from "./api"
 import { isOwned, stallReason, type JobFacts } from "./status"
 import type { JobRecord, JobRun, JobStore } from "./store"
@@ -91,8 +92,18 @@ export interface JobWakeDeps {
 
 export interface WakeTickResult { woken: number; capped: number; stalled: number }
 
+/** How long a wake that was started may wait for its run to begin (a
+ *  slot, a busy agent) before the job counts as held by nobody. */
+const START_WAIT_MS = 30 * MIN
+
+/** A schedule's job is not woken: the wake run would not carry the
+ *  schedule's own model, autonomy or limits. Its next firing goes on. */
+const noWake = (job: Pick<JobRecord, "door">) => job.door === "cron"
+
 export class JobWake {
   private now: () => number
+  /** Wakes started and when: their run may still be waiting for a slot. */
+  private startedAt = new Map<string, number>()
 
   constructor(private deps: JobWakeDeps) {
     this.now = deps.now ?? Date.now
@@ -122,8 +133,12 @@ export class JobWake {
         if (jobs.markStalled(job.id, `its agent ${job.assignee} is not on this node, so it cannot be woken`, now)) result.stalled++
         continue
       }
+      if (noWake(job)) {
+        if (jobs.markStalled(job.id, `a schedule's job is not woken by the daemon; its next firing continues it. What was left: ${job.note ?? "not said"}`, now)) result.stalled++
+        continue
+      }
       // A run is on it already: it will say what comes next.
-      if (this.factsOf(job).liveRun) continue
+      if (this.factsOf(job).liveRun || this.deps.held?.(job)) continue
       const cost = jobs.costUsd(job.id)
       const over = job.wakeCount >= settings.maxWakes ? `it was woken ${job.wakeCount} times, the most a job may be (requests.jobs.wake.maxWakes)`
         : cost >= settings.maxCostUsd ? `its runs cost $${cost.toFixed(2)}, the most a job may spend (requests.jobs.wake.maxCostUsd)` : null
@@ -135,13 +150,16 @@ export class JobWake {
         continue
       }
       if (!jobs.takeWake(job.id, now)) continue
+      this.startedAt.set(job.id, now)
       result.woken++
       log(`[jobs] waking ${job.id} for ${job.assignee} (wake ${job.wakeCount + 1})`)
       void Promise.resolve()
         .then(() => this.deps.start(job, wakeText(job, settings)))
         .then((res) => {
           const error = res && typeof res === "object" ? res.error : undefined
-          if (!error || error === "__queued__") return
+          // Queued behind a busy agent: the run will start, nothing to arm.
+          if (!error || isQueued(error)) return
+          this.startedAt.delete(job.id)
           // The run did not start (the agent is busy, a limit holds): try
           // again in a few minutes. Each try counts toward the cap.
           const at = this.now()
@@ -154,15 +172,14 @@ export class JobWake {
   private checkOwned(settings: JobWakeSettings, result: WakeTickResult): void {
     const { jobs, log } = this.deps
     const now = this.now()
-    for (const job of jobs.listOpen()) {
-      // The owner's request keeps its own checks until a run declares a
-      // job state on it. A job on another node is that node's to check.
-      if (job.ownerRequest && job.declaredAt === null) continue
-      if (job.peer) continue
-      if (job.state === "blocked" || job.state === "stalled") continue
-      // A wake that is due is the wake pass's, not a stall.
-      if (job.wakeAt !== null) continue
+    for (const [id, at] of this.startedAt) if (now - at >= START_WAIT_MS) this.startedAt.delete(id)
+    // Only the jobs the check can stall: not the owner's requests no run
+    // declared on (their own checks hold them), not a job on another node
+    // (that node's to check), not one blocked, stalled or with a wake set.
+    for (const job of jobs.unheldCandidates()) {
       if (now - job.updatedAt < settings.graceMinutes * MIN && job.state !== "waiting") continue
+      // Its wake was started and the run may still be waiting for a slot.
+      if (this.startedAt.has(job.id)) continue
       const facts = this.factsOf(job)
       if (isOwned(job, facts, now)) continue
       if (this.deps.held?.(job)) continue
@@ -178,7 +195,7 @@ export class JobWake {
    *  the job waits on that work instead of closing. True when it does. */
   runLeftBackground(job: JobRecord, open: number, runId?: string): boolean {
     const settings = this.deps.settings()
-    if (!settings.enabled || open <= 0 || job.ownerRequest) return false
+    if (!settings.enabled || open <= 0 || job.ownerRequest || noWake(job)) return false
     const now = this.now()
     return this.deps.jobs.declare(job.id, {
       state: "waiting", on: BACKGROUND_WAITER, until: now + settings.maxBackgroundMinutes * MIN,
@@ -197,8 +214,11 @@ export class JobWake {
       // The owner's request is woken only once a run put a job state on it
       // or it waits on this work: its own checks hold it otherwise.
       if (job.ownerRequest && job.declaredAt === null) return false
+      // Only a job that waits on this work, or is still working: a job
+      // someone blocked or stopped is not started again by a stray reply.
+      if (noWake(job) || !(job.waitingOn === BACKGROUND_WAITER || job.state === "working")) return false
       // A run is on it now: it sees the work's result itself.
-      if (this.factsOf(job).liveRun) return false
+      if (this.factsOf(job).liveRun || this.deps.held?.(job)) return false
       const now = this.now()
       const said = reply.replace(/\s+/g, " ").trim()
       const note = `background work you left running has ended.${said ? ` Its closing reply: ${clip(said, REPLY_MAX)}` : ""}`

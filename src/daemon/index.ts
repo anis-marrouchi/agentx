@@ -793,7 +793,9 @@ export class AgentXDaemon {
             }).then((res) => ({ error: res.error })),
             hasAgent: (id) => !!this.registry.getAgent(id),
             // A hand-off still out answers for its job.
-            held: (job) => job.id.startsWith("job-dlg-") && !!this.delegations?.isPending(job.id.slice("job-".length)),
+            // So does a run this process saw start and not end, whatever its trace says.
+            held: (job) => requests.doors.hasLiveRun(job.id)
+              || (job.id.startsWith("job-dlg-") && !!this.delegations?.isPending(job.id.slice("job-".length))),
             log: this.log,
           })
           this.jobWake = jobWake

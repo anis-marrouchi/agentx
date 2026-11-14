@@ -383,6 +383,17 @@ export class JobStore {
     return this.runs(id).reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
   }
 
+  /** The open jobs the minute check may stall, least recently moved
+   *  first: working, continue or waiting, with no wake set, on this node;
+   *  an owner's request only once a run declared a job state on it. */
+  unheldCandidates(limit = 500): JobRecord[] {
+    return this.db.prepare(
+      `${SELECT} WHERE job_state IN ('working', 'continue', 'waiting') AND wake_at IS NULL AND peer IS NULL AND ${OPEN_ROW}
+         AND (state = '${JOB_ROW_STATE}' OR declared_at IS NOT NULL)
+       ORDER BY updated_at, rowid LIMIT ?`,
+    ).all(limit).map(toJob)
+  }
+
   /** Every open job, oldest first: what the minute check walks. */
   listOpen(limit = 2000): JobRecord[] {
     return this.db.prepare(
