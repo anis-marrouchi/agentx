@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.222.0](https://github.com/anis-marrouchi/agentx/compare/v0.221.1...v0.222.0) (2026-11-14)
+
+
+### Features
+
+* **whatsapp:** drop self-chat messages by prefix ([#1856](https://github.com/anis-marrouchi/agentx/issues/1856)) ([998ed86](https://github.com/anis-marrouchi/agentx/commit/998ed8687cd6c59ec9b5f941874a18096512e9b0))
+
 ## [0.221.1](https://github.com/anis-marrouchi/agentx/compare/v0.221.0...v0.221.1) (2026-11-13)
 
 
