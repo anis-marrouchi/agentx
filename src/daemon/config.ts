@@ -1769,6 +1769,20 @@ export const requestsConfigSchema = z.object({
   jobs: z.object({
     /** Off: only the owner's turns leave a record, as before jobs. */
     enabled: z.boolean().default(true),
+    /** The daemon owns the wake-up (src/jobs/wake.ts): a job whose run
+     *  said "continue" is started again at its time, and an open job with
+     *  no live run, no wake and nobody it waits on is marked stalled. */
+    wake: z.object({
+      enabled: z.boolean().default(true),
+      /** Wakes one job may get. Past it the job is stalled, not woken. */
+      maxWakes: z.number().int().min(1).max(500).default(20),
+      /** What one job's runs may cost (USD) before it is no longer woken. */
+      maxCostUsd: z.number().positive().max(1000).default(10),
+      /** Minutes an open job may sit with nobody on it before it is stalled. */
+      graceMinutes: z.number().min(1).max(24 * 60).default(10),
+      /** Minutes a job waits on background work its run left before it stalls. */
+      maxBackgroundMinutes: z.number().min(1).max(24 * 60).default(180),
+    }).default({}),
   }).default({}),
   /** Resend once (src/requests/resend.ts, #1542): a request that needs
    *  attention because a usage limit or a restart stopped it is sent back
@@ -3117,12 +3131,18 @@ export const daemonConfigSchema = z.object({
    *  - `maxAgeSeconds`: a handle is killed unconditionally on the next
    *    sweep once its total wall-clock idleness exceeds this. Default
    *    2700s (45min) — matches the registry's pre-config staleTimeoutMs.
+   *  - `maxBackgroundSeconds`: how long a process may stay up after its
+   *    last turn while it still has background work open (a build, a
+   *    script, a sub-agent). Used in place of `maxAgeSeconds` for such a
+   *    process, so the work is not cut at 45 minutes. Default 10800s
+   *    (3 hours) (#1861).
    *  - `sweepIntervalSeconds`: how often the sweeper checks. Default 5s.
    *
    *  See `agents.<id>.persistentProcess` to opt an agent into the pool. */
   processPool: z.object({
     maxIdleSeconds: z.number().int().min(5).max(86_400).default(30),
     maxAgeSeconds: z.number().int().min(60).max(86_400).default(2700),
+    maxBackgroundSeconds: z.number().int().min(60).max(86_400).default(10_800),
     sweepIntervalSeconds: z.number().int().min(1).max(300).default(5),
   }).default({}),
 })

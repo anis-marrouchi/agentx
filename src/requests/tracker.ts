@@ -8,6 +8,7 @@ import type { FlowSettings } from "./flow"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
 import type { OwnerCheckSettings } from "./owner-check"
 import type { CloseProofSettings } from "./close-proof"
+import type { JobWakeSettings } from "@/jobs/wake"
 import { firstLink, HANDOFF_REASON, OPEN_STATES, OWED_TO_OWNER, OWNER_BY, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
@@ -75,7 +76,7 @@ export interface RequestSettings {
   closeProof?: Partial<CloseProofSettings>
   /** The job ledger (#1861): a job for every run that is not the owner's
    *  turn. Unset: on. */
-  jobs?: { enabled: boolean }
+  jobs?: { enabled: boolean; wake?: JobWakeSettings }
 }
 
 /** The chat of a card's promise when no turn names one: the card itself. */

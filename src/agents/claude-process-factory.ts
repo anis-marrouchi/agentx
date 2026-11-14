@@ -7,6 +7,7 @@ import {
   SUBAGENT_MODEL_ENV,
   type ProcessFactory,
   type ProcessHandle,
+  type ProcessHooks,
   type ProcessKey,
   type ProcessSnapshot,
   type ProcessState,
@@ -120,8 +121,8 @@ export function withSubagentModel(env: NodeJS.ProcessEnv, model: string | undefi
 export class ClaudeProcessFactory implements ProcessFactory {
   constructor(private opts: ClaudeProcessFactoryOptions = {}) {}
 
-  spawn(key: ProcessKey, opts: SpawnOptions): ProcessHandle {
-    return new ClaudeProcessHandle(key, opts, this.opts)
+  spawn(key: ProcessKey, opts: SpawnOptions, hooks?: ProcessHooks): ProcessHandle {
+    return new ClaudeProcessHandle(key, opts, this.opts, hooks)
   }
 }
 
@@ -137,6 +138,8 @@ class ClaudeProcessHandle implements ProcessHandle {
   private turnQueue: Promise<void> = Promise.resolve()
   /** Background tasks the process has open, asked turn or not (#1560). */
   private background = new BackgroundTasks()
+  /** Results of turns nobody asked for that the hook already got (#1861). */
+  private passedOn = new WeakSet<ParsedEvent>()
   private snap: ProcessSnapshot
   private log: (msg: string) => void
 
@@ -144,6 +147,7 @@ class ClaudeProcessHandle implements ProcessHandle {
     public readonly key: ProcessKey,
     public readonly opts: SpawnOptions,
     private factoryOpts: ClaudeProcessFactoryOptions,
+    private hooks: ProcessHooks = {},
   ) {
     const binary = factoryOpts.binary ?? "claude"
     const args = this.buildArgs(opts)
@@ -241,7 +245,8 @@ class ClaudeProcessHandle implements ProcessHandle {
 
     // Until Claude echoes our uuid, the events are from a turn nobody
     // asked for (queued while the handle sat idle, or still running).
-    // Its reply is not this question's answer: log it and drop it.
+    // Its reply is not this question's answer: it goes to the hook for
+    // the job that left the work running (#1861), or is logged and dropped.
     let echoed = false
     let init: ParsedEvent | null = null
 
@@ -267,7 +272,8 @@ class ClaudeProcessHandle implements ProcessHandle {
           } else if (evt.type === "result") {
             init = null
             const text = typeof evt.result === "string" ? evt.result : ""
-            this.log(`[claude pid=${this.snap.pid}] dropped a reply no question asked for (${text.length} chars): ${text.slice(0, 120)}`)
+            const did = this.passUnaskedReply(evt) ? "passed to its job" : "dropped"
+            this.log(`[claude pid=${this.snap.pid}] ${did} a reply no question asked for (${text.length} chars): ${text.slice(0, 120)}`)
           }
           continue
         }
@@ -389,12 +395,41 @@ class ClaudeProcessHandle implements ProcessHandle {
     // for; any result ends the turn that was running.
     if (evt.type === "system" && evt.subtype === "init" && this.snap.state !== "busy") unaskedTurn = true
     else if (evt.type === "result") unaskedTurn = false
+    // A result while no asked turn is in flight is the reply of a turn
+    // nobody asked for. Pass it on now: the next question may never come.
+    const unaskedResult = evt.type === "result" && this.snap.state !== "busy"
     this.snap = {
       ...this.snap,
       lastActivityAt: Date.now(),
       backgroundTasks: this.background.pending,
       unaskedTurn,
     }
+    if (unaskedResult) this.passUnaskedReply(evt)
+  }
+
+  /**
+   * Hand the reply of a turn nobody asked for to the hook, once per result
+   * (#1861). True when the hook has it, now or from before. The hook's
+   * errors stay here: they must not break the stream or the next turn.
+   */
+  private passUnaskedReply(evt: ParsedEvent): boolean {
+    if (this.passedOn.has(evt)) return true
+    const hook = this.hooks.onUnaskedReply
+    if (!hook) return false
+    this.passedOn.add(evt)
+    const sessionId = typeof evt.session_id === "string" ? evt.session_id : this.snap.claudeSessionId
+    try {
+      hook({
+        key: this.key,
+        text: typeof evt.result === "string" ? evt.result : "",
+        ...(sessionId ? { sessionId } : {}),
+        ...(typeof evt.total_cost_usd === "number" ? { costUsd: evt.total_cost_usd } : {}),
+        at: Date.now(),
+      })
+    } catch (e: any) {
+      this.log(`[claude pid=${this.snap.pid}] unasked reply handler failed: ${e?.message || e}`)
+    }
+    return true
   }
 
   /**

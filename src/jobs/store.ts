@@ -359,6 +359,56 @@ export class JobStore {
     ).run(now, id, now).changes > 0
   }
 
+  /** Arm a wake the daemon decided on itself (background work ended, a
+   *  start that did not take): the job continues at `at`, with why. */
+  armWake(id: string, at: number, note: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET job_state = 'continue', wake_at = ?, job_note = ?, updated_at = ?, waiting_on = NULL, stalled_at = NULL
+       WHERE id = ? AND ${OPEN_ROW}`,
+    ).run(at, clip(note, JOB_NOTE_MAX), now, id).changes > 0
+  }
+
+  /** Arm again a wake that was taken and whose run never began. Only
+   *  while the job is as `takeWake` left it (continue, no wake set):
+   *  whatever moved it since (a stop, a declaration) stands. */
+  rearmWake(id: string, at: number, note: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET wake_at = ?, job_note = ?, updated_at = ?
+       WHERE id = ? AND job_state = 'continue' AND wake_at IS NULL AND ${OPEN_ROW}`,
+    ).run(at, clip(note, JOB_NOTE_MAX), now, id).changes > 0
+  }
+
+  /** How many runs began on the job so far. */
+  runCount(id: string): number {
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM request_links WHERE request_id = ? AND kind = 'run'").get(id) as { n: number }).n
+  }
+
+  /** The newest open job of this agent in this chat: the one background
+   *  work left by a turn there belongs to. */
+  latestInChat(assignee: string, channel: string, chatId: string): JobRecord | null {
+    const row = this.db.prepare(
+      `${SELECT} WHERE agent_id = ? AND channel = ? AND chat_id = ? AND state != 'candidate' AND ${OPEN_ROW}
+       ORDER BY updated_at DESC, rowid DESC LIMIT 1`,
+    ).get(assignee, channel, chatId)
+    return row ? toJob(row) : null
+  }
+
+  /** What the job's runs cost so far, where the traces priced them. */
+  costUsd(id: string): number {
+    return this.runs(id).reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
+  }
+
+  /** The open jobs the minute check may stall, least recently moved
+   *  first: working, continue or waiting, with no wake set, on this node;
+   *  an owner's request only once a run declared a job state on it. */
+  unheldCandidates(limit = 500): JobRecord[] {
+    return this.db.prepare(
+      `${SELECT} WHERE job_state IN ('working', 'continue', 'waiting') AND wake_at IS NULL AND peer IS NULL AND ${OPEN_ROW}
+         AND (state = '${JOB_ROW_STATE}' OR declared_at IS NOT NULL)
+       ORDER BY updated_at, rowid LIMIT ?`,
+    ).all(limit).map(toJob)
+  }
+
   /** Every open job, oldest first: what the minute check walks. */
   listOpen(limit = 2000): JobRecord[] {
     return this.db.prepare(

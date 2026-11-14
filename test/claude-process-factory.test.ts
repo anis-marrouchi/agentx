@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { ClaudeProcessFactory, TurnDeadlineExceeded, TurnInterrupted } from "../src/agents/claude-process-factory"
-import type { ProcessKey, SpawnOptions } from "../src/agents/process-registry"
+import type { ProcessKey, SpawnOptions, UnaskedReply } from "../src/agents/process-registry"
 
 // These tests spawn a REAL `claude -p` subprocess. Skipped automatically
 // when the binary is missing so the suite stays green on CI hosts that
@@ -217,23 +217,24 @@ process.stdin.on("data", (c) => {
       n++
       out({ type: "system", subtype: "init", turn: n })
       out({ type: "user", uuid: q.uuid, isReplay: true, message: q.message })
-      out({ type: "result", result: "answer " + n })
+      out({ type: "result", result: "answer " + n, session_id: "sid-1", total_cost_usd: 0.01 })
       if (n === 1) setTimeout(() => { chain = chain.then(async () => {
         out({ type: "system", subtype: "init", turn: "notification" })
         await wait(200)
-        out({ type: "result", result: "notification reply" })
+        out({ type: "result", result: "notification reply", session_id: "sid-1", total_cost_usd: 0.02 })
       }) }, 50)
     })
   }
 })
 `
-  const spawnStandIn = () => {
+  const spawnStandIn = (onUnaskedReply?: (r: UnaskedReply) => void) => {
     const dir = mkdtempSync(join(tmpdir(), "agentx-notifying-claude-"))
     const binary = join(dir, "claude")
     writeFileSync(binary, standIn)
     chmodSync(binary, 0o755)
     const logs: string[] = []
-    const handle = new ClaudeProcessFactory({ binary, log: (m) => logs.push(m) }).spawn(KEY, OPTS())
+    const handle = new ClaudeProcessFactory({ binary, log: (m) => logs.push(m) })
+      .spawn(KEY, OPTS(), onUnaskedReply ? { onUnaskedReply } : undefined)
     const ask = async (message: string) => {
       const events: any[] = []
       for await (const evt of handle.runTurn({ message, taskId: "t", deadlineMs: 5_000 })) events.push(evt.raw)
@@ -254,7 +255,60 @@ process.stdin.on("data", (c) => {
       expect(second.filter((e) => e.subtype === "init").map((e) => e.turn)).toEqual([2])
       expect(answer(await ask("q3"))).toBe("answer 3")
       expect(logs.filter((m) => m.includes("notification reply"))).toHaveLength(1)
+      expect(logs.filter((m) => m.includes("dropped a reply"))).toHaveLength(1)
       expect(handle.snapshot().turnCount).toBe(3)
+    } finally {
+      await handle.kill("test-end")
+    }
+  })
+
+  // #1861: the reply goes to the job that left the work running.
+  it("passes the reply to the handler as it arrives, once, and not the asked ones", async () => {
+    const got: UnaskedReply[] = []
+    const { handle, logs, ask } = spawnStandIn((r) => got.push(r))
+    try {
+      const before = Date.now()
+      expect(answer(await ask("q1"))).toBe("answer 1")
+      expect(got).toHaveLength(0)                   // an asked turn is not passed
+      await new Promise(r => setTimeout(r, 400))   // no next question yet
+      expect(got).toHaveLength(1)
+      expect(got[0]).toMatchObject({ key: KEY, text: "notification reply", sessionId: "sid-1", costUsd: 0.02 })
+      expect(got[0].at).toBeGreaterThanOrEqual(before)
+      // The next asked turn reads past it: its answer is its own, no second call.
+      expect(answer(await ask("q2"))).toBe("answer 2")
+      expect(answer(await ask("q3"))).toBe("answer 3")
+      expect(got).toHaveLength(1)
+      expect(logs.filter((m) => m.includes("passed to its job a reply"))).toHaveLength(1)
+      expect(logs.filter((m) => m.includes("dropped a reply"))).toHaveLength(0)
+      expect(handle.snapshot().turnCount).toBe(3)
+    } finally {
+      await handle.kill("test-end")
+    }
+  })
+
+  it("passes a reply that ends while the next question waits, once", async () => {
+    const got: UnaskedReply[] = []
+    const { handle, ask } = spawnStandIn((r) => got.push(r))
+    try {
+      expect(answer(await ask("q1"))).toBe("answer 1")
+      await new Promise(r => setTimeout(r, 120))   // the notification turn has started
+      expect(answer(await ask("q2"))).toBe("answer 2")
+      expect(got.map((r) => r.text)).toEqual(["notification reply"])
+    } finally {
+      await handle.kill("test-end")
+    }
+  })
+
+  it("a handler that throws breaks neither the stream nor the next turn", async () => {
+    let calls = 0
+    const { handle, logs, ask } = spawnStandIn(() => { calls++; throw new Error("job store down") })
+    try {
+      expect(answer(await ask("q1"))).toBe("answer 1")
+      await new Promise(r => setTimeout(r, 400))
+      expect(calls).toBe(1)
+      expect(logs.some((m) => m.includes("unasked reply handler failed: job store down"))).toBe(true)
+      expect(answer(await ask("q2"))).toBe("answer 2")
+      expect(calls).toBe(1)
     } finally {
       await handle.kill("test-end")
     }
@@ -266,6 +320,48 @@ process.stdin.on("data", (c) => {
       expect(answer(await ask("q1"))).toBe("answer 1")
       await new Promise(r => setTimeout(r, 120))   // the notification turn has started
       expect(answer(await ask("q2"))).toBe("answer 2")
+    } finally {
+      await handle.kill("test-end")
+    }
+  })
+})
+
+describe("ClaudeProcessFactory — background work that ends without a word (#1861)", () => {
+  // Answers the question, then 50 ms later runs a turn of its own whose
+  // result carries no text.
+  const standIn = `#!/usr/bin/env node
+const out = (e) => process.stdout.write(JSON.stringify(e) + "\\n")
+let buf = ""
+process.stdin.on("data", (c) => {
+  buf += c
+  let nl
+  while ((nl = buf.indexOf("\\n")) !== -1) {
+    const q = JSON.parse(buf.slice(0, nl))
+    buf = buf.slice(nl + 1)
+    out({ type: "system", subtype: "init" })
+    out({ type: "user", uuid: q.uuid, isReplay: true, message: q.message })
+    out({ type: "result", result: "started" })
+    setTimeout(() => {
+      out({ type: "system", subtype: "init" })
+      out({ type: "result" })
+    }, 50)
+  }
+})
+`
+  it("still calls the handler, with empty text", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-silent-claude-"))
+    const binary = join(dir, "claude")
+    writeFileSync(binary, standIn)
+    chmodSync(binary, 0o755)
+    const got: UnaskedReply[] = []
+    const handle = new ClaudeProcessFactory({ binary }).spawn(KEY, OPTS(), { onUnaskedReply: (r) => got.push(r) })
+    try {
+      for await (const _ of handle.runTurn({ message: "go", taskId: "t", deadlineMs: 5_000 })) { /* drain */ }
+      await new Promise(r => setTimeout(r, 250))
+      expect(got).toHaveLength(1)
+      expect(got[0].text).toBe("")
+      expect(got[0].key).toEqual(KEY)
+      expect(got[0].costUsd).toBeUndefined()
     } finally {
       await handle.kill("test-end")
     }
