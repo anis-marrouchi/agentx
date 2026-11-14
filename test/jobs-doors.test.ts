@@ -299,7 +299,7 @@ describe("no behaviour change for the owner's requests", () => {
 
 describe("attached to the bus", () => {
   it("opens jobs after the tracker, and the setting defaults to on", () => {
-    expect(requestsConfigSchema.parse({}).jobs).toEqual({ enabled: true })
+    expect(requestsConfigSchema.parse({}).jobs.enabled).toBe(true)
     const attached = attachRequests(db, () => ({ ...ON, jobs: { enabled: true } }), () => {})
     const bus = getEventBus()
     try {

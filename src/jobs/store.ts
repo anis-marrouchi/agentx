@@ -359,6 +359,30 @@ export class JobStore {
     ).run(now, id, now).changes > 0
   }
 
+  /** Arm a wake the daemon decided on itself (background work ended, a
+   *  start that did not take): the job continues at `at`, with why. */
+  armWake(id: string, at: number, note: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET job_state = 'continue', wake_at = ?, job_note = ?, updated_at = ?, waiting_on = NULL, stalled_at = NULL
+       WHERE id = ? AND ${OPEN_ROW}`,
+    ).run(at, clip(note, JOB_NOTE_MAX), now, id).changes > 0
+  }
+
+  /** The newest open job of this agent in this chat: the one background
+   *  work left by a turn there belongs to. */
+  latestInChat(assignee: string, channel: string, chatId: string): JobRecord | null {
+    const row = this.db.prepare(
+      `${SELECT} WHERE agent_id = ? AND channel = ? AND chat_id = ? AND state != 'candidate' AND ${OPEN_ROW}
+       ORDER BY updated_at DESC, rowid DESC LIMIT 1`,
+    ).get(assignee, channel, chatId)
+    return row ? toJob(row) : null
+  }
+
+  /** What the job's runs cost so far, where the traces priced them. */
+  costUsd(id: string): number {
+    return this.runs(id).reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
+  }
+
   /** Every open job, oldest first: what the minute check walks. */
   listOpen(limit = 2000): JobRecord[] {
     return this.db.prepare(

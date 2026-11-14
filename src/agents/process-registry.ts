@@ -160,9 +160,25 @@ export interface ProcessHandle {
   kill(reason: string): Promise<void>
 }
 
+/** The reply of a turn nobody asked for: Claude ran it on its own when
+ *  background work of the process ended (#1861). */
+export interface UnaskedReply {
+  key: ProcessKey
+  /** What Claude said. Empty when it said nothing; the work still ended. */
+  text: string
+  sessionId?: string
+  costUsd?: number
+  at: number
+}
+
+/** What a process tells its registry about, outside asked turns. */
+export interface ProcessHooks {
+  onUnaskedReply?: (reply: UnaskedReply) => void
+}
+
 export interface ProcessFactory {
   /** Spawn (or fake) a process bound to `key` with `opts`. */
-  spawn(key: ProcessKey, opts: SpawnOptions): ProcessHandle
+  spawn(key: ProcessKey, opts: SpawnOptions, hooks?: ProcessHooks): ProcessHandle
 }
 
 /**
@@ -228,6 +244,10 @@ export interface ProcessRegistryConfig {
    *  sweep. Defaults: 30s idle, 45min stale. */
   idleTimeoutMs?: number
   staleTimeoutMs?: number
+  /** The stale limit of a process with background work open, in place of
+   *  `staleTimeoutMs`: a build left running is not cut at 45 minutes
+   *  (#1861). Default 3 hours. */
+  backgroundMaxMs?: number
   /** Sweep interval. Default 5_000 (5s). */
   sweepIntervalMs?: number
   factory: ProcessFactory
@@ -265,6 +285,8 @@ export class ProcessRegistry {
    *  re-reads each handle's workspace via the currentWorkspaceHash
    *  hook to compare against the stored hash. */
   private handleWorkspace = new Map<ProcessKeyString, string>()
+  /** Who gets the replies no question asked for (#1861). */
+  private unaskedReplyHandler?: (r: UnaskedReply) => void
   private readonly cfg: Required<Omit<ProcessRegistryConfig, "factory" | "log" | "currentWorkspaceHash">> & {
     factory: ProcessFactory
     log: (msg: string) => void
@@ -277,11 +299,21 @@ export class ProcessRegistry {
       maxProcessesPerAgent: cfg.maxProcessesPerAgent ?? 16,
       idleTimeoutMs: cfg.idleTimeoutMs ?? 30_000,
       staleTimeoutMs: cfg.staleTimeoutMs ?? 45 * 60 * 1000,
+      backgroundMaxMs: cfg.backgroundMaxMs ?? 3 * 60 * 60 * 1000,
       sweepIntervalMs: cfg.sweepIntervalMs ?? 5_000,
       factory: cfg.factory,
       log: cfg.log ?? (() => {}),
       currentWorkspaceHash: cfg.currentWorkspaceHash,
     }
+  }
+
+  /**
+   * Set who gets the reply of a turn nobody asked for, so background work
+   * can report to the job that started it (#1861). Holds for the processes
+   * already running too. Unset: such replies are dropped, as before.
+   */
+  setUnaskedReplyHandler(fn: ((r: UnaskedReply) => void) | undefined): void {
+    this.unaskedReplyHandler = fn
   }
 
   /** Begin the idle-eviction sweep timer. Idempotent. */
@@ -354,7 +386,11 @@ export class ProcessRegistry {
       )
     }
 
-    const handle = this.cfg.factory.spawn(key, opts)
+    // The hook reads the handler when a reply comes, so one set later
+    // still reaches this process.
+    const handle = this.cfg.factory.spawn(key, opts, {
+      onUnaskedReply: (r) => this.unaskedReplyHandler?.(r),
+    })
     this.handles.set(ks, handle)
     this.handleWorkspace.set(ks, opts.workspace)
     this.cfg.log(`[process-registry] spawned ${ks}`)
@@ -390,6 +426,16 @@ export class ProcessRegistry {
     const ks = processKeyToString(key)
     const h = this.handles.get(ks)
     return h != null && h.state() !== "dead"
+  }
+
+  /** Background work the live process for this key still has open: its
+   *  open background tasks, and at least 1 while a turn nobody asked for
+   *  is running. 0 when there is no live process (#1861). */
+  backgroundOpen(key: ProcessKey): number {
+    const h = this.handles.get(processKeyToString(key))
+    if (!h || h.state() === "dead") return 0
+    const snap = h.snapshot()
+    return Math.max(snap.backgroundTasks ?? 0, snap.unaskedTurn ? 1 : 0)
   }
 
   /** Force-kill one handle, removing it from the registry. */
@@ -491,19 +537,24 @@ export class ProcessRegistry {
       if (h.state() !== "idle") continue
       // The stale limit counts from the last asked turn and is the upper
       // bound: work the process keeps doing on its own does not extend it.
+      // With background work open the bound is the longer backgroundMaxMs,
+      // so a build left running is not cut at the stale limit (#1861).
       const idleFor = now - snap.lastTurnAt
       const openTasks = snap.backgroundTasks ?? 0
-      if (idleFor >= this.cfg.staleTimeoutMs) {
+      const working = openTasks > 0 || !!snap.unaskedTurn
+      if (idleFor >= (working ? this.cfg.backgroundMaxMs : this.cfg.staleTimeoutMs)) {
         this.handles.delete(ks)
         this.handleWorkspace.delete(ks)
-        const open = openTasks > 0 ? `, ${openTasks} background task(s) open` : ""
-        void h.kill(`stale (idle ${Math.round(idleFor / 1000)}s${open})`)
-        this.cfg.log(`[process-registry] killed stale ${ks}${open}`)
+        const why = working
+          ? `stale with background work (idle ${Math.round(idleFor / 1000)}s, ${openTasks} open)`
+          : `stale (idle ${Math.round(idleFor / 1000)}s)`
+        void h.kill(why)
+        this.cfg.log(`[process-registry] killed stale ${ks}: ${why}`)
         continue
       }
       // Background tasks and a turn nobody asked for are work (#1560):
       // killing the process kills them. Drift waits for them too.
-      if (openTasks > 0 || snap.unaskedTurn) continue
+      if (working) continue
       const quietFor = now - Math.max(snap.lastTurnAt, snap.lastActivityAt ?? 0)
       if (quietFor >= this.cfg.idleTimeoutMs) {
         this.handles.delete(ks)

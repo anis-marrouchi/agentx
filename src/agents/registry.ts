@@ -80,6 +80,7 @@ import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn, isInsideDelegation } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
+import { wokenJobId } from "@/jobs/wake"
 import { isOperatorTurn } from "@/requests/operator"
 import { dueAtOf, taskTypeOf } from "@/watchers/due"
 import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
@@ -2375,6 +2376,7 @@ export class AgentRegistry {
       taskType: taskTypeOf(task.context as Record<string, unknown> | undefined),
       ...(typeof (task.context as Record<string, unknown> | undefined)?.home === "string"
         ? { home: ((task.context as Record<string, unknown>).home as string).slice(0, 500) } : {}),
+      ...(wokenJobId(task.context) ? { jobId: wokenJobId(task.context) } : {}),
     }
     getEventBus().emit("task:started", started)
     traceOpened = true

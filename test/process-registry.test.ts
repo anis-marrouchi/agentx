@@ -3,6 +3,7 @@ import {
   ProcessRegistry,
   type ProcessFactory,
   type ProcessHandle,
+  type ProcessHooks,
   type ProcessKey,
   type ProcessSnapshot,
   type ProcessState,
@@ -107,9 +108,12 @@ class FakeFactory implements ProcessFactory {
   spawned: FakeHandle[] = []
   /** Optional hash to record on every spawn — drift tests set this. */
   initialHash: string | null = null
-  spawn(key: ProcessKey, opts: SpawnOptions): ProcessHandle {
+  /** The hooks the registry gave each spawn, in spawn order. */
+  hooks: Array<ProcessHooks | undefined> = []
+  spawn(key: ProcessKey, opts: SpawnOptions, hooks?: ProcessHooks): ProcessHandle {
     const h = new FakeHandle(key, opts, {}, this.initialHash)
     this.spawned.push(h)
+    this.hooks.push(hooks)
     return h
   }
 }
@@ -372,6 +376,7 @@ describe("ProcessRegistry — idle/stale sweep", () => {
         factory,
         idleTimeoutMs: 1_000,
         staleTimeoutMs: 60_000,
+        backgroundMaxMs: 600_000,
         sweepIntervalMs: 100,
       })
       reg.start()
@@ -404,9 +409,41 @@ describe("ProcessRegistry — idle/stale sweep", () => {
       expect(h.killReasons.some((r) => r.startsWith("idle"))).toBe(true)
     })
 
-    it("keeps the stale limit as the upper bound, open work or not", async () => {
-      const { h } = await sweepOnce({ lastActivityAt: Date.now(), backgroundTasks: 1, unaskedTurn: true }, 61_000)
-      expect(h.killReasons.some((r) => r.startsWith("stale"))).toBe(true)
+    it("keeps the stale limit as the upper bound when no work is open", async () => {
+      const { h } = await sweepOnce({ lastActivityAt: Date.now(), backgroundTasks: 0, unaskedTurn: false }, 61_000)
+      expect(h.killReasons).toHaveLength(1)
+      expect(h.killReasons[0]).toMatch(/^stale \(idle 61s\)$/)
+    })
+
+    // #1861: a build left running is not cut at the stale limit.
+    it("spares open background tasks past the stale limit", async () => {
+      const { h, reg } = await sweepOnce({ backgroundTasks: 1 }, 61_000)
+      expect(h.killReasons).toHaveLength(0)
+      expect(reg.list()).toHaveLength(1)
+    })
+
+    it("spares a turn nobody asked for past the stale limit", async () => {
+      const { h } = await sweepOnce({ unaskedTurn: true }, 61_000)
+      expect(h.killReasons).toHaveLength(0)
+    })
+
+    it("kills open background work past backgroundMaxMs, and says so", async () => {
+      const { h, reg } = await sweepOnce({ lastActivityAt: Date.now(), backgroundTasks: 2 }, 601_000)
+      expect(h.killReasons).toEqual(["stale with background work (idle 601s, 2 open)"])
+      expect(reg.list()).toHaveLength(0)
+    })
+
+    it("gives background work 3 hours by default", async () => {
+      const factory = new FakeFactory()
+      const reg = new ProcessRegistry({ factory, sweepIntervalMs: 100 })
+      reg.start()
+      const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+      h.setIdle(Date.now() - (3 * 60 * 60 * 1000 - 5_000))
+      h.setWork({ backgroundTasks: 1 })
+      vi.advanceTimersByTime(150)
+      expect(h.killReasons).toHaveLength(0)
+      vi.advanceTimersByTime(5_000)
+      expect(h.killReasons.some((r) => r.startsWith("stale with background work"))).toBe(true)
     })
   })
 
@@ -437,6 +474,54 @@ describe("ProcessRegistry — idle/stale sweep", () => {
     vi.advanceTimersByTime(150)
     await Promise.resolve()
     expect(reg.list()).toHaveLength(0) // reaped
+  })
+})
+
+describe("ProcessRegistry — background work belongs to the job (#1861)", () => {
+  it("backgroundOpen counts the open tasks of the live process", () => {
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({ factory, sweepIntervalMs: 1_000_000 })
+    expect(reg.backgroundOpen(KEY("a"))).toBe(0)   // no process
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    expect(reg.backgroundOpen(KEY("a"))).toBe(0)
+    h.setWork({ backgroundTasks: 3 })
+    expect(reg.backgroundOpen(KEY("a"))).toBe(3)
+    expect(reg.backgroundOpen(KEY("a", "other"))).toBe(0)
+  })
+
+  it("backgroundOpen counts a turn nobody asked for as one", () => {
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({ factory, sweepIntervalMs: 1_000_000 })
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    h.setWork({ backgroundTasks: 0, unaskedTurn: true })
+    expect(reg.backgroundOpen(KEY("a"))).toBe(1)
+    h.setWork({ backgroundTasks: 2, unaskedTurn: true })
+    expect(reg.backgroundOpen(KEY("a"))).toBe(2)
+  })
+
+  it("backgroundOpen is 0 for a dead process", async () => {
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({ factory, sweepIntervalMs: 1_000_000 })
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    h.setWork({ backgroundTasks: 1 })
+    await h.kill("test")
+    expect(reg.backgroundOpen(KEY("a"))).toBe(0)
+  })
+
+  it("passes an unasked reply to the handler, also one set after the spawn", () => {
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({ factory, sweepIntervalMs: 1_000_000 })
+    reg.acquire(KEY("a"), OPTS("a"))
+    const reply = { key: KEY("a"), text: "build done", at: Date.now() }
+    // No handler yet: nothing to call, nothing thrown.
+    expect(() => factory.hooks[0]?.onUnaskedReply?.(reply)).not.toThrow()
+    const got: unknown[] = []
+    reg.setUnaskedReplyHandler((r) => got.push(r))
+    factory.hooks[0]?.onUnaskedReply?.(reply)
+    expect(got).toEqual([reply])
+    reg.setUnaskedReplyHandler(undefined)
+    factory.hooks[0]?.onUnaskedReply?.(reply)
+    expect(got).toHaveLength(1)
   })
 })
 

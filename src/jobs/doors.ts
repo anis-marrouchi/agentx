@@ -73,6 +73,9 @@ export interface JobDoorsDeps {
   /** Is this delegation one this node started and still waits on? Asked
    *  after a restart, when the doors no longer remember it themselves. */
   pendingDelegation?: (delegationId: string) => boolean
+  /** The run ended cleanly but left background work running in its
+   *  process (a script, a build). True when the job now waits on it. */
+  leftBackground?: (job: JobRecord, end: AgentXEvents["task:completed"]) => boolean
 }
 
 export class JobDoors {
@@ -94,6 +97,10 @@ export class JobDoors {
 
   setPendingDelegation(fn: JobDoorsDeps["pendingDelegation"]): void {
     this.deps.pendingDelegation = fn
+  }
+
+  setLeftBackground(fn: JobDoorsDeps["leftBackground"]): void {
+    this.deps.leftBackground = fn
   }
 
   private guard(what: string, fn: () => void): void {
@@ -120,6 +127,14 @@ export class JobDoors {
       if (owned) {
         if (owned.ownerRequest) jobs.tagOwnerRow(owned.id, {})
         on(owned.id)
+        return
+      }
+      // The run the daemon started to wake a job (phase 3).
+      const woken = p.jobId ? jobs.get(p.jobId) : null
+      if (woken) {
+        jobs.linkRun(woken.id, runId, now)
+        if (!woken.ownerRequest) jobs.working(woken.id, now)
+        on(woken.id)
         return
       }
       // A run that continues one a restart or a time limit cut off.
@@ -195,6 +210,8 @@ export class JobDoors {
       }
       // The run said what the job's state is: nothing more to do.
       if (job.state !== "working" || job.declaredRun === p.taskId) return
+      // Background work the run left open holds the job: it waits on it.
+      if (this.deps.leftBackground?.(job, p)) return
       // A hand-off this node started ends with its delegation.
       const dlg = job.id.startsWith("job-dlg-") ? job.id.slice("job-".length) : null
       if (dlg && (this.handed.has(dlg) || this.deps.pendingDelegation?.(dlg))) return

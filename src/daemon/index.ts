@@ -146,6 +146,7 @@ import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { handleJobsApi } from "@/jobs/api"
 import { dbFacts } from "@/jobs/facts"
+import { DEFAULT_WAKE_SETTINGS, JobWake, wakeContext } from "@/jobs/wake"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
 import { runDriftSweep } from "@/requests/drift/sweep"
@@ -778,6 +779,27 @@ export class AgentXDaemon {
           fillLinkAgents(this.requests.store, db, resolve(process.cwd(), ".agentx/a2a/delegations.jsonl"), this.log)
           // Jobs (#1861): a hand-off still out ends with its delegation.
           this.requests.doors.setPendingDelegation((id) => !!this.delegations?.isPending(id))
+          // The daemon owns the wake-up of a job (#1861, phase 3).
+          const requests = this.requests
+          const jobWake = new JobWake({
+            jobs: requests.jobs,
+            settings: () => (this.config.requests.enabled && this.config.requests.jobs.enabled
+              ? this.config.requests.jobs.wake : { ...DEFAULT_WAKE_SETTINGS, enabled: false }),
+            facts: dbFacts(db),
+            // An owner's request is woken as a pick-up, in its own chat,
+            // so the tracker links the run; a job in the chat it runs in.
+            start: (job, text) => this.registry.execute({
+              agentId: job.assignee, message: text, context: job.ownerRequest ? pickupContext(job.id) : wakeContext(job),
+            }).then((res) => ({ error: res.error })),
+            hasAgent: (id) => !!this.registry.getAgent(id),
+            // A hand-off still out answers for its job.
+            held: (job) => job.id.startsWith("job-dlg-") && !!this.delegations?.isPending(job.id.slice("job-".length)),
+            log: this.log,
+          })
+          this.jobWake = jobWake
+          requests.doors.setLeftBackground((job, end) => jobWake.runLeftBackground(
+            job, this.processRegistry?.backgroundOpen({ agentId: end.agentId, channel: end.channel, chatId: end.chatId }) ?? 0, end.taskId,
+          ))
           // A promise closed with a proof leaves a checked fact in the
           // wiki's fact ledger (#1138 D): `agentx wiki facts list`.
           let ledger: FactLedger | null = null
@@ -892,6 +914,7 @@ export class AgentXDaemon {
           log: (m) => this.log(`  ${m}`),
           idleTimeoutMs: (poolCfg.maxIdleSeconds ?? 30) * 1000,
           staleTimeoutMs: (poolCfg.maxAgeSeconds ?? 2700) * 1000,
+          backgroundMaxMs: (poolCfg.maxBackgroundSeconds ?? 10800) * 1000,
           sweepIntervalMs: (poolCfg.sweepIntervalSeconds ?? 5) * 1000,
           // Drift detection: re-read each handle's workspace CLAUDE.md
           // hash on every sweep. When the hash changes (user edited
@@ -900,6 +923,9 @@ export class AgentXDaemon {
           // up the new file. Mid-turn handles get checked next idle.
           currentWorkspaceHash: (_key, workspace) => readClaudeMdHashSafe(workspace),
         })
+        // Background work belongs to its job (#1861): the closing reply of
+        // a turn nobody asked for wakes the job of that chat.
+        procReg.setUnaskedReplyHandler((r) => { this.jobWake?.backgroundEnded(r.key, r.text) })
         procReg.start()
         setProcessRegistry(procReg)
         this.processRegistry = procReg
@@ -2435,6 +2461,8 @@ export class AgentXDaemon {
    *  is the owner's (requests/operator, #393). */
   private operatorKey: string | null = null
   private requestsSweeping = false
+  /** The daemon-owned wake of jobs (src/jobs/wake.ts, #1861). */
+  private jobWake: JobWake | null = null
   /** Status drift (#1138 step F): its last check, and one at a time. */
   private driftAt = 0
   private driftSweeping = false
@@ -2642,6 +2670,8 @@ export class AgentXDaemon {
             .catch((e: any) => this.log(`[requests] sweep failed: ${e?.message ?? e}`))
             .finally(() => { this.requestsSweeping = false })
         }
+        // Jobs (#1861): start the wakes that are due, mark what nobody holds.
+        try { this.jobWake?.tick() } catch (e: any) { this.log(`[jobs] check failed: ${e?.message ?? e}`) }
         this.statusDriftTick()
         this.status?.board.sweep()
         // The Reminders mirror (#1062): beside the sweep, because the OS

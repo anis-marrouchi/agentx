@@ -171,6 +171,9 @@ export interface AgentXEvents {
     /** The issue or merge request the caller said the work is about, as
      *  given in the run's context as `home` (jobs, #1861). */
     home?: string
+    /** The job this run was started to wake, when the daemon started it
+     *  (jobs/wake wakeContext, #1861). Never set by a caller of /task. */
+    jobId?: string
   }
 
   /** A single step inside an in-flight task — typically a tool call or
