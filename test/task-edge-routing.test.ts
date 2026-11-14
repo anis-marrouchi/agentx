@@ -102,7 +102,10 @@ describe("routeTaskEdge", () => {
     const { routeTaskEdge } = await import("../src/agents/edge-routing")
     const route = await routeTaskEdge({ ...base, currentModel: "claude-fable-5-2" })
     expect(route.upgraded).toBe(false)
+    expect(route.model).toBe("claude-fable-5-2")
     expect(route.reason).toMatch(/already on the edge model/)
+    const { edgePlanFor } = await import("../src/agents/edge-routing")
+    expect(edgePlanFor(route, { tier: "claude-code" })).toEqual({})
   })
 
   it("advises sub-agents only for Claude Code", async () => {
@@ -149,6 +152,55 @@ describe("edgePlanFor", () => {
   it("changes nothing without a route", async () => {
     const { edgePlanFor } = await import("../src/agents/edge-routing")
     expect(edgePlanFor(undefined, { tier: "claude-code" })).toEqual({})
+  })
+})
+
+// The downgrade (task-tier routing) and the edge seat are asked at the same
+// time, and the edge seat only knows the agent's configured model. #1864: an
+// agent configured on the edge model used to run a hard job on the cheap
+// model, because "already on the edge model" left the downgrade in place.
+describe("jobModelFor", () => {
+  const onEdge = { ...base, currentModel: "claude-fable-5-2" }
+  const cheap = "claude-haiku-5-5"
+
+  it("drops a downgrade when the seat is sure and the agent is already on the edge model", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.95, 0.1))
+    const { routeTaskEdge, jobModelFor } = await import("../src/agents/edge-routing")
+    const route = await routeTaskEdge(onEdge)
+    // No override: the job runs on the agent's own model, the edge model.
+    expect(jobModelFor(route, cheap)).toBeUndefined()
+  })
+
+  it("keeps the downgrade when the seat is under the threshold", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.69, 0.1))
+    const { routeTaskEdge, jobModelFor } = await import("../src/agents/edge-routing")
+    expect(jobModelFor(await routeTaskEdge(onEdge), cheap)).toBe(cheap)
+  })
+
+  it("keeps the downgrade when only sub-agents are advised", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.2, 0.9))
+    const { routeTaskEdge, jobModelFor } = await import("../src/agents/edge-routing")
+    const route = await routeTaskEdge(onEdge)
+    expect(route.subagents).toBe(true)
+    expect(jobModelFor(route, cheap)).toBe(cheap)
+  })
+
+  it("keeps the downgrade while the seat is in shadow", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.99, 0.1, "shadow"))
+    const { routeTaskEdge, jobModelFor } = await import("../src/agents/edge-routing")
+    expect(jobModelFor(await routeTaskEdge(onEdge), cheap)).toBe(cheap)
+  })
+
+  it("puts the edge model over a downgrade when the agent is on another model", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.95, 0.1))
+    const { routeTaskEdge, jobModelFor } = await import("../src/agents/edge-routing")
+    expect(jobModelFor(await routeTaskEdge(base), cheap)).toBe("claude-fable-5-2")
+  })
+
+  it("passes the downgrade through when there is no route", async () => {
+    const { jobModelFor } = await import("../src/agents/edge-routing")
+    expect(jobModelFor(undefined, cheap)).toBe(cheap)
+    expect(jobModelFor(undefined, undefined)).toBeUndefined()
   })
 })
 

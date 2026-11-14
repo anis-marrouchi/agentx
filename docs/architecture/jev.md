@@ -207,9 +207,9 @@ Some tasks are never moved:
 - A task that already names its model, such as a scheduled job with its own `model`.
 - A task that the triage rule sent to a cheaper model ([A cheaper model for triage events](../reference/config-agents.md#a-cheaper-model-for-triage-events)).
 - A request on the `voice`, `desktop` or `opencode` channel, where a person chose the model.
-- A task whose agent already runs on the edge model.
+- A task whose agent already runs on the edge model. It stays on that model; there is nothing higher to move to.
 
-The sub-agent line is left out when the session's tool list (`session.lean.tools`) does not include the `Agent` tool. If both this seat and `task-tier` are sure about the same task, the edge model wins.
+The sub-agent line is left out when the session's tool list (`session.lean.tools`) does not include the `Agent` tool. If both this seat and `task-tier` are sure about the same task, the edge model wins. This also holds for an agent that already runs on the edge model: the task is not sent to the cheaper model.
 
 There are two costs to know. When a task in a running conversation moves to the edge model, that model reads the whole conversation once at the full price, because the saved copy of a conversation belongs to one model. An agent with `persistentProcess` on is also restarted for the task and again for the next one.
 

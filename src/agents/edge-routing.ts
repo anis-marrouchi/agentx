@@ -84,9 +84,11 @@ export function subagentToolAvailable(claudeArgs: readonly string[] | undefined)
 }
 
 export interface EdgeRouteResult {
-  /** The edge model for this job, or undefined to leave the model alone. */
+  /** The edge model, when the seat is sure this job needs it and one is
+   *  configured. Set even when the agent already runs on it, so a
+   *  downgrade routed for the same job is dropped (jobModelFor). */
   model?: string
-  /** True when this call moved the job up. */
+  /** True when this call moved the job up from the agent's own model. */
   upgraded: boolean
   /** True when the turn should ask for sub-agents. */
   subagents: boolean
@@ -154,27 +156,49 @@ export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteRe
     return keep(`shadow — would ${wantsEdge ? "move up" : "keep the model"}${wantsSubagents ? " and ask for sub-agents" : ""} (${shown})`, pEdge, pSub)
   }
 
-  const canUpgrade = wantsEdge && Boolean(opts.edgeModel) && opts.edgeModel !== opts.currentModel
-  if (!canUpgrade && !wantsSubagents) {
+  // `currentModel` is the agent's configured model. The job may have been
+  // routed below it at the same time (routing.ts), so "already on the edge
+  // model" still names the edge model: jobModelFor uses it to drop that
+  // downgrade.
+  const edgeModel = wantsEdge && opts.edgeModel ? opts.edgeModel : undefined
+  const canUpgrade = Boolean(edgeModel) && edgeModel !== opts.currentModel
+  if (!edgeModel && !wantsSubagents) {
     const why = !wantsEdge
       ? "the agent's model is enough"
-      : !opts.edgeModel
-        ? "needs the edge model, but none is configured"
-        : "already on the edge model"
+      : "needs the edge model, but none is configured"
     return keep(`${why} (${shown})`, pEdge, pSub)
   }
 
   return {
-    ...(canUpgrade ? { model: opts.edgeModel! } : {}),
+    ...(edgeModel ? { model: edgeModel } : {}),
     upgraded: canUpgrade,
     subagents: wantsSubagents,
     needsEdge: pEdge,
     subagentsHelp: pSub,
     reason: [
-      canUpgrade ? `hard task → ${opts.edgeModel} for this job` : "",
+      canUpgrade ? `hard task → ${edgeModel} for this job` : "",
+      edgeModel && !canUpgrade ? `hard task, already on the edge model (${edgeModel})` : "",
       wantsSubagents ? "sub-agents advised" : "",
     ].filter(Boolean).join(", ") + ` (${shown})`,
   }
+}
+
+/**
+ * The per-job model override, given the edge route and the downgrade that
+ * task-tier routing picked (if any). A confident "needs the edge model"
+ * wins over a downgrade: the two seats disagree only when one of them is
+ * wrong, and the cheaper mistake is the stronger model.
+ *
+ * When the agent already runs on the edge model there is nothing to move
+ * up to, and the answer is no override at all, so the job runs on the
+ * agent's own model and a warm process is not respawned.
+ */
+export function jobModelFor(
+  route: EdgeRouteResult | undefined,
+  routedModel: string | undefined,
+): string | undefined {
+  if (!route?.model) return routedModel
+  return route.upgraded ? route.model : undefined
 }
 
 export interface EdgePlan {
