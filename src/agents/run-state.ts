@@ -45,11 +45,15 @@ export function needsJobState(settings: JobStateSettings | undefined, channel: s
   return !!settings?.enabled && settings.channels.includes(base(channel))
 }
 
-/** Does the state go on the answer too? Not on a schedule's: its answer is
- *  posted as is and read by the quiet and exit checks, so the state stays
- *  on the job's row only. */
+/** Channels whose answer goes back to an agent, not to a person. */
+const ANSWER_TO_AGENT = ["a2a", "events"]
+
+/** Does the state go on the answer too? Only where an agent reads the
+ *  answer. A schedule's or a reminder's answer is posted to a person as is
+ *  (and a schedule's is read by the quiet and exit checks), so there the
+ *  state stays on the job's row only. */
 export function stateOnAnswer(channel: string | undefined): boolean {
-  return base(channel) !== "cron"
+  return ANSWER_TO_AGENT.includes(base(channel))
 }
 
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "")

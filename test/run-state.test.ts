@@ -205,6 +205,29 @@ describe("registry.execute on an agent channel", () => {
     expect(s).toMatchObject({ content: "Disk is 95% full.", jobState: { state: "stalled" } })
   })
 
+  it("a reminder's answer goes to a person: an approvals check-in text stays as composed", async () => {
+    const checkin = { channel: "reminder", chatId: "checkin:r-1", sender: "approvals" }
+    const text = "Anis, 2 approvals wait for you:\n1. Merge PR #12\n2. Pay invoice 44"
+    // Stated with the tool: no line added.
+    const tool = registry([(task, reg) => {
+      reg.recordJobState(task.runningTaskId!, { state: "done", proof: "composed" })
+      return { content: text }
+    }])
+    const t = await tool.r.execute({ agentId: "secretary", message: "compose", context: checkin })
+    expect(tool.seen).toHaveLength(1)
+    expect(t).toMatchObject({ content: text, jobState: { state: "done", proof: "composed" } })
+    // Its own State line is kept on the row, not posted.
+    const own = registry([{ content: `${text}\nState: done — composed` }])
+    const o = await own.r.execute({ agentId: "secretary", message: "compose", context: checkin })
+    expect(own.seen).toHaveLength(1)
+    expect(o).toMatchObject({ content: text, jobState: { state: "done", proof: "composed" } })
+    // Stated when asked, or never: no [Job state] or [Job stalled] line.
+    const asked = registry([{ content: text }, { content: "State: done — composed" }])
+    expect((await asked.r.execute({ agentId: "secretary", message: "compose", context: checkin })).content).toBe(text)
+    const stalled = registry([{ content: text }, { content: "no idea" }])
+    expect(await stalled.r.execute({ agentId: "secretary", message: "compose", context: checkin })).toMatchObject({ content: text, jobState: { state: "stalled" } })
+  })
+
   it("an ask that fails counts as no state", async () => {
     const { r } = registry([{ content: "Built it." }, { content: "", error: "boom" }])
     const res = await r.execute({ agentId: "ops", message: "build", context: a2a })

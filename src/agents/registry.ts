@@ -1600,7 +1600,12 @@ export class AgentRegistry {
     // whoever asked reads it with the answer (not a schedule's answer).
     const onAnswer = stateOnAnswer(channel)
     const withState = (state: JobState): AgentResponse => {
-      if (!onAnswer || jobStateInText(response.content)) return { ...response, jobState: state }
+      // An answer that goes to a person loses the run's own State line too.
+      if (!onAnswer) {
+        const content = jobStateInText(response.content) ? withoutStateLines(response.content ?? "") : response.content
+        return { ...response, content, jobState: state }
+      }
+      if (jobStateInText(response.content)) return { ...response, jobState: state }
       const line = `[Job state] ${describeJobState(state)}`
       return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: state }
     }

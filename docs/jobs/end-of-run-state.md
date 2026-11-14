@@ -40,7 +40,7 @@ Every run on these channels starts with one line that reminds the agent of the r
 1. AgentX asks the agent once, in the same conversation, for one line with the state. The asking agent still gets the run's own answer, not the reply to this question.
 2. If the agent still gives no state, or the question fails, the job is **stalled**. A line is added to the answer: `[Job stalled] <agent> ended its run without saying whether the work is done, continuing, waiting or blocked…`. The agent that asked reads it with the answer. One `job_stalled` [failure signal](./failure-signals.md) is recorded.
 
-A state given with the tool, or when asked, is added to the end of the answer as `[Job state] …`, so the agent that asked sees it too. A state already on the answer's last line is not repeated. A scheduled job's answer is posted as it is: its state is kept on the job only, so the answer's exit-code line stays last.
+A state given with the tool, or when asked, is added to the end of the answer as `[Job state] …`, so the agent that asked sees it too. A state already on the answer's last line is not repeated. Only answers that go back to an agent (`a2a`, `events`) get the line. A scheduled job's or a reminder's answer goes to a person, so its state is kept on the job only: no `[Job state]` or `[Job stalled]` line is added, the run's own `State:` line is taken off, and a schedule's exit-code line stays last.
 
 A schedule that [reports only exceptions](./daily-report.md#report-only-when-something-is-wrong) stays quiet. If its answer is `NOTHING_TO_REPORT`, the job is **done** and AgentX asks nothing. Any `State:` line is taken off the answer, and no `[Job state]` line is added, so nothing is posted.
 
