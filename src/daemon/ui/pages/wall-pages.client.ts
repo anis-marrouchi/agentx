@@ -12,7 +12,7 @@
 //   Projects  one card per project: a bar of its open work, the four
 //             counts, closed per week as four bars, its agents, and its
 //             worst state in the corner.
-//   Jobs      today's totals, then jobs per machine: value line, schedule,
+//   Schedules today's totals, then jobs per machine: value line, schedule,
 //             next run, the last seven runs as squares and "look stale".
 //             Pause and Archive are drawn but not built (delivery phase 2).
 //   Creator   give an agent a task: it becomes its post (the composer's
@@ -123,7 +123,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
     }).join('') + '</div>';
   }
 
-  // --- Jobs (#1355): per machine, the last seven runs, look stale ---
+  // --- Schedules (nav key jobs, #1355; the ledger of assigned work is wall-jobledger): per machine, the last seven runs, look stale ---
   var STALE_OFF_DAYS = 14, STALE_FAILS = 3;
   function jobStale(j, r) {
     var why = [];
@@ -310,7 +310,7 @@ export const WALL_PAGES_CSS = `
 .wpc__ag { display: flex; gap: 4px; flex-wrap: wrap; }
 .wpc__ag small { color: var(--ax-muted); }
 
-/* Jobs (#1355) */
+/* Schedules (nav key jobs, #1355) */
 .wjt { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 0 0 8px; }
 .wjt div { background: var(--ax-surface); border-radius: var(--ax-radius); padding: 8px 10px; }
 .wjt dt { font-size: var(--ax-fs-xs); color: var(--ax-muted); }

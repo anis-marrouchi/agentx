@@ -119,7 +119,7 @@ export const WALL_ACTIVITY_SCRIPT = String.raw`
         '<dt>Where</dt><dd>' + (where || '–') + '</dd>' +
         '<dt>Review</dt><dd>' + (marks.length ? '<ul class="wac__marks">' + marks.map(function (m) { return '<li><b>' + esc(m.kind) + '</b> ' + esc(m.text) + '</li>'; }).join('') + '</ul>' : '<span class="wac__muted">No review findings for this run</span>') + '</dd></dl>' +
       '<div class="wac__links"><a class="ax-btn ax-btn--ghost" href="' + esc(actHref(x)) + '">Open the run</a>' +
-        (x.source === 'jobs' ? '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=jobs">Jobs</a>' : '') +
+        (x.source === 'jobs' ? '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=jobs">Schedules</a>' : '') +
         (S.act.agent ? '' : '<button type="button" class="ax-btn ax-btn--ghost" data-act-agent="' + esc(r.agentId) + '">' + esc(nameOf(r.agentId)) + '\'s runs</button>') +
       '</div></div>';
   }

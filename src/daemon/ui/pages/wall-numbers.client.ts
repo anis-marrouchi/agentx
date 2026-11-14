@@ -12,7 +12,7 @@
 // has no numbers; another failure is named under the list.
 //
 // The nav entry shows once any machine has a number, so a Hub with no
-// numbers set up looks as it did. The Jobs page shows a value line's
+// numbers set up looks as it did. The Schedules page (nav key jobs) shows a value line's
 // number (crons.<id>.value.number) through numJob(). It only reads.
 //
 // Funnels (N4, n-view=funnels): each machine's numbers.funnels, drawn over

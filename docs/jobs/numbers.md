@@ -254,9 +254,9 @@ On a phone, each row stacks: the name and the reading first, then the trend and 
 
 ### See a job's number on the Jobs page
 
-When a job's value line names a number (see [Link a job's value line to a number](#link-a-job-s-value-line-to-a-number)), the Hub's **Jobs** page shows that number's newest reading and status under the value line. Select the number's name to open it on the Numbers page.
+When a job's value line names a number (see [Link a job's value line to a number](#link-a-job-s-value-line-to-a-number)), the Hub's **Schedules** page shows that number's newest reading and status under the value line. Select the number's name to open it on the Numbers page.
 
-![A job on the Jobs page with its number's newest reading](/screenshots/numbers/hub-jobs-number.png)
+![A job on the Schedules page with its number's newest reading](/screenshots/numbers/hub-jobs-number.png)
 
 ## Follow a funnel
 

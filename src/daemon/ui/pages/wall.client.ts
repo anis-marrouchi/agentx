@@ -68,6 +68,8 @@ import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
 import { WALL_BUILD_SCRIPT } from "./wall-build.client"
 import { WALL_NUMBERS_SCRIPT } from "./wall-numbers.client"
 import { numPeriodText, numTargetText, numFmt, numCounts, numDeptCardsHtml, numDeptOf, numEsc, numFilter, numGroups, numJobHtml, numMerge, numRank, numRowHtml, numSourceText, numSparkSvg, numStatusHtml, numTagKinds, numTagsOf, numbersPageHtml, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml } from "./wall-numbers"
+import { WALL_JOBLEDGER_SCRIPT } from "./wall-jobledger.client"
+import { jlDetailHtml, jlDoorLabel, jlDoors, jlEsc, jlHomeHtml, jlLinkHtml, jlRowHtml, jlSpan, jlStates, jlTitle, jlTone, jobLedgerPageHtml } from "./wall-jobledger"
 import { computeFunnel, formatShare, funnelGroupValues, funnelSteps } from "@/numbers/funnel"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange } from "./wall-cost"
@@ -90,12 +92,13 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers'];
+  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers', 'jobledger'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
+  ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jobLedgerPageHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
@@ -114,6 +117,7 @@ ${WALL_SETTINGS_SCRIPT}
 ${WALL_ACTIVITY_SCRIPT}
 ${WALL_BUILD_SCRIPT}
 ${WALL_NUMBERS_SCRIPT}
+${WALL_JOBLEDGER_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -330,6 +334,7 @@ ${WALL_NUMBERS_SCRIPT}
     if (S.page === 'editor') wedRead(q);
     if (S.page === 'org') orgRead(q);
     if (S.page === 'numbers') numRead(q);
+    if (S.page === 'jobledger') jlRead(q);
     S.post = q.get('post') || '';
     settingsReadHash(q);
     return f;
@@ -351,6 +356,7 @@ ${WALL_NUMBERS_SCRIPT}
     if (S.page === 'editor') wedWrite(q);
     if (S.page === 'org') orgWrite(q);
     if (S.page === 'numbers') numWrite(q);
+    if (S.page === 'jobledger') jlWrite(q);
     if (post) q.set('post', post);
     return '#' + q.toString();
   }
@@ -1069,8 +1075,8 @@ ${WALL_NUMBERS_SCRIPT}
       el.classList.toggle('is-zero', !n);
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
-    var named = { projects: 'Projects', jobs: 'Jobs', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
+    var named = { projects: 'Projects', jobs: 'Schedules', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1347,6 +1353,8 @@ ${WALL_NUMBERS_SCRIPT}
     renderWorkflows(page);
     // The Numbers page (#1826): wall-numbers.client.ts. It needs no feed.
     renderNumbers(page);
+    // The Jobs page (#1861): wall-jobledger.client.ts. It needs no feed.
+    renderJobLedger(page);
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list' || page === 'org');
     if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-events', 'wall-decide', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     // Needs you does not wait on the feed (#1440): its list is the inbox.
@@ -1432,6 +1440,7 @@ ${WALL_NUMBERS_SCRIPT}
     refreshDecide();
     refreshCost();
     refreshNumbers();
+    refreshJobLedger();
     refreshPeople();
     refreshWorkflows();
     // A failed read says so on the Org page; the rest of the Wall goes on.

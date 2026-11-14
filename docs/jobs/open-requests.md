@@ -27,6 +27,10 @@ A request waits on you when the agent raises a [decision card](../dashboard/appr
 
 When a request needs attention you are told once, through your normal [notifications](./notifications.md). They are held while Focus is on. After that the request stays on the list. Nothing closes because it got old. One kind of failure is tried again for you first: see [Resend once after a limit or a restart](#resend-once-after-a-limit-or-a-restart).
 
+### Jobs: all assigned work, not only yours
+
+A request is work you asked for. Agents also get work from other agents, issue mentions, schedules and workflows. The Hub's **Jobs** page lists all of it, your requests included, each with one status line that says what it is doing now. See [Jobs](../dashboard/jobs.md).
+
 ## Turn it on
 
 In the dashboard: on the [Hub](../dashboard/hub.md#choose-approvals-and-requests), open **Settings** › **Requests**, tick **Record and follow my requests** and select **Save**. Or from the terminal:

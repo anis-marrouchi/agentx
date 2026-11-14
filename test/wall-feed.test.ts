@@ -877,12 +877,12 @@ describe("Wall v2 feed (#1355)", () => {
     expect(of("a")).toContain("shop</span>")
   })
 
-  it("counts Projects and Jobs in the nav, and opens them from it", async () => {
+  it("counts Projects and Schedules in the nav, and opens them from it", async () => {
     const w = openWall({ data: V2, live: LIVE2, hash: "#status=open&view=jobs" })
     await w.settle()
     expect(w.el("nav-n-projects").textContent).toBe("1")
     expect(w.el("nav-n-jobs").textContent).toBe("1")
-    expect(w.el("wall-title").textContent).toBe("Jobs")
+    expect(w.el("wall-title").textContent).toBe("Schedules")
     expect(w.el("wall-views").hidden).toBe(true)
     expect(w.el("wall-compose").hidden).toBe(true)
     expect(w.el("wall-jobs").hidden).toBe(false)

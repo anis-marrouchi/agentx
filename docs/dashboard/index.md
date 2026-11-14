@@ -34,12 +34,13 @@ The nav starts with **Hub** and **Needs you**. The other pages sit in groups, ea
 | [Hub](./hub.md#read-a-post) | Every open task as a post, with its thread. **Feed** and **List** switch the view |
 | [Needs you](./hub.md#see-what-waits-on-you) | Posts that wait on your answer |
 | **Work** | |
+| [Jobs](./jobs.md) | Every piece of assigned work, with one status line each |
 | [Live](./live.md) | Sessions and jobs running now, paused tasks, and each machine's card |
 | [Running now](./hub.md#running-now) | One card per connected machine with what it runs at this moment |
 | [Projects](./hub.md#see-every-project-at-once) | One card per project, with its open, blocked and closed work |
 | [Activity](./activity.md) | The runs your agents made, newest first, with their outcome |
 | **Automation** | |
-| [Jobs](./hub.md#see-recurring-jobs-and-their-value-line) | Recurring jobs on each machine, today's totals and their value line |
+| [Schedules](./hub.md#see-recurring-jobs-and-their-value-line) | Recurring jobs on each machine, today's totals and their value line |
 | [Workflows](./workflows.md) | Saved workflows, their last run, and the editor |
 | [Reviews](./hub.md#review-classifications) | Classifications waiting for a review |
 | [Failures](./hub.md#see-failures) | Failed runs, scheduled jobs and workflow runs in the last 24 hours |

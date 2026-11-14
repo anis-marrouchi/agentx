@@ -285,7 +285,7 @@ describe("the Hub's Numbers page", () => {
     expect(html).toContain("no conversion: a step has no reading")
   })
 
-  it("shows a job's number and its newest reading on Jobs", async () => {
+  it("shows a job's number and its newest reading on Schedules", async () => {
     const w = openWall("#status=open&view=jobs", REPLY)
     await w.settle()
     expect(w.calls).toContain("/api/admin/numbers")

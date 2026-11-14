@@ -7,12 +7,12 @@ The Hub, the dashboard's home, covers most of it:
 | You want to see | Hub page |
 |---|---|
 | Each machine, whether it answers, and what it runs now | [Running now](./hub.md#running-now) |
-| Recurring jobs, their last runs and the ones that look stale | [Jobs](./hub.md#see-recurring-jobs-and-their-value-line) |
+| Recurring jobs, their last runs and the ones that look stale | [Schedules](./hub.md#see-recurring-jobs-and-their-value-line) |
 | Failed runs, failed scheduled jobs and failed workflow runs | [Failures](./hub.md#see-failures) |
 | Every run of every agent | [Activity](./activity.md) |
 
 1. **Browser:** open the dashboard. The Hub opens.
-2. In the nav on the left, select **Running now** (under **Work**), **Jobs** or **Failures** (under **Automation**). On a phone, **Running now** is in the bottom bar and the others are under **More**.
+2. In the nav on the left, select **Running now** (under **Work**), **Schedules** or **Failures** (under **Automation**). On a phone, **Running now** is in the bottom bar and the others are under **More**.
 
 ![Running now on the Hub: one card per machine with what it runs now, in the isolated demo](/screenshots/wall/running.png)
 
@@ -112,7 +112,7 @@ Without `agent`, it only reaches a running task. With `agent`, a finished schedu
 ## Check it worked
 
 1. **Browser:** on the Hub, select **Running now**. Every machine you expect has a card marked **up**.
-2. Select **Jobs**. Each machine lists its schedules.
+2. Select **Schedules**. Each machine lists its schedules.
 3. On `/mesh`, in the **Operations** view, each reachable machine lists its schedules and workflows under **Routines**.
 4. Select **Flagged**. Only items with a flag stay in the list.
 5. Select a schedule's row under **Today's automations**. Its drawer lists **Runs today**, each with an **Open** link.
