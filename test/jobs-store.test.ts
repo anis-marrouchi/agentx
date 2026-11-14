@@ -68,8 +68,18 @@ describe("a job opened at another door", () => {
     })
     expect(jobs.byRun("run-job-1")?.id).toBe("job-1")
     expect(jobs.children("job-p").map((j) => j.id)).toEqual(["job-1"])
-    expect(jobs.openAtHome("coder", "https://x.test/i/1")?.id).toBe("job-1")
+    // A hand-off that names the issue is not the job a new comment continues.
+    expect(jobs.openAtHome("coder", "https://x.test/i/1")).toBeNull()
+  })
+
+  it("continues only a mention job at its home", () => {
+    const home = { kind: "issue" as const, link: "https://x.test/i/1" }
+    openA2a("job-a2a", { home })
+    expect(openA2a("job-m", { door: "mention", requester: "someone", chatId: "group/p:issue:1", home, now: T0 - 1 })).toBe(true)
+    expect(jobs.openAtHome("coder", "https://x.test/i/1")?.id).toBe("job-m")
     expect(jobs.openAtHome("other", "https://x.test/i/1")).toBeNull()
+    jobs.declare("job-m", { state: "done", proof: "fixed in abc123" }, { now: T0 + 1 })
+    expect(jobs.openAtHome("coder", "https://x.test/i/1")).toBeNull()
   })
 
   it("does not open twice under one id", () => {
@@ -211,10 +221,24 @@ describe("lists", () => {
   it("prunes finished job rows only", () => {
     ownerRequest("req-1"); requests.close("req-1", "done", "https://x.test", T0, null, "owner")
     openA2a("job-1"); jobs.declare("job-1", { state: "done", proof: "p" }, { now: T0 })
-    openA2a("job-2")
+    openA2a("job-2", { now: T0 + HOUR })
     expect(jobs.pruneDone(T0 + 1)).toBe(1)
     expect(jobs.get("job-1")).toBeNull()
     expect(jobs.get("job-2")).not.toBeNull()
+    expect(jobs.get("req-1")).not.toBeNull()
+  })
+
+  it("ages out blocked, stalled and orphaned working job rows by their last move", () => {
+    ownerRequest("req-1")
+    openA2a("job-b"); jobs.declare("job-b", { state: "blocked", why: "the run failed" }, { now: T0 })
+    openA2a("job-s"); jobs.markStalled("job-s", "no live run", T0)
+    openA2a("job-w") // its run was cut by a restart: nothing moved it since
+    openA2a("job-c"); jobs.declare("job-c", { state: "continue", wakeAt: T0 + 400 * 24 * HOUR, note: "later" }, { now: T0 })
+    openA2a("job-n"); jobs.working("job-n", T0 + 2 * HOUR)
+    expect(jobs.pruneDone(T0 + HOUR)).toBe(3)
+    expect(["job-b", "job-s", "job-w"].map((id) => jobs.get(id))).toEqual([null, null, null])
+    expect(jobs.get("job-c")).not.toBeNull()
+    expect(jobs.get("job-n")).not.toBeNull()
     expect(jobs.get("req-1")).not.toBeNull()
   })
 
