@@ -3355,6 +3355,8 @@ export class AgentXDaemon {
       inPlan: (id) => requests.plans.get(id)?.state === "active",
       // A request a usage limit stopped is resent once the hold lifts (#1542).
       limitHeld: () => activeProviderHolds().length > 0,
+      // That resend is the job's next run when its wake takes it (#1861 box 4).
+      wakeJob: (id, note) => this.jobWake?.wakeFor(id, note) ?? false,
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
       tellAgent: async (agentId, text, r) => {
@@ -3404,6 +3406,11 @@ export class AgentXDaemon {
       isLocalDelegation: (id) => this.delegations.isPending(id),
       // execute() does not reject on a failed start; it reports { error }.
       alertAgent: async (agentId, text, w) => {
+        // #1861 box 4 — a watcher on work a job handed out wakes that job:
+        // its next run starts in the job's chat, under the job's caps. No
+        // job to wake (jobs off, a hand-off from a person's turn): the
+        // alert turn below, as before.
+        if (this.jobWake?.alertDelegator(agentId, text, w)) return
         // #1100 — the delegator hears it in the chat it asked from, where
         // the work waiting on it lives, not in a new one.
         // Only an agent's own chat: in a person's chat a queued alert's

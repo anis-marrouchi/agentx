@@ -70,6 +70,10 @@ export interface RequestSweepDeps {
   /** A usage-limit hold is active (#1542): a request a limit stopped is
    *  not resent until it lifts. Unset: no hold. */
   limitHeld?: () => boolean
+  /** Arms the wake of the request's job (#1861 box 4): its one resend
+   *  then starts as the job's next run. False: not taken, the pick-up
+   *  path resends it. Unset: always the pick-up path. */
+  wakeJob?: (requestId: string, note: string) => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
   check?: LoopChecker
   /** Reads a request's issue or merge request home (#1522). Unset: homes
@@ -247,8 +251,17 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         if (v.act === "hold") { held.add(r.id); continue }
         if (v.act !== "resend") continue
         if (store.requestPickup(r.id, now, { resend: true })) {
+          const by = v.cause === "limit" ? "a usage limit" : "a restart"
+          // Through the job's wake when it takes it (#1861 box 4): one
+          // path, under the job's caps. Otherwise the pick-up, as before.
+          if (deps.wakeJob?.(r.id, resendLine(v.cause))) {
+            store.dropPickup(r.id)
+            result.resent++
+            log(`[requests] ${r.id} resent once through its job's wake: stopped by ${by} (${r.attentionReason})`)
+            continue
+          }
           resent.set(r.id, v.cause)
-          log(`[requests] ${r.id} resent once: stopped by ${v.cause === "limit" ? "a usage limit" : "a restart"} (${r.attentionReason})`)
+          log(`[requests] ${r.id} resent once: stopped by ${by} (${r.attentionReason})`)
         }
       }
       result.held = held.size

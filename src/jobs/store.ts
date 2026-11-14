@@ -362,11 +362,12 @@ export class JobStore {
   }
 
   /** Arm a wake the daemon decided on itself (background work ended, a
-   *  start that did not take): the job continues at `at`, with why. */
+   *  watcher or a resend, a start that did not take): the job continues
+   *  at `at`, with why. Never a blocked or stalled job: its reason stands. */
   armWake(id: string, at: number, note: string, now: number): boolean {
     return this.db.prepare(
       `UPDATE requests SET job_state = 'continue', wake_at = ?, job_note = ?, updated_at = ?, waiting_on = NULL, stalled_at = NULL
-       WHERE id = ? AND ${OPEN_ROW}`,
+       WHERE id = ? AND ${OPEN_ROW} AND ${NOT_FAILED}`,
     ).run(at, clip(note, JOB_NOTE_MAX), now, id).changes > 0
   }
 
