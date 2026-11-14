@@ -222,17 +222,25 @@ export class JobWake {
    *  a watcher fired on work the job handed out, a request a limit or a
    *  restart stopped is due its one resend (#1861 box 4). Instead of a
    *  run of its own, it arms the job's wake: the run starts in the job's
-   *  chat, under the job's caps, linked to the same job. False when the
-   *  wake is off, the job is closed, missing or a schedule's: the caller
-   *  keeps its old path. */
+   *  chat, under the job's caps, linked to the same job. True only when
+   *  the wake is armed and its run will carry `note`. False, and the
+   *  caller keeps its old path, when the wake is off; the job is closed,
+   *  missing, a schedule's or another node's; it is blocked or stalled
+   *  (its reason stands); it is at its cap of wakes or cost; or a run is
+   *  on it or about to start (that run would never see `note`). */
   wakeFor(jobId: string, note: string): boolean {
-    if (!this.deps.settings().enabled) return false
+    const settings = this.deps.settings()
+    if (!settings.enabled) return false
     try {
       const job = this.deps.jobs.get(jobId)
       if (!job || noWake(job) || job.peer || !this.deps.hasAgent(job.assignee)) return false
-      if (job.state === "done" || job.state === "dropped") return false
+      if (job.state === "done" || job.state === "dropped" || job.state === "blocked" || job.state === "stalled") return false
+      if (job.wakeCount >= settings.maxWakes || this.deps.jobs.costUsd(job.id) >= settings.maxCostUsd) return false
+      if (this.startedAt.has(job.id) || this.factsOf(job).liveRun || this.deps.held?.(job)) return false
       const now = this.now()
-      const armed = this.deps.jobs.armWake(job.id, now, note, now)
+      // A wake already armed keeps what it was for: both reasons go.
+      const said = job.wakeAt !== null && job.note ? `${note} (also: ${job.note})` : note
+      const armed = this.deps.jobs.armWake(job.id, now, said, now)
       if (armed) this.deps.log(`[jobs] ${job.id}: wake armed (${clip(note.replace(/\s+/g, " "), 120)})`)
       return armed
     } catch (e: any) {
@@ -242,16 +250,28 @@ export class JobWake {
   }
 
   /** The job of the agent that handed out a delegation: the parent of
-   *  the job the hand-off opened, when that agent is `delegator`. */
+   *  the job the hand-off opened, when that agent is `delegator`. Not an
+   *  owner's request: a hand-off from a person's turn is followed by the
+   *  request's own checks, not woken as a job. */
   delegatorJob(delegationId: string, delegator: string): string | null {
     try {
       const child = this.deps.jobs.byDelegation(delegationId) ?? this.deps.jobs.get(`job-${delegationId}`)
       if (!child?.parentId) return null
       const parent = this.deps.jobs.get(child.parentId)
-      return parent && parent.assignee === delegator ? parent.id : null
+      return parent && !parent.ownerRequest && parent.assignee === delegator ? parent.id : null
     } catch {
       return null
     }
+  }
+
+  /** A watcher's alert to `agentId` about work it handed out: wakes the
+   *  job that handed it out, which carries the alert as its note. True
+   *  when the wake took it; false, and the alert turn goes as before,
+   *  for any other watcher, no such job, or a job the wake does not take. */
+  alertDelegator(agentId: string, text: string, w: { kind: string; taskKey: string }): boolean {
+    if (w.kind !== "delegation" || !w.taskKey.startsWith("dlg-")) return false
+    const jobId = this.delegatorJob(w.taskKey, agentId)
+    return jobId ? this.wakeFor(jobId, text) : false
   }
 
   /** A run ended cleanly with background work still open in its process:

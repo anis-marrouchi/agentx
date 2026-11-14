@@ -475,6 +475,16 @@ describe("store", () => {
     expect(jobs.armWake(job.id, clock + MIN, "try again", clock)).toBe(true)
     expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: clock + MIN, note: "try again" })
   })
+
+  it("armWake never writes over a blocked or stalled job", () => {
+    open("job-b")
+    jobs.declare("job-b", { state: "blocked", why: "the key" }, { now: clock })
+    expect(jobs.armWake("job-b", clock, "x", clock)).toBe(false)
+    open("job-s")
+    jobs.markStalled("job-s", "nobody", clock)
+    expect(jobs.armWake("job-s", clock, "x", clock)).toBe(false)
+    expect(jobs.get("job-s")).toMatchObject({ state: "stalled", note: "nobody", wakeAt: null })
+  })
 })
 
 describe("other paths wake the job (#1861 box 4)", () => {
@@ -489,15 +499,64 @@ describe("other paths wake the job (#1861 box 4)", () => {
     expect(jobs.get("job-1")!.wakeCount).toBe(1)
   })
 
-  it("wakeFor counts toward the job's cap", async () => {
+  it("wakeFor counts toward the job's cap, and at the cap leaves the caller its old path", async () => {
     open()
     settings.maxWakes = 1
-    wake.wakeFor("job-1", "first"); wake.tick()
+    expect(wake.wakeFor("job-1", "first")).toBe(true)
+    wake.tick()
+    await flush()
     jobs.declare("job-1", { state: "waiting", on: "pm", until: clock + HOUR }, { now: clock })
-    wake.wakeFor("job-1", "second"); wake.tick()
+    expect(wake.wakeFor("job-1", "second")).toBe(false)
+    wake.tick()
     await flush()
     expect(started).toHaveLength(1)
-    expect(jobs.get("job-1")!.state).toBe("stalled")
+    // Not armed, not stalled a second time: the job stays as its run left it.
+    expect(jobs.get("job-1")).toMatchObject({ state: "waiting", wakeAt: null, waitingOn: "pm" })
+  })
+
+  it("wakeFor does not take a job at its cost cap", () => {
+    open()
+    settings.maxCostUsd = 1
+    db.prepare("INSERT INTO task_traces VALUES ('run-job-1', 'ok', 1, 2, 1.5, NULL)").run()
+    expect(wake.wakeFor("job-1", "x")).toBe(false)
+    expect(jobs.get("job-1")!.wakeAt).toBeNull()
+  })
+
+  it("wakeFor never wakes a blocked or stalled job, and keeps its reason", () => {
+    open("job-b")
+    jobs.declare("job-b", { state: "blocked", why: "needs the client's key" }, { now: clock })
+    expect(wake.wakeFor("job-b", "watcher fired")).toBe(false)
+    expect(jobs.get("job-b")).toMatchObject({ state: "blocked", wakeAt: null })
+    expect(jobs.get("job-b")!.note).toContain("client's key")
+    open("job-s")
+    jobs.markStalled("job-s", "nobody on it", clock)
+    expect(wake.wakeFor("job-s", "watcher fired")).toBe(false)
+    expect(jobs.get("job-s")).toMatchObject({ state: "stalled", wakeAt: null, note: "nobody on it" })
+  })
+
+  it("wakeFor does not take an alert while a run is on the job or about to start: that run would never see it", async () => {
+    open()
+    live.add("job-1")
+    expect(wake.wakeFor("job-1", "x")).toBe(false)
+    live.delete("job-1"); held.add("job-1")
+    expect(wake.wakeFor("job-1", "x")).toBe(false)
+    held.delete("job-1")
+    // A wake started, its run still waiting for a slot.
+    jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "n" }, { now: clock })
+    wake.tick()
+    await flush()
+    expect(wake.wakeFor("job-1", "x")).toBe(false)
+    expect(jobs.get("job-1")!.wakeAt).toBeNull()
+  })
+
+  it("wakeFor on a job with a wake already armed keeps both reasons", async () => {
+    open()
+    jobs.declare("job-1", { state: "continue", wakeAt: clock + HOUR, note: "check the build" }, { now: clock })
+    expect(wake.wakeFor("job-1", "watcher w-1 fired")).toBe(true)
+    wake.tick()
+    await flush()
+    expect(started[0].text).toContain("watcher w-1 fired")
+    expect(started[0].text).toContain("check the build")
   })
 
   it("wakeFor leaves the caller its old path: wake off, closed, missing, a schedule's or another node's job", () => {
@@ -524,5 +583,34 @@ describe("other paths wake the job (#1861 box 4)", () => {
     expect(wake.delegatorJob("dlg-none", "pm")).toBeNull()
     open("job-dlg-2", { assignee: "coder", requester: "pm" })
     expect(wake.delegatorJob("dlg-2", "pm")).toBeNull()
+  })
+
+  it("delegatorJob does not hand back an owner's request: a hand-off from a person's turn keeps the request's own checks", () => {
+    requests.addCandidate({ id: "req-1", runId: "o1", channel: "telegram", chatId: "anis", sender: "owner", agentId: "pm", text: "ship it", now: clock })
+    expect(jobs.get("req-1")?.ownerRequest).toBe(true)
+    open("job-dlg-3", { assignee: "coder", requester: "pm", parentId: "req-1" })
+    expect(wake.delegatorJob("dlg-3", "pm")).toBeNull()
+    expect(wake.alertDelegator("pm", "overdue", { kind: "delegation", taskKey: "dlg-3" })).toBe(false)
+  })
+
+  it("alertDelegator: a delegation watcher wakes the job that handed the work out, with the alert as its note", async () => {
+    open("job-parent", { assignee: "pm", requester: "owner", chatId: "owner" })
+    open("job-dlg-1", { assignee: "coder", requester: "pm", parentId: "job-parent" })
+    expect(wake.alertDelegator("pm", "w-1: the hand-off is overdue", { kind: "delegation", taskKey: "dlg-1" })).toBe(true)
+    wake.tick()
+    await flush()
+    expect(started.map((s) => s.id)).toEqual(["job-parent"])
+    expect(started[0].text).toContain("w-1: the hand-off is overdue")
+  })
+
+  it("alertDelegator leaves every other alert to the alert turn", () => {
+    open("job-parent", { assignee: "pm", requester: "owner" })
+    open("job-dlg-1", { assignee: "coder", requester: "pm", parentId: "job-parent" })
+    expect(wake.alertDelegator("pm", "x", { kind: "task", taskKey: "dlg-1" })).toBe(false)
+    expect(wake.alertDelegator("pm", "x", { kind: "delegation", taskKey: "t-1" })).toBe(false)
+    expect(wake.alertDelegator("coo", "x", { kind: "delegation", taskKey: "dlg-1" })).toBe(false)
+    live.add("job-parent")
+    expect(wake.alertDelegator("pm", "x", { kind: "delegation", taskKey: "dlg-1" })).toBe(false)
+    expect(jobs.get("job-parent")!.wakeAt).toBeNull()
   })
 })

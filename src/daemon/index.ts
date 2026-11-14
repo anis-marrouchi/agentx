@@ -3410,10 +3410,7 @@ export class AgentXDaemon {
         // its next run starts in the job's chat, under the job's caps. No
         // job to wake (jobs off, a hand-off from a person's turn): the
         // alert turn below, as before.
-        if (w.kind === "delegation" && w.taskKey.startsWith("dlg-")) {
-          const jobId = this.jobWake?.delegatorJob(w.taskKey, agentId)
-          if (jobId && this.jobWake?.wakeFor(jobId, text)) return
-        }
+        if (this.jobWake?.alertDelegator(agentId, text, w)) return
         // #1100 — the delegator hears it in the chat it asked from, where
         // the work waiting on it lives, not in a new one.
         // Only an agent's own chat: in a person's chat a queued alert's
