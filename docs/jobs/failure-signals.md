@@ -16,6 +16,7 @@ AgentX now records each of them as a **failure signal**: one line with what happ
 | `callback_repeat_skipped` | A helper agent wrote its answer, then ended its run with the same answer again. The repeat was not passed on. |
 | `same_work_waited` | The same request reached an agent twice while one of its runs was already on it, so the second waited. |
 | `close_proof_missing` | A check closed a request while some of the things you asked for had no proof link (`requests.closeProof.mode` is `"warn"`). See [Proof for each thing you asked for](./open-requests.md#proof-for-each-thing-you-asked-for). |
+| `job_stalled` | A run of agent work ended without saying whether the work is done, continuing, waiting or blocked, and gave no state when asked once. See [Say where the work stands when a run ends](./end-of-run-state.md). |
 
 The same signal about the same request or hand-off within 10 minutes is counted once. Signals are kept for 90 days.
 

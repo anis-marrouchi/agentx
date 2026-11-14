@@ -35,6 +35,8 @@ describe("a run that starts on a home another run works on", () => {
   })
 
   const config = () => daemonConfigSchema.parse({
+    // Not about the end-of-run job state (run-state.test.ts): its reminder and ask turn are off here.
+    jobState: { enabled: false },
     node: { id: "test", name: "test" },
     agents: { writer: { name: "Writer", tier: "claude-code", workspace: dir, maxConcurrent: 2 } },
   })

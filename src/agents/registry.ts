@@ -755,6 +755,8 @@ export class AgentRegistry {
   /** The job's state a running run stated with agentx_job_state or
    *  agentx_waiting (run-state.ts), read when it ends. */
   private jobStates: Map<string, JobState> = new Map()
+  /** See setJobStateListener. */
+  private jobStateListener?: (runIds: Array<string | undefined>, ev: import("@/jobs/run-state-ledger").RunStateEvent) => void
   /** Callers waiting for a run to let go of its slot (whenRunEnds). */
   private runEndWaiters: Map<string, Array<() => void>> = new Map()
   /** Claude cloud sessions this node launched (#622), by issue. Created on
@@ -901,6 +903,17 @@ export class AgentRegistry {
     if (!this.runningTaskOwner(runningTaskId)) return false
     this.jobStates.set(runningTaskId, state)
     return true
+  }
+
+  /** Told what each checked run said about its job: the daemon writes it
+   *  on the job (jobs/run-state-ledger.ts). `runIds`: the run's trace id
+   *  and running id, and the ask turn's when there was one. */
+  setJobStateListener(fn: AgentRegistry["jobStateListener"]): void {
+    this.jobStateListener = fn
+  }
+
+  private tellJobState(runIds: Array<string | undefined>, ev: import("@/jobs/run-state-ledger").RunStateEvent): void {
+    try { this.jobStateListener?.(runIds, ev) } catch (e: any) { this.log(`[job-state] ledger write failed: ${e?.message ?? e}`) }
   }
 
   /** The state a run stated: with a tool while it ran, else on its last lines. */
@@ -1588,12 +1601,15 @@ export class AgentRegistry {
       const line = `[Job state] ${describeJobState(state)}`
       return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: state }
     }
+    const runIds = [task.taskId, runId]
     const stated = this.takeJobState(task, response)
     if (stated) {
       this.log(`[job-state] ${where}: ${describeJobState(stated)}`)
+      this.tellJobState(runIds, { kind: "stated", state: stated })
       return withState(stated)
     }
     this.log(`[job-state] ${where}: ended with no state; asking once`)
+    this.tellJobState(runIds, { kind: "asked" })
     const ask: AgentTask = { ...task, message: JOB_STATE_ASK, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
     let asked: AgentResponse
     try {
@@ -1606,9 +1622,11 @@ export class AgentRegistry {
     if (ask.runningTaskId) this.jobStates.delete(ask.runningTaskId)
     if (answer) {
       this.log(`[job-state] ${where}: ${describeJobState(answer)} (when asked)`)
+      this.tellJobState([...runIds, ask.taskId, ask.runningTaskId], { kind: "stated", state: answer })
       return withState(answer)
     }
     this.log(`[job-state] ${where}: no state when asked${asked.error ? ` (${asked.error.slice(0, 120)})` : ""}; stalled`)
+    this.tellJobState([...runIds, ask.taskId, ask.runningTaskId], { kind: "stalled", reason: "run ended with no state, and gave none when asked" })
     emitSignal({ kind: "job_stalled", agentId: task.agentId, ref: task.taskId ?? runId ?? "-", detail: `${channel ?? "-"}: run ended with no job state, none when asked` })
     const line = stalledLine(task.agentId)
     return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: { state: "stalled" } }

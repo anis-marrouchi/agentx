@@ -144,6 +144,17 @@ describe("registry.execute on an agent channel", () => {
     expect(o).toMatchObject({ content: "Built it." })
   })
 
+  it("tells the listener what each run said, for its job", async () => {
+    const { r } = registry([{ content: "Built it." }, { content: "nothing" }])
+    const told: Array<[Array<string | undefined>, string]> = []
+    r.setJobStateListener((ids, ev) => told.push([ids, ev.kind]))
+    await r.execute({ agentId: "ops", message: "build", context: a2a })
+    expect(told).toEqual([
+      [["trace-0", "run-0"], "asked"],
+      [["trace-0", "run-0", "trace-1", "run-1"], "stalled"],
+    ])
+  })
+
   it("refuses a state for a run that is not going", () => {
     const { r } = registry([])
     expect(r.recordJobState("gone", { state: "blocked", why: "x" })).toBe(false)
