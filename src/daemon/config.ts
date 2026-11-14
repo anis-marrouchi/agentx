@@ -621,6 +621,11 @@ const channelsConfigSchema = z.object({
     sessionDir: z.string().default(".agentx/whatsapp-sessions"),
     defaultAgent: z.string().optional(),
     allowFrom: z.array(z.string()).optional(),
+    /** Self-chat messages whose text starts with one of these (after leading
+     *  spaces and direction marks) are dropped before any run, with one log
+     *  line naming the message id. For pages that send to the owner's own
+     *  number, e.g. sign-in codes (noqta/noqta#777). Empty: no change. */
+    selfChatSkipPrefixes: z.array(z.string()).optional(),
     routes: z.array(z.object({
       contact: z.string().optional(),
       group: z.string().optional(),

@@ -76,6 +76,19 @@ export function isWhatsAppSenderAllowed(
   return false
 }
 
+/** Leading spaces and direction marks a phone may put before a tag. */
+const LEADING_MARKS = /^[\s\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/
+
+/** noqta/noqta#777: true when a self-chat text starts with one of the listed
+ *  tags, after leading spaces and direction marks. A page that sends to the
+ *  owner's own number (a sign-in code) tags its text so the agent never reads
+ *  it. Blank entries never match; an unset or empty list matches nothing. */
+export function isSelfChatSkipped(text: string, prefixes: string[] | undefined): boolean {
+  if (!prefixes?.length || !text) return false
+  const head = text.replace(LEADING_MARKS, "")
+  return prefixes.some((p) => p.trim() !== "" && head.startsWith(p.trim()))
+}
+
 /** Close counters behind the 408/440 reconnect policy (#982). Kept apart so
  *  network timeouts never count toward the conflict give-up. */
 export interface WhatsAppReconnectState {
@@ -152,6 +165,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private sessionDir: string
   private defaultAgent?: string
   private allowFrom?: string[]
+  /** Self-chat texts starting with one of these are dropped (noqta/noqta#777). */
+  private selfChatSkipPrefixes?: string[]
   private routes: WhatsAppRoute[]
   private handler?: (msg: IncomingMessage) => Promise<void>
   private sock: any = null
@@ -190,6 +205,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
       sessionDir: string
       defaultAgent?: string
       allowFrom?: string[]
+      /** Self-chat messages whose text starts with one of these are dropped
+       *  before any run, and from the history read for a session or the wiki. */
+      selfChatSkipPrefixes?: string[]
       routes?: WhatsAppRoute[]
       onQR?: (qr: string | null) => void
       onStatus?: (status: "connecting" | "open" | "close", detail?: string) => void
@@ -202,6 +220,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.sessionDir = resolve(config.sessionDir)
     this.defaultAgent = config.defaultAgent
     this.allowFrom = config.allowFrom
+    this.selfChatSkipPrefixes = config.selfChatSkipPrefixes
     this.routes = config.routes || []
     this.onQR = config.onQR
     this.onStatus = config.onStatus
@@ -465,6 +484,18 @@ export class WhatsAppAdapter implements ChannelAdapter {
           const chatUser = remoteJid.replace(/:.*/, "").replace(/@.*/, "")
           const isSelfChat = (chatUser === myJid) || (chatUser === myLid)
           if (!isSelfChat) continue
+          // A page's message to the owner's own number (a sign-in code) is
+          // not the owner typing: drop it before media or any run. The id
+          // only is logged, never the text.
+          const selfText = msg.message?.conversation
+            || msg.message?.extendedTextMessage?.text
+            || msg.message?.imageMessage?.caption
+            || msg.message?.videoMessage?.caption
+            || ""
+          if (isSelfChatSkipped(selfText, this.selfChatSkipPrefixes)) {
+            this.log(`self-chat skipped by prefix: id=${msg.key.id || "?"}`)
+            continue
+          }
         }
 
         // Extract text content + detect media
@@ -795,7 +826,12 @@ export class WhatsAppAdapter implements ChannelAdapter {
         }
         return []
       })
-      return (messages || []).map(mapBaileysMessage).filter(Boolean) as HistoryMessage[]
+      const mapped = (messages || []).map(mapBaileysMessage).filter(Boolean) as HistoryMessage[]
+      // The same self-chat drop as the live path (noqta/noqta#777), so a
+      // tagged code never reaches a new session's seed or the wiki ingest.
+      const kept = mapped.filter((m) => !(m.fromMe && isSelfChatSkipped(m.text, this.selfChatSkipPrefixes)))
+      if (kept.length < mapped.length) this.log(`self-chat skipped by prefix: ${mapped.length - kept.length} in history of ${jid.replace(/@.*/, "").slice(-6)}`)
+      return kept
     } catch (e: any) {
       this.log(`getHistory(${jid}) failed: ${e.message}`)
       return []
