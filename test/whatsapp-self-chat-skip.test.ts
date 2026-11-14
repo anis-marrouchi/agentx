@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-// noqta/noqta#777: a page sends Anis's sign-in code to his own number, so it
-// lands in the self-chat the agent reads as Anis. Tagged self-chat messages
+// noqta/noqta#777: a page sends the owner's sign-in code to the owner's own
+// number, so it lands in the self-chat the agent reads as the owner. Tagged self-chat messages
 // must start no run and leave their text in no log.
 
 const handlers: Record<string, (arg: any) => any> = {}
