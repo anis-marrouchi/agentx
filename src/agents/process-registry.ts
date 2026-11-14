@@ -86,6 +86,9 @@ export interface ProcessSnapshot {
   unaskedTurn?: boolean
 }
 
+/** The env variable Claude Code reads for the model of its sub-agents. */
+export const SUBAGENT_MODEL_ENV = "CLAUDE_CODE_SUBAGENT_MODEL"
+
 export interface SpawnOptions {
   agentId: string
   channel: string
@@ -103,6 +106,9 @@ export interface SpawnOptions {
    *  session profile (AgentTask.claudeArgs). The process key already
    *  carries the channel, so one process never mixes profiles. */
   extraArgs?: string[]
+  /** Model for the sub-agents this process starts, set with an edge-model
+   *  job (agents/edge-routing.ts). Unset: Claude Code's own choice. */
+  subagentModel?: string
 }
 
 export interface TurnInput {
@@ -171,6 +177,11 @@ export function staleHandleReason(handle: ProcessHandle, opts: SpawnOptions): st
   const prevModel = handle.opts?.model
   if (prevModel && opts.model && prevModel !== opts.model) {
     return `model changed (${prevModel} -> ${opts.model})`
+  }
+  // The sub-agent model is an env variable of the process, so a process
+  // spawned with another one (or none) cannot serve this turn.
+  if (handle.opts && (handle.opts.subagentModel ?? null) !== (opts.subagentModel ?? null)) {
+    return `sub-agent model changed (${handle.opts.subagentModel ?? "default"} -> ${opts.subagentModel ?? "default"})`
   }
   if (opts.resumeSessionId) {
     if (snap.claudeSessionId && snap.claudeSessionId !== opts.resumeSessionId) {

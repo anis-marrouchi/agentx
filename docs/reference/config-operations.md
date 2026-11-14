@@ -360,11 +360,14 @@ Typed decisions ("seats") let a small, fast model answer fixed-choice questions 
 | `decisions.defaultBackend` | string | `"local"` | Backend used by seats that don't name one. |
 | `decisions.backends` | object | `{}` | Settings for each backend below. |
 | `decisions.seats` | map of objects | `{}` | Per-seat settings, keyed by seat name. |
-| `decisions.routing` | object | `{}` | Models to move simple tasks to. |
+| `decisions.routing` | object | `{}` | Models to move simple tasks down to, and hard tasks up to. |
 | `decisions.routing.cheapModel` | string | — | Cheaper model for `claude-code` agents (older form of the next key). |
 | `decisions.routing.cheapModels` | object | — | Cheaper model per engine. |
 | `decisions.routing.cheapModels.claude-code` | string | — | Cheaper model for `claude-code` agents, such as a `claude-` model or `haiku`. |
 | `decisions.routing.cheapModels.codex-cli` | string | — | Cheaper model for `codex-cli` agents, such as a `gpt-` model. |
+| `decisions.routing.edgeModels` | object | — | Most capable model per engine. A task the `task-edge` decision is sure needs it runs on this model; the next task is back on the agent's own model. See [Edge model and sub-agents](../architecture/jev.md#edge-model-and-sub-agents). |
+| `decisions.routing.edgeModels.claude-code` | string | — | Most capable model for `claude-code` agents, such as a `claude-` model or `fable`. |
+| `decisions.routing.edgeModels.codex-cli` | string | — | Most capable model for `codex-cli` agents, such as a `gpt-` model. |
 
 **Local backend** (asks a model through an agent engine):
 

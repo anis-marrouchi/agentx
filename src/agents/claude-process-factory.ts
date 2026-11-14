@@ -4,6 +4,7 @@ import { randomUUID } from "crypto"
 import { existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import {
+  SUBAGENT_MODEL_ENV,
   type ProcessFactory,
   type ProcessHandle,
   type ProcessKey,
@@ -109,6 +110,13 @@ export function persistentCallerEnv(env: NodeJS.ProcessEnv, key: ProcessKey): No
   return env
 }
 
+/** A process serving an edge-model job keeps its sub-agents on that model
+ *  (agents/edge-routing.ts). */
+export function withSubagentModel(env: NodeJS.ProcessEnv, model: string | undefined): NodeJS.ProcessEnv {
+  if (model) env[SUBAGENT_MODEL_ENV] = model
+  return env
+}
+
 export class ClaudeProcessFactory implements ProcessFactory {
   constructor(private opts: ClaudeProcessFactoryOptions = {}) {}
 
@@ -143,7 +151,7 @@ class ClaudeProcessHandle implements ProcessHandle {
 
     this.child = spawn(binary, args, {
       cwd: opts.workspace,
-      env: claudeBillingEnv(persistentCallerEnv({ ...process.env }, key), opts.billing),
+      env: claudeBillingEnv(withSubagentModel(persistentCallerEnv({ ...process.env }, key), opts.subagentModel), opts.billing),
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams
 
