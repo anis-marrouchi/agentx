@@ -227,3 +227,115 @@ describe("edgeSeatOn", () => {
     expect(edgeSeatOn()).toBe(true)
   })
 })
+
+// A person describes a problem and asks for nothing. Read as a sentence it
+// is a remark; the work it leads to can still be large. Each test is one
+// way a remark could start work, or a job could move up, that nobody
+// switched on.
+describe("implied work", () => {
+  const implied = (edge: number, pImplied: number, design: number, mode = "active") => ({
+    answers: {
+      needsEdge: { type: "noul", noul: edge },
+      subagentsHelp: { type: "noul", noul: 0.2 },
+      workAsked: {
+        type: "choice", choice: pImplied >= 0.5 ? "implied" : "asked",
+        probabilities: { asked: 1 - pImplied, implied: pImplied, none: 0 },
+      },
+      designChange: { type: "noul", noul: design },
+    },
+    callId: "test", mode,
+  })
+  const remark = { ...base, message: "we cannot see whether an agent is still working on its job" }
+
+  let routeTaskEdge: typeof import("../src/agents/edge-routing").routeTaskEdge
+  let edgePlanFor: typeof import("../src/agents/edge-routing").edgePlanFor
+  let IMPLIED_WORK_NOTE: string, SUBAGENT_NOTE: string, IMPLIED_AT: number
+
+  beforeEach(async () => {
+    hoisted.askSeat.mockReset()
+    hoisted.getSeatMode.mockReset()
+    ;({ routeTaskEdge, edgePlanFor, IMPLIED_WORK_NOTE, SUBAGENT_NOTE, IMPLIED_AT } = await import("../src/agents/edge-routing"))
+  })
+
+  it("does not ask the two questions when the setting is off", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.3, 0.2))
+    const r = await routeTaskEdge({ ...remark })
+    expect(Object.keys(hoisted.askSeat.mock.calls[0][2])).toEqual(["needsEdge", "subagentsHelp"])
+    expect(r.impliedWork).toBeUndefined()
+  })
+
+  it("asks them in the same call when the setting is on", async () => {
+    hoisted.askSeat.mockResolvedValue(implied(0.3, 0.98, 0.85))
+    await routeTaskEdge({ ...remark, impliedWork: "shadow" })
+    expect(hoisted.askSeat).toHaveBeenCalledTimes(1)
+    expect(Object.keys(hoisted.askSeat.mock.calls[0][2])).toEqual(["needsEdge", "subagentsHelp", "workAsked", "designChange"])
+  })
+
+  it("active: a problem that needs a design change moves up and the agent states the job", async () => {
+    hoisted.askSeat.mockResolvedValue(implied(0.3, 0.98, 0.85))
+    const r = await routeTaskEdge({ ...remark, impliedWork: "active" })
+    expect(r.upgraded).toBe(true)
+    expect(r.model).toBe("claude-fable-5-2")
+    expect(r.impliedWork).toBe(true)
+    expect(r.reason).toContain("implied hard task")
+    expect(edgePlanFor(r, { tier: "claude-code" }).turnNote).toBe(IMPLIED_WORK_NOTE)
+  })
+
+  it("active: a small implied fix gets the line and keeps the agent's model", async () => {
+    hoisted.askSeat.mockResolvedValue(implied(0.05, 0.99, 0.1))
+    const r = await routeTaskEdge({ ...remark, impliedWork: "active" })
+    expect(r.upgraded).toBe(false)
+    expect(r.impliedWork).toBe(true)
+    expect(edgePlanFor(r, { tier: "claude-code" })).toEqual({ turnNote: IMPLIED_WORK_NOTE })
+  })
+
+  it("active: an outright request is left alone, however large the design score", async () => {
+    hoisted.askSeat.mockResolvedValue(implied(0.3, 0.1, 0.9))
+    const r = await routeTaskEdge({ ...remark, impliedWork: "active" })
+    expect(r.upgraded).toBe(false)
+    expect(r.impliedWork).toBe(false)
+    expect(edgePlanFor(r, { tier: "claude-code" })).toEqual({})
+  })
+
+  it("active: an unsure reading (under the threshold) changes nothing", async () => {
+    hoisted.askSeat.mockResolvedValue(implied(0.3, IMPLIED_AT - 0.01, 0.95))
+    const r = await routeTaskEdge({ ...remark, impliedWork: "active" })
+    expect(r.upgraded).toBe(false)
+    expect(r.impliedWork).toBe(false)
+  })
+
+  it("shadow: records what it would do and changes nothing", async () => {
+    hoisted.askSeat.mockResolvedValue(implied(0.3, 0.98, 0.85))
+    const r = await routeTaskEdge({ ...remark, impliedWork: "shadow" })
+    expect(r.upgraded).toBe(false)
+    expect(r.impliedWork).toBe(false)
+    expect(r.impliedP).toBe(0.98)
+    expect(r.reason).toContain("implied work (shadow): would state the job and move up")
+    expect(edgePlanFor(r, { tier: "claude-code" })).toEqual({})
+  })
+
+  it("a seat in shadow changes nothing even when implied work is active", async () => {
+    hoisted.askSeat.mockResolvedValue(implied(0.3, 0.98, 0.85, "shadow"))
+    const r = await routeTaskEdge({ ...remark, impliedWork: "active" })
+    expect(r.upgraded).toBe(false)
+    expect(r.impliedWork).toBe(false)
+  })
+
+  it("a missing or malformed answer changes nothing", async () => {
+    hoisted.askSeat.mockResolvedValue({
+      answers: { needsEdge: { type: "noul", noul: 0.3 }, subagentsHelp: { type: "noul", noul: 0.2 }, workAsked: { type: "choice" } },
+      callId: "test", mode: "active",
+    })
+    const r = await routeTaskEdge({ ...remark, impliedWork: "active" })
+    expect(r.upgraded).toBe(false)
+    expect(r.impliedWork).toBeFalsy()
+  })
+
+  it("both lines are carried when the job is implied and splits into parts", async () => {
+    const a = implied(0.3, 0.98, 0.85)
+    a.answers.subagentsHelp.noul = 0.9
+    hoisted.askSeat.mockResolvedValue(a)
+    const r = await routeTaskEdge({ ...remark, impliedWork: "active" })
+    expect(edgePlanFor(r, { tier: "claude-code" }).turnNote).toBe(`${IMPLIED_WORK_NOTE}\n${SUBAGENT_NOTE}`)
+  })
+})

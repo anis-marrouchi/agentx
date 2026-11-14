@@ -1,7 +1,7 @@
 import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
-import { edgeModelForEngine, edgePlanFor, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
+import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
 import { askSeat } from "@/decisions/seat"
@@ -3226,6 +3226,11 @@ export class AgentRegistry {
                 agentPrompt: state.def.systemPrompt ?? null,
                 edgeModel: edgeModelForEngine(state.def.tier, this.config.decisions.routing),
                 currentModel: state.def.model ?? null,
+                // Only a message a person wrote is read for implied work:
+                // a cron, a webhook or another agent says what it wants.
+                impliedWork: isHumanFacingTurn(task.context as any)
+                  ? this.config.decisions.routing.impliedWork
+                  : "off",
               }))
             } catch {
               /* never let this decision stop a task */
@@ -3339,7 +3344,7 @@ export class AgentRegistry {
     const edgePlan = edgePlanFor(edgeRoute, { tier: state.def.tier, claudeArgs })
     const jobModel = jobModelFor(edgeRoute, routedModel)
     const downgradeDropped = Boolean(routedModel) && jobModel !== routedModel
-    if (edgeRoute && (edgeRoute.upgraded || edgeRoute.subagents || downgradeDropped)) {
+    if (edgeRoute && (edgeRoute.upgraded || edgeRoute.subagents || downgradeDropped || (edgeRoute.impliedP ?? 0) >= IMPLIED_AT)) {
       this.log(`[${task.agentId}] ${edgeRoute.reason}${downgradeDropped ? ` — downgrade to ${routedModel} dropped` : ""}`)
     }
 

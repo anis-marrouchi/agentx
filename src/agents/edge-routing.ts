@@ -2,7 +2,8 @@ import { askSeat, getSeatMode } from "@/decisions/seat"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
   TASK_EDGE_SEAT,
-  taskEdgeQuestions,
+  impliedWork,
+  taskEdgeQuestionsFor,
   taskEdgeState,
   type TaskEdgeInput,
 } from "@/decisions/seats/task-edge"
@@ -40,6 +41,23 @@ export const UPGRADE_AT = 0.7
 
 /** At or above this P(sub-agents help), the turn asks for them. */
 export const SUBAGENTS_AT = 0.7
+
+/** At or above this P(work is implied, not asked), the message is read as
+ *  a job. Higher than the others: a remark taken for a job starts work
+ *  nobody asked for. Live Jev gave 0.98 and 0.99 on the two samples. */
+export const IMPLIED_AT = 0.8
+
+/** At or above this P(the fix needs a design change), implied work moves
+ *  up to the edge model. Samples: 0.85 and 0.86 against 0.10 and 0.30. */
+export const DESIGN_AT = 0.7
+
+/** How implied work is handled (`decisions.routing.impliedWork`). */
+export type ImpliedWorkMode = "off" | "shadow" | "active"
+
+/** The one line a turn carries when work is implied. The agent states the
+ *  job, so the person sees the reading and can correct it. */
+export const IMPLIED_WORK_NOTE =
+  "[Implied request] This message describes a problem and does not say what to do. Start your reply with one sentence that states the job as you understand it, then do that job. If it could mean two different jobs, or the work cannot be undone, ask one question first."
 
 export { SUBAGENT_MODEL_ENV } from "./process-registry"
 
@@ -96,6 +114,12 @@ export interface EdgeRouteResult {
   needsEdge: number | null
   /** P(sub-agents help), or null when nothing was asked. */
   subagentsHelp: number | null
+  /** True when the turn should carry the implied-request line. */
+  impliedWork?: boolean
+  /** P(work is implied, not asked), or null when not asked. */
+  impliedP?: number | null
+  /** P(the fix needs a design change), or null when not asked. */
+  designChange?: number | null
   reason: string
 }
 
@@ -108,6 +132,9 @@ export interface EdgeRouteOptions extends TaskEdgeInput {
   currentModel?: string | null
   upgradeAt?: number
   subagentsAt?: number
+  /** Whether a message that only describes a problem is read as a job.
+   *  The caller passes "off" for turns no person wrote. */
+  impliedWork?: ImpliedWorkMode
 }
 
 /**
@@ -116,9 +143,15 @@ export interface EdgeRouteOptions extends TaskEdgeInput {
  * task from running.
  */
 export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteResult> {
+  let pImplied: number | null = null
+  let pDesign: number | null = null
   const keep = (reason: string, pEdge: number | null = null, pSub: number | null = null): EdgeRouteResult => ({
-    upgraded: false, subagents: false, needsEdge: pEdge, subagentsHelp: pSub, reason,
+    upgraded: false, subagents: false, needsEdge: pEdge, subagentsHelp: pSub,
+    ...(pImplied !== null || pDesign !== null ? { impliedWork: false, impliedP: pImplied, designChange: pDesign } : {}),
+    reason,
   })
+  const impliedMode: ImpliedWorkMode = opts.impliedWork ?? "off"
+  const askImplied = impliedMode !== "off"
 
   if (channelKeepsConfiguredModel(opts.channel)) {
     return keep(`${opts.channel} requests retain the configured model`)
@@ -129,10 +162,11 @@ export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteRe
     result = await askSeat(
       TASK_EDGE_SEAT,
       taskEdgeState(opts),
-      taskEdgeQuestions,
+      taskEdgeQuestionsFor(askImplied),
       {
-        // The incumbent is "never move up, never ask for sub-agents".
-        incumbent: { needsEdge: 0, subagentsHelp: 0 },
+        // The incumbent is "never move up, never ask for sub-agents", and
+        // "every message asks for what it says".
+        incumbent: { needsEdge: 0, subagentsHelp: 0, ...(askImplied ? { workAsked: "asked", designChange: 0 } : {}) },
         features: { agent: opts.agent, channel: opts.channel ?? "unknown" },
         timeoutMs: PRE_SPAWN_SEAT_TIMEOUT_MS,
       },
@@ -147,13 +181,30 @@ export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteRe
   const pSub = probability(answers.subagentsHelp?.noul)
   const upgradeAt = opts.upgradeAt ?? UPGRADE_AT
   const subagentsAt = opts.subagentsAt ?? SUBAGENTS_AT
-  const wantsEdge = pEdge !== null && pEdge >= upgradeAt
+  if (askImplied) {
+    pImplied = impliedWork(result.answers as Record<string, unknown>)
+    pDesign = probability(answers.designChange?.noul)
+  }
+  // Implied work: the message describes a problem and asks for nothing.
+  // A problem that needs a design change is edge work even though the
+  // sentence itself reads as a remark.
+  const implied = pImplied !== null && pImplied >= IMPLIED_AT
+  const impliedHard = implied && pDesign !== null && pDesign >= DESIGN_AT
+  const impliedActs = impliedMode === "active"
+  const askedEdge = pEdge !== null && pEdge >= upgradeAt
+  const wantsEdge = askedEdge || (impliedActs && impliedHard)
+  const wantsNote = impliedActs && implied
   const wantsSubagents = opts.tier === "claude-code" && pSub !== null && pSub >= subagentsAt
   const shown = `edge ${show(pEdge)}, sub-agents ${show(pSub)}`
+    + (askImplied ? `, implied ${show(pImplied)}, design ${show(pDesign)}` : "")
+  const impliedShadow = impliedMode === "shadow" && implied
+    ? ` — implied work (shadow): would state the job${impliedHard && !askedEdge ? " and move up" : ""}`
+    : ""
 
   // Shadow records the answer and changes nothing.
   if (result.mode !== "active") {
-    return keep(`shadow — would ${wantsEdge ? "move up" : "keep the model"}${wantsSubagents ? " and ask for sub-agents" : ""} (${shown})`, pEdge, pSub)
+    const would = wantsEdge || (implied && impliedHard)
+    return keep(`shadow — would ${would ? "move up" : "keep the model"}${wantsSubagents ? " and ask for sub-agents" : ""}${implied ? " and state the implied job" : ""} (${shown})`, pEdge, pSub)
   }
 
   // `currentModel` is the agent's configured model. The job may have been
@@ -162,11 +213,11 @@ export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteRe
   // downgrade.
   const edgeModel = wantsEdge && opts.edgeModel ? opts.edgeModel : undefined
   const canUpgrade = Boolean(edgeModel) && edgeModel !== opts.currentModel
-  if (!edgeModel && !wantsSubagents) {
+  if (!edgeModel && !wantsSubagents && !wantsNote) {
     const why = !wantsEdge
       ? "the agent's model is enough"
       : "needs the edge model, but none is configured"
-    return keep(`${why} (${shown})`, pEdge, pSub)
+    return keep(`${why} (${shown})${impliedShadow}`, pEdge, pSub)
   }
 
   return {
@@ -175,11 +226,13 @@ export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteRe
     subagents: wantsSubagents,
     needsEdge: pEdge,
     subagentsHelp: pSub,
+    ...(askImplied ? { impliedWork: wantsNote, impliedP: pImplied, designChange: pDesign } : {}),
     reason: [
-      canUpgrade ? `hard task → ${edgeModel} for this job` : "",
-      edgeModel && !canUpgrade ? `hard task, already on the edge model (${edgeModel})` : "",
+      canUpgrade ? `${askedEdge ? "hard task" : "implied hard task"} → ${edgeModel} for this job` : "",
+      edgeModel && !canUpgrade ? `${askedEdge ? "hard task" : "implied hard task"}, already on the edge model (${edgeModel})` : "",
       wantsSubagents ? "sub-agents advised" : "",
-    ].filter(Boolean).join(", ") + ` (${shown})`,
+      wantsNote ? "implied work: the agent states the job" : "",
+    ].filter(Boolean).join(", ") + ` (${shown})${impliedShadow}`,
   }
 }
 
@@ -206,7 +259,8 @@ export interface EdgePlan {
   model?: string
   /** Model for the job's sub-agents, when the job moved up. */
   subagentModel?: string
-  /** Line added to the turn, when sub-agents are advised and available. */
+  /** Lines added to the turn: the implied-request line, and the
+   *  sub-agent line when sub-agents are advised and available. */
   turnNote?: string
 }
 
@@ -220,10 +274,14 @@ export function edgePlanFor(
   if (!route) return {}
   const claude = opts.tier === "claude-code"
   const canUseSubagents = claude && subagentToolAvailable(opts.claudeArgs)
+  const notes = [
+    route.impliedWork ? IMPLIED_WORK_NOTE : "",
+    route.subagents && canUseSubagents ? SUBAGENT_NOTE : "",
+  ].filter(Boolean)
   return {
     ...(route.upgraded && route.model ? { model: route.model } : {}),
     ...(route.upgraded && route.model && canUseSubagents ? { subagentModel: route.model } : {}),
-    ...(route.subagents && canUseSubagents ? { turnNote: SUBAGENT_NOTE } : {}),
+    ...(notes.length ? { turnNote: notes.join("\n") } : {}),
   }
 }
 
