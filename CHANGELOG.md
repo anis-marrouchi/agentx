@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.224.0](https://github.com/anis-marrouchi/agentx/compare/v0.223.0...v0.224.0) (2026-11-14)
+
+
+### Features
+
+* **routing:** read work a message implies but does not ask for ([#1862](https://github.com/anis-marrouchi/agentx/issues/1862)) ([#1863](https://github.com/anis-marrouchi/agentx/issues/1863)) ([5731a6b](https://github.com/anis-marrouchi/agentx/commit/5731a6b953c8326aa285c0c05736141c652112c1))
+
+
+### Bug Fixes
+
+* **channels:** honour the no-wake label on GitHub and GitLab ([#1867](https://github.com/anis-marrouchi/agentx/issues/1867)) ([f719c64](https://github.com/anis-marrouchi/agentx/commit/f719c640401a88cec31af1e4236a01aba71c781c))
+* **routing:** a confident edge answer drops a routed downgrade ([#1865](https://github.com/anis-marrouchi/agentx/issues/1865)) ([41db88e](https://github.com/anis-marrouchi/agentx/commit/41db88e1049f4e2830a76c31531380c346fcf50c)), closes [#1864](https://github.com/anis-marrouchi/agentx/issues/1864)
+
 ## [0.223.0](https://github.com/anis-marrouchi/agentx/compare/v0.222.0...v0.223.0) (2026-11-14)
 
 
