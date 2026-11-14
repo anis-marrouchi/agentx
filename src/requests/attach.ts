@@ -10,7 +10,7 @@ import { RequestTracker, type RequestSettings } from "./tracker"
 import { traceInbound, type InboundLog } from "./checkers/reply"
 import { DriftStore } from "./drift/store"
 import { JobStore } from "@/jobs/store"
-import { DEFAULT_JOB_SETTINGS, JobDoors } from "@/jobs/doors"
+import { DEFAULT_JOB_SETTINGS, JobDoors, type JobDoorsDeps } from "@/jobs/doors"
 
 // --- Hook the request tracker to the daemon's event bus (#356) ---
 
@@ -87,6 +87,8 @@ export function attachRequests(
   db: Database.Database,
   settings: () => RequestSettings,
   log: (msg: string) => void,
+  /** A job's run ended with no state declared (jobs/doors.ts). */
+  onUndeclared?: JobDoorsDeps["onUndeclared"],
 ): AttachedRequests {
   const store = new RequestStore(db)
   const plans = new PlanStore(db)
@@ -98,7 +100,7 @@ export function attachRequests(
   bus.on("task:completed", completed)
   // After the tracker, on purpose: a run it linked is the owner's already.
   const jobs = new JobStore(db)
-  const doors = new JobDoors({ jobs, requests: store, settings: () => (settings().enabled ? settings().jobs ?? DEFAULT_JOB_SETTINGS : { enabled: false }), log })
+  const doors = new JobDoors({ jobs, requests: store, settings: () => (settings().enabled ? settings().jobs ?? DEFAULT_JOB_SETTINGS : { enabled: false }), log, onUndeclared })
   const jobStarted = doors.taskStarted.bind(doors)
   const jobCompleted = doors.taskCompleted.bind(doors)
   bus.on("task:started", jobStarted)

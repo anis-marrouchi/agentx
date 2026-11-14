@@ -47,6 +47,7 @@ When the run belongs to a job in the jobs ledger, the state is written on that j
 - `waiting` stores who it waits on and until when. With no readable time, it is due after one hour.
 - `blocked` stores why.
 - A stalled job is marked `stalled`, and its requester counts as told: the answer they received says so.
+- On these channels, a run that ends cleanly without a state is no longer closed as done ("the run ended without error"). It stays working until the question is answered, or it stalls.
 
 The time the run was asked for a state is also stored on the job.
 

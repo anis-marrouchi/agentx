@@ -14,7 +14,7 @@ import { watchConfigFile } from "./config-watch"
 import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
-import { describeJobState, jobStateFrom } from "@/agents/run-state"
+import { describeJobState, jobStateFrom, needsJobState } from "@/agents/run-state"
 import { recordRunState } from "@/jobs/run-state-ledger"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
@@ -777,7 +777,10 @@ export class AgentXDaemon {
         // turning it on needs no restart; the tracker itself reads
         // `requests.enabled` on every event and does nothing while it is off.
         try {
-          this.requests = attachRequests(db, () => this.config.requests, this.log)
+          // A run on a job-state channel that declared nothing is not
+          // closed as done: the registry asks it once, then marks it
+          // stalled (#1861 phase 2, agents/run-state.ts).
+          this.requests = attachRequests(db, () => this.config.requests, this.log, (_job, end) => needsJobState(this.config.jobState, end.channel))
           fillLinkAgents(this.requests.store, db, resolve(process.cwd(), ".agentx/a2a/delegations.jsonl"), this.log)
           // Jobs (#1861): a hand-off still out ends with its delegation.
           this.requests.doors.setPendingDelegation((id) => !!this.delegations?.isPending(id))

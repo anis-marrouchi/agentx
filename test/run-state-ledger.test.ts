@@ -62,3 +62,25 @@ describe("recordRunState", () => {
     expect(jobs.get("job-1")?.state).toBe("working")
   })
 })
+
+describe("with the doors (phase 1)", () => {
+  it("a clean end on a job-state channel is left to the check, then stalls; elsewhere it closes", async () => {
+    const { JobDoors } = await import("../src/jobs/doors")
+    const { needsJobState } = await import("../src/agents/run-state")
+    const settings = { enabled: true, channels: ["a2a", "cron", "reminder", "events"] }
+    const requests = new RequestStore(db)
+    const doors = new JobDoors({ jobs, requests, settings: () => ({ enabled: true }), log: () => {}, now: () => T0, onUndeclared: (_j, e) => needsJobState(settings, e.channel) })
+    const run = (taskId: string, channel: string, chatId: string) => {
+      doors.taskStarted({ agentId: "coder", channel, chatId, taskId, messagePreview: "build", fullMessage: "build", at: new Date(T0).toISOString(), sender: { name: "agent:pm" }, humanRoot: false } as any)
+      doors.taskCompleted({ agentId: "coder", channel, chatId, taskId, durationMs: 10, at: new Date(T0).toISOString() } as any)
+      return jobs.byRun(taskId)!
+    }
+    const a2a = run("t-a2a", "a2a", "pm-2")
+    expect(a2a.state).toBe("working")
+    recordRunState(jobs, ["t-a2a"], { kind: "stalled", reason: "run ended with no state, and gave none when asked" }, T0)
+    expect(jobs.get(a2a.id)).toMatchObject({ state: "stalled", requesterToldAt: T0 })
+
+    const mention = run("t-gh", "github", "o/r:issue:3")
+    expect(mention.state).toBe("done")
+  })
+})
