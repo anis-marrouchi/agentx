@@ -1,4 +1,5 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, SeededMessage } from "./types"
+import { noWakeLabelIn } from "./no-wake"
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
@@ -66,6 +67,10 @@ export interface GitLabChannelConfig {
    *  tokenEnv). Wired by the daemon; used when `agentMappings` has no token
    *  for the agent (#1745). */
   integrationToken?: (agentId: string) => string | undefined
+  /** An issue or MR carrying this label starts no run (no hook, no
+   *  dispatch), on any event or note, with or without a project rule
+   *  (noqta/noqta#800). Default "agent:no-wake"; "" turns it off. */
+  noWakeLabel?: string
 }
 
 /** Statuses that mean "this token may not write here". A per-agent token
@@ -94,8 +99,8 @@ interface GitLabNoteEvent {
     /** "create" or "update" on current GitLab; absent on older ones. */
     action?: string
   }
-  issue?: { iid: number; title: string; state: string }
-  merge_request?: { iid: number; title: string; state: string; source_branch: string; target_branch: string }
+  issue?: { iid: number; title: string; state: string; labels?: Array<{ title: string }> }
+  merge_request?: { iid: number; title: string; state: string; source_branch: string; target_branch: string; labels?: Array<{ title: string }> }
 }
 
 interface GitLabIssueEvent {
@@ -775,6 +780,12 @@ export class GitLabAdapter implements ChannelAdapter {
       noteableTitle = stripAgentxMarkers(event.merge_request.title)
     }
 
+    const noWake = noWakeLabelIn((event.issue ?? event.merge_request)?.labels, this.config.noWakeLabel)
+    if (noWake) {
+      this.log(`Note ${noteId} on ${project} ${noteableType}#${noteableIid} skipped: labelled "${noWake}" (channels.gitlab.noWakeLabel)`)
+      res.writeHead(200); res.end("ok"); return
+    }
+
     // Project-rule note filter — runs AFTER cascade-prevention so we don't
     // log "rule dropped" for our own bot replies, but BEFORE expensive
     // resolveAgent + downstream dispatch. Drops comments whose noteable
@@ -964,6 +975,11 @@ export class GitLabAdapter implements ChannelAdapter {
     const ruleLabels = Array.isArray(attrsLabelsRaw)
       ? attrsLabelsRaw.map((l: any) => typeof l === "string" ? l : l?.title).filter(Boolean)
       : (Array.isArray(eventLabelsRaw) ? eventLabelsRaw.map((l: any) => l?.title).filter(Boolean) : [])
+    const noWake = noWakeLabelIn(ruleLabels, this.config.noWakeLabel)
+    if (noWake) {
+      this.log(`Issue #${attrs.iid} on ${project} skipped: "${attrs.action ?? "event"}" on an issue labelled "${noWake}" (channels.gitlab.noWakeLabel)`)
+      res.writeHead(200); res.end("ok"); return
+    }
     const ruleDecision = this.rules?.shouldFireGitlabIssue(project, {
       action: attrs.action,
       state: attrs.state,
@@ -1365,6 +1381,11 @@ export class GitLabAdapter implements ChannelAdapter {
     const mrLabels = Array.isArray(mrLabelsRaw)
       ? mrLabelsRaw.map((l: any) => typeof l === "string" ? l : l?.title).filter(Boolean)
       : (Array.isArray(mrEventLabels) ? mrEventLabels.map((l: any) => l?.title).filter(Boolean) : [])
+    const mrNoWake = noWakeLabelIn(mrLabels, this.config.noWakeLabel)
+    if (mrNoWake) {
+      this.log(`MR !${attrs.iid} on ${project} skipped: "${attrs.action ?? "event"}" on an MR labelled "${mrNoWake}" (channels.gitlab.noWakeLabel)`)
+      res.writeHead(200); res.end("ok"); return
+    }
     const mrRuleDecision = this.rules?.shouldFireGitlabMR(project, {
       action: attrs.action,
       state: attrs.state,

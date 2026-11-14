@@ -705,6 +705,10 @@ const channelsConfigSchema = z.object({
      *  ["team-"], an agent with no agentMappings row answers to @<id> and
      *  @team-<id>. Default: only @<id>. */
     agentUsernamePrefixes: z.array(z.string().min(1)).default([]),
+    /** An issue or MR carrying this label starts no run on any event or
+     *  note, with or without a project rule (noqta/noqta#800). "" turns
+     *  it off. */
+    noWakeLabel: z.string().default("agent:no-wake"),
   }).default({}),
   github: z.object({
     enabled: z.boolean().default(false),
@@ -759,6 +763,10 @@ const channelsConfigSchema = z.object({
     /** Adding this label to an issue or pull request starts a run, whoever
      *  adds it (#1719). A comment starts one only with an @-mention. */
     triggerLabel: z.string().min(1).default("agentx"),
+    /** An issue or pull request carrying this label starts no run: not on
+     *  opening, a label change or a comment, with or without a project
+     *  rule (noqta/noqta#800). "" turns it off. */
+    noWakeLabel: z.string().default("agent:no-wake"),
   }).default({}),
   /** ntfy push notifications — outbound only. The operator-facing tap on
    *  the shoulder: cron failures, task errors, and anything an agent decides

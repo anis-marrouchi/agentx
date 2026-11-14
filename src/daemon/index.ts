@@ -3775,6 +3775,7 @@ export class AgentXDaemon {
           // (re)start. Add/remove an agent → no GitLab config change needed.
           knownAgentIds: Object.keys(this.config.agents),
           agentUsernamePrefixes: this.config.channels.gitlab.agentUsernamePrefixes,
+          noWakeLabel: this.config.channels.gitlab.noWakeLabel,
           // An agent's token declared in its integrations[] (gitlab-user,
           // tokenEnv), read from the live config so a reload applies (#1745).
           integrationToken: (agentId: string) => gitlabIntegrationToken(this.config, agentId).token,
@@ -3879,6 +3880,7 @@ export class AgentXDaemon {
           pullRequestActions: githubConfig.pullRequestActions,
           ignoreOwnChanges: githubConfig.ignoreOwnChanges,
           debounceSeconds: githubConfig.debounceSeconds,
+          noWakeLabel: githubConfig.noWakeLabel,
         },
         this.log,
       )
