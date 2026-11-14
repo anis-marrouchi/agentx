@@ -153,7 +153,7 @@ export function measureContract(db: Database.Database, opts: ContractOptions): C
       if (l.kind === "delegation") dlgOf.set(l.ref, l.request_id)
       else runOf.set(l.ref, l.request_id)
     }
-    for (const r of db.prepare("SELECT * FROM requests WHERE state != 'candidate' AND (closed_at IS NULL OR closed_at >= ?)").all(since - 24 * HOUR) as any[]) reqs.set(r.id, r)
+    for (const r of db.prepare("SELECT * FROM requests WHERE state NOT IN ('candidate', 'job') AND (closed_at IS NULL OR closed_at >= ?)").all(since - 24 * HOUR) as any[]) reqs.set(r.id, r)
   }
   // The request open in a chat at a time: a callback turn in the owner's
   // chat belongs to the request its delegation was linked to.

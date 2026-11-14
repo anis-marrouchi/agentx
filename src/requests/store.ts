@@ -699,15 +699,17 @@ export class RequestStore {
     ).all(now, quietBefore).map(toRecord)
   }
 
+  /** A row that is only a job (state 'job', #1861) is not a request: the
+   *  job store reads those. */
   get(id: string): RequestRecord | null {
-    const row = this.db.prepare("SELECT * FROM requests WHERE id = ?").get(id)
+    const row = this.db.prepare("SELECT * FROM requests WHERE id = ? AND state != 'job'").get(id)
     return row ? toRecord(row) : null
   }
 
-  /** The request a run, delegation or card belongs to. */
+  /** The request a run, delegation or card belongs to. Never a job row. */
   byLink(kind: LinkKind, ref: string): RequestRecord | null {
     const row = this.db.prepare(
-      "SELECT r.* FROM requests r JOIN request_links l ON l.request_id = r.id WHERE l.kind = ? AND l.ref = ?",
+      "SELECT r.* FROM requests r JOIN request_links l ON l.request_id = r.id WHERE l.kind = ? AND l.ref = ? AND r.state != 'job'",
     ).get(kind, ref)
     return row ? toRecord(row) : null
   }

@@ -145,6 +145,7 @@ import { GuestHostStore, askHost } from "@/guests/hosts"
 import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { handleJobsApi } from "@/jobs/api"
+import { dbFacts } from "@/jobs/facts"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
 import { runDriftSweep } from "@/requests/drift/sweep"
@@ -716,11 +717,13 @@ export class AgentXDaemon {
         this.recordInboundDispatch(agentId, context, message, senderAgentId),
       onStarted: (rec) => {
         this.requests?.tracker.delegationStarted(rec)
+        this.requests?.doors.delegationStarted(rec)
         this.status?.board.delegationStarted(rec)
         void this.watchers?.checkpoint.delegationStarted(rec)
       },
       onDone: (rec, result) => {
         this.requests?.tracker.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
+        this.requests?.doors.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
         this.status?.board.delegationDone(rec, result.status, result.waiting?.dueAt)
         this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text, result.waiting?.dueAt)
           .catch((e: any) => this.log(`[watchers] end of ${rec.id}: ${e?.message ?? e}`))
@@ -3255,6 +3258,12 @@ export class AgentXDaemon {
     // Only when the mode is not off do the owner's words go to the model
     // before a close (#692 S8). One run at a time per request.
     if ((this.config.requests.closeProof?.mode ?? "off") !== "off") void this.deliverablesReader(requests).run()
+    // Finished jobs age out like closed requests (#1861).
+    try {
+      requests.jobs.pruneDone(Date.now() - this.config.requests.retentionDays * 86_400_000)
+    } catch (e: any) {
+      this.log(`[jobs] retention failed: ${e?.message ?? e}`)
+    }
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
@@ -5776,7 +5785,9 @@ export class AgentXDaemon {
       // The job ledger (#1861): every piece of assigned work, read only.
       if (path === "/jobs" || path.startsWith("/jobs/")) {
         if (!this.requests) { this.json(res, 503, { error: "jobs need the database" }); return }
-        const reply = handleJobsApi(req.method || "GET", path, { store: this.requests.jobs, query: url.searchParams })
+        const reply = handleJobsApi(req.method || "GET", path, {
+          store: this.requests.jobs, query: url.searchParams, ...(this.db ? { facts: dbFacts(this.db) } : {}),
+        })
         this.json(res, reply.status, reply.body)
         return
       }

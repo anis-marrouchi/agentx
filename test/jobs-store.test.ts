@@ -88,7 +88,9 @@ describe("a job opened at another door", () => {
     expect(requests.withoutHeadline()).toEqual([])
     expect(requests.flowRows(0)).toEqual([])
     expect(requests.query({ states: [...OPEN_STATES, "done", "declined", "dropped"], limit: 10 }).total).toBe(0)
-    expect(requests.get("job-1")!.state).toBe(JOB_ROW_STATE)
+    expect(requests.get("job-1")).toBeNull()
+    expect(requests.byLink("run", "run-job-1")).toBeNull()
+    expect(db.prepare("SELECT state FROM requests WHERE id = 'job-1'").pluck().get()).toBe(JOB_ROW_STATE)
   })
 })
 

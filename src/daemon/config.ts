@@ -1763,6 +1763,13 @@ export const requestsConfigSchema = z.object({
   }).default({}),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
+  /** The job ledger (src/jobs, #1861): one record for every run that is
+   *  not the owner's turn too (hand-offs between agents, issue mentions,
+   *  crons, workflow steps). Needs `enabled` above. */
+  jobs: z.object({
+    /** Off: only the owner's turns leave a record, as before jobs. */
+    enabled: z.boolean().default(true),
+  }).default({}),
   /** Resend once (src/requests/resend.ts, #1542): a request that needs
    *  attention because a usage limit or a restart stopped it is sent back
    *  to its agent one time, on its own. The owner is told only if that

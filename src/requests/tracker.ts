@@ -73,6 +73,9 @@ export interface RequestSettings {
   /** Proof per deliverable before a close by check (close-proof.ts,
    *  #692). Unset: off. */
   closeProof?: Partial<CloseProofSettings>
+  /** The job ledger (#1861): a job for every run that is not the owner's
+   *  turn. Unset: on. */
+  jobs?: { enabled: boolean }
 }
 
 /** The chat of a card's promise when no turn names one: the card itself. */
