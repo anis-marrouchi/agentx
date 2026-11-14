@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.223.0](https://github.com/anis-marrouchi/agentx/compare/v0.222.0...v0.223.0) (2026-11-14)
+
+
+### Features
+
+* **routing:** move a hard task to the edge model and ask for sub-agents ([#1859](https://github.com/anis-marrouchi/agentx/issues/1859)) ([e41ea44](https://github.com/anis-marrouchi/agentx/commit/e41ea4403a54f1a18da61506e18a7ea07ff47317))
+
 ## [0.222.0](https://github.com/anis-marrouchi/agentx/compare/v0.221.1...v0.222.0) (2026-11-14)
 
 
