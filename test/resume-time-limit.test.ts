@@ -101,6 +101,8 @@ describe("registry.execute after a time-limit stop", () => {
       node: { id: "t", name: "t" },
       agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir } },
       resume,
+      // The job-state ask (run-state.test.ts) would add a turn here.
+      jobState: { enabled: false },
     })
     const logs: string[] = []
     const r = new AgentRegistry(config, (...a: unknown[]) => logs.push(a.join(" ")))

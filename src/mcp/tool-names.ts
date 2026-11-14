@@ -16,6 +16,7 @@ export const AGENTX_TOOL_NAMES: readonly string[] = [
   "agentx_emit",
   "agentx_signal",
   "agentx_waiting",
+  "agentx_job_state",
   "agentx_send_contact",
   "agentx_task",
   "agentx_agents",

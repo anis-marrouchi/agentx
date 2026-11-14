@@ -2425,6 +2425,15 @@ export const daemonConfigSchema = z.object({
       maxContinuations: z.number().int().min(0).max(3).default(1),
     }).default({}),
   }).default({}),
+  /** A run of agent work ends by stating its job's state: done (proof),
+   *  continue, waiting or blocked (#1861 phase 2, agents/run-state.ts).
+   *  One that states nothing is asked once in the same session; still
+   *  nothing, its answer says the job is stalled. Chat with a person is
+   *  never checked. */
+  jobState: z.object({
+    enabled: z.boolean().default(true),
+    channels: z.array(z.string()).default(["a2a", "cron", "reminder", "events"]),
+  }).default({}),
   /** Admission queue (src/admission, #1521): every new agent session waits
    *  in one priority queue until the node has room (memory, swap, disk,
    *  load), is under its session caps, and the start pace allows it.
