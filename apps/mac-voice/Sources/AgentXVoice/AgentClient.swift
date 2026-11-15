@@ -275,9 +275,12 @@ enum AgentClient {
     static func ask(_ message: String, agent: String, handsFree: Bool = false, request: String? = nil) async throws -> Answer {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)/ask")!)
         req.httpMethod = "POST"
-        // An agent turn routinely takes minutes. The default 60s would cut
-        // off exactly the thoughtful answers worth waiting for.
-        req.timeoutInterval = 600
+        // An agent turn routinely takes minutes, and before it starts it
+        // may wait up to an hour for room on the computer (the daemon's
+        // admission queue). The daemon always ends the wait itself: with
+        // the answer, or with why there is none. Giving up here first
+        // showed "The request timed out" for a turn that was still coming.
+        req.timeoutInterval = OpenRequests.askTimeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var payload: [String: Any] = ["message": message, "session": Config.voiceSession]
         // No agent known: the daemon answers with its default agent.
@@ -367,12 +370,13 @@ enum AgentClient {
         let since: Double
         let heard: Bool
         let error: String?
+        let held: String?
 
         var remote: OpenRequests.Remote {
             OpenRequests.Remote(key: id, agentID: agentId, question: question,
                                 sentAt: Date(timeIntervalSince1970: sentAt / 1000),
                                 since: Date(timeIntervalSince1970: since / 1000),
-                                state: state, heard: heard, error: error)
+                                state: state, heard: heard, error: error, held: held)
         }
     }
 

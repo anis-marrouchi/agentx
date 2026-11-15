@@ -22,7 +22,7 @@ Two things can start while these checks say no, on purpose:
 
 - If nothing of AgentX's is running, one session still starts even when memory is short (`admission.allowOneWhenIdle`). The pressure then comes from other programs, and a machine that never answers is worse than one slow answer. Set it to `false` to hold everything.
 - Owner work skips the start pace (below) and may go one session over the limit.
-- Critical work, such as an alert, is not held by the swap or load checks. See [Alerts that must not wait](#alerts-that-must-not-wait).
+- Owner work, and critical work such as an alert, is not held by the swap or load checks. See [Alerts that must not wait](#alerts-that-must-not-wait).
 
 When a running agent hands part of its work to a helper agent, the helper may go two sessions over the limit (`admission.delegationHeadroom`). The first agent keeps its place while it waits for the helper, so without this room a full machine would wait on itself.
 
@@ -30,7 +30,7 @@ When a running agent hands part of its work to a helper agent, the helper may go
 
 The queue is ordered by priority, then by age:
 
-1. **owner**: you, on voice or the phone app, or anyone with the owner role in `people`. Owner work may go one session over the limit (`admission.ownerExtraSessions`) but never past the memory, swap, disk or load checks.
+1. **owner**: you, on voice or the phone app, or anyone with the owner role in `people`. Owner work may go one session over the limit (`admission.ownerExtraSessions`) and is not held by the swap or load checks, but never goes past the memory or disk checks.
 2. **critical**: agents listed in `admission.priority.criticalAgents`, and messages sent with `"priority": "critical"` (see below).
 3. **normal**: everything else, such as chat messages and messages from other agents.
 4. **background**: scheduled jobs and heartbeats (`admission.priority.backgroundChannels`).
@@ -47,6 +47,8 @@ Critical work is therefore not held by the swap check or the load check. It stil
 - the start pace (below) says wait.
 
 Only the time held by these checks counts toward `admission.maxWaitMinutes`, so critical work is never refused because swap stayed high.
+
+Owner work follows the same rule, for the same reason: you are waiting for the answer, and owner work ranks above critical work. Something you say to the desktop assistant or type in the phone app starts while swap is high, as long as free memory and free disk are above their limits. On a machine that is really short of memory it still waits, and the desktop assistant then shows **Waiting for room** on the request (see below).
 
 To send a message as critical, add `"priority": "critical"` to a `POST /send/agent` request, or `priority: "critical"` to the `agentx_send_agent` tool. It works for an agent on another machine too. For example (terminal):
 
@@ -68,6 +70,8 @@ When AgentX stops, chat messages still waiting are not lost: they run again afte
 A chat message that has waited 2 minutes (`admission.waitNotice.afterSeconds`, default `120`; `0` turns it off) gets one written line on its thread. The line says the message arrived, why it has not started yet, and that the answer will come there. Only channels in `admission.waitNotice.channels` get it (default `["gitlab"]`).
 
 The line is sent once per message, also across restarts. On GitLab it is a top-level note that everyone on the project can read, so it holds a plain reason only ("short of free disk space", "working on another request"), never numbers or machine names. The full reason is in the log, on the line that starts with `[wait-notice]`.
+
+A request made with the desktop assistant is told the same way, without a setting for the channel: after the same wait, its row in the assistant's requests list changes from **Thinking** to **Waiting for room**, and the pill says once that the answer will still come. The row goes back to **Thinking** when the session starts. The assistant keeps waiting for the answer for as long as the queue may hold it.
 
 On the same channels, the two ends without a start are also told in plain words:
 
@@ -134,6 +138,7 @@ In an emergency, start the daemon with the environment variable `AGENTX_ADMISSIO
 ## If something is wrong
 
 - **Work waits a long time.** Run `agentx queue` and read the "held by" line under each waiting item. If swap stays high long after the machine is quiet, raise `admission.maxSwapUsedMB`.
+- **The desktop assistant shows Waiting for room for a long time.** The machine is short of free memory or disk, which hold owner work too. Run `agentx queue` to see which, then close programs you are not using.
 - **An alert still waits.** Check that the sender adds `"priority": "critical"`. If `agentx queue` shows it held by `memory:`, `disk:` or `session cap`, that is on purpose: the machine is really short.
 - **The log says `no idle session to close` and work keeps waiting.** Every open session is in use, or the memory is held by other programs. Stop those programs or wait for the running work to finish.
 - **Chats often start slower while the machine is busy.** Idle sessions are being closed to make room. Raise `admission.closeIdle.minQuietSeconds` to keep them open longer.

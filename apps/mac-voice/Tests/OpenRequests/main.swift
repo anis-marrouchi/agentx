@@ -261,6 +261,29 @@ check(failing.requests.count == 1 && failing.request(failed1)?.phase == .thinkin
       && failing.request(failed1)?.question == "what's on thursday", "in the same row, thinking")
 check(OpenRequests.askAgain == "Ask again" && OpenRequests.loadingAfter == 0.5, "the words and the half second of screen 7")
 
+// --- Waiting for room: the turn has not started on the daemon ---
+
+var roomy = OpenRequests()
+let heldID = roomy.add(agentID: "writer", question: "draft it", at: at(0))
+roomy.setKey(heldID, "rheld0001")
+var heldRow = remote("rheld0001", "writer", "thinking")
+heldRow.held = "Not started yet: the machine that runs me is short of free memory."
+let beforeHeld = roomy.requests
+roomy.sync([heldRow])
+check(roomy.request(heldID)?.isHeld == true, "a row this app runs is held when the daemon says so")
+check(OpenRequests.stateWords(roomy.request(heldID)!, now: at(125)).hasPrefix("Waiting for room, "), "a held row says it waits for room, not that it thinks")
+check(OpenRequests.voiceOver(name: "Writer", roomy.request(heldID)!, now: at(125)).contains("Waiting for room on this computer"), "VoiceOver says so too")
+check(OpenRequests.newlyHeld(before: beforeHeld, now: roomy.requests).map(\.id) == [heldID], "it is said once, when it becomes held")
+check(OpenRequests.newlyHeld(before: roomy.requests, now: roomy.requests).isEmpty, "and not again while it stays held")
+check(roomy.request(heldID)?.phase == .thinking && roomy.request(heldID)?.isNew == false, "held is not a failure and not an answer")
+roomy.sync([remote("rheld0001", "writer", "thinking")])
+check(roomy.request(heldID)?.isHeld == false, "the turn started: it thinks")
+roomy.sync([heldRow])
+roomy.answered(heldID, at: at(200))
+check(roomy.request(heldID)?.held == nil, "an answer clears it")
+check(OpenRequests.askTimeout >= 3600 + 600, "the app waits longer than the daemon's longest queue wait")
+check(OpenRequests.heldNote(name: "Writer") == "Writer is waiting for room on this Mac · the answer will come", "the pill's line for a held turn")
+
 if failures > 0 {
     print("\(failures) failed")
     exit(1)

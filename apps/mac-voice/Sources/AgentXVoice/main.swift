@@ -1449,6 +1449,12 @@ final class App: NSObject, NSApplicationDelegate {
         for agent in Set(requests.requests.filter { $0.phase == .waiting }.map(\.agentID)) {
             if let next = requests.startNext(for: agent, at: now) { run(next) }
         }
+        // A turn that cannot start yet: said once on the pill, so a long
+        // wait is not mistaken for a lost request.
+        for r in OpenRequests.newlyHeld(before: before, now: requests.requests) {
+            Log.info("request \(r.id) waits for room (\(r.agentID)): \(r.held ?? "")")
+            note(OpenRequests.heldNote(name: statusMenu.name(of: r.agentID)))
+        }
         if requests.requests != before { requestsChanged() }
     }
 
