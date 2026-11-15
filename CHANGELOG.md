@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.226.3](https://github.com/anis-marrouchi/agentx/compare/v0.226.2...v0.226.3) (2026-11-15)
+
+
+### Bug Fixes
+
+* owner turns pass the swap hold, and a held desktop request says it waits for room ([#1884](https://github.com/anis-marrouchi/agentx/issues/1884)) ([bc2196c](https://github.com/anis-marrouchi/agentx/commit/bc2196c536c0c4b24be59c2b4db238092cccccd9))
+
 ## [0.226.2](https://github.com/anis-marrouchi/agentx/compare/v0.226.1...v0.226.2) (2026-11-15)
 
 
