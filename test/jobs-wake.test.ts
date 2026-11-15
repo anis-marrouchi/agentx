@@ -286,7 +286,7 @@ describe("the wake", () => {
   })
 
   it("has its settings in the config, on by default", () => {
-    expect(requestsConfigSchema.parse({}).jobs).toEqual({ enabled: true, wake: DEFAULT_WAKE_SETTINGS })
+    expect(requestsConfigSchema.parse({}).jobs).toEqual({ wake: DEFAULT_WAKE_SETTINGS })
   })
 
   it("tells the woken run what to do", () => {

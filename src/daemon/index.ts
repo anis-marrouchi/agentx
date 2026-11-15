@@ -148,6 +148,7 @@ import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { handleJobsApi, type JobView } from "@/jobs/api"
 import { JobMesh } from "@/jobs/mesh"
+import { jobsOn } from "@/jobs/doors"
 import { dbFacts } from "@/jobs/facts"
 import { DEFAULT_WAKE_SETTINGS, JobWake, markWake, wakeContext } from "@/jobs/wake"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
@@ -789,7 +790,7 @@ export class AgentXDaemon {
           const requests = this.requests
           const jobWake = new JobWake({
             jobs: requests.jobs,
-            settings: () => (this.config.requests.enabled && this.config.requests.jobs.enabled
+            settings: () => (jobsOn(this.config.requests)
               ? this.config.requests.jobs.wake : { ...DEFAULT_WAKE_SETTINGS, enabled: false }),
             facts: dbFacts(db),
             // An owner's request is woken as a pick-up, in its own chat,
@@ -946,7 +947,7 @@ export class AgentXDaemon {
           backgroundMaxMs: (poolCfg.maxBackgroundSeconds ?? 10800) * 1000,
           // The longer limit is part of the job wake: with the wake off,
           // nothing waits on the work, and the process ends as before.
-          keepBackground: () => this.config.requests.enabled && this.config.requests.jobs.enabled && this.config.requests.jobs.wake.enabled,
+          keepBackground: () => jobsOn(this.config.requests) && this.config.requests.jobs.wake.enabled,
           sweepIntervalMs: (poolCfg.sweepIntervalSeconds ?? 5) * 1000,
           // Drift detection: re-read each handle's workspace CLAUDE.md
           // hash on every sweep. When the hash changes (user edited
@@ -2707,7 +2708,7 @@ export class AgentXDaemon {
         // Jobs (#1861): start the wakes that are due, mark what nobody holds.
         try { this.jobWake?.tick() } catch (e: any) { this.log(`[jobs] check failed: ${e?.message ?? e}`) }
         // Beside the tick, never inside it: a peer may take seconds to answer.
-        if (this.config.requests.enabled && this.config.requests.jobs.enabled) void this.jobMesh?.refresh()
+        if (jobsOn(this.config.requests)) void this.jobMesh?.refresh()
         this.statusDriftTick()
         this.status?.board.sweep()
         // The Reminders mirror (#1062): beside the sweep, because the OS
@@ -9693,7 +9694,7 @@ export class AgentXDaemon {
       // The same while follow-up workflows are on, for agentx_workflow (#788).
       // And while workflows.required is on for the agent, for its plan (#858).
       const followUp = this.config.workflows.enabled && ((this.config.workflows.followUp.enabled && (this.config.workflows.followUp.agents[agentId] ?? true)) || requiredFor(this.config.workflows, agentId))
-      const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled || followUp ? agentxToolServer() : null)
+      const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled || jobsOn(this.config.requests) || followUp ? agentxToolServer() : null)
       try {
         const result = syncMcpToWorkspace(ws, mcp)
         switch (result) {

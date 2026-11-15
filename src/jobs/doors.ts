@@ -24,6 +24,14 @@ export interface JobDoorSettings {
 
 export const DEFAULT_JOB_SETTINGS: JobDoorSettings = { enabled: true }
 
+/** Is the job ledger on? `requests.jobs.enabled` when it is set; unset,
+ *  it follows `requests.enabled`. So a node can keep jobs without
+ *  tracking the owner's requests, and an install that set nothing
+ *  behaves as before. */
+export function jobsOn(requests: { enabled: boolean; jobs?: { enabled?: boolean } }): boolean {
+  return requests.jobs?.enabled ?? requests.enabled
+}
+
 /** What a run that ended cleanly without declaring a state leaves. */
 export const RUN_ENDED_PROOF = "the run ended without error (no state declared)"
 

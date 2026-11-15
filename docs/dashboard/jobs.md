@@ -113,6 +113,8 @@ Two older paths now go through the job's wake:
 
 Both count toward the job's caps. Time-limit continuation and pick-up still work as before, and a run they start stays on the same job. They and the older delegation log and watcher table are due to be removed on Monday 16 November 2026 at 12:00 UTC, unless Anis decides otherwise.
 
+Jobs are kept while `requests.enabled` is on. To keep jobs on a node where requests are off, set `requests.jobs.enabled` to `true`: every run that is not your own turn gets its job, and your own requests leave no record there. Set it to `false` to keep no jobs at all.
+
 To turn the wake and the check off, set `requests.jobs.wake.enabled` to `false` in `agentx.json`. An agent's process with background work open is then stopped after 45 minutes again, not 3 hours. The settings are listed under [`requests`](../reference/config-automation.md#requests).
 
 ## Read the jobs from a script
