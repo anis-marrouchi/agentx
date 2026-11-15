@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.226.1](https://github.com/anis-marrouchi/agentx/compare/v0.226.0...v0.226.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **jobs:** a stalled job is told to the one who asked ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861)) ([#1879](https://github.com/anis-marrouchi/agentx/issues/1879)) ([3c012ef](https://github.com/anis-marrouchi/agentx/commit/3c012ef3a5356d595ccbd8d23155b12e00793583))
+* **jobs:** the job ledger has its own switch ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861)) ([#1878](https://github.com/anis-marrouchi/agentx/issues/1878)) ([988e040](https://github.com/anis-marrouchi/agentx/commit/988e040f58cd21a9fdf418f682e2335669ea6d49))
+
 ## [0.226.0](https://github.com/anis-marrouchi/agentx/compare/v0.225.0...v0.226.0) (2026-11-14)
 
 
