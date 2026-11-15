@@ -123,6 +123,7 @@ Open it one of three ways:
 |---|---|---|
 | **Thinking, 1:12** | The agent is working on it, for 1 minute 12 seconds so far | Nothing yet |
 | **Waiting its turn** | Another request to the same agent goes first | Nothing yet |
+| **Waiting for room, 3:40** | The computer has no room to start the agent yet (it is short of free memory or disk). The request is in [the session queue](/jobs/session-queue) and starts on its own | Nothing yet |
 | A blue dot and **Answer ready** | The answer is back and you haven't heard it | Hear it. The answer plays and its text shows in the pill |
 | **Heard** | You have heard it | See its text again. **Listen again** in the pill plays it |
 | **Couldn't answer** | The agent could not answer | See why, under the row, with **Ask again** |
@@ -1568,7 +1569,8 @@ To check the phone side, with the [phone app](./mobile-chat.md) paired and a pas
 - **A daemon on another machine refuses it:** the widget can't send a mesh token yet. Use a daemon on the same Mac.
 - **A question you started with a name went to the ticked agent:** the name matched no agent, or more than one. Check the ids and `mentions` with `agentx agent list`, or try it with the curl in [Check it worked](#check-it-worked). For an agent on another computer, run `agentx mesh list`: that computer must say `healthy`. If two computers have an agent with that name, say its id.
 - **No small orbs while two agents work:** the row counts only questions asked from this Mac's assistant, and answers waiting in its speaking queue. A task an agent runs for someone else doesn't show.
-- **A second question to the same agent waits a long time:** it waits until that agent has finished answering the request before it. The assistant gives up after 10 minutes, and the row says **Couldn't answer**. Pick it to see why.
+- **A second question to the same agent waits a long time:** it waits until that agent has finished answering the request before it. The assistant waits for as long as AgentX may hold the request (an hour in the queue by default, then the agent's own time limit). If AgentX gives up, the row says **Couldn't answer**. Pick it to see why.
+- **A request says Waiting for room:** the computer is short of free memory, so the agent has not started. The pill says so once. The answer still comes; to get it sooner, close programs you are not using.
 - **An answer is never spoken:** answers wait until you pick them in the [open-requests list](#open-requests). Point at the pill or press **Command–Option–O**, then pick the row with the blue dot. To hear answers as soon as they are back, tick **Play answers at once** in the menu.
 - **No soft sound when an answer is ready:** **Hold notifications** is ticked, or someone holds [the floor](#one-speaker-at-a-time-the-floor). The blue dot and **1 new** still show.
 - **The open-requests list is empty after a restart:** the app reads the list from the daemon every few seconds. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/requests`. An empty `requests` means every row was closed; your questions and answers are in **History…**. An error means the daemon is older than the list or not running: run `agentx daemon status`.

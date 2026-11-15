@@ -1,4 +1,5 @@
 import { hookOutput as midTurnHookOutput } from "@/agents/mid-turn"
+import { heldLine } from "@/admission/wait-notice"
 import { handleLookup } from "@/daemon/lookup-api"
 import { emitSignal, setSignalDb } from "@/improve/signals"
 import { openCodeProcessPool } from "@/agents/opencode-process"
@@ -8929,6 +8930,12 @@ export class AgentXDaemon {
                 ? { channel: "app", sender: VOICE_SENDER, chatId: thread.chatId, via: "voice" as const }
                 : { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
               intentRef,
+              // Held by the node for a while (admission.waitNotice): the row
+              // says so, so the client shows "waiting for room", not silence.
+              ...(requestId && this.voiceRequests ? {
+                onHeld: (w: { blockedBy: string[] }) => this.voiceRequests?.hold(requestId, heldLine(w.blockedBy)),
+                onStart: () => this.voiceRequests?.started(requestId),
+              } : {}),
             })
 
             // Who is speaking, and in what voice — the client has no other

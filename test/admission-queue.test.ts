@@ -92,17 +92,18 @@ describe("admission gate (#1521)", () => {
     hold.ticket!.release()
   })
 
-  it("lets owner turns go one over the cap, never past resources", async () => {
-    const { q, res } = setup({ maxSessions: 1, ownerExtraSessions: 1 })
+  it("lets owner turns go one over the cap, never past short memory", async () => {
+    const { q, res } = setup({ maxSessions: 2, ownerExtraSessions: 1 })
     ask(q, "a")
     await tick(); await tick()
     const owner = ask(q, "v", { channel: "voice" })
     await tick(); await tick()
     expect(owner.ticket).toBeTruthy()
-    res.current = { ...roomy, swapUsedMB: 7000 }
+    res.current = { ...roomy, memAvailableMB: 200 }
     const owner2 = ask(q, "v2", { owner: true })
     await tick(); await tick()
     expect(owner2.ticket).toBeUndefined()
+    expect(q.snapshot().waiting[0].blockedBy.join()).toMatch(/memory: 200 MB available/)
   })
 
   it("a full class only holds its own runs", async () => {
@@ -314,13 +315,29 @@ describe("critical fast lane (#1807)", () => {
     expect(alert.ticket).toBeTruthy()
   })
 
-  it("passes a run ahead of it that only swap holds", async () => {
-    const { q } = await busy()
+  it("an owner turn is not held by swap or load either, while normal work waits", async () => {
+    const { q, logs } = await busy()
+    const normal = ask(q, "normal")
     const owner = ask(q, "owner", { channel: "voice" })
     const alert = ask(q, "alert", { atLeast: "critical" })
     await tick(); await tick()
-    expect(owner.ticket).toBeUndefined()
+    expect(owner.ticket).toBeTruthy()
     expect(alert.ticket).toBeTruthy()
+    expect(normal.ticket).toBeUndefined()
+    expect(logs.some((l) => /started owner \(owner\) past the gate \(swap: 6785 MB used/.test(l))).toBe(true)
+
+    const loaded = await busy({}, { load1: 40 })
+    const owner2 = ask(loaded.q, "owner", { owner: true })
+    await tick(); await tick()
+    expect(owner2.ticket).toBeTruthy()
+  })
+
+  it("an owner turn still waits while memory is short", async () => {
+    const { q } = await busy({}, { ...swapped, memAvailableMB: 300 })
+    const owner = ask(q, "owner", { channel: "voice" })
+    await tick(); await tick()
+    expect(owner.ticket).toBeUndefined()
+    expect(q.snapshot().waiting[0].blockedBy.join()).toMatch(/memory: 300 MB available/)
   })
 
   it("still waits while memory is short", async () => {

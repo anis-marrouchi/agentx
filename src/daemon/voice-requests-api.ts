@@ -58,6 +58,9 @@ export interface VoiceRequest {
   heard: boolean
   /** Why it failed, in one line. */
   error: string | null
+  /** While thinking: why its turn has not started yet (the machine has no
+   *  room), in one plain line. Null once the turn runs. */
+  held: string | null
   /** Closed rows are not listed; a reopen brings one back. */
   closed: boolean
   /** The phone app's conversation it ran in, if any. */
@@ -107,6 +110,7 @@ export class VoiceRequestStore {
       CREATE INDEX IF NOT EXISTS voice_requests_open ON voice_requests(closed_at, sent_at)`)
     const cols = db.prepare("PRAGMA table_info(voice_requests)").all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === "conversation_id")) db.exec("ALTER TABLE voice_requests ADD COLUMN conversation_id TEXT")
+    if (!cols.some((c) => c.name === "held")) db.exec("ALTER TABLE voice_requests ADD COLUMN held TEXT")
     this.chats = new AppChatStore(db)
     // The /ask that was holding a thinking row died with the last daemon:
     // nothing will ever answer it. Say so instead of thinking forever.
@@ -155,7 +159,7 @@ export class VoiceRequestStore {
   followUp(id: string, question: string, waiting = false, now = Date.now()): VoiceRequest | null {
     if (!ID_RE.test(id)) return null
     this.db.prepare(`UPDATE voice_requests SET question = ?, state = ?, since = ?,
-      heard_at = NULL, reply = NULL, error = NULL, closed_at = NULL WHERE id = ?`)
+      heard_at = NULL, reply = NULL, error = NULL, held = NULL, closed_at = NULL WHERE id = ?`)
       .run(question.slice(0, LIMITS.question), waiting ? "waiting" : "thinking", now, id)
     return this.get(id)
   }
@@ -170,6 +174,19 @@ export class VoiceRequestStore {
   start(id: string, now = Date.now()): void {
     if (!ID_RE.test(id)) return
     this.db.prepare("UPDATE voice_requests SET state = 'thinking', since = ? WHERE id = ? AND state IN ('waiting', 'thinking')").run(now, id)
+  }
+
+  /** Its turn waits in the admission queue: `why` is shown with the row
+   *  until the turn starts or the row is settled. */
+  hold(id: string, why: string): void {
+    if (!ID_RE.test(id)) return
+    this.db.prepare("UPDATE voice_requests SET held = ? WHERE id = ? AND state = 'thinking'").run(oneLine(why, LIMITS.error), id)
+  }
+
+  /** Its turn started: it is no longer held. */
+  started(id: string): void {
+    if (!ID_RE.test(id)) return
+    this.db.prepare("UPDATE voice_requests SET held = NULL WHERE id = ?").run(id)
   }
 
   /** /ask answered with `status` and `body`. A 2xx without an error is an
@@ -187,10 +204,10 @@ export class VoiceRequestStore {
     if (status >= 200 && status < 300 && !error) {
       let reply = JSON.stringify(body)
       if (reply.length > LIMITS.reply) reply = JSON.stringify({ ...body, full: null, ui: null })
-      this.db.prepare("UPDATE voice_requests SET state = 'answered', since = ?, reply = ?, error = NULL WHERE id = ?").run(now, reply, id)
+      this.db.prepare("UPDATE voice_requests SET state = 'answered', since = ?, reply = ?, error = NULL, held = NULL WHERE id = ?").run(now, reply, id)
     } else {
       const why = error ?? `The daemon answered ${status}.`
-      this.db.prepare("UPDATE voice_requests SET state = 'failed', since = ?, error = ? WHERE id = ?").run(now, oneLine(why, LIMITS.error), id)
+      this.db.prepare("UPDATE voice_requests SET state = 'failed', since = ?, error = ?, held = NULL WHERE id = ?").run(now, oneLine(why, LIMITS.error), id)
     }
   }
 
@@ -249,7 +266,7 @@ function toRequest(r: any): VoiceRequest {
   return {
     id: r.id, agentId: r.agent_id, question: r.question, state: r.state,
     sentAt: r.sent_at, since: r.since, heard: r.heard_at != null || readOnPhone,
-    error: r.error ?? null, closed: r.closed_at != null,
+    error: r.error ?? null, held: r.state === "thinking" ? r.held ?? null : null, closed: r.closed_at != null,
     conversationId: r.conversation_id ?? null,
   }
 }

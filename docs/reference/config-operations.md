@@ -456,7 +456,7 @@ The session queue: every new agent session waits until the machine has room. Rea
 | `boot.intervalSeconds` | `30` | The interval. |
 | `allowOneWhenIdle` | `true` | With nothing running, one session starts even when memory is short. |
 | `maxWaitMinutes` | `60` | Refuse work still waiting after this long, with a plain message; 0 = never. |
-| `waitNotice.afterSeconds` | `120` | One written line to the person whose chat message has waited this long; 0 = off. |
+| `waitNotice.afterSeconds` | `120` | One written line to the person whose chat message has waited this long; 0 = off. A desktop assistant request shows **Waiting for room** after the same wait. |
 | `waitNotice.channels` | `["gitlab"]` | Channels that get the wait line and the plain refusal and plan-limit lines. |
 | `sampleSeconds` | `5` | How often resources are read again while work waits. |
 | `classes` | `{}` | Named limits, e.g. `{ "browser": { "max": 1, "agents": ["web-tester"] } }`. |
@@ -466,7 +466,7 @@ The session queue: every new agent session waits until the machine has room. Rea
 | `closeIdle.settleSeconds` | `30` | Seconds between rounds, so the next reading shows what the last round freed. |
 | `priority.ownerChannels` | `["voice", "app"]` | Channels whose work runs at owner priority. |
 | `priority.ownerPeople` | `[]` | People ids whose work runs at owner priority. |
-| `priority.criticalAgents` | `[]` | Agents whose work runs at critical priority. Critical work (these agents, and messages sent with `"priority": "critical"`) is not held by the swap or load checks. |
+| `priority.criticalAgents` | `[]` | Agents whose work runs at critical priority. Critical work (these agents, and messages sent with `"priority": "critical"`) is not held by the swap or load checks; neither is owner work. |
 | `priority.backgroundChannels` | `["cron", "heartbeat", "routine"]` | Channels whose work runs last. |
 
 ## environment

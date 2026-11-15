@@ -50,6 +50,12 @@ struct OpenRequests {
         /// A follow-up spoken while it was thinking: asked as soon as the
         /// answer is back.
         var pending: String? = nil
+        /// From the daemon while it thinks: why its turn has not started
+        /// yet (the computer has no room). Nil once the turn runs.
+        var held: String? = nil
+
+        /// Thinking, but its turn has not started: it waits for room.
+        var isHeld: Bool { phase == .thinking && held != nil }
 
         /// An answer or a failure the owner has not seen yet.
         var isNew: Bool {
@@ -121,6 +127,7 @@ struct OpenRequests {
             requests[i].since = now
             requests[i].heard = false
             requests[i].local = true
+            requests[i].held = nil
             return busy ? .waits : .ask
         }
     }
@@ -133,17 +140,18 @@ struct OpenRequests {
         requests[i].pending = nil
         requests[i].phase = .thinking
         requests[i].since = now
+        requests[i].held = nil
         return true
     }
 
     /// The answer came back.
     mutating func answered(_ id: Int, at now: Date) {
-        update(id) { $0.phase = .answered; $0.since = now }
+        update(id) { $0.phase = .answered; $0.since = now; $0.held = nil }
     }
 
     /// The agent could not answer.
     mutating func failed(_ id: Int, reason: String, at now: Date) {
-        update(id) { $0.phase = .failed(reason); $0.since = now }
+        update(id) { $0.phase = .failed(reason); $0.since = now; $0.held = nil }
     }
 
     /// The oldest request waiting for `agentID`, now thinking, if there is
@@ -235,6 +243,8 @@ struct OpenRequests {
         let state: String
         let heard: Bool
         let error: String?
+        /// Why its turn has not started yet, while it thinks.
+        var held: String? = nil
 
         var phase: Phase {
             switch state {
@@ -260,6 +270,9 @@ struct OpenRequests {
         for i in requests.indices {
             guard let key = requests[i].key, let theirs = byKey[key] else { continue }
             if theirs.heard { requests[i].heard = true }
+            // Held or not is the daemon's to say, for a row this app runs
+            // too: its /ask is still open while the turn waits for room.
+            if requests[i].phase == .thinking, theirs.state == "thinking" { requests[i].held = theirs.held }
             guard !requests[i].local else { continue }
             if requests[i].phase != theirs.phase {
                 requests[i].phase = theirs.phase
@@ -275,7 +288,7 @@ struct OpenRequests {
             nextID += 1
             restore(Request(id: id, agentID: theirs.agentID, question: theirs.question, sentAt: theirs.sentAt,
                             phase: theirs.phase, since: theirs.since, heard: theirs.heard,
-                            key: theirs.key, local: false))
+                            key: theirs.key, local: false, held: theirs.state == "thinking" ? theirs.held : nil))
             joined.append(id)
         }
         return joined
@@ -408,7 +421,7 @@ struct OpenRequests {
     static func stateWords(_ r: Request, now: Date) -> String {
         switch r.phase {
         case .waiting: return "Waiting its turn"
-        case .thinking: return "Thinking, " + clock(Int(now.timeIntervalSince(r.since)))
+        case .thinking: return (r.isHeld ? "Waiting for room, " : "Thinking, ") + clock(Int(now.timeIntervalSince(r.since)))
         case .answered: return r.heard ? "Heard" : "Answer ready"
         case .failed: return "Couldn’t answer"
         }
@@ -422,7 +435,8 @@ struct OpenRequests {
         case .waiting: state = "Waiting its turn"
         case .thinking:
             let s = Int(now.timeIntervalSince(r.since))
-            state = s < 60 ? "Thinking" : "Thinking, \(s / 60) minute\(s / 60 == 1 ? "" : "s")"
+            let word = r.isHeld ? "Waiting for room on this computer" : "Thinking"
+            state = s < 60 ? word : "\(word), \(s / 60) minute\(s / 60 == 1 ? "" : "s")"
         case .answered: state = r.heard ? "Heard" : "Answer ready, not heard"
         case .failed: state = r.heard ? "Couldn’t answer" : "Couldn’t answer, not seen"
         }
@@ -446,6 +460,19 @@ struct OpenRequests {
 
     /// The pill's line when an answer comes back and waits.
     static func readyNote(name: String) -> String { "\(name) answered · hover or ⌘⌥O to hear it" }
+
+    /// The longest an /ask is waited for: the daemon's longest queue wait
+    /// (60 minutes by default) plus a long turn.
+    static let askTimeout: TimeInterval = 4 * 3600
+
+    /// The pill's line when a request's turn cannot start yet: the
+    /// computer has no room. It is not a failure; the answer still comes.
+    static func heldNote(name: String) -> String { "\(name) is waiting for room on this Mac · the answer will come" }
+
+    /// Rows held in `now` that were not held in `before`.
+    static func newlyHeld(before: [Request], now: [Request]) -> [Request] {
+        now.filter { r in r.isHeld && !(before.first { $0.id == r.id }?.isHeld ?? false) }
+    }
 
     /// The pill's line when a request fails.
     static func failedNote(name: String) -> String { "\(name) couldn’t answer · ⌘⌥O to see why" }

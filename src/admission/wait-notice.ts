@@ -25,6 +25,12 @@ export function plainWaitReason(blockedBy: string[]): string {
   return "the machine that runs me has no room yet"
 }
 
+/** The line kept with a voice or desktop request while its turn waits
+ *  (shown by the desktop assistant under the request). */
+export function heldLine(blockedBy: string[]): string {
+  return `Not started yet: ${plainWaitReason(blockedBy)}. It starts on its own when there is room.`
+}
+
 /** The one line posted after a run has waited admission.waitNotice.afterSeconds. */
 export function waitNoticeText(blockedBy: string[]): string {
   return `Received. I have not started yet because ${plainWaitReason(blockedBy)}. ` +

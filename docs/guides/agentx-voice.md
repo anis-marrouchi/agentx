@@ -279,6 +279,7 @@ Each row in the list shows the agent, what it is doing, the first words of your 
 |---|---|
 | **Thinking, 1:12** | The agent is still working on it |
 | **Waiting its turn** | You asked that agent again; this one goes when the first is answered |
+| **Waiting for room, 3:40** | The computer is short of free memory, so the agent has not started yet. Nothing is lost: it starts on its own and the answer comes. See [the session queue](/jobs/session-queue) |
 | A blue dot and **Answer ready** | The answer is back and you haven't heard it. Pick it to hear it |
 | **Heard** | You have heard it. Pick it to read it again; **Listen again** plays it |
 | **Couldn't answer** | Something went wrong. Pick it to see why, and choose **Ask again** to send the same words once more |

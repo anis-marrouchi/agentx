@@ -53,6 +53,34 @@ describe("VoiceRequestStore", () => {
     expect(store.list().map((r) => r.id)).toEqual([a.id, b.id])
   })
 
+  it("a held turn says why on its row until it starts or is settled", () => {
+    const store = new VoiceRequestStore(db, T0)
+    const r = store.create("writer", "draft the summary", false, T0)
+    expect(store.get(r.id)?.held).toBeNull()
+    store.hold(r.id, "Not started yet: the machine that runs me is short of free memory.")
+    expect(store.get(r.id)).toMatchObject({ state: "thinking", held: "Not started yet: the machine that runs me is short of free memory." })
+    store.started(r.id)
+    expect(store.get(r.id)?.held).toBeNull()
+
+    // Settled while held (refused after the longest wait): the reason goes.
+    store.hold(r.id, "Not started yet.")
+    store.settle(r.id, 500, { error: "no room" }, T0 + 5000)
+    expect(store.get(r.id)).toMatchObject({ state: "failed", held: null })
+    // A row that is not thinking is never marked held.
+    store.hold(r.id, "Not started yet.")
+    expect(store.get(r.id)?.held).toBeNull()
+    // A follow-up starts clean.
+    store.followUp(r.id, "again", false, T0 + 6000)
+    expect(store.get(r.id)).toMatchObject({ state: "thinking", held: null })
+  })
+
+  it("/ask marks its row held from the admission queue, and clears it when the turn starts", () => {
+    const src = readFileSync(path.join(__dirname, "../src/daemon/index.ts"), "utf8")
+    const ask = src.slice(src.indexOf('case "POST /ask":'), src.indexOf('case "POST /mesh/task":'))
+    expect(ask).toContain("onHeld: (w: { blockedBy: string[] }) => this.voiceRequests?.hold(requestId, heldLine(w.blockedBy))")
+    expect(ask).toContain("onStart: () => this.voiceRequests?.started(requestId)")
+  })
+
   it("a second request for a busy agent waits, and thinks once /ask takes it", () => {
     const store = new VoiceRequestStore(db, T0)
     const r = store.create("writer", "and the title", true, T0)
