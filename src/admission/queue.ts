@@ -19,12 +19,12 @@
 // Two ways past a closed gate, both on purpose and both settings:
 //   - allowOneWhenIdle: with nothing of ours running, one run starts even
 //     when resources are short. The pressure is not ours.
-//   - owner turns skip the pace and may go ownerExtraSessions over the cap
-//     (never past resources).
-//   - critical runs (an alert, a /send/agent with priority "critical") are
-//     not held by swap or load (#1807). macOS keeps swap in use long after
-//     memory pressure ends, so a swap hold can last an hour. Short memory,
-//     short disk, the session cap and the pace still hold them.
+//   - owner turns skip the pace and may go ownerExtraSessions over the cap.
+//   - critical runs (an alert, a /send/agent with priority "critical") and
+//     owner turns are not held by swap or load (#1807). macOS keeps swap in
+//     use long after memory pressure ends, so a swap hold can last an hour.
+//     Short memory, short disk and the session cap still hold them, and the
+//     pace still holds a critical run.
 // A helper run started by a running session (a delegation) may go
 // delegationHeadroom over the cap: its parent holds a place while it
 // waits for the helper, so without headroom a full node deadlocks.
@@ -284,9 +284,17 @@ export function gateReasons(r: ResourceSample, s: AdmissionSettings): string[] {
  *  high on macOS long after memory pressure ends, and load is not memory. */
 export const CRITICAL_SKIPS = ["swap:", "load:"]
 
+/** Priorities that go past the soft reasons above. The owner's own turn is
+ *  one: a person is waiting on it, and it ranks above critical, so it must
+ *  not sit an hour behind a swap reading an alert walks past. Short memory
+ *  and a full disk still hold both. */
+export function skipsSoftHolds(priority: AdmissionPriority): boolean {
+  return priority === "owner" || priority === "critical"
+}
+
 /** A gate reason that holds a run of this priority. */
 export function holdsPriority(reason: string, priority: AdmissionPriority): boolean {
-  return !(priority === "critical" && CRITICAL_SKIPS.some((p) => reason.startsWith(p)))
+  return !(skipsSoftHolds(priority) && CRITICAL_SKIPS.some((p) => reason.startsWith(p)))
 }
 
 /** The priority a caller may ask for on a task (#1807): only "critical".
@@ -500,7 +508,7 @@ export class AdmissionQueue {
       // so order is kept; the session cap does not, since a run behind it
       // with more headroom (owner, delegated helper) may still fit.
       const node: string[] = []
-      const skipsSoft = e.priority === "critical"
+      const skipsSoft = skipsSoftHolds(e.priority)
       if (holdAll === "all" || (holdAll === "soft" && !skipsSoft)) node.push("behind earlier work")
       const extra = e.priority === "owner" ? s.ownerExtraSessions : 0
       const sessionCap = cap + Math.max(extra, e.delegated ? s.delegationHeadroom : 0)
