@@ -185,6 +185,15 @@ export class JobDoors {
         on(same.id)
         return
       }
+      // A schedule's firing goes on with the job its earlier firing left
+      // to continue: the daemon does not wake a schedule's job itself.
+      const left = from.door === "cron" && from.requester ? jobs.continuedBySchedule(p.agentId, from.requester) : null
+      if (left) {
+        jobs.linkRun(left.id, runId, now)
+        jobs.working(left.id, now)
+        on(left.id)
+        return
+      }
       const id = dlg && !taken ? `job-${dlg}` : `job-${runId}`
       // A workflow step serves the request its workflow run is linked to.
       const wfRun = from.door === "workflow" && p.chatId.startsWith("workflow:") ? p.chatId.slice("workflow:".length) : null

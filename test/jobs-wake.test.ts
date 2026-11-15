@@ -269,6 +269,40 @@ describe("the wake", () => {
     expect(jobs.get("job-1")!.note).toMatch(/schedule's job is not woken.*What was left: the rest/)
   })
 
+  it("a schedule's job that continues is not stalled while its schedule is on: its next firing goes on with it", () => {
+    const w = new JobWake({
+      jobs, settings: () => settings, log: (m) => logs.push(m), now: () => clock, start: async () => ({}),
+      hasAgent: () => true, scheduleOn: (id) => id === "hourly",
+    })
+    const fire = (taskId: string) => ({ taskId, agentId: "coder", channel: "cron", chatId: "cron:hourly", messagePreview: "report" }) as any
+    doors.taskStarted(fire("run-1"))
+    jobs.declare("job-run-1", { state: "continue", wakeAt: clock + HOUR, note: "step 4 is open" }, { runId: "run-1", now: clock })
+    doors.taskCompleted({ ...fire("run-1"), finalResponse: "State: continue" })
+    clock += HOUR + MIN
+    expect(w.tick()).toEqual({ woken: 0, capped: 0, stalled: 0 })
+    expect(jobs.get("job-run-1")).toMatchObject({ state: "continue", wakeAt: clock + HOUR })
+    // The next firing is a run of the same job, not a new one.
+    doors.taskStarted(fire("run-2"))
+    expect(jobs.get("job-run-2")).toBeNull()
+    expect(jobs.byRun("run-2")!.id).toBe("job-run-1")
+    expect(jobs.get("job-run-1")).toMatchObject({ state: "working", wakeAt: null })
+    jobs.declare("job-run-1", { state: "done", proof: "report sent" }, { runId: "run-2", now: clock })
+    // With nothing left to continue, the firing after that opens its own job.
+    doors.taskStarted(fire("run-3"))
+    expect(jobs.get("job-run-3")!.state).toBe("working")
+  })
+
+  it("a schedule's job is stalled when its schedule is off or gone", () => {
+    const w = new JobWake({
+      jobs, settings: () => settings, log: (m) => logs.push(m), now: () => clock, start: async () => ({}),
+      hasAgent: () => true, scheduleOn: () => false,
+    })
+    open("job-1", { door: "cron", requester: "cron:gone", channel: "cron", chatId: "cron:gone" })
+    jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "the rest" }, { now: clock })
+    expect(w.tick().stalled).toBe(1)
+    expect(jobs.get("job-1")!.note).toMatch(/its schedule is off or gone/)
+  })
+
   it("a job whose agent is not here is stalled, not woken", () => {
     open("job-1", { assignee: "ghost" })
     jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
@@ -341,6 +375,93 @@ describe("the invariant, each minute", () => {
     expect(wake.tick().stalled).toBe(1)
     expect(jobs.get("req-1")!.state).toBe("stalled")
     expect(requests.get("req-1")!.state).toBe("in_progress")
+  })
+})
+
+describe("a stalled job is told to the one who asked", () => {
+  let sent: Array<{ to: string; text: string; id: string }>
+  let full: Set<string>
+  let teller: JobWake
+
+  beforeEach(() => {
+    sent = []; full = new Set()
+    teller = new JobWake({
+      jobs, settings: () => settings, log: (m) => logs.push(m), now: () => clock,
+      facts: (): JobFacts => ({ lastRunEndedAt: clock - HOUR }),
+      start: async () => ({}), hasAgent: (id) => id !== "ghost",
+      tell: (to, text, job) => { if (full.has(to)) return false; sent.push({ to, text, id: job.id }); return true },
+    })
+  })
+
+  it("a job stalled by the minute check ends with its requester told, by one message", () => {
+    open("job-1", { home: { kind: "issue", link: "acme/app#12" } })
+    jobs.declare("job-1", { state: "waiting", on: "devops", until: clock + HOUR }, { now: clock })
+    clock += 2 * HOUR
+    expect(teller.tick().stalled).toBe(1)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ to: "pm", id: "job-1" })
+    expect(sent[0].text).toMatch(/^\[Job stalled\] job-1: the work you asked coder for is stalled: waited on devops until .*, and nothing came\./)
+    expect(sent[0].text).toContain("It was: build the report")
+    expect(sent[0].text).toContain("Where the work lives: acme/app#12")
+    expect(jobs.get("job-1")!.requesterToldAt).toBe(clock)
+    expect(jobs.stalledUntold()).toEqual([])
+    // Once: the next checks send nothing more.
+    clock += MIN
+    teller.tick()
+    expect(sent).toHaveLength(1)
+  })
+
+  it("a job stalled at its wake (a cap, an agent that is gone) is told too", () => {
+    open("job-cap")
+    jobs.declare("job-cap", { state: "continue", wakeAt: clock, note: "the rest" }, { now: clock })
+    settings.maxWakes = 0
+    expect(teller.tick().capped).toBe(1)
+    expect(sent.map((s) => s.to)).toEqual(["pm"])
+    expect(sent[0].text).toMatch(/not woken again/)
+    expect(jobs.get("job-cap")!.requesterToldAt).not.toBeNull()
+  })
+
+  it("tells a schedule's own agent, and the agent that owes the job when the one who asked is no agent here", () => {
+    open("job-cron", { door: "cron", requester: "cron:nightly", channel: "cron", chatId: "cron:nightly" })
+    open("job-login", { door: "mention", requester: "someone", channel: "github", chatId: "acme/app:issue:3" })
+    open("job-far", { requester: "ghost" })
+    clock += 11 * MIN
+    expect(teller.tick().stalled).toBe(3)
+    expect(sent.map((s) => [s.id, s.to])).toEqual([["job-cron", "coder"], ["job-login", "coder"], ["job-far", "coder"]])
+    expect(sent[0].text).toMatch(/the job of your schedule nightly is stalled/)
+    expect(sent[1].text).toMatch(/a job you hold \(asked by someone\) is stalled/)
+  })
+
+  it("leaves a job untold while nobody can take the line, and tells it at a later check", () => {
+    open("job-1")
+    open("job-lost", { assignee: "ghost", requester: "ghost" })
+    full.add("pm")
+    clock += 11 * MIN
+    expect(teller.tick().stalled).toBe(2)
+    expect(sent).toEqual([])
+    expect(jobs.stalledUntold().map((j) => j.id)).toEqual(["job-1", "job-lost"])
+    full.clear()
+    clock += MIN
+    teller.tick()
+    expect(sent.map((s) => s.id)).toEqual(["job-1"])
+    expect(jobs.stalledUntold().map((j) => j.id)).toEqual(["job-lost"])
+  })
+
+  it("a job that goes back to work and stalls again is told again", () => {
+    open("job-1")
+    clock += 11 * MIN
+    teller.tick()
+    jobs.working("job-1", clock)
+    clock += 11 * MIN
+    teller.tick()
+    expect(sent.map((s) => s.id)).toEqual(["job-1", "job-1"])
+  })
+
+  it("tells nobody when there is no sender, as before", () => {
+    open("job-1")
+    clock += 11 * MIN
+    expect(wake.tick().stalled).toBe(1)
+    expect(jobs.stalledUntold().map((j) => j.id)).toEqual(["job-1"])
   })
 })
 
