@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.226.2](https://github.com/anis-marrouchi/agentx/compare/v0.226.1...v0.226.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **jobs:** a page of untellable stalled jobs no longer hides later ones ([#1881](https://github.com/anis-marrouchi/agentx/issues/1881)) ([3721b07](https://github.com/anis-marrouchi/agentx/commit/3721b07aad0ede1fae0f938b6fb8dcf96be6ba23)), closes [#1861](https://github.com/anis-marrouchi/agentx/issues/1861)
+
 ## [0.226.1](https://github.com/anis-marrouchi/agentx/compare/v0.226.0...v0.226.1) (2026-11-15)
 
 
