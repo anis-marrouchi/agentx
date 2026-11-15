@@ -7,7 +7,7 @@ import { RequestStore } from "../src/requests/store"
 import { RequestTracker, pickupContext, isPickup, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep } from "../src/requests/sweep"
 import { JobStore } from "../src/jobs/store"
-import { JobDoors, RUN_ENDED_PROOF, doorOf, homeOfForgeChat } from "../src/jobs/doors"
+import { JobDoors, RUN_ENDED_PROOF, doorOf, homeOfForgeChat, jobsOn } from "../src/jobs/doors"
 import { attachRequests } from "../src/requests/attach"
 import { getEventBus } from "../src/events/bus"
 import { requestsConfigSchema } from "../src/daemon/config"
@@ -313,8 +313,12 @@ describe("no behaviour change for the owner's requests", () => {
 })
 
 describe("attached to the bus", () => {
-  it("opens jobs after the tracker, and the setting defaults to on", () => {
-    expect(requestsConfigSchema.parse({}).jobs.enabled).toBe(true)
+  it("opens jobs after the tracker, and the setting follows requests.enabled when unset", () => {
+    expect(requestsConfigSchema.parse({}).jobs.enabled).toBeUndefined()
+    expect(jobsOn(requestsConfigSchema.parse({ enabled: true }))).toBe(true)
+    expect(jobsOn(requestsConfigSchema.parse({}))).toBe(false)
+    expect(jobsOn(requestsConfigSchema.parse({ jobs: { enabled: true } }))).toBe(true)
+    expect(jobsOn(requestsConfigSchema.parse({ enabled: true, jobs: { enabled: false } }))).toBe(false)
     const attached = attachRequests(db, () => ({ ...ON, jobs: { enabled: true } }), () => {})
     const bus = getEventBus()
     try {
@@ -327,5 +331,36 @@ describe("attached to the bus", () => {
     } finally {
       attached.detach()
     }
+  })
+
+  /** One hand-off run and one owner turn through the bus, with these settings. */
+  function through(settings: Partial<RequestSettings>) {
+    const attached = attachRequests(db, () => ({ ...ON, ...settings }), () => {})
+    const bus = getEventBus()
+    try {
+      bus.emit("task:started", { agentId: "coder", channel: "a2a", chatId: "pm", taskId: "s1", messagePreview: "build", sender: { name: "agent:pm" }, at: "" } as any)
+      bus.emit("task:started", { agentId: "coder", ...ownerTurn, taskId: "s2", messagePreview: "ship it", at: "" } as any)
+      return { job: attached.jobs.byRun("s1"), owner: attached.jobs.byRun("s2") }
+    } finally {
+      attached.detach()
+    }
+  }
+
+  it("requests off, jobs on: the hand-off opens a job, the owner's turn leaves no record", () => {
+    const { job, owner } = through({ enabled: false, jobs: { enabled: true } })
+    expect(job).toMatchObject({ door: "a2a", state: "working", requester: "pm" })
+    expect(owner).toBeNull()
+  })
+
+  it("requests off, jobs unset: nothing opens", () => {
+    expect(through({ enabled: false }).job).toBeNull()
+  })
+
+  it("requests on, jobs unset: the hand-off opens a job", () => {
+    expect(through({ enabled: true }).job).toMatchObject({ door: "a2a" })
+  })
+
+  it("jobs off: nothing opens, whatever requests says", () => {
+    expect(through({ enabled: true, jobs: { enabled: false } }).job).toBeNull()
   })
 })

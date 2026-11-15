@@ -76,7 +76,7 @@ export interface RequestSettings {
   closeProof?: Partial<CloseProofSettings>
   /** The job ledger (#1861): a job for every run that is not the owner's
    *  turn. Unset: on. */
-  jobs?: { enabled: boolean; wake?: JobWakeSettings }
+  jobs?: { enabled?: boolean; wake?: JobWakeSettings }
 }
 
 /** The chat of a card's promise when no turn names one: the card itself. */

@@ -1765,10 +1765,12 @@ export const requestsConfigSchema = z.object({
   retentionDays: z.number().positive().max(3650).default(90),
   /** The job ledger (src/jobs, #1861): one record for every run that is
    *  not the owner's turn too (hand-offs between agents, issue mentions,
-   *  crons, workflow steps). Needs `enabled` above. */
+   *  crons, workflow steps). */
   jobs: z.object({
-    /** Off: only the owner's turns leave a record, as before jobs. */
-    enabled: z.boolean().default(true),
+    /** Unset: follows `enabled` above. True: the ledger is kept even
+     *  while `enabled` is off (the owner's turns then leave no record).
+     *  False: off. Read through `jobsOn` (src/jobs/doors.ts). */
+    enabled: z.boolean().optional(),
     /** The daemon owns the wake-up (src/jobs/wake.ts): a job whose run
      *  said "continue" is started again at its time, and an open job with
      *  no live run, no wake and nobody it waits on is marked stalled. */
