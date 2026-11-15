@@ -12,7 +12,8 @@ import type { JobRecord, JobRun, JobStore } from "./store"
 //      and cost;
 //   2. checks the invariant: every open job has a live run, an armed
 //      wake, or a named waiter with a due time. A job with none is
-//      marked stalled, with why.
+//      marked stalled, with why;
+//   3. tells the one who asked for each stalled job that it stalled.
 // Background work a turn left running belongs to its job too: when it
 // ends, its closing reply wakes the job instead of being dropped.
 //
@@ -39,6 +40,9 @@ export const BACKGROUND_WAITER = "its background work"
 const MIN = 60_000
 const ASK_MAX = 1500
 const REPLY_MAX = 600
+// A notice keeps 1000 characters: the line must fit whole.
+const TOLD_ASK_MAX = 250
+const TOLD_WHY_MAX = 400
 
 /** Marks the context of the run the daemon starts to wake a job. A symbol
  *  key cannot arrive in a JSON body, so a caller of /task cannot set it. */
@@ -94,6 +98,13 @@ export interface JobWakeDeps {
   hasAgent: (agentId: string) => boolean
   /** Something else answers for the job right now (a hand-off still out). */
   held?: (job: JobRecord) => boolean
+  /** Is the schedule with this id still there and on? Its next firing
+   *  continues its job. Unset: no schedule is known to be on. */
+  scheduleOn?: (id: string) => boolean
+  /** Give `agentId` the line that says a job stalled, without a run of
+   *  its own. False when it cannot take it now: it is tried again at the
+   *  next pass. Unset: nobody is told. */
+  tell?: (agentId: string, text: string, job: JobRecord) => boolean
   log: (msg: string) => void
   now?: () => number
 }
@@ -109,6 +120,36 @@ const START_WAIT_MS = 45 * MIN
 /** A schedule's job is not woken: the wake run would not carry the
  *  schedule's own model, autonomy or limits. Its next firing goes on. */
 const noWake = (job: Pick<JobRecord, "door">) => job.door === "cron"
+
+/** The id of the schedule a schedule's job belongs to. */
+const scheduleOf = (job: Pick<JobRecord, "requester" | "chatId">) => (job.requester ?? job.chatId).replace(/^cron:/, "")
+
+/** Who is told a job stalled, and as what. The agent that asked, when it
+ *  is on this node. A schedule has nobody who asked: its own agent is
+ *  told, and reads it at the schedule's next firing. So is the agent of
+ *  an owner's request (the request's own checks tell the owner), and of
+ *  a job whose requester is no agent here (a login, software, an agent
+ *  on another node, which reads the job's line from this node). */
+export function stalledRecipient(job: JobRecord, hasAgent: (id: string) => boolean): { agentId: string; as: "requester" | "schedule" | "assignee" } | null {
+  if (job.door === "cron") return hasAgent(job.assignee) ? { agentId: job.assignee, as: "schedule" } : null
+  // Only a hand-off names an agent as its requester: a login may spell like one.
+  if (job.door === "a2a" && !job.ownerRequest && job.requester && job.requester !== job.assignee && hasAgent(job.requester)) return { agentId: job.requester, as: "requester" }
+  return hasAgent(job.assignee) ? { agentId: job.assignee, as: "assignee" } : null
+}
+
+/** The line the recipient reads. */
+export function stalledText(job: JobRecord, as: "requester" | "schedule" | "assignee"): string {
+  const what = as === "requester" ? `the work you asked ${job.assignee} for is stalled`
+    : as === "schedule" ? `the job of your schedule ${scheduleOf(job)} is stalled`
+    : `a job you hold${job.ownerRequest ? " for the owner" : job.requester ? ` (asked by ${job.requester})` : ""} is stalled`
+  const next = as === "requester" ? `Nobody is on it now: ask ${job.assignee} again, or drop it.`
+    : as === "schedule" ? "The daemon does not wake a schedule's job: take it up at the next firing, or say it is done."
+    : "Nobody is on it now: take it up, or tell the one who asked why not."
+  const lines = [`[Job stalled] ${job.id}: ${what}: ${clip(job.note ?? "no run, no wake and no one it waits on", TOLD_WHY_MAX)}.`,`It was: ${clip(job.text.replace(/\s+/g, " ").trim(), TOLD_ASK_MAX)}`]
+  if (job.home) lines.push(`Where the work lives: ${job.home.link}`)
+  lines.push(next)
+  return lines.join("\n")
+}
 
 export class JobWake {
   private now: () => number
@@ -134,7 +175,27 @@ export class JobWake {
     if (!settings.enabled) return result
     try { this.wakeDue(settings, result) } catch (e: any) { this.deps.log(`[jobs] wake failed: ${e?.message ?? e}`) }
     try { this.checkOwned(settings, result) } catch (e: any) { this.deps.log(`[jobs] invariant check failed: ${e?.message ?? e}`) }
+    try { this.tellStalled() } catch (e: any) { this.deps.log(`[jobs] telling stalled jobs failed: ${e?.message ?? e}`) }
     return result
+  }
+
+  /** Every stalled job is told to the one who asked for it, once: the
+   *  wake and the invariant only mark it. A job nobody here can be told
+   *  about stays untold, and is tried again at the next pass. Returns how
+   *  many were told. */
+  tellStalled(): number {
+    const { jobs, tell, log } = this.deps
+    if (!tell) return 0
+    let told = 0
+    for (const job of jobs.stalledUntold()) {
+      const to = stalledRecipient(job, this.deps.hasAgent)
+      if (!to || !tell(to.agentId, stalledText(job, to.as), job)) continue
+      if (jobs.markRequesterTold(job.id, this.now())) {
+        told++
+        log(`[jobs] ${job.id} stalled: told ${to.agentId}${to.as === "requester" ? "" : ` (${to.as})`}`)
+      }
+    }
+    return told
   }
 
   private wakeDue(settings: JobWakeSettings, result: WakeTickResult): void {
@@ -146,7 +207,14 @@ export class JobWake {
         continue
       }
       if (noWake(job)) {
-        if (jobs.markStalled(job.id, `a schedule's job is not woken by the daemon; its next firing continues it. What was left: ${job.note ?? "not said"}`, now)) result.stalled++
+        // Its next firing continues it (the doors link that run to this
+        // job), so it is not stalled while its schedule is on: looked at
+        // again in an hour.
+        if (this.deps.scheduleOn?.(scheduleOf(job))) {
+          jobs.deferWake(job.id, now + 60 * MIN)
+          continue
+        }
+        if (jobs.markStalled(job.id, `a schedule's job is not woken by the daemon, and its schedule is off or gone, so no firing continues it. What was left: ${job.note ?? "not said"}`, now)) result.stalled++
         continue
       }
       // A run is on it already, or an earlier wake of it is still waiting

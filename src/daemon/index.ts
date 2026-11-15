@@ -151,6 +151,7 @@ import { JobMesh } from "@/jobs/mesh"
 import { jobsOn } from "@/jobs/doors"
 import { dbFacts } from "@/jobs/facts"
 import { DEFAULT_WAKE_SETTINGS, JobWake, markWake, wakeContext } from "@/jobs/wake"
+import { MAX_NOTICES } from "@/agents/notices"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
 import { runDriftSweep } from "@/requests/drift/sweep"
@@ -805,6 +806,15 @@ export class AgentXDaemon {
             // So does a run this process saw start and not end, whatever its trace says.
             held: (job) => requests.doors.hasLiveRun(job.id)
               || (job.id.startsWith("job-dlg-") && !!this.delegations?.isPending(job.id.slice("job-".length))),
+            scheduleOn: (id) => this.config.crons[id]?.enabled === true,
+            // A stalled job is told as a notice: read at the head of the
+            // agent's next run, no run of its own. Left for the next pass
+            // while the agent's notices are full, so none pushes another out.
+            tell: (agentId, text) => {
+              if (this.registry.notices.count(agentId) >= MAX_NOTICES) return false
+              this.registry.notices.add(agentId, "the job ledger", text)
+              return true
+            },
             log: this.log,
           })
           this.jobWake = jobWake

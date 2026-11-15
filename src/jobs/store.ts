@@ -381,6 +381,24 @@ export class JobStore {
     ).run(at, clip(note, JOB_NOTE_MAX), now, id).changes > 0
   }
 
+  /** Move a due wake to a later time, and nothing else: for a job the
+   *  daemon does not wake itself (a schedule's). */
+  deferWake(id: string, at: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET wake_at = ? WHERE id = ? AND wake_at IS NOT NULL AND job_state = 'continue' AND ${OPEN_ROW}`,
+    ).run(at, id).changes > 0
+  }
+
+  /** The job an earlier firing of this schedule left to continue, for
+   *  this agent: the next firing goes on with it. */
+  continuedBySchedule(assignee: string, requester: string): JobRecord | null {
+    const row = this.db.prepare(
+      `${SELECT} WHERE door = 'cron' AND agent_id = ? AND requester = ? AND job_state = 'continue' AND state = '${JOB_ROW_STATE}' AND ${OPEN_ROW}
+       ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+    ).get(assignee, requester)
+    return row ? toJob(row) : null
+  }
+
   /** How many runs began on the job so far. */
   runCount(id: string): number {
     return (this.db.prepare("SELECT COUNT(*) AS n FROM request_links WHERE request_id = ? AND kind = 'run'").get(id) as { n: number }).n
