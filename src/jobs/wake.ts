@@ -43,6 +43,9 @@ const REPLY_MAX = 600
 // A notice keeps 1000 characters: the line must fit whole.
 const TOLD_ASK_MAX = 250
 const TOLD_WHY_MAX = 400
+/** Stalled jobs read per page, and at most per pass, when telling them. */
+const TELL_PAGE = 50
+const TELL_SCAN_MAX = 500
 
 /** Marks the context of the run the daemon starts to wake a job. A symbol
  *  key cannot arrive in a JSON body, so a caller of /task cannot set it. */
@@ -187,13 +190,23 @@ export class JobWake {
     const { jobs, tell, log } = this.deps
     if (!tell) return 0
     let told = 0
-    for (const job of jobs.stalledUntold()) {
-      const to = stalledRecipient(job, this.deps.hasAgent)
-      if (!to || !tell(to.agentId, stalledText(job, to.as), job)) continue
-      if (jobs.markRequesterTold(job.id, this.now())) {
-        told++
-        log(`[jobs] ${job.id} stalled: told ${to.agentId}${to.as === "requester" ? "" : ` (${to.as})`}`)
+    // Page on past the jobs that stay untold, so a full page of them does
+    // not hide a later job that can be told. Bounded per pass.
+    let after: { stalledAt: number; id: string } | undefined
+    for (let seen = 0; seen < TELL_SCAN_MAX;) {
+      const page = jobs.stalledUntold(TELL_PAGE, after)
+      for (const job of page) {
+        const to = stalledRecipient(job, this.deps.hasAgent)
+        if (!to || !tell(to.agentId, stalledText(job, to.as), job)) continue
+        if (jobs.markRequesterTold(job.id, this.now())) {
+          told++
+          log(`[jobs] ${job.id} stalled: told ${to.agentId}${to.as === "requester" ? "" : ` (${to.as})`}`)
+        }
       }
+      seen += page.length
+      const last = page[page.length - 1]
+      if (page.length < TELL_PAGE || last?.stalledAt == null) break
+      after = { stalledAt: last.stalledAt, id: last.id }
     }
     return told
   }

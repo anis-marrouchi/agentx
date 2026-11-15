@@ -333,11 +333,14 @@ export class JobStore {
     ).run(now, now, clip(reason, JOB_NOTE_MAX), id).changes > 0
   }
 
-  /** Stalled jobs whose requester was not told yet, oldest first. */
-  stalledUntold(limit = 50): JobRecord[] {
+  /** Stalled jobs whose requester was not told yet, oldest first. `after`
+   *  pages on: only jobs that come after that one in this order. */
+  stalledUntold(limit = 50, after?: { stalledAt: number; id: string }): JobRecord[] {
+    const page = after ? " AND (stalled_at > ? OR (stalled_at = ? AND rowid > (SELECT rowid FROM requests WHERE id = ?)))" : ""
+    const args: unknown[] = after ? [after.stalledAt, after.stalledAt, after.id, limit] : [limit]
     return this.db.prepare(
-      `${SELECT} WHERE job_state = 'stalled' AND requester_told_at IS NULL AND ${OPEN_ROW} ORDER BY stalled_at, rowid LIMIT ?`,
-    ).all(limit).map(toJob)
+      `${SELECT} WHERE job_state = 'stalled' AND requester_told_at IS NULL AND ${OPEN_ROW}${page} ORDER BY stalled_at, rowid LIMIT ?`,
+    ).all(...args).map(toJob)
   }
 
   /** Claims the telling: true for the one caller that may send it. */

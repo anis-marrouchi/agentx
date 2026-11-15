@@ -447,6 +447,18 @@ describe("a stalled job is told to the one who asked", () => {
     expect(jobs.stalledUntold().map((j) => j.id)).toEqual(["job-lost"])
   })
 
+  it("a full page of jobs nobody here can be told about does not hide a later one", () => {
+    for (let i = 0; i < 50; i++) open(`job-lost-${String(i).padStart(2, "0")}`, { assignee: "ghost", requester: "ghost" })
+    clock += 11 * MIN
+    expect(teller.tick().stalled).toBe(50)
+    expect(sent).toEqual([])
+    open("job-late")
+    clock += 11 * MIN
+    expect(teller.tick().stalled).toBe(1)
+    expect(sent.map((s) => s.id)).toEqual(["job-late"])
+    expect(jobs.stalledUntold(100)).toHaveLength(50)
+  })
+
   it("a job that goes back to work and stalls again is told again", () => {
     open("job-1")
     clock += 11 * MIN
