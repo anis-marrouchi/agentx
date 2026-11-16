@@ -10,10 +10,16 @@ import type { JobRecord, JobRun, JobStore } from "./store"
 // looks (GET /jobs/:id?tree=1, the Jobs page), and once a minute for the
 // jobs still open, so the line here says what is happening there.
 //
-// A peer that does not know the job, or runs a version without the
-// ledger, answers 404: the job here keeps its own line. Still unknown there
-// after UNKNOWN_GRACE_MS with no progress here, the hand-off never started
-// there or was lost: the job is marked stalled, so its requester is told.
+// A peer answers 404 for a job it does not have, and says with it whether
+// it keeps a ledger (`ledger`: "on" or "off"). Only "on" means there is no
+// such job. Still unknown there after UNKNOWN_GRACE_MS with no progress
+// here, the hand-off never started there or was lost: the job is marked
+// stalled, so its requester is told. A peer with its ledger off, or a
+// version that does not say, may well have done the work: the job here
+// keeps its own line and is never stalled by this (#1888).
+//
+// The minute pass reads PASS_SIZE jobs and goes on from there at the next
+// one, so every open hand-off is read in turn, however many there are.
 
 export interface RemoteJob {
   peer: string
@@ -23,8 +29,10 @@ export interface RemoteJob {
   children?: JobView[]
   /** Why it could not be read. */
   error?: string
-  /** The other node answered and has no such job. */
+  /** The other node keeps a job ledger and has no such job. */
   unknown?: boolean
+  /** The other node did not answer, or answered with an error. */
+  down?: boolean
 }
 
 export interface JobMeshDeps {
@@ -45,8 +53,13 @@ const LINE_MAX = 300
  *  queued behind a busy agent there to start. */
 export const UNKNOWN_GRACE_MS = 6 * 3_600_000
 
+/** How many jobs one minute pass reads. */
+export const PASS_SIZE = 30
+
 export class JobMesh {
   private busy = false
+  /** Where the last pass stopped: the next one goes on after this row. */
+  private after = 0
 
   constructor(private deps: JobMeshDeps) {}
 
@@ -56,26 +69,39 @@ export class JobMesh {
     if (!job.peer) return null
     try {
       const r = await this.deps.fetchJob(job.peer, job.remoteId ?? job.id)
-      if (r.status === 404) return { peer: job.peer, unknown: true, error: "that node has no such job (it may not have started it yet, or runs an older version)" }
-      const body = r.body as { job?: JobView; runs?: JobRun[]; children?: JobView[] } | null
-      if (r.status !== 200 || !body?.job || typeof body.job.id !== "string") return { peer: job.peer, error: `that node answered ${r.status}` }
+      const body = r.body as { job?: JobView; runs?: JobRun[]; children?: JobView[]; ledger?: unknown } | null
+      if (r.status === 404) {
+        if (body?.ledger === "on") return { peer: job.peer, unknown: true, error: "that node has no such job (it may not have started it yet)" }
+        if (body?.ledger === "off") return { peer: job.peer, error: "that node keeps no jobs (its job ledger is off), so it cannot say" }
+        return { peer: job.peer, error: "that node has no such job, or keeps no jobs (it runs an older version and cannot say which)" }
+      }
+      if (r.status !== 200 || !body?.job || typeof body.job.id !== "string") return { peer: job.peer, down: true, error: `that node answered ${r.status}` }
       return { peer: job.peer, job: body.job, runs: Array.isArray(body.runs) ? body.runs : [], children: Array.isArray(body.children) ? body.children : [] }
     } catch (e: any) {
-      return { peer: job.peer, error: `that node did not answer (${String(e?.message ?? e).slice(0, 120)})` }
+      return { peer: job.peer, down: true, error: `that node did not answer (${String(e?.message ?? e).slice(0, 120)})` }
     }
   }
 
-  /** One pass over the open jobs on other nodes: each keeps, as its note,
-   *  the status line its node gives now. A job its node still does not
-   *  know after UNKNOWN_GRACE_MS is marked stalled. One pass at a time.
-   *  Returns how many were read. */
+  /** One pass over the open jobs on other nodes, PASS_SIZE of them, going
+   *  on where the last pass stopped: each keeps, as its note, the status
+   *  line its node gives now. A job its node still does not know after
+   *  UNKNOWN_GRACE_MS is marked stalled. A node that did not answer is not
+   *  asked again in the same pass. One pass at a time. Returns how many
+   *  were read. */
   async refresh(): Promise<number> {
     if (this.busy) return 0
     this.busy = true
     let read = 0
     try {
-      for (const job of this.deps.jobs.openOnPeers()) {
+      let page = this.deps.jobs.openOnPeersPage(this.after, PASS_SIZE)
+      // Past the last one: start again from the first.
+      if (!page.jobs.length && this.after > 0) page = this.deps.jobs.openOnPeersPage(0, PASS_SIZE)
+      this.after = page.jobs.length < PASS_SIZE ? 0 : page.last
+      const down = new Set<string>()
+      for (const job of page.jobs) {
+        if (down.has(job.peer!)) continue
         const remote = await this.remoteOf(job)
+        if (remote?.down) down.add(job.peer!)
         if (remote?.unknown) this.stallUnknown(job)
         if (!remote?.job) continue
         const line = `${REMOTE_NOTE}${String(remote.job.status ?? remote.job.state).replace(/\s+/g, " ").trim().slice(0, LINE_MAX)}`

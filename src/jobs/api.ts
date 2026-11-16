@@ -8,7 +8,11 @@ import { statusLine, type JobFacts } from "./status"
 //                   ?state=open|all|<state>[,<state>]  (default open)
 //                   ?door= ?agent= ?requester= ?parent= ?roots=1
 //                   ?limit= (1-500, default 100) ?offset=
-//   GET /jobs/:id   one job, its runs, its parent and its children
+//   GET /jobs/:id   one job, its runs, its parent and its children.
+//                   An id it does not have is a 404 with `ledger`: "on"
+//                   (there is no such job) or "off" (this node keeps no
+//                   jobs, so the work may well be here). A 404 without
+//                   `ledger` is a version that cannot tell (#1888).
 // Each job carries `status`: its one line, derived from facts the daemon
 // has (status.ts), never from what the agent says about itself.
 
@@ -22,6 +26,9 @@ export interface JobsApiDeps {
   facts?: (job: JobRecord, runs: () => JobRun[]) => JobFacts
   query?: URLSearchParams
   now?: number
+  /** This node keeps no jobs (`requests.jobs.enabled` off). A job it does
+   *  not have then says nothing about the work: the 404 says so. */
+  ledgerOff?: boolean
 }
 
 export interface JobView extends JobRecord {
@@ -91,7 +98,7 @@ export function handleJobsApi(method: string, path: string, deps: JobsApiDeps): 
   const id = decodeURIComponent(path.slice("/jobs/".length))
   if (!id || id.includes("/")) return err(404, "not found")
   const job = deps.store.get(id)
-  if (!job) return err(404, `no job "${id}"`)
+  if (!job) return { status: 404, body: { error: `no job "${id}"`, ledger: deps.ledgerOff ? "off" : "on" } }
   const parent = job.parentId ? deps.store.get(job.parentId) : null
   return {
     status: 200,
