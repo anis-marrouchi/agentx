@@ -52,6 +52,7 @@ import { readRequiredSettings, updateRequiredSettings, type RequiredSettingsPatc
 import { budgetPatchProblem, updateBudget, type BudgetPatch } from "@/daemon/budget-settings"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
+import { compressResponses } from "./http-compress"
 import { appReachDeps, type AppReachDeps } from "./app-reach"
 import { dashboardIcon } from "./app-icon"
 import { assetLinks, handleDashboardPlaces, placesDeps, type PlacesDeps } from "./app-places"
@@ -170,6 +171,8 @@ export function startBoardDashboard(config: DaemonConfig): void {
   })
 
   const server = createServer(async (req, res) => {
+    // Before every route, /app and /member included (Tailscale serves those).
+    compressResponses(req, res)
     try {
       await handleBoardRequest(req, res, { boards, sources, token, config, workflowStore, workflowRuns, workflowLayouts })
     } catch (e: any) {
