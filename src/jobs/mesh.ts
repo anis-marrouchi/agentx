@@ -11,7 +11,9 @@ import type { JobRecord, JobRun, JobStore } from "./store"
 // jobs still open, so the line here says what is happening there.
 //
 // A peer that does not know the job, or runs a version without the
-// ledger, answers 404: the job here keeps its own line.
+// ledger, answers 404: the job here keeps its own line. Still unknown there
+// after UNKNOWN_GRACE_MS with no progress here, the hand-off never started
+// there or was lost: the job is marked stalled, so its requester is told.
 
 export interface RemoteJob {
   peer: string
@@ -21,6 +23,8 @@ export interface RemoteJob {
   children?: JobView[]
   /** Why it could not be read. */
   error?: string
+  /** The other node answered and has no such job. */
+  unknown?: boolean
 }
 
 export interface JobMeshDeps {
@@ -28,12 +32,18 @@ export interface JobMeshDeps {
   /** GET /jobs/<id> on the peer, with this node's mesh token. */
   fetchJob: (peer: string, id: string) => Promise<{ status: number; body: unknown }>
   log: (msg: string) => void
+  now?: () => number
 }
 
 /** How the note of a job here quotes its status on the other node. */
 export const REMOTE_NOTE = "there: "
 
 const LINE_MAX = 300
+
+/** How long a job handed to another node may stay unknown there, with no
+ *  progress here, before it is marked stalled. Long enough for a hand-off
+ *  queued behind a busy agent there to start. */
+export const UNKNOWN_GRACE_MS = 6 * 3_600_000
 
 export class JobMesh {
   private busy = false
@@ -46,7 +56,7 @@ export class JobMesh {
     if (!job.peer) return null
     try {
       const r = await this.deps.fetchJob(job.peer, job.remoteId ?? job.id)
-      if (r.status === 404) return { peer: job.peer, error: "that node has no such job (it may not have started it yet, or runs an older version)" }
+      if (r.status === 404) return { peer: job.peer, unknown: true, error: "that node has no such job (it may not have started it yet, or runs an older version)" }
       const body = r.body as { job?: JobView; runs?: JobRun[]; children?: JobView[] } | null
       if (r.status !== 200 || !body?.job || typeof body.job.id !== "string") return { peer: job.peer, error: `that node answered ${r.status}` }
       return { peer: job.peer, job: body.job, runs: Array.isArray(body.runs) ? body.runs : [], children: Array.isArray(body.children) ? body.children : [] }
@@ -56,8 +66,9 @@ export class JobMesh {
   }
 
   /** One pass over the open jobs on other nodes: each keeps, as its note,
-   *  the status line its node gives now. One pass at a time. Returns how
-   *  many were read. */
+   *  the status line its node gives now. A job its node still does not
+   *  know after UNKNOWN_GRACE_MS is marked stalled. One pass at a time.
+   *  Returns how many were read. */
   async refresh(): Promise<number> {
     if (this.busy) return 0
     this.busy = true
@@ -65,6 +76,7 @@ export class JobMesh {
     try {
       for (const job of this.deps.jobs.openOnPeers()) {
         const remote = await this.remoteOf(job)
+        if (remote?.unknown) this.stallUnknown(job)
         if (!remote?.job) continue
         const line = `${REMOTE_NOTE}${String(remote.job.status ?? remote.job.state).replace(/\s+/g, " ").trim().slice(0, LINE_MAX)}`
         if (job.note !== line || job.remoteId !== remote.job.id) this.deps.jobs.setRemote(job.id, remote.job.id, line)
@@ -76,5 +88,13 @@ export class JobMesh {
       this.busy = false
     }
     return read
+  }
+
+  private stallUnknown(job: JobRecord): void {
+    const now = this.deps.now?.() ?? Date.now()
+    if (now - job.updatedAt < UNKNOWN_GRACE_MS) return
+    const hours = Math.floor((now - job.updatedAt) / 3_600_000)
+    const reason = `${job.peer} has no record of this job ${hours} h after it was handed there: the hand-off did not start there, or was lost`
+    if (this.deps.jobs.markStalled(job.id, reason, now)) this.deps.log(`[jobs] ${job.id} stalled: ${reason}`)
   }
 }

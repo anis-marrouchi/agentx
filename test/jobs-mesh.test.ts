@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { JobStore } from "../src/jobs/store"
-import { JobMesh } from "../src/jobs/mesh"
+import { JobMesh, UNKNOWN_GRACE_MS } from "../src/jobs/mesh"
 import { handleJobsApi } from "../src/jobs/api"
 import { statusLine } from "../src/jobs/status"
 import { JobDoors } from "../src/jobs/doors"
@@ -105,6 +105,31 @@ describe("a job handed to another node", () => {
     down = true
     expect(await mesh.refresh()).toBe(0)
     expect(jobs.get("job-dlg-abc-12")!.note).toBe("there: done: https://x.test/deploy/1")
+  })
+
+  it("is marked stalled when that node still has no record of it after the grace time, never sooner or while down", async () => {
+    let now = NOW
+    const m = new JobMesh({ jobs, log: () => {}, now: () => now, fetchJob: async (_p, id) => {
+      if (down) throw new Error("connect ECONNREFUSED")
+      const reply = handleJobsApi("GET", `/jobs/${id}`, { store: far, now })
+      return { status: reply.status, body: reply.body }
+    } })
+    jobs.open({ id: "job-lost", door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: "a2a:coder:pm:lost", text: "t", peer: "clawd", state: "waiting", waitingOn: "pm@clawd", now: NOW })
+    now = NOW + UNKNOWN_GRACE_MS - 1
+    await m.refresh()
+    expect(jobs.get("job-lost")!.state).toBe("waiting")
+    now = NOW + UNKNOWN_GRACE_MS + HOUR
+    down = true
+    await m.refresh()
+    expect(jobs.get("job-lost")!.state).toBe("waiting")
+    down = false
+    await m.refresh()
+    expect(jobs.get("job-lost")).toMatchObject({ state: "stalled", note: "clawd has no record of this job 7 h after it was handed there: the hand-off did not start there, or was lost" })
+    expect(jobs.stalledUntold().map((j) => j.id)).toEqual(["job-lost"])
+    // A job that node knows is never stalled by this, however old.
+    handOff()
+    await m.refresh()
+    expect(jobs.get("job-dlg-abc-12")!.state).toBe("waiting")
   })
 
   it("is not read while blocked or stalled here, so the reason is never written over", async () => {
