@@ -31,7 +31,7 @@ import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
-import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
+import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, handedOffTimeLimitError, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
 import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, stateOnAnswer, withoutStateLines, type JobState } from "./run-state"
 import { isQuietAnswer } from "@/crons/quiet"
 import { withoutExitMarker } from "@/crons/exit-check"
@@ -687,6 +687,8 @@ export class AgentRegistry {
   private runNote?: (started: AgentXEvents["task:started"]) => string | undefined
   /** See setTraceToolCalls. */
   private traceToolCalls?: (traceId: string) => Array<{ action: string | null; inputSummary: string | null }>
+  /** See setTimeLimitHandoff. */
+  private timeLimitHandoff?: (runIds: Array<string | undefined>, note: string) => string | null
   /** Workflow auto-runner — invoked when workflow matching is in `mode: "auto"`
    *  and a candidate workflow's confidence ≥ autoRunThreshold. Wired by the
    *  daemon after the workflow dispatcher is constructed. Returns the runId of
@@ -930,6 +932,13 @@ export class AgentRegistry {
    *  run's tool calls from (#1257). Unset, the note lists none. */
   setTraceToolCalls(lookup: AgentRegistry["traceToolCalls"]): void {
     this.traceToolCalls = lookup
+  }
+
+  /** Wire the hand-off of a run stopped at its time limit to its job's
+   *  wake (#1861): given the run's ids and the note, the id of the job
+   *  that continues it, or null when none does. Unset, none does. */
+  setTimeLimitHandoff(fn: AgentRegistry["timeLimitHandoff"]): void {
+    this.timeLimitHandoff = fn
   }
 
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
@@ -1446,7 +1455,7 @@ export class AgentRegistry {
     // Notices waiting for this agent ride on its next run of agent work
     // (a2a, cron, workflow, ...), never on a person's or visitor's chat
     // nor on an internal run whose output is parsed (notices.ts).
-    if (takesNotices(channel) && !task.preSpawnRetry && !task.timeLimitContinuation) {
+    if (takesNotices(channel) && !task.preSpawnRetry) {
       const notes = this.notices.take(task.agentId)
       if (notes) task = { ...task, message: notes + task.message }
     }
@@ -1512,9 +1521,9 @@ export class AgentRegistry {
         errorKind: "interrupted",
       }
     }
-    // Stopped at the agent's time limit (#1257): continue it in the same
-    // chat, under a cap, so its session carries the work on; otherwise say
-    // why it stopped there. The continuation answers the same caller.
+    // Stopped at the agent's time limit (#1257): its job continues it, in
+    // a run the job's wake starts (#1861); otherwise say why it stopped
+    // there. The caller gets the stop now, not a continued answer.
     const limit = planTimeLimit({
       error: response.error,
       errorKind: response.errorKind,
@@ -1522,31 +1531,25 @@ export class AgentRegistry {
       channel: task.context?.channel,
       chatId: task.context?.chatId,
       workflowRunId: task.workflowRunId,
-      continuation: task.timeLimitContinuation ?? 0,
-      timeoutMinutes: task.timeoutMinutes,
-      elapsedMs: Date.now() - (task.timeLimitStartedAt ?? startedAt),
-      callerGone: task.callerSignal?.aborted ?? false,
       settings: this.config.resume?.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS,
     })
-    if (limit.action === "continue") {
-      const settings = this.config.resume?.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS
+    if (limit.action === "handoff") {
       const stoppedTrace = task.taskId
       let toolCalls: Array<{ action: string | null; inputSummary: string | null }> = []
       try { toolCalls = stoppedTrace && this.traceToolCalls ? this.traceToolCalls(stoppedTrace) : [] } catch { /* the note lists none */ }
-      const note = buildTimeLimitNote(limit.minutes, toolCalls, limit.continuation >= settings.maxContinuations)
-      this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${stoppedTrace ?? "-"}: stopped at its ${limit.minutes}m time limit; continuing (${limit.continuation}/${settings.maxContinuations})`)
-      const request = task.timeLimitRequest ?? task.message
-      return this.runWithRecovery({
-        ...task,
-        message: `${note}\n${request}`,
-        timeLimitRequest: request,
-        timeLimitContinuation: limit.continuation,
-        timeLimitStartedAt: task.timeLimitStartedAt ?? startedAt,
-        ...(limit.timeoutMinutes ? { timeoutMinutes: limit.timeoutMinutes } : {}),
-        resumedFrom: stoppedTrace ?? task.resumedFrom,
-        runningTaskId: undefined,
-        freshSession: false,
-      }, onDelta, onThinking, onEvent)
+      let jobId: string | null = null
+      try { jobId = this.timeLimitHandoff?.([task.taskId, task.runningTaskId], buildTimeLimitNote(limit.minutes, toolCalls)) ?? null } catch (e: any) {
+        this.log(`[resume] time-limit hand-off failed: ${e?.message ?? e}`)
+      }
+      const where = `${task.agentId} ${task.context?.channel ?? "-"} ${stoppedTrace ?? "-"}`
+      if (jobId) {
+        this.log(`[resume] ${where}: stopped at its ${limit.minutes}m time limit; its job ${jobId} continues it`)
+        response = { ...response, error: handedOffTimeLimitError(response.error!, jobId) }
+      } else {
+        const reason = "no job's wake took it: no job, the wake is off, or the job is at its cap"
+        this.log(`[resume] ${where}: stopped at its ${limit.minutes}m time limit; not continued — ${reason}`)
+        response = { ...response, error: reportedTimeLimitError(response.error!, reason) }
+      }
     }
     if (limit.action === "report") {
       this.log(`[resume] ${task.agentId} ${task.context?.channel ?? "-"} ${task.taskId ?? "-"}: stopped at its ${limit.minutes}m time limit; not continued — ${limit.reason}`)
@@ -1628,9 +1631,8 @@ export class AgentRegistry {
     this.log(`[job-state] ${where}: ended with no state; asking once`)
     this.tellJobState(runIds, { kind: "asked" })
     // The question is a turn of its own, not the work again: it does not
-    // settle the run's intent (the run does, below in runWithRecovery),
-    // and it is not a time-limit continuation of the request.
-    const { intentRef: _intent, timeLimitRequest: _request, timeLimitContinuation: _continuation, timeLimitStartedAt: _started, ...rest } = task
+    // settle the run's intent (the run does, below in runWithRecovery).
+    const { intentRef: _intent, ...rest } = task
     const ask: AgentTask = { ...rest, message: JOB_STATE_ASK, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
     let asked: AgentResponse
     try {
@@ -4516,7 +4518,7 @@ export class AgentRegistry {
   private offerMidTurn(task: AgentTask, state: { def: AgentDef; runningTasks: RunningTask[] }, channel: string, chatId: string): void {
     if (this.config.session?.midTurnMessages === false || task.midTurnId) return
     if (state.def.tier !== "claude-code" || !midTurnChat(channel, chatId)) return
-    if (task.preSpawnRetry || task.timeLimitContinuation || task.message.startsWith("[agentx:")) return
+    if (task.preSpawnRetry || task.message.startsWith("[agentx:")) return
     if (!this.messageQueue.isBusy(task.agentId, channel, chatId)) return
     const run = state.runningTasks.find((r) => r.channel === channel && r.chatId === chatId)
     const from = String((task.context as any)?.sender?.name ?? (task.context as any)?.sender ?? "the owner")

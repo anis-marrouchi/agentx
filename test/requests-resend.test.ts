@@ -260,3 +260,45 @@ describe("resend through the job's wake (#1861 box 4)", () => {
     expect(sent[0].text).toContain("stopped by a restart")
   })
 })
+
+describe("pick-up through the job's wake (#1861)", () => {
+  function handedBack(note: string, taskId = "t1") {
+    start(taskId)
+    fail(taskId, "boom")
+    const { id } = db.prepare("SELECT id FROM requests ORDER BY created_at DESC, rowid DESC LIMIT 1").get() as { id: string }
+    expect(store.handOff(id, "coder", note, clock)).toBe(true)
+    return id
+  }
+
+  it("arms the job's wake with the owner's words instead of a pick-up turn", async () => {
+    const id = handedBack("use the staging key")
+    const woken: Array<{ id: string; note: string }> = []
+    const res = await sweep({ wakeJob: (rid, note) => { woken.push({ id: rid, note }); return true } })
+    expect(res).toMatchObject({ pickedUp: 1 })
+    expect(sent).toHaveLength(0)
+    expect(woken).toEqual([{ id, note: expect.stringContaining("What they say now: use the staging key") }])
+    expect(woken[0].note).toContain(`close it with agentx_request: {action:"done", id:"${id}"`)
+    // The wake's own text says what was asked: the note does not repeat it.
+    expect(woken[0].note).not.toContain("What they asked")
+    expect(store.get(id)!.noteSaid).toBe(true)
+    // Taken once: the next check starts nothing more.
+    clock += MIN
+    await sweep({ wakeJob: (rid, note) => { woken.push({ id: rid, note }); return true } })
+    expect(woken).toHaveLength(1)
+  })
+
+  it("keeps the pick-up turn when the wake does not take it, or the note is too long for it", async () => {
+    handedBack("short")
+    expect(await sweep({ wakeJob: () => false })).toMatchObject({ pickedUp: 1 })
+    expect(sent[0].text).toMatch(/^\[agentx:request-pickup id=/)
+
+    sent = []
+    let asked = 0
+    clock += MIN
+    const id = handedBack("x".repeat(1200), "t2")
+    expect(store.get(id)!.ownerNote!.length).toBe(1200)
+    await sweep({ wakeJob: () => { asked++; return true } })
+    expect(asked).toBe(0)
+    expect(sent).toHaveLength(1)
+  })
+})

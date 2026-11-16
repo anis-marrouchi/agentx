@@ -137,16 +137,16 @@ describe("registry.execute on an agent channel", () => {
     expect(logs.some((l) => /ended with no state; asking once/.test(l))).toBe(true)
   })
 
-  it("the question is not the work again: no intent to settle, no time limit to continue", async () => {
+  it("the question is not the work again: no intent to settle", async () => {
     const { r, seen } = registry([{ content: "Built it." }, { content: "`State: done — PR #9`" }])
     const res = await r.execute({
       agentId: "ops", message: "build", context: { channel: "cron", chatId: "nightly" },
-      intentRef: { eventId: "ev-1", decidedBy: "cron" }, timeLimitRequest: "build", timeLimitContinuation: 1, timeLimitStartedAt: 5,
+      intentRef: { eventId: "ev-1", decidedBy: "cron" },
     })
     expect(seen).toHaveLength(2)
     expect(seen[0].intentRef).toEqual({ eventId: "ev-1", decidedBy: "cron" })
     expect(seen[1]).toMatchObject({ jobStateAsk: true, message: JOB_STATE_ASK })
-    for (const k of ["intentRef", "timeLimitRequest", "timeLimitContinuation", "timeLimitStartedAt"] as const) expect(seen[1][k]).toBeUndefined()
+    expect(seen[1].intentRef).toBeUndefined()
     expect(res.jobState).toEqual({ state: "done", proof: "PR #9" })
   })
 

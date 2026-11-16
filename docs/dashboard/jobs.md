@@ -100,7 +100,7 @@ Work often takes more than one run. The daemon, not the agent, keeps a job going
 
 - **Continue:** a run that ends with work left says when to go on and what is left. At that time the daemon starts the next run, in the same chat, and gives it the job's note. The job shows `sleeping until …` in between.
 - **A cap on every job:** the daemon wakes one job at most 20 times, and stops once its runs have cost 10 US dollars. The reply an agent writes on its own when background work ends counts toward that cost too. A job at its cap is marked stalled, and its line says which cap. Change the caps with `requests.jobs.wake.maxWakes` and `requests.jobs.wake.maxCostUsd`.
-- **A wake that cannot start:** when the agent is busy, the woken run waits for a free slot; it is never put in the chat's message queue, so its reply is not posted in a chat where nobody asked for it. If no run could start at all, the daemon tries again 5 minutes later. If the run started and then failed (a time limit, a model error), the daemon does not try again: the job shows `blocked` with the reason.
+- **A wake that cannot start:** when the agent is busy, the woken run waits for a free slot; it is never put in the chat's message queue, so its reply is not posted in a chat where nobody asked for it. If no run could start at all, the daemon tries again 5 minutes later. If the run started and then failed (a model error), the daemon does not try again: the job shows `blocked` with the reason. A run stopped at its time limit is the exception: its job is woken again, within its caps.
 - **Background work:** when a run ends but left a script or a build running, the job waits on it (`waiting on its background work until …`) instead of closing. When that work ends, the daemon wakes the job that waits on it and gives it the work's closing reply; another job in the same chat is left as it is. Before, that reply was dropped. The agent's process is kept for up to 3 hours while such work is open (`processPool.maxBackgroundSeconds`); before, it was stopped after 45 minutes.
 - **The check each minute:** an open job must have a live run, a set wake, or someone named it waits on with a due time. The daemon checks this every minute. A job with none of the three for 10 minutes (`requests.jobs.wake.graceMinutes`) is marked stalled, with the reason on its status line.
 - **A stalled job is told:** at the same check, the daemon tells the agent that asked for the work, once, with a `[Job stalled]` line that gives the job, the reason and what was asked. The line is a notice: the agent reads it at the start of its next run, and no run is started for it. A schedule has nobody who asked, so its own agent is told. The agent that owes the job is told when the one who asked is not an agent on this machine (a person's request, a comment on an issue, an agent on another machine). Notices are kept in memory: one not yet read when the daemon restarts is lost, and the job still shows as stalled on this page.
@@ -109,12 +109,14 @@ Work often takes more than one run. The daemon, not the agent, keeps a job going
 
 Your own requests keep their own checks (quiet time, resend, pick-up). The check each minute holds one of them only after a run has stated a job state on it.
 
-Two older paths now go through the job's wake:
+Four older paths now go through the job's wake:
 
 - **Watchers:** when a watcher fires on work a job handed to another agent, the daemon wakes the job that handed it out, with the watcher's alert as its note. Before, the alert started a run of its own. With no such job (jobs turned off, or work handed out from a person's chat), the alert run starts as before.
 - **Resend once:** a request that a usage limit or a restart stopped is sent back once by waking its job, with the reason as its note. If the wake does not take it, the pick-up turn sends it, as before.
+- **Time limit:** a run stopped at its agent's time limit wakes its job, with a note listing the tool calls it had made. The run no longer gets a continuation of its own. See [work that runs past its time limit](/jobs/restart-safely#work-that-runs-past-its-time-limit).
+- **Pick-up:** when you reply to a request, hand it to an agent, or ask for it to be picked up again, the requests check wakes its job, with your words as the note. If the wake does not take it (jobs turned off, the job blocked or at its cap, or your words too long for a note), the pick-up turn goes as before.
 
-Both count toward the job's caps. Time-limit continuation and pick-up still work as before, and a run they start stays on the same job. They and the older delegation log and watcher table are due to be removed on Monday 16 November 2026 at 12:00 UTC, unless Anis decides otherwise.
+All of them count toward the job's caps. The older delegation log and watcher table are still in place.
 
 Jobs are kept while `requests.enabled` is on. To keep jobs on a node where requests are off, set `requests.jobs.enabled` to `true`: every run that is not your own turn gets its job, and your own requests leave no record there. Set it to `false` to keep no jobs at all.
 

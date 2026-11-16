@@ -2434,11 +2434,10 @@ export const daemonConfigSchema = z.object({
       windowMinutes: z.number().positive().default(10),
     }).default({}),
     /** A run stopped at its agent's time limit (maxExecutionMinutes) is
-     *  continued in the same chat, with a note, up to this many times
-     *  (#1257). Scheduled jobs and workflow steps never are. */
+     *  continued by its job's wake, with a note, under the job's caps
+     *  (#1257, #1861). Scheduled jobs and workflow steps never are. */
     timeLimit: z.object({
       enabled: z.boolean().default(true),
-      maxContinuations: z.number().int().min(0).max(3).default(1),
     }).default({}),
   }).default({}),
   /** A run of agent work ends by stating its job's state: done (proof),

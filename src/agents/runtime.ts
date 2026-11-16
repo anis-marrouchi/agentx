@@ -178,13 +178,6 @@ export interface AgentTask {
   preSpawnRetry?: number
   /** Offered to the run already going in this chat (mid-turn.ts). */
   midTurnId?: string
-  /** Set on a run that continues one stopped at its agent's time limit
-   *  (#1257): how many continuations this request has had, and when its
-   *  first run started (a caller's deadline counts from there). */
-  timeLimitContinuation?: number
-  timeLimitStartedAt?: number
-  /** The request as first sent, without the continuation note. */
-  timeLimitRequest?: string
   /** Set on the one turn that asks a run for its job's state (run-state.ts). */
   jobStateAsk?: boolean
   /** Improvement plan #8 — when true, the dispatcher discards any

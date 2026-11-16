@@ -748,3 +748,90 @@ describe("other paths wake the job (#1861 box 4)", () => {
     expect(jobs.get("job-parent")!.wakeAt).toBeNull()
   })
 })
+
+describe("a time-limit stop is continued by its job (#1861)", () => {
+  // The run's own end marks its job blocked, timed out (jobs/doors.ts).
+  const timedOut = (id = "job-1") => jobs.declare(id, { state: "blocked", why: "coder timed out: Claude Code timed out after 30m" }, { runId: `run-${id}`, now: clock })
+
+  it("turns the run's own time-out into a wake, and the next tick starts the run with the note", async () => {
+    open()
+    timedOut()
+    expect(wake.timeLimitStopped(["run-job-1", "running-1"], "your last run was stopped at its 30 min time limit")).toBe("job-1")
+    expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: clock })
+    wake.tick()
+    await flush()
+    expect(started).toHaveLength(1)
+    expect(started[0].text).toContain("30 min time limit")
+  })
+
+  it("finds the job by any of the run's ids, and takes one still marked working", () => {
+    open()
+    expect(wake.timeLimitStopped([undefined, "nope", "run-job-1"], "n")).toBe("job-1")
+  })
+
+  it("waits for the stopped run to leave the job before starting", async () => {
+    open()
+    timedOut()
+    live.add("job-1")
+    expect(wake.timeLimitStopped(["run-job-1"], "n")).toBe("job-1")
+    wake.tick()
+    await flush()
+    expect(started).toHaveLength(0)
+    live.delete("job-1")
+    wake.tick()
+    await flush()
+    expect(started).toHaveLength(1)
+  })
+
+  it("keeps another reason: blocked by another run, stalled, closed", () => {
+    open()
+    jobs.declare("job-1", { state: "blocked", why: "needs the client's key" }, { runId: "run-other", now: clock })
+    expect(wake.timeLimitStopped(["run-job-1"], "n")).toBeNull()
+    expect(jobs.get("job-1")).toMatchObject({ state: "blocked", wakeAt: null })
+    open("job-s")
+    jobs.markStalled("job-s", "nobody on it", clock)
+    expect(wake.timeLimitStopped(["run-job-s"], "n")).toBeNull()
+    open("job-d")
+    jobs.declare("job-d", { state: "done", proof: "PR 1" }, { now: clock })
+    expect(wake.timeLimitStopped(["run-job-d"], "n")).toBeNull()
+  })
+
+  it("stays blocked at the job's cap of wakes or cost", () => {
+    open()
+    timedOut()
+    settings.maxWakes = 0
+    expect(wake.timeLimitStopped(["run-job-1"], "n")).toBeNull()
+    settings.maxWakes = 20
+    settings.maxCostUsd = 1
+    db.prepare("INSERT INTO task_traces VALUES ('run-job-1', 'error', 1, 2, 1.5, NULL)").run()
+    expect(wake.timeLimitStopped(["run-job-1"], "n")).toBeNull()
+    expect(jobs.get("job-1")).toMatchObject({ state: "blocked", wakeAt: null })
+  })
+
+  it("takes no run with no job, the wake off, a schedule's, another node's or an absent agent's job", () => {
+    expect(wake.timeLimitStopped(["run-none"], "n")).toBeNull()
+    open()
+    settings.enabled = false
+    expect(wake.timeLimitStopped(["run-job-1"], "n")).toBeNull()
+    settings.enabled = true
+    open("job-cron", { door: "cron", requester: "cron:daily" })
+    expect(wake.timeLimitStopped(["run-job-cron"], "n")).toBeNull()
+    open("job-peer", { peer: "clawd", remoteId: "r1" })
+    expect(wake.timeLimitStopped(["run-job-peer"], "n")).toBeNull()
+    open("job-ghost", { assignee: "ghost" })
+    expect(wake.timeLimitStopped(["run-job-ghost"], "n")).toBeNull()
+  })
+})
+
+describe("a time-limit stop, through the doors", () => {
+  it("the door's timed-out block is the one the hand-off turns into a wake", () => {
+    open()
+    doors.taskCompleted({
+      taskId: "run-job-1", agentId: "coder", channel: "a2a", chatId: "pm", durationMs: 1,
+      error: "Claude Code timed out after 30m. Bump …", errorKind: "timeout", at: new Date(clock).toISOString(),
+    } as any)
+    expect(jobs.get("job-1")).toMatchObject({ state: "blocked", declaredRun: "run-job-1" })
+    expect(wake.timeLimitStopped(["run-job-1", "running-x"], "n")).toBe("job-1")
+    expect(jobs.get("job-1")).toMatchObject({ state: "continue", wakeAt: clock, note: "n" })
+  })
+})
