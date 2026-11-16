@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.226.5](https://github.com/anis-marrouchi/agentx/compare/v0.226.4...v0.226.5) (2026-11-16)
+
+
+### Bug Fixes
+
+* **jobs:** every hand-off is read in turn, and a peer with its ledger off no longer stalls them ([#1888](https://github.com/anis-marrouchi/agentx/issues/1888)) ([#1889](https://github.com/anis-marrouchi/agentx/issues/1889)) ([2c05128](https://github.com/anis-marrouchi/agentx/commit/2c05128216d9170ac8120db5babc44542ccbb20d)), closes [#1861](https://github.com/anis-marrouchi/agentx/issues/1861)
+
 ## [0.226.4](https://github.com/anis-marrouchi/agentx/compare/v0.226.3...v0.226.4) (2026-11-16)
 
 
