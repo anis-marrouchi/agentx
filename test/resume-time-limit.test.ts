@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import {
-  buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, planTimeLimit, reportedTimeLimitError,
-  timeLimitContinuations, timeLimitMinutes,
+  buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, handedOffTimeLimitError, planTimeLimit, reportedTimeLimitError,
+  timeLimitMinutes,
 } from "../src/agents/resume/time-limit"
 import { sendTimeoutMs } from "../src/daemon/delegation-wiring"
 import { AgentRegistry } from "../src/agents/registry"
@@ -12,14 +12,14 @@ import { daemonConfigSchema } from "../src/daemon/config"
 import type { AgentResponse, AgentTask } from "../src/agents/runtime"
 
 // A run stopped at its agent's time limit used to end as a bare error and
-// was never picked up again (#1257). It is now continued once in the same
-// chat, with a note, and answers the same caller; when it can't be, the
-// error says why.
+// was never picked up again (#1257). Then the registry continued it once
+// itself. Now its job continues it (#1861): the stop is handed to the
+// job's wake, and the caller gets the stop at once; when no wake takes
+// it, the error says why.
 
 const LIMIT_ERR = `Claude Code timed out after 30m. Bump agent.maxExecutionMinutes for "Ops" if tasks need longer.`
 const plan = (over: Partial<Parameters<typeof planTimeLimit>[0]> = {}) => planTimeLimit({
-  error: LIMIT_ERR, errorKind: "timeout", channel: "a2a", chatId: "a2a:sec:ops",
-  continuation: 0, elapsedMs: 30 * 60_000, callerGone: false, settings: DEFAULT_TIME_LIMIT_SETTINGS, ...over,
+  error: LIMIT_ERR, errorKind: "timeout", channel: "a2a", chatId: "a2a:sec:ops", settings: DEFAULT_TIME_LIMIT_SETTINGS, ...over,
 })
 
 describe("timeLimitMinutes", () => {
@@ -39,55 +39,51 @@ describe("timeLimitMinutes", () => {
 })
 
 describe("planTimeLimit", () => {
-  it("continues a time-limit stop once", () => {
-    expect(plan()).toEqual({ action: "continue", minutes: 30, continuation: 1 })
-    expect(plan({ continuation: 1 })).toMatchObject({ action: "report", reason: "already continued once" })
+  it("hands a time-limit stop to its job", () => {
+    expect(plan()).toEqual({ action: "handoff", minutes: 30 })
   })
   it("leaves other errors and mesh runs alone", () => {
     expect(plan({ error: "boom", errorKind: "unknown" })).toEqual({ action: "none" })
     expect(plan({ viaMesh: "peer-a" })).toEqual({ action: "none" })
   })
-  it("reports scheduled jobs, workflow steps and runs nobody waits for", () => {
+  it("reports scheduled jobs and workflow steps", () => {
     expect(plan({ channel: "cron" })).toMatchObject({ action: "report", reason: expect.stringMatching(/scheduled job/) })
     expect(plan({ workflowRunId: "run-1" })).toMatchObject({ action: "report", reason: expect.stringMatching(/workflow step/) })
     expect(plan({ chatId: "workflow:run-1" })).toMatchObject({ action: "report", reason: expect.stringMatching(/workflow step/) })
-    expect(plan({ callerGone: true })).toMatchObject({ action: "report", reason: expect.stringMatching(/nobody is waiting/) })
   })
-  it("reports when turned off or capped at 0", () => {
-    expect(plan({ settings: { enabled: false, maxContinuations: 1 } })).toMatchObject({ action: "report", reason: expect.stringMatching(/turned off/) })
-    expect(plan({ settings: { enabled: true, maxContinuations: 0 } })).toMatchObject({ action: "report", reason: expect.stringMatching(/turned off/) })
-  })
-  it("keeps within the caller's own deadline", () => {
-    expect(plan({ timeoutMinutes: 90 })).toEqual({ action: "continue", minutes: 30, continuation: 1, timeoutMinutes: 60 })
-    expect(plan({ timeoutMinutes: 31 })).toMatchObject({ action: "report", reason: expect.stringMatching(/caller's own time limit/) })
+  it("reports when turned off", () => {
+    expect(plan({ settings: { enabled: false } })).toMatchObject({ action: "report", reason: expect.stringMatching(/turned off/) })
   })
 })
 
-describe("the continuation note", () => {
-  it("says it hit the limit, lists the tool calls, and asks to finish or report on the last run", () => {
-    const note = buildTimeLimitNote(30, [{ action: "Bash", inputSummary: "render  video.mp4" }], true)
-    expect(note).toMatch(/^\[Continued after the time limit\] You worked on this request for 30 min/)
+describe("the wake note", () => {
+  it("says it hit the limit and lists the tool calls, short enough for a job note", () => {
+    const note = buildTimeLimitNote(30, [{ action: "Bash", inputSummary: "render  video.mp4" }])
+    expect(note).toMatch(/^your last run was stopped at its 30 min time limit/)
     expect(note).toContain("1. Bash: render video.mp4")
-    expect(note).toMatch(/check whether it already happened/)
-    expect(note).toMatch(/last run for it.*say what is done, what is left/s)
-    expect(buildTimeLimitNote(30, [], false)).toMatch(/No tool calls were recorded[\s\S]*Carry on from where you stopped/)
+    expect(note).toMatch(/Carry on from where it stopped\.$/)
+    expect(buildTimeLimitNote(30, [])).toMatch(/No tool calls were recorded/)
+    const many = Array.from({ length: 40 }, () => ({ action: "Bash", inputSummary: "x".repeat(500) }))
+    const long = buildTimeLimitNote(90, many)
+    expect(long).toContain("…and 32 more")
+    expect(long.length).toBeLessThanOrEqual(1000)
   })
-  it("keeps the runtime's message when not continued", () => {
-    expect(reportedTimeLimitError(LIMIT_ERR, "already continued once"))
-      .toBe(`${LIMIT_ERR} It was not continued (already continued once).`)
+  it("keeps the runtime's message, and says who continues it", () => {
+    expect(reportedTimeLimitError(LIMIT_ERR, "workflow step")).toBe(`${LIMIT_ERR} It was not continued (workflow step).`)
+    expect(handedOffTimeLimitError(LIMIT_ERR, "job-1")).toBe(`${LIMIT_ERR} Its job job-1 continues it in a new run.`)
   })
 })
 
-describe("a send's wait covers the continuation", () => {
-  it("adds the agent's time limit once per continuation", () => {
-    expect(timeLimitContinuations(DEFAULT_TIME_LIMIT_SETTINGS)).toBe(1)
-    expect(timeLimitContinuations({ enabled: false, maxContinuations: 2 })).toBe(0)
-    expect(sendTimeoutMs(90, 1)).toBe(210 * 60_000)
+describe("a send's wait", () => {
+  it("is the callee's own time limit: no continuation inside the send", () => {
     expect(sendTimeoutMs(90)).toBe(120 * 60_000)
   })
-  it("defaults to one continuation in the config", () => {
+  it("has no continuation cap in the config", () => {
     const config = daemonConfigSchema.parse({ node: { id: "t", name: "t" } })
-    expect(config.resume.timeLimit).toEqual({ enabled: true, maxContinuations: 1 })
+    expect(config.resume.timeLimit).toEqual({ enabled: true })
+    // An old config with the cap still parses: the key is dropped.
+    const old = daemonConfigSchema.parse({ node: { id: "t", name: "t" }, resume: { timeLimit: { enabled: true, maxContinuations: 2 } } })
+    expect(old.resume.timeLimit).toEqual({ enabled: true })
   })
 })
 
@@ -118,34 +114,43 @@ describe("registry.execute after a time-limit stop", () => {
   }
   const stopped: AgentResponse = { content: "", error: LIMIT_ERR, errorKind: "timeout" }
 
-  it("continues the same chat with the note and answers the caller", async () => {
-    const { r, seen, logs } = registry([stopped, { content: "render finished" }])
+  it("hands the stop to its job's wake, with the note, and runs nothing more itself", async () => {
+    const { r, seen, logs } = registry([stopped, { content: "never run" }])
+    const handed: Array<{ runIds: Array<string | undefined>; note: string }> = []
+    r.setTimeLimitHandoff((runIds, note) => { handed.push({ runIds, note }); return "job-7" })
     const res = await r.execute({ agentId: "ops", message: "render the intro", context: { channel: "a2a", chatId: "a2a:sec:ops" } })
-    expect(res).toMatchObject({ content: "render finished" })
-    expect(res.error).toBeUndefined()
-    expect(seen).toHaveLength(2)
-    expect(seen[1].context).toEqual({ channel: "a2a", chatId: "a2a:sec:ops" })
-    expect(seen[1].message).toMatch(/^\[Continued after the time limit\][\s\S]*1\. Bash: make render[\s\S]*\nrender the intro$/)
-    expect(seen[1]).toMatchObject({ timeLimitContinuation: 1, resumedFrom: "trace-0", timeLimitRequest: "render the intro" })
-    expect(logs.some((l) => /stopped at its 30m time limit; continuing \(1\/1\)/.test(l))).toBe(true)
-  })
-
-  it("stops after the cap and says so", async () => {
-    const { r, seen } = registry([stopped, stopped])
-    const res = await r.execute({ agentId: "ops", message: "render", context: { channel: "a2a", chatId: "x" } })
-    expect(seen).toHaveLength(2)
-    expect(res.error).toBe(`${LIMIT_ERR} It was not continued (already continued once).`)
+    expect(seen).toHaveLength(1)
+    expect(res.error).toBe(handedOffTimeLimitError(LIMIT_ERR, "job-7"))
     expect(res.errorKind).toBe("timeout")
+    expect(handed).toHaveLength(1)
+    expect(handed[0].runIds[0]).toBe("trace-0")
+    expect(handed[0].note).toMatch(/30 min time limit[\s\S]*1\. Bash: make render/)
+    expect(logs.some((l) => /stopped at its 30m time limit; its job job-7 continues it/.test(l))).toBe(true)
   })
 
-  it("never continues a scheduled job, and can be turned off", async () => {
+  it("says so when no job's wake takes it", async () => {
+    const { r, seen } = registry([stopped])
+    r.setTimeLimitHandoff(() => null)
+    const res = await r.execute({ agentId: "ops", message: "render", context: { channel: "a2a", chatId: "x" } })
+    expect(seen).toHaveLength(1)
+    expect(res.error).toMatch(/not continued \(no job's wake took it/)
+    // Unset, the same.
+    const bare = registry([stopped])
+    expect((await bare.r.execute({ agentId: "ops", message: "render", context: { channel: "a2a", chatId: "x" } })).error)
+      .toMatch(/no job's wake took it/)
+  })
+
+  it("never hands off a scheduled job, and can be turned off", async () => {
+    let calls = 0
     const cron = registry([stopped])
+    cron.r.setTimeLimitHandoff(() => { calls++; return "job-1" })
     const res = await cron.r.execute({ agentId: "ops", message: "nightly", context: { channel: "cron", chatId: "job" } })
     expect(cron.seen).toHaveLength(1)
     expect(res.error).toMatch(/not continued \(scheduled job/)
 
     const off = registry([stopped], { timeLimit: { enabled: false } })
-    await off.r.execute({ agentId: "ops", message: "render", context: { channel: "a2a", chatId: "x" } })
-    expect(off.seen).toHaveLength(1)
+    off.r.setTimeLimitHandoff(() => { calls++; return "job-1" })
+    expect((await off.r.execute({ agentId: "ops", message: "render", context: { channel: "a2a", chatId: "x" } })).error).toMatch(/turned off/)
+    expect(calls).toBe(0)
   })
 })

@@ -86,7 +86,6 @@ import { StoppedTaskStore } from "@/agents/signals/store"
 import { setSignalService } from "@/agents/signals/instance"
 import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
 import { traceToolCalls } from "@/storage/traces"
-import { timeLimitContinuations } from "@/agents/resume/time-limit"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
@@ -870,9 +869,10 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
         }
-        // A run continued after its time limit lists the tool calls the
-        // stopped run made (#1257).
+        // A run stopped at its time limit is continued by its job's wake
+        // (#1861), with the tool calls the stopped run made (#1257).
         this.registry.setTraceToolCalls((traceId) => traceToolCalls(db, traceId))
+        this.registry.setTimeLimitHandoff((runIds, note) => this.jobWake?.timeLimitStopped(runIds, note) ?? null)
         // The job's state a run of agent work ends with goes on its job
         // (#1861 phase 2).
         this.registry.setJobStateListener((runIds, ev) => {
@@ -4934,7 +4934,7 @@ export class AgentXDaemon {
       message: target.message,
       calleeContext: target.calleeContext,
       extras,
-      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes, timeLimitContinuations(this.config.resume.timeLimit)) }) } : {}),
+      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes) }) } : {}),
       // One session per piece of work (#1100): the body's home, or the one
       // a /task context carries.
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),

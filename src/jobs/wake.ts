@@ -330,6 +330,35 @@ export class JobWake {
     }
   }
 
+  /** A run was stopped at its agent's time limit (agents/resume/time-
+   *  limit.ts): its job continues it, in a run this wake starts with
+   *  `note`. The run's own end has already marked the job blocked (timed
+   *  out, jobs/doors.ts): that block is the stop handed off here; any
+   *  other reason stands. The id of the job, or null when none takes it:
+   *  the wake is off; no job, an owner's request (its own checks follow
+   *  it), a schedule's or another node's; closed or held for another
+   *  reason; at its cap of wakes or cost. The start waits, as every wake
+   *  does, until no run is on the job. */
+  timeLimitStopped(runIds: Array<string | undefined>, note: string): string | null {
+    const settings = this.deps.settings()
+    if (!settings.enabled) return null
+    try {
+      const ids = runIds.filter((id): id is string => !!id)
+      const job = ids.map((id) => this.deps.jobs.byRun(id)).find((j) => !!j)
+      if (!job || job.ownerRequest || noWake(job) || job.peer || !this.deps.hasAgent(job.assignee)) return null
+      const ownStop = job.state === "blocked" && job.declaredRun !== null && ids.includes(job.declaredRun)
+      if (!ownStop && job.state !== "working" && job.state !== "continue") return null
+      if (job.wakeCount >= settings.maxWakes || this.deps.jobs.costUsd(job.id) >= settings.maxCostUsd) return null
+      const now = this.now()
+      if (!this.deps.jobs.declare(job.id, { state: "continue", wakeAt: now, note }, { runId: ids[0], now })) return null
+      this.deps.log(`[jobs] ${job.id}: stopped at its time limit, wake armed`)
+      return job.id
+    } catch (e: any) {
+      this.deps.log(`[jobs] time-limit hand-off failed: ${e?.message ?? e}`)
+      return null
+    }
+  }
+
   /** The job of the agent that handed out a delegation: the parent of
    *  the job the hand-off opened, when that agent is `delegator`. Not an
    *  owner's request: a hand-off from a person's turn is followed by the

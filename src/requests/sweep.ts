@@ -9,6 +9,7 @@ import { cardWords } from "./card-view"
 import { goalLine } from "./goals"
 import { DEFAULT_RESEND, resendLine, resendVerdict, type ResendCause } from "./resend"
 import { HUB_NAME } from "@/daemon/ui/hub-name"
+import { JOB_NOTE_MAX } from "@/jobs/store"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
@@ -70,9 +71,9 @@ export interface RequestSweepDeps {
   /** A usage-limit hold is active (#1542): a request a limit stopped is
    *  not resent until it lifts. Unset: no hold. */
   limitHeld?: () => boolean
-  /** Arms the wake of the request's job (#1861 box 4): its one resend
-   *  then starts as the job's next run. False: not taken, the pick-up
-   *  path resends it. Unset: always the pick-up path. */
+  /** Arms the wake of the request's job (#1861): its one resend (box 4)
+   *  or its pick-up then starts as the job's next run. False: not taken,
+   *  the pick-up turn goes as before. Unset: always the pick-up turn. */
   wakeJob?: (requestId: string, note: string) => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
   check?: LoopChecker
@@ -136,6 +137,18 @@ export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?
  *  bot's chat, a voice turn), so it is told to answer in this turn, which
  *  the request's card shows as the last answer (#481). */
 export function pickupText(r: RequestRecord, resend: ResendCause | null = null): string {
+  const { lead, tail } = pickupParts(r, resend)
+  return [`[agentx:request-pickup id=${r.id}]`, lead, "", "What they asked:", r.text, "", ...tail].join("\n")
+}
+
+/** The same, as the note of the job's wake that picks it up (#1861): the
+ *  wake's own text already says what was asked. */
+export function pickupNote(r: RequestRecord, resend: ResendCause | null = null): string {
+  const { lead, tail } = pickupParts(r, resend)
+  return [lead, ...tail].filter((l) => l !== "").join(" ")
+}
+
+function pickupParts(r: RequestRecord, resend: ResendCause | null): { lead: string; tail: string[] } {
   const first = r.askedAgent && r.askedAgent !== r.agentId ? r.askedAgent : null
   const on = new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")
   const asked = `on ${r.channel} (chat ${r.chatId}) on ${on} UTC and was not finished.`
@@ -146,23 +159,21 @@ export function pickupText(r: RequestRecord, resend: ResendCause | null = null):
     : first
     ? `That chat is ${first}'s: you may have no way to write there, so do not report in it. Give your report as the answer to this turn: the owner reads it on the request's card. If you have a chat of your own with them, you can report there as well.`
     : "Report to them in that chat."
-  return [
-    `[agentx:request-pickup id=${r.id}]`,
-    resend
-      ? `${resendLine(resend)} It was asked ${wall ? `on the ${HUB_NAME} on ${on} UTC and was not finished.` : asked}`
-      : wall && !first && !r.ownerNote
-      ? `The owner gave you this task on the ${HUB_NAME} on ${on} UTC.`
-      : first
-        ? `The owner handed this request to you. It was asked of ${first} ${asked}`
-        : `The owner asked you to pick this request up again. It was asked ${asked}`,
-    "",
-    "What they asked:",
-    r.text,
-    "",
-    ...goalLine(r.goal),
-    ...(r.ownerNote && !r.noteSaid ? ["What they say now:", r.ownerNote, ""] : []),
-    `Do the work now. ${report} When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
-  ].join("\n")
+  const lead = resend
+    ? `${resendLine(resend)} It was asked ${wall ? `on the ${HUB_NAME} on ${on} UTC and was not finished.` : asked}`
+    : wall && !first && !r.ownerNote
+    ? `The owner gave you this task on the ${HUB_NAME} on ${on} UTC.`
+    : first
+      ? `The owner handed this request to you. It was asked of ${first} ${asked}`
+      : `The owner asked you to pick this request up again. It was asked ${asked}`
+  return {
+    lead,
+    tail: [
+      ...goalLine(r.goal),
+      ...(r.ownerNote && !r.noteSaid ? ["What they say now:", r.ownerNote, ""] : []),
+      `Do the work now. ${report} When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
+    ],
+  }
 }
 
 const HOUR = 3_600_000
@@ -282,6 +293,15 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       // mark back after it is set, not before (#485).
       const says = r.ownerNote && !r.noteSaid ? r.ownerNote : null
       if (says) store.setNoteSaid(r.id, says, true)
+      // The job's next run when its wake takes it (#1861): one path, under
+      // the job's caps. A note too long for the wake keeps the turn whole.
+      const note = pickupNote(r, resent.get(r.id) ?? null)
+      if (note.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, note)) {
+        result.pickedUp++
+        if (resent.has(r.id)) result.resent++
+        log(`[requests] ${r.id} picked up through its job's wake`)
+        continue
+      }
       try {
         await deps.tellAgent(r.agentId, pickupText(r, resent.get(r.id) ?? null), r)
         result.pickedUp++
