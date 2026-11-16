@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.226.4](https://github.com/anis-marrouchi/agentx/compare/v0.226.3...v0.226.4) (2026-11-16)
+
+
+### Bug Fixes
+
+* **jobs:** a hand-off the other node never recorded is marked stalled ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861)) ([#1886](https://github.com/anis-marrouchi/agentx/issues/1886)) ([a656575](https://github.com/anis-marrouchi/agentx/commit/a6565751ca165e96cd9e183f45078b41a1fe01c2))
+
 ## [0.226.3](https://github.com/anis-marrouchi/agentx/compare/v0.226.2...v0.226.3) (2026-11-15)
 
 
