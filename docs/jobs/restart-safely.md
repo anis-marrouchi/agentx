@@ -248,7 +248,7 @@ The same exceptions apply as after a restart:
 
 When the work is handed to its job, the error ends with `Its job <id> continues it in a new run.` When it is not, the error says why, for example `Claude Code timed out after 30m. … It was not continued (no job's wake took it: no job, the wake is off, or the job is at its cap).`
 
-How many times one job is woken, and what its runs may cost, are the job's caps (`requests.jobs.wake.maxWakes` and `maxCostUsd`). The older `resume.timeLimit.maxContinuations` setting is gone; an `agentx.json` that still has it starts as before, without it.
+How many times one job is woken, and what its runs may cost, are the job's caps (`requests.jobs.wake.maxWakes` and `maxCostUsd`). The older time-limit continuation count is gone; an `agentx.json` that still has it starts as before, without it.
 
 Set it in `agentx.json` under `resume`. The value shown is the default:
 
