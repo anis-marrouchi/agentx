@@ -2,6 +2,17 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.227.0](https://github.com/anis-marrouchi/agentx/compare/v0.226.5...v0.227.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **jobs:** time-limit stops and pick-ups wake the job ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861)) (#1896)
+
+### Features
+
+* **jobs:** time-limit stops and pick-ups wake the job ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861)) ([#1896](https://github.com/anis-marrouchi/agentx/issues/1896)) ([638e1c7](https://github.com/anis-marrouchi/agentx/commit/638e1c7a380727e5e9dd290cae1b4f27bf50ad4e))
+
 ## [0.226.5](https://github.com/anis-marrouchi/agentx/compare/v0.226.4...v0.226.5) (2026-11-16)
 
 
