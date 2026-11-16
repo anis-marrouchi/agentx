@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { JobStore } from "../src/jobs/store"
-import { JobMesh, UNKNOWN_GRACE_MS } from "../src/jobs/mesh"
+import { JobMesh, PASS_SIZE, UNKNOWN_GRACE_MS } from "../src/jobs/mesh"
 import { handleJobsApi } from "../src/jobs/api"
 import { statusLine } from "../src/jobs/status"
 import { JobDoors } from "../src/jobs/doors"
@@ -130,6 +130,75 @@ describe("a job handed to another node", () => {
     handOff()
     await m.refresh()
     expect(jobs.get("job-dlg-abc-12")!.state).toBe("waiting")
+  })
+
+  it("is read in turn when there are more than one pass holds, the oldest too, and stalled like any other", async () => {
+    let now = NOW
+    const m = new JobMesh({ jobs, log: () => {}, now: () => now, fetchJob: async (peer, id) => {
+      asked.push(`${peer}:${id}`)
+      const reply = handleJobsApi("GET", `/jobs/${id}`, { store: far, now })
+      return { status: reply.status, body: reply.body }
+    } })
+    const total = PASS_SIZE * 2 + 5
+    // The oldest is the least recently active: a newest-first window never reaches it.
+    for (let i = 0; i < total; i++) {
+      jobs.open({ id: `job-${i}`, door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: `a2a:coder:pm:${i}`, text: "t", peer: "clawd", state: "waiting", waitingOn: "pm@clawd", now: NOW + i })
+    }
+    far.open({ id: "job-0", door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: "a2a:coder:pm:0", text: "t", now: NOW })
+    expect(await m.refresh()).toBe(1)
+    expect(jobs.get("job-0")!.note).toMatch(/^there: /)
+    await m.refresh()
+    await m.refresh()
+    expect(new Set(asked).size).toBe(total)
+    expect(asked).toHaveLength(total)
+    // The next pass starts again from the first.
+    await m.refresh()
+    expect(asked[total]).toBe("clawd:job-0")
+    // Past the grace time every one that node does not know is stalled, in three passes.
+    now = NOW + UNKNOWN_GRACE_MS + HOUR
+    for (let i = 0; i < 3; i++) await m.refresh()
+    expect(jobs.openOnPeers(500).map((j) => j.id)).toEqual(["job-0"])
+    expect(jobs.get(`job-${total - 1}`)!.state).toBe("stalled")
+    expect(jobs.get("job-1")!.state).toBe("stalled")
+  })
+
+  it("is not stalled when that node keeps no jobs, or runs a version that cannot say", async () => {
+    let now = NOW
+    let answer: { status: number; body: unknown } = { status: 404, body: null }
+    const m = new JobMesh({ jobs, log: () => {}, now: () => now, fetchJob: async () => answer })
+    jobs.open({ id: "job-off", door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: "a2a:coder:pm:off", text: "t", peer: "clawd", state: "waiting", waitingOn: "pm@clawd", now: NOW })
+    now = NOW + UNKNOWN_GRACE_MS + HOUR
+    // Its ledger is off: the 404 says so.
+    answer = handleJobsApi("GET", "/jobs/job-off", { store: far, now, ledgerOff: true })
+    expect(answer).toMatchObject({ status: 404, body: { ledger: "off" } })
+    await m.refresh()
+    expect(jobs.get("job-off")!.state).toBe("waiting")
+    const off = (await m.remoteOf(jobs.get("job-off")!))!
+    expect(off.unknown).toBeUndefined()
+    expect(off.error).toMatch(/keeps no jobs/)
+    // An older version: a 404 that does not say.
+    for (const body of [null, { error: 'no job "job-off"' }, { error: "Not found" }]) {
+      answer = { status: 404, body }
+      await m.refresh()
+      expect(jobs.get("job-off")!.state).toBe("waiting")
+      expect((await m.remoteOf(jobs.get("job-off")!))!.error).toMatch(/older version/)
+    }
+    // Its ledger is on and it has no such job: stalled.
+    answer = handleJobsApi("GET", "/jobs/job-off", { store: far, now })
+    expect(answer).toMatchObject({ status: 404, body: { ledger: "on" } })
+    await m.refresh()
+    expect(jobs.get("job-off")!.state).toBe("stalled")
+  })
+
+  it("does not ask a node that is down for each of its jobs in one pass", async () => {
+    for (let i = 0; i < 5; i++) jobs.open({ id: `job-d${i}`, door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: `a2a:coder:pm:d${i}`, text: "t", peer: i === 2 ? "other" : "clawd", state: "waiting", waitingOn: "pm@clawd", now: NOW })
+    const m = new JobMesh({ jobs, log: () => {}, fetchJob: async (peer, id) => {
+      asked.push(`${peer}:${id}`)
+      if (peer === "clawd") throw new Error("connect ECONNREFUSED")
+      return { status: 404, body: { ledger: "on" } }
+    } })
+    await m.refresh()
+    expect(asked).toEqual(["clawd:job-d0", "other:job-d2"])
   })
 
   it("is not read while blocked or stalled here, so the reason is never written over", async () => {

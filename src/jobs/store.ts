@@ -452,15 +452,24 @@ export class JobStore {
     ).all(limit).map(toJob)
   }
 
-  /** Open jobs whose agent runs on another node, most recently active
-   *  first: the ones this node asks that node about (phase 4). Not a
-   *  blocked or stalled job: its note is why, and the other node's line
-   *  must not write over it. */
+  /** Open jobs whose agent runs on another node: the ones this node asks
+   *  that node about (phase 4). Not a blocked or stalled job: its note is
+   *  why, and the other node's line must not write over it. */
   openOnPeers(limit = 30): JobRecord[] {
-    return this.db.prepare(
-      `${SELECT} WHERE state = ? AND peer IS NOT NULL AND ${OPEN_ROW} AND ${NOT_FAILED}
-       ORDER BY updated_at DESC, rowid DESC LIMIT ?`,
-    ).all(JOB_ROW_STATE, limit).map(toJob)
+    return this.openOnPeersPage(0, limit).jobs
+  }
+
+  /** One page of them in a fixed order (the order they were recorded),
+   *  after the row `after`. `last` is the row to pass for the next page.
+   *  A caller that walks the pages reads every one of them, however many
+   *  there are and however old (#1888). */
+  openOnPeersPage(after: number, limit = 30): { jobs: JobRecord[]; last: number } {
+    const rows = this.db.prepare(
+      `SELECT *, rowid AS page_row, ${JOB_STATE_SQL} AS derived_state FROM requests
+       WHERE state = ? AND peer IS NOT NULL AND ${OPEN_ROW} AND ${NOT_FAILED} AND rowid > ?
+       ORDER BY rowid LIMIT ?`,
+    ).all(JOB_ROW_STATE, after, limit) as Array<{ page_row: number }>
+    return { jobs: rows.map(toJob), last: rows.length ? rows[rows.length - 1].page_row : after }
   }
 
   /** What the other node says about a job handed to it: its id there and

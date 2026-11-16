@@ -5874,6 +5874,7 @@ export class AgentXDaemon {
         if (!this.requests) { this.json(res, 503, { error: "jobs need the database" }); return }
         const reply = handleJobsApi(req.method || "GET", path, {
           store: this.requests.jobs, query: url.searchParams, ...(this.db ? { facts: dbFacts(this.db) } : {}),
+          ledgerOff: !jobsOn(this.config.requests),
         })
         // ?tree=1 on one job: a job handed to another node comes with
         // that node's own row, runs and children (phase 4).
