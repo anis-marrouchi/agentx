@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3"
 import { MAX_OPEN_PROMISES } from "./daemon-api"
 import { HEADLINE_MAX } from "./headline"
-import { openPromise } from "./promise"
+import { armPromiseWake, openPromise } from "./promise"
 import { OPEN_STATES, OWED_TO_OWNER, OWNER_BY, type RequestRecord, type RequestStore } from "./store"
 
 // --- Catch "I'll do X" as a promise (#1138 step E) ---
@@ -337,7 +337,10 @@ export class PromiseCatcher {
     }
     if (!candidate) {
       // The request already follows this work: it gets the due time it lacked.
-      if (r.dueAt === null && v.dueAt !== null) store.setLoop(r.id, { dueAt: v.dueAt }, now)
+      if (r.dueAt === null && v.dueAt !== null) {
+        store.setLoop(r.id, { dueAt: v.dueAt }, now)
+        armPromiseWake(store, r.id, v.dueAt, now)
+      }
       store.touch(r.id, now)
       log.settle(t.runId, "promise", `${v.what} (on open request ${r.id})`)
       return "promise"
