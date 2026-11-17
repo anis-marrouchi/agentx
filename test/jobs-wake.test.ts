@@ -709,44 +709,6 @@ describe("other paths wake the job (#1861 box 4)", () => {
     expect(wake.wakeFor("job-1", "x")).toBe(false)
   })
 
-  it("delegatorJob finds the job that handed the work out, only for that agent", () => {
-    open("job-parent", { assignee: "pm", requester: "owner" })
-    open("job-dlg-1", { assignee: "coder", requester: "pm", parentId: "job-parent" })
-    expect(wake.delegatorJob("dlg-1", "pm")).toBe("job-parent")
-    expect(wake.delegatorJob("dlg-1", "someone-else")).toBeNull()
-    expect(wake.delegatorJob("dlg-none", "pm")).toBeNull()
-    open("job-dlg-2", { assignee: "coder", requester: "pm" })
-    expect(wake.delegatorJob("dlg-2", "pm")).toBeNull()
-  })
-
-  it("delegatorJob does not hand back an owner's request: a hand-off from a person's turn keeps the request's own checks", () => {
-    requests.addCandidate({ id: "req-1", runId: "o1", channel: "telegram", chatId: "anis", sender: "owner", agentId: "pm", text: "ship it", now: clock })
-    expect(jobs.get("req-1")?.ownerRequest).toBe(true)
-    open("job-dlg-3", { assignee: "coder", requester: "pm", parentId: "req-1" })
-    expect(wake.delegatorJob("dlg-3", "pm")).toBeNull()
-    expect(wake.alertDelegator("pm", "overdue", { kind: "delegation", taskKey: "dlg-3" })).toBe(false)
-  })
-
-  it("alertDelegator: a delegation watcher wakes the job that handed the work out, with the alert as its note", async () => {
-    open("job-parent", { assignee: "pm", requester: "owner", chatId: "owner" })
-    open("job-dlg-1", { assignee: "coder", requester: "pm", parentId: "job-parent" })
-    expect(wake.alertDelegator("pm", "w-1: the hand-off is overdue", { kind: "delegation", taskKey: "dlg-1" })).toBe(true)
-    wake.tick()
-    await flush()
-    expect(started.map((s) => s.id)).toEqual(["job-parent"])
-    expect(started[0].text).toContain("w-1: the hand-off is overdue")
-  })
-
-  it("alertDelegator leaves every other alert to the alert turn", () => {
-    open("job-parent", { assignee: "pm", requester: "owner" })
-    open("job-dlg-1", { assignee: "coder", requester: "pm", parentId: "job-parent" })
-    expect(wake.alertDelegator("pm", "x", { kind: "task", taskKey: "dlg-1" })).toBe(false)
-    expect(wake.alertDelegator("pm", "x", { kind: "delegation", taskKey: "t-1" })).toBe(false)
-    expect(wake.alertDelegator("coo", "x", { kind: "delegation", taskKey: "dlg-1" })).toBe(false)
-    live.add("job-parent")
-    expect(wake.alertDelegator("pm", "x", { kind: "delegation", taskKey: "dlg-1" })).toBe(false)
-    expect(jobs.get("job-parent")!.wakeAt).toBeNull()
-  })
 })
 
 describe("a time-limit stop is continued by its job (#1861)", () => {

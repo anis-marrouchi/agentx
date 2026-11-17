@@ -102,7 +102,7 @@ If the other agent writes back to the sender with `agentx_send_agent` while it w
 
 The callback turn is the sending agent's own work. Nothing from it is sent to a person. A send made from a person's chat (for example, while passing a helper's answer on to them) is not called back this way; it is queued as below.
 
-A callback can lead to a new send, which calls back in turn. The count of such hops travels with the work in both directions, to agents on other machines too, and a [watcher](../automations/task-watchers.md) alert about the work counts as one more hop. After four, sends go out without a callback, so two agents cannot keep calling each other back.
+A callback can lead to a new send, which calls back in turn. The count of such hops travels with the work in both directions, to agents on other machines too. After four, sends go out without a callback, so two agents cannot keep calling each other back.
 
 Otherwise (the daemon cannot tell which turn is sending, the send comes from a person's chat or is past four hops, or `mesh.delegation.callbackSends` is `false`), the message is queued and its answer is not returned to the sender:
 
@@ -169,7 +169,7 @@ A message that must start soon, such as a battery or disk alert, can be sent wit
 
 ### When the helper's run ends before the work does
 
-Sometimes a helper ends its run to wait: for a build, a deploy, a monitor, or another agent. Its reply then is not the end of the work. The helper says so with the `agentx_waiting` tool before it ends the run, giving what it waits for (`on`) and, if it knows, when the wait should be over (`due`, an ISO time). The answer that comes back to the asking agent then says the work is **not finished** and what it waits for, with status `waiting`, instead of "finished". An open request stays "waiting on another agent", and a [task watcher](/automations/task-watchers) stays open until the work is marked done, due at that time. A request status comment that reads "waiting" turns done when that watcher is marked done, and timed out when it fires and the owner is told; with no watcher, it reads timed out once the due time (or `watchers.defaultDueMinutes` from the end of the run, if none was given) plus `watchers.escalateAfterMinutes` has passed.
+Sometimes a helper ends its run to wait: for a build, a deploy, a monitor, or another agent. Its reply then is not the end of the work. The helper says so with the `agentx_waiting` tool before it ends the run, giving what it waits for (`on`) and, if it knows, when the wait should be over (`due`, an ISO time). The answer that comes back to the asking agent then says the work is **not finished** and what it waits for, with status `waiting`, instead of "finished". An open request stays "waiting on another agent",, due at that time. A request status comment that reads "waiting" reads timed out once the due time (or 120 minutes from the end of the run, if none was given) plus 30 minutes has passed.
 
 The tool works only from inside the helper's own run (`POST /runs/waiting` on its own machine).
 

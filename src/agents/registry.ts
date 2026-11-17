@@ -86,7 +86,7 @@ import { isHumanFacingTurn, isInsideDelegation } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { wokenJobId } from "@/jobs/wake"
 import { isOperatorTurn } from "@/requests/operator"
-import { dueAtOf, taskTypeOf } from "@/watchers/due"
+import { dueAtOf, taskTypeOf } from "@/agents/task-context"
 import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
@@ -683,8 +683,6 @@ export class AgentRegistry {
     sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number }) => Promise<string>
     directory: () => Array<{ peer: string; healthy: boolean; skills: Array<{ id: string }> }>
   }
-  /** See setRunNote. */
-  private runNote?: (started: AgentXEvents["task:started"]) => string | undefined
   /** See setTraceToolCalls. */
   private traceToolCalls?: (traceId: string) => Array<{ action: string | null; inputSummary: string | null }>
   /** See setTimeLimitHandoff. */
@@ -892,13 +890,6 @@ export class AgentRegistry {
    *  reload). */
   setWorkflowRunStore(runs: WorkflowRunStore | undefined): void {
     this.workflowRuns = runs
-  }
-
-  /** Wire the watcher's note for a run's prompt (#1049): how to close the
-   *  watcher only that run can close. The daemon calls this once watchers
-   *  attach; unset, no note is added. */
-  setRunNote(note: ((started: AgentXEvents["task:started"]) => string | undefined) | undefined): void {
-    this.runNote = note
   }
 
   /** A running run states its job's state (agentx_job_state,
@@ -3244,7 +3235,6 @@ export class AgentRegistry {
       wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
       // Kept on an isolated run too: it is about this run, not its context.
-      watcherNote: (() => { try { return this.runNote?.(started) } catch { return undefined } })(),
       rotationMemo,
       ownerDecisions,
       // Checked here, after the planner may have dropped the session.

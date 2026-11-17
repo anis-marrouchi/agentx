@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, the daily exceptions digest, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, the weekly quality report, resuming after a restart, due reminders, native apps and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, the daily exceptions digest, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, the weekly quality report, resuming after a restart, due reminders, native apps and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -19,7 +19,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `timeout` | number | `600` | Time limit in seconds. Agent jobs get at least 2 hours; see [time limits](./config.md#time-limits-and-cancel). |
 | `model` | string | — | Model for this job only, instead of the agent's model. |
 | `maxOutputTokens` | number (50–8000) | — | Asks the agent to keep its answer under about this many tokens. A soft cap added to the prompt. |
-| `taskType` | string (up to 64 characters) | — | The type of task each run is. It picks the proof a watcher asks for before the run counts as done (`watchers.evidence.<type>`). Unset, or a type with no rule of its own: the rule for `cron`, if there is one. To exempt a job from proof, remove the `cron` rule rather than set a type. See [Require proof of done](/automations/task-watchers#_5-require-proof-of-done-optional). |
+| `taskType` | string (up to 64 characters) | — | The type of task each run is, recorded in the run's context. |
 | `autonomy` | `"report"` \| `"propose"` \| `"act"` | — (acts as `act`) | How much the run may do. See [routine autonomy](./config.md#routine-autonomy). Not allowed on command jobs. |
 | `requireSources` | boolean | — | Check each answer before it is sent: every line that states a fact must carry a link (`https://…`, or a link to a `.md` file in the agent's folder). If one does not, the message ends with a warning that names the line, and the run record counts it as `unsourced`. See [sales leads](../jobs/sales.md). |
 | `expectExitZero` | boolean | — | For a prompt that tells the agent to run a shell command. The agent is asked to end its answer with a line `EXIT=<code>`, the command's exit code (0 means it worked). The run counts as failed when that line is missing or is not `EXIT=0`, so the failure shows in the schedule's run history and `onError` applies. Without it, a run counts as a success whenever the agent itself finished, even if the command it ran failed. Not allowed on command jobs, which already fail on a non-zero exit. See [a prompt that runs a command](#a-prompt-that-runs-a-command). |
@@ -387,7 +387,6 @@ To turn it on by hand:
 | `requests.promises.requireProof` | boolean | `true` | An agent's `done` on a promise needs a proof: a link, a passing test run, an output, or a check that ran. `false`: any evidence closes it. |
 | `requests.promises.facts` | boolean | `true` | A promise closed with a proof writes a checked fact to the wiki's fact ledger (`agentx wiki facts list`). |
 | `requests.promises.factTtlDays` | number (up to 3650) | `7` | Days that fact stays trusted before it shows as stale. |
-| `requests.promises.watchers` | boolean | `true` | A task watcher that fires raises the request that follows its task, or opens a promise for it, and you are told once through the requests check. `false`, or an address in `watchers.owner`: the watcher tells you itself. |
 | `requests.promises.cards` | boolean | `false` | A decision card raised outside a request is a promise you owe, closed when you decide it. |
 | `requests.catchPromises` | object | `{}` | Catch "I'll do X": at the end of each of your turns, one short model call reads the agent's reply. A firm promise becomes a promise of that agent; a reply that asks you leaves the request waiting on you. See [Promises caught in a reply](/jobs/open-requests#promises-caught-in-a-reply). |
 | `requests.catchPromises.enabled` | boolean | `true` | Reads the replies. On by default wherever requests are on; it spends one model call on most of your turns, bounded by `dailyCap`. Also `agentx requests settings --catch on\|off`. |
@@ -453,29 +452,6 @@ Tracked numbers and their readings. See [Track numbers over time](/jobs/numbers)
 | `numbers.retryMinutes` | whole number (5 to 1440) | `60` | Minutes before a failed read is tried again. |
 | `numbers.missedTwiceCard` | boolean | `true` | A number that misses its target twice in a row raises one decision card for its owner agent. `false`: no card; `agentx numbers review` still lists it. See [When a number misses twice](/jobs/numbers#when-a-number-misses-twice). |
 | `numbers.reviewer` | string (agent id) | unset | An agent that checks the owner's follow-up on a missed-twice card. It is told when you say yes, and gets the card itself when the number has no owner agent on this computer. |
-
-## `watchers`
-
-Task watchers: when a task starts (a message to an agent, a hand-off from one agent to another, a scheduled run), AgentX decides whether something should watch it. A watched task that passes its due time with no done signal, or that ends without a result, is reported to the agent that handed it over, and then to you. Off by default.
-
-The decision is the `task-watch` decision seat: it gives the chance that the task carries a deadline, a promise to you, or a hand-off. A watcher is attached unless the seat is `active` and the chance is below `noBelow`. A seat that is off, failed, in `shadow` mode or unsure attaches one. How it works, step by step: [Watch tasks that must finish](/automations/task-watchers).
-
-| Key | Type | Default | What it does |
-|---|---|---|---|
-| `watchers.enabled` | boolean | `false` | Runs the check at every task start and follows the watchers. |
-| `watchers.skipChannels` | list of strings | `[]` | Channels whose tasks are never checked, for example `["voice"]`. The watchers' own alert turns (channel `watchers`) never are. |
-| `watchers.defaultDueMinutes` | number (up to 43200) | `120` | Minutes from the start of a task to its due time, when the task gives none. A caller gives one as `dueAt` (an ISO date or milliseconds) in the task's `context`. |
-| `watchers.noBelow` | number (0 to 1) | `0.2` | A chance below this is a confident "no". Only an `active` seat skips the watcher on it. |
-| `watchers.yesAt` | number (0 to 1) | `0.7` | A chance at or above this is recorded as "yes". Between `noBelow` and `yesAt` it is "uncertain", which attaches a watcher. |
-| `watchers.escalateAfterMinutes` | number (up to 10080) | `30` | Minutes after the agent that handed the task over is told before you are told too, if the task is still not done. |
-| `watchers.owner.channel` | string | — | Channel you are told on. Unset: your default notification channel. |
-| `watchers.owner.chatId` | string | — | Chat on that channel. Unset: `default`. |
-| `watchers.retentionDays` | number (up to 3650) | `30` | Days a finished watcher is kept before it is deleted. Watchers still watching are never deleted. |
-| `watchers.doneSignal` | `"result"` or `"explicit"` | `"result"` | What closes a watcher. `result`: the agent's run ends with a reply, or the delegation answers. `explicit`: only `POST /watchers/<id>/done`, so a reply that only promises ("I'll publish at 18:00") keeps the watcher open until its due time. A run that ends without a result fires at once in both modes. |
-| `watchers.evidence.<type>` | object | — | Proof a done needs for tasks of this type. The type is the task's `taskType` (from `POST /task`, `POST /send/agent`, the `agentx_send_agent` and `agentx_task` tools, or a cron job's `taskType`), else the watcher's kind: `dispatch`, `delegation` or `cron`. A task of a type with a rule is never closed by its reply, only by a done whose evidence the rule accepts; anything else is refused. A cron or dispatch run with a rule is told in its own instructions how to close its watcher. The proof is what the agent reports: AgentX checks its shape, not that it is true. Types with no rule close as `doneSignal` says. See [Require proof of done](/automations/task-watchers#_5-require-proof-of-done-optional). |
-| `watchers.evidence.<type>.accept` | list of `"test"`, `"output"`, `"link"` | required | The kinds of proof that count; any one of them closes the task. `test`: at least one test passed and none failed. `output`: the text the task produced. `link`: an `http` or `https` address. |
-| `watchers.evidence.<type>.minOutputChars` | number (1 to 2000) | `40` | The shortest `output` accepted. |
-| `watchers.evidence.<type>.linkHosts` | list of strings | `[]` | Sites a `link` must be on, for example `["example.com"]` (its subdomains count too). Empty: any site. |
 
 ## `requestStatus`
 

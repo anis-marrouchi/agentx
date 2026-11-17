@@ -62,8 +62,6 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/requests" || path.startsWith("/requests/") ||
     // The job ledger (#1861): every piece of assigned work, with who asked.
     path === "/jobs" || path.startsWith("/jobs/") ||
-    // Watchers carry each watched task's summary and who handed it over (#1030).
-    path === "/watchers" || path.startsWith("/watchers/") ||
     // Follow-up runs name people, chats and what was said to them (#788).
     path === "/follow-up" || path.startsWith("/follow-up/") ||
     // Recent events name agents, chats and errors across the node.

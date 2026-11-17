@@ -328,8 +328,7 @@ export class A2AMesh {
       /** This node checked its own operator key on the forward: tell the
        *  peer the turn is the owner's (requests/operator, #407). */
       vouchOwner?: boolean
-      /** The task's type (#1049): picks the evidence the peer's watcher
-       *  asks for before the task counts as done. */
+      /** The task's type (#1049), carried into the peer's run context. */
       taskType?: string
       /** Callback hops behind this send (#1100), so the peer's callee
        *  stays under MAX_SEND_DEPTH. Top level, like taskType. */

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "http"
 import type { AddressInfo } from "net"
-import { contextWithTaskType, taskTypeOf } from "../src/watchers/due"
+import { contextWithTaskType, taskTypeOf } from "../src/agents/task-context"
 import { _handleToolCallForTesting, _resetDaemonUrlForTesting } from "../src/mcp/index"
 import { A2AMesh } from "../src/a2a/mesh"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -114,5 +114,17 @@ describe("mesh.sendTask carries taskType at the top level", () => {
   it("leaves it out when not given", async () => {
     await mesh.sendTask("p", "say hi", "beta", { senderAgentId: "front" }).catch(() => {})
     expect(seen.find((s) => s.path === "/task")!.body).not.toHaveProperty("taskType")
+  })
+})
+
+describe("task watchers are removed (#1861)", () => {
+  it("an old config with a watchers section still parses: the keys are dropped", () => {
+    const old = daemonConfigSchema.parse({
+      node: { id: "t", name: "t" },
+      watchers: { enabled: true, evidence: { code: { accept: ["test"] } } },
+      requests: { promises: { watchers: false } },
+    })
+    expect(old).not.toHaveProperty("watchers")
+    expect(old.requests.promises).not.toHaveProperty("watchers")
   })
 })

@@ -28,7 +28,7 @@ import { cronGoalGate, withGoalFirst, type CronGoalSource } from "./goal-gate"
  * the model. Keeps a cheap knob available for operators without us needing
  * to invent our own token counter or hack a post-response truncate.
  */
-/** A cron run's context. `taskType` picks its watcher's evidence rule. */
+/** A cron run's context, with its `taskType` when set. */
 function cronContext(jobId: string, job: CronJobState): AgentTask["context"] {
   return { channel: "cron", chatId: `cron:${jobId}`, ...(job.taskType ? { taskType: job.taskType } : {}) }
 }
