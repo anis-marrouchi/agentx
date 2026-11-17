@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.228.1](https://github.com/anis-marrouchi/agentx/compare/v0.228.0...v0.228.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **requests:** a promise's due time wakes the agent that owes it ([#1903](https://github.com/anis-marrouchi/agentx/issues/1903)) ([34b2d52](https://github.com/anis-marrouchi/agentx/commit/34b2d52cbd2278a9c59d1125344ed3c167a04609))
+
 ## [0.228.0](https://github.com/anis-marrouchi/agentx/compare/v0.227.1...v0.228.0) (2026-11-17)
 
 
