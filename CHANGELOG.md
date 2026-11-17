@@ -2,6 +2,17 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.228.0](https://github.com/anis-marrouchi/agentx/compare/v0.227.1...v0.228.0) (2026-11-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **jobs:** the `watchers` config section, `requests.promises.watchers`, the /watchers API and the `watcher` field of POST /runs/waiting are removed. An old config still loads; those keys are ignored.
+
+### Code Refactoring
+
+* **jobs:** remove task watchers ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861)) ([#1900](https://github.com/anis-marrouchi/agentx/issues/1900)) ([082fde9](https://github.com/anis-marrouchi/agentx/commit/082fde9944b880c5b0dafd53a5d990e6a543756b))
+
 ## [0.227.1](https://github.com/anis-marrouchi/agentx/compare/v0.227.0...v0.227.1) (2026-11-17)
 
 
