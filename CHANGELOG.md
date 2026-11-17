@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.227.1](https://github.com/anis-marrouchi/agentx/compare/v0.227.0...v0.227.1) (2026-11-17)
+
+
+### Performance Improvements
+
+* **dashboard:** compress pages, JSON and assets with brotli or gzip ([#1895](https://github.com/anis-marrouchi/agentx/issues/1895)) ([29cc8be](https://github.com/anis-marrouchi/agentx/commit/29cc8be27da1ac8d9efa57cf6a5e0a21a8115a61))
+
 ## [0.227.0](https://github.com/anis-marrouchi/agentx/compare/v0.226.5...v0.227.0) (2026-11-16)
 
 
