@@ -1574,11 +1574,14 @@ function TriggerFormForm({ node, patchData }: FormProps) {
 }
 
 function SubProcessForm({ node, patchData }: FormProps) {
-  const cfg = node.config as { workflowId?: string; inputMap?: unknown; awaitCompletion?: boolean }
+  const cfg = node.config as { workflowId?: string; inputMap?: unknown; awaitCompletion?: boolean; timeoutMin?: number | string }
   return (
     <Section title="Sub-process">
-      <Field label="Which workflow" hint="id of another workflow definition — it runs to completion, then parent resumes">
+      <Field label="Which workflow" hint="id of another workflow definition — the parent resumes when its run ends: on `done` if it completed, on `error` if it failed or was canceled">
         <Input mono value={String(cfg.workflowId ?? "")} onChange={(v) => patchData({ workflowId: v })} placeholder="child-workflow-id" />
+      </Field>
+      <Field label="Stop waiting after (minutes)" hint="Optional. When it passes, the child run is canceled and the parent leaves on `error`. Empty: wait until the child run ends.">
+        <Input mono value={String(cfg.timeoutMin ?? "")} onChange={(v) => patchData({ timeoutMin: v.trim() === "" ? undefined : Number.isFinite(Number(v)) ? Number(v) : v })} placeholder="30" />
       </Field>
       <Field label="Values to pass on" hint='Map child-context keys → templated values. Use a single key "*" for full inheritance.'>
         <KeyValueEditor

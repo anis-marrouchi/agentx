@@ -515,7 +515,7 @@ function computeDueAt(dueIn: unknown): string | undefined {
 }
 
 /** subProcess: spawn a child workflow run, pause the parent until the child
- *  reaches `end`. Enforces workflow.maxChildDepth safety rail at spawn time.
+ *  run ends (completed, failed or canceled) or `timeoutMin` passes. Enforces workflow.maxChildDepth safety rail at spawn time.
  *  Actual spawn is performed by the dispatcher (walk loop observes
  *  `spawnChild` on the result and creates + kicks the child run). */
 const subProcessHandler: NodeHandler = async (ctx) => {
@@ -550,6 +550,18 @@ const subProcessHandler: NodeHandler = async (ctx) => {
     }
   }
 
+  // Optional limit on the wait (#1905). Without one the parent waits until
+  // the child run ends, however it ends.
+  let timeoutAt: string | undefined
+  const rawTimeout = rendered.timeoutMin
+  if (rawTimeout !== undefined && rawTimeout !== null && rawTimeout !== "") {
+    const minutes = Number(rawTimeout)
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      return { error: `subProcess "${ctx.node.id}": timeoutMin must be a number of minutes above 0` }
+    }
+    timeoutAt = new Date(Date.now() + minutes * 60_000).toISOString()
+  }
+
   return {
     paused: true,
     pausedAt: {
@@ -557,6 +569,7 @@ const subProcessHandler: NodeHandler = async (ctx) => {
       nodeId: ctx.node.id,
       childRunId: "",         // populated by dispatcher after spawn
       childWorkflowId,
+      ...(timeoutAt ? { timeoutAt } : {}),
     },
     spawnChild: { workflowId: childWorkflowId, input: inputBundle },
   }

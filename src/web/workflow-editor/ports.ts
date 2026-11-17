@@ -12,6 +12,7 @@ import type { WorkflowEdge, WorkflowNode } from "./types"
 //   owner.ask       yes (main), no, expired
 //   person.message  sent (main), declined
 //   person.wait     reply (main), timeout
+//   subProcess      done (main), error
 //   anything else   one port, the main one
 //
 // The main port has no name: an edge leaves on it with no `fromPort`. An
@@ -29,6 +30,7 @@ const FOLLOW_UP: Record<string, { main: string; other: string[] }> = {
   "owner.ask": { main: "yes", other: ["no", "expired"] },
   "person.message": { main: "sent", other: ["declined"] },
   "person.wait": { main: "reply", other: ["timeout"] },
+  "subProcess": { main: "done", other: ["error"] },
 }
 
 const UNSURE = "unsure"

@@ -169,13 +169,16 @@ const NODE_CATALOG = `# V2 Node catalog
       "form": FormSchema
     }
     Output: { submittedBy, submittedAt, values: { fieldKey: value }, action: "primary" | "secondary" }
-- \`subProcess\` — spawn a child workflow; parent pauses until child reaches end.
+- \`subProcess\` — spawn a child workflow; parent pauses until the child run ends; ports done / error.
     config: {
       "workflowId": "<other workflow id>",
       "inputMap": { "trigger": { "grantee": "{{trigger.values.name}}" } }  (or "*" for full inherit),
-      "awaitCompletion": true
+      "awaitCompletion": true,
+      "timeoutMin"?: 30
     }
-    Output: { childRunId, status, output: <child's last bundle> }
+    Output: { childRunId, status, output: <child's last bundle>, port, error? }
+    An edge without fromPort leaves on \`done\` (child completed). A child that failed, was canceled
+    or passed timeoutMin leaves on \`error\`; with no edge for \`error\` the parent run fails there.
 - \`signal.emit\` — publish an event.  config: { "name": "approved", "scope": "workflow"|"global", "payload": {} }
 - \`signal.wait\` — pause until matching signal arrives. config: { "name": "approved", "scope": "workflow", "match": { "grantId": "{{trigger.id}}" } }
 - \`timer.boundary\` — pause for a duration. config: { "after": "PT2H" | "P1D" | 60 (minutes) }
