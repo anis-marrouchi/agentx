@@ -3,6 +3,7 @@ import { cronValueOf, type CronValue } from "@/crons/value-line"
 import { renderMonitorPage } from "./ui/pages/monitor"
 import { renderActivityPage } from "./ui/pages/activity"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
+import { compressResponse } from "./http-compress"
 import { appendFileSync, existsSync, mkdirSync } from "fs"
 import { readFile } from "fs/promises"
 import { fileURLToPath } from "url"
@@ -170,6 +171,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
   })
 
   const server = createServer(async (req, res) => {
+    compressResponse(req, res)
     try {
       await handleBoardRequest(req, res, { boards, sources, token, config, workflowStore, workflowRuns, workflowLayouts })
     } catch (e: any) {
