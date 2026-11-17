@@ -287,6 +287,7 @@ export function nextWakeAt(p: NonNullable<WorkflowRun["pausedAt"]>): string | nu
     return remind && Date.parse(remind) < Date.parse(p.deadline) ? remind : p.deadline
   }
   if (p.kind === "agentStep") return p.blocked ? null : p.nextNudgeAt ?? null
+  if (p.kind === "subProcess") return p.timeoutAt ?? null
   return null
 }
 

@@ -176,7 +176,7 @@ export function waitingOn(run: Pick<WorkflowRun, "status" | "pausedAt" | "pendin
     case "signalWait":
       return `the signal "${p.signalName}"`
     case "subProcess":
-      return `the child workflow ${p.childWorkflowId}`
+      return `the child workflow ${p.childWorkflowId}${p.timeoutAt ? ` until ${p.timeoutAt.slice(0, 16).replace("T", " ")} UTC` : ""}`
     case "checkpoint":
       return `an event at checkpoint ${p.checkpointName}`
   }

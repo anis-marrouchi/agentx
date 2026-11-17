@@ -79,7 +79,7 @@ An `agent` node needs a registered `agentId`. It can also set `timeoutMinutes`. 
 | `timer.boundary` | Pauses until a timer runs out |
 | `owner.notify`, `owner.ask` | Tells you something, or asks you on a decision card |
 | `person.message`, `person.wait` | Sends a message to a person after your approval, or waits for a person's reply |
-| `subProcess` | Starts another workflow and waits for it to finish |
+| `subProcess` | Starts another workflow and waits for its run to end, see [Run another workflow](#run-another-workflow) |
 | `checkpoint` | Pauses for review until a resume event arrives |
 | `end` | Closes the run with the given status |
 
@@ -110,6 +110,41 @@ A `timer.boundary` can end early when someone writes on the work it waits for:
 - Labels cannot carry that mark. A step that sets labels itself lists them in `self` (`"group/project#12 +Doing, group/project#12 -To Do"`, rendered like `refs`). When a label change from an account AgentX posts with is exactly a recorded one, it is the run's own write and does not wake (`result=self`); each record is used once. Any other label change wakes, even from the same bot account.
 - The node that receives the GitLab webhook passes the wake to its mesh peers, so the run may live on another node. Upgrade the nodes holding the runs first: an older node answers the wake with 400 and its timers run as before.
 - Each wake logs `wake run=<id> node=<node> event=<note|label>:<ref> result=woke|debounced|self|stale`, or `result=no-run` when no run watches the ref.
+
+## Run another workflow
+
+A `subProcess` step starts a run of another workflow (the child) and pauses its own run (the parent) until the child's run ends.
+
+```json
+{ "id": "call", "type": "subProcess",
+  "config": { "workflowId": "nightly-report",
+              "inputMap": { "trigger": { "day": "{{trigger.day}}" } },
+              "timeoutMin": 30 } }
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `workflowId` | required | The id of the workflow to run |
+| `inputMap` | none | Values handed to the child. Each top-level key is a step id in the child, usually its trigger; `"*"` hands over everything the parent has |
+| `timeoutMin` | none | The most minutes the parent waits. Leave it out to wait until the child's run ends |
+
+The step leaves on one of two ports:
+
+| Port | When | Edge |
+|---|---|---|
+| `done` | The child's run completed | An edge without `fromPort` |
+| `error` | The child's run failed or was canceled, or `timeoutMin` passed first | An edge with `"fromPort": "error"` |
+
+```json
+{ "from": "call", "to": "next_step" },
+{ "from": "call", "fromPort": "error", "to": "tell_owner" }
+```
+
+- **A child's failure reaches the parent.** When a step in the child fails after its retries, the child's run fails and the parent moves on at once by the `error` port. The same happens when the child's run is canceled, or ends on an `end` step whose status is `failed` or `canceled`.
+- **No `error` edge.** The parent's run fails at the `subProcess` step, and the step's note says which child step failed and why. It does not stay paused.
+- **Timeout.** When `timeoutMin` passes, the parent leaves by the `error` port and the child's run is canceled. The timer is kept on disk, so it still fires after a daemon restart.
+- **Output.** Later steps read <code v-pre>{{call.status}}</code> (`completed`, `failed`, `canceled` or `timedOut`), <code v-pre>{{call.error}}</code> (why the child did not complete), <code v-pre>{{call.childRunId}}</code>, and <code v-pre>{{call.output}}</code> (the output of the child's last successful step), for a step with id `call`.
+- **A child with no `end` step.** A child's run that runs out of steps counts as completed.
 
 ## Follow-up steps
 
@@ -232,4 +267,6 @@ The script writes its local state file and prints `RESULT steps=…` followed by
 - **An event trigger doesn't fire:** look for `[workflows] <id> skipping` in `agentx daemon logs`; a filter or loop guard dropped the event.
 - **A run stays paused on a timer after its due time:** look for `timer-recovered` or `timer … dropped` in `agentx daemon logs`. `dropped` names the reason, such as a workflow that is not loaded. Such a run stays paused until its workflow loads again; the next check then moves it on.
 - **A run stops partway:** `agentx workflow trace <runId>` shows which step failed and why.
+- **A run failed at a `subProcess` step:** the child's run did not complete and the step has no edge for `error`. The step's note in `agentx workflow trace <runId>` names the child's run and the step that failed. Add an edge with `"fromPort": "error"` to handle it in the parent.
+- **A run stays paused on a `subProcess` step:** the child's run has not ended. Find it with `agentx workflow runs <child id>`, then stop it with `agentx workflow cancel <runId>` or let it finish; either way the parent moves on. Set `timeoutMin` to limit the wait.
 - **A followed run stopped after `no`, `expired`, `declined` or `timeout`:** the step has no edge for that port. Add one with that `fromPort`.

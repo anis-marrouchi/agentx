@@ -185,7 +185,10 @@ const TIMER_BOUNDARY_OUTPUT: OutputField[] = [
 
 const SUB_PROCESS_OUTPUT: OutputField[] = [
   { path: "childRunId", type: "string", description: "Run id of the spawned child workflow." },
-  { path: "result", type: "any", description: "Output bundle of the child's terminal `end` node (if any)." },
+  { path: "status", type: "string", description: "How the child run ended: `completed`, `failed`, `canceled`, or `timedOut` when `timeoutMin` passed first." },
+  { path: "output", type: "any", description: "Output of the child's last successful step that produced one." },
+  { path: "port", type: "string", description: "`done` when the child completed, otherwise `error`." },
+  { path: "error", type: "string", description: "Why the child did not complete (on the `error` port)." },
 ]
 
 // --- The table ---

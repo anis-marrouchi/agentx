@@ -378,6 +378,7 @@ export class WorkflowDispatcher {
     }
     const kind = this.runs.get(t.runId)?.pausedAt?.kind
     if (kind === "replyWait" || kind === "agentStep") { await this.followUpTimer(wf, t); return }
+    if (kind === "subProcess") { await this.subProcessTimeout(t); return }
     const resumed = await this.resumeTimerWait(wf, t.runId, t.nodeId, t.fireAt, {
       key: `timer:${t.id}`,
       note: `timer:${t.id}`,
@@ -1120,13 +1121,8 @@ export class WorkflowDispatcher {
         })
       }
 
-      if (terminal && updated && updated.parentRunId && updated.parentNodeId) {
-        void this.resumeParent({
-          parentRunId: updated.parentRunId,
-          parentNodeId: updated.parentNodeId,
-          childRun: updated,
-        }).catch((e: any) => this.log(`[workflow:${workflow.id}] resumeParent failed: ${e.message}`))
-      }
+      // A child run that ended here reports to its parent from settle(),
+      // the one place every ending passes through (#1905).
     })
   }
 
@@ -1587,8 +1583,18 @@ export class WorkflowDispatcher {
    *  complete, and a run that ended gets its one summary. */
   private async settle(runId: string): Promise<void> {
     let run = this.runs.get(runId)
-    if (!run?.meta?.followUp) return
+    if (!run) return
+    const isChild = !!(run.parentRunId && run.parentNodeId)
+    if (!run.meta?.followUp && !isChild) return
     if (run.status === "running" && run.pending.length === 0) run = this.runs.setStatus(runId, "completed") ?? run
+    // A child run that ended, however it ended, hands its result to the
+    // parent waiting on it (#1905). Safe to repeat: only a parent still
+    // paused on this child takes it.
+    if (isChild && TERMINAL.has(run.status)) {
+      await this.resumeParent({ parentRunId: run.parentRunId!, parentNodeId: run.parentNodeId!, childRunId: run.id })
+        .catch((e: any) => this.log(`[workflow:${run!.workflowId}] resumeParent failed: ${e?.message ?? e}`))
+    }
+    if (!run.meta?.followUp) return
     if (!TERMINAL.has(run.status) || run.meta?.endNotifiedAt) return
     run = this.runs.setMeta(runId, { endNotifiedAt: new Date().toISOString() }) ?? run
     this.timers.cancel({ runId })
@@ -1659,50 +1665,85 @@ export class WorkflowDispatcher {
       .catch((e: any) => this.log(`[workflow:${childWf.id}] child walk failed: ${e.message}`))
   }
 
-  /** Resume a parent run whose subProcess node was awaiting this child. */
+  /** Give a parent run paused on a subProcess node that node's result, and
+   *  move it on (#1905). The child completed: the `done` port. It failed,
+   *  was canceled, or `timedOut` (the parent stopped waiting): the `error`
+   *  port, and with no edge for it the parent run fails at the node, the
+   *  way any failed step fails its run. A parent that is no longer waiting
+   *  on this child is left alone, so a late or repeated call does nothing. */
   async resumeParent(args: {
     parentRunId: string
     parentNodeId: string
-    childRun: WorkflowRun
+    childRunId: string
+    timedOut?: boolean
   }): Promise<void> {
     const preliminaryParent = this.runs.get(args.parentRunId)
     if (!preliminaryParent) return
     const parentWf = this.store.list().find((w) => w.id === preliminaryParent.workflowId)
-    if (!parentWf) return
+    if (!parentWf) {
+      this.log(`[workflows] child run ${args.childRunId} ended but its parent ${args.parentRunId} stays paused: workflow "${preliminaryParent.workflowId}" not loaded`)
+      return
+    }
 
+    // Unset: the parent was not waiting on this child. True: it has steps to walk.
+    let walk: boolean | undefined
     await this.commit(args.parentRunId, () => {
       const parent = this.runs.get(args.parentRunId)
       if (!parent || parent.status !== "paused") return
-      if (!parent.pausedAt || parent.pausedAt.kind !== "subProcess") return
-      if (parent.pausedAt.nodeId !== args.parentNodeId) return
-      if (parent.pausedAt.childRunId !== args.childRun.id) return
+      const p = parent.pausedAt
+      if (!p || p.kind !== "subProcess") return
+      if (p.nodeId !== args.parentNodeId) return
+      if (p.childRunId !== args.childRunId) return
 
-      const node = findNode(parentWf, args.parentNodeId)
-      const successors = node ? parentWf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
-      const childOutput: Record<string, unknown> = {
-        childRunId: args.childRun.id,
-        status: args.childRun.status,
-        output: pickChildOutput(args.childRun),
+      const child = this.runs.get(args.childRunId)
+      // A child that ended just before the timeout counts as ended.
+      const timedOut = !!args.timedOut && !(child && TERMINAL.has(child.status))
+      if (!timedOut && !(child && TERMINAL.has(child.status))) return
+      const status = timedOut ? "timedOut" : child!.status
+      const ok = status === "completed"
+      let error: string | undefined
+      if (timedOut) {
+        error = `child run ${args.childRunId} of "${p.childWorkflowId}" did not finish before the timeout${p.timeoutAt ? ` (${p.timeoutAt})` : ""}`
+      } else if (!ok) {
+        const failed = [...child!.history].reverse().find((h) => h.status === "failed" || (status === "canceled" && h.status === "skipped"))
+        error = `child run ${args.childRunId} of "${p.childWorkflowId}" ${status}${failed ? ` at "${failed.nodeId}"${failed.note ? `: ${failed.note}` : ""}` : ""}`
       }
-      this.runs.recordExecution({
-        runId: parent.id,
-        entry: {
-          at: new Date().toISOString(),
-          nodeId: args.parentNodeId,
-          inputKeys: [],
-          status: "resumed",
-          output: childOutput,
-          idempotencyKey: idempotencyKey(parent.id, args.parentNodeId, `child:${args.childRun.id}`),
-        },
-        nextPending: successors,
-        status: "running",
-        pausedAt: null,
-        context: { ...parent.context, [args.parentNodeId]: childOutput },
-      })
-      this.log(`[workflow:${parentWf.id}] parent run ${parent.id} resumed from subProcess child ${args.childRun.id}`)
-      this.emitRunEvent({ runId: parent.id, workflowId: parentWf.id, nodeId: args.parentNodeId, phase: "resumed", status: "running", note: `child:${args.childRun.id}`, rootId: parent.eventRootId })
+      const childOutput: Record<string, unknown> = {
+        childRunId: args.childRunId,
+        status,
+        output: child ? pickChildOutput(child) : {},
+        ...(error ? { error: error.slice(0, 500) } : {}),
+      }
+      this.timers.cancel({ cancelKey: `${parent.id}:${p.nodeId}` })
+      walk = this.resumeOn(
+        parentWf, parent, p.nodeId, childOutput, ok ? "done" : "error",
+        idempotencyKey(parent.id, p.nodeId, `child:${args.childRunId}`),
+        (error ?? `child:${args.childRunId}`).slice(0, 200),
+      )
+      this.log(`[workflow:${parentWf.id}] parent run ${parent.id} ${walk ? "resumed" : "failed"} at "${p.nodeId}": child ${args.childRunId} ${status}`)
     })
-    void this.walk(parentWf, args.parentRunId, `child:${args.childRun.id}`)
+    if (walk === undefined) return
+    if (walk) {
+      void this.walk(parentWf, args.parentRunId, `child:${args.childRunId}`)
+        .catch((e: any) => this.log(`[workflow:${parentWf.id}] walk-after-child failed: ${e.message}`))
+    } else {
+      // The parent failed here; if it is a child itself, its own parent hears.
+      await this.settle(args.parentRunId)
+    }
+  }
+
+  /** A subProcess node's `timeoutMin` passed: the parent goes on by the
+   *  `error` port, then the child still running is canceled so it does not
+   *  keep working for a parent that left. */
+  private async subProcessTimeout(t: TimerRecord): Promise<void> {
+    const p = this.runs.get(t.runId)?.pausedAt
+    if (p?.kind !== "subProcess" || p.nodeId !== t.nodeId || !p.timeoutAt) return
+    if (Date.now() < Date.parse(p.timeoutAt)) return
+    await this.resumeParent({ parentRunId: t.runId, parentNodeId: p.nodeId, childRunId: p.childRunId, timedOut: true })
+    const child = this.runs.get(p.childRunId)
+    if (child && !TERMINAL.has(child.status)) {
+      await this.cancelRun(child.id, `canceled: parent run ${t.runId} stopped waiting (timeoutMin)`)
+    }
   }
 
 }

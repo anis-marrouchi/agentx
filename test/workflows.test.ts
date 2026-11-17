@@ -17,6 +17,7 @@ import {
   type AgentExecuteResponse,
 } from "../src/workflows"
 import { render, renderParams } from "../src/workflows/template"
+import { TimerService } from "../src/workflows/timers"
 
 const TEST_DIR = resolve(__dirname, "../.test-workflows")
 
@@ -973,10 +974,220 @@ describe("BPM: subProcess (nested workflows + depth cap)", () => {
     expect(depth1!.status).toBe("failed")
     const noteMatches = depth1!.history.some((h) => h.status === "failed" && (h.note ?? "").includes("max child workflow depth"))
     expect(noteMatches).toBe(true)
-    // Root run is still paused waiting on the failed child; the resume on
-    // failure is a Phase-2 refinement. For now we just verify the cap
-    // enforcement fires and does not silently go deeper.
-    expect(depth0.status).toBe("paused")
+    // #1905: the failed child reaches the root. Its subProcess node has no
+    // `error` edge, so the root run fails there instead of staying paused.
+    expect(depth0.status).toBe("failed")
+    expect(depth0.pausedAt ?? null).toBeNull()
+    const rootNote = depth0.history.find((h) => h.nodeId === "recurse" && h.status === "failed")?.note ?? ""
+    expect(rootNote).toContain("max child workflow depth")
+  })
+
+  // #1905: a child run that ends any way but `completed` must reach the parent.
+  const childFailsWf = () => workflowSchema.parse({
+    id: "child-fails", version: 2, title: "child fails", priority: 0, fanOut: false,
+    envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
+    nodes: [
+      { id: "trigger", type: "trigger.manual", config: {} },
+      { id: "work",    type: "transform", config: { template: { did: "the work" } } },
+      { id: "notify",  type: "action.send", retry: { maxAttempts: 3, backoffMs: 1 }, config: { channel: "down", chatId: "c", text: "done" } },
+      { id: "done",    type: "end", config: {} },
+    ],
+    edges: [
+      { from: "trigger", to: "work" },
+      { from: "work", to: "notify" },
+      { from: "notify", to: "done" },
+    ],
+  })
+  const parentWithErrorPath = (childId: string, extra: Record<string, unknown> = {}) => workflowSchema.parse({
+    id: "parent-err", version: 2, title: "parent", priority: 0, fanOut: false,
+    envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
+    nodes: [
+      { id: "trigger", type: "trigger.channel", config: { source: "manual" } },
+      { id: "call",    type: "subProcess", config: { workflowId: childId, awaitCompletion: true, ...extra } },
+      { id: "finish",  type: "action.send", config: { channel: "fake", chatId: "c", text: "child ok" } },
+      { id: "alert",   type: "action.send", config: { channel: "fake", chatId: "c", text: "child {{call.status}}: {{call.error}}" } },
+      { id: "done",    type: "end", config: {} },
+    ],
+    edges: [
+      { from: "trigger", to: "call" },
+      { from: "call", to: "finish" },
+      { from: "call", fromPort: "error", to: "alert" },
+      { from: "finish", to: "done" },
+      { from: "alert", to: "done" },
+    ],
+  })
+
+  it("child with a failing node: parent resumes and takes the error path", async () => {
+    const store = new WorkflowStore({ baseDir: TEST_DIR })
+    store.save(childFailsWf())
+    store.save(parentWithErrorPath("child-fails"))
+    const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+    const sends: Array<{ text: string }> = []
+    let attempts = 0
+    const channels = {
+      fake: { send: async (m: { text: string }) => { sends.push(m); return "m" } },
+      down: { send: async () => { attempts++; throw new Error("channel is down") } },
+    }
+    const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
+    const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels, agents })
+
+    await dispatcher.dispatch({
+      trigger: { source: "manual" },
+      entityRef: { backend: "manual", id: "e-fail" },
+      event: { id: "evt-1", payload: {} },
+    })
+    await new Promise((r) => setTimeout(r, 150))
+
+    const all = runs.list()
+    const parent = all.find((r) => r.workflowId === "parent-err")!
+    const child  = all.find((r) => r.workflowId === "child-fails")!
+    expect(attempts).toBe(3)
+    expect(child.status).toBe("failed")
+    expect(parent.status).toBe("completed")
+    expect(parent.pausedAt ?? null).toBeNull()
+    // Only the error path ran, and it saw why the child failed.
+    expect(sends).toHaveLength(1)
+    expect(sends[0].text).toContain("child failed:")
+    expect(sends[0].text).toContain("notify")
+    expect(sends[0].text).toContain("channel is down")
+    expect(parent.context.call).toMatchObject({ childRunId: child.id, status: "failed", port: "error", output: { did: "the work" } })
+  })
+
+  it("a canceled child also moves the parent to the error path", async () => {
+    const store = new WorkflowStore({ baseDir: TEST_DIR })
+    store.save(workflowSchema.parse({
+      id: "child-waits", version: 2, title: "child waits", priority: 0, fanOut: false,
+      envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
+      nodes: [
+        { id: "trigger", type: "trigger.manual", config: {} },
+        { id: "wait",    type: "signal.wait", config: { name: "never" } },
+        { id: "done",    type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "wait" }, { from: "wait", to: "done" }],
+    }))
+    store.save(parentWithErrorPath("child-waits"))
+    const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+    const sends: Array<{ text: string }> = []
+    const channels = { fake: { send: async (m: { text: string }) => { sends.push(m); return "m" } } }
+    const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
+    const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels, agents })
+
+    await dispatcher.dispatch({
+      trigger: { source: "manual" },
+      entityRef: { backend: "manual", id: "e-cancel" },
+      event: { id: "evt-1", payload: {} },
+    })
+    await new Promise((r) => setTimeout(r, 60))
+    const child = runs.list().find((r) => r.workflowId === "child-waits")!
+    expect(child.status).toBe("paused")
+    expect(runs.list().find((r) => r.workflowId === "parent-err")!.status).toBe("paused")
+
+    await dispatcher.cancelRun(child.id)
+    await new Promise((r) => setTimeout(r, 60))
+
+    const parent = runs.list().find((r) => r.workflowId === "parent-err")!
+    expect(parent.status).toBe("completed")
+    expect(sends).toHaveLength(1)
+    expect(sends[0].text).toContain("child canceled:")
+  })
+
+  it("timeoutMin: the parent stops waiting, takes the error path, and the child is canceled", async () => {
+    const store = new WorkflowStore({ baseDir: TEST_DIR })
+    store.save(workflowSchema.parse({
+      id: "child-waits", version: 2, title: "child waits", priority: 0, fanOut: false,
+      envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
+      nodes: [
+        { id: "trigger", type: "trigger.manual", config: {} },
+        { id: "wait",    type: "signal.wait", config: { name: "never" } },
+        { id: "done",    type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "wait" }, { from: "wait", to: "done" }],
+    }))
+    // 0.002 minutes = 120 ms.
+    store.save(parentWithErrorPath("child-waits", { timeoutMin: 0.002 }))
+    const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+    const sends: Array<{ text: string }> = []
+    const channels = { fake: { send: async (m: { text: string }) => { sends.push(m); return "m" } } }
+    const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
+    const timers = new TimerService({ baseDir: resolve(TEST_DIR, "_timer-base"), tickIntervalMs: 20 })
+    const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels, agents, timers })
+    timers.start()
+
+    await dispatcher.dispatch({
+      trigger: { source: "manual" },
+      entityRef: { backend: "manual", id: "e-timeout" },
+      event: { id: "evt-1", payload: {} },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    const waiting = runs.list().find((r) => r.workflowId === "parent-err")!
+    expect(waiting.status).toBe("paused")
+    expect(waiting.pausedAt).toMatchObject({ kind: "subProcess" })
+    expect((waiting.pausedAt as { timeoutAt?: string }).timeoutAt).toBeTruthy()
+
+    await new Promise((r) => setTimeout(r, 500))
+    timers.stop()
+
+    const parent = runs.list().find((r) => r.workflowId === "parent-err")!
+    const child  = runs.list().find((r) => r.workflowId === "child-waits")!
+    expect(parent.status).toBe("completed")
+    expect(parent.context.call).toMatchObject({ status: "timedOut", port: "error" })
+    expect(sends).toHaveLength(1)
+    expect(sends[0].text).toContain("child timedOut:")
+    expect(child.status).toBe("canceled")
+  })
+
+  it("a child that completes before timeoutMin leaves on the main port and drops the timer", async () => {
+    const store = new WorkflowStore({ baseDir: TEST_DIR })
+    store.save(workflowSchema.parse({
+      id: "child-ok", version: 2, title: "child ok", priority: 0, fanOut: false,
+      envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
+      nodes: [
+        { id: "trigger", type: "trigger.manual", config: {} },
+        { id: "done",    type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "done" }],
+    }))
+    store.save(parentWithErrorPath("child-ok", { timeoutMin: 30 }))
+    const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+    const sends: Array<{ text: string }> = []
+    const channels = { fake: { send: async (m: { text: string }) => { sends.push(m); return "m" } } }
+    const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
+    const timers = new TimerService({ baseDir: resolve(TEST_DIR, "_timer-base"), tickIntervalMs: 20 })
+    const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels, agents, timers })
+
+    await dispatcher.dispatch({
+      trigger: { source: "manual" },
+      entityRef: { backend: "manual", id: "e-ok" },
+      event: { id: "evt-1", payload: {} },
+    })
+    await new Promise((r) => setTimeout(r, 100))
+
+    const parent = runs.list().find((r) => r.workflowId === "parent-err")!
+    expect(parent.status).toBe("completed")
+    expect(parent.context.call).toMatchObject({ status: "completed", port: "done" })
+    expect(sends.map((s) => s.text)).toEqual(["child ok"])
+    expect(timers.list()).toHaveLength(0)
+  })
+
+  it("rejects a timeoutMin that is not a positive number", async () => {
+    const store = new WorkflowStore({ baseDir: TEST_DIR })
+    store.save(childFailsWf())
+    store.save(parentWithErrorPath("child-fails", { timeoutMin: "soon" }))
+    const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+    const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
+    const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels: {}, agents })
+
+    await dispatcher.dispatch({
+      trigger: { source: "manual" },
+      entityRef: { backend: "manual", id: "e-bad" },
+      event: { id: "evt-1", payload: {} },
+    })
+    await new Promise((r) => setTimeout(r, 60))
+
+    const all = runs.list()
+    expect(all).toHaveLength(1)
+    expect(all[0].status).toBe("failed")
+    expect(all[0].history.at(-1)?.note).toContain("timeoutMin")
   })
 })
 

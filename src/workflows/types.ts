@@ -274,6 +274,10 @@ export const FOLLOW_UP_PORTS: Record<string, { main: string; other: string[] }> 
   "owner.ask": { main: "yes", other: ["no", "expired"] },
   "person.message": { main: "sent", other: ["declined"] },
   "person.wait": { main: "reply", other: ["timeout"] },
+  // Not a follow-up step, but it leaves the same way (#1905): `done` when
+  // the child run completed, `error` when it failed, was canceled or did
+  // not finish within `timeoutMin`.
+  "subProcess": { main: "done", other: ["error"] },
 }
 
 // --------------------------- DAG linter -----------------------------------
@@ -483,6 +487,9 @@ export const pausedAtSchema = z.discriminatedUnion("kind", [
     nodeId: z.string(),
     childRunId: z.string(),
     childWorkflowId: z.string(),
+    /** ISO-8601 instant when the parent stops waiting (the node's
+     *  `timeoutMin`). Unset: it waits until the child run ends. */
+    timeoutAt: z.string().optional(),
   }),
   z.object({
     kind: z.literal("signalWait"),

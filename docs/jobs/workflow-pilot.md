@@ -71,7 +71,10 @@ Know this before the first run: the live run waits at the new `pilot` step until
    ```yaml
      - { from: act, to: pilot }
      - { from: pilot, to: done }
+     - { from: pilot, fromPort: error, to: done }
    ```
+
+   The second `pilot` edge keeps a broken pilot from failing the live run: if the pilot's run fails or is canceled, the live run still goes on to `done`. See [Run another workflow](../reference/workflow-schema.md#run-another-workflow).
 
 4. **In the terminal**, check both files:
 
