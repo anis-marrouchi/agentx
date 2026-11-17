@@ -922,9 +922,7 @@ const cronJobSchema = z.object({
    *  but appending an instruction to the prompt is reliably honored. Use
    *  1500 for briefs, 500 for status pings, 300 for pure classifiers. */
   maxOutputTokens: z.number().int().min(50).max(8000).optional(),
-  /** The task type of each run (`context.taskType`): picks the evidence a
-   *  watcher's done needs (`watchers.evidence.<type>`, #1049). Unset: the
-   *  `cron` rule, if there is one. */
+  /** The task type of each run (`context.taskType`, #1049). */
   taskType: z.string().trim().min(1).max(64).optional(),
   /** How much this routine may do: `report` (read-only), `propose` (branch,
    *  commit, MR/draft; never merge/deploy/delete) or `act` (the agent's full
@@ -1608,54 +1606,6 @@ export const mergePolicyConfigSchema = z.object({
    *  unapproved core commit; YES approves that commit. */
   ownerCard: z.boolean().default(true),
 }).default({})
-/** Task watchers (src/watchers, #1030). At every task start (a dispatch, a
- *  delegation, a cron run) the `task-watch` decision seat says whether the
- *  task carries a deadline, a promise or a hand-off; a watcher is attached
- *  unless the seat is active and confidently says no. A watcher tells the
- *  delegating agent, then the owner, when the due time passes with no done
- *  signal or the task ends without a result. */
-export const watchersConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  /** Channels whose runs are never checked (the watchers' own alert turns
-   *  never are). */
-  skipChannels: z.array(z.string().min(1)).default([]),
-  /** The due time of a task that gives none, from its start. */
-  defaultDueMinutes: z.number().positive().max(30 * 24 * 60).default(120),
-  /** A seat probability below this is a confident "no". Only an active
-   *  seat skips the watcher on it. */
-  noBelow: z.number().min(0).max(1).default(0.2),
-  /** At or above: "yes". Between `noBelow` and this: "uncertain", which
-   *  attaches a watcher (fail-safe). */
-  yesAt: z.number().min(0).max(1).default(0.7),
-  /** After the delegating agent is told, the owner is told this much later
-   *  if the task is still not done. */
-  escalateAfterMinutes: z.number().positive().max(7 * 24 * 60).default(30),
-  /** Where the owner is told. Unset: the default notification channel. */
-  owner: z.object({
-    channel: z.string().min(1).optional(),
-    chatId: z.string().min(1).optional(),
-  }).default({}),
-  /** Finished watchers are deleted after this many days. */
-  retentionDays: z.number().positive().max(3650).default(30),
-  /** What closes a watcher. "result": the run ends with a reply, or the
-   *  delegation answers. "explicit": only POST /watchers/:id/done, so a
-   *  reply that only promises ("I'll publish at 18:00") keeps it open. */
-  doneSignal: z.enum(["result", "explicit"]).default("result"),
-  /** Evidence a done needs, by task type (#1049): the caller's
-   *  `context.taskType`, else the watcher's kind (dispatch, delegation,
-   *  cron). A task of a type with a rule closes only on a done whose
-   *  evidence the rule accepts; its reply never closes it. Types with no
-   *  rule close as `doneSignal` says. */
-  evidence: z.record(z.string().min(1), z.object({
-    /** The kinds of proof that count: any one of them closes the task. */
-    accept: z.array(z.enum(["test", "output", "link"])).min(1),
-    /** The shortest output text accepted. */
-    minOutputChars: z.number().int().min(1).max(2000).default(40),
-    /** Hosts a link must be on (or a subdomain of). Empty: any host. */
-    linkHosts: z.array(z.string().min(1)).default([]),
-  })).default({}),
-}).default({}).refine((w) => w.noBelow <= w.yesAt, { message: "watchers.noBelow must not be above watchers.yesAt" })
-
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and
  *  when the operator hears about what is waiting. */
 export const requestsConfigSchema = z.object({
@@ -1699,11 +1649,6 @@ export const requestsConfigSchema = z.object({
     facts: z.boolean().default(true),
     /** Days that fact stays trusted before it shows as stale. */
     factTtlDays: z.number().positive().max(3650).default(7),
-    /** A task watcher that fires raises the open request that follows its
-     *  task, or opens a promise for it, and the requests check tells the
-     *  owner once: one escalation path. Off: the watcher tells the owner
-     *  itself, as before. Needs requests.enabled. */
-    watchers: z.boolean().default(true),
     /** A decision card raised outside a request's turn opens a promise
      *  owed by the owner, closed when the card is decided. Off: cards stay
      *  on the Desk only, as before. */
@@ -2567,9 +2512,6 @@ export const daemonConfigSchema = z.object({
    *  by default. */
   requests: requestsConfigSchema,
   numbers: numbersConfigSchema,
-  /** Task watchers (src/watchers, #1030): every task start decides whether
-   *  the task needs a watcher and attaches one. Off by default. */
-  watchers: watchersConfigSchema,
   people: peopleConfigSchema,
   members: membersConfigSchema,
   /** Request status where the request was made (src/requests/status-board,

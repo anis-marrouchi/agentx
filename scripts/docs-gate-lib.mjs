@@ -77,11 +77,14 @@ export function keyPatterns(key, { leafOk }) {
     dotted.add(tail.slice(-2).join("."))
   }
   const res = [...dotted].map((d) => new RegExp(`(^|[^\\w.])${escapeRe(d)}(?![\\w])`))
-  if (leafOk && leaf !== "*") {
-    const l = escapeRe(leaf)
-    res.push(new RegExp(`"${l}"\\s*:|\`${l}\`|^\\s*${l}:`, "m"))
-  }
+  if (leafOk && leaf !== "*") res.push(leafPattern(leaf))
   return res
+}
+
+/** A config key's last segment written as code. */
+const leafPattern = (leaf) => {
+  const l = escapeRe(leaf)
+  return new RegExp(`"${l}"\\s*:|\`${l}\`|^\\s*${l}:`, "m")
 }
 
 /** Where each removed command, flag or config key is still mentioned. */
@@ -115,8 +118,15 @@ export function staleMentions(base, head, pages) {
   }
   for (const key of base.configKeys) {
     if (headKeys.has(key)) continue
-    const leafOk = !headLeaves.has(key.split(".").pop())
-    for (const re of keyPatterns(key, { leafOk })) hit("Setting", key, re)
+    const segs = key.split(".")
+    const leaf = segs[segs.length - 1]
+    for (const re of keyPatterns(key, { leafOk: false })) hit("Setting", key, re)
+    if (headLeaves.has(leaf) || leaf === "*") continue
+    // A bare last segment is often a common word (`owner`, `accept`): it
+    // counts only on a page that still names the key's top-level section,
+    // as a flag counts only on its command's page.
+    const section = segs.length > 1 && segs[0] !== "*" ? leafPattern(segs[0]) : null
+    hit("Setting", key, leafPattern(leaf), section ? (p) => section.test(p.text) : undefined)
   }
   // One problem per file and item, even if several patterns matched.
   const seen = new Set()

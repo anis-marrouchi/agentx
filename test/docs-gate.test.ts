@@ -220,6 +220,20 @@ describe("staleMentions", () => {
     expect(found).toHaveLength(1)
     expect(found[0].message).toContain("daemon.oldKnob")
   })
+
+  it("counts a removed setting's bare last segment only on a page that still names its section", () => {
+    const base = surface([], ["daemon.port", "watchers", "watchers.owner", "watchers.evidence.*.accept"])
+    const head = surface([], ["daemon.port"])
+    const pages = [
+      { path: "docs/roles.md", text: "A person whose role is `owner`. Give it as `accept`." },
+      { path: "docs/old.md", text: '```json\n{ "watchers": { "owner": {} } }\n```' },
+    ]
+    const found = staleMentions(base, head, pages)
+    expect(found.map((e: { file: string; message: string }) => `${e.file} ${e.message.split(" was")[0]}`)).toEqual([
+      'docs/old.md Setting "watchers"',
+      'docs/old.md Setting "watchers.owner"',
+    ])
+  })
 })
 
 describe("keyPatterns", () => {

@@ -573,7 +573,7 @@ const TOOLS = [
         },
         taskType: {
           type: "string",
-          description: "Optional. The kind of task (e.g. 'code-change', 'report'). When this node's watchers.evidence has a rule for it, the task counts as done only with the proof that rule asks for.",
+          description: "Optional. The kind of task (e.g. 'code-change', 'report'). It is recorded in the run's context.",
         },
         home: {
           type: "string",
@@ -683,7 +683,7 @@ const TOOLS = [
     description:
       "Say that this run ends to WAIT for something before the work is done: a build, a deploy, a monitor, another agent's answer, a time. " +
       "Call it before you end the run instead of reporting the work as done. The agent that asked you is then told the work is waiting for that, not finished; " +
-      "its watcher stays open, due when you say the wait should end. When the wait is over, finish the work and report it with its proof.",
+      "give when the wait should end. When the wait is over, finish the work and report it with its proof.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -776,7 +776,7 @@ const TOOLS = [
         },
         taskType: {
           type: "string",
-          description: "Optional. The kind of task (e.g. 'code-change', 'report'). When this node's watchers.evidence has a rule for it, the task counts as done only with the proof that rule asks for.",
+          description: "Optional. The kind of task (e.g. 'code-change', 'report'). It is recorded in the run's context.",
         },
         home: {
           type: "string",

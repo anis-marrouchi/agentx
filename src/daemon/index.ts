@@ -107,11 +107,8 @@ import type { WorkflowRun } from "@/workflows/types"
 import { parseWorkActivity, type WorkActivity } from "@/workflows/wake"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, fillLinkAgents, type AttachedRequests } from "@/requests/attach"
-import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
-import { handleWatchersApi } from "@/watchers/daemon-api"
-import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
+import { contextWithTaskType, taskTypeOf } from "@/agents/task-context"
 import { contextWithAdmissionPriority, requestedPriorityOf } from "@/admission/queue"
-import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { homeChecker } from "@/requests/home-check"
 import { FINISHED_STEP_STATES, type PlanStep } from "@/requests/plan-store"
@@ -134,7 +131,7 @@ import {
   type DispatchRef, type ItemEnd,
 } from "@/requests/sprints"
 import { handleSprintsApi } from "@/requests/sprint-api"
-import { attachPromiseFacts, closeWatcherLoop, promiseSettingsOf, raiseWatcherLoop, watcherNotice } from "@/requests/promise"
+import { attachPromiseFacts, promiseSettingsOf } from "@/requests/promise"
 import { FactLedger } from "@/wiki/facts/ledger"
 import { DEFAULT_CONTINUE_SETTINGS, DEFAULT_PLAN_SETTINGS, MESSAGE_KIND } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
@@ -292,7 +289,7 @@ import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { ChainBudget } from "@/a2a/chain-budget"
-import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -725,22 +722,13 @@ export class AgentXDaemon {
         this.requests?.tracker.delegationStarted(rec)
         this.requests?.doors.delegationStarted(rec)
         this.status?.board.delegationStarted(rec)
-        void this.watchers?.checkpoint.delegationStarted(rec)
       },
       onDone: (rec, result) => {
         this.requests?.tracker.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
         this.requests?.doors.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
         this.status?.board.delegationDone(rec, result.status, result.waiting?.dueAt)
-        this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text, result.waiting?.dueAt)
-          .catch((e: any) => this.log(`[watchers] end of ${rec.id}: ${e?.message ?? e}`))
       },
-      callbackNote: (rec) => {
-        const notes = [
-          this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
-          this.config.watchers.enabled ? this.watchers?.checkpoint.doneNote(rec.id) : undefined,
-        ].filter(Boolean)
-        return notes.length ? notes.join("\n\n") : undefined
-      },
+      callbackNote: (rec) => this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
       onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
     })
 
@@ -878,16 +866,6 @@ export class AgentXDaemon {
         this.registry.setJobStateListener((runIds, ev) => {
           if (this.requests) recordRunState(this.requests.jobs, runIds, ev, Date.now())
         })
-        // Task watchers (#1030). Attached whatever the setting says, like
-        // requests: the checkpoint reads `watchers.enabled` on every event.
-        try {
-          this.watchers = this.attachTaskWatchers(db)
-          // A cron or dispatch run is told how to close its own watcher.
-          const checkpoint = this.watchers.checkpoint
-          this.registry.setRunNote((started) => checkpoint.runNote(started))
-        } catch (e: any) {
-          this.log(`  Watchers: not available (${e?.message ?? e})`)
-        }
         // Request status where the request was made (#383). Attached the
         // same way; it does nothing for a channel that is not listed in
         // `requestStatus.channels`.
@@ -895,10 +873,6 @@ export class AgentXDaemon {
           this.status = attachStatus(db, () => ({
             channels: this.config.requestStatus.channels,
             retentionDays: this.config.requests.retentionDays,
-            // A request left waiting by a delegation that ended waiting
-            // (#1100) with no watcher to close it: the watchers' own times.
-            waitDefaultMinutes: this.config.watchers.defaultDueMinutes,
-            waitGraceMinutes: this.config.watchers.escalateAfterMinutes,
           }), {
             post: async (row, text) =>
               (await this.router.getChannel(row.channel)?.send({ channel: row.channel, chatId: row.chatId, text, agentId: row.agentId })) || "",
@@ -2513,9 +2487,6 @@ export class AgentXDaemon {
   private driftAt = 0
   private driftSweeping = false
   private readonly driftLiveCache = new Map<string, boolean>()
-  /** Task watchers (src/watchers, #1030). */
-  private watchers: AttachedWatchers | null = null
-  private watchersSweeping = false
   private status: AttachedStatus | null = null
 
   /** Send a status-comment edit to the peer that holds the agent's token. */
@@ -2725,14 +2696,6 @@ export class AgentXDaemon {
         // The Reminders mirror (#1062): beside the sweep, because the OS
         // task app can take seconds to answer.
         this.mirrorTick()
-        // Task watchers (#1030): overdue tasks fire, unanswered alerts go
-        // to the owner. Beside the sweep, like requests.
-        if (this.watchers && !this.watchersSweeping) {
-          this.watchersSweeping = true
-          void this.watchers.checkpoint.sweep()
-            .catch((e: any) => this.log(`[watchers] sweep failed: ${e?.message ?? e}`))
-            .finally(() => { this.watchersSweeping = false })
-        }
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts). Not over a
         // demo or a recording: the card waits for the floor to be free.
@@ -3359,10 +3322,10 @@ export class AgentXDaemon {
       fillHeadlines: () => headlines.fill(),
       // A stopped request is a nag: its card is on the Desk at once, the
       // line about it waits for the daily digest (#1126).
-      // A blocked plan step or a task watcher that fired is told in its
-      // own words, as a notice (#1138 D: the one escalation of every loop).
+      // A blocked plan step is told in its own words, as a notice (#1138 D:
+      // the one escalation of every loop).
       notify: (title, message, r, kind) => this.notifyRequestOwner(title, message, r, kind ?? "nag"),
-      noticeFor: (r) => planNotice(requests.plans, r) ?? watcherNotice(r),
+      noticeFor: (r) => planNotice(requests.plans, r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       inPlan: (id) => requests.plans.get(id)?.state === "active",
       // A request a usage limit stopped is resent once the hold lifts (#1542).
@@ -3385,83 +3348,6 @@ export class AgentXDaemon {
           this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`)
         })
       },
-      log: this.log,
-    })
-  }
-
-  /** Wait, up to `maxMs`, for the agent's turn in this chat to end, so a
-   *  turn told there does not run beside it (#1100). False: still busy. */
-  private async waitForChat(agentId: string, channel: string, chatId: string, maxMs: number): Promise<boolean> {
-    const until = Date.now() + maxMs
-    while (this.registry.isChatBusy(agentId, channel, chatId)) {
-      if (Date.now() >= until) return false
-      await new Promise((r) => setTimeout(r, 1000))
-    }
-    return true
-  }
-
-  /** The watcher checkpoint at every task start (src/watchers, #1030). */
-  private attachTaskWatchers(db: NonNullable<ReturnType<typeof openDb>>): AttachedWatchers {
-    const port = parseInt(this.config.node.bind.split(":")[1] || "18800", 10)
-    return attachWatchers(db, {
-      settings: () => this.config.watchers,
-      // A tracked plan already nudges its steps and tells the owner.
-      lookups: [({ key, traceId }) => {
-        const req = this.requests
-        if (!req) return null
-        const r = (traceId ? req.store.byLink("run", traceId) : null) ?? req.store.byLink("delegation", key)
-        return r && req.plans.get(r.id)?.state === "active" ? `plan ${r.id}` : null
-      }],
-      hasAgent: (id) => !!this.registry.getAgent(id),
-      // A mesh peer's delegation reaches this node as a run under its dlg
-      // chat; only the caller's node holds the delegation and watches it.
-      isLocalDelegation: (id) => this.delegations.isPending(id),
-      // execute() does not reject on a failed start; it reports { error }.
-      alertAgent: async (agentId, text, w) => {
-        // #1861 box 4 — a watcher on work a job handed out wakes that job:
-        // its next run starts in the job's chat, under the job's caps. No
-        // job to wake (jobs off, a hand-off from a person's turn): the
-        // alert turn below, as before.
-        if (this.jobWake?.alertDelegator(agentId, text, w)) return
-        // #1100 — the delegator hears it in the chat it asked from, where
-        // the work waiting on it lives, not in a new one.
-        // Only an agent's own chat: in a person's chat a queued alert's
-        // answer would be posted to the person. a2a and mcp turns wait for
-        // a slot instead of queueing.
-        const asked = alertChatOf(agentId, w.taskKey, (id) => this.delegations.originFor(id))
-        const free = asked ? await this.waitForChat(agentId, asked.origin.channel, asked.origin.chatId, 10 * 60_000) : false
-        const context = alertContext(asked, w.id, free)
-        const res = await this.registry.execute({ agentId, message: text, context: context as any })
-        // Queued behind the turn running in that chat: it is delivered.
-        if (res.error && !res.content?.trim() && !isQueued(res.error)) throw new Error(res.error)
-      },
-      alertOwner: async (title, text) => {
-        const to = this.config.watchers.owner
-        if (to.channel) {
-          await this.router.sendOutbound({ channel: to.channel, chatId: to.chatId ?? "default", text: `${title}\n${text}` } as any)
-          return
-        }
-        await this.notifyOwner(title, text, "watchers")
-      },
-      // #1100 — a request left waiting by a delegation that ended waiting
-      // follows that delegation's watcher.
-      onClosed: (w, outcome) => {
-        if (w.kind === "delegation" && w.taskKey.startsWith("dlg-")) this.status?.board.waitEnded(w.taskKey, outcome)
-        // A promise the watcher's escalation opened closes with it, its
-        // evidence the proof (#1138 D). Read again: `w` is from before the done.
-        if (outcome === "done" && this.requests) closeWatcherLoop(this.requests.store, this.watchers?.store.get(w.id) ?? w, Date.now())
-      },
-      // The one escalation (#1138 D): the request loop tells the owner once.
-      // An owner address set for watchers alone keeps the watcher's own push.
-      raise: (w, reason) => {
-        const s = this.config.requests
-        if (!this.requests || !s.enabled || !promiseSettingsOf(s).watchers || this.config.watchers.owner.channel) return false
-        // Not raised (the request already needs attention, for another
-        // reason): no notice of the watcher's will go out, so it pushes its own.
-        const r = raiseWatcherLoop(this.requests.store, w, reason, Date.now())
-        return r.raised || r.opened
-      },
-      doneHint: (w, rule) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":${evidenceExample(rule)}}'`,
       log: this.log,
     })
   }
@@ -4687,8 +4573,7 @@ export class AgentXDaemon {
     const targetAgent = String(body.agentId)
     const text = String(body.text)
     const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
-    // The task's type picks the evidence its watcher's done needs
-    // (#1049); it travels in the callee's context on every path.
+    // The task's type (#1049) travels in the callee's context on every path.
     const taskType = taskTypeOf(body)
     // priority: "critical" (#1807): an alert that must not wait behind a
     // swap or load hold on the target's node. Any other value is ignored.
@@ -5908,18 +5793,6 @@ export class AgentXDaemon {
           runningTurn: (id, p) => this.provenTurn(id, p),
           onChange: () => this.kickSprints(),
         }, this.callerProof(req))
-        this.json(res, reply.status, reply.body)
-        return
-      }
-
-      // Task watchers (#1030): list them, mark a task done.
-      if (path === "/watchers" || path.startsWith("/watchers/")) {
-        if (!this.watchers) { this.json(res, 503, { error: "watchers need the database" }); return }
-        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
-        const reply = handleWatchersApi(req.method || "GET", path, url.searchParams, body as Record<string, unknown> | undefined, {
-          store: this.watchers.store,
-          checkpoint: this.watchers.checkpoint,
-        })
         this.json(res, reply.status, reply.body)
         return
       }
@@ -8180,7 +8053,7 @@ export class AgentXDaemon {
         case "POST /runs/waiting": {
           // #1100 — a run that ends to wait for something (a build, another
           // agent, a time) says so: the one who asked hears "waiting", not
-          // "done", and its watcher stays open. Only from the run itself.
+          // "done". Only from the run itself.
           const body = await readBody(req)
           const on = typeof body.on === "string" ? body.on.trim() : ""
           if (!on) { this.json(res, 400, { error: "Required: on (what the work waits for)" }); break }
@@ -8190,9 +8063,7 @@ export class AgentXDaemon {
           if (!turn?.taskId) { this.json(res, 403, { error: "no running turn matches this call: use the agentx_waiting tool from inside your run" }); break }
           const rec = this.delegations.markWaiting(turn.taskId, { on, ...(due ? { dueAt: due } : {}) })
           this.registry.recordJobState(turn.taskId, { state: "waiting", on, ...(due ? { until: new Date(due).toISOString() } : {}) })
-          const traceId = this.registry.runningTraceId(turn.agentId, turn.taskId)
-          const watcher = traceId && this.config.watchers.enabled ? this.watchers?.checkpoint.markWaiting(traceId, due) ?? null : null
-          this.json(res, 200, waitingBody({ delegation: rec?.id ?? null, asker: rec?.caller ?? null, watcher, on, dueAt: due }))
+          this.json(res, 200, waitingBody({ delegation: rec?.id ?? null, asker: rec?.caller ?? null, on, dueAt: due }))
           break
         }
 
@@ -8213,8 +8084,6 @@ export class AgentXDaemon {
           this.registry.recordJobState(turn.taskId, state)
           if (state.state === "waiting") {
             this.delegations.markWaiting(turn.taskId, { on: state.on, ...(dueAt ? { dueAt } : {}) })
-            const traceId = this.registry.runningTraceId(turn.agentId, turn.taskId)
-            if (traceId && this.config.watchers.enabled) this.watchers?.checkpoint.markWaiting(traceId, dueAt)
           }
           this.json(res, 200, { ok: true, state, note: `Recorded: this run ends with the job ${describeJobState(state)}. Whoever asked hears it with your answer.` })
           break
@@ -8438,7 +8307,7 @@ export class AgentXDaemon {
             this.log(`[a2a] /task accepted without senderAgentId for agent="${agentId}" from ${(req.socket?.remoteAddress) || "unknown"} — caller should upgrade. Required in next release.`)
           }
           // A top-level `taskType` (a mesh peer's /send/agent, #1049) joins
-          // the run's context, where the watcher reads it.
+          // the run's context.
           if (taskTypeOf(body)) body.context = contextWithTaskType(body)
           // So does a top-level `home` (#1100): a second run on it is told.
           const taskHome = homeOfBody(body)

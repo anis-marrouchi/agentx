@@ -28,11 +28,10 @@ export interface StatusSettings {
   channels: string[]
   retentionDays: number
   /** A delegation that ended waiting with no due time: how long it may
-   *  wait before the request reads timed out. Default 120 (the watchers'
-   *  default due). */
+   *  wait before the request reads timed out. Default 120. */
   waitDefaultMinutes?: number
   /** Past a wait's due time (or the default above), how long before the
-   *  request reads timed out. Default 30 (the watchers' escalation delay). */
+   *  request reads timed out. Default 30. */
   waitGraceMinutes?: number
 }
 
@@ -178,10 +177,9 @@ export class StatusBoard {
       const row = this.store.byRef("delegation", d.id)
       // The callee's run ended to wait (#1100): the request still waits on
       // it, it is not handed back yet. The delegation itself is over, so
-      // nothing else will hand it back: the wait ends when the delegation's
-      // watcher closes (waitEnded, wired by the daemon) or, with no watcher
-      // (watchers off, or none attached), at the latest `until` (sweep):
-      // the due time the callee gave, or the default, plus a grace period.
+      // nothing else will hand it back: the wait ends at the latest `until`
+      // (sweep): the due time the callee gave, or the default, plus a grace
+      // period.
       // A later reply from the callee comes as a new message or delegation
       // with nothing linking it to this one, so it is not used.
       if (status === "waiting") {
@@ -197,8 +195,7 @@ export class StatusBoard {
   }
 
   /** The work a delegation that ended waiting waits on is over (#1100):
-   *  its watcher was marked done ("done"), or fired and the owner was told
-   *  ("timeout"). Nothing for a delegation that did not end waiting: its
+   *  "timeout" from the sweep past its latest `until`. Nothing for a delegation that did not end waiting: its
    *  own end already handed it back. */
   waitEnded(delegationId: string, outcome: "done" | "timeout"): void {
     this.guard("wait end", () => {

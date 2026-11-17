@@ -9,12 +9,10 @@ import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsCall, type RequestsApiDeps } from "../src/requests/daemon-api"
 import { runRequestsSweep } from "../src/requests/sweep"
 import {
-  attachPromiseFacts, closeWatcherLoop, DEFAULT_PROMISE_SETTINGS, openPromise, parseProof, promiseFact, raiseWatcherLoop, watcherNotice,
+  attachPromiseFacts, DEFAULT_PROMISE_SETTINGS, openPromise, parseProof, promiseFact,
   type PromiseSettings,
 } from "../src/requests/promise"
 import type { CheckResult } from "../src/requests/checkers"
-import { WatcherStore } from "../src/watchers/store"
-import { WatchCheckpoint, type WatcherSettings } from "../src/watchers/checkpoint"
 import { FactLedger, isStaleFact } from "../src/wiki/facts/ledger"
 import { registerWikiFacts } from "../src/commands/wiki-facts"
 import { requestsConfigSchema } from "../src/daemon/config"
@@ -204,78 +202,6 @@ describe("the API for later steps: openPromise", () => {
 })
 
 describe("one escalation path", () => {
-  const WATCH: WatcherSettings = {
-    enabled: true, skipChannels: [], defaultDueMinutes: 120, noBelow: 0.2, yesAt: 0.7,
-    escalateAfterMinutes: 30, retentionDays: 30, doneSignal: "result",
-  }
-
-  function checkpoint(ownerAlerts: string[]) {
-    const watchers = new WatcherStore(db)
-    const cp = new WatchCheckpoint({
-      store: watchers, settings: () => WATCH, decide: async () => ({ probability: 0.9, callId: null, mode: "active" }),
-      hasAgent: (id) => AGENTS.has(id), alertAgent: async () => {}, alertOwner: async (title) => { ownerAlerts.push(title) },
-      raise: (w, reason) => { const r = raiseWatcherLoop(store, w, reason, clock); return r.raised || r.opened },
-      onClosed: (w, outcome) => { if (outcome === "done") closeWatcherLoop(store, watchers.get(w.id) ?? w, clock) },
-      log: () => {}, now: () => clock,
-    })
-    return { cp, watchers }
-  }
-
-  it("a task watcher that fires opens a promise for its task; the requests check tells the owner once; done with evidence closes it with a fact", async () => {
-    const ownerAlerts: string[] = []
-    const { cp, watchers } = checkpoint(ownerAlerts)
-    await cp.check({ key: "trace-1", traceId: "trace-1", kind: "dispatch", agentId: "devops", channel: "cron", delegator: null, message: "renew the TLS certificate", dueAt: clock + HOUR })
-    const w = watchers.list()[0]
-    clock += 2 * HOUR
-    await cp.sweep()
-    // Not the watcher's own push: the request loop's.
-    expect(ownerAlerts).toEqual([])
-    const r = store.byLink("watcher", w.id)!
-    expect(r).toMatchObject({ promise: true, agentId: "devops", owedTo: "owner", state: "needs_attention", attentionReason: expect.stringMatching(/^Task watcher /) })
-    const told: Array<{ title: string; kind?: string }> = []
-    const sweep = () => runRequestsSweep({
-      store, settings, now: clock, log: () => {}, noticeFor: watcherNotice,
-      notify: async (title, _m, _r, kind) => { told.push({ title, kind }) },
-    })
-    await sweep()
-    await sweep()
-    expect(told).toEqual([{ title: "A task is not finished", kind: "notice" }])
-    // Marked done with a link: the promise closes with it as proof.
-    expect(cp.markDone(w.id, "https://example.com/cert/renewed").changed).toBe(true)
-    expect(store.get(r.id)).toMatchObject({ state: "done", proof: { kind: "link", value: "https://example.com/cert/renewed" }, factId: expect.any(String) })
-    expect(facts()[0]).toMatchObject({ subject: "renew the TLS certificate", attribute: "done", verifiedBy: "devops" })
-  })
-
-  it("a watcher that fires on a request already needing attention for another reason tells the owner itself", async () => {
-    const ownerAlerts: string[] = []
-    const { cp, watchers } = checkpoint(ownerAlerts)
-    tracker.taskStarted({
-      agentId: "devops", channel: "telegram", chatId: "chat-1", taskId: "t1", messagePreview: "renew it", fullMessage: "renew it",
-      at: "", humanRoot: true, sender: { id: "4242" },
-    } as any)
-    await cp.check({ key: "trace-1", traceId: "trace-1", kind: "dispatch", agentId: "devops", channel: "cron", delegator: null, message: "renew the TLS certificate", dueAt: clock + HOUR })
-    const w = watchers.list()[0]
-    store.link("req-t1", "watcher", w.id, clock)
-    expect(store.needsAttention("req-t1", "the run failed", clock)).toBe(true)
-    clock += 2 * HOUR
-    await cp.sweep()
-    // The request keeps its first reason, so no watcher notice would go out: the watcher's own push does.
-    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", attentionReason: "the run failed" })
-    expect(ownerAlerts).toEqual(["A task is not finished"])
-  })
-
-  it("a watcher on handed-on work raises the request that follows it, and does not open a second record", () => {
-    tracker.taskStarted({
-      agentId: "coder", channel: "telegram", chatId: "chat-1", taskId: "t1", messagePreview: "ship it", fullMessage: "ship it",
-      at: "", humanRoot: true, sender: { id: "4242" },
-    } as any)
-    tracker.delegationStarted({ id: "dlg-1", caller: "coder", callee: "devops", origin: { channel: "telegram", chatId: "chat-1" } } as any)
-    const res = raiseWatcherLoop(store, { id: "watch-dlg-1", taskKey: "dlg-1", traceId: null, agentId: "devops", delegator: "coder", summary: "deploy", dueAt: clock }, "the due time passed", clock)
-    expect(res).toMatchObject({ requestId: "req-t1", opened: false, raised: true })
-    expect(store.byLink("watcher", "watch-dlg-1")?.id).toBe("req-t1")
-    expect(store.listByState("needs_attention").map((r) => r.id)).toEqual(["req-t1"])
-  })
-
   it("a follow-up wait that runs out comes back through the requests check, not a path of its own", async () => {
     tracker.taskStarted({
       agentId: "coder", channel: "telegram", chatId: "chat-1", taskId: "t1", messagePreview: "ship it", fullMessage: "ship it",
@@ -315,8 +241,8 @@ describe("one escalation path", () => {
 })
 
 describe("settings", () => {
-  it("requests.promises defaults: proof required, facts on for 7 days, watchers on the loop, cards off", () => {
-    expect(requestsConfigSchema.parse(undefined).promises).toEqual({ requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false })
+  it("requests.promises defaults: proof required, facts on for 7 days, cards off", () => {
+    expect(requestsConfigSchema.parse(undefined).promises).toEqual({ requireProof: true, facts: true, factTtlDays: 7, cards: false })
     expect(requestsConfigSchema.safeParse({ promises: { factTtlDays: 0 } }).success).toBe(false)
   })
 })

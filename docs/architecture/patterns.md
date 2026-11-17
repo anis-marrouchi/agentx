@@ -44,7 +44,7 @@ A *pattern* is a recurring shape of agent work with a name. Each entry below say
 
 - **Problem**: the same thing is tracked in three places, and the three disagree.
 - **Shape**: one record per thing. Everything else points at that record.
-- **Lives in**: `src/requests/store.ts` and `src/approvals/cards.ts`. Watchers (`src/watchers/store.ts`) and plan steps (`src/requests/plan-store.ts`) keep their own stores, but their escalation and their done go through the one promise path in `src/requests/promise.ts`.
+- **Lives in**: `src/requests/store.ts` and `src/approvals/cards.ts`. Plan steps (`src/requests/plan-store.ts`) keep their own store, but their escalation and their done go through the one promise path in `src/requests/promise.ts`.
 - **Do it well**: before adding a table with a due date or a status, check whether a request or a card already is the home.
 
 ### Listener
@@ -107,14 +107,14 @@ A *pattern* is a recurring shape of agent work with a name. Each entry below say
 
 - **Problem**: things go quiet and nobody notices.
 - **Shape**: after a stall time, a nudge; then an escalation; a fixed number of times, then stop.
-- **Lives in**: `src/requests/sweep.ts`, `src/requests/plan-sweep.ts`, `src/watchers/due.ts`.
+- **Lives in**: `src/requests/sweep.ts`, `src/requests/plan-sweep.ts`, `src/jobs/wake.ts`.
 - **Do it well**: every chaser has a limit. After the last nudge it tells the owner once and stops.
 
 ### Evidence watcher
 
 - **Problem**: saying "done" closes nothing, or closes things that are not done.
 - **Shape**: an item closes only when a check passes: a page, an issue state, a commit on a branch, a reply, a test.
-- **Lives in**: `src/requests/checkers/index.ts`, `src/watchers/evidence.ts`.
+- **Lives in**: `src/requests/checkers/index.ts`, `src/requests/evidence.ts`.
 - **Do it well**: prefer a check the daemon can run over a link a person has to open.
 
 ### Handoff

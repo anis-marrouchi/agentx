@@ -226,7 +226,6 @@ The request shows the fact's id, and `agentx wiki facts show <id>` shows the fac
 
 The same record follows the other things someone owes:
 
-- **Task watchers.** A watched task that is not finished in time raises the request that follows it. With none, it becomes a promise of the agent that has the task. You are told once, through the same check as every other request, under the title **A task is not finished**. Marking the task done closes that promise, with the task's evidence as its proof. Turn this off with `promises.watchers: false`, or by giving watchers their own address in `watchers.owner`.
 - **Plan steps.** A blocked step is told through the same check, in the plan's own words.
 - **Follow-up waits.** When handed-on work ends to wait for something with a due time, the request waits on it and is due then. If the wait runs out, the request comes back to you like any other past its due time.
 - **Decision cards** (off by default). With `promises.cards: true`, a card an agent raises outside a request is a promise you owe. It closes when you decide the card, with your answer as a fact, or is dropped when the card expires.

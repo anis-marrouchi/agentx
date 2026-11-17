@@ -109,14 +109,13 @@ Work often takes more than one run. The daemon, not the agent, keeps a job going
 
 Your own requests keep their own checks (quiet time, resend, pick-up). The check each minute holds one of them only after a run has stated a job state on it.
 
-Four older paths now go through the job's wake:
+Three older paths now go through the job's wake:
 
-- **Watchers:** when a watcher fires on work a job handed to another agent, the daemon wakes the job that handed it out, with the watcher's alert as its note. Before, the alert started a run of its own. With no such job (jobs turned off, or work handed out from a person's chat), the alert run starts as before.
 - **Resend once:** a request that a usage limit or a restart stopped is sent back once by waking its job, with the reason as its note. If the wake does not take it, the pick-up turn sends it, as before.
 - **Time limit:** a run stopped at its agent's time limit wakes its job, with a note listing the tool calls it had made. The run no longer gets a continuation of its own. See [work that runs past its time limit](/jobs/restart-safely#work-that-runs-past-its-time-limit).
 - **Pick-up:** when you reply to a request, hand it to an agent, or ask for it to be picked up again, the requests check wakes its job, with your words as the note. If the wake does not take it (jobs turned off, the job blocked or at its cap, or your words too long for a note), the pick-up turn goes as before.
 
-All of them count toward the job's caps. The older delegation log and watcher table are still in place.
+All of them count toward the job's caps. Task watchers are removed: a job that is not finished is followed by its own wake and the stalled check. An old `agentx.json` that still has their section loads; the section is ignored. The older delegation log is still in place.
 
 Jobs are kept while `requests.enabled` is on. To keep jobs on a node where requests are off, set `requests.jobs.enabled` to `true`: every run that is not your own turn gets its job, and your own requests leave no record there. Set it to `false` to keep no jobs at all.
 

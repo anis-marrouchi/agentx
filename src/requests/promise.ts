@@ -1,6 +1,5 @@
 import { randomBytes } from "crypto"
-import { parseEvidence, type Evidence } from "@/watchers/evidence"
-import type { WatcherRecord } from "@/watchers/store"
+import { parseEvidence, type Evidence } from "@/requests/evidence"
 import type { FactInput, WriteResult } from "@/wiki/facts/ledger"
 import type { CloseWhen } from "./checkers"
 import { OPEN_STATES, OWED_TO_OWNER, type LinkKind, type RequestHome, type RequestRecord, type RequestStore } from "./store"
@@ -120,15 +119,12 @@ export interface PromiseSettings {
   facts: boolean
   /** Days such a fact stays trusted before it counts as stale. */
   factTtlDays: number
-  /** A task watcher that fires raises the request loop that follows its
-   *  task (or opens a promise for it) instead of telling the owner itself. */
-  watchers: boolean
   /** A decision card raised outside a request's turn opens a promise owed
    *  by the owner, closed when the card is decided. */
   cards: boolean
 }
 
-export const DEFAULT_PROMISE_SETTINGS: PromiseSettings = { requireProof: true, facts: true, factTtlDays: 7, watchers: true, cards: false }
+export const DEFAULT_PROMISE_SETTINGS: PromiseSettings = { requireProof: true, facts: true, factTtlDays: 7, cards: false }
 
 export const promiseSettingsOf = (s: { promises?: Partial<PromiseSettings> } | undefined): PromiseSettings => ({ ...DEFAULT_PROMISE_SETTINGS, ...s?.promises })
 
@@ -157,7 +153,7 @@ export interface OpenPromiseInput {
   dueAt?: number | null
   closeWhen?: CloseWhen | null
   home?: RequestHome | null
-  /** What it follows (a card, a watcher), so its end finds it. */
+  /** What it follows (a card), so its end finds it. */
   link?: { kind: LinkKind; ref: string }
   headline?: string
   now: number
@@ -212,67 +208,6 @@ export function waitOnLoop(store: RequestStore, requestId: string | null, wait: 
   store.progress(r.id, now, "waiting_other")
   if (wait.dueAt && r.dueAt === null) store.setLoop(r.id, { dueAt: wait.dueAt }, now)
   return store.get(r.id)
-}
-
-// ── Task watchers (#1030) fold into the loop ──────────────────────────────
-
-/** Channel of a watcher's loop: its chat is the watched task's key. */
-export const WATCHER_LOOP_CHANNEL = "watchers"
-
-/** A watcher fired and its delegating agent did not finish the task (or
- *  there is none): the one escalation instead of the watcher's own push.
- *  The request that follows the task needs attention; with none, the
- *  watcher's task becomes a promise of the agent that has it. */
-export function raiseWatcherLoop(
-  store: RequestStore,
-  w: Pick<WatcherRecord, "id" | "taskKey" | "traceId" | "agentId" | "delegator" | "summary" | "dueAt">,
-  reason: string,
-  now: number,
-): { requestId: string; raised: boolean; opened: boolean } {
-  // A peer's agent is not this node's: the agent that handed it on holds it.
-  const local = !w.agentId.includes("@")
-  const agentId = local ? w.agentId : w.delegator ?? w.agentId
-  const owedTo = w.delegator && w.delegator !== agentId ? w.delegator : OWED_TO_OWNER
-  return raiseLoop(store, {
-    links: [{ kind: "delegation", ref: w.taskKey }, ...(w.traceId ? [{ kind: "run" as const, ref: w.traceId }] : [])],
-    reason: `${WATCHER_REASON}${w.id}: ${reason}`,
-    open: {
-      agentId, owedTo, text: w.summary, channel: WATCHER_LOOP_CHANNEL, chatId: w.taskKey,
-      dueAt: w.dueAt, link: { kind: "watcher", ref: w.id },
-    },
-    now,
-  })
-}
-
-/** Words a watcher's escalation starts with: its notice is a notice, not
- *  a nag for the digest, as the watcher's own push was. */
-export const WATCHER_REASON = "Task watcher "
-
-/** The requests check's words for a loop a watcher raised (noticeFor).
- *  Null: not a watcher's. */
-export function watcherNotice(r: RequestRecord): { title: string; text: string; kind: "notice" } | null {
-  if (r.state !== "needs_attention" || !r.attentionReason?.startsWith(WATCHER_REASON)) return null
-  const by = r.promise && r.owedTo !== OWED_TO_OWNER ? ` (handed over by ${r.owedTo})` : ""
-  return {
-    title: "A task is not finished",
-    text: [
-      `${r.agentId}${by}: ${(r.headline ?? r.text).replace(/\s+/g, " ").trim().slice(0, 240)}`,
-      `Why: ${r.attentionReason.slice(WATCHER_REASON.length)}`,
-      r.dueAt ? `Due ${new Date(r.dueAt).toISOString()}. Request ${r.id}.` : `Request ${r.id}.`,
-    ].join("\n"),
-    kind: "notice",
-  }
-}
-
-/** A watcher was marked done: the promise its escalation opened closes,
- *  with the watcher's evidence as its proof when it carried one. A
- *  request of the owner's that the watcher only pointed at is left to its
- *  own close. False: nothing to close. */
-export function closeWatcherLoop(store: RequestStore, w: Pick<WatcherRecord, "id" | "reason" | "evidence">, now: number): boolean {
-  const r = store.byLink("watcher", w.id)
-  if (!r || !r.promise || !(OPEN_STATES as readonly string[]).includes(r.state)) return false
-  const proof = w.evidence ? proofFromEvidence(w.evidence, now) : null
-  return store.close(r.id, "done", proof ? describeProof(proof) : w.reason || "the watched task was marked done", now, proof, "promise")
 }
 
 // ── The fact a kept promise leaves ────────────────────────────────────────

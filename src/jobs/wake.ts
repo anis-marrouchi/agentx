@@ -300,8 +300,8 @@ export class JobWake {
   }
 
   /** Another part of the daemon has a reason to start a job's next run:
-   *  a watcher fired on work the job handed out, a request a limit or a
-   *  restart stopped is due its one resend (#1861 box 4). Instead of a
+   *  a request a limit or a restart stopped is due its one resend
+   *  (#1861 box 4). Instead of a
    *  run of its own, it arms the job's wake: the run starts in the job's
    *  chat, under the job's caps, linked to the same job. True only when
    *  the wake is armed and its run will carry `note`. False, and the
@@ -357,31 +357,6 @@ export class JobWake {
       this.deps.log(`[jobs] time-limit hand-off failed: ${e?.message ?? e}`)
       return null
     }
-  }
-
-  /** The job of the agent that handed out a delegation: the parent of
-   *  the job the hand-off opened, when that agent is `delegator`. Not an
-   *  owner's request: a hand-off from a person's turn is followed by the
-   *  request's own checks, not woken as a job. */
-  delegatorJob(delegationId: string, delegator: string): string | null {
-    try {
-      const child = this.deps.jobs.byDelegation(delegationId) ?? this.deps.jobs.get(`job-${delegationId}`)
-      if (!child?.parentId) return null
-      const parent = this.deps.jobs.get(child.parentId)
-      return parent && !parent.ownerRequest && parent.assignee === delegator ? parent.id : null
-    } catch {
-      return null
-    }
-  }
-
-  /** A watcher's alert to `agentId` about work it handed out: wakes the
-   *  job that handed it out, which carries the alert as its note. True
-   *  when the wake took it; false, and the alert turn goes as before,
-   *  for any other watcher, no such job, or a job the wake does not take. */
-  alertDelegator(agentId: string, text: string, w: { kind: string; taskKey: string }): boolean {
-    if (w.kind !== "delegation" || !w.taskKey.startsWith("dlg-")) return false
-    const jobId = this.delegatorJob(w.taskKey, agentId)
-    return jobId ? this.wakeFor(jobId, text) : false
   }
 
   /** A run ended cleanly with background work still open in its process:

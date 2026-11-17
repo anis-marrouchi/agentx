@@ -25,7 +25,7 @@ import { dirname } from "path"
 import { randomBytes } from "crypto"
 import { HUMAN_CHANNELS, isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
 import { isQueued } from "@/agents/queued"
-import { taskTypeOf } from "@/watchers/due"
+import { taskTypeOf } from "@/agents/task-context"
 import { normalizeHome } from "./home"
 import { describeJobState, endStateInAnswer, stalledLine, type EndState } from "@/agents/run-state"
 
@@ -70,8 +70,7 @@ export interface DelegationRecord {
   origin: DelegationOrigin
   root: RootInitiator
   startedAt: number
-  /** The caller's task type (`context.taskType`), which picks the evidence
-   *  a watcher's done needs (watchers, #1049). */
+  /** The caller's task type (`context.taskType`, #1049). */
   taskType?: string
   /** "send": an agent's send_agent from a turn no person is waiting on.
    *  Its answer goes back to the asking agent's own chat (#1100). Absent:
