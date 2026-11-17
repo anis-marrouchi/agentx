@@ -156,6 +156,8 @@ export interface OpenPromiseInput {
   /** What it follows (a card), so its end finds it. */
   link?: { kind: LinkKind; ref: string }
   headline?: string
+  /** False: its due time does not wake the agent (an escalation). */
+  wake?: boolean
   now: number
 }
 
@@ -171,7 +173,21 @@ export function openPromise(store: RequestStore, input: OpenPromiseInput): Reque
   if (input.link) store.link(id, input.link.kind, input.link.ref, input.now)
   if (byOwner) store.waitOnOwner(id, input.text, input.now)
   if (input.headline) store.setHeadline(id, { headline: input.headline }, "agent")
+  if (!byOwner && input.wake !== false) armPromiseWake(store, id, input.dueAt ?? null, input.now)
   return store.get(id)!
+}
+
+/** The brick noqta#858 found missing: a due time only told the owner the
+ *  promise was late. Now the agent that owes it is woken when it falls
+ *  due, through the job wake. Not a due time already past (the agent is
+ *  in the turn that made it) nor one the owner owes (the owner is not
+ *  an agent to wake). */
+export function armPromiseWake(store: RequestStore, id: string, dueAt: number | null, now: number): boolean {
+  if (dueAt === null || dueAt <= now) return false
+  const r = store.get(id)
+  if (!r || r.owedBy === OWED_TO_OWNER) return false
+  const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+  return store.armDueWake(id, dueAt, `It is due now (${new Date(dueAt).toISOString()}), owed to ${r.owedTo ?? "the owner"}: ${words}`, now)
 }
 
 /** The one escalation (#1138 D): the loop that follows this work needs
@@ -191,7 +207,8 @@ export function raiseLoop(
       return { requestId: r.id, raised: store.needsAttention(r.id, input.reason, input.now), opened: false }
     }
   }
-  const r = openPromise(store, { ...input.open, now: input.now })
+  // It needs attention now: a wake would hide that behind 'continue'.
+  const r = openPromise(store, { ...input.open, wake: false, now: input.now })
   return { requestId: r.id, raised: store.needsAttention(r.id, input.reason, input.now), opened: true }
 }
 

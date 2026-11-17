@@ -386,6 +386,9 @@ const settleableAttention = (col: string) => `(${col} LIKE '${OVERDUE_REASON}%' 
 const STATE_CHANGED = "state_changed_at = CASE WHEN state IS ? THEN state_changed_at ELSE ? END"
 
 export class RequestStore {
+  /** Seen once: the job store's columns are on the table (`armDueWake`). */
+  private jobColumns = false
+
   constructor(private db: Database.Database) {
     ensureRequestTables(db)
     db.pragma("foreign_keys = ON")
@@ -447,6 +450,23 @@ export class RequestStore {
   }
 
   /** Give an open request a due time or a checker, from accept or wait. */
+  /** A promise's due time wakes the agent that owes it (noqta#858): the
+   *  job wake (`dueWakes`) starts its run at `at`. Only a loop no run has
+   *  put a job state on and with no wake set: a declared state or a wake
+   *  already armed stands. True when the wake is armed. */
+  armDueWake(id: string, at: number, note: string, now: number): boolean {
+    // The job columns come with the job store; without it there is no wake.
+    if (!this.jobColumns) {
+      const cols = this.db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
+      this.jobColumns = cols.some((c) => c.name === "wake_at") && cols.some((c) => c.name === "job_state")
+      if (!this.jobColumns) return false
+    }
+    return this.db.prepare(
+      `UPDATE requests SET job_state = 'continue', wake_at = ?, job_note = ?, updated_at = ?
+       WHERE id = ? AND state IN ('in_progress', 'waiting_other') AND job_state IS NULL AND wake_at IS NULL`,
+    ).run(at, note.slice(0, 1000), now, id).changes > 0
+  }
+
   setLoop(id: string, loop: { dueAt?: number | null; closeWhen?: CloseWhen | null }, now: number): void {
     if (loop.dueAt !== undefined) this.db.prepare("UPDATE requests SET due_at = ?, updated_at = ? WHERE id = ?").run(loop.dueAt, now, id)
     if (loop.closeWhen !== undefined) {
