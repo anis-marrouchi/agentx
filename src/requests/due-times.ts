@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3"
-import { estimateRows, factorOf, usualOf, type AgentFactor, type EstimateRow } from "./estimates"
+import { EstimateCache, factorOf, usualOf, type AgentFactor, type EstimateRow } from "./estimates"
 import { SlotStore, type DueSource } from "./slot-store"
 import { describeMoves, fit, isoOf, MAX_ESTIMATE_MINUTES, movesBy, place, PRIORITIES, utc, type Move, type Priority, type QueueItem, type SlotAnswer, type SlotInputs, type SlotOptions } from "./slots"
 
@@ -66,12 +66,11 @@ export interface DueTimesCtx {
   log?: (msg: string) => void
 }
 
-/** How long an agent's past rows are kept in memory between calls. */
-const ESTIMATES_TTL_MS = 60_000
-
 /** The context the daemon passes, read from its database. An agent's
  *  past rows are read once and kept for a minute: its factor and its
- *  usual minutes both come from that one bounded read. */
+ *  usual minutes both come from that one bounded read. Pass `estimates`
+ *  from something that outlives the call, or the minute starts over with
+ *  every context (#1920). */
 export function dueTimesCtx(
   db: Database.Database,
   settings: DueTimeSettings,
@@ -79,20 +78,14 @@ export function dueTimesCtx(
     capacity: number; lanes: (agentId: string) => number; tell?: DueTimesCtx["tell"]; log?: (msg: string) => void; now?: () => number
     /** requests.staleAfterHours; unset, 24. */
     staleAfterHours?: number
+    /** Rows kept between calls; unset, kept for this context only. */
+    estimates?: EstimateCache
   },
   slots: SlotStore = new SlotStore(db),
 ): DueTimesCtx {
   const opts = () => ({ now: deps.now?.() ?? Date.now(), days: settings.factorDays, minRows: settings.factorMinRows })
-  const kept = new Map<string, { at: number; rows: EstimateRow[] }>()
-  const rowsOf = (agentId: string): EstimateRow[] => {
-    const o = opts()
-    const k = kept.get(agentId)
-    if (k && o.now - k.at >= 0 && o.now - k.at < ESTIMATES_TTL_MS) return k.rows
-    const rows = estimateRows(db, { ...o, agentId })
-    if (kept.size > 500) kept.clear()
-    kept.set(agentId, { at: o.now, rows })
-    return rows
-  }
+  const estimates = deps.estimates ?? new EstimateCache()
+  const rowsOf = (agentId: string): EstimateRow[] => estimates.rows(db, { ...opts(), agentId })
   return {
     settings, slots, capacity: deps.capacity, lanes: deps.lanes, tell: deps.tell, log: deps.log,
     staleAfterMs: (deps.staleAfterHours ?? 24) * 60 * 60_000,

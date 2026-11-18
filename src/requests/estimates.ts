@@ -79,6 +79,27 @@ export function estimateRows(db: Database.Database, opts: EstimateOptions & { ag
   return rows.map((r) => ({ id: r.id, agentId: r.agent_id, work: r.work ?? null, estimateMinutes: r.est, realMinutes: r.run_ms / MIN, closedAt: r.closed_at }))
 }
 
+/** How long read rows are kept between calls. */
+export const ESTIMATES_TTL_MS = 60_000
+
+/** Estimate rows kept for a minute (#1920). Owned by whoever outlives the
+ *  calls (the daemon, the dashboard), so a context built per call still
+ *  reads the database at most once a minute per agent (or for all). */
+export class EstimateCache {
+  private kept = new Map<string, { at: number; rows: EstimateRow[] }>()
+  constructor(private readonly ttlMs = ESTIMATES_TTL_MS) {}
+
+  rows(db: Database.Database, opts: EstimateOptions & { agentId?: string }): EstimateRow[] {
+    const key = `${opts.agentId ?? "*"}|${opts.days}|${opts.scanRows ?? ""}`
+    const k = this.kept.get(key)
+    if (k && opts.now - k.at >= 0 && opts.now - k.at < this.ttlMs) return k.rows
+    const rows = estimateRows(db, opts)
+    if (this.kept.size > 500) this.kept.clear()
+    this.kept.set(key, { at: opts.now, rows })
+    return rows
+  }
+}
+
 function median(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
@@ -97,7 +118,11 @@ export function factorOf(agentId: string, rows: EstimateRow[], opts: Pick<Estima
 
 /** Every agent's factor, for `agentx requests contract`. */
 export function correctionFactors(db: Database.Database, opts: EstimateOptions & { agentId?: string }): AgentFactor[] {
-  const rows = estimateRows(db, opts)
+  return factorsOf(estimateRows(db, opts), opts)
+}
+
+/** Every agent's factor from rows already read (newest first). */
+export function factorsOf(rows: EstimateRow[], opts: Pick<EstimateOptions, "minRows" | "maxRows">): AgentFactor[] {
   const agents = [...new Set(rows.map((r) => r.agentId))].sort()
   return agents.map((a) => factorOf(a, rows, opts))
 }
