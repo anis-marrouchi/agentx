@@ -18,6 +18,7 @@ import { readScreenSettings } from "@/computer-use/capture-settings"
 import { defaultNotifyChannel } from "@/notify/push-settings"
 import { noticeRuleBreak, withTodo } from "@/approvals/screen-gate"
 import { isPhoneLink } from "@/notify/phone-link"
+import { numberReport } from "@/notify/unanswered"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -184,8 +185,10 @@ export const notify = new Command()
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok) { console.log(chalk.red(`  ${data.error ?? `daemon ${res.status}`}`)); process.exit(1) }
       if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
+      // The number (#1936): per day, per item, this node and its peers.
+      for (const line of numberReport(data.number)) console.log(line)
       const c = data.counts ?? {}
-      console.log(`  Last 24 h: ${c.sent ?? 0} sent, ${c.held ?? 0} held for Focus or a call, ${c.digest ?? 0} kept for the digest, ${c.repeat ?? 0} not repeated, ${c.failed ?? 0} failed`)
+      console.log(`  Last 24 h: ${c.sent ?? 0} sent, ${c.held ?? 0} held for Focus or a call, ${c.digest ?? 0} kept for the digest, ${c.repeat ?? 0} not repeated, ${c.failed ?? 0} failed${c.recorded ? `, ${c.recorded} recorded in your chats with agents` : ""}`)
       console.log(chalk.dim(`  ${data.waitingForDigest ?? 0} waiting for the next digest`))
       // Did it land (#1138 step B): of those that went out.
       const l = data.landed ?? {}

@@ -254,7 +254,7 @@ agentx notify --drop <id>     # remove one held message without sending it
 | `--status` | Show whether you are in Focus or a call, and the messages held, each with its id |
 | `--flush` | Send everything held now, as one message |
 | `--drop <id>` | Remove one held message without sending it. Copy the id from `--status`; the start of the id is enough when only one message begins with it |
-| `--told` | Show what you were told in the last 24 hours: how many were sent, held, kept for the digest or not repeated, and the latest ones |
+| `--told` | Show how many items you did not see or answer within 24 hours, per day, on every computer (see [the number](#8-how-many-reached-you-the-number)), then what you were told in the last 24 hours: how many were sent, held, kept for the digest or not repeated, and the latest ones |
 | `--from <who>` | Shown in a held digest, so you know who sent what |
 | `--channel`, `--chat-id` | Deliver somewhere other than the default channel (`notifications.channel`, which is `push`) |
 | `--no-banner`, `--no-sound` | Skip the banner or the sound for this message |
@@ -306,6 +306,31 @@ AgentX also keeps where you were last seen: the phone app, its Desk tab, and eac
 
 **A channel that is down is refused.** When a channel cannot send, for example WhatsApp with no connection, `/health` shows it under `channels` as `"up": false` with the reason and since when. A message sent to it is refused with that reason: `POST /send` answers `503` with `{"ok": false, "refused": true, "reason": "…"}`, and AgentX does not report it as sent. A channel down on two checks a minute apart raises one notice (a reminder for the digest, like other system reminders). If your usual notification channel is the one that is down, the notice goes to the next address on the list that works. To try this without breaking anything, switch a channel off and on again: `curl -s -X POST http://127.0.0.1:18800/channels/ntfy/switch -H 'Content-Type: application/json' -d '{"on": false}'`. It stays off until you switch it on or restart AgentX.
 
+## 8. How many reached you: the number
+
+AgentX counts, for each day, the items it sent you that you did not see or answer within 24 hours. This is only a measure. It changes nothing about what is sent or when.
+
+- **An item** is one thing for you, counted once: the same notice on two channels, or sent on again because it was not seen, is still one item.
+- **Seen or answered** means the same as in [section 7](#7-did-it-land-seen-answered-and-urgent-messages). In one of your chats with an agent (see below), your next message in that chat counts as seen.
+- **Left out:** a message that answers your own message (a reply is something you asked for), and anything kept back as a repeat or for the digest.
+- **Still within 24 h:** an item younger than 24 hours that you have not seen yet is shown apart. It is counted only once its 24 hours are over.
+- **Every computer in your mesh** is counted. A computer that does not answer is shown as `unreachable`, never as 0.
+
+Two more numbers are printed next to it, so it cannot look better by hiding things:
+
+- **Desk items waiting over 24 h**: what waits on your Desk for more than a day.
+- **Batched over 24 h, not sent**: always 0 for now. It is there for a later change that may gather items into fewer messages.
+
+**Your chats with agents.** Messages in a private chat where you talk to an agent are not checked like notices. To count them too, list the chat in `notifications.told.record` as `channel:chatId`, for example `["telegram:123456789"]`. AgentX then writes down each message an agent sends there. It never holds one back, never sends one again on another channel, and never checks it for a repeat. A chat that is also in `notifications.told.addresses` keeps the told-once check instead.
+
+To see the number:
+
+1. **Terminal:** run `agentx notify --told`.
+2. The first line is yesterday's number for every computer, for example `Not seen or answered within 24 h on 2026-11-17: 8 of 12 items (this computer 5 of 7, server 3 of 5). Desk items waiting over 24 h: 2. Batched over 24 h, not sent: 0.`
+3. Under it, each computer lists its two extra numbers and the last 7 days, one line per day.
+
+The same line is in the morning digest, when the digest goes out. Scripts read it from `GET /owner/told`, under `number` (`?days=` from 1 to 30, 7 by default; `?peers=0` for this computer only). `GET /owner/told/number` returns this computer's number alone; other computers in the mesh read it with the mesh token.
+
 ## Check it worked
 
 1. In the terminal, run `agentx notifications show`.
@@ -328,6 +353,9 @@ AgentX also keeps where you were last seen: the phone app, its Desk tab, and eac
 18. With the phone app, run `agentx notify "Seen test" --title "Reach"`. On the phone, open **Alerts** and tap the message. Run `agentx notify --told`: the message shows `seen ... (phone)`.
 19. Switch a channel off: `curl -s -X POST http://127.0.0.1:18800/channels/ntfy/switch -H 'Content-Type: application/json' -d '{"on": false}'`. Run `curl -s http://127.0.0.1:18800/health`: `channels.ntfy` says `"up": false`. Send to it with `curl -s -X POST http://127.0.0.1:18800/send -H 'Content-Type: application/json' -d '{"channel":"ntfy","chatId":"default","text":"Test\nrefused"}'`: the answer is `503` with `"refused": true` and the reason. Switch it on again with `{"on": true}`.
 20. On the phone, run `agentx notify "Link test" --url https://example.com` and tap the notification: `https://example.com` opens. Run `agentx notify "Request test" --request <id>` with the id of an open request and tap it: that request opens on the Hub. With ntfy, this needs `notifications.publicUrl` or `calls.phone.appUrl`.
+
+21. Run `agentx notify --told`. The first line starts with `Not seen or answered within 24 h on` and yesterday's date, and every computer in your mesh is named in it.
+22. Add one of your chats with an agent to `notifications.told.record`, restart AgentX, and ask the agent something in that chat. Run `agentx notify --told`: the first count line ends with `1 recorded in your chats with agents` or more. Its answer is a reply, so it is left out of the number.
 
 `agentx doctor` runs the same helper check under **Notifications**, along with its other checks.
 
@@ -360,4 +388,8 @@ Other problems:
 | A script's message is sent every time even though it says the same thing | A message shorter than 40 characters is never taken for a repeat. Give it a `--key`. |
 | System reminders never arrive | They come in the daily digest. Check that `approvals.digest.enabled` is on and has a destination (`approvals.digest.destination`, or `notifications.destination`). |
 | An agent's spoken answer waits a long time | Another program on this computer is speaking or playing a sound. AgentX waits for it for up to 10 minutes, then speaks anyway. |
+| A computer shows `unreachable` in the number | That computer did not answer. `down at the last mesh check`: check it is on and reachable (`agentx mesh list` shows it `healthy`). `answered 401`: the mesh token does not match. `answered 404` or `without a number`: it runs an older AgentX; update it. |
+| The number counts messages you did read | Seen comes from the phone app's read mark, the Desk, or your next message in a chat listed in `notifications.told.record`. A message read on the lock screen, or in a chat that is not listed, is not marked seen. |
+| Nothing is recorded for a chat with an agent | Check the chat is in `notifications.told.record` exactly as `channel:chatId`, that it is not also in `notifications.told.addresses`, and that you restarted AgentX after saving. |
+| The digest has no number line | The line is added only when a digest goes out. A digest with nothing waiting is not sent, so the number does not make one go out. |
 | The new icon does not show | Run `agentx desktop install` after changing **Banner icon**, then allow notifications again if asked. |
