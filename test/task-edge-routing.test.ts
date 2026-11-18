@@ -338,4 +338,100 @@ describe("implied work", () => {
     const r = await routeTaskEdge({ ...remark, impliedWork: "active" })
     expect(edgePlanFor(r, { tier: "claude-code" }).turnNote).toBe(`${IMPLIED_WORK_NOTE}\n${SUBAGENT_NOTE}`)
   })
+
+  // #1864 for implied hard work: the same downgrade gap, reached through
+  // the design-change answer instead of "needs the edge model".
+  describe("with a downgrade routed for the same job", () => {
+    const onEdge = { ...remark, currentModel: "claude-fable-5-2", impliedWork: "active" as const }
+    const cheap = "claude-haiku-5-5"
+
+    it("agent on the edge model, implied hard work → the downgrade is dropped", async () => {
+      hoisted.askSeat.mockResolvedValue(implied(0.3, 0.98, 0.85))
+      const { jobModelFor } = await import("../src/agents/edge-routing")
+      const r = await routeTaskEdge(onEdge)
+      expect(r.model).toBe("claude-fable-5-2")
+      expect(r.upgraded).toBe(false)
+      // No override: the job runs on the agent's own model, the edge model.
+      expect(jobModelFor(r, cheap)).toBeUndefined()
+    })
+
+    it("agent on the edge model, design change under the threshold → the downgrade applies", async () => {
+      hoisted.askSeat.mockResolvedValue(implied(0.3, 0.98, 0.69))
+      const { jobModelFor } = await import("../src/agents/edge-routing")
+      expect(jobModelFor(await routeTaskEdge(onEdge), cheap)).toBe(cheap)
+    })
+
+    it("agent on the edge model, implied work in shadow → the downgrade applies", async () => {
+      hoisted.askSeat.mockResolvedValue(implied(0.3, 0.98, 0.85))
+      const { jobModelFor } = await import("../src/agents/edge-routing")
+      expect(jobModelFor(await routeTaskEdge({ ...onEdge, impliedWork: "shadow" }), cheap)).toBe(cheap)
+    })
+
+    it("agent on another model, implied hard work → the edge model", async () => {
+      hoisted.askSeat.mockResolvedValue(implied(0.3, 0.98, 0.85))
+      const { jobModelFor } = await import("../src/agents/edge-routing")
+      expect(jobModelFor(await routeTaskEdge({ ...onEdge, currentModel: "claude-opus-5-5" }), cheap)).toBe("claude-fable-5-2")
+    })
+  })
+})
+
+// The log line the registry writes. The edge seat only sees the agent's
+// configured model, so its reason can say "already on the edge model"
+// while task-tier routing had sent the job down. The line must say which
+// model the job actually runs on.
+describe("edgeRouteLog", () => {
+  const onEdge = { ...base, currentModel: "claude-fable-5-2" }
+  const cheap = "claude-haiku-5-5"
+
+  beforeEach(() => {
+    hoisted.askSeat.mockReset()
+  })
+
+  it("names the dropped downgrade and the model the job runs on", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.95, 0.1))
+    const { routeTaskEdge, edgeRouteLog } = await import("../src/agents/edge-routing")
+    const line = edgeRouteLog(await routeTaskEdge(onEdge), cheap)
+    expect(line).toMatch(/^hard task → claude-fable-5-2 for this job/)
+    expect(line).toContain(`downgrade to ${cheap} dropped`)
+    expect(line).not.toMatch(/already on the edge model/)
+  })
+
+  it("says the same for implied hard work", async () => {
+    hoisted.askSeat.mockResolvedValue({
+      answers: {
+        needsEdge: { type: "noul", noul: 0.3 },
+        subagentsHelp: { type: "noul", noul: 0.2 },
+        workAsked: { type: "choice", choice: "implied", probabilities: { asked: 0.02, implied: 0.98, none: 0 } },
+        designChange: { type: "noul", noul: 0.85 },
+      },
+      callId: "test", mode: "active",
+    })
+    const { routeTaskEdge, edgeRouteLog } = await import("../src/agents/edge-routing")
+    const line = edgeRouteLog(await routeTaskEdge({ ...onEdge, impliedWork: "active" }), cheap)
+    expect(line).toMatch(/^implied hard task → claude-fable-5-2 for this job/)
+    expect(line).toContain(`downgrade to ${cheap} dropped`)
+  })
+
+  it("keeps \"already on the edge model\" when no downgrade was routed", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.95, 0.1))
+    const { routeTaskEdge, edgeRouteLog } = await import("../src/agents/edge-routing")
+    const line = edgeRouteLog(await routeTaskEdge(onEdge), undefined)
+    expect(line).toMatch(/already on the edge model \(claude-fable-5-2\)/)
+    expect(line).not.toContain("dropped")
+  })
+
+  it("names the dropped downgrade on a real move up", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.95, 0.1))
+    const { routeTaskEdge, edgeRouteLog } = await import("../src/agents/edge-routing")
+    const line = edgeRouteLog(await routeTaskEdge(base), cheap)
+    expect(line).toMatch(/^hard task → claude-fable-5-2 for this job/)
+    expect(line).toContain(`downgrade to ${cheap} dropped`)
+  })
+
+  it("is the plain reason when the downgrade stands", async () => {
+    hoisted.askSeat.mockResolvedValue(answer(0.2, 0.9))
+    const { routeTaskEdge, edgeRouteLog } = await import("../src/agents/edge-routing")
+    const route = await routeTaskEdge(onEdge)
+    expect(edgeRouteLog(route, cheap)).toBe(route.reason)
+  })
 })

@@ -229,7 +229,7 @@ export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteRe
     ...(askImplied ? { impliedWork: wantsNote, impliedP: pImplied, designChange: pDesign } : {}),
     reason: [
       canUpgrade ? `${askedEdge ? "hard task" : "implied hard task"} → ${edgeModel} for this job` : "",
-      edgeModel && !canUpgrade ? `${askedEdge ? "hard task" : "implied hard task"}, already on the edge model (${edgeModel})` : "",
+      edgeModel && !canUpgrade ? `${askedEdge ? "hard task" : "implied hard task"}${alreadyOnEdge(edgeModel)}` : "",
       wantsSubagents ? "sub-agents advised" : "",
       wantsNote ? "implied work: the agent states the job" : "",
     ].filter(Boolean).join(", ") + ` (${shown})${impliedShadow}`,
@@ -252,6 +252,31 @@ export function jobModelFor(
 ): string | undefined {
   if (!route?.model) return routedModel
   return route.upgraded ? route.model : undefined
+}
+
+/** The part of a route reason that says the agent's configured model is
+ *  already the edge model. edgeRouteLog rewrites it when a downgrade was
+ *  routed for the same job, so it is built in one place. */
+function alreadyOnEdge(model: string): string {
+  return `, already on the edge model (${model})`
+}
+
+/**
+ * The line the registry logs for a route, once the downgrade is known.
+ * The seat only sees the agent's configured model, so its reason says
+ * "already on the edge model" even when task-tier routing had sent the
+ * job down. When a confident answer drops that downgrade, the line says
+ * the job runs on the edge model and names the downgrade it dropped
+ * (#1864).
+ */
+export function edgeRouteLog(route: EdgeRouteResult, routedModel: string | undefined): string {
+  const jobModel = jobModelFor(route, routedModel)
+  const dropped = Boolean(routedModel) && jobModel !== routedModel
+  if (!dropped || !route.model) return route.reason
+  const reason = route.upgraded
+    ? route.reason
+    : route.reason.replace(alreadyOnEdge(route.model), ` → ${route.model} for this job (the agent's own model)`)
+  return `${reason} — downgrade to ${routedModel} dropped`
 }
 
 export interface EdgePlan {
