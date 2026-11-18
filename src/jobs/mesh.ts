@@ -1,5 +1,6 @@
 import type { JobView } from "./api"
-import type { JobRecord, JobRun, JobStore } from "./store"
+import { peerNotePrefix, type JobRecord, type JobRun, type JobStore } from "./store"
+import { stalledRecipient } from "./wake"
 
 // --- The job tree across nodes (#1861, phase 4) ---
 //
@@ -39,8 +40,28 @@ export interface JobMeshDeps {
   jobs: JobStore
   /** GET /jobs/<id> on the peer, with this node's mesh token. */
   fetchJob: (peer: string, id: string) => Promise<{ status: number; body: unknown }>
+  /** Is the hand-off of this job still out (its answer not back yet)?
+   *  While it is, its answer ends the job here (doors.delegationDone).
+   *  Unset: always out, so the other node's end is only quoted. */
+  handOffOut?: (job: JobRecord) => boolean
+  /** Is this agent on this node? For who is told a job is blocked there. */
+  hasAgent?: (agentId: string) => boolean
+  /** Give `agentId` the line that says a job is blocked on the other node,
+   *  without a run of its own. False: not taken now, tried at the next
+   *  read. Unset: nobody is told. */
+  tell?: (agentId: string, text: string, job: JobRecord) => boolean
   log: (msg: string) => void
   now?: () => number
+}
+
+/** The line the one who asked reads when its job is blocked on the other node. */
+export function blockedOnPeerText(job: JobRecord, said: string): string {
+  const who = `${job.assignee}@${job.peer}`
+  return [
+    `[Job blocked] ${job.id}: the work ${job.requester ? `${job.requester} asked ${who} for` : `held by ${who}`} is blocked on ${job.peer}: ${said.slice(0, 400)}.`,
+    `It was: ${job.text.replace(/\s+/g, " ").trim().slice(0, 250)}`,
+    `It stays open here and closes when it is done there. Help unblock it there, or drop it.`,
+  ].join("\n")
 }
 
 /** How the note of a job here quotes its status on the other node. */
@@ -104,9 +125,11 @@ export class JobMesh {
         if (remote?.down) down.add(job.peer!)
         if (remote?.unknown) this.stallUnknown(job)
         if (!remote?.job) continue
-        const line = `${REMOTE_NOTE}${String(remote.job.status ?? remote.job.state).replace(/\s+/g, " ").trim().slice(0, LINE_MAX)}`
-        if (job.note !== line || job.remoteId !== remote.job.id) this.deps.jobs.setRemote(job.id, remote.job.id, line)
+        const said = String(remote.job.status ?? remote.job.state).replace(/\s+/g, " ").trim().slice(0, LINE_MAX)
         read++
+        if (this.followEnd(job, remote.job.state, said)) continue
+        const line = `${REMOTE_NOTE}${said}`
+        if (job.note !== line || job.remoteId !== remote.job.id) this.deps.jobs.setRemote(job.id, remote.job.id, line)
       }
     } catch (e: any) {
       this.deps.log(`[jobs] reading other nodes failed: ${e?.message ?? e}`)
@@ -114,6 +137,58 @@ export class JobMesh {
       this.busy = false
     }
     return read
+  }
+
+  /** Once the hand-off's answer is back (or will never come), nothing
+   *  else moves the job here: it follows the other node (#1861: every
+   *  open job has a run, a wake or a waiter with a due time, and one that
+   *  waits on a node whose job ended has none).
+   *    done there      done here, that node's line as the proof
+   *    dropped there   dropped here
+   *    stalled there   stalled here (its requester is told once), and
+   *                    still read: a later done there closes it, a run
+   *                    there puts it back to waiting
+   *    blocked there   still waiting here, quoting why; the one who asked
+   *                    is told once per block
+   *  True when the job here was moved and its line is not to be quoted. */
+  private followEnd(job: JobRecord, state: string | undefined, said: string): boolean {
+    if (!state || (this.deps.handOffOut?.(job) ?? true)) return false
+    const { jobs, log } = this.deps
+    const now = this.deps.now?.() ?? Date.now()
+    const line = `${peerNotePrefix(job.peer!)}${said}`
+    if (state === "done") {
+      if (jobs.declare(job.id, { state: "done", proof: line }, { now })) log(`[jobs] ${job.id} done: ${line}`)
+      return true
+    }
+    if (state === "dropped") {
+      if (jobs.dropPeer(job.id, line, now)) log(`[jobs] ${job.id} dropped: ${line}`)
+      return true
+    }
+    if (state === "stalled") {
+      // Stalled here already: its first reason and notice stand.
+      if (job.state !== "stalled" && jobs.markStalled(job.id, line, now)) log(`[jobs] ${job.id} stalled: ${line}`)
+      return true
+    }
+    // Going on there again: a job stalled here by that node waits on it again.
+    if (job.state === "stalled") {
+      if (!jobs.peerResumed(job.id, `${job.assignee}@${job.peer}`, `${REMOTE_NOTE}${said}`)) return true
+      log(`[jobs] ${job.id} picked up again on ${job.peer}: waiting on it`)
+      job = { ...job, state: "waiting", requesterToldAt: null }
+    }
+    if (state === "blocked") {
+      if (job.requesterToldAt === null) this.tellBlocked(job, said, now)
+    } else if (job.requesterToldAt !== null) {
+      jobs.clearPeerTold(job.id)
+    }
+    return false
+  }
+
+  private tellBlocked(job: JobRecord, said: string, now: number): void {
+    const { tell, hasAgent, jobs, log } = this.deps
+    if (!tell || !hasAgent) return
+    const to = stalledRecipient(job, hasAgent)
+    if (!to || !tell(to.agentId, blockedOnPeerText(job, said), job)) return
+    if (jobs.markRequesterTold(job.id, now)) log(`[jobs] ${job.id} blocked on ${job.peer}: told ${to.agentId}`)
   }
 
   private stallUnknown(job: JobRecord): void {

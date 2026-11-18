@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore, OPEN_STATES } from "../src/requests/store"
-import { JobStore, JOB_COLUMNS, JOB_ROW_STATE, ensureJobColumns } from "../src/jobs/store"
+import { JobStore, JOB_COLUMNS, JOB_ROW_STATE, ensureJobColumns, retireWatcherTable } from "../src/jobs/store"
 import { isOwned, statusLine, stallReason, ago } from "../src/jobs/status"
 import { handleJobsApi } from "../src/jobs/api"
 
@@ -336,5 +336,39 @@ describe("GET /jobs", () => {
       facts: () => ({ liveRun: { runId: "run-job-1", startedAt: T0, lastToolAt: T0 + HOUR - 40_000 } }),
     })
     expect((reply.body as any).jobs[0].status).toBe("working, last tool call 40 s ago")
+  })
+})
+
+describe("the retired watcher ledger (#1861 phase 4)", () => {
+  const table = (d: Database.Database) => d.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_watchers'").get()
+
+  it("is dropped when empty, and kept with its rows when not", () => {
+    const empty = new Database(path.join(tmp, "empty.sqlite"))
+    empty.exec("CREATE TABLE task_watchers (id TEXT PRIMARY KEY, summary TEXT NOT NULL)")
+    new JobStore(empty)
+    expect(table(empty)).toBeUndefined()
+    empty.close()
+
+    const kept = new Database(path.join(tmp, "kept.sqlite"))
+    kept.exec("CREATE TABLE task_watchers (id TEXT PRIMARY KEY, summary TEXT NOT NULL)")
+    kept.prepare("INSERT INTO task_watchers VALUES ('w-1', 'old watcher')").run()
+    new JobStore(kept)
+    expect(kept.prepare("SELECT summary FROM task_watchers").pluck().all()).toEqual(["old watcher"])
+    kept.close()
+
+    // A database that never had it: nothing to do.
+    expect(table(db)).toBeUndefined()
+  })
+
+  it("never throws on a database it cannot write, and leaves the table", () => {
+    const file = path.join(tmp, "ro.sqlite")
+    const w = new Database(file)
+    new JobStore(w)
+    w.exec("CREATE TABLE task_watchers (id TEXT PRIMARY KEY, summary TEXT NOT NULL)")
+    w.close()
+    const ro = new Database(file, { readonly: true })
+    expect(() => retireWatcherTable(ro)).not.toThrow()
+    expect(table(ro)).toBeDefined()
+    ro.close()
   })
 })

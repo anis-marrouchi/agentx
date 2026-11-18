@@ -515,15 +515,16 @@ export class RequestStore {
 
   /** Give an open request a due time or a checker, from accept or wait. */
   /** A promise's due time wakes the agent that owes it (noqta#858): the
-   *  job wake (`dueWakes`) starts its run at `at`. Only a loop no run has
-   *  put a job state on and with no wake set: a declared state or a wake
-   *  already armed stands. True when the wake is armed. */
+   *  job wake (`dueWakes`) starts its run at `at`. Only a loop with no
+   *  wake set, and no job state or "working" (a spent wake, #1861): any
+   *  other declared state, or a wake already armed, stands. True when
+   *  the wake is armed. */
   armDueWake(id: string, at: number, note: string, now: number): boolean {
     // The job columns come with the job store; without it there is no wake.
     if (!this.hasJobColumns()) return false
     return this.db.prepare(
       `UPDATE requests SET job_state = 'continue', wake_at = ?, job_note = ?, updated_at = ?
-       WHERE id = ? AND state IN ('in_progress', 'waiting_other') AND job_state IS NULL AND wake_at IS NULL`,
+       WHERE id = ? AND state IN ('in_progress', 'waiting_other') AND COALESCE(job_state, 'working') = 'working' AND wake_at IS NULL`,
     ).run(at, note.slice(0, 1000), now, id).changes > 0
   }
 
@@ -1184,8 +1185,22 @@ export class RequestStore {
          WHERE id = ? AND state = 'needs_attention'${opts.resend ? " AND resent_at IS NULL" : ""}`,
       ).run(now, now, now, ...(opts.resend ? [now] : []), id).changes > 0
       if (moved) this.supersedeHandBacks(id)
+      // Only the owner's word lifts a hold a run declared, not the resend.
+      if (moved && !opts.resend) this.liftJobHold(id)
       return moved
     })()
+  }
+
+  /** The owner picked the request up again or handed it on: a block or a
+   *  stall a run's job state put on it is lifted, so its job reads the
+   *  request's own state and the job's wake takes the pick-up (#1861),
+   *  under the job's caps, instead of a turn outside them. */
+  private liftJobHold(id: string): void {
+    if (!this.hasJobColumns()) return
+    this.db.prepare(
+      `UPDATE requests SET job_state = NULL, job_note = NULL, stalled_at = NULL, requester_told_at = NULL
+       WHERE id = ? AND state != 'job' AND job_state IN ('blocked', 'stalled')`,
+    ).run(id)
   }
 
   /** Takes back a pick-up mark another path took over (the job's wake,
@@ -1205,7 +1220,7 @@ export class RequestStore {
            question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id), ${PROOF_RESET}
          WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
       ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
-      if (moved) this.supersedeHandBacks(id)
+      if (moved) { this.supersedeHandBacks(id); this.liftJobHold(id) }
       return moved
     })()
   }

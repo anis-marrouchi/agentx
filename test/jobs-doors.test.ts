@@ -215,6 +215,56 @@ describe("the owner's turn", () => {
     expect(db.prepare("SELECT COUNT(*) FROM requests").pluck().get()).toBe(0)
   })
 
+  it("woken by the daemon: the wake is spent when its run starts, and its next due time arms a new one", () => {
+    const HOUR = 3_600_000
+    start("o1", ownerTurn)
+    requests.progress("req-o1", clock)
+    end("o1", ownerTurn)
+    // A promise-style due wake on the owner's request, then the wake fires.
+    expect(requests.armDueWake("req-o1", clock + HOUR, "It is due now", clock)).toBe(true)
+    clock += HOUR
+    expect(jobs.takeWake("req-o1", clock)).toBe(true)
+    // The wake's run is the request's pick-up: the tracker links it.
+    const wakeRun = { agentId: "coder", channel: "requests", chatId: "req-o1", sender: { name: "operator" }, pickup: true, jobId: "req-o1", humanRoot: false }
+    start("w1", wakeRun)
+    expect(jobs.byRun("w1")!.id).toBe("req-o1")
+    // Back to its request's own state: no wake left that nobody holds.
+    expect(jobs.get("req-o1")).toMatchObject({ state: "working", wakeAt: null, note: null })
+    expect(db.prepare("SELECT job_state FROM requests WHERE id = 'req-o1'").pluck().get()).toBeNull()
+    end("w1", wakeRun)
+    // The agent gave a new due time: it gets its own wake.
+    expect(requests.armDueWake("req-o1", clock + 2 * HOUR, "It is due now", clock)).toBe(true)
+    expect(jobs.get("req-o1")).toMatchObject({ state: "continue", wakeAt: clock + 2 * HOUR })
+  })
+
+  it("woken by the daemon after a run declared on it: working, and the minute check follows it", () => {
+    start("o1", ownerTurn)
+    requests.progress("req-o1", clock)
+    jobs.declare("req-o1", { state: "continue", wakeAt: clock + 1000, note: "check the build" }, { runId: "o1", now: clock })
+    end("o1", ownerTurn)
+    clock += 1000
+    expect(jobs.takeWake("req-o1", clock)).toBe(true)
+    start("w1", { agentId: "coder", channel: "requests", chatId: "req-o1", sender: { name: "operator" }, pickup: true, jobId: "req-o1", humanRoot: false })
+    expect(jobs.get("req-o1")).toMatchObject({ state: "working", wakeAt: null })
+    expect(jobs.unheldCandidates().map((j) => j.id)).toContain("req-o1")
+    // Its next due time arms a wake too.
+    expect(requests.armDueWake("req-o1", clock + 5000, "It is due now", clock)).toBe(true)
+    expect(jobs.get("req-o1")).toMatchObject({ state: "continue", wakeAt: clock + 5000 })
+    // A state a run declared that is not "working" is not written over.
+    jobs.declare("req-o1", { state: "waiting", on: "devops", until: clock + 9000 }, { now: clock })
+    expect(requests.armDueWake("req-o1", clock + 7000, "It is due now", clock)).toBe(false)
+    expect(jobs.get("req-o1")).toMatchObject({ state: "waiting", waitingOn: "devops" })
+  })
+
+  it("a new turn on an owner's request keeps a wake still armed for later", () => {
+    start("o1", ownerTurn)
+    requests.progress("req-o1", clock)
+    end("o1", ownerTurn)
+    expect(requests.armDueWake("req-o1", clock + 5000, "It is due now", clock)).toBe(true)
+    start("w1", { agentId: "coder", channel: "requests", chatId: "req-o1", sender: { name: "operator" }, pickup: true, humanRoot: false })
+    expect(jobs.get("req-o1")).toMatchObject({ state: "continue", wakeAt: clock + 5000 })
+  })
+
   it("the owner's mention on an issue is the owner's request, not a mention job", () => {
     start("g1", { channel: "github", chatId: "org/repo:issue:12", sender: { username: "the-owner" }, humanRoot: true })
     expect(jobs.byRun("g1")).toMatchObject({ id: "req-g1", ownerRequest: true })

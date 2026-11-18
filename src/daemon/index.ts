@@ -786,6 +786,14 @@ export class AgentXDaemon {
           this.requests.doors.setPendingDelegation((id) => !!this.delegations?.isPending(id))
           // The daemon owns the wake-up of a job (#1861, phase 3).
           const requests = this.requests
+          // A job's notice (stalled, blocked on another node): read at the
+          // head of the agent's next run, no run of its own. Left for the
+          // next pass while the agent's notices are full.
+          const tellJobNotice = (agentId: string, text: string): boolean => {
+            if (this.registry.notices.count(agentId) >= MAX_NOTICES) return false
+            this.registry.notices.add(agentId, "the job ledger", text)
+            return true
+          }
           const jobWake = new JobWake({
             jobs: requests.jobs,
             settings: () => (jobsOn(this.config.requests)
@@ -807,11 +815,7 @@ export class AgentXDaemon {
             // A stalled job is told as a notice: read at the head of the
             // agent's next run, no run of its own. Left for the next pass
             // while the agent's notices are full, so none pushes another out.
-            tell: (agentId, text) => {
-              if (this.registry.notices.count(agentId) >= MAX_NOTICES) return false
-              this.registry.notices.add(agentId, "the job ledger", text)
-              return true
-            },
+            tell: (agentId, text) => tellJobNotice(agentId, text),
             log: this.log,
           })
           this.jobWake = jobWake
@@ -827,6 +831,11 @@ export class AgentXDaemon {
               })
               return { status: r.status, body: await r.json().catch(() => null) }
             },
+            // While the hand-off is out, its answer ends the job here; once
+            // it is back, the other node's end is the job's end.
+            handOffOut: (job) => job.id.startsWith("job-dlg-") && !!this.delegations?.isPending(job.id.slice("job-".length)),
+            hasAgent: (id) => !!this.registry.getAgent(id),
+            tell: (agentId, text) => tellJobNotice(agentId, text),
             log: this.log,
           })
           requests.doors.setLeftBackground((job, end) => jobWake.runLeftBackground(
