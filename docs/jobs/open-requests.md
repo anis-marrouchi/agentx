@@ -140,7 +140,7 @@ An agent can close your request in a way that does not do what you asked. It may
 - **What is checked:** every close you did not make yourself. That includes an agent closing it as done or declined, a plan finishing, a promise or a check closing it, handed-on work settling it, and an agent running `agentx requests` from its own run. Your own closes (the Hub, the terminal, a card or a chat answer) are never checked.
 - **How:** within a minute or two of the close, AgentX makes one short call to the model you set (Sonnet by default, through the provider you already use). It sends your words, your latest note on the request, and how the request was closed. The model answers **match**, **mismatch** or **unclear**.
 - **On a mismatch:** the request opens again as **needs attention**, with the reason starting `Closed without doing what you asked`. You are told once, like any request that needs attention. How it was closed stays in its record.
-- **On a mismatch after a plan finished:** a plan of steps closes its request when its last step finishes. If that close is a mismatch, the agent that owns the request is also woken with a new run. The run gets your words and the reason, and is told to do what is still missing. Before, the request only showed **needs attention** and no agent was woken.
+- **On a mismatch after a plan finished:** a plan of steps closes its request when its last step finishes. If that close is a mismatch, the agent that owns the request is also woken with a new run. The run gets your words and the reason, and is told to do what is still missing. Before, the request only showed **needs attention** and no agent was woken. To only be told, with no agent woken, set `"wakeOnPlanMismatch": false` beside `"enabled"`: see [Turn one of these wake-ups off](#turn-one-of-these-wake-ups-off).
 - **On a match or unclear:** nothing happens. `agentx requests show <id>` shows the result.
 - Closes older than 48 hours are not read. A call that fails is tried again at the next check; after three failures the close is marked unclear.
 
@@ -296,6 +296,33 @@ Two more things now happen without the seat, wherever requests are on:
 
 - **A due time an agent accepts wakes it.** When an agent accepts your request with a due time (`agentx_request` with `action: "accept"` and `due`), AgentX starts a run of that agent at that time, as it already does for a promise.
 - **A promise that falls due is pushed the same minute.** The requests check wakes the agent that owes it, even when no wake-up was set for it, and tells whoever waits on it: you get **Promise not kept**, and an agent that waits on it reads a `[Promise due]` line at the start of its next run. It no longer waits for a day of silence first.
+
+#### Turn one of these wake-ups off
+
+Each of the three wake-ups that came with the due-time check has its own switch. All three are on by default. You can turn one off without going back to an older version.
+
+| Setting in `agentx.json`, under `requests` | Default | When it is `false` |
+|---|---|---|
+| `promises.duePush` | `true` | A promise that falls due is not pushed: its agent is not woken by the requests check and whoever waits on it is not told. The promise comes back to you as **needs attention** once it is past its due time with nothing done on it since, or after the usual quiet time. A wake-up the promise already had still runs. |
+| `promises.acceptWake` | `true` | A due time an agent accepts on your request is stored and shown, but no run is started at that time. |
+| `ownerCheck.wakeOnPlanMismatch` | `true` | When the [owner-words check](#when-someone-else-closes-your-request-the-owner-words-check) reopens a request that a plan closed, you are told and no agent is woken. |
+
+To turn one off:
+
+1. Open `agentx.json` and find the `requests` block.
+2. Add the setting. This example turns off the push for promises that fall due and keeps the other two:
+   ```json
+   "requests": {
+     "enabled": true,
+     "promises": { "duePush": false }
+   }
+   ```
+3. **Terminal:** restart AgentX:
+   ```bash
+   agentx daemon restart
+   ```
+
+To turn it on again, set it to `true` or remove the line, then restart AgentX.
 
 ## Close on evidence, not on a claim
 
@@ -615,6 +642,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 27. **Terminal:** with the `due-time` seat in `active` mode, ask an agent to answer "I will post the review by 15:00" and record nothing. The daemon log has a `[due-time]` line ending in `asking once`, then one of `recorded when asked`, `said there is none when asked` or `nothing recorded when asked`.
 28. **Terminal:** ask an agent to promise you something due in five minutes. Six minutes later, the daemon log has a `fell due` line for the promise that says the agent was woken, and you receive **Promise not kept** unless the agent kept it first.
 29. **Terminal:** with the owner-words check on, let a plan of steps finish on a request it does not fulfil. Within two minutes, the daemon log has the line `its plan closed without doing what was asked; <agent> woken`.
+30. **Terminal:** with `requests.promises.duePush` set to `false` and AgentX restarted, ask an agent to promise you something due in five minutes. Six minutes later, the daemon log has no `fell due` line for the promise.
 
 ## If something is wrong
 
@@ -630,6 +658,9 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **An agent is asked `[Due time]` when it set no due time:** the seat read the reply wrongly. The agent answers `Due: none` and nothing else happens. If it happens often, set the seat back to `shadow` and review its rows with `agentx decisions calls --seat due-time`.
 - **A request needs attention with `Set a due time and recorded none`:** the agent wrote a due time, was asked to record it, and did not. Reply on the request with the time you expect, or hand it back to the agent.
 - **A promise fell due and its agent was not woken:** the log line says `not woken`. A run of that agent is already on it, the agent is not on this computer, or the job reached its wake-up limit (`requests.jobs.wake.maxWakes`). You are told in every case.
+- **A promise fell due and nothing happened that minute:** check `requests.promises.duePush` in `agentx.json`. With `false`, the push is off and the promise comes back to you later as **needs attention**. Remove the line or set it to `true`, then restart AgentX.
+- **An agent accepted a due time and was not woken at that time:** check `requests.promises.acceptWake` in `agentx.json`. With `false`, the due time is only stored.
+- **A plan's close was reopened and its agent was not woken:** check `requests.ownerCheck.wakeOnPlanMismatch` in `agentx.json`. With `false`, only you are told.
 - **The owner-words check never reopens anything:** check that `requests.ownerCheck.enabled` is `true` in `agentx.json` and that AgentX was restarted. Search the daemon log for `owner-words check`: a `call failed` line means the provider or model could not be reached.
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 

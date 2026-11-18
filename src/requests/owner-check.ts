@@ -30,9 +30,12 @@ export interface OwnerCheckSettings {
   /** Closes older than this are not judged. */
   maxAgeHours: number
   timeoutSeconds: number
+  /** A plan's close judged a mismatch also wakes the request's agent
+   *  (#1908). Off: reopened and the owner told, nobody woken. */
+  wakeOnPlanMismatch: boolean
 }
 
-export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = { enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60 }
+export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = { enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true }
 
 export const OWNER_CHECK_SYSTEM =
   "You check whether work closed by an assistant did what its owner asked. You are strict about the owner's words and fair to the assistant. " +
@@ -153,7 +156,7 @@ export class OwnerWordsCheck {
             this.deps.log?.(`[requests] ${r.id}: owner-words check reopened it (${r.state} by ${r.closedBy}): ${v.why}`)
             // A plan that closed too early (#1908): the flag alone woke
             // nobody. The agent that owns the request is woken with why.
-            if (r.closedBy === PLAN_BY && this.deps.wake) {
+            if (r.closedBy === PLAN_BY && this.deps.wake && s.wakeOnPlanMismatch !== false) {
               try {
                 this.deps.wake(r, planMismatchText(r, v.why))
                 out.woken.push(r.id)

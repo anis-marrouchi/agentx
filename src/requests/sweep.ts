@@ -360,8 +360,10 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   // A promise that fell due and is not kept (#1908): its agent is woken
   // now, and whoever waits on it is told by this same check, not after
   // the quiet time. Its checker ran above: a promise it closed is gone.
+  // Off (`promises.duePush`, #1912): nothing is read, woken or marked here;
+  // the promise comes back through the quiet check below.
   try {
-    for (const r of store.duePromises(now)) {
+    for (const r of settings.promises?.duePush === false ? [] : store.duePromises(now)) {
       // Back done, and settled once quiet (#1214): left to that.
       if (settings.settleHandedBack !== false && r.state === "in_progress" && !deps.inPlan?.(r.id) && store.cameBack(r.id) && !asksOwner(r.id)) continue
       const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()

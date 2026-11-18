@@ -1653,6 +1653,15 @@ export const requestsConfigSchema = z.object({
      *  owed by the owner, closed when the card is decided. Off: cards stay
      *  on the Desk only, as before. */
     cards: z.boolean().default(false),
+    /** A promise that falls due and is not kept is pushed by the requests
+     *  check (#1908): its agent is woken, whoever waits on it is told, and
+     *  it needs attention, the same minute. Off: it comes back to the
+     *  owner once quiet or overdue, as before 0.229.0. */
+    duePush: z.boolean().default(true),
+    /** A due time an agent accepts on a request arms a wake-up at that
+     *  time, like a promise's (#1908). Off: the due time is stored and no
+     *  wake-up is armed. */
+    acceptWake: z.boolean().default(true),
   }).default({}),
   /** Catch "I'll do X" (src/requests/catch.ts, #1138 E): at the end of an
    *  owner-facing turn whose reply could hold one, one small model call
@@ -1691,6 +1700,10 @@ export const requestsConfigSchema = z.object({
     /** Closes older than this are not read. */
     maxAgeHours: z.number().positive().max(24 * 30).default(48),
     timeoutSeconds: z.number().int().min(5).max(300).default(60),
+    /** A tracked plan's close judged a mismatch also wakes the agent that
+     *  owns the request (#1908). Off: the request is reopened and the
+     *  owner is told, and no agent is woken. */
+    wakeOnPlanMismatch: z.boolean().default(true),
   }).default({}),
   /** Proof per deliverable before a close by check (src/requests/close-proof.ts),
    *  retro:01M70Z38BBZYRBBCZW2T1S3T3K. When the mode is not "off", the

@@ -378,6 +378,7 @@ To turn it on by hand:
 | `requests.ownerCheck.perCheck` | number (1 to 20) | `2` | Closes read per requests check, once a minute. |
 | `requests.ownerCheck.maxAgeHours` | number | `48` | Closes older than this are not read. |
 | `requests.ownerCheck.timeoutSeconds` | number (5 to 300) | `60` | How long one call may take before it is tried again at the next check. |
+| `requests.ownerCheck.wakeOnPlanMismatch` | boolean | `true` | When the check reopens a request that a tracked plan closed, the agent that owns the request is also woken with a new run. `false`: the request is reopened and you are told; no agent is woken. See [Turn one of these wake-ups off](/jobs/open-requests#turn-one-of-these-wake-ups-off). |
 | `requests.closeProof.mode` | `"off"`, `"warn"` or `"block"` | `"off"` | Proof for each thing you asked for, before a check closes the request (retro:01M70Z38BBZYRBBCZW2T1S3T3K). When it is not `"off"`, the words of open requests that can close on their own go to the `ownerCheck` model once, before any close, to list what they ask for. `"warn"` closes and records one signal; `"block"` keeps the request open and tells the agent once. See [Proof for each thing you asked for](/jobs/open-requests#proof-for-each-thing-you-asked-for). |
 | `requests.closeProof.perCheck` | number (1 to 20) | `2` | Requests whose words are read per requests check, once a minute. |
 | `requests.closeProof.askPerCheck` | number (1 to 20) | `3` | Agents told per requests check which items need a link. |
@@ -388,6 +389,8 @@ To turn it on by hand:
 | `requests.promises.facts` | boolean | `true` | A promise closed with a proof writes a checked fact to the wiki's fact ledger (`agentx wiki facts list`). |
 | `requests.promises.factTtlDays` | number (up to 3650) | `7` | Days that fact stays trusted before it shows as stale. |
 | `requests.promises.cards` | boolean | `false` | A decision card raised outside a request is a promise you owe, closed when you decide it. |
+| `requests.promises.duePush` | boolean | `true` | A promise that falls due and is not kept is pushed the same minute: its agent is woken, whoever waits on it is told, and it needs attention. `false`: no push; it comes back to you once it is overdue with nothing done since, or quiet. See [Turn one of these wake-ups off](/jobs/open-requests#turn-one-of-these-wake-ups-off). |
+| `requests.promises.acceptWake` | boolean | `true` | A due time an agent accepts on a request starts a run of that agent at that time. `false`: the due time is stored and no run is started. |
 | `requests.catchPromises` | object | `{}` | Catch "I'll do X": at the end of each of your turns, one short model call reads the agent's reply. A firm promise becomes a promise of that agent; a reply that asks you leaves the request waiting on you. See [Promises caught in a reply](/jobs/open-requests#promises-caught-in-a-reply). |
 | `requests.catchPromises.enabled` | boolean | `true` | Reads the replies. On by default wherever requests are on; it spends one model call on most of your turns, bounded by `dailyCap`. Also `agentx requests settings --catch on\|off`. |
 | `requests.catchPromises.dailyCap` | number (1 to 10000) | `300` | Model calls a day (UTC), across all agents. Past it, replies are not read until the next day. Also `agentx requests settings --catch-cap <n>`. |
