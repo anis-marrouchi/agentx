@@ -101,6 +101,7 @@ import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-s
 import { handleAgentChatApi } from "./agent-chat-api"
 import { NUMBERS_HUB_PATH, numbersHubReply } from "@/numbers/hub-api"
 import { isJobsHubPath, jobsHubReply } from "@/jobs/hub-api"
+import { capacityOf, dueTimeSettingsOf } from "@/requests/due-times"
 
 // --- Kanban Board Dashboard ---
 //
@@ -892,7 +893,17 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // The Hub's Jobs page (#1861): this machine's job ledger, each job with
   // its status line. After the token gate above; peers come through the proxy.
   if (method === "GET" && isJobsHubPath(path)) {
-    const reply = jobsHubReply(dashboardDb(), path, url.searchParams, Date.now())
+    // The queue with its computed times (#1909), while due times are not
+    // off, from agentx.json as it is now.
+    let live = ctx.config
+    try { live = loadDaemonConfig() } catch { /* keep the started config */ }
+    const due = dueTimeSettingsOf(live.requests)
+    const queue = due.mode === "off" ? undefined : {
+      capacity: capacityOf(due, live.admission?.maxSessions),
+      lanes: (id: string) => live.agents?.[id]?.maxConcurrent ?? 1,
+      defaultMinutes: due.defaultEstimateMinutes, factorDays: due.factorDays, factorMinRows: due.factorMinRows,
+    }
+    const reply = jobsHubReply(dashboardDb(), path, url.searchParams, Date.now(), queue)
     sendJson(res, reply.status, reply.body)
     return
   }

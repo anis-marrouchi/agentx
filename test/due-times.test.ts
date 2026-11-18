@@ -11,6 +11,7 @@ import { handleRequestsApi, type RequestsApiDeps } from "../src/requests/daemon-
 import { DEFAULT_DUE_TIME_SETTINGS, dueTimesCtx, NO_SOURCE_REFUSAL, type DueTimeMode } from "../src/requests/due-times"
 import { place, schedule, type QueueItem, type SlotOptions } from "../src/requests/slots"
 import { correctionFactors } from "../src/requests/estimates"
+import { dueReport } from "../src/requests/due-report"
 
 // Due times from the queue (#1909): the agent registers the work, the
 // daemon gives the time. A fake clock throughout.
@@ -300,5 +301,21 @@ describe("the correction factor", () => {
       db.prepare("INSERT INTO task_traces VALUES (?, ?, ?)").run(`run-${i}`, T0 - 3 * HOUR, T0 - 3 * HOUR + 20 * MIN)
     }
     expect(correctionFactors(db, { now: T0, days: 30, minRows: 3 })[0]).toMatchObject({ agentId: "writer", factor: 2, rows: 3 })
+  })
+})
+
+describe("the shadow report (agentx requests contract)", () => {
+  it("gives each agent's rows, the median gap to the daemon's time, and what the refusal would stop", () => {
+    promise("shadow", { estimateMinutes: 20, due: new Date(T0 + 4 * HOUR).toISOString() })
+    promise("shadow", { estimateMinutes: 20, due: new Date(T0 + 2 * HOUR).toISOString(), dueSource: { kind: "fact", text: "the 10:00 posting slot" } })
+    promise("shadow", { estimateMinutes: 20 })
+    const r = dueReport(db, { since: T0 - HOUR, now: T0, factorDays: 30, factorMinRows: 3 })
+    expect(r.rows).toBe(3)
+    expect(r.agents).toEqual([expect.objectContaining({
+      agentId: "writer", rows: 3, written: 2, noSource: 1, doesNotFit: 0,
+      factor: { agentId: "writer", factor: 1, rows: 0, measured: false },
+    })])
+    // Gaps: 4 h against 20 min, and 2 h against 40 min (behind the first).
+    expect(r.agents[0].medianGapMinutes).toBe(Math.round(((240 - 20) + (120 - 40)) / 2))
   })
 })

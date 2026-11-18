@@ -5,6 +5,8 @@ import { openDb } from "@/storage/sqlite"
 import { findConfigPath } from "@/daemon/config-mutator"
 import { loadDaemonConfig } from "@/daemon/config"
 import { measureContract, parseSpan, pct, type ContractReport } from "@/requests/contract"
+import { dueReport, type DueReport } from "@/requests/due-report"
+import { dueTimeSettingsOf } from "@/requests/due-times"
 
 // --- agentx requests contract — the hand-back contract, measured (#1509) ---
 //
@@ -76,7 +78,20 @@ function print(r: ContractReport, dryRun: boolean): void {
       console.log(`    ${q.line}`)
     }
   }
-  console.log(chalk.dim("\n  Read only: nothing was told or written."))
+}
+
+/** Due times (#1909): each agent's correction factor, and how far the
+ *  times it wrote are from the daemon's, from the shadow rows. */
+function printDue(d: DueReport, mode: string): void {
+  console.log(chalk.bold("\n  Due times") + chalk.dim(`  (requests.dueTimes.mode ${mode})`))
+  if (!d.agents.length) { console.log(chalk.dim("  No closed work with an estimate, and no due-time rows yet.")); return }
+  console.log(chalk.dim("  agent                    correction  rows  written  agent − daemon  no source  does not fit"))
+  for (const a of d.agents) {
+    const factor = a.factor.measured ? `×${a.factor.factor} (${a.factor.rows})` : `×1 (${a.factor.rows}, too few)`
+    const gap = a.medianGapMinutes === null ? "-" : `${a.medianGapMinutes > 0 ? "+" : ""}${a.medianGapMinutes} min`
+    console.log(`  ${a.agentId.padEnd(24)} ${factor.padEnd(11)} ${String(a.rows).padStart(5)} ${String(a.written).padStart(8)} ${gap.padStart(15)} ${String(a.noSource).padStart(10)} ${String(a.doesNotFit).padStart(13)}`)
+  }
+  console.log(chalk.dim("  correction: real time over estimate, median of its closed rows (rows read). agent − daemon: median minutes between the time the agent wrote and the one the daemon would give."))
 }
 
 export const contract = new Command("contract")
@@ -102,11 +117,19 @@ export const contract = new Command("contract")
     const db = openDb({ quiet: true })
     if (!db) { process.exitCode = 1; return }
     let ownerIds: string[] = []
-    try { ownerIds = (loadDaemonConfig().people ?? []).filter((p) => p.role === "owner").map((p) => p.id) } catch { /* no people: the implicit owner only */ }
+    let dueSettings = dueTimeSettingsOf(undefined)
+    try {
+      const config = loadDaemonConfig()
+      ownerIds = (config.people ?? []).filter((p) => p.role === "owner").map((p) => p.id)
+      dueSettings = dueTimeSettingsOf(config.requests)
+    } catch { /* no config: the implicit owner only, default due-time settings */ }
     const until = Date.now()
     const report = measureContract(db, {
       since: until - span, until, deliverWithinMinutes, rhythmHours, pushAfterHours, ownerIds, agent: opts.agent, sample: Math.floor(sample),
     })
-    if (opts.json) { console.log(JSON.stringify(opts.dryRun ? report : { ...report, dryRun: undefined }, null, 2)); return }
+    const due = dueReport(db, { since: until - span, now: until, agent: opts.agent, factorDays: dueSettings.factorDays, factorMinRows: dueSettings.factorMinRows })
+    if (opts.json) { console.log(JSON.stringify({ ...(opts.dryRun ? report : { ...report, dryRun: undefined }), dueTimes: { mode: dueSettings.mode, ...due } }, null, 2)); return }
     print(report, !!opts.dryRun)
+    printDue(due, dueSettings.mode)
+    console.log(chalk.dim("\n  Read only: nothing was told or written."))
   })

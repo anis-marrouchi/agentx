@@ -69,7 +69,7 @@ import { WALL_BUILD_SCRIPT } from "./wall-build.client"
 import { WALL_NUMBERS_SCRIPT } from "./wall-numbers.client"
 import { numPeriodText, numTargetText, numFmt, numCounts, numDeptCardsHtml, numDeptOf, numEsc, numFilter, numGroups, numJobHtml, numMerge, numRank, numRowHtml, numSourceText, numSparkSvg, numStatusHtml, numTagKinds, numTagsOf, numbersPageHtml, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml } from "./wall-numbers"
 import { WALL_JOBLEDGER_SCRIPT } from "./wall-jobledger.client"
-import { jlDetailHtml, jlDoorLabel, jlDoors, jlEsc, jlHomeHtml, jlLinkHtml, jlRowHtml, jlSpan, jlStates, jlTitle, jlTone, jobLedgerPageHtml } from "./wall-jobledger"
+import { jlDetailHtml, jlDoorLabel, jlDoors, jlEsc, jlHomeHtml, jlLinkHtml, jlQueueHtml, jlRowHtml, jlSpan, jlStates, jlTitle, jlTone, jobLedgerPageHtml } from "./wall-jobledger"
 import { computeFunnel, formatShare, funnelGroupValues, funnelSteps } from "@/numbers/funnel"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange } from "./wall-cost"
@@ -98,7 +98,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
-  ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jobLedgerPageHtml })}
+  ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}

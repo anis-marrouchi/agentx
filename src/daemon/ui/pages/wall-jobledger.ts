@@ -61,6 +61,24 @@ export interface JobLedgerModel {
   /** More than one machine is read: rows name theirs. */
   multi: boolean
   now: number
+  /** The queue with its computed times, one line per agent (#1909). Empty
+   *  where due times are off. */
+  queue?: HubQueueLine[]
+}
+
+/** One agent's queue as a machine computes it (src/requests/due-report.ts). */
+export interface HubQueueLine { agentId: string; jobs: number; minutes: number; nextEndAt: number; clearsAt: number; factor: number; nodeName?: string }
+
+/** The queue block: one line per agent, its open jobs, their minutes, when
+ *  the next ends and when it is clear, and its correction factor. */
+export function jlQueueHtml(lines: HubQueueLine[] | undefined, multi: boolean, now: number): string {
+  if (!lines || !lines.length) return ""
+  const at = (ms: number) => '<time datetime="' + jlEsc(new Date(ms).toISOString()) + '">in ' + jlSpan(ms - now) + "</time>"
+  const rows = lines.map((q) => "<li><b>@" + jlEsc(q.agentId) + "</b>" + (multi && q.nodeName ? ' <span class="k">' + jlEsc(q.nodeName) + "</span>" : "") +
+    " · " + q.jobs + (q.jobs === 1 ? " job" : " jobs") + ", " + jlSpan(q.minutes * 60000) + " of work" +
+    " · next ends " + at(q.nextEndAt) + " · clear " + at(q.clearsAt) +
+    (q.factor !== 1 ? ' · <span title="its work takes this many times its estimates">correction ×' + jlEsc(q.factor) + "</span>" : "") + "</li>").join("")
+  return '<section class="wjl__queue" aria-label="Queue: computed due times per agent"><p class="wjl__qh">Queue <span class="k">computed by the daemon from estimates, priorities and capacity</span></p><ul>' + rows + "</ul></section>"
 }
 
 /** HTML-escape text for the page. */
@@ -207,6 +225,6 @@ export function jobLedgerPageHtml(m: JobLedgerModel): string {
   const empty = m.state === "open" && !m.door ? "No open jobs: no assigned work is unfinished." : "No jobs match this state and door."
   const rows = m.list.map((j) => jlRowHtml(j, opts(j))).join("")
   const more = m.total > m.list.length ? '<p class="wjl__foot">Showing the ' + m.list.length + " most recently active of " + m.total + ".</p>" : ""
-  return tools + warn + (top ? '<div class="wjl__list wjl__top">' + top + "</div>" : "") +
+  return tools + warn + jlQueueHtml(m.queue, m.multi, m.now) + (top ? '<div class="wjl__list wjl__top">' + top + "</div>" : "") +
     (rows ? '<div class="wjl__list">' + rows + "</div>" : '<p class="ax-wall__empty">' + empty + "</p>") + more
 }
