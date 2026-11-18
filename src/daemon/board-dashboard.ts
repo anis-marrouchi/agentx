@@ -4,7 +4,7 @@ import { renderMonitorPage } from "./ui/pages/monitor"
 import { renderActivityPage } from "./ui/pages/activity"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { compressResponse } from "./http-compress"
-import { appendFileSync, existsSync, mkdirSync } from "fs"
+import { appendFileSync, existsSync, mkdirSync, statSync } from "fs"
 import { readFile } from "fs/promises"
 import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
@@ -100,8 +100,23 @@ import { getTopbarFeatures, headerBuild, setTopbarFeatures, type TopbarPeer } fr
 import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
 import { handleAgentChatApi } from "./agent-chat-api"
 import { NUMBERS_HUB_PATH, numbersHubReply } from "@/numbers/hub-api"
-import { isJobsHubPath, jobsHubReply } from "@/jobs/hub-api"
+import { isJobsHubPath, JOBS_HUB_PATH, jobsHubReply } from "@/jobs/hub-api"
 import { capacityOf, dueTimeSettingsOf } from "@/requests/due-times"
+
+/** agentx.json as it is now, read again only when the file changed (its
+ *  mtime or size): a page that polls does not parse it every time. A
+ *  file that does not load keeps the last good config, else `fallback`. */
+let liveCache: { key: string; config: DaemonConfig } | null = null
+let liveFailedKey = ""
+function liveConfig(fallback: DaemonConfig): DaemonConfig {
+  let key = ""
+  for (const p of [resolve(process.cwd(), "agentx.json"), resolve(process.cwd(), ".agentx/config.json")]) {
+    try { const st = statSync(p); key = `${p}:${st.mtimeMs}:${st.size}`; break } catch { /* next */ }
+  }
+  if (!key || key === liveFailedKey || liveCache?.key === key) return liveCache?.config ?? fallback
+  try { liveCache = { key, config: loadDaemonConfig() } } catch { liveFailedKey = key; return liveCache?.config ?? fallback }
+  return liveCache.config
+}
 
 // --- Kanban Board Dashboard ---
 //
@@ -893,15 +908,19 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // The Hub's Jobs page (#1861): this machine's job ledger, each job with
   // its status line. After the token gate above; peers come through the proxy.
   if (method === "GET" && isJobsHubPath(path)) {
-    // The queue with its computed times (#1909), while due times are not
-    // off, from agentx.json as it is now.
-    let live = ctx.config
-    try { live = loadDaemonConfig() } catch { /* keep the started config */ }
-    const due = dueTimeSettingsOf(live.requests)
-    const queue = due.mode === "off" ? undefined : {
-      capacity: capacityOf(due, live.admission?.maxSessions),
-      lanes: (id: string) => live.agents?.[id]?.maxConcurrent ?? 1,
-      defaultMinutes: due.defaultEstimateMinutes, factorDays: due.factorDays, factorMinRows: due.factorMinRows,
+    // The queue with its computed times (#1909), on the list only, while
+    // due times are not off. The config is read again only when agentx.json
+    // changed: the page polls.
+    let queue: Parameters<typeof jobsHubReply>[4]
+    if (path === JOBS_HUB_PATH) {
+      const live = liveConfig(ctx.config)
+      const due = dueTimeSettingsOf(live.requests)
+      queue = due.mode === "off" ? undefined : {
+        capacity: capacityOf(due, live.admission?.maxSessions),
+        lanes: (id: string) => live.agents?.[id]?.maxConcurrent ?? 1,
+        defaultMinutes: due.defaultEstimateMinutes, factorDays: due.factorDays, factorMinRows: due.factorMinRows,
+        staleAfterHours: live.requests?.staleAfterHours,
+      }
     }
     const reply = jobsHubReply(dashboardDb(), path, url.searchParams, Date.now(), queue)
     sendJson(res, reply.status, reply.body)
