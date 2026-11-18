@@ -46,6 +46,26 @@ describe("the queue, one line per agent", () => {
     ])
   })
 
+  it("reads the closed rows at most once a minute: the Jobs page polls (#1920)", () => {
+    work("writer", 60, 1)
+    expect(queueLines(db, { ...opts, now: NOW })[0].factor).toBe(1)
+    // Three closed rows that took twice their estimate.
+    db.exec("CREATE TABLE IF NOT EXISTS task_traces (task_id TEXT PRIMARY KEY, started_at INTEGER, finished_at INTEGER)")
+    for (const i of [1, 2, 3]) {
+      const id = `done-${i}`
+      db.prepare(
+        `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, closed_at, estimate_minutes, first_estimate_minutes, work)
+         VALUES (?, 'done', 'telegram', 'c', 'writer', 'x', ?, ?, ?, 10, 10, 'writing')`,
+      ).run(id, NOW - 120 * MIN, NOW - 60 * MIN, NOW - 60 * MIN)
+      store.link(id, "run", `run-${id}`, NOW)
+      db.prepare("INSERT INTO task_traces VALUES (?, ?, ?)").run(`run-${id}`, NOW - 90 * MIN, NOW - 70 * MIN)
+    }
+    // A poll within the minute: the kept factors.
+    expect(queueLines(db, { ...opts, now: NOW + 30_000 })[0].factor).toBe(1)
+    // After the minute: read again.
+    expect(queueLines(db, { ...opts, now: NOW + 61_000 })[0].factor).toBe(2)
+  })
+
   it("comes with the Hub's list only while due times are not off", () => {
     work("writer", 60, 1)
     expect((jobsHubReply(db, JOBS_HUB_PATH, new URLSearchParams(), NOW).body as any).queue).toBeUndefined()

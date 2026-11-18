@@ -118,7 +118,11 @@ export function factorOf(agentId: string, rows: EstimateRow[], opts: Pick<Estima
 
 /** Every agent's factor, for `agentx requests contract`. */
 export function correctionFactors(db: Database.Database, opts: EstimateOptions & { agentId?: string }): AgentFactor[] {
-  const rows = estimateRows(db, opts)
+  return factorsOf(estimateRows(db, opts), opts)
+}
+
+/** Every agent's factor from rows already read (newest first). */
+export function factorsOf(rows: EstimateRow[], opts: Pick<EstimateOptions, "minRows" | "maxRows">): AgentFactor[] {
   const agents = [...new Set(rows.map((r) => r.agentId))].sort()
   return agents.map((a) => factorOf(a, rows, opts))
 }

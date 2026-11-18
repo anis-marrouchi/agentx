@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3"
-import { correctionFactors, type AgentFactor } from "./estimates"
+import { correctionFactors, EstimateCache, factorsOf, type AgentFactor } from "./estimates"
 import { readQueue, readSlots } from "./slot-store"
 import { schedule } from "./slots"
 
@@ -53,6 +53,16 @@ export interface QueueLine {
   factor: number
 }
 
+/** The closed rows the Jobs page's factors come from, kept a minute per
+ *  database (#1920): the page polls, and each read scans up to 2000 rows. */
+const queueEstimates = new WeakMap<Database.Database, EstimateCache>()
+
+function estimatesOf(db: Database.Database): EstimateCache {
+  let cache = queueEstimates.get(db)
+  if (!cache) { cache = new EstimateCache(); queueEstimates.set(db, cache) }
+  return cache
+}
+
 /** The node's queue as the daemon computes it, one line per agent, the
  *  busiest first. Read only. */
 export function queueLines(db: Database.Database, opts: {
@@ -62,7 +72,8 @@ export function queueLines(db: Database.Database, opts: {
 }): QueueLine[] {
   const items = readQueue(db, { now: opts.now, staleAfterMs: (opts.staleAfterHours ?? 24) * 60 * 60_000 })
   if (!items.length) return []
-  const factors = new Map(correctionFactors(db, { now: opts.now, days: opts.factorDays, minRows: opts.factorMinRows }).map((f) => [f.agentId, f.factor]))
+  const rows = estimatesOf(db).rows(db, { now: opts.now, days: opts.factorDays, minRows: opts.factorMinRows })
+  const factors = new Map(factorsOf(rows, { minRows: opts.factorMinRows }).map((f) => [f.agentId, f.factor]))
   const factor = (a: string) => factors.get(a) ?? 1
   const plan = schedule(items, { now: opts.now, capacity: opts.capacity, lanes: opts.lanes, factor, defaultMinutes: () => opts.defaultMinutes })
   const by = new Map<string, QueueLine>()
