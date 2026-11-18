@@ -687,6 +687,11 @@ export class AgentRegistry {
   private traceToolCalls?: (traceId: string) => Array<{ action: string | null; inputSummary: string | null }>
   /** See setTimeLimitHandoff. */
   private timeLimitHandoff?: (runIds: Array<string | undefined>, note: string) => string | null
+  /** See setDueTimeGate. */
+  private dueTimeGate?: (
+    run: { agentId: string; channel: string; chatId: string; runIds: string[]; startedAt: number; reply: string },
+    askAgent: (text: string) => Promise<{ reply?: string; error?: string }>,
+  ) => Promise<unknown>
   /** Workflow auto-runner — invoked when workflow matching is in `mode: "auto"`
    *  and a candidate workflow's confidence ≥ autoRunThreshold. Wired by the
    *  daemon after the workflow dispatcher is constructed. Returns the runId of
@@ -930,6 +935,13 @@ export class AgentRegistry {
    *  that continues it, or null when none does. Unset, none does. */
   setTimeLimitHandoff(fn: AgentRegistry["timeLimitHandoff"]): void {
     this.timeLimitHandoff = fn
+  }
+
+  /** Wire the check a run's end goes through when its reply may set a
+   *  due time (requests/due-gate.ts, #1908). It gets the run and a way
+   *  to ask the agent one question in the same session. Unset: no check. */
+  setDueTimeGate(fn: AgentRegistry["dueTimeGate"]): void {
+    this.dueTimeGate = fn
   }
 
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
@@ -1547,6 +1559,7 @@ export class AgentRegistry {
       response = { ...response, error: reportedTimeLimitError(response.error!, limit.reason) }
     }
     if (!task.jobStateAsk) response = await this.checkJobState(task, response)
+    if (!task.jobStateAsk) this.checkDueTime(task, response, startedAt)
     if (task.intentRef) {
       try {
         // A queued answer is an accepted message, not a failure (#282).
@@ -1645,6 +1658,35 @@ export class AgentRegistry {
     if (!onAnswer) return { ...response, jobState: { state: "stalled" } }
     const line = stalledLine(task.agentId)
     return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: { state: "stalled" } }
+  }
+
+  /**
+   * A run that ended cleanly with a reply goes to the due-time gate
+   * (#1908): a due time the agent wrote and did not record gets one
+   * question, in the same session. Beside the answer, never before it:
+   * the caller already has the run's answer and does not wait for this.
+   */
+  private checkDueTime(task: AgentTask, response: AgentResponse, startedAt: number): void {
+    const gate = this.dueTimeGate
+    const reply = response.content?.trim()
+    if (!gate || !reply || response.error || response.viaMesh || response.midTurnDelivered) return
+    const runIds = [task.taskId, task.runningTaskId].filter((id): id is string => !!id)
+    const askAgent = async (text: string) => {
+      // A question to the run, like the job-state ask: not the work again,
+      // and it does not settle the run's intent.
+      const { intentRef: _intent, ...rest } = task
+      const ask: AgentTask = { ...rest, message: text, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
+      const asked = await this.runWithRecovery(ask)
+      return { reply: asked.content, error: asked.error }
+    }
+    void Promise.resolve()
+      .then(() => gate({
+        agentId: task.agentId,
+        channel: String(task.context?.channel ?? ""),
+        chatId: String(task.context?.chatId ?? ""),
+        runIds, startedAt, reply,
+      }, askAgent))
+      .catch((e: any) => this.log(`[due-time] ${task.agentId} ${task.taskId ?? "-"}: check failed: ${e?.message ?? e}`))
   }
 
   /**

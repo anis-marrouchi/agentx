@@ -7,6 +7,9 @@ import { RequestStore } from "../src/requests/store"
 import { JobStore } from "../src/jobs/store"
 import { DEFAULT_WAKE_SETTINGS, JobWake } from "../src/jobs/wake"
 import { armPromiseWake, openPromise, raiseLoop } from "../src/requests/promise"
+import { runRequestsSweep } from "../src/requests/sweep"
+import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
+import { handleRequestsApi } from "../src/requests/daemon-api"
 
 // A promise's due time wakes the agent that owes it (noqta#858): before,
 // the due time only told the owner the promise was late.
@@ -117,5 +120,97 @@ describe("a due time added to an open request", () => {
     jobs.declare(q.id, { state: "waiting", on: "pm", until: clock + 5 * HOUR }, { now: clock })
     expect(armPromiseWake(store, q.id, clock + HOUR, clock)).toBe(false)
     expect(jobs.get(q.id)?.state).toBe("waiting")
+  })
+})
+
+// The same hour it falls due (#1908): the agent is woken and whoever waits
+// on it is told by the requests check, not after the quiet time.
+describe("a promise past its due time", () => {
+  const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
+  let told: Array<{ to: string; text: string }>
+  let notices: string[]
+
+  const check = () => runRequestsSweep({
+    store, settings, log: () => {}, now: clock,
+    hasAgent: (id) => ["sales", "pm"].includes(id),
+    wakeJob: (id, note) => wake.wakeFor(id, note),
+    tellRequester: (to, text) => { told.push({ to, text }); return true },
+    notify: async (title) => { notices.push(title) },
+  })
+
+  beforeEach(() => {
+    told = []
+    notices = []
+  })
+
+  it("wakes its agent at the due time and tells the owner in the same check", async () => {
+    const p = promise()
+    clock += HOUR
+    expect((await check()).duePushed).toBe(0)
+    expect(wake.tick().woken).toBe(0)
+    clock += HOUR + MIN
+    const result = await check()
+    expect(result.duePushed).toBe(1)
+    expect(result.notified).toBe(1)
+    expect(notices[0]).toContain("Promise not kept")
+    expect(store.get(p.id)).toMatchObject({ state: "needs_attention" })
+    expect(store.get(p.id)!.attentionReason).toContain("Past its due time")
+    expect(wake.tick().woken).toBe(1)
+    await flush()
+    expect(started.map((s) => s.id)).toEqual([p.id])
+    // Once: the next checks neither wake nor tell again.
+    clock += MIN
+    expect((await check()).duePushed).toBe(0)
+    expect(wake.tick().woken).toBe(0)
+    expect(notices).toHaveLength(1)
+  })
+
+  it("wakes the agent even when the promise had no wake armed", async () => {
+    const p = promise({ wake: false })
+    expect(jobs.get(p.id)?.wakeAt).toBeNull()
+    clock += 2 * HOUR + MIN
+    expect((await check()).duePushed).toBe(1)
+    expect(wake.tick().woken).toBe(1)
+    await flush()
+    expect(started[0]).toMatchObject({ id: p.id, assignee: "sales" })
+    expect(started[0].text).toContain("fell due")
+  })
+
+  it("tells the agent that waits on it, as a notice", async () => {
+    const p = promise({ owedTo: "pm" })
+    clock += 2 * HOUR + MIN
+    await check()
+    expect(told).toHaveLength(1)
+    expect(told[0].to).toBe("pm")
+    expect(told[0].text).toContain(p.id)
+    expect(told[0].text).toContain("sales promised you this")
+  })
+
+  it("leaves a kept promise, one not due yet, and one the owner owes", async () => {
+    const kept = promise()
+    store.close(kept.id, "done", "https://example.com/sent", clock)
+    promise({ dueAt: clock + 5 * HOUR })
+    promise({ owedTo: "sales", owedBy: "owner", channel: "approvals", chatId: "card-2" })
+    clock += 2 * HOUR + MIN
+    expect((await check()).duePushed).toBe(0)
+    expect(told).toEqual([])
+  })
+})
+
+describe("a due time an agent accepts on a request", () => {
+  it("arms the wake, like a promise's", () => {
+    const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
+    const tracker = new RequestTracker(store, () => settings, () => {}, () => clock)
+    tracker.taskStarted({
+      agentId: "sales", channel: "telegram", chatId: "chat-1", taskId: "t1", messagePreview: "Send the offer", fullMessage: "Send the offer",
+      at: "", humanRoot: true, sender: { id: "4242" },
+    } as any)
+    const due = new Date(clock + 3 * HOUR).toISOString()
+    const res = handleRequestsApi("POST", "/requests", { agentId: "sales", action: "accept", id: "req-t1", due }, {
+      store, tracker, enabled: true, hasAgent: (id) => id === "sales", now: clock,
+      runningTurn: (agentId) => (agentId === "sales" ? { channel: "telegram", chatId: "chat-1" } : null),
+    }, { taskId: "t1" })
+    expect(res.status).toBe(200)
+    expect(jobs.get("req-t1")).toMatchObject({ wakeAt: clock + 3 * HOUR, state: "continue" })
   })
 })

@@ -42,6 +42,28 @@ const TEXT_CLIP = 2000
 const MAX_TRIES = 3
 export const MISMATCH_PREFIX = "Closed without doing what you asked"
 
+/** Who closes a request when every step of its tracked plan finished. */
+export const PLAN_BY = "plan"
+
+/** What the agent is told when its plan's close was reopened (#1908). */
+export function planMismatchText(r: RequestRecord, why: string): string {
+  return [
+    `[agentx:request-reopened id=${r.id}] Your tracked plan for this request finished and closed it, but the close does not do what the owner asked, so the request is open again.`,
+    "",
+    "What the owner asked:",
+    clip(r.text),
+    ...(r.ownerNote ? ["", "The owner's latest note on it:", clip(r.ownerNote)] : []),
+    "",
+    `Why the close does not match: ${why || "the close does not match the owner's words"}`,
+    ...(r.evidence ? [`What the plan closed with: ${clip(r.evidence)}`] : []),
+    "",
+    "Do what is still missing now. Do not repeat an outside action you already took: check first.",
+    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link to the proof>"}. ` +
+      `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} so you are woken for it. ` +
+      "The owner is told it is open again.",
+  ].join("\n")
+}
+
 /** `d`: what the owner's words ask for and the links given (#692 B4).
  *  Default: the list and proofs kept on the request. */
 export function ownerCheckPrompt(r: RequestRecord, d: Deliverables | null = deliverablesOf(r, null)): string {
@@ -90,6 +112,10 @@ export interface OwnerCheckDeps {
   now?: () => number
   /** The request's tracked plan as deliverables (#692 B6). */
   plan?: (requestId: string) => Deliverables | null
+  /** Starts a turn on the request's agent with `text` (#1908): a plan's
+   *  close judged a mismatch wakes it. Fire and forget. Unset: only the
+   *  owner is told. */
+  wake?: (r: RequestRecord, text: string) => void
 }
 
 export class OwnerWordsCheck {
@@ -99,9 +125,9 @@ export class OwnerWordsCheck {
   constructor(private readonly deps: OwnerCheckDeps) {}
 
   /** Judge up to `perCheck` closes. Never throws; one run at a time. */
-  async run(): Promise<{ checked: number; reopened: string[] }> {
+  async run(): Promise<{ checked: number; reopened: string[]; woken: string[] }> {
     const s = this.deps.settings()
-    const out = { checked: 0, reopened: [] as string[] }
+    const out = { checked: 0, reopened: [] as string[], woken: [] as string[] }
     if (!s.enabled || this.running) return out
     this.running = true
     try {
@@ -125,6 +151,17 @@ export class OwnerWordsCheck {
           if (this.deps.store.reopenForOwnerCheck(r.id, reason, at)) {
             out.reopened.push(r.id)
             this.deps.log?.(`[requests] ${r.id}: owner-words check reopened it (${r.state} by ${r.closedBy}): ${v.why}`)
+            // A plan that closed too early (#1908): the flag alone woke
+            // nobody. The agent that owns the request is woken with why.
+            if (r.closedBy === PLAN_BY && this.deps.wake) {
+              try {
+                this.deps.wake(r, planMismatchText(r, v.why))
+                out.woken.push(r.id)
+                this.deps.log?.(`[requests] ${r.id}: its plan closed without doing what was asked; ${r.agentId} woken`)
+              } catch (e: any) {
+                this.deps.log?.(`[requests] ${r.id}: could not wake ${r.agentId} after its plan's close was reopened: ${e?.message ?? e}`)
+              }
+            }
           }
         } else {
           this.deps.store.setOwnerCheck(r.id, v.verdict, v.why || null, at)

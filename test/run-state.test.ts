@@ -270,4 +270,53 @@ describe("registry.execute on an agent channel", () => {
     expect(r.recordJobState("gone", { state: "blocked", why: "x" })).toBe(false)
     expect(r.recordJobState("run-7", { state: "blocked", why: "x" })).toBe(true)
   })
+  // The due-time gate (#1908): beside the answer, never before it.
+  describe("the due-time gate", () => {
+    const telegram = { channel: "telegram", chatId: "chat-1" }
+    const tick = () => new Promise((res) => setTimeout(res, 0))
+
+    it("gets each clean run with a reply, and can ask one question in the same session", async () => {
+      const { r, seen } = registry([{ content: "I will post the review by 15:00Z" }, { content: "Due: none" }])
+      const runs: any[] = []
+      const answers: any[] = []
+      r.setDueTimeGate(async (run, askAgent) => {
+        runs.push(run)
+        answers.push(await askAgent("[Due time] record it"))
+      })
+      const before = Date.now()
+      const res = await r.execute({ agentId: "ops", message: "review it", context: telegram })
+      // The caller has the run's own answer, unchanged.
+      expect(res.content).toBe("I will post the review by 15:00Z")
+      await tick()
+      await tick()
+      expect(runs).toHaveLength(1)
+      expect(runs[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", runIds: ["trace-0", "run-0"], reply: "I will post the review by 15:00Z" })
+      expect(runs[0].startedAt).toBeGreaterThanOrEqual(before)
+      expect(seen).toHaveLength(2)
+      expect(seen[1]).toMatchObject({ message: "[Due time] record it", context: telegram, jobStateAsk: true, freshSession: false, resumedFrom: "trace-0" })
+      expect(answers).toEqual([{ reply: "Due: none", error: undefined }])
+      // The question's own turn is not checked again.
+      expect(runs).toHaveLength(1)
+    })
+
+    it("is not given a failed run, an empty reply, or a run with no gate set", async () => {
+      const { r } = registry([{ content: "", error: "boom" }, { content: "  " }, { content: "fine" }])
+      const runs: any[] = []
+      r.setDueTimeGate(async (run) => { runs.push(run) })
+      await r.execute({ agentId: "ops", message: "a", context: telegram })
+      await r.execute({ agentId: "ops", message: "b", context: telegram })
+      await tick()
+      expect(runs).toEqual([])
+      r.setDueTimeGate(undefined)
+      expect((await r.execute({ agentId: "ops", message: "c", context: telegram })).content).toBe("fine")
+    })
+
+    it("never fails the run when the gate throws", async () => {
+      const { r, logs } = registry([{ content: "done by 15:00Z" }])
+      r.setDueTimeGate(async () => { throw new Error("gate down") })
+      expect((await r.execute({ agentId: "ops", message: "a", context: telegram })).content).toBe("done by 15:00Z")
+      await tick()
+      expect(logs.join("\n")).toContain("gate down")
+    })
+  })
 })

@@ -731,7 +731,7 @@ describe("the minute check", () => {
   it("does nothing while the feature is off", async () => {
     start("t1"); end("t1", { error: "a" })
     settings.enabled = false
-    expect((await sweep()).result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0 })
+    expect((await sweep()).result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0 })
   })
 })
 
@@ -743,7 +743,7 @@ describe("waiting on the owner", () => {
     expect(store.listOpen()[0]).toMatchObject({ state: "waiting_owner", question: "Deploy to the server now, or after the review?" })
     clock += 72 * HOUR
     const result = await runRequestsSweep({ store, settings, log: () => {}, now: clock, notify: async () => {} })
-    expect(result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0 })
+    expect(result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0 })
     expect(store.get("req-t1")?.state).toBe("waiting_owner")
   })
 

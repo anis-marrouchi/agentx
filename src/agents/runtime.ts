@@ -178,7 +178,9 @@ export interface AgentTask {
   preSpawnRetry?: number
   /** Offered to the run already going in this chat (mid-turn.ts). */
   midTurnId?: string
-  /** Set on the one turn that asks a run for its job's state (run-state.ts). */
+  /** Set on the one turn that asks a run for its job's state
+   *  (run-state.ts), and on the one that asks it to record a due time it
+   *  set (requests/due-gate.ts): a question to the run, not work. */
   jobStateAsk?: boolean
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
