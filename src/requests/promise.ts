@@ -122,9 +122,14 @@ export interface PromiseSettings {
   /** A decision card raised outside a request's turn opens a promise owed
    *  by the owner, closed when the card is decided. */
   cards: boolean
+  /** A promise that falls due and is not kept is pushed by the requests
+   *  check: agent woken, waiter told, needs attention (#1908). */
+  duePush: boolean
+  /** A due time an agent accepts on a request arms a wake-up (#1908). */
+  acceptWake: boolean
 }
 
-export const DEFAULT_PROMISE_SETTINGS: PromiseSettings = { requireProof: true, facts: true, factTtlDays: 7, cards: false }
+export const DEFAULT_PROMISE_SETTINGS: PromiseSettings = { requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true }
 
 export const promiseSettingsOf = (s: { promises?: Partial<PromiseSettings> } | undefined): PromiseSettings => ({ ...DEFAULT_PROMISE_SETTINGS, ...s?.promises })
 

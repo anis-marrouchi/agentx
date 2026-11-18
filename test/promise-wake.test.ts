@@ -6,7 +6,7 @@ import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { JobStore } from "../src/jobs/store"
 import { DEFAULT_WAKE_SETTINGS, JobWake } from "../src/jobs/wake"
-import { armPromiseWake, openPromise, raiseLoop } from "../src/requests/promise"
+import { armPromiseWake, DEFAULT_PROMISE_SETTINGS, openPromise, raiseLoop } from "../src/requests/promise"
 import { runRequestsSweep } from "../src/requests/sweep"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi } from "../src/requests/daemon-api"
@@ -130,8 +130,8 @@ describe("a promise past its due time", () => {
   let told: Array<{ to: string; text: string }>
   let notices: string[]
 
-  const check = () => runRequestsSweep({
-    store, settings, log: () => {}, now: clock,
+  const check = (over: Partial<RequestSettings> = {}) => runRequestsSweep({
+    store, settings: { ...settings, ...over }, log: () => {}, now: clock,
     hasAgent: (id) => ["sales", "pm"].includes(id),
     wakeJob: (id, note) => wake.wakeFor(id, note),
     tellRequester: (to, text) => { told.push({ to, text }); return true },
@@ -223,6 +223,27 @@ describe("a promise past its due time", () => {
     expect((await check()).duePushed).toBe(0)
   })
 
+  // The switch (#1912): `promises.duePush`.
+  it("with the push off, neither wakes the agent nor tells the waiter nor marks it pushed", async () => {
+    const p = promise({ owedTo: "pm", wake: false })
+    store.progress(p.id, clock + 2 * HOUR + 30_000)
+    clock += 2 * HOUR + MIN
+    const result = await check({ promises: { duePush: false } })
+    expect(result.duePushed).toBe(0)
+    expect(result.quiet).toBe(0)
+    expect(told).toEqual([])
+    expect(notices).toEqual([])
+    expect(store.get(p.id)).toMatchObject({ state: "in_progress", attentionReason: null })
+    expect(wake.tick().woken).toBe(0)
+    expect((db.prepare("SELECT due_pushed_at FROM requests WHERE id = ?").get(p.id) as any).due_pushed_at).toBeNull()
+    // Turned on again: pushed as on 0.229.0.
+    const on = await check({ promises: { duePush: true } })
+    expect(on.duePushed).toBe(1)
+    expect(told.map((t) => t.to)).toEqual(["pm"])
+    expect(store.get(p.id)).toMatchObject({ state: "needs_attention" })
+    expect(wake.tick().woken).toBe(1)
+  })
+
   it("leaves a kept promise, one not due yet, and one the owner owes", async () => {
     const kept = promise()
     store.close(kept.id, "done", "https://example.com/sent", clock)
@@ -249,5 +270,24 @@ describe("a due time an agent accepts on a request", () => {
     }, { taskId: "t1" })
     expect(res.status).toBe(200)
     expect(jobs.get("req-t1")).toMatchObject({ wakeAt: clock + 3 * HOUR, state: "continue" })
+  })
+
+  // The switch (#1912): `promises.acceptWake`.
+  it("with the switch off, stores the due time and arms no wake", () => {
+    const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
+    const tracker = new RequestTracker(store, () => settings, () => {}, () => clock)
+    tracker.taskStarted({
+      agentId: "sales", channel: "telegram", chatId: "chat-1", taskId: "t1", messagePreview: "Send the offer", fullMessage: "Send the offer",
+      at: "", humanRoot: true, sender: { id: "4242" },
+    } as any)
+    const due = new Date(clock + 3 * HOUR).toISOString()
+    const res = handleRequestsApi("POST", "/requests", { agentId: "sales", action: "accept", id: "req-t1", due }, {
+      store, tracker, enabled: true, hasAgent: (id) => id === "sales", now: clock,
+      runningTurn: (agentId) => (agentId === "sales" ? { channel: "telegram", chatId: "chat-1" } : null),
+      promiseSettings: { ...DEFAULT_PROMISE_SETTINGS, acceptWake: false },
+    }, { taskId: "t1" })
+    expect(res.status).toBe(200)
+    expect(store.get("req-t1")).toMatchObject({ dueAt: clock + 3 * HOUR, state: "in_progress" })
+    expect(jobs.get("req-t1")?.wakeAt ?? null).toBeNull()
   })
 })

@@ -632,7 +632,7 @@ export function handleRequestsApi(
       store.setLoop(request.id, loop, now)
       // A due time the agent accepts wakes it when it comes (#1908), like
       // a promise's: before, it only fed the overdue notice to the owner.
-      if (action === "accept" && typeof loop.dueAt === "number") armPromiseWake(store, request.id, loop.dueAt, now)
+      if (action === "accept" && typeof loop.dueAt === "number" && deps.promiseSettings?.acceptWake !== false) armPromiseWake(store, request.id, loop.dueAt, now)
       if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)
     } catch (e: any) {
       return { status: 400, body: { error: e?.message ?? String(e) } }

@@ -136,12 +136,12 @@ describe("readVerdict / prompt", () => {
 describe("a plan's close judged a mismatch", () => {
   const MISMATCH = '{"verdict":"mismatch","why":"the review you asked for by noon was never posted"}'
 
-  function withWake(answer: string) {
+  function withWake(answer: string, over: Partial<typeof DEFAULT_OWNER_CHECK> = {}) {
     const woken: Array<{ id: string; agentId: string; text: string }> = []
     const lines: string[] = []
     const c = new OwnerWordsCheck({
       store,
-      settings: () => ({ ...DEFAULT_OWNER_CHECK, enabled: true }),
+      settings: () => ({ ...DEFAULT_OWNER_CHECK, enabled: true, ...over }),
       generate: async () => answer,
       wake: (r, text) => { woken.push({ id: r.id, agentId: r.agentId, text }) },
       log: (l) => lines.push(l),
@@ -166,6 +166,18 @@ describe("a plan's close judged a mismatch", () => {
     // Once: the next check has nothing left to judge.
     expect((await c.run()).woken).toEqual([])
     expect(woken).toHaveLength(1)
+  })
+
+  // The switch (#1912): `ownerCheck.wakeOnPlanMismatch`.
+  it("with the wake off, reopens it for the owner and wakes nobody", async () => {
+    store.progress(ID, 5_500)
+    expect(store.close(ID, "done", "plan: 2 of 2 steps finished", 6_000, null, PLAN_BY)).toBe(true)
+    const { c, woken } = withWake(MISMATCH, { wakeOnPlanMismatch: false })
+    const out = await c.run()
+    expect(out).toMatchObject({ checked: 1, reopened: [ID], woken: [] })
+    expect(store.get(ID)).toMatchObject({ state: "needs_attention", ownerCheck: "mismatch", closedAt: null })
+    expect(store.get(ID)!.attentionReason).toContain("the review you asked for by noon was never posted")
+    expect(woken).toEqual([])
   })
 
   it("wakes nobody when the plan's close matches, or when an agent closed it by hand", async () => {
