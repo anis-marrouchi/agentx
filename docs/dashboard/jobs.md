@@ -70,6 +70,8 @@ When `requests.dueTimes.mode` is `"shadow"` or `"on"`, a **Queue** block sits ab
 - **clear:** when the last of them would end.
 - **correction:** how long the agent's work really took against its estimates. It is not shown when it is 1.
 
+![The Jobs page in a demo with due times in shadow mode: the Queue block above the list, one line per agent with its jobs, minutes of work, when the next ends and when it is clear](/screenshots/wall/job-ledger-queue.png)
+
 The block only reads. See [Due times the daemon gives](../jobs/open-requests.md#due-times-the-daemon-gives-the-queue) for how the times are worked out and how to turn it on.
 
 ## How long a job is kept
