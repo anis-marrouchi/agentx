@@ -186,6 +186,23 @@ describe("a promise past its due time", () => {
     expect(told[0].text).toContain("sales promised you this")
   })
 
+  // Handed on and back done (#1912 item 2): a promise is never settled by
+  // the hand-back path (that path reads non-promises only), so it is pushed
+  // like any other due promise, once, and is not read again by the next check.
+  it("pushes a promise whose handed work came back, once, and leaves it out of the next check", async () => {
+    const p = promise()
+    store.link(p.id, "delegation", "dlg-1", clock, "pm")
+    store.endLink("delegation", "dlg-1", "done", "https://example.com/pr/1", clock + HOUR)
+    expect(store.cameBack(p.id)).toBe(false)
+    clock += 2 * HOUR + MIN
+    expect((await check()).duePushed).toBe(1)
+    expect(store.get(p.id)).toMatchObject({ state: "needs_attention", promise: true })
+    clock += MIN
+    expect(store.duePromises(clock).map((r) => r.id)).not.toContain(p.id)
+    expect((await check()).duePushed).toBe(0)
+    expect(store.get(p.id)?.state).toBe("needs_attention")
+  })
+
   // A host rolled back to code from before the push (#1912): that code
   // sets a due time without clearing `due_pushed_at`.
   const oldSetDue = (id: string, dueAt: number) =>

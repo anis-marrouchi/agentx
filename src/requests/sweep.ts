@@ -363,9 +363,10 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   // Off (`promises.duePush`, #1912): nothing is read, woken or marked here;
   // the promise comes back through the quiet check below.
   try {
+    // No "came back, left to settle" skip here (#1912 item 2): the
+    // hand-back settle reads non-promises only (CAME_BACK), so every due
+    // promise is pushed once and then left out of this query by its mark.
     for (const r of settings.promises?.duePush === false ? [] : store.duePromises(now)) {
-      // Back done, and settled once quiet (#1214): left to that.
-      if (settings.settleHandedBack !== false && r.state === "in_progress" && !deps.inPlan?.(r.id) && store.cameBack(r.id) && !asksOwner(r.id)) continue
       const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
       const woken = deps.wakeJob?.(r.id, `It fell due (${when(r.dueAt!)}) and is not kept, owed to ${r.owedTo ?? "the owner"}: ${words}`.slice(0, JOB_NOTE_MAX)) ?? false
       const waiter = r.owedTo && r.owedTo !== r.agentId && deps.hasAgent?.(r.owedTo) ? r.owedTo : null
